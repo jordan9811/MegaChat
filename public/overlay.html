@@ -46,7 +46,8 @@
       height: 100%;
       border: 0;
       display: block;
-      background: transparent;        /* &transparent scene -> game shows through */
+      background: transparent;
+      background-color: transparent;  /* no dark fill on the iframe element itself */
     }
 
     /* White layer used only for the CRT power-off flash. */
@@ -145,6 +146,88 @@
     stage.style.width = TILE_W + 'px';
     const videoBoxes = new Map(); // seatId -> tile element (insertion order)
 
+    // Build a direct vdo.ninja VIEW url for OBS overlay tiles.
+    //
+    // The server sends viewUrl with &scene (generateVDORoom). Scene mode applies
+    // mixer layouts — portrait slots, holder letterboxing, UI chrome — which is
+    // exactly the dark-navy bands + pause/bitrate controls in the screenshot.
+    // Overlay must use a plain ?view=STREAMID link instead (docs: view.md).
+    //
+    // Documented params appended here:
+    //   transparent, cleanviewer, cleanoutput  — transparent page, no UI chrome
+    //   cover                                   — crop to fill window (cover.md)
+    //   structure                               — 16:9 holder matching our tile (and-structure.md)
+    //   hideplaybutton, obsoff                  — hide play btn / tally (viewer-side)
+    //   viewwidth/viewheight                    — match tile px (and-viewheight.md)
+    //   css                                     — inline transparent holder + object-fit cover
+    function extractViewStreamId(baseUrl) {
+      try {
+        const view = new URL(baseUrl).searchParams.get('view');
+        if (view) return view.split(',')[0].trim();
+      } catch { /* fall through */ }
+      const m = baseUrl.match(/[?&]view=([^&]+)/i);
+      return m ? decodeURIComponent(m[1]).split(',')[0].trim() : null;
+    }
+
+    function buildOverlayViewUrl(baseUrl) {
+      const streamId = extractViewStreamId(baseUrl);
+      let origin = 'https://vdo.ninja';
+      try { origin = new URL(baseUrl).origin; } catch { /* default */ }
+      if (!streamId) return baseUrl; // nothing to rewrite
+
+      // Inline CSS via documented &css param (design-parameters/css).
+      const css = [
+        ':root{--video-holder-color:transparent!important}',
+        'body,html{background:transparent!important;background-color:transparent!important}',
+        'video,canvas{object-fit:cover!important;width:100%!important;height:100%!important}',
+        '#container,#grid,#videos,.vidcon,.video-container,.videoContainer,#videoContainer',
+        '{width:100%!important;height:100%!important;margin:0!important;padding:0!important;background:transparent!important}',
+        '#controls,#playbutton,#header,#menu,#bottombar,#topbar,.controls,#miniPreview,#whip,#stats,#bitrate,.bitrate,#milestone,.pause,#pausebutton,.pause-button',
+        '{display:none!important;opacity:0!important;visibility:hidden!important}',
+      ].join('');
+
+      const q = [
+        `view=${encodeURIComponent(streamId)}`,
+        'transparent',
+        'cleanviewer',
+        'cleanoutput',
+        'cover',
+        'structure',
+        'hideplaybutton',
+        'obsoff',
+        'muted',
+        'autostart',
+        `viewwidth=${TILE_W}`,
+        `viewheight=${TILE_H}`,
+        `css=${encodeURIComponent(css)}`,
+      ].join('&');
+      // Plain direct view — intentionally NO &scene (mixer layout breaks overlay).
+      return `${origin}/?${q}`;
+    }
+
+    // IFRAME API style injection — backup in case &css loads late. Best-effort.
+    function injectVdoOverlayStyles(iframe) {
+      const send = () => {
+        try {
+          iframe.contentWindow?.postMessage({
+            style: [
+              ':root { --video-holder-color: transparent !important; }',
+              'body, html { background: transparent !important; background-color: transparent !important; }',
+              'video, canvas { object-fit: cover !important; width: 100% !important; height: 100% !important; }',
+              '#container, #grid, #videos, .vidcon, .video-container, .videoContainer {',
+              '  width: 100% !important; height: 100% !important; margin: 0 !important;',
+              '  padding: 0 !important; background: transparent !important; }',
+              '#controls, #playbutton, #header, #menu, #bottombar, .controls, #stats, .bitrate, .pause-button {',
+              '  display: none !important; visibility: hidden !important; }',
+            ].join('\n'),
+          }, '*');
+        } catch { /* ignore */ }
+      };
+      iframe.addEventListener('load', send);
+      setTimeout(send, 1200);
+      setTimeout(send, 3500);
+    }
+
     ws.onopen = () => console.log('Overlay connected to server');
 
     ws.onmessage = (event) => {
@@ -178,13 +261,12 @@
       box.style.top = (liveCount() * (TILE_H + GAP)) + 'px';
 
       const iframe = document.createElement('iframe');
-      // Frontend-only: request a transparent scene so non-video area (letterbox)
-      // lets the gameplay behind the overlay show through. (Does not touch the
-      // server's generateVDORoom — just appends a render flag to the view URL.)
-      const sep = seat.viewUrl.includes('?') ? '&' : '?';
-      iframe.src = seat.viewUrl + sep + 'transparent';
-      iframe.allow = 'autoplay; camera; microphone; display-capture';
+      iframe.src = buildOverlayViewUrl(seat.viewUrl);
+      iframe.allow = 'autoplay; camera; microphone';
       iframe.setAttribute('allowtransparency', 'true');
+      iframe.style.background = 'transparent';
+      iframe.style.backgroundColor = 'transparent';
+      injectVdoOverlayStyles(iframe);
 
       const flash = document.createElement('div');
       flash.className = 'crt-flash';
