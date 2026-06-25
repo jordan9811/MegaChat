@@ -133,6 +133,31 @@
       font-weight: bold;
     }
 
+    .meter {
+      display: none;
+      margin-bottom: 20px;
+      padding: 15px 20px;
+      border: 1px solid #0ff;
+      border-radius: 8px;
+      background: rgba(0, 255, 255, 0.05);
+    }
+
+    .meter.show { display: block; }
+
+    .meter-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      color: #0aa;
+      font-size: 0.9rem;
+    }
+
+    .meter-val {
+      color: #0ff;
+      font-weight: bold;
+      font-family: monospace;
+    }
+
     .info {
       margin-top: 30px;
       padding-top: 30px;
@@ -209,8 +234,23 @@
     <p class="subtitle">Get your webcam on the stream</p>
 
     <div class="price">
-      <div class="price-amount">0.01 USDC</div>
-      <div class="price-label">Per 10-minute seat</div>
+      <div class="price-amount" id="priceAmount">0.1 USDC</div>
+      <div class="price-label" id="priceLabel">pay-as-you-watch · per 10s</div>
+    </div>
+
+    <div id="meter" class="meter">
+      <div class="meter-row">
+        <span>Remaining</span>
+        <span class="meter-val" id="meterRemaining">— USDC</span>
+      </div>
+      <div class="meter-row">
+        <span>Spent</span>
+        <span class="meter-val" id="meterSpent">0 USDC</span>
+      </div>
+      <div class="meter-row">
+        <span>≈ time left</span>
+        <span class="meter-val" id="meterTime">—</span>
+      </div>
     </div>
 
     <input 
@@ -256,6 +296,7 @@
     // ─── Arc + Circle Gateway config (loaded from the server) ────────────────
     let CONFIG = null;
     let account = null;
+    let mySeatId = null;
 
     // EIP-712 type for the Gateway batched EIP-3009 authorization. This MUST
     // mirror @circle-fin/x402-batching exactly so the facilitator accepts it.
@@ -286,7 +327,44 @@
     async function loadConfig() {
       const res = await fetch('/api/config');
       CONFIG = await res.json();
+      // Reflect the pay-per-tick pricing in the header box.
+      const amt = document.getElementById('priceAmount');
+      const lbl = document.getElementById('priceLabel');
+      if (amt) amt.textContent = `${CONFIG.tickPrice} USDC`;
+      if (lbl) lbl.textContent =
+        `pay-as-you-watch · per ${CONFIG.tickSeconds}s · up to ${CONFIG.maxSession} USDC/session`;
     }
+
+    function formatTimeLeft(seconds) {
+      const s = Math.max(0, Math.floor(seconds));
+      const m = Math.floor(s / 60);
+      const r = s % 60;
+      return `${m}:${r.toString().padStart(2, '0')}`;
+    }
+
+    function showMeter(remaining, spent, secondsLeft) {
+      const box = document.getElementById('meter');
+      box.classList.add('show');
+      document.getElementById('meterRemaining').textContent = `${remaining} USDC`;
+      document.getElementById('meterSpent').textContent = `${spent} USDC`;
+      document.getElementById('meterTime').textContent = formatTimeLeft(secondsLeft);
+    }
+
+    // Live meter + seat lifecycle updates from the server.
+    ws.onmessage = (event) => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+      if (!mySeatId) return;
+      if (msg.type === 'meter_update' && msg.seatId === mySeatId) {
+        showMeter(msg.remaining, msg.spent, msg.secondsLeft);
+      } else if (msg.type === 'seat_removed' && msg.seatId === mySeatId) {
+        document.getElementById('meterTime').textContent = '0:00';
+        if (msg.reason === 'out_of_funds') {
+          showMessage('⚠️ Out of funds — your seat ended. Deposit more USDC and rejoin.', 'error');
+        }
+        mySeatId = null;
+      }
+    };
 
     // ─── helpers ─────────────────────────────────────────────────────────────
     function b64encode(obj) {
@@ -492,6 +570,8 @@
 
       const paymentPayload = {
         x402Version: requirements.x402Version || 2,
+        // Circle Gateway's /v1/x402/verify requires `resource` to be echoed back.
+        resource: requirements.resource,
         accepted: req,
         payload: { authorization, signature }
       };
@@ -563,6 +643,11 @@
     }
 
     function onJoinSuccess(data) {
+      mySeatId = data.seatId;
+      showMeter(data.remaining, '0', data.secondsLeft);
+      const txLink = data.payment && data.payment.transaction
+        ? `<br><a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">View settlement on explorer</a>`
+        : '';
       showMessage(
         `✅ Success! Click the link below to open your camera:
         <div class="camera-link">
@@ -570,7 +655,7 @@
         </div>
         <p style="margin-top: 15px; font-size: 0.9rem;">
           Your camera will appear on the stream automatically!<br>
-          Expires in ${Math.floor(data.expiresIn / 60)} minutes.
+          Prepaid ${data.remaining} USDC — metered ${data.tickPrice} USDC every ${data.tickSeconds}s.${txLink}
         </p>`,
         'success'
       );

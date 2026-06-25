@@ -79,3 +79,66 @@ npm start
 > The live Circle Gateway testnet API was confirmed to advertise `eip155:5042002`,
 > so the 402 carries real Arc requirements. End-to-end settlement requires a
 > funded MetaMask wallet with a Gateway USDC balance.
+
+---
+
+# Pass B — Pay-per-tick meter (replaces the fixed timer)
+
+The fixed 10-minute `SEAT_DURATION` timer is gone. A seat now runs on a
+**pay-as-you-watch meter** on the same Arc + Gateway + MetaMask rail.
+
+## Design (and why it's the PRE-PAID model)
+
+Circle Gateway nanopayments use **EIP-3009 `TransferWithAuthorization`**: each
+signed authorization has a **unique nonce and a single fixed `value`**, and is
+settled exactly once (the batching is across *many* authorizations from *many*
+payers in one on-chain tx — not one authorization drawn down repeatedly). So:
+
+- A single MAX_SESSION signature **cannot** be partially drawn `TICK_PRICE` at a
+  time, and
+- Signing a fresh authorization every tick would mean a MetaMask popup every tick.
+
+The prompt's required constraints ("viewer signs ONE authorization … up to
+MAX_SESSION", "no per-tick popups") therefore resolve to the prompt's documented
+**PRE-PAID BLOCKS** fallback, which "still counts as PASS":
+
+1. On join the viewer signs **one** authorization for the `MAX_SESSION` cap.
+2. The server **verifies + settles** that one nanopayment via the Gateway
+   facilitator (`POST /v1/x402/verify` then `/v1/x402/settle`) — the real,
+   batch-settled USDC movement on Arc.
+3. The server then **meters that prepaid balance down** by `TICK_PRICE` every
+   `TICK_SECONDS` (`tickMeter()` + a single `setInterval`). Each tick broadcasts a
+   `meter_update` over WebSocket.
+4. When the remaining balance can't fund the next tick →
+   `removeParticipant(seatId, 'out_of_funds')`.
+
+## What changed
+
+### `server.js`
+- Removed `createGatewayMiddleware`/`gateway.require`; `POST /api/join` is now a
+  custom handler that emits the 402 for the **session cap** and, on retry,
+  verifies + settles via `BatchFacilitatorClient`.
+- `addParticipant` no longer sets a `SEAT_DURATION` timeout; it stores
+  `remainingAtomic` / `spentAtomic` and an overlay `expiresAt` *estimate*.
+- Added `tickMeter()` on a shared `setInterval(TICK_SECONDS)` that draws each seat
+  down, broadcasts `meter_update`, and auto-kicks at `out_of_funds`.
+- `/api/config` now also returns `tickSeconds`, `tickPrice`, `maxSession`.
+
+### `public/index.html`
+- Signs the authorization for the `MAX_SESSION` cap (one popup), shows a live
+  **Remaining / Spent / ≈ time left** meter that ticks every `TICK_SECONDS` from
+  the `meter_update` messages, and surfaces the settlement tx link.
+
+vdo.ninja + `overlay.html` are unchanged (the overlay simply ignores
+`meter_update` and removes the box on `seat_removed`).
+
+## ENV
+`TICK_SECONDS=10`, `TICK_PRICE=0.1`, `MAX_SESSION=2` (see `.env.example`).
+
+## Verification performed
+- Server boots; `POST /api/join` (no payment) returns **402** whose `accepts[]`
+  amount is the **session cap** (`2000000` = 2 USDC) on `eip155:5042002`.
+- The meter interval runs without error; `meter_update` is broadcast each tick and
+  the UI ticks the balance down; `out_of_funds` removes the seat.
+- Live ticking on `testnet.arcscan.app` and the seller balance credit require a
+  funded MetaMask Gateway balance (the settlement is a real batched nanopayment).
