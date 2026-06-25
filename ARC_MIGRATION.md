@@ -135,9 +135,33 @@ vdo.ninja + `overlay.html` are unchanged (the overlay simply ignores
 ## ENV
 `TICK_SECONDS=10`, `TICK_PRICE=0.1`, `MAX_SESSION=2` (see `.env.example`).
 
+## Balance-aware session pricing (fix)
+
+The session amount is **not** a flat `MAX_SESSION`. The server reads the wallet's
+**available Circle Gateway balance** (`POST /v1/balances` with
+`{ token:"USDC", sources:[{ depositor, domain: 26 }] }`, 6-decimal aware — the
+same call `GatewayClient`/the facilitator use) and prices the session at
+`min(available, MAX_SESSION)`:
+
+- `GET /api/balance/:address` → `{ available, pending, spendable, canJoin }`. The
+  UI shows `available` as **"Remaining"** after connect/deposit (with a few retries
+  to ride out the deposit-finalization lag).
+- `POST /api/join` (no payment) requires the wallet `address`, reads the balance,
+  and emits the 402 priced at the spendable amount. A **1 USDC deposit is offered
+  as a 1 USDC session** instead of demanding the 2 USDC cap (the previous cause of
+  `insufficient_balance`).
+- On the paid retry the server verifies/settles against the **signed
+  authorization value** (capped at `MAX_SESSION`), and the seat's metered balance
+  starts from that amount.
+
 ## Verification performed
-- Server boots; `POST /api/join` (no payment) returns **402** whose `accepts[]`
-  amount is the **session cap** (`2000000` = 2 USDC) on `eip155:5042002`.
+- Server boots; `POST /api/join` (no payment, with `address`) returns **402** whose
+  `accepts[]` amount is `min(available, MAX_SESSION)` on `eip155:5042002`.
+- Against the funded wallet `0x2eEB…E705` (confirmed 1 USDC Gateway deposit):
+  `GET /api/balance` returns `available:"1"`, `spendable:"1"`, `canJoin:true`; the
+  join 402 is priced at `1000000` (1 USDC); and the Gateway facilitator's verify
+  returns `invalid_signature` (i.e. the **balance gate passes** — only the real
+  MetaMask signature remains), confirming `insufficient_balance` is resolved.
 - The meter interval runs without error; `meter_update` is broadcast each tick and
   the UI ticks the balance down; `out_of_funds` removes the seat.
 - Live ticking on `testnet.arcscan.app` and the seller balance credit require a

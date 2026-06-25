@@ -418,6 +418,7 @@
         renderWallet();
         // Let the isolated watch-to-earn module know which wallet to credit.
         window.dispatchEvent(new CustomEvent('wallet:connected', { detail: { account } }));
+        refreshBalance();
         return account;
       } catch (err) {
         showMessage('❌ ' + (err.message || 'Wallet connection failed'), 'error');
@@ -460,6 +461,26 @@
         connectBtn.textContent = '🦊 Connected';
         connectBtn.disabled = true;
         info.innerHTML = `Wallet: <span class="addr">${account}</span><br>Network: Arc Testnet (${CONFIG.network})`;
+      }
+    }
+
+    // Read the wallet's available Gateway balance and preview it as "Remaining".
+    // This is the spendable balance the join gate checks against.
+    async function refreshBalance() {
+      if (!account || mySeatId) return; // don't clobber a live metered session
+      try {
+        const res = await fetch(`/api/balance/${account}`);
+        const data = await res.json();
+        if (!res.ok) return;
+        const tickPrice = parseFloat(CONFIG.tickPrice || '0.1') || 0.1;
+        const ticks = Math.floor(parseFloat(data.spendable || '0') / tickPrice);
+        showMeter(data.available, '0', ticks * (CONFIG.tickSeconds || 10));
+        if (parseFloat(data.available) === 0 && parseFloat(data.pending) > 0) {
+          document.getElementById('meterRemaining').textContent =
+            `${data.pending} USDC (finalizing…)`;
+        }
+      } catch (e) {
+        console.warn('balance refresh failed', e);
       }
     }
 
@@ -523,9 +544,16 @@
 
         showMessage(
           `✅ Deposited ${amountStr} USDC into Gateway.<br>` +
-          `<a class="addr" href="${CONFIG.explorerUrl}/tx/${depositTx}" target="_blank">View on explorer</a>`,
+          `<a class="addr" href="${CONFIG.explorerUrl}/tx/${depositTx}" target="_blank">View on explorer</a>` +
+          `<p style="margin-top:10px;font-size:0.85rem;">Updating balance… (a fresh deposit may take a moment to finalize)</p>`,
           'success'
         );
+        // Reflect the new deposit in "Remaining". Retry a few times because the
+        // Gateway available balance can lag the on-chain deposit by a bit.
+        refreshBalance();
+        for (const delay of [4000, 8000, 15000]) {
+          setTimeout(refreshBalance, delay);
+        }
       } catch (err) {
         console.error(err);
         showMessage('❌ Deposit failed: ' + (err.message || err), 'error');
@@ -601,16 +629,25 @@
         await ensureArcChain();
 
         // 1) Hit the gate with no payment → expect 402 + Gateway requirements.
+        // We send the wallet address so the server prices the session against the
+        // wallet's available Gateway balance (min(available, MAX_SESSION)).
         btn.textContent = '⏳ Requesting payment terms...';
         const first = await fetch('/api/join', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username })
+          body: JSON.stringify({ username, address: account })
         });
 
         if (first.status === 402) {
           const requiredHeader = first.headers.get('payment-required');
-          if (!requiredHeader) throw new Error('Server did not return payment requirements');
+          if (!requiredHeader) {
+            // No requirements header => the balance gate rejected us.
+            const errData = await first.json().catch(() => ({}));
+            const detail = errData.available != null
+              ? ` (available ${errData.available} USDC)`
+              : '';
+            throw new Error((errData.hint || errData.error || 'Insufficient Gateway balance') + detail);
+          }
           const requirements = b64decode(requiredHeader);
 
           // 2) Sign the Gateway EIP-3009 authorization with MetaMask.
@@ -625,7 +662,7 @@
               'Content-Type': 'application/json',
               'Payment-Signature': paymentHeader
             },
-            body: JSON.stringify({ username })
+            body: JSON.stringify({ username, address: account })
           });
           const data = await paid.json();
           if (paid.ok && data.success) {

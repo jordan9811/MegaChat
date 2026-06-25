@@ -113,6 +113,42 @@ function b64decodeJson(str) {
   return JSON.parse(Buffer.from(str, 'base64').toString('utf-8'));
 }
 
+// Circle Gateway domain id for Arc Testnet (GATEWAY_DOMAINS.arcTestnet).
+const ARC_GATEWAY_DOMAIN = 26;
+
+// Read a depositor's *available* Gateway balance the same way the facilitator /
+// GatewayClient does: POST /v1/balances { token, sources:[{depositor, domain}] }.
+// `balance` is the available (spendable) amount; `pendingBatch` is awaiting batch
+// settlement. Amounts are decimal USDC strings (6 decimals) -> convert to atomic.
+async function getGatewayBalance(address) {
+  const res = await fetch(`${FACILITATOR_URL}/v1/balances`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      token: 'USDC',
+      sources: [{ depositor: address, domain: ARC_GATEWAY_DOMAIN }]
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || `Gateway /balances returned ${res.status}`);
+  }
+  // No record yet (e.g. deposit not finalized) -> treat as zero available.
+  const entry = (data.balances || []).find(
+    (b) => (b.depositor || '').toLowerCase() === address.toLowerCase()
+  ) || (data.balances || [])[0] || null;
+
+  const availableStr = entry?.balance ?? '0';
+  const pendingStr = entry?.pendingBatch ?? '0';
+  return {
+    availableAtomic: usdcToAtomic(availableStr),
+    pendingAtomic: usdcToAtomic(pendingStr),
+    available: atomicToUsdc(usdcToAtomic(availableStr)),
+    pending: atomicToUsdc(usdcToAtomic(pendingStr)),
+    hasRecord: !!entry
+  };
+}
+
 const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
@@ -137,6 +173,33 @@ app.get('/api/config', (req, res) => {
     tickPrice: TICK_PRICE,
     maxSession: MAX_SESSION
   });
+});
+
+// Read a wallet's available Circle Gateway balance (what it can spend to join).
+// Returns the available + pending amounts and the spendable session amount
+// (min(available, MAX_SESSION)) so the UI can preview "Remaining".
+app.get('/api/balance/:address', async (req, res) => {
+  const { address } = req.params;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) {
+    return res.status(400).json({ error: 'Invalid address' });
+  }
+  try {
+    const bal = await getGatewayBalance(address);
+    const spendableAtomic = bal.availableAtomic < MAX_SESSION_ATOMIC
+      ? bal.availableAtomic
+      : MAX_SESSION_ATOMIC;
+    return res.json({
+      address,
+      available: bal.available,
+      pending: bal.pending,
+      hasRecord: bal.hasRecord,
+      spendable: atomicToUsdc(spendableAtomic),
+      maxSession: MAX_SESSION,
+      canJoin: spendableAtomic >= TICK_PRICE_ATOMIC
+    });
+  } catch (err) {
+    return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
+  }
 });
 
 // Active video seats
@@ -326,7 +389,7 @@ app.get('/overlay', (req, res) => {
 //    draws it down TICK_PRICE every TICK_SECONDS until 'out_of_funds'.
 app.post('/api/join', async (req, res) => {
   try {
-    const { username } = req.body;
+    const { username, address } = req.body;
     if (!username) {
       return res.status(400).json({ error: 'Username required' });
     }
@@ -337,17 +400,48 @@ app.post('/api/join', async (req, res) => {
     } catch (err) {
       return res.status(503).json({ error: 'Gateway unavailable', message: err.message });
     }
-    const requirements = buildRequirements(kind, MAX_SESSION_ATOMIC);
 
     const paymentHeader = req.headers['payment-signature'];
 
-    // Step 1 — no payment yet: emit the 402 with the session-cap requirements.
+    // Step 1 — no payment yet: read the wallet's available Gateway balance and
+    // emit a 402 for the spendable session amount = min(available, MAX_SESSION).
+    // This is what fixes "insufficient_balance" for deposits below the cap: a
+    // 1 USDC deposit is offered (and signable) as a 1 USDC session.
     if (!paymentHeader) {
+      if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) {
+        return res.status(400).json({ error: 'Wallet address required to price the session' });
+      }
+
+      let bal;
+      try {
+        bal = await getGatewayBalance(address);
+      } catch (err) {
+        return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
+      }
+
+      const sessionAtomic = bal.availableAtomic < MAX_SESSION_ATOMIC
+        ? bal.availableAtomic
+        : MAX_SESSION_ATOMIC;
+
+      if (sessionAtomic < TICK_PRICE_ATOMIC) {
+        return res.status(402).json({
+          error: 'Insufficient Gateway balance',
+          reason: 'insufficient_balance',
+          available: bal.available,
+          pending: bal.pending,
+          needAtLeast: TICK_PRICE,
+          hint: bal.hasRecord
+            ? 'Deposit more USDC into the Gateway to watch.'
+            : 'No finalized Gateway balance yet — your deposit may still be finalizing.'
+        });
+      }
+
+      const requirements = buildRequirements(kind, sessionAtomic);
       const paymentRequired = {
         x402Version: 2,
         resource: {
           url: '/api/join',
-          description: `Co-stream seat — prepaid up to ${MAX_SESSION} USDC, metered ${TICK_PRICE} USDC / ${TICK_SECONDS}s`,
+          description: `Co-stream seat — prepaid ${atomicToUsdc(sessionAtomic)} USDC, metered ${TICK_PRICE} USDC / ${TICK_SECONDS}s`,
           mimeType: 'application/json'
         },
         accepts: [requirements]
@@ -358,13 +452,34 @@ app.post('/api/join', async (req, res) => {
       return res.end(JSON.stringify({}));
     }
 
-    // Step 2 — verify the signed authorization for the full session cap.
+    // Step 2 — verify + settle the signed authorization. The settled amount is
+    // exactly what the viewer signed (their available balance, capped at the
+    // session max), so the requirements we verify against must use that value.
     let paymentPayload;
     try {
       paymentPayload = b64decodeJson(paymentHeader);
     } catch {
       return res.status(400).json({ error: 'Malformed Payment-Signature header' });
     }
+
+    let sessionAtomic;
+    try {
+      sessionAtomic = BigInt(paymentPayload?.payload?.authorization?.value ?? '0');
+    } catch {
+      sessionAtomic = 0n;
+    }
+    if (sessionAtomic <= 0n) {
+      return res.status(400).json({ error: 'Signed authorization has no value' });
+    }
+    if (sessionAtomic > MAX_SESSION_ATOMIC) {
+      return res.status(400).json({
+        error: 'Authorization exceeds session cap',
+        reason: 'over_cap',
+        maxSession: MAX_SESSION
+      });
+    }
+
+    const requirements = buildRequirements(kind, sessionAtomic);
 
     const verify = await facilitator.verify(paymentPayload, requirements);
     if (!verify.isValid) {
@@ -384,7 +499,7 @@ app.post('/api/join', async (req, res) => {
     }
 
     const result = addParticipant(username, {
-      remainingAtomic: MAX_SESSION_ATOMIC,
+      remainingAtomic: sessionAtomic,
       payer: settle.payer || verify.payer || null,
       depositTx: settle.transaction || null
     });
