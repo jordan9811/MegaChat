@@ -8,6 +8,7 @@ import {
   BatchFacilitatorClient,
   GATEWAY_AUTH_VALIDITY_WINDOW_SECONDS
 } from '@circle-fin/x402-batching/server';
+import { attachRewards } from './rewards.js';
 
 // Load .env if present (Node >=20.6 native loader). Never throws if missing.
 try {
@@ -291,6 +292,20 @@ wss.on('connection', (ws) => {
     console.log('Client disconnected');
   });
 });
+
+// ─── Pass C: watch-to-earn (isolated; never breaks Pass A / B) ───────────────
+try {
+  attachRewards(wss, {
+    earnInterval: Number(process.env.EARN_INTERVAL || 60),
+    earnAmount: process.env.EARN_AMOUNT || '0.1',
+    earnCap: process.env.EARN_CAP || '5',
+    poolWallet: process.env.REWARD_POOL_WALLET_ADDRESS || null,
+    poolPrivateKey: process.env.REWARD_POOL_PRIVATE_KEY || null,
+    rpcUrl: ARC_RPC_URL
+  });
+} catch (err) {
+  console.warn('[rewards] failed to attach, continuing without watch-to-earn:', err.message);
+}
 
 // Routes
 

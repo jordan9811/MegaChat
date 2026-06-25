@@ -251,6 +251,10 @@
         <span>≈ time left</span>
         <span class="meter-val" id="meterTime">—</span>
       </div>
+      <div class="meter-row" id="earnedRow">
+        <span>earned this session</span>
+        <span class="meter-val" id="rewardsEarned">0 USDC</span>
+      </div>
     </div>
 
     <input 
@@ -412,6 +416,8 @@
         account = accounts[0];
         await ensureArcChain();
         renderWallet();
+        // Let the isolated watch-to-earn module know which wallet to credit.
+        window.dispatchEvent(new CustomEvent('wallet:connected', { detail: { account } }));
         return account;
       } catch (err) {
         showMessage('❌ ' + (err.message || 'Wallet connection failed'), 'error');
@@ -682,5 +688,8 @@
 
     loadConfig().catch(err => console.error('Failed to load config', err));
   </script>
+
+  <!-- Pass C: watch-to-earn (isolated client module) -->
+  <script src="/rewards.js"></script>
 </body>
 </html>
