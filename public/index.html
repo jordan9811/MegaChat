@@ -226,6 +226,83 @@
     .camera-link a:hover {
       text-decoration: underline;
     }
+
+    /* Inline camera-publish stage (replaces the old redirect flow). */
+    .camera-stage {
+      display: none;
+      margin-top: 20px;
+    }
+
+    .camera-stage.show { display: block; }
+
+    .cam-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.95rem;
+      font-weight: bold;
+      margin-bottom: 12px;
+    }
+
+    .cam-status .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #0aa;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    .cam-status.live .dot { background: #f33; animation: none; box-shadow: 0 0 10px #f33; }
+    .cam-status.live { color: #f55; }
+    .cam-status.error .dot { background: #f00; animation: none; }
+    .cam-status.error { color: #f55; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+
+    .cam-frame {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      border: 2px solid #0ff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 0 25px rgba(0, 255, 255, 0.25);
+    }
+
+    .cam-frame iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    /* Hidden self-view used only to confirm the local stream is actually
+       publishing (so we can auto-fire camera_ready). Kept active but invisible. */
+    .cam-detector {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+      left: -9999px;
+      top: -9999px;
+    }
+
+    .cam-hint {
+      margin-top: 12px;
+      font-size: 0.85rem;
+      color: #0aa;
+    }
+
+    #goLiveBtn { margin-top: 14px; display: none; }
+    #goLiveBtn.show { display: block; }
+    #camRetryBtn { margin-top: 12px; display: none; }
+    #camRetryBtn.show { display: block; }
   </style>
 </head>
 <body>
@@ -278,6 +355,19 @@
     </button>
 
     <div id="message" class="message"></div>
+
+    <div id="cameraStage" class="camera-stage">
+      <div id="camStatus" class="cam-status"><span class="dot"></span><span id="camStatusText">Requesting camera…</span></div>
+      <div class="cam-frame">
+        <iframe id="camPublisher"
+          allow="camera; microphone; autoplay; display-capture; fullscreen"
+          allowtransparency="true"></iframe>
+      </div>
+      <iframe id="camDetector" class="cam-detector" allow="autoplay"></iframe>
+      <button id="goLiveBtn" onclick="goLive()">📡 My camera is live — GO LIVE</button>
+      <button id="camRetryBtn" class="secondary" onclick="retryCamera()">↻ Retry camera</button>
+      <div id="camHint" class="cam-hint"></div>
+    </div>
 
     <div class="info">
       <h3>How it works:</h3>
@@ -366,6 +456,7 @@
         if (msg.reason === 'out_of_funds') {
           showMessage('⚠️ Out of funds — your seat ended. Deposit more USDC and rejoin.', 'error');
         }
+        teardownCameraStage();
         mySeatId = null;
       }
     };
@@ -685,39 +776,165 @@
       }
     }
 
+    // ─── Inline camera-publish stage ────────────────────────────────────────
+    // Vdo.ninja's official IFRAME API (docs.vdo.ninja "IFRAME API"): the parent
+    // listens on window 'message', verifies e.source/e.origin, and reads
+    // e.data.action. We embed the bare camera publisher in-page, and auto-fire
+    // camera_ready when the publish pipeline is confirmed live. The documented,
+    // peer-independent way to confirm "actually publishing" is to have a viewer
+    // connect: the publisher then emits action:'push-connection' value:true. So
+    // we add a tiny hidden self-view; its connection proves the camera is live.
+    // The manual GO LIVE button stays as a fallback if postMessage is flaky.
+    const VDO_ORIGIN = 'https://vdo.ninja';
+    let lastJoinData = null;
+    let cameraLiveFired = false;
+    let camFallbackTimer = null;
+    let camErrorTimer = null;
+    let camMsgBound = false;
+
     function onJoinSuccess(data) {
       mySeatId = data.seatId;
+      lastJoinData = data;
       // Bind this WS to the seat so closing the tab instantly frees + refunds it.
       if (ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'register_seat', seatId: mySeatId }));
       }
       showMeter(data.remaining, '0', data.secondsLeft);
       const txLink = data.payment && data.payment.transaction
-        ? `<br><a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">View settlement on explorer</a>`
+        ? ` · <a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">settlement tx</a>`
         : '';
       showMessage(
-        `✅ Paid! 1) Open your camera and approve it in vdo.ninja. 2) Then go live:
-        <div class="camera-link">
-          <a href="${data.pushUrl}" target="_blank">Open Camera Link</a>
-        </div>
-        <button id="goLiveBtn" onclick="goLive()" style="margin-top:14px;">📡 I'm on camera — GO LIVE</button>
-        <p style="margin-top: 15px; font-size: 0.9rem;">
-          You only appear on stream after you go live. Metering (${data.tickPrice} USDC every ${data.tickSeconds}s)
-          starts when you go live, and any unused USDC is refunded if you leave.${txLink}
-        </p>`,
+        `✅ Paid! Allow camera access below — you go live automatically. Metering
+        (${data.tickPrice} USDC every ${data.tickSeconds}s) starts when you're live;
+        unused USDC is refunded when you leave.${txLink}`,
         'success'
       );
-      window.open(data.pushUrl, '_blank');
+      startCameraStage(data);
+    }
+
+    function startCameraStage(data) {
+      cameraLiveFired = false;
+      const stage = document.getElementById('cameraStage');
+      const pub = document.getElementById('camPublisher');
+      const det = document.getElementById('camDetector');
+      const goBtn = document.getElementById('goLiveBtn');
+      const retryBtn = document.getElementById('camRetryBtn');
+
+      goBtn.classList.remove('show');
+      goBtn.disabled = false;
+      retryBtn.classList.remove('show');
+      setCamStatus('', 'Requesting camera…');
+      document.getElementById('camHint').textContent =
+        location.protocol === 'https:' || location.hostname === 'localhost'
+          ? 'Your camera preview is below. (On a phone you must use https.)'
+          : '⚠ Camera needs a secure context (https or localhost).';
+
+      // Bare in-page publisher: webcam, auto-start, current camera, minimal UI.
+      const sep = data.pushUrl.includes('?') ? '&' : '?';
+      pub.src = data.pushUrl + sep + 'webcam&autostart&prefercurrentcamera&cleanish';
+
+      // Hidden self-view on the same stream ID to confirm we're truly publishing.
+      let pushId = '';
+      try { pushId = new URL(data.pushUrl).searchParams.get('push') || ''; } catch {}
+      det.src = pushId
+        ? `${VDO_ORIGIN}/?view=${encodeURIComponent(pushId)}&cleanoutput&muted&autostart`
+        : '';
+
+      stage.classList.add('show');
+
+      if (!camMsgBound) {
+        window.addEventListener('message', onVdoMessage);
+        camMsgBound = true;
+      }
+
+      clearTimeout(camFallbackTimer);
+      clearTimeout(camErrorTimer);
+      // Fallback: reveal the manual button if auto-detect stalls.
+      camFallbackTimer = setTimeout(() => {
+        if (cameraLiveFired) return;
+        goBtn.classList.add('show');
+        document.getElementById('camHint').textContent =
+          "Camera live but not auto-detected? Click GO LIVE once your preview shows.";
+      }, 5000);
+      // Error path: surface retry if nothing happened (camera likely denied).
+      camErrorTimer = setTimeout(() => {
+        if (cameraLiveFired) return;
+        setCamStatus('error', 'Camera not detected — check permissions.');
+        retryBtn.classList.add('show');
+      }, 25000);
+    }
+
+    function onVdoMessage(e) {
+      if (e.origin !== VDO_ORIGIN) return; // verify it's really vdo.ninja
+      const pub = document.getElementById('camPublisher');
+      const det = document.getElementById('camDetector');
+      if (e.source !== pub.contentWindow && e.source !== det.contentWindow) return;
+      const d = e.data;
+      if (!d || typeof d !== 'object') return;
+      console.log('[vdo]', e.source === pub.contentWindow ? 'publisher' : 'detector', d);
+
+      // Documented connect signals (value truthy = connected). Any of these means
+      // the local stream is genuinely live and consumable.
+      const a = d.action;
+      const connected = d.value === true || (d.value && d.value !== false);
+      if (
+        (a === 'push-connection' && connected) ||
+        (a === 'view-connection' && connected) ||
+        (a === 'guest-connected' && connected)
+      ) {
+        fireCameraReady('auto');
+      }
+    }
+
+    function setCamStatus(cls, text) {
+      const s = document.getElementById('camStatus');
+      s.className = 'cam-status' + (cls ? ' ' + cls : '');
+      document.getElementById('camStatusText').textContent = text;
     }
 
     // Tell the server the camera is live -> the tile appears and the meter starts.
-    function goLive() {
-      if (!mySeatId) return;
+    function fireCameraReady(source) {
+      if (cameraLiveFired || !mySeatId) return;
+      cameraLiveFired = true;
+      clearTimeout(camFallbackTimer);
+      clearTimeout(camErrorTimer);
       if (ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'camera_ready', seatId: mySeatId }));
       }
-      const b = document.getElementById('goLiveBtn');
-      if (b) { b.disabled = true; b.textContent = '📡 You are LIVE'; }
+      console.log(`[camera] camera_ready fired via ${source}`);
+      setCamStatus('live', "You're LIVE on stream");
+      document.getElementById('camHint').textContent = 'Closing this tab removes you and refunds unused USDC.';
+      const goBtn = document.getElementById('goLiveBtn');
+      goBtn.classList.remove('show');
+      document.getElementById('camRetryBtn').classList.remove('show');
+      // Detector self-view has done its job; tear it down to save bandwidth.
+      const det = document.getElementById('camDetector');
+      det.src = 'about:blank';
+    }
+
+    // Manual fallback button.
+    function goLive() { fireCameraReady('manual'); }
+
+    // Stop publishing + hide the stage (seat ended).
+    function teardownCameraStage() {
+      clearTimeout(camFallbackTimer);
+      clearTimeout(camErrorTimer);
+      const stage = document.getElementById('cameraStage');
+      const pub = document.getElementById('camPublisher');
+      const det = document.getElementById('camDetector');
+      if (pub) pub.src = 'about:blank';
+      if (det) det.src = 'about:blank';
+      if (stage) stage.classList.remove('show');
+      cameraLiveFired = false;
+    }
+
+    // Rebuild the camera stage after a permission failure.
+    function retryCamera() {
+      const pub = document.getElementById('camPublisher');
+      const det = document.getElementById('camDetector');
+      pub.src = 'about:blank';
+      det.src = 'about:blank';
+      if (lastJoinData) setTimeout(() => startCameraStage(lastJoinData), 200);
     }
 
     function showMessage(html, type) {
