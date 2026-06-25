@@ -117,7 +117,8 @@
   <div id="grid" class="grid"></div>
 
   <script>
-    const ws = new WebSocket(`ws://${location.host}`);
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${wsProto}//${location.host}`);
     const grid = document.getElementById('grid');
     const videoBoxes = new Map(); // seatId -> element
 

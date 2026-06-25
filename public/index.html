@@ -401,7 +401,8 @@
       }
     }
 
-    const ws = new WebSocket(`ws://${location.host}`);
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${wsProto}//${location.host}`);
     ws.onopen = () => console.log('Connected');
     ws.onerror = (err) => console.error('WebSocket error:', err);
 

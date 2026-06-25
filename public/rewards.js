@@ -12,7 +12,8 @@
 
   function connect() {
     try {
-      ws = new WebSocket(`ws://${location.host}`);
+      const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${wsProto}//${location.host}`);
     } catch (e) {
       console.warn('[rewards] ws connect failed', e);
       return;
