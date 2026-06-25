@@ -405,26 +405,9 @@
     ws.onopen = () => console.log('Connected');
     ws.onerror = (err) => console.error('WebSocket error:', err);
 
-    // EIP-712 type for the Gateway batched EIP-3009 authorization. This MUST
-    // mirror @circle-fin/x402-batching exactly so the facilitator accepts it.
-    const CIRCLE_BATCHING_NAME = 'GatewayWalletBatched';
-    const CIRCLE_BATCHING_VERSION = '1';
-    const AUTHORIZATION_TYPES = {
-      TransferWithAuthorization: [
-        { name: 'from', type: 'address' },
-        { name: 'to', type: 'address' },
-        { name: 'value', type: 'uint256' },
-        { name: 'validAfter', type: 'uint256' },
-        { name: 'validBefore', type: 'uint256' },
-        { name: 'nonce', type: 'bytes32' }
-      ]
-    };
-    const EIP712_DOMAIN_TYPE = [
-      { name: 'name', type: 'string' },
-      { name: 'version', type: 'string' },
-      { name: 'chainId', type: 'uint256' },
-      { name: 'verifyingContract', type: 'address' }
-    ];
+    // NOTE: the EIP-712 domain/types/message for the GatewayWalletBatched
+    // transferWithAuthorization payload are built locally inside buildPayment(),
+    // right before signing, so they can never be read in the temporal dead zone.
 
     // ERC-20 / Gateway Wallet function selectors.
     const SEL_APPROVE = '0x095ea7b3';      // approve(address,uint256)
@@ -725,6 +708,28 @@
         validBefore: (now + req.maxTimeoutSeconds).toString(),
         nonce: randomNonce()
       };
+
+      // Build the EIP-712 structures HERE, immediately before signing, so every
+      // identifier is declared above its use (no TDZ). Values MUST stay
+      // byte-identical to what the Circle Gateway facilitator expects.
+      const CIRCLE_BATCHING_NAME = 'GatewayWalletBatched';
+      const CIRCLE_BATCHING_VERSION = '1';
+      const AUTHORIZATION_TYPES = {
+        TransferWithAuthorization: [
+          { name: 'from', type: 'address' },
+          { name: 'to', type: 'address' },
+          { name: 'value', type: 'uint256' },
+          { name: 'validAfter', type: 'uint256' },
+          { name: 'validBefore', type: 'uint256' },
+          { name: 'nonce', type: 'bytes32' }
+        ]
+      };
+      const EIP712_DOMAIN_TYPE = [
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' }
+      ];
 
       const typedData = {
         types: { EIP712Domain: EIP712_DOMAIN_TYPE, ...AUTHORIZATION_TYPES },
