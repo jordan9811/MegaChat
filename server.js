@@ -232,7 +232,13 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
 app.use(express.json());
-app.use(express.static('public'));
+// Never cache the frontend during development — guarantees the browser always
+// runs the latest index.html / overlay.html / rewards.js (no stale-bundle bugs).
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  next();
+});
+app.use(express.static('public', { etag: false, lastModified: false }));
 
 // Expose the Arc / Gateway config the frontend needs to build payments.
 app.get('/api/config', (req, res) => {
