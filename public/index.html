@@ -540,8 +540,22 @@
     }
 
     // Add / switch MetaMask to Arc Testnet (chainId 0x4CEF52 = 5042002).
+    // Only runs after a non-null provider AND a connected account exist, and only
+    // after CONFIG is loaded — so we never read chainId/chainIdHex off null.
     async function ensureArcChain() {
-      const eth = ensureEthereum();
+      const eth = getProvider();
+      if (!eth) {
+        throw new Error('No wallet detected. Install MetaMask or open this page in a wallet browser.');
+      }
+      if (!account) {
+        throw new Error('Connect your wallet first.');
+      }
+      if (!CONFIG) {
+        try { await loadConfig(); } catch { /* handled below */ }
+      }
+      if (!CONFIG || !CONFIG.chainIdHex) {
+        throw new Error('Network config not loaded yet — please try again in a moment.');
+      }
       const hexChainId = CONFIG.chainIdHex; // e.g. 0x4cef52
       try {
         await eth.request({
