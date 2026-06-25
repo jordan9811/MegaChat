@@ -9,6 +9,8 @@ import {
   GATEWAY_AUTH_VALIDITY_WINDOW_SECONDS
 } from '@circle-fin/x402-batching/server';
 import { attachRewards } from './rewards.js';
+import { createWalletClient, http, erc20Abi } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 
 // Load .env if present (Node >=20.6 native loader). Never throws if missing.
 try {
@@ -41,6 +43,14 @@ const SELLER_WALLET_ADDRESS =
 // Price per seat, in USDC dollars (legacy fixed price; kept for reference).
 const SEAT_PRICE = process.env.SEAT_PRICE || '0.01';
 
+// Seller private key — only used to REFUND the unused prepaid balance back to a
+// viewer when they leave. This is a plain ERC-20 transfer, NOT part of the
+// Gateway verify/settle payment path. Refunds are skipped if it isn't set.
+const SELLER_PRIVATE_KEY = process.env.SELLER_PRIVATE_KEY || null;
+// How long a paid seat may stay "pending" (paid but camera not approved) before
+// we release it and refund the full prepaid amount.
+const PENDING_CAMERA_TIMEOUT_MS = Number(process.env.PENDING_CAMERA_TIMEOUT_MS || 5 * 60 * 1000);
+
 // ─── Pass B: pay-per-tick meter ──────────────────────────────────────────────
 // The viewer signs ONE Gateway authorization for up to MAX_SESSION USDC at join.
 // We settle that nanopayment once (batch-settled on Arc by Circle Gateway), then
@@ -72,6 +82,74 @@ const MAX_SESSION_ATOMIC = usdcToAtomic(MAX_SESSION);
 
 // Circle Gateway facilitator client — verifies + settles the signed authorization.
 const facilitator = new BatchFacilitatorClient({ url: FACILITATOR_URL });
+
+// ─── Refund wallet (seller -> viewer) ────────────────────────────────────────
+// Used ONLY to return the unused prepaid USDC when a viewer leaves. Plain ERC-20
+// transfer via viem; independent of the Gateway payment path.
+const arcViemChain = {
+  id: ARC_CHAIN_ID,
+  name: 'Arc Testnet',
+  network: ARC_NETWORK,
+  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+  rpcUrls: { default: { http: [ARC_RPC_URL] }, public: { http: [ARC_RPC_URL] } }
+};
+let sellerAccount = null;
+let sellerWalletClient = null;
+if (SELLER_PRIVATE_KEY && /^0x[0-9a-fA-F]{64}$/.test(SELLER_PRIVATE_KEY)) {
+  try {
+    sellerAccount = privateKeyToAccount(SELLER_PRIVATE_KEY);
+    sellerWalletClient = createWalletClient({
+      account: sellerAccount,
+      chain: arcViemChain,
+      transport: http(ARC_RPC_URL)
+    });
+    console.log(`[refund] seller refund wallet ready: ${sellerAccount.address}`);
+  } catch (err) {
+    console.warn('[refund] failed to init seller wallet, refunds disabled:', err.message);
+    sellerWalletClient = null;
+  }
+} else {
+  console.warn('[refund] SELLER_PRIVATE_KEY not set — unused-balance refunds disabled.');
+}
+
+// Refund the unused prepaid balance (settled - consumed = remainingAtomic) back
+// to the viewer. Fire-and-forget: retries once, never blocks tile removal.
+async function refundSeat(seat) {
+  if (!seat || seat.refunded) return;
+  const refundAtomic = seat.remainingAtomic;
+  if (refundAtomic <= 0n) return; // nothing unused to return
+  const to = seat.viewerAddress || seat.payer;
+  if (!to || !/^0x[0-9a-fA-F]{40}$/.test(to)) {
+    console.warn(`[refund] seat ${seat.id}: no viewer address — cannot refund ${atomicToUsdc(refundAtomic)} USDC`);
+    return;
+  }
+  seat.refunded = true; // guard against double refund
+
+  if (!sellerWalletClient) {
+    console.warn(`[refund] seat ${seat.id}: refunds disabled — would return ${atomicToUsdc(refundAtomic)} USDC to ${to}`);
+    return;
+  }
+
+  const transfer = () => sellerWalletClient.writeContract({
+    address: USDC_ADDRESS,
+    abi: erc20Abi,
+    functionName: 'transfer',
+    args: [to, refundAtomic]
+  });
+
+  try {
+    const tx = await transfer();
+    console.log(`[refund] seat ${seat.id}: returned ${atomicToUsdc(refundAtomic)} USDC to ${to} (tx ${tx})`);
+  } catch (err) {
+    console.warn(`[refund] seat ${seat.id}: refund failed, retrying once — ${err.message}`);
+    try {
+      const tx2 = await transfer();
+      console.log(`[refund] seat ${seat.id}: refund retry ok, returned ${atomicToUsdc(refundAtomic)} USDC to ${to} (tx ${tx2})`);
+    } catch (err2) {
+      console.error(`[refund] seat ${seat.id}: refund retry FAILED — ${err2.message}`);
+    }
+  }
+}
 
 // Cache the Arc "supported kind" (USDC asset + Gateway Wallet verifyingContract).
 let arcKindCache = null;
@@ -253,20 +331,44 @@ function addParticipant(username, meta = {}) {
     pushUrl: vdoRoom.pushUrl,
     viewUrl: vdoRoom.viewUrl,
     joinedAt: now,
-    // Overlay countdown estimate; the meter (below) is the real cutoff.
-    expiresAt: now + ESTIMATED_SESSION_MS,
+    // 'live' gates everything: a tile is only shown, and the meter only ticks,
+    // once the joiner signals camera_ready (see activateSeatLive).
+    live: false,
+    liveAt: null,
+    expiresAt: 0, // set when the camera goes live
     spentAtomic: 0n,
     remainingAtomic,
     payer: meta.payer || null,
-    depositTx: meta.depositTx || null
+    viewerAddress: meta.viewerAddress || meta.payer || null,
+    depositTx: meta.depositTx || null,
+    refunded: false,
+    ownerWs: null
   };
 
   activeSeats.set(seatId, seat);
 
-  // NOTE: the fixed SEAT_DURATION setTimeout is intentionally removed in Pass B.
-  // The shared meter interval (see startMeter) draws the seat down per tick.
+  // NOTE: we do NOT broadcast seat_added here. The overlay tile must only appear
+  // after the camera is actually live (camera_ready), not on payment/join.
 
-  // Broadcast to overlay
+  return { success: true, seat };
+}
+
+// Promote a paid+pending seat to live once the joiner's camera is publishing.
+// This is what starts the meter and shows the tile on the overlay.
+function activateSeatLive(seatId, ws) {
+  const seat = activeSeats.get(seatId);
+  if (!seat || seat.live) return false;
+
+  seat.live = true;
+  seat.liveAt = Date.now();
+  if (ws) { ws.__seatId = seatId; seat.ownerWs = ws; }
+
+  const ticksLeft = TICK_PRICE_ATOMIC > 0n
+    ? Number(seat.remainingAtomic / TICK_PRICE_ATOMIC)
+    : 0;
+  // Overlay countdown estimate; the meter is the real cutoff. Starts NOW (live).
+  seat.expiresAt = Date.now() + ticksLeft * TICK_SECONDS * 1000;
+
   broadcast({
     type: 'seat_added',
     seat: {
@@ -276,23 +378,27 @@ function addParticipant(username, meta = {}) {
       expiresAt: seat.expiresAt
     }
   });
-
-  return { success: true, seat };
+  console.log(`[seat] ${seat.id}: camera live — meter started (${atomicToUsdc(seat.remainingAtomic)} USDC prepaid)`);
+  return true;
 }
 
-// Remove participant
+// Remove participant. Frees the seat immediately and (if any prepaid balance is
+// unused) refunds it back to the viewer — without blocking the removal.
 function removeParticipant(seatId, reason = 'left') {
   const seat = activeSeats.get(seatId);
   if (!seat) return { success: false };
 
   activeSeats.delete(seatId);
 
-  // Broadcast removal
+  // Broadcast removal (tile disappears instantly for everyone).
   broadcast({
     type: 'seat_removed',
     seatId,
     reason
   });
+
+  // Refund the unused prepaid USDC (fire-and-forget; never blocks removal).
+  refundSeat(seat).catch((e) => console.error('[refund] unexpected error:', e));
 
   return { success: true };
 }
@@ -302,6 +408,10 @@ function removeParticipant(seatId, reason = 'left') {
 // When the next draw would exceed the remaining balance, auto-kick the seat.
 function tickMeter() {
   for (const seat of activeSeats.values()) {
+    // Only meter seats whose camera is actually live. Pending (paid but not yet
+    // live) seats don't tick — the countdown starts at camera_ready.
+    if (!seat.live) continue;
+
     if (seat.remainingAtomic < TICK_PRICE_ATOMIC) {
       // Can't fund another tick — drop the seat.
       removeParticipant(seat.id, 'out_of_funds');
@@ -340,10 +450,10 @@ if (typeof meterInterval.unref === 'function') meterInterval.unref();
 wss.on('connection', (ws) => {
   console.log('Client connected');
 
-  // Send current state
+  // Send current state — only LIVE seats render on the overlay.
   ws.send(JSON.stringify({
     type: 'initial_state',
-    seats: Array.from(activeSeats.values()).map(s => ({
+    seats: Array.from(activeSeats.values()).filter(s => s.live).map(s => ({
       id: s.id,
       username: s.username,
       viewUrl: s.viewUrl,
@@ -351,8 +461,31 @@ wss.on('connection', (ws) => {
     }))
   }));
 
+  // Seat lifecycle messages from a joiner's page.
+  ws.on('message', (data) => {
+    let msg;
+    try { msg = JSON.parse(data.toString()); } catch { return; }
+
+    if (msg.type === 'register_seat' && typeof msg.seatId === 'string') {
+      // Bind this socket to the seat so a tab close instantly frees + refunds it,
+      // even if the camera never went live.
+      const seat = activeSeats.get(msg.seatId);
+      if (seat) { ws.__seatId = msg.seatId; seat.ownerWs = ws; }
+    } else if (msg.type === 'camera_ready' && typeof msg.seatId === 'string') {
+      // Camera approved + publishing -> show the tile and start the meter.
+      activateSeatLive(msg.seatId, ws);
+    }
+    // rewards_* messages are handled by the rewards.js connection listener.
+  });
+
   ws.on('close', () => {
     console.log('Client disconnected');
+    // If this socket owned a seat, remove it the moment the viewer drops —
+    // stops the meter and refunds the unused balance immediately.
+    if (ws.__seatId && activeSeats.has(ws.__seatId)) {
+      console.log(`[seat] ${ws.__seatId}: owner disconnected — removing + refunding`);
+      removeParticipant(ws.__seatId, 'disconnected');
+    }
   });
 });
 
@@ -501,6 +634,9 @@ app.post('/api/join', async (req, res) => {
     const result = addParticipant(username, {
       remainingAtomic: sessionAtomic,
       payer: settle.payer || verify.payer || null,
+      viewerAddress: (address && /^0x[0-9a-fA-F]{40}$/.test(address))
+        ? address
+        : (settle.payer || verify.payer || null),
       depositTx: settle.transaction || null
     });
 
@@ -510,6 +646,18 @@ app.post('/api/join', async (req, res) => {
         reason: result.reason
       });
     }
+
+    // The seat is paid but PENDING until the camera goes live. If the joiner
+    // never approves their camera, release the seat and refund the full prepaid
+    // amount so funds aren't stranded.
+    const pendingSeatId = result.seat.id;
+    setTimeout(() => {
+      const s = activeSeats.get(pendingSeatId);
+      if (s && !s.live) {
+        console.log(`[seat] ${pendingSeatId}: camera not approved in time — releasing + refunding`);
+        removeParticipant(pendingSeatId, 'camera_timeout');
+      }
+    }, PENDING_CAMERA_TIMEOUT_MS);
 
     const ticksLeft = TICK_PRICE_ATOMIC > 0n
       ? Number(result.seat.remainingAtomic / TICK_PRICE_ATOMIC)

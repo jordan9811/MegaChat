@@ -687,22 +687,37 @@
 
     function onJoinSuccess(data) {
       mySeatId = data.seatId;
+      // Bind this WS to the seat so closing the tab instantly frees + refunds it.
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'register_seat', seatId: mySeatId }));
+      }
       showMeter(data.remaining, '0', data.secondsLeft);
       const txLink = data.payment && data.payment.transaction
         ? `<br><a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">View settlement on explorer</a>`
         : '';
       showMessage(
-        `✅ Success! Click the link below to open your camera:
+        `✅ Paid! 1) Open your camera and approve it in vdo.ninja. 2) Then go live:
         <div class="camera-link">
           <a href="${data.pushUrl}" target="_blank">Open Camera Link</a>
         </div>
+        <button id="goLiveBtn" onclick="goLive()" style="margin-top:14px;">📡 I'm on camera — GO LIVE</button>
         <p style="margin-top: 15px; font-size: 0.9rem;">
-          Your camera will appear on the stream automatically!<br>
-          Prepaid ${data.remaining} USDC — metered ${data.tickPrice} USDC every ${data.tickSeconds}s.${txLink}
+          You only appear on stream after you go live. Metering (${data.tickPrice} USDC every ${data.tickSeconds}s)
+          starts when you go live, and any unused USDC is refunded if you leave.${txLink}
         </p>`,
         'success'
       );
       window.open(data.pushUrl, '_blank');
+    }
+
+    // Tell the server the camera is live -> the tile appears and the meter starts.
+    function goLive() {
+      if (!mySeatId) return;
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'camera_ready', seatId: mySeatId }));
+      }
+      const b = document.getElementById('goLiveBtn');
+      if (b) { b.disabled = true; b.textContent = '📡 You are LIVE'; }
     }
 
     function showMessage(html, type) {

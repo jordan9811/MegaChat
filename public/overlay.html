@@ -17,16 +17,20 @@
       font-family: Arial, sans-serif;
     }
 
+    /* The grid only exists while someone is live. It is hidden (display:none)
+       when empty so the overlay canvas is fully transparent — nothing drawn. */
     .grid {
-      display: grid;
+      display: none;
       grid-template-columns: repeat(3, 1fr);
+      grid-auto-rows: 1fr;
       gap: 15px;
       padding: 15px;
       width: 100vw;
       height: 100vh;
     }
 
-    /* Adjust grid based on number of seats */
+    /* Responsive: tiles share the whole canvas and auto-size to the count.
+       Rows are 1fr so they stretch to fill the full height. */
     .grid.seats-1 { grid-template-columns: 1fr; }
     .grid.seats-2 { grid-template-columns: repeat(2, 1fr); }
     .grid.seats-3 { grid-template-columns: repeat(3, 1fr); }
@@ -36,11 +40,11 @@
 
     .video-box {
       position: relative;
-      background: rgba(0, 0, 0, 0.8);
-      border: 3px solid #0ff;
+      /* Transparent tile — only the live camera video + labels show. No opaque
+         backdrop, so a small/loading cam never clouds the stream behind it. */
+      background: transparent;
       border-radius: 12px;
       overflow: hidden;
-      box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
       animation: boxFadeIn 0.5s ease-out;
     }
 
@@ -107,29 +111,14 @@
       font-family: monospace;
     }
 
-    /* No seats state */
-    .empty-state {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      color: #0ff;
-      font-size: 2rem;
-      opacity: 0.3;
-      text-align: center;
-    }
   </style>
 </head>
 <body>
   <div id="grid" class="grid"></div>
-  <div id="emptyState" class="empty-state">
-    Waiting for participants...
-  </div>
 
   <script>
-    const ws = new WebSocket('ws://localhost:3000');
+    const ws = new WebSocket(`ws://${location.host}`);
     const grid = document.getElementById('grid');
-    const emptyState = document.getElementById('emptyState');
     const videoBoxes = new Map(); // seatId -> element
 
     ws.onopen = () => {
@@ -141,18 +130,18 @@
       
       switch (msg.type) {
         case 'initial_state':
+          // Server only sends seats that are already live (camera approved).
           msg.seats.forEach(seat => addVideoBox(seat));
-          updateEmptyState();
           break;
-          
+
         case 'seat_added':
+          // Server only broadcasts this AFTER camera_ready, so the tile pops in
+          // only when a real face is publishing — no loading state on stream.
           addVideoBox(msg.seat);
-          updateEmptyState();
           break;
-          
+
         case 'seat_removed':
           removeVideoBox(msg.seatId);
-          updateEmptyState();
           break;
       }
     };
@@ -226,11 +215,8 @@
     function updateGridLayout() {
       const count = videoBoxes.size;
       grid.className = `grid seats-${count}`;
-    }
-
-    function updateEmptyState() {
-      emptyState.style.display = videoBoxes.size === 0 ? 'flex' : 'none';
-      grid.style.display = videoBoxes.size === 0 ? 'none' : 'grid';
+      // Fully invisible/transparent when no one is live — nothing drawn.
+      grid.style.display = count === 0 ? 'none' : 'grid';
     }
 
     ws.onerror = (err) => {
