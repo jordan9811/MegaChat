@@ -383,14 +383,27 @@
   </div>
 
   <script>
-    const ws = new WebSocket(`ws://${location.host}`);
-    ws.onopen = () => console.log('Connected');
-    ws.onerror = (err) => console.error('WebSocket error:', err);
-
-    // ─── Arc + Circle Gateway config (loaded from the server) ────────────────
+    // ─── App + wallet state (declared FIRST) ─────────────────────────────────
+    // These are declared before ANY other statement so that no code — including
+    // async WebSocket/provider callbacks — can ever read them in the temporal
+    // dead zone. `account` stays null until an explicit Connect populates it.
     let CONFIG = null;
     let account = null;
     let mySeatId = null;
+    let hasWallet = false;
+
+    // Safe provider accessor: never throws, returns null when no injected wallet.
+    function getProvider() {
+      try {
+        return (typeof window !== 'undefined' && window.ethereum) ? window.ethereum : null;
+      } catch {
+        return null;
+      }
+    }
+
+    const ws = new WebSocket(`ws://${location.host}`);
+    ws.onopen = () => console.log('Connected');
+    ws.onerror = (err) => console.error('WebSocket error:', err);
 
     // EIP-712 type for the Gateway batched EIP-3009 authorization. This MUST
     // mirror @circle-fin/x402-batching exactly so the facilitator accepts it.
@@ -494,16 +507,22 @@
     }
 
     function ensureEthereum() {
-      if (!window.ethereum) {
-        throw new Error('MetaMask not found. Install the MetaMask extension.');
+      const eth = getProvider();
+      if (!eth) {
+        throw new Error('No wallet detected. Install MetaMask or open this page in a wallet browser.');
       }
-      return window.ethereum;
+      return eth;
     }
 
     async function connectWallet() {
       try {
         const eth = ensureEthereum();
+        // First account read happens HERE — only after an explicit Connect.
         const accounts = await eth.request({ method: 'eth_requestAccounts' });
+        if (!accounts || !accounts.length) {
+          showMessage('🔒 Wallet is locked or no account is shared. Unlock MetaMask and try again.', 'error');
+          return null;
+        }
         account = accounts[0];
         await ensureArcChain();
         renderWallet();
@@ -512,8 +531,11 @@
         refreshBalance();
         return account;
       } catch (err) {
-        showMessage('❌ ' + (err.message || 'Wallet connection failed'), 'error');
-        throw err;
+        const msg = err && err.code === 4001
+          ? 'Connection request rejected in your wallet.'
+          : (err && err.message) || 'Wallet connection failed';
+        showMessage('❌ ' + msg, 'error');
+        return null;
       }
     }
 
@@ -548,10 +570,24 @@
     function renderWallet() {
       const info = document.getElementById('walletInfo');
       const connectBtn = document.getElementById('connectBtn');
+      if (!info || !connectBtn) return;
       if (account) {
         connectBtn.textContent = '🦊 Connected';
         connectBtn.disabled = true;
-        info.innerHTML = `Wallet: <span class="addr">${account}</span><br>Network: Arc Testnet (${CONFIG.network})`;
+        const net = CONFIG && CONFIG.network ? CONFIG.network : 'Arc';
+        info.innerHTML = `Wallet: <span class="addr">${account}</span><br>Network: Arc Testnet (${net})`;
+      } else if (!hasWallet) {
+        connectBtn.textContent = '🦊 No wallet detected';
+        connectBtn.disabled = true;
+        info.innerHTML = 'No wallet detected — install <span class="addr">MetaMask</span> or open this page in a wallet browser.';
+        const dep = document.getElementById('depositBtn');
+        const join = document.getElementById('joinBtn');
+        if (dep) dep.disabled = true;
+        if (join) join.disabled = true;
+      } else {
+        connectBtn.textContent = '🦊 Connect MetaMask';
+        connectBtn.disabled = false;
+        info.textContent = '';
       }
     }
 
@@ -593,6 +629,7 @@
       const btn = document.getElementById('depositBtn');
       try {
         if (!account) await connectWallet();
+        if (!account) return; // connect failed/cancelled — connectWallet showed why
         await ensureArcChain();
 
         const amountStr = prompt('How much USDC to deposit into Gateway?', '1');
@@ -717,6 +754,11 @@
 
       try {
         if (!account) await connectWallet();
+        if (!account) { // connect failed/cancelled — connectWallet showed why
+          btn.disabled = false;
+          btn.textContent = '🎬 JOIN STREAM';
+          return;
+        }
         await ensureArcChain();
 
         // 1) Hit the gate with no payment → expect 402 + Gateway requirements.
@@ -947,15 +989,39 @@
       if (e.key === 'Enter') joinSeat();
     });
 
-    // Reflect account/network changes from MetaMask.
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', (accs) => {
-        account = accs[0] || null;
-        renderWallet();
-      });
+    // ─── Init (runs after all state is initialized) ──────────────────────────
+    // Detects the wallet WITHOUT reading any account, wires guarded listeners,
+    // and renders a clear state. No provider/account access happens before this.
+    function initWallet() {
+      const eth = getProvider();
+      hasWallet = !!eth;
+      if (eth && typeof eth.on === 'function') {
+        try {
+          // Reflect account/network changes once a wallet is connected.
+          eth.on('accountsChanged', (accs) => {
+            account = (accs && accs[0]) || null;
+            renderWallet();
+            if (account) refreshBalance();
+          });
+          eth.on('chainChanged', () => { /* user can re-trigger via actions */ });
+        } catch (e) {
+          console.warn('wallet listener setup failed', e);
+        }
+      }
+      // Note: account stays null here on purpose — we only read it on Connect.
+      renderWallet();
     }
 
-    loadConfig().catch(err => console.error('Failed to load config', err));
+    async function init() {
+      try {
+        await loadConfig();
+      } catch (err) {
+        console.error('Failed to load config', err);
+      }
+      initWallet();
+    }
+
+    init();
   </script>
 
   <!-- Pass C: watch-to-earn (isolated client module) -->
