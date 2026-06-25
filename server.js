@@ -9,7 +9,7 @@ import {
   GATEWAY_AUTH_VALIDITY_WINDOW_SECONDS
 } from '@circle-fin/x402-batching/server';
 import { attachRewards } from './rewards.js';
-import { createWalletClient, http, erc20Abi } from 'viem';
+import { createWalletClient, createPublicClient, http, erc20Abi, decodeEventLog } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
 // Load .env if present (Node >=20.6 native loader). Never throws if missing.
@@ -35,6 +35,12 @@ const GATEWAY_WALLET_ADDRESS =
 const FACILITATOR_URL =
   process.env.FACILITATOR_URL || 'https://gateway-api-testnet.circle.com';
 const EXPLORER_URL = process.env.EXPLORER_URL || 'https://testnet.arcscan.app';
+
+// Circle Modular Wallets (passkey path) — loaded from env, never logged.
+const CIRCLE_CLIENT_KEY = process.env.CIRCLE_CLIENT_KEY || null;
+const CIRCLE_CLIENT_URL = process.env.CIRCLE_CLIENT_URL || null;
+// Confirmed from Circle skill use-modular-wallets Transport URL Path Segments table.
+const CIRCLE_MODULAR_CHAIN_PATH = process.env.CIRCLE_MODULAR_CHAIN_PATH || 'arcTestnet';
 
 // Seller receives the seat payments. Default is a placeholder; set in .env.
 const SELLER_WALLET_ADDRESS =
@@ -198,6 +204,60 @@ const ARC_GATEWAY_DOMAIN = 26;
 // GatewayClient does: POST /v1/balances { token, sources:[{depositor, domain}] }.
 // `balance` is the available (spendable) amount; `pendingBatch` is awaiting batch
 // settlement. Amounts are decimal USDC strings (6 decimals) -> convert to atomic.
+// On-chain USDC balance for passkey smart accounts (6-decimal ERC-20).
+async function getOnChainUsdcBalance(address) {
+  const client = createPublicClient({
+    chain: arcViemChain,
+    transport: http(ARC_RPC_URL)
+  });
+  const raw = await client.readContract({
+    address: USDC_ADDRESS,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [address]
+  });
+  return {
+    availableAtomic: BigInt(raw),
+    pendingAtomic: 0n,
+    available: atomicToUsdc(raw),
+    pending: '0',
+    hasRecord: raw > 0n
+  };
+}
+
+// Verify a gasless passkey join payment: USDC Transfer from payer -> seller.
+async function verifyModularUsdcPayment(txHash, expectedFrom, expectedAmountAtomic) {
+  const client = createPublicClient({
+    chain: arcViemChain,
+    transport: http(ARC_RPC_URL)
+  });
+  const receipt = await client.getTransactionReceipt({ hash: txHash });
+  if (!receipt || receipt.status !== 'success') {
+    return { ok: false, reason: 'tx_not_success' };
+  }
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== USDC_ADDRESS.toLowerCase()) continue;
+    try {
+      const decoded = decodeEventLog({
+        abi: erc20Abi,
+        data: log.data,
+        topics: log.topics
+      });
+      if (decoded.eventName !== 'Transfer') continue;
+      const from = decoded.args.from;
+      const to = decoded.args.to;
+      const value = BigInt(decoded.args.value);
+      if (from.toLowerCase() !== expectedFrom.toLowerCase()) continue;
+      if (to.toLowerCase() !== SELLER_WALLET_ADDRESS.toLowerCase()) continue;
+      if (value < expectedAmountAtomic) continue;
+      return { ok: true, payer: from, amount: value, txHash };
+    } catch {
+      continue;
+    }
+  }
+  return { ok: false, reason: 'transfer_not_found' };
+}
+
 async function getGatewayBalance(address) {
   const res = await fetch(`${FACILITATOR_URL}/v1/balances`, {
     method: 'POST',
@@ -239,9 +299,19 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.static('public', { etag: false, lastModified: false }));
+// Browser ESM imports for the passkey wallet module (Phase 1).
+app.use('/vendor/viem', express.static(path.join(__dirname, 'node_modules/viem')));
+app.use('/vendor/circle', express.static(path.join(__dirname, 'node_modules/@circle-fin/modular-wallets-core/dist')));
 
 // Expose the Arc / Gateway config the frontend needs to build payments.
 app.get('/api/config', (req, res) => {
+  const modularWallets = (CIRCLE_CLIENT_KEY && CIRCLE_CLIENT_URL)
+    ? {
+        clientKey: CIRCLE_CLIENT_KEY,
+        clientUrl: CIRCLE_CLIENT_URL,
+        chainPath: CIRCLE_MODULAR_CHAIN_PATH
+      }
+    : null;
   res.json({
     chainId: ARC_CHAIN_ID,
     chainIdHex: '0x' + ARC_CHAIN_ID.toString(16),
@@ -255,7 +325,8 @@ app.get('/api/config', (req, res) => {
     seatPrice: SEAT_PRICE,
     tickSeconds: TICK_SECONDS,
     tickPrice: TICK_PRICE,
-    maxSession: MAX_SESSION
+    maxSession: MAX_SESSION,
+    modularWallets
   });
 });
 
@@ -267,8 +338,12 @@ app.get('/api/balance/:address', async (req, res) => {
   if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) {
     return res.status(400).json({ error: 'Invalid address' });
   }
+  const passkeyMode = req.get('x-wallet-mode') === 'passkey'
+    || req.query.mode === 'passkey';
   try {
-    const bal = await getGatewayBalance(address);
+    const bal = passkeyMode
+      ? await getOnChainUsdcBalance(address)
+      : await getGatewayBalance(address);
     const spendableAtomic = bal.availableAtomic < MAX_SESSION_ATOMIC
       ? bal.availableAtomic
       : MAX_SESSION_ATOMIC;
@@ -279,7 +354,8 @@ app.get('/api/balance/:address', async (req, res) => {
       hasRecord: bal.hasRecord,
       spendable: atomicToUsdc(spendableAtomic),
       maxSession: MAX_SESSION,
-      canJoin: spendableAtomic >= TICK_PRICE_ATOMIC
+      canJoin: spendableAtomic >= TICK_PRICE_ATOMIC,
+      source: passkeyMode ? 'onchain' : 'gateway'
     });
   } catch (err) {
     return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
@@ -533,6 +609,97 @@ app.post('/api/join', async (req, res) => {
       return res.status(400).json({ error: 'Username required' });
     }
 
+    const walletMode = req.get('x-wallet-mode') || 'metamask';
+    const paymentHeader = req.headers['payment-signature'];
+    const modularPaymentHeader = req.headers['x-modular-payment'];
+
+    // ── Passkey path: gasless userOp USDC transfer already submitted ──────────
+    if (walletMode === 'passkey' && modularPaymentHeader) {
+      let modPay;
+      try {
+        modPay = b64decodeJson(modularPaymentHeader);
+      } catch {
+        return res.status(400).json({ error: 'Malformed X-Modular-Payment header' });
+      }
+      const txHash = modPay.txHash;
+      const payer = modPay.payer || address;
+      let sessionAtomic;
+      try {
+        sessionAtomic = BigInt(modPay.amount || '0');
+      } catch {
+        sessionAtomic = 0n;
+      }
+      if (!/^0x[0-9a-fA-F]{64}$/.test(txHash || '')) {
+        return res.status(400).json({ error: 'Invalid txHash in modular payment' });
+      }
+      if (!/^0x[0-9a-fA-F]{40}$/.test(payer || '')) {
+        return res.status(400).json({ error: 'Invalid payer address' });
+      }
+      if (sessionAtomic <= 0n) {
+        return res.status(400).json({ error: 'Modular payment has no amount' });
+      }
+      if (sessionAtomic > MAX_SESSION_ATOMIC) {
+        return res.status(400).json({
+          error: 'Payment exceeds session cap',
+          reason: 'over_cap',
+          maxSession: MAX_SESSION
+        });
+      }
+
+      const verified = await verifyModularUsdcPayment(txHash, payer, sessionAtomic);
+      if (!verified.ok) {
+        return res.status(402).json({
+          error: 'Modular payment verification failed',
+          reason: verified.reason
+        });
+      }
+
+      const result = addParticipant(username, {
+        remainingAtomic: sessionAtomic,
+        payer: verified.payer,
+        viewerAddress: payer,
+        depositTx: verified.txHash
+      });
+
+      if (!result.success) {
+        return res.status(409).json({
+          error: 'No seats available',
+          reason: result.reason
+        });
+      }
+
+      const pendingSeatId = result.seat.id;
+      setTimeout(() => {
+        const s = activeSeats.get(pendingSeatId);
+        if (s && !s.live) {
+          console.log(`[seat] ${pendingSeatId}: camera not approved in time — releasing + refunding`);
+          removeParticipant(pendingSeatId, 'camera_timeout');
+        }
+      }, PENDING_CAMERA_TIMEOUT_MS);
+
+      const ticksLeft = TICK_PRICE_ATOMIC > 0n
+        ? Number(result.seat.remainingAtomic / TICK_PRICE_ATOMIC)
+        : 0;
+
+      return res.json({
+        success: true,
+        message: 'Seat assigned! Open this link to go live:',
+        pushUrl: result.seat.pushUrl,
+        seatId: result.seat.id,
+        remaining: atomicToUsdc(result.seat.remainingAtomic),
+        tickPrice: TICK_PRICE,
+        tickSeconds: TICK_SECONDS,
+        maxSession: MAX_SESSION,
+        secondsLeft: ticksLeft * TICK_SECONDS,
+        payment: {
+          payer: verified.payer,
+          transaction: verified.txHash,
+          network: ARC_NETWORK,
+          mode: 'passkey'
+        }
+      });
+    }
+
     let kind;
     try {
       kind = await getArcKind();
@@ -540,12 +707,7 @@ app.post('/api/join', async (req, res) => {
       return res.status(503).json({ error: 'Gateway unavailable', message: err.message });
     }
 
-    const paymentHeader = req.headers['payment-signature'];
-
-    // Step 1 — no payment yet: read the wallet's available Gateway balance and
-    // emit a 402 for the spendable session amount = min(available, MAX_SESSION).
-    // This is what fixes "insufficient_balance" for deposits below the cap: a
-    // 1 USDC deposit is offered (and signable) as a 1 USDC session.
+    // Step 1 — no payment yet: read balance and emit 402 for the spendable session.
     if (!paymentHeader) {
       if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) {
         return res.status(400).json({ error: 'Wallet address required to price the session' });
@@ -553,7 +715,9 @@ app.post('/api/join', async (req, res) => {
 
       let bal;
       try {
-        bal = await getGatewayBalance(address);
+        bal = walletMode === 'passkey'
+          ? await getOnChainUsdcBalance(address)
+          : await getGatewayBalance(address);
       } catch (err) {
         return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
       }
@@ -564,14 +728,16 @@ app.post('/api/join', async (req, res) => {
 
       if (sessionAtomic < TICK_PRICE_ATOMIC) {
         return res.status(402).json({
-          error: 'Insufficient Gateway balance',
+          error: walletMode === 'passkey' ? 'Insufficient USDC balance' : 'Insufficient Gateway balance',
           reason: 'insufficient_balance',
           available: bal.available,
           pending: bal.pending,
           needAtLeast: TICK_PRICE,
-          hint: bal.hasRecord
-            ? 'Deposit more USDC into the Gateway to watch.'
-            : 'No finalized Gateway balance yet — your deposit may still be finalizing.'
+          hint: walletMode === 'passkey'
+            ? 'Fund your smart account from faucet.circle.com (Arc Testnet).'
+            : (bal.hasRecord
+              ? 'Deposit more USDC into the Gateway to watch.'
+              : 'No finalized Gateway balance yet — your deposit may still be finalizing.')
         });
       }
 
@@ -588,7 +754,12 @@ app.post('/api/join', async (req, res) => {
       res.statusCode = 402;
       res.setHeader('PAYMENT-REQUIRED', b64encodeJson(paymentRequired));
       res.setHeader('Content-Type', 'application/json');
-      return res.end(JSON.stringify({}));
+      return res.end(JSON.stringify({
+        sessionAmount: atomicToUsdc(sessionAtomic),
+        sessionAmountAtomic: sessionAtomic.toString(),
+        payTo: SELLER_WALLET_ADDRESS,
+        walletMode
+      }));
     }
 
     // Step 2 — verify + settle the signed authorization. The settled amount is
