@@ -303,6 +303,17 @@
     #goLiveBtn.show { display: block; }
     #camRetryBtn { margin-top: 12px; display: none; }
     #camRetryBtn.show { display: block; }
+
+    /* Leave Stream — shown only while live; same effect as closing the tab. */
+    #leaveBtn {
+      margin-top: 14px;
+      display: none;
+      background: #200;
+      color: #f66;
+      border: 2px solid #f33;
+    }
+    #leaveBtn.show { display: block; }
+    #leaveBtn:hover { background: rgba(255, 51, 51, 0.15); }
   </style>
 </head>
 <body>
@@ -366,6 +377,7 @@
       <iframe id="camDetector" class="cam-detector" allow="autoplay"></iframe>
       <button id="goLiveBtn" onclick="goLive()">📡 My camera is live — GO LIVE</button>
       <button id="camRetryBtn" class="secondary" onclick="retryCamera()">↻ Retry camera</button>
+      <button id="leaveBtn" onclick="leaveStream()">🚪 Leave Stream</button>
       <div id="camHint" class="cam-hint"></div>
     </div>
 
@@ -968,13 +980,39 @@
       }
       console.log(`[camera] camera_ready fired via ${source}`);
       setCamStatus('live', "You're LIVE on stream");
-      document.getElementById('camHint').textContent = 'Closing this tab removes you and refunds unused USDC.';
+      document.getElementById('camHint').textContent = 'Leaving (button or closing the tab) stops the meter and refunds unused USDC.';
       const goBtn = document.getElementById('goLiveBtn');
       goBtn.classList.remove('show');
       document.getElementById('camRetryBtn').classList.remove('show');
+      // Now live — offer an explicit Leave button (same effect as a tab close).
+      document.getElementById('leaveBtn').classList.add('show');
       // Detector self-view has done its job; tear it down to save bandwidth.
       const det = document.getElementById('camDetector');
       det.src = 'about:blank';
+    }
+
+    // Leave instantly — same as closing the tab. Tells the server to stop the
+    // meter, remove the seat (broadcasts seat_removed), and refund the unused
+    // prepaid balance, then resets the local UI to the pre-join state.
+    async function leaveStream() {
+      const seatId = mySeatId;
+      if (!seatId) return;
+      const leaveBtn = document.getElementById('leaveBtn');
+      leaveBtn.disabled = true;
+      // Stop reacting to this seat locally right away so the meter stops instantly.
+      mySeatId = null;
+      teardownCameraStage();
+      try {
+        await fetch(`/api/leave/${seatId}`, { method: 'POST' });
+      } catch (e) {
+        console.warn('leave request failed (server still drops seat on disconnect)', e);
+      }
+      leaveBtn.disabled = false;
+      const joinBtn = document.getElementById('joinBtn');
+      if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = '🎬 JOIN STREAM'; }
+      showMessage('👋 You left the stream. Unused USDC has been refunded.', 'success');
+      // Back to pre-join: show the wallet's available balance as "Remaining".
+      refreshBalance();
     }
 
     // Manual fallback button.
@@ -987,9 +1025,11 @@
       const stage = document.getElementById('cameraStage');
       const pub = document.getElementById('camPublisher');
       const det = document.getElementById('camDetector');
+      const leaveBtn = document.getElementById('leaveBtn');
       if (pub) pub.src = 'about:blank';
       if (det) det.src = 'about:blank';
       if (stage) stage.classList.remove('show');
+      if (leaveBtn) leaveBtn.classList.remove('show');
       cameraLiveFired = false;
     }
 

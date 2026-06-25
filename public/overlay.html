@@ -5,142 +5,160 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    body {
+    /* OBS browser source: fully transparent canvas. Only live tiles paint. */
+    html, body {
       background: transparent;
+    }
+    body {
       overflow: hidden;
       font-family: Arial, sans-serif;
     }
 
-    /* The grid only exists while someone is live. It is hidden (display:none)
-       when empty so the overlay canvas is fully transparent — nothing drawn. */
-    .grid {
-      display: none;
-      grid-template-columns: repeat(3, 1fr);
-      grid-auto-rows: 1fr;
-      gap: 15px;
-      padding: 15px;
-      width: 100vw;
-      height: 100vh;
-    }
-
-    /* Responsive: tiles share the whole canvas and auto-size to the count.
-       Rows are 1fr so they stretch to fill the full height. */
-    .grid.seats-1 { grid-template-columns: 1fr; }
-    .grid.seats-2 { grid-template-columns: repeat(2, 1fr); }
-    .grid.seats-3 { grid-template-columns: repeat(3, 1fr); }
-    .grid.seats-4 { grid-template-columns: repeat(2, 1fr); }
-    .grid.seats-5 { grid-template-columns: repeat(3, 1fr); }
-    .grid.seats-6 { grid-template-columns: repeat(3, 1fr); }
-
-    .video-box {
-      position: relative;
-      /* Transparent tile — only the live camera video + labels show. No opaque
-         backdrop, so a small/loading cam never clouds the stream behind it. */
+    /* Transparent, shrink-wrapped column anchored top-right. No background, no
+       border, no min size — it sizes to the tiles actually present, and when
+       empty nothing is drawn at all (the game shows through). */
+    #stage {
+      position: fixed;
+      top: 20px;
+      right: 20px;
       background: transparent;
-      border-radius: 12px;
+      /* width/height are set from JS (TILE_W and the live tile count). */
+    }
+
+    /* One fixed-size tile per live participant. Absolutely positioned so the
+       remaining tiles can smoothly slide up when one is removed. */
+    .tile {
+      position: absolute;
+      right: 0;
+      background: transparent;        /* no opaque backdrop */
+      border-radius: 10px;
       overflow: hidden;
-      animation: boxFadeIn 0.5s ease-out;
+      transform-origin: center center;
+      /* CHANGE 3 — slide-up reflow: animating `top` closes the gap smoothly. */
+      transition: top 300ms cubic-bezier(.2, .8, .2, 1);
+      will-change: top, clip-path, transform, opacity;
     }
 
-    @keyframes boxFadeIn {
-      from {
-        opacity: 0;
-        transform: scale(0.8) translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-      }
-    }
-
-    .video-box.removing {
-      animation: boxFadeOut 0.5s ease-out forwards;
-    }
-
-    @keyframes boxFadeOut {
-      from {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-      }
-      to {
-        opacity: 0;
-        transform: scale(0.8) translateY(-20px);
-      }
-    }
-
-    .video-box iframe {
+    .tile iframe {
       width: 100%;
       height: 100%;
-      border: none;
+      border: 0;
       display: block;
+      background: transparent;        /* &transparent scene -> game shows through */
+    }
+
+    /* White layer used only for the CRT power-off flash. */
+    .crt-flash {
+      position: absolute;
+      inset: 0;
+      background: #fff;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 5;
     }
 
     .username-label {
       position: absolute;
-      bottom: 10px;
-      left: 10px;
-      background: rgba(0, 0, 0, 0.8);
+      bottom: 8px;
+      left: 8px;
+      background: rgba(0, 0, 0, 0.7);
       color: #0ff;
-      padding: 8px 15px;
-      border-radius: 20px;
+      padding: 4px 10px;
+      border-radius: 14px;
       font-weight: bold;
-      font-size: 14px;
-      border: 2px solid #0ff;
+      font-size: 12px;
+      border: 1px solid #0ff;
       z-index: 10;
       pointer-events: none;
+      max-width: calc(100% - 16px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .timer {
       position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(0, 0, 0, 0.8);
+      top: 8px;
+      right: 8px;
+      background: rgba(0, 0, 0, 0.7);
       color: #0ff;
-      padding: 6px 12px;
-      border-radius: 15px;
-      font-size: 12px;
+      padding: 3px 9px;
+      border-radius: 12px;
+      font-size: 11px;
       font-weight: bold;
-      border: 2px solid #0ff;
+      border: 1px solid #0ff;
       z-index: 10;
       font-family: monospace;
+      pointer-events: none;
     }
 
+    /* CHANGE 4 — JOIN: heart-rate-monitor blip (a thin bright horizontal line)
+       that then expands outward into the full tile. */
+    .tile.joining { animation: tileJoin 650ms cubic-bezier(.2, .8, .2, 1) both; }
+    @keyframes tileJoin {
+      0%   { clip-path: inset(50% 0% 50% 0%); opacity: .35;
+             box-shadow: 0 0 16px 3px rgba(0,255,255,.9); filter: brightness(1.7); }
+      14%  { clip-path: inset(49% 0% 49% 0%); opacity: 1;
+             box-shadow: 0 0 28px 8px rgba(0,255,255,1); }   /* bright blip line */
+      26%  { clip-path: inset(44.5% 0% 44.5% 0%); }          /* first beat */
+      36%  { clip-path: inset(48.5% 0% 48.5% 0%); }          /* heartbeat dip */
+      46%  { clip-path: inset(43% 0% 43% 0%); }              /* second beat */
+      100% { clip-path: inset(0% 0% 0% 0%); opacity: 1;
+             box-shadow: 0 0 0 0 rgba(0,255,255,0); filter: brightness(1); }
+    }
+
+    /* CHANGE 5 — LEAVE: retro CRT power-off. Collapse to a bright line, white
+       flash, then blink out to nothing. Reflow runs AFTER this completes. */
+    .tile.leaving { animation: crtOff 460ms ease-in forwards; pointer-events: none; }
+    @keyframes crtOff {
+      0%   { clip-path: inset(0 0 0 0); transform: scale(1); filter: brightness(1); }
+      40%  { clip-path: inset(46% 0 46% 0); transform: scale(1); filter: brightness(1.6); }
+      62%  { clip-path: inset(49.4% 0 49.4% 0); filter: brightness(3.2); }   /* thin line */
+      80%  { clip-path: inset(49.4% 43% 49.4% 43%); transform: scaleX(.5); } /* line -> dot */
+      100% { clip-path: inset(50% 50% 50% 50%); transform: scale(.15); opacity: 0; }
+    }
+    .tile.leaving .crt-flash { animation: crtFlash 460ms ease-in forwards; }
+    @keyframes crtFlash {
+      0%, 38% { opacity: 0; }
+      60%     { opacity: .95; }   /* white flash on the collapsing line */
+      100%    { opacity: 0; }
+    }
   </style>
 </head>
 <body>
-  <div id="grid" class="grid"></div>
+  <div id="stage"></div>
 
   <script>
+    // ─── Layout config ───────────────────────────────────────────────────────
+    const TILE_W = 320;    // tile width  (px)
+    const TILE_H = 180;    // tile height (px)
+    const GAP = 12;        // vertical gap between stacked tiles (px)
+    const MAX_SEATS = 3;   // never render more than this many tiles
+    const CRT_MS = 460;    // CHANGE 5 leave animation duration
+    const JOIN_MS = 700;   // CHANGE 4 join animation duration
+
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${wsProto}//${location.host}`);
-    const grid = document.getElementById('grid');
-    const videoBoxes = new Map(); // seatId -> element
+    const stage = document.getElementById('stage');
+    stage.style.width = TILE_W + 'px';
+    const videoBoxes = new Map(); // seatId -> tile element (insertion order)
 
-    ws.onopen = () => {
-      console.log('Overlay connected to server');
-    };
+    ws.onopen = () => console.log('Overlay connected to server');
 
     ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
       switch (msg.type) {
         case 'initial_state':
           // Server only sends seats that are already live (camera approved).
           msg.seats.forEach(seat => addVideoBox(seat));
           break;
-
         case 'seat_added':
-          // Server only broadcasts this AFTER camera_ready, so the tile pops in
-          // only when a real face is publishing — no loading state on stream.
+          // Broadcast only AFTER camera_ready, so the tile pops in live.
           addVideoBox(msg.seat);
           break;
-
         case 'seat_removed':
           removeVideoBox(msg.seatId);
           break;
@@ -148,82 +166,143 @@
     };
 
     function addVideoBox(seat) {
-      // Don't add if already exists
       if (videoBoxes.has(seat.id)) return;
+      if (liveCount() >= MAX_SEATS) return; // CHANGE 2 — never render a 4th
 
       const box = document.createElement('div');
-      box.className = 'video-box';
+      box.className = 'tile joining';     // CHANGE 4 entrance animation
       box.dataset.seatId = seat.id;
+      box.style.width = TILE_W + 'px';
+      box.style.height = TILE_H + 'px';
+      // Place it in its final slot BEFORE insertion so it doesn't slide on add.
+      box.style.top = (liveCount() * (TILE_H + GAP)) + 'px';
 
-      // Create iframe for VDO.Ninja view
       const iframe = document.createElement('iframe');
-      iframe.src = seat.viewUrl;
-      iframe.allow = 'camera; microphone; autoplay; display-capture';
+      // Frontend-only: request a transparent scene so non-video area (letterbox)
+      // lets the gameplay behind the overlay show through. (Does not touch the
+      // server's generateVDORoom — just appends a render flag to the view URL.)
+      const sep = seat.viewUrl.includes('?') ? '&' : '?';
+      iframe.src = seat.viewUrl + sep + 'transparent';
+      iframe.allow = 'autoplay; camera; microphone; display-capture';
+      iframe.setAttribute('allowtransparency', 'true');
 
-      // Username label
+      const flash = document.createElement('div');
+      flash.className = 'crt-flash';
+
       const label = document.createElement('div');
       label.className = 'username-label';
       label.textContent = seat.username;
 
-      // Timer
       const timer = document.createElement('div');
       timer.className = 'timer';
-      
+
       box.appendChild(iframe);
+      box.appendChild(flash);
       box.appendChild(label);
       box.appendChild(timer);
-      grid.appendChild(box);
+      stage.appendChild(box);
 
       videoBoxes.set(seat.id, box);
-      updateGridLayout();
+      relayout();
+      playJoinSound();
 
-      // Update timer
+      // Drop the joining class once the entrance finishes (so it won't replay).
+      setTimeout(() => box.classList.remove('joining'), JOIN_MS);
+
       updateTimer(seat.id, seat.expiresAt, timer);
     }
 
     function removeVideoBox(seatId) {
       const box = videoBoxes.get(seatId);
-      if (!box) return;
+      if (!box || box.classList.contains('leaving')) return;
 
-      // Animate out
-      box.classList.add('removing');
-      
+      // CHANGE 5 — play the CRT power-off first; the tile keeps its slot so the
+      // others don't move yet.
+      box.classList.add('leaving');
+      playLeaveSound();
+
       setTimeout(() => {
         box.remove();
         videoBoxes.delete(seatId);
-        updateGridLayout();
-      }, 500);
+        // CHANGE 3 — now reflow: remaining tiles slide up to close the gap.
+        relayout();
+      }, CRT_MS);
+    }
+
+    // Count tiles that are actually occupying a slot (exclude ones mid-leave).
+    function liveCount() {
+      let n = 0;
+      for (const box of videoBoxes.values()) {
+        if (!box.classList.contains('leaving')) n++;
+      }
+      return n;
+    }
+
+    // Position every live tile in a top-to-bottom stack and shrink-wrap #stage.
+    function relayout() {
+      let i = 0;
+      for (const box of videoBoxes.values()) {
+        if (box.classList.contains('leaving')) continue; // keeps its current spot
+        box.style.top = (i * (TILE_H + GAP)) + 'px';
+        i++;
+      }
+      stage.style.height = i > 0 ? (i * (TILE_H + GAP) - GAP) + 'px' : '0px';
     }
 
     function updateTimer(seatId, expiresAt, timerEl) {
-      const update = () => {
-        if (!videoBoxes.has(seatId)) return;
-
+      const tick = () => {
+        const box = videoBoxes.get(seatId);
+        if (!box || box.classList.contains('leaving')) return;
         const remaining = Math.max(0, expiresAt - Date.now());
-        const minutes = Math.floor(remaining / 60000);
-        const seconds = Math.floor((remaining % 60000) / 1000);
-        
-        timerEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-        if (remaining > 0) {
-          setTimeout(update, 1000);
-        }
+        const m = Math.floor(remaining / 60000);
+        const s = Math.floor((remaining % 60000) / 1000);
+        timerEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+        if (remaining > 0) setTimeout(tick, 1000);
       };
-      
-      update();
+      tick();
     }
 
-    function updateGridLayout() {
-      const count = videoBoxes.size;
-      grid.className = `grid seats-${count}`;
-      // Fully invisible/transparent when no one is live — nothing drawn.
-      grid.style.display = count === 0 ? 'none' : 'grid';
+    // ─── CHANGE 6 — best-effort SFX ──────────────────────────────────────────
+    // Short synthesized blips via WebAudio (no external assets). CRITICAL: this
+    // is best-effort only. Browser autoplay policy and headless OBS browser
+    // sources may block audio with no user gesture / no audio device — every
+    // call is wrapped so a blocked or rejected sound NEVER throws or blocks the
+    // animation. If audio can't play, the visuals still run.
+    let audioCtx = null;
+    function getCtx() {
+      try {
+        if (!audioCtx) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return null;
+          audioCtx = new AC();
+        }
+        return audioCtx;
+      } catch { return null; }
     }
+    function blip(notes) {
+      try {
+        const ctx = getCtx();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') { ctx.resume().catch(() => {}); }
+        const now = ctx.currentTime;
+        notes.forEach(([freq, at]) => {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = 'sine';
+          o.frequency.value = freq;
+          g.gain.setValueAtTime(0.0001, now + at);
+          g.gain.exponentialRampToValueAtTime(0.25, now + at + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.18);
+          o.connect(g).connect(ctx.destination);
+          o.start(now + at);
+          o.stop(now + at + 0.2);
+        });
+      } catch { /* ignore — audio is purely best-effort */ }
+    }
+    function playJoinSound() { blip([[660, 0], [990, 0.12]]); }  // rising "blip-blip"
+    function playLeaveSound() { blip([[520, 0], [300, 0.10]]); } // descending power-off
 
-    ws.onerror = (err) => {
-      console.error('WebSocket error:', err);
-    };
-
+    ws.onerror = (err) => console.error('WebSocket error:', err);
     ws.onclose = () => {
       console.log('Disconnected from server, reconnecting...');
       setTimeout(() => location.reload(), 3000);
