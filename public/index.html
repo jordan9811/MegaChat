@@ -408,12 +408,9 @@
 
     // NOTE: the EIP-712 domain/types/message for the GatewayWalletBatched
     // transferWithAuthorization payload are built locally inside buildPayment(),
-    // right before signing, so they can never be read in the temporal dead zone.
-
-    // ERC-20 / Gateway Wallet function selectors.
-    const SEL_APPROVE = '0x095ea7b3';      // approve(address,uint256)
-    const SEL_DEPOSIT = '0x47e7ef24';      // deposit(address token,uint256 value)
-    const SEL_ALLOWANCE = '0xdd62ed3e';    // allowance(address,address)
+    // and the ERC-20 / Gateway Wallet function selectors are declared locally
+    // inside depositToGateway(), right before use — so neither can ever be read
+    // in the temporal dead zone.
 
     async function loadConfig() {
       const res = await fetch('/api/config');
@@ -624,6 +621,12 @@
 
     // One-time deposit of USDC into the Circle Gateway Wallet contract.
     async function depositToGateway() {
+      // ERC-20 / Gateway Wallet function selectors — declared here, above every
+      // use in this function, so they can never be read in the temporal dead zone.
+      const SEL_APPROVE = '0x095ea7b3';      // approve(address,uint256)
+      const SEL_DEPOSIT = '0x47e7ef24';      // deposit(address token,uint256 value)
+      const SEL_ALLOWANCE = '0xdd62ed3e';    // allowance(address,address)
+
       const btn = document.getElementById('depositBtn');
       try {
         if (!account) await connectWallet();
