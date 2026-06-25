@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Join Stream</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #000;
+      color: #0ff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 600px;
+      width: 100%;
+      background: #111;
+      border: 2px solid #0ff;
+      border-radius: 10px;
+      padding: 40px;
+      box-shadow: 0 0 50px rgba(0, 255, 255, 0.3);
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 2rem;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #0aa;
+      margin-bottom: 30px;
+      font-size: 0.9rem;
+    }
+
+    .price {
+      background: rgba(0, 255, 255, 0.1);
+      border: 1px solid #0ff;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .price-amount {
+      font-size: 2.5rem;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .price-label {
+      color: #0aa;
+      font-size: 0.9rem;
+    }
+
+    input {
+      width: 100%;
+      padding: 15px;
+      background: #000;
+      border: 2px solid #0ff;
+      color: #0ff;
+      font-size: 1rem;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    input:focus {
+      outline: none;
+      box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+    }
+
+    button {
+      width: 100%;
+      padding: 18px;
+      background: #0ff;
+      color: #000;
+      border: none;
+      font-size: 1.1rem;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    button:hover {
+      background: #0dd;
+      transform: translateY(-2px);
+      box-shadow: 0 5px 20px rgba(0, 255, 255, 0.5);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .info {
+      margin-top: 30px;
+      padding-top: 30px;
+      border-top: 1px solid #0ff;
+    }
+
+    .info h3 {
+      margin-bottom: 15px;
+      font-size: 1.2rem;
+    }
+
+    .info ul {
+      list-style: none;
+    }
+
+    .info li {
+      padding: 8px 0;
+      color: #0aa;
+      font-size: 0.9rem;
+    }
+
+    .info li::before {
+      content: '▸ ';
+      color: #0ff;
+      font-weight: bold;
+    }
+
+    .message {
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 20px;
+      display: none;
+    }
+
+    .message.show {
+      display: block;
+    }
+
+    .message.success {
+      background: rgba(0, 255, 100, 0.2);
+      border: 1px solid #0f0;
+      color: #0f0;
+    }
+
+    .message.error {
+      background: rgba(255, 0, 100, 0.2);
+      border: 1px solid #f00;
+      color: #f00;
+    }
+
+    .camera-link {
+      background: #000;
+      padding: 15px;
+      border: 2px solid #0f0;
+      border-radius: 8px;
+      margin-top: 10px;
+      word-break: break-all;
+    }
+
+    .camera-link a {
+      color: #0f0;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .camera-link a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎥 JOIN ON-CAMERA</h1>
+    <p class="subtitle">Get your webcam on the stream</p>
+
+    <div class="price">
+      <div class="price-amount">0.01 USDC</div>
+      <div class="price-label">Per 10-minute seat</div>
+    </div>
+
+    <input 
+      type="text" 
+      id="username" 
+      placeholder="Enter your username"
+      maxlength="20"
+    >
+
+    <button id="joinBtn" onclick="joinSeat()">
+      🎬 JOIN STREAM
+    </button>
+
+    <div id="message" class="message"></div>
+
+    <div class="info">
+      <h3>How it works:</h3>
+      <ul>
+        <li>Pay 0.01 USDC</li>
+        <li>Get link to open your camera</li>
+        <li>You appear on stream automatically</li>
+        <li>10 minute duration</li>
+        <li>Box animates away when you leave</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    const ws = new WebSocket('ws://localhost:3000');
+    
+    ws.onopen = () => console.log('Connected');
+    ws.onerror = (err) => console.error('WebSocket error:', err);
+
+    async function joinSeat() {
+      const username = document.getElementById('username').value.trim();
+      const btn = document.getElementById('joinBtn');
+      const msgBox = document.getElementById('message');
+
+      if (!username) {
+        showMessage('Please enter a username', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '⏳ Processing...';
+
+      try {
+        const response = await fetch('/api/join', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          showMessage(
+            `✅ Success! Click the link below to open your camera:
+            <div class="camera-link">
+              <a href="${data.pushUrl}" target="_blank">
+                Open Camera Link
+              </a>
+            </div>
+            <p style="margin-top: 15px; font-size: 0.9rem;">
+              Your camera will appear on the stream automatically!<br>
+              Expires in ${Math.floor(data.expiresIn / 60)} minutes.
+            </p>`,
+            'success'
+          );
+          
+          // Auto-open camera link
+          window.open(data.pushUrl, '_blank');
+          
+        } else {
+          showMessage('❌ ' + (data.error || 'Failed to join'), 'error');
+          btn.disabled = false;
+          btn.textContent = '🎬 JOIN STREAM';
+        }
+
+      } catch (error) {
+        console.error('Error:', error);
+        showMessage('❌ Connection error. Try again.', 'error');
+        btn.disabled = false;
+        btn.textContent = '🎬 JOIN STREAM';
+      }
+    }
+
+    function showMessage(html, type) {
+      const msgBox = document.getElementById('message');
+      msgBox.innerHTML = html;
+      msgBox.className = `message ${type} show`;
+    }
+
+    // Allow Enter key to submit
+    document.getElementById('username').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') joinSeat();
+    });
+  </script>
+</body>
+</html>

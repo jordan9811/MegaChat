@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Stream Overlay</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: transparent;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+      padding: 15px;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* Adjust grid based on number of seats */
+    .grid.seats-1 { grid-template-columns: 1fr; }
+    .grid.seats-2 { grid-template-columns: repeat(2, 1fr); }
+    .grid.seats-3 { grid-template-columns: repeat(3, 1fr); }
+    .grid.seats-4 { grid-template-columns: repeat(2, 1fr); }
+    .grid.seats-5 { grid-template-columns: repeat(3, 1fr); }
+    .grid.seats-6 { grid-template-columns: repeat(3, 1fr); }
+
+    .video-box {
+      position: relative;
+      background: rgba(0, 0, 0, 0.8);
+      border: 3px solid #0ff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+      animation: boxFadeIn 0.5s ease-out;
+    }
+
+    @keyframes boxFadeIn {
+      from {
+        opacity: 0;
+        transform: scale(0.8) translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    .video-box.removing {
+      animation: boxFadeOut 0.5s ease-out forwards;
+    }
+
+    @keyframes boxFadeOut {
+      from {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+      to {
+        opacity: 0;
+        transform: scale(0.8) translateY(-20px);
+      }
+    }
+
+    .video-box iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+
+    .username-label {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      color: #0ff;
+      padding: 8px 15px;
+      border-radius: 20px;
+      font-weight: bold;
+      font-size: 14px;
+      border: 2px solid #0ff;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .timer {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      color: #0ff;
+      padding: 6px 12px;
+      border-radius: 15px;
+      font-size: 12px;
+      font-weight: bold;
+      border: 2px solid #0ff;
+      z-index: 10;
+      font-family: monospace;
+    }
+
+    /* No seats state */
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      color: #0ff;
+      font-size: 2rem;
+      opacity: 0.3;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="grid" class="grid"></div>
+  <div id="emptyState" class="empty-state">
+    Waiting for participants...
+  </div>
+
+  <script>
+    const ws = new WebSocket('ws://localhost:3000');
+    const grid = document.getElementById('grid');
+    const emptyState = document.getElementById('emptyState');
+    const videoBoxes = new Map(); // seatId -> element
+
+    ws.onopen = () => {
+      console.log('Overlay connected to server');
+    };
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      
+      switch (msg.type) {
+        case 'initial_state':
+          msg.seats.forEach(seat => addVideoBox(seat));
+          updateEmptyState();
+          break;
+          
+        case 'seat_added':
+          addVideoBox(msg.seat);
+          updateEmptyState();
+          break;
+          
+        case 'seat_removed':
+          removeVideoBox(msg.seatId);
+          updateEmptyState();
+          break;
+      }
+    };
+
+    function addVideoBox(seat) {
+      // Don't add if already exists
+      if (videoBoxes.has(seat.id)) return;
+
+      const box = document.createElement('div');
+      box.className = 'video-box';
+      box.dataset.seatId = seat.id;
+
+      // Create iframe for VDO.Ninja view
+      const iframe = document.createElement('iframe');
+      iframe.src = seat.viewUrl;
+      iframe.allow = 'camera; microphone; autoplay; display-capture';
+
+      // Username label
+      const label = document.createElement('div');
+      label.className = 'username-label';
+      label.textContent = seat.username;
+
+      // Timer
+      const timer = document.createElement('div');
+      timer.className = 'timer';
+      
+      box.appendChild(iframe);
+      box.appendChild(label);
+      box.appendChild(timer);
+      grid.appendChild(box);
+
+      videoBoxes.set(seat.id, box);
+      updateGridLayout();
+
+      // Update timer
+      updateTimer(seat.id, seat.expiresAt, timer);
+    }
+
+    function removeVideoBox(seatId) {
+      const box = videoBoxes.get(seatId);
+      if (!box) return;
+
+      // Animate out
+      box.classList.add('removing');
+      
+      setTimeout(() => {
+        box.remove();
+        videoBoxes.delete(seatId);
+        updateGridLayout();
+      }, 500);
+    }
+
+    function updateTimer(seatId, expiresAt, timerEl) {
+      const update = () => {
+        if (!videoBoxes.has(seatId)) return;
+
+        const remaining = Math.max(0, expiresAt - Date.now());
+        const minutes = Math.floor(remaining / 60000);
+        const seconds = Math.floor((remaining % 60000) / 1000);
+        
+        timerEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+        if (remaining > 0) {
+          setTimeout(update, 1000);
+        }
+      };
+      
+      update();
+    }
+
+    function updateGridLayout() {
+      const count = videoBoxes.size;
+      grid.className = `grid seats-${count}`;
+    }
+
+    function updateEmptyState() {
+      emptyState.style.display = videoBoxes.size === 0 ? 'flex' : 'none';
+      grid.style.display = videoBoxes.size === 0 ? 'none' : 'grid';
+    }
+
+    ws.onerror = (err) => {
+      console.error('WebSocket error:', err);
+    };
+
+    ws.onclose = () => {
+      console.log('Disconnected from server, reconnecting...');
+      setTimeout(() => location.reload(), 3000);
+    };
+  </script>
+</body>
+</html>
