@@ -298,10 +298,20 @@ app.use((req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   next();
 });
-app.use(express.static('public', { etag: false, lastModified: false }));
-// Browser ESM imports for the passkey wallet module (Phase 1).
-app.use('/vendor/viem', express.static(path.join(__dirname, 'node_modules/viem')));
-app.use('/vendor/circle', express.static(path.join(__dirname, 'node_modules/@circle-fin/modular-wallets-core/dist')));
+
+// Browsers require text/javascript for ES modules (.js / .mjs). Express's default
+// MIME lookup can mislabel .mjs on some platforms, which breaks dynamic import().
+function staticJsHeaders(res, filePath) {
+  if (filePath.endsWith('.mjs') || filePath.endsWith('.js')) {
+    res.setHeader('Content-Type', 'text/javascript; charset=UTF-8');
+  }
+}
+
+app.use(express.static('public', {
+  etag: false,
+  lastModified: false,
+  setHeaders: staticJsHeaders,
+}));
 
 // Expose the Arc / Gateway config the frontend needs to build payments.
 app.get('/api/config', (req, res) => {

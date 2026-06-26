@@ -1,6 +1,8 @@
 /**
- * Circle Modular Wallets (passkey) client module — Phase 1.
+ * Circle Modular Wallets (passkey) client — browser source (bundled before serve).
  * Arc Testnet chain path: /arcTestnet (Circle skill Transport URL Path Segments).
+ *
+ * Edit this file, then run: npm run build:passkey
  */
 import { createPublicClient, formatUnits, parseUnits } from 'viem';
 import { arcTestnet } from 'viem/chains';
@@ -70,23 +72,19 @@ export async function connectPasskey(username) {
 
   const stored = loadStoredCredential();
   let credential;
-  try {
-    if (stored) {
-      console.log('[passkey] logging in with stored credential…');
-      credential = await toWebAuthnCredential({
-        transport: passkeyTransport,
-        mode: WebAuthnMode.Login,
-      });
-    } else {
-      console.log('[passkey] registering new passkey for', username);
-      credential = await toWebAuthnCredential({
-        transport: passkeyTransport,
-        mode: WebAuthnMode.Register,
-        username,
-      });
-    }
-  } catch (err) {
-    throw err;
+  if (stored) {
+    console.log('[passkey] logging in with stored credential…');
+    credential = await toWebAuthnCredential({
+      transport: passkeyTransport,
+      mode: WebAuthnMode.Login,
+    });
+  } else {
+    console.log('[passkey] registering new passkey for', username);
+    credential = await toWebAuthnCredential({
+      transport: passkeyTransport,
+      mode: WebAuthnMode.Register,
+      username,
+    });
   }
 
   storeCredential(credential);

@@ -1,6 +1,7 @@
 # Phase 1 Morning Test — Passkey Modular Wallets
 
 **Prerequisites**
+- Passkey bundle built: `npm run build:passkey` (re-run after editing `src/passkey-wallet.mjs`)
 - Server running: `npm start` on branch `modular-wallets`
 - Open **`http://localhost:3000`** only (passkey domain in Circle Console is `localhost` — Cloudflare tunnel will **not** work for passkeys)
 - `.env` has `CIRCLE_CLIENT_KEY` and `CIRCLE_CLIENT_URL` from Circle Console
@@ -135,6 +136,7 @@ Code uses: `toModularTransport(\`${clientUrl}/arcTestnet\`, clientKey)` — **no
 ## Automated gate (already run by agent)
 
 ```bash
+npm run build:passkey
 node _gate-phase1.mjs
 ```
 

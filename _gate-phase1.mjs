@@ -68,8 +68,15 @@ try {
   else ok('MetaMask onboarding button present');
   if (!html.includes('Sign in with Passkey')) fail('Missing passkey onboarding button');
   else ok('Passkey onboarding button present');
-  if (!html.includes('importmap')) fail('Missing import map for passkey module');
-  else ok('Passkey ESM import map present');
+  if (!html.includes('passkey-wallet.bundle.js')) fail('Missing passkey bundle import');
+  else ok('index.html loads passkey-wallet.bundle.js');
+
+  const bundle = await fetchOk('/passkey-wallet.bundle.js');
+  if (bundle.status !== 200) fail('/passkey-wallet.bundle.js not served');
+  else ok('/passkey-wallet.bundle.js returns 200');
+  const bundleText = await (await fetchOk('/passkey-wallet.bundle.js')).text();
+  if (/from\s+["']abitype["']/.test(bundleText)) fail('Bundle still has bare abitype import');
+  else ok('Bundle has no bare abitype specifier');
 
   const cfg = await fetchOk('/api/config');
   const config = await cfg.json();
@@ -82,10 +89,6 @@ try {
   } else {
     ok('/api/config modularWallets null (env not set — OK for gate)');
   }
-
-  const vendor = await fetchOk('/vendor/circle/index.mjs');
-  if (vendor.status !== 200) fail('/vendor/circle/index.mjs not served');
-  else ok('Circle SDK served for browser ESM');
 
 } catch (e) {
   fail('HTTP checks failed: ' + e.message);

@@ -333,15 +333,6 @@
       line-height: 1.45;
     }
   </style>
-  <script type="importmap">
-  {
-    "imports": {
-      "viem": "/vendor/viem/_esm/index.js",
-      "viem/": "/vendor/viem/_esm/",
-      "@circle-fin/modular-wallets-core": "/vendor/circle/index.mjs"
-    }
-  }
-  </script>
 </head>
 <body>
   <div class="container">
@@ -542,7 +533,7 @@
 
     async function loadPasskeyModule() {
       if (passkeyModuleLoaded && window.PasskeyWallet) return window.PasskeyWallet;
-      await import('/passkey-wallet.mjs');
+      await import('/passkey-wallet.bundle.js');
       passkeyModuleLoaded = true;
       return window.PasskeyWallet;
     }

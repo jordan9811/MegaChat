@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "build:passkey": "node scripts/build-passkey.mjs",
     "start": "node server.js"
   },
   "dependencies": {
@@ -15,5 +16,8 @@
     "viem": "^2.53.1",
     "ws": "^8.14.2",
     "x402": "^1.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
   }
 }
