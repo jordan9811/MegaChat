@@ -451,12 +451,25 @@
     async function loadConfig() {
       const res = await fetch('/api/config');
       CONFIG = await res.json();
-      // Reflect the pay-per-tick pricing in the header box.
+      updatePriceDisplay();
+    }
+
+    function updatePriceDisplay() {
+      if (!CONFIG) return;
       const amt = document.getElementById('priceAmount');
       const lbl = document.getElementById('priceLabel');
-      if (amt) amt.textContent = `${CONFIG.tickPrice} USDC`;
-      if (lbl) lbl.textContent =
-        `pay-as-you-watch · per ${CONFIG.tickSeconds}s · up to ${CONFIG.maxSession} USDC/session`;
+      const tickPrice = walletMode === 'passkey'
+        ? (CONFIG.passkeyTickPrice || CONFIG.tickPrice)
+        : CONFIG.tickPrice;
+      const tickSec = walletMode === 'passkey'
+        ? (CONFIG.passkeyTickSeconds || CONFIG.tickSeconds)
+        : CONFIG.tickSeconds;
+      if (amt) amt.textContent = `${tickPrice} USDC`;
+      if (lbl) {
+        lbl.textContent = walletMode === 'passkey'
+          ? `passkey stream · ${tickPrice} USDC/s · cap ${CONFIG.maxSession} USDC`
+          : `pay-as-you-watch · per ${tickSec}s · up to ${CONFIG.maxSession} USDC/session`;
+      }
     }
 
     function formatTimeLeft(seconds) {
@@ -558,6 +571,7 @@
         btn.disabled = true;
         btn.textContent = '⏳ Passkey…';
         walletMode = 'passkey';
+        updatePriceDisplay();
         account = null; // clear any stale MetaMask address
 
         const PW = await loadPasskeyModule();
@@ -927,8 +941,8 @@
           || requirements.accepts[0];
         if (!req) throw new Error('No payment requirement from server');
 
-        btn.textContent = '⏳ Passkey payment (gasless)…';
-        const payment = await PW.payJoinGasless(req.amount, req.payTo);
+        btn.textContent = '⏳ Passkey authorize (one prompt)…';
+        const payment = await PW.authorizeSessionGasless(req.amount, req.payTo);
 
         btn.textContent = '⏳ Confirming seat…';
         const paid = await fetch('/api/join', {
@@ -1055,18 +1069,26 @@
     function onJoinSuccess(data) {
       mySeatId = data.seatId;
       lastJoinData = data;
+      const isPasskeyStream = walletMode === 'passkey'
+        || data.paymentMode === 'passkey_stream'
+        || (data.payment && data.payment.mode === 'passkey_stream');
       // Bind this WS to the seat so closing the tab instantly frees + refunds it.
       if (ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'register_seat', seatId: mySeatId }));
       }
       showMeter(data.remaining, '0', data.secondsLeft);
       const txLink = data.payment && data.payment.transaction
-        ? ` · <a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">settlement tx</a>`
+        ? ` · <a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">approval tx</a>`
         : '';
+      const meterNote = isPasskeyStream
+        ? `${data.tickPrice} USDC pulled every ${data.tickSeconds}s while live (silent after authorize)`
+        : `${data.tickPrice} USDC every ${data.tickSeconds}s`;
+      const refundNote = isPasskeyStream
+        ? 'Unspent USDC stays in your smart account when you leave.'
+        : 'Unused USDC is refunded when you leave.';
       showMessage(
-        `✅ Paid! Allow camera access below — you go live automatically. Metering
-        (${data.tickPrice} USDC every ${data.tickSeconds}s) starts when you're live;
-        unused USDC is refunded when you leave.${txLink}`,
+        `✅ Authorized! Allow camera access below — you go live automatically. Metering
+        (${meterNote}) starts when you're live; ${refundNote}${txLink}`,
         'success'
       );
       startCameraStage(data);
@@ -1163,7 +1185,9 @@
       }
       console.log(`[camera] camera_ready fired via ${source}`);
       setCamStatus('live', "You're LIVE on stream");
-      document.getElementById('camHint').textContent = 'Leaving (button or closing the tab) stops the meter and refunds unused USDC.';
+      document.getElementById('camHint').textContent = walletMode === 'passkey'
+        ? 'Leaving (button or closing the tab) stops the meter. Unspent USDC stays in your wallet.'
+        : 'Leaving (button or closing the tab) stops the meter and refunds unused USDC.';
       const goBtn = document.getElementById('goLiveBtn');
       goBtn.classList.remove('show');
       document.getElementById('camRetryBtn').classList.remove('show');
@@ -1193,7 +1217,12 @@
       leaveBtn.disabled = false;
       const joinBtn = document.getElementById('joinBtn');
       if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = '🎬 JOIN STREAM'; }
-      showMessage('👋 You left the stream. Unused USDC has been refunded.', 'success');
+      showMessage(
+        walletMode === 'passkey'
+          ? '👋 You left the stream. Unspent USDC remains in your smart account.'
+          : '👋 You left the stream. Unused USDC has been refunded.',
+        'success'
+      );
       // Back to pre-join: show the wallet's available balance as "Remaining".
       refreshBalance();
     }

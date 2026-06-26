@@ -9,6 +9,10 @@ import {
   GATEWAY_AUTH_VALIDITY_WINDOW_SECONDS
 } from '@circle-fin/x402-batching/server';
 import { attachRewards } from './rewards.js';
+import {
+  applyStreamTick,
+  streamMeterPayload,
+} from './passkey-meter.js';
 import { createWalletClient, createPublicClient, http, erc20Abi, decodeEventLog } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
@@ -69,6 +73,13 @@ const TICK_SECONDS = Number(process.env.TICK_SECONDS || 10);
 const TICK_PRICE = process.env.TICK_PRICE || '0.1';
 const MAX_SESSION = process.env.MAX_SESSION || '2';
 
+// Phase 2: passkey stream meter (true per-second on-chain pulls). MetaMask keeps TICK_* above.
+const PASSKEY_TICK_SECONDS = Number(process.env.PASSKEY_TICK_SECONDS || 1);
+const PASSKEY_TICK_PRICE = process.env.PASSKEY_TICK_PRICE || '0.001';
+// Documented approach: B — session keys (A) not in SDK yet; streamed pulls via
+// one upfront approve userOp + seller transferFrom each tick (silent after join).
+const PASSKEY_METER_APPROACH = 'B';
+
 // USDC has 6 decimals. Convert a decimal USDC string to atomic units (BigInt).
 function usdcToAtomic(amountStr) {
   const [whole, frac = ''] = String(amountStr).split('.');
@@ -84,6 +95,7 @@ function atomicToUsdc(atomic) {
 }
 
 const TICK_PRICE_ATOMIC = usdcToAtomic(TICK_PRICE);
+const PASSKEY_TICK_PRICE_ATOMIC = usdcToAtomic(PASSKEY_TICK_PRICE);
 const MAX_SESSION_ATOMIC = usdcToAtomic(MAX_SESSION);
 
 // Circle Gateway facilitator client — verifies + settles the signed authorization.
@@ -119,9 +131,18 @@ if (SELLER_PRIVATE_KEY && /^0x[0-9a-fA-F]{64}$/.test(SELLER_PRIVATE_KEY)) {
 }
 
 // Refund the unused prepaid balance (settled - consumed = remainingAtomic) back
-// to the viewer. Fire-and-forget: retries once, never blocks tile removal.
+// to the viewer. Passkey stream seats skip this — unspent USDC never left the wallet.
 async function refundSeat(seat) {
   if (!seat || seat.refunded) return;
+  if (seat.paymentMode === 'passkey_stream') {
+    seat.refunded = true;
+    if (seat.remainingAtomic > 0n) {
+      console.log(
+        `[refund] stream seat ${seat.id}: ${atomicToUsdc(seat.remainingAtomic)} USDC was never pulled — remains in viewer wallet`
+      );
+    }
+    return;
+  }
   const refundAtomic = seat.remainingAtomic;
   if (refundAtomic <= 0n) return; // nothing unused to return
   const to = seat.viewerAddress || seat.payer;
@@ -223,6 +244,51 @@ async function getOnChainUsdcBalance(address) {
     pending: '0',
     hasRecord: raw > 0n
   };
+}
+
+// Verify passkey join: USDC Approval(owner -> seller) for at least sessionCap.
+async function verifyModularUsdcApproval(txHash, expectedOwner, expectedAmountAtomic) {
+  const client = createPublicClient({
+    chain: arcViemChain,
+    transport: http(ARC_RPC_URL)
+  });
+  const receipt = await client.getTransactionReceipt({ hash: txHash });
+  if (!receipt || receipt.status !== 'success') {
+    return { ok: false, reason: 'tx_not_success' };
+  }
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== USDC_ADDRESS.toLowerCase()) continue;
+    try {
+      const decoded = decodeEventLog({
+        abi: erc20Abi,
+        data: log.data,
+        topics: log.topics
+      });
+      if (decoded.eventName !== 'Approval') continue;
+      const owner = decoded.args.owner;
+      const spender = decoded.args.spender;
+      const value = BigInt(decoded.args.value);
+      if (owner.toLowerCase() !== expectedOwner.toLowerCase()) continue;
+      if (spender.toLowerCase() !== SELLER_WALLET_ADDRESS.toLowerCase()) continue;
+      if (value < expectedAmountAtomic) continue;
+      return { ok: true, payer: owner, amount: value, txHash };
+    } catch {
+      continue;
+    }
+  }
+  // Fallback: read current allowance (approval may be in same tx).
+  try {
+    const allowance = await client.readContract({
+      address: USDC_ADDRESS,
+      abi: erc20Abi,
+      functionName: 'allowance',
+      args: [expectedOwner, SELLER_WALLET_ADDRESS]
+    });
+    if (BigInt(allowance) >= expectedAmountAtomic) {
+      return { ok: true, payer: expectedOwner, amount: BigInt(allowance), txHash };
+    }
+  } catch { /* ignore */ }
+  return { ok: false, reason: 'approval_not_found' };
 }
 
 // Verify a gasless passkey join payment: USDC Transfer from payer -> seller.
@@ -336,6 +402,9 @@ app.get('/api/config', (req, res) => {
     tickSeconds: TICK_SECONDS,
     tickPrice: TICK_PRICE,
     maxSession: MAX_SESSION,
+    passkeyTickSeconds: PASSKEY_TICK_SECONDS,
+    passkeyTickPrice: PASSKEY_TICK_PRICE,
+    passkeyMeterApproach: PASSKEY_METER_APPROACH,
     modularWallets
   });
 });
@@ -434,7 +503,11 @@ function addParticipant(username, meta = {}) {
     viewerAddress: meta.viewerAddress || meta.payer || null,
     depositTx: meta.depositTx || null,
     refunded: false,
-    ownerWs: null
+    ownerWs: null,
+    // 'gateway' = MetaMask prepaid block; 'passkey_stream' = approve + per-tick pull
+    paymentMode: meta.paymentMode || 'gateway',
+    sessionCapAtomic: meta.sessionCapAtomic ?? remainingAtomic,
+    _tickInFlight: false,
   };
 
   activeSeats.set(seatId, seat);
@@ -455,11 +528,17 @@ function activateSeatLive(seatId, ws) {
   seat.liveAt = Date.now();
   if (ws) { ws.__seatId = seatId; seat.ownerWs = ws; }
 
-  const ticksLeft = TICK_PRICE_ATOMIC > 0n
-    ? Number(seat.remainingAtomic / TICK_PRICE_ATOMIC)
+  const tickPrice = seat.paymentMode === 'passkey_stream'
+    ? PASSKEY_TICK_PRICE_ATOMIC
+    : TICK_PRICE_ATOMIC;
+  const tickSec = seat.paymentMode === 'passkey_stream'
+    ? PASSKEY_TICK_SECONDS
+    : TICK_SECONDS;
+  const ticksLeft = tickPrice > 0n
+    ? Number(seat.remainingAtomic / tickPrice)
     : 0;
   // Overlay countdown estimate; the meter is the real cutoff. Starts NOW (live).
-  seat.expiresAt = Date.now() + ticksLeft * TICK_SECONDS * 1000;
+  seat.expiresAt = Date.now() + ticksLeft * tickSec * 1000;
 
   broadcast({
     type: 'seat_added',
@@ -470,7 +549,8 @@ function activateSeatLive(seatId, ws) {
       expiresAt: seat.expiresAt
     }
   });
-  console.log(`[seat] ${seat.id}: camera live — meter started (${atomicToUsdc(seat.remainingAtomic)} USDC prepaid)`);
+  const modeLabel = seat.paymentMode === 'passkey_stream' ? 'stream meter' : 'prepaid meter';
+  console.log(`[seat] ${seat.id}: camera live — ${modeLabel} started (${atomicToUsdc(seat.remainingAtomic)} USDC cap)`);
   return true;
 }
 
@@ -495,48 +575,105 @@ function removeParticipant(seatId, reason = 'left') {
   return { success: true };
 }
 
-// ─── Pass B meter ────────────────────────────────────────────────────────────
-// Every TICK_SECONDS, draw TICK_PRICE from each active seat's prepaid balance.
-// When the next draw would exceed the remaining balance, auto-kick the seat.
-function tickMeter() {
-  for (const seat of activeSeats.values()) {
-    // Only meter seats whose camera is actually live. Pending (paid but not yet
-    // live) seats don't tick — the countdown starts at camera_ready.
-    if (!seat.live) continue;
+// ─── Pass B meter (MetaMask/Gateway prepaid block) ─────────────────────────
+function tickPrepaidSeat(seat) {
+  if (seat.remainingAtomic < TICK_PRICE_ATOMIC) {
+    removeParticipant(seat.id, 'out_of_funds');
+    return;
+  }
 
-    if (seat.remainingAtomic < TICK_PRICE_ATOMIC) {
-      // Can't fund another tick — drop the seat.
-      removeParticipant(seat.id, 'out_of_funds');
-      continue;
-    }
+  seat.remainingAtomic -= TICK_PRICE_ATOMIC;
+  seat.spentAtomic += TICK_PRICE_ATOMIC;
 
-    seat.remainingAtomic -= TICK_PRICE_ATOMIC;
-    seat.spentAtomic += TICK_PRICE_ATOMIC;
+  const ticksLeft = TICK_PRICE_ATOMIC > 0n
+    ? Number(seat.remainingAtomic / TICK_PRICE_ATOMIC)
+    : 0;
+  const secondsLeft = ticksLeft * TICK_SECONDS;
 
-    const ticksLeft = TICK_PRICE_ATOMIC > 0n
-      ? Number(seat.remainingAtomic / TICK_PRICE_ATOMIC)
-      : 0;
-    const secondsLeft = ticksLeft * TICK_SECONDS;
+  broadcast({
+    type: 'meter_update',
+    seatId: seat.id,
+    remaining: atomicToUsdc(seat.remainingAtomic),
+    spent: atomicToUsdc(seat.spentAtomic),
+    secondsLeft,
+    minutesLeft: Math.floor(secondsLeft / 60),
+    mode: 'gateway'
+  });
 
-    broadcast({
-      type: 'meter_update',
-      seatId: seat.id,
-      remaining: atomicToUsdc(seat.remainingAtomic),
-      spent: atomicToUsdc(seat.spentAtomic),
-      secondsLeft,
-      minutesLeft: Math.floor(secondsLeft / 60)
-    });
-
-    // If this tick exhausted the balance, kick on the next pass.
-    if (seat.remainingAtomic < TICK_PRICE_ATOMIC) {
-      removeParticipant(seat.id, 'out_of_funds');
-    }
+  if (seat.remainingAtomic < TICK_PRICE_ATOMIC) {
+    removeParticipant(seat.id, 'out_of_funds');
   }
 }
 
-const meterInterval = setInterval(tickMeter, TICK_SECONDS * 1000);
-// Don't keep the process alive solely for the meter.
-if (typeof meterInterval.unref === 'function') meterInterval.unref();
+// ─── Phase 2 passkey stream meter: on-chain transferFrom each tick ─────────
+async function tickPasskeyStreamSeat(seat) {
+  if (seat._tickInFlight) return;
+  if (seat.remainingAtomic < PASSKEY_TICK_PRICE_ATOMIC) {
+    removeParticipant(seat.id, 'out_of_funds');
+    return;
+  }
+
+  seat._tickInFlight = true;
+  try {
+    if (sellerWalletClient) {
+      const tx = await sellerWalletClient.writeContract({
+        address: USDC_ADDRESS,
+        abi: erc20Abi,
+        functionName: 'transferFrom',
+        args: [seat.viewerAddress, SELLER_WALLET_ADDRESS, PASSKEY_TICK_PRICE_ATOMIC]
+      });
+      console.log(
+        `[meter:passkey] seat ${seat.id}: pulled ${atomicToUsdc(PASSKEY_TICK_PRICE_ATOMIC)} USDC (tx ${tx})`
+      );
+    } else {
+      console.log(
+        `[meter:passkey] seat ${seat.id}: DRY pull ${atomicToUsdc(PASSKEY_TICK_PRICE_ATOMIC)} USDC (no SELLER_PRIVATE_KEY)`
+      );
+    }
+
+    if (!applyStreamTick(seat, PASSKEY_TICK_PRICE_ATOMIC)) {
+      removeParticipant(seat.id, 'out_of_funds');
+      return;
+    }
+
+    const payload = streamMeterPayload(seat, PASSKEY_TICK_PRICE_ATOMIC, PASSKEY_TICK_SECONDS);
+    payload.remaining = atomicToUsdc(seat.remainingAtomic);
+    payload.spent = atomicToUsdc(seat.spentAtomic);
+    broadcast({ type: 'meter_update', ...payload });
+
+    if (seat.remainingAtomic < PASSKEY_TICK_PRICE_ATOMIC) {
+      removeParticipant(seat.id, 'out_of_funds');
+    }
+  } catch (err) {
+    console.warn(`[meter:passkey] seat ${seat.id}: pull failed — ${err.message}`);
+    removeParticipant(seat.id, 'out_of_funds');
+  } finally {
+    seat._tickInFlight = false;
+  }
+}
+
+function tickMeterGateway() {
+  for (const seat of activeSeats.values()) {
+    if (!seat.live) continue;
+    if (seat.paymentMode === 'passkey_stream') continue;
+    tickPrepaidSeat(seat);
+  }
+}
+
+function tickMeterPasskey() {
+  for (const seat of activeSeats.values()) {
+    if (!seat.live) continue;
+    if (seat.paymentMode !== 'passkey_stream') continue;
+    tickPasskeyStreamSeat(seat).catch((e) =>
+      console.error(`[meter:passkey] seat ${seat.id} unexpected:`, e)
+    );
+  }
+}
+
+const gatewayMeterInterval = setInterval(tickMeterGateway, TICK_SECONDS * 1000);
+const passkeyMeterInterval = setInterval(tickMeterPasskey, PASSKEY_TICK_SECONDS * 1000);
+if (typeof gatewayMeterInterval.unref === 'function') gatewayMeterInterval.unref();
+if (typeof passkeyMeterInterval.unref === 'function') passkeyMeterInterval.unref();
 
 // WebSocket connection
 wss.on('connection', (ws) => {
@@ -656,10 +793,10 @@ app.post('/api/join', async (req, res) => {
         });
       }
 
-      const verified = await verifyModularUsdcPayment(txHash, payer, sessionAtomic);
+      const verified = await verifyModularUsdcApproval(txHash, payer, sessionAtomic);
       if (!verified.ok) {
         return res.status(402).json({
-          error: 'Modular payment verification failed',
+          error: 'Modular approval verification failed',
           reason: verified.reason
         });
       }
@@ -668,7 +805,9 @@ app.post('/api/join', async (req, res) => {
         remainingAtomic: sessionAtomic,
         payer: verified.payer,
         viewerAddress: payer,
-        depositTx: verified.txHash
+        depositTx: verified.txHash,
+        paymentMode: 'passkey_stream',
+        sessionCapAtomic: sessionAtomic,
       });
 
       if (!result.success) {
@@ -687,8 +826,8 @@ app.post('/api/join', async (req, res) => {
         }
       }, PENDING_CAMERA_TIMEOUT_MS);
 
-      const ticksLeft = TICK_PRICE_ATOMIC > 0n
-        ? Number(result.seat.remainingAtomic / TICK_PRICE_ATOMIC)
+      const ticksLeft = PASSKEY_TICK_PRICE_ATOMIC > 0n
+        ? Number(result.seat.remainingAtomic / PASSKEY_TICK_PRICE_ATOMIC)
         : 0;
 
       return res.json({
@@ -697,15 +836,17 @@ app.post('/api/join', async (req, res) => {
         pushUrl: result.seat.pushUrl,
         seatId: result.seat.id,
         remaining: atomicToUsdc(result.seat.remainingAtomic),
-        tickPrice: TICK_PRICE,
-        tickSeconds: TICK_SECONDS,
+        tickPrice: PASSKEY_TICK_PRICE,
+        tickSeconds: PASSKEY_TICK_SECONDS,
         maxSession: MAX_SESSION,
-        secondsLeft: ticksLeft * TICK_SECONDS,
+        secondsLeft: ticksLeft * PASSKEY_TICK_SECONDS,
+        paymentMode: 'passkey_stream',
         payment: {
           payer: verified.payer,
           transaction: verified.txHash,
           network: ARC_NETWORK,
-          mode: 'passkey'
+          mode: 'passkey_stream',
+          approach: PASSKEY_METER_APPROACH,
         }
       });
     }
@@ -736,13 +877,17 @@ app.post('/api/join', async (req, res) => {
         ? bal.availableAtomic
         : MAX_SESSION_ATOMIC;
 
-      if (sessionAtomic < TICK_PRICE_ATOMIC) {
+      const minTickAtomic = walletMode === 'passkey'
+        ? PASSKEY_TICK_PRICE_ATOMIC
+        : TICK_PRICE_ATOMIC;
+
+      if (sessionAtomic < minTickAtomic) {
         return res.status(402).json({
           error: walletMode === 'passkey' ? 'Insufficient USDC balance' : 'Insufficient Gateway balance',
           reason: 'insufficient_balance',
           available: bal.available,
           pending: bal.pending,
-          needAtLeast: TICK_PRICE,
+          needAtLeast: walletMode === 'passkey' ? PASSKEY_TICK_PRICE : TICK_PRICE,
           hint: walletMode === 'passkey'
             ? 'Fund your smart account from faucet.circle.com (Arc Testnet).'
             : (bal.hasRecord
@@ -751,12 +896,15 @@ app.post('/api/join', async (req, res) => {
         });
       }
 
+      const meterDesc = walletMode === 'passkey'
+        ? `Passkey stream — approve ${atomicToUsdc(sessionAtomic)} USDC cap, ${PASSKEY_TICK_PRICE} USDC / ${PASSKEY_TICK_SECONDS}s on-chain pulls`
+        : `Co-stream seat — prepaid ${atomicToUsdc(sessionAtomic)} USDC, metered ${TICK_PRICE} USDC / ${TICK_SECONDS}s`;
       const requirements = buildRequirements(kind, sessionAtomic);
       const paymentRequired = {
         x402Version: 2,
         resource: {
           url: '/api/join',
-          description: `Co-stream seat — prepaid ${atomicToUsdc(sessionAtomic)} USDC, metered ${TICK_PRICE} USDC / ${TICK_SECONDS}s`,
+          description: meterDesc,
           mimeType: 'application/json'
         },
         accepts: [requirements]
@@ -768,7 +916,10 @@ app.post('/api/join', async (req, res) => {
         sessionAmount: atomicToUsdc(sessionAtomic),
         sessionAmountAtomic: sessionAtomic.toString(),
         payTo: SELLER_WALLET_ADDRESS,
-        walletMode
+        walletMode,
+        tickPrice: walletMode === 'passkey' ? PASSKEY_TICK_PRICE : TICK_PRICE,
+        tickSeconds: walletMode === 'passkey' ? PASSKEY_TICK_SECONDS : TICK_SECONDS,
+        meterApproach: walletMode === 'passkey' ? PASSKEY_METER_APPROACH : 'gateway_prepaid'
       }));
     }
 
@@ -910,7 +1061,9 @@ server.listen(PORT, () => {
 ║  Overlay: http://localhost:${PORT}/overlay   ║
 ╠═══════════════════════════════════════════╣
 ║  Chain:   ${ARC_NETWORK}
-║  Meter:   ${TICK_PRICE} USDC / ${TICK_SECONDS}s  (cap ${MAX_SESSION} USDC)
+║  Meter (MetaMask): ${TICK_PRICE} USDC / ${TICK_SECONDS}s
+║  Meter (Passkey):  ${PASSKEY_TICK_PRICE} USDC / ${PASSKEY_TICK_SECONDS}s  [approach ${PASSKEY_METER_APPROACH}]
+║  Session cap:      ${MAX_SESSION} USDC
 ║  Seller:  ${SELLER_WALLET_ADDRESS}
 ╚═══════════════════════════════════════════╝
   `);

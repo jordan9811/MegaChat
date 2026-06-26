@@ -4,7 +4,7 @@
  *
  * Edit this file, then run: npm run build:passkey
  */
-import { createPublicClient, formatUnits, parseUnits } from 'viem';
+import { createPublicClient, encodeFunctionData, erc20Abi, formatUnits, parseUnits } from 'viem';
 import { arcTestnet } from 'viem/chains';
 import { createBundlerClient, toWebAuthnAccount } from 'viem/account-abstraction';
 import {
@@ -13,7 +13,6 @@ import {
   toModularTransport,
   toPasskeyTransport,
   toWebAuthnCredential,
-  encodeTransfer,
   ContractAddress,
 } from '@circle-fin/modular-wallets-core';
 
@@ -41,13 +40,22 @@ function storeCredential(credential) {
   localStorage.setItem(CREDENTIAL_KEY, JSON.stringify(credential));
 }
 
+function encodeApprove(spender, amount) {
+  const data = encodeFunctionData({
+    abi: erc20Abi,
+    functionName: 'approve',
+    args: [spender, amount],
+  });
+  return { data, to: ContractAddress.ArcTestnet_USDC };
+}
+
 /** Build Circle transports + clients. Throws if config missing. */
 export function initModularClients(config) {
   if (!config || !config.clientKey || !config.clientUrl || !config.chainPath) {
     throw new Error('Modular Wallets not configured on server');
   }
   modularConfig = config;
-  const chainPath = config.chainPath; // arcTestnet — from Circle skill, not guessed
+  const chainPath = config.chainPath;
   passkeyTransport = toPasskeyTransport(config.clientUrl, config.clientKey);
   modularTransport = toModularTransport(
     `${config.clientUrl}/${chainPath}`,
@@ -112,13 +120,7 @@ export async function getPasskeyUsdcBalance() {
   if (!publicClient || !smartAccountAddress) return '0';
   const raw = await publicClient.readContract({
     address: ContractAddress.ArcTestnet_USDC,
-    abi: [{
-      name: 'balanceOf',
-      type: 'function',
-      stateMutability: 'view',
-      inputs: [{ name: 'account', type: 'address' }],
-      outputs: [{ name: '', type: 'uint256' }],
-    }],
+    abi: erc20Abi,
     functionName: 'balanceOf',
     args: [smartAccountAddress],
   });
@@ -126,23 +128,21 @@ export async function getPasskeyUsdcBalance() {
 }
 
 /**
- * Gasless join payment: USDC transfer to seller via bundler + paymaster.
- * @param {string} amountAtomic - atomic USDC units (6 decimals) as decimal string
- * @param {string} sellerAddress - payTo from 402 requirements
- * @returns {Promise<{ txHash: string, payer: string, amount: string }>}
+ * Phase 2 join: ONE gasless userOp approving the seller to pull up to sessionCap.
+ * After this, the server pulls TICK_PRICE every tick via transferFrom — no further prompts.
  */
-export async function payJoinGasless(amountAtomic, sellerAddress) {
+export async function authorizeSessionGasless(sessionCapAtomic, sellerAddress) {
   if (!isPasskeyReady()) throw new Error('Passkey wallet not connected');
-  const amount = BigInt(amountAtomic);
-  if (amount <= 0n) throw new Error('Invalid payment amount');
+  const amount = BigInt(sessionCapAtomic);
+  if (amount <= 0n) throw new Error('Invalid session cap');
 
-  const callData = encodeTransfer(
-    sellerAddress,
-    ContractAddress.ArcTestnet_USDC,
-    amount
+  const callData = encodeApprove(sellerAddress, amount);
+  console.log(
+    '[passkey] authorizing stream pulls:',
+    formatUnits(amount, USDC_DECIMALS),
+    'USDC cap for seller',
+    sellerAddress
   );
-
-  console.log('[passkey] sending gasless join payment', formatUnits(amount, USDC_DECIMALS), 'USDC →', sellerAddress);
   const userOpHash = await bundlerClient.sendUserOperation({
     account: smartAccount,
     calls: [callData],
@@ -151,12 +151,19 @@ export async function payJoinGasless(amountAtomic, sellerAddress) {
 
   const { receipt } = await bundlerClient.waitForUserOperationReceipt({ hash: userOpHash });
   const txHash = receipt.transactionHash;
-  console.log('[passkey] join payment confirmed:', txHash);
+  console.log('[passkey] session authorize confirmed:', txHash);
   return {
+    type: 'approve',
     txHash,
     payer: smartAccountAddress,
-    amount: amountAtomic,
+    amount: sessionCapAtomic,
+    seller: sellerAddress,
   };
+}
+
+/** @deprecated Phase 1 upfront transfer — kept for reference; join uses authorizeSessionGasless. */
+export async function payJoinGasless(amountAtomic, sellerAddress) {
+  return authorizeSessionGasless(amountAtomic, sellerAddress);
 }
 
 /** Smoke-test client construction without WebAuthn (for automated gate). */
@@ -167,13 +174,13 @@ export function selfTestClients(config) {
   }
 }
 
-// Expose for non-module index.html script.
 window.PasskeyWallet = {
   initModularClients,
   connectPasskey,
   getPasskeyAddress,
   isPasskeyReady,
   getPasskeyUsdcBalance,
+  authorizeSessionGasless,
   payJoinGasless,
   selfTestClients,
   parseUsdcAmount: (str) => parseUnits(String(str), USDC_DECIMALS).toString(),

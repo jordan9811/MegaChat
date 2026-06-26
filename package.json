@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build:passkey": "node scripts/build-passkey.mjs",
+    "gate:phase2": "node _gate-phase2.mjs",
     "start": "node server.js"
   },
   "dependencies": {
