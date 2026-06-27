@@ -46,7 +46,7 @@ Checks: stream meter math (dry-run to zero), server boot, `GET /` 200, `/api/con
 3. DevTools → Console: should be clean on load (no module/TDZ errors).
 4. Enter username → **Sign in with Passkey** → complete Face ID / platform auth.
 5. Confirm header shows passkey pricing (`0.001 USDC/s` by default).
-6. **JOIN STREAM** → **one** passkey prompt for USDC **approve** (not transfer). Note approval tx link.
+6. **JOIN STREAM** → **one** passkey prompt for USDC **approve** (not transfer). Uses **`POST /api/join/passkey`** (not Gateway `/api/join`). Note approval tx link.
 7. Allow camera → go live automatically (or GO LIVE fallback).
 8. **UI meter:** `Remaining` ticks down every `PASSKEY_TICK_SECONDS`; `≈ time left` counts down.
 9. **Arcscan:** open [testnet.arcscan.app](https://testnet.arcscan.app) → smart account address → watch **Transfer** txs from viewer → seller every second (server `[meter:passkey]` logs in terminal).

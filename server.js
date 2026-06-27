@@ -246,52 +246,72 @@ async function getOnChainUsdcBalance(address) {
   };
 }
 
-// Verify passkey join: USDC Approval(owner -> seller) for at least sessionCap.
-async function verifyModularUsdcApproval(txHash, expectedOwner, expectedAmountAtomic) {
-  const client = createPublicClient({
-    chain: arcViemChain,
-    transport: http(ARC_RPC_URL)
-  });
-  const receipt = await client.getTransactionReceipt({ hash: txHash });
-  if (!receipt || receipt.status !== 'success') {
-    return { ok: false, reason: 'tx_not_success' };
+// Verify passkey stream join: on-chain allowance (primary) + optional approve tx receipt.
+async function verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash) {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(payer || '')) {
+    return { ok: false, reason: 'invalid_payer' };
   }
-  for (const log of receipt.logs) {
-    if (log.address.toLowerCase() !== USDC_ADDRESS.toLowerCase()) continue;
-    try {
-      const decoded = decodeEventLog({
-        abi: erc20Abi,
-        data: log.data,
-        topics: log.topics
-      });
-      if (decoded.eventName !== 'Approval') continue;
-      const owner = decoded.args.owner;
-      const spender = decoded.args.spender;
-      const value = BigInt(decoded.args.value);
-      if (owner.toLowerCase() !== expectedOwner.toLowerCase()) continue;
-      if (spender.toLowerCase() !== SELLER_WALLET_ADDRESS.toLowerCase()) continue;
-      if (value < expectedAmountAtomic) continue;
-      return { ok: true, payer: owner, amount: value, txHash };
-    } catch {
-      continue;
-    }
-  }
-  // Fallback: read current allowance (approval may be in same tx).
-  try {
-    const allowance = await client.readContract({
+
+  const readAllowance = async () => {
+    const client = createPublicClient({
+      chain: arcViemChain,
+      transport: http(ARC_RPC_URL)
+    });
+    const raw = await client.readContract({
       address: USDC_ADDRESS,
       abi: erc20Abi,
       functionName: 'allowance',
-      args: [expectedOwner, SELLER_WALLET_ADDRESS]
+      args: [payer, SELLER_WALLET_ADDRESS]
     });
-    if (BigInt(allowance) >= expectedAmountAtomic) {
-      return { ok: true, payer: expectedOwner, amount: BigInt(allowance), txHash };
+    return BigInt(raw);
+  };
+
+  let allowance;
+  try {
+    allowance = await readAllowance();
+  } catch (err) {
+    return { ok: false, reason: 'allowance_read_failed', message: err.message };
+  }
+
+  // UserOp receipt can land before RPC allowance index catches up.
+  if (allowance < sessionAtomic && txHash) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      allowance = await readAllowance();
+    } catch { /* keep prior */ }
+  }
+
+  if (allowance < sessionAtomic) {
+    console.warn(
+      `[join:passkey] insufficient allowance ${atomicToUsdc(allowance)} USDC `
+      + `(need ${atomicToUsdc(sessionAtomic)}) for ${payer}`
+    );
+    return { ok: false, reason: 'insufficient_allowance', allowance };
+  }
+
+  if (txHash && /^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+    try {
+      const client = createPublicClient({
+        chain: arcViemChain,
+        transport: http(ARC_RPC_URL)
+      });
+      const receipt = await client.getTransactionReceipt({ hash: txHash });
+      if (!receipt || receipt.status !== 'success') {
+        return { ok: false, reason: 'tx_not_success' };
+      }
+    } catch {
+      // Allowance is authoritative once confirmed on-chain.
     }
-  } catch { /* ignore */ }
-  return { ok: false, reason: 'approval_not_found' };
+  }
+
+  console.log(
+    `[join:passkey] verified allowance ${atomicToUsdc(allowance)} USDC `
+    + `(session cap ${atomicToUsdc(sessionAtomic)}) for ${payer}`
+  );
+  return { ok: true, payer, allowance, amount: allowance, txHash: txHash || null };
 }
 
-// Verify a gasless passkey join payment: USDC Transfer from payer -> seller.
+// Legacy Phase 1 transfer verifier — not used by passkey stream join.
 async function verifyModularUsdcPayment(txHash, expectedFrom, expectedAmountAtomic) {
   const client = createPublicClient({
     chain: arcViemChain,
@@ -744,11 +764,163 @@ app.get('/overlay', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
 });
 
-// Join seat — Circle Gateway payment on Arc Testnet (Pass B: prepaid session).
-// 1) No payment header  -> 402 with Gateway requirements for the MAX_SESSION cap.
-// 2) With Payment-Signature -> verify + settle the prepaid session, then start the
-//    meter. The viewer signs ONE authorization (no per-tick popups); the meter
-//    draws it down TICK_PRICE every TICK_SECONDS until 'out_of_funds'.
+function schedulePendingCameraTimeout(seatId) {
+  setTimeout(() => {
+    const s = activeSeats.get(seatId);
+    if (s && !s.live) {
+      console.log(`[seat] ${seatId}: camera not approved in time — releasing + refunding`);
+      removeParticipant(seatId, 'camera_timeout');
+    }
+  }, PENDING_CAMERA_TIMEOUT_MS);
+}
+
+function passkeyJoinSuccessResponse(seat, verified) {
+  const ticksLeft = PASSKEY_TICK_PRICE_ATOMIC > 0n
+    ? Number(seat.remainingAtomic / PASSKEY_TICK_PRICE_ATOMIC)
+    : 0;
+  return {
+    success: true,
+    message: 'Seat assigned! Open this link to go live:',
+    pushUrl: seat.pushUrl,
+    seatId: seat.id,
+    remaining: atomicToUsdc(seat.remainingAtomic),
+    tickPrice: PASSKEY_TICK_PRICE,
+    tickSeconds: PASSKEY_TICK_SECONDS,
+    maxSession: MAX_SESSION,
+    secondsLeft: ticksLeft * PASSKEY_TICK_SECONDS,
+    paymentMode: 'passkey_stream',
+    payment: {
+      payer: verified.payer,
+      transaction: verified.txHash,
+      allowance: atomicToUsdc(verified.allowance),
+      network: ARC_NETWORK,
+      mode: 'passkey_stream',
+      approach: PASSKEY_METER_APPROACH,
+    }
+  };
+}
+
+// Passkey/modular smart account join — NO Gateway x402 middleware or transfer lookup.
+app.post('/api/join/passkey', async (req, res) => {
+  try {
+    const { username, address } = req.body;
+    if (!username) {
+      return res.status(400).json({ error: 'Username required' });
+    }
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) {
+      return res.status(400).json({ error: 'Smart account address required' });
+    }
+
+    const modularPaymentHeader = req.headers['x-modular-payment'];
+
+    // Step 1 — session terms (on-chain balance only; no Gateway 402).
+    if (!modularPaymentHeader) {
+      let bal;
+      try {
+        bal = await getOnChainUsdcBalance(address);
+      } catch (err) {
+        return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
+      }
+
+      const sessionAtomic = bal.availableAtomic < MAX_SESSION_ATOMIC
+        ? bal.availableAtomic
+        : MAX_SESSION_ATOMIC;
+
+      if (sessionAtomic < PASSKEY_TICK_PRICE_ATOMIC) {
+        return res.status(402).json({
+          error: 'Insufficient USDC balance',
+          reason: 'insufficient_balance',
+          available: bal.available,
+          needAtLeast: PASSKEY_TICK_PRICE,
+          hint: 'Fund your smart account from faucet.circle.com (Arc Testnet).',
+          path: 'passkey'
+        });
+      }
+
+      console.log(
+        `[join:passkey] session terms for ${address}: `
+        + `cap ${atomicToUsdc(sessionAtomic)} USDC, `
+        + `${PASSKEY_TICK_PRICE} USDC / ${PASSKEY_TICK_SECONDS}s stream meter`
+      );
+
+      return res.json({
+        needsApprove: true,
+        sessionAmount: atomicToUsdc(sessionAtomic),
+        sessionAmountAtomic: sessionAtomic.toString(),
+        payTo: SELLER_WALLET_ADDRESS,
+        tickPrice: PASSKEY_TICK_PRICE,
+        tickSeconds: PASSKEY_TICK_SECONDS,
+        maxSession: MAX_SESSION,
+        meterApproach: PASSKEY_METER_APPROACH,
+        path: 'passkey'
+      });
+    }
+
+    // Step 2 — approve confirmed client-side; verify allowance and admit.
+    let modPay;
+    try {
+      modPay = b64decodeJson(modularPaymentHeader);
+    } catch {
+      return res.status(400).json({ error: 'Malformed X-Modular-Payment header' });
+    }
+
+    const txHash = modPay.txHash;
+    const payer = modPay.payer || address;
+    let sessionAtomic;
+    try {
+      sessionAtomic = BigInt(modPay.amount || '0');
+    } catch {
+      sessionAtomic = 0n;
+    }
+
+    if (sessionAtomic <= 0n) {
+      return res.status(400).json({ error: 'Modular payment has no session cap' });
+    }
+    if (sessionAtomic > MAX_SESSION_ATOMIC) {
+      return res.status(400).json({
+        error: 'Session cap exceeds max',
+        reason: 'over_cap',
+        maxSession: MAX_SESSION
+      });
+    }
+
+    const verified = await verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash);
+    if (!verified.ok) {
+      return res.status(402).json({
+        error: 'Passkey allowance verification failed',
+        reason: verified.reason,
+        path: 'passkey'
+      });
+    }
+
+    const result = addParticipant(username, {
+      remainingAtomic: sessionAtomic,
+      payer: verified.payer,
+      viewerAddress: payer,
+      depositTx: verified.txHash,
+      paymentMode: 'passkey_stream',
+      sessionCapAtomic: sessionAtomic,
+    });
+
+    if (!result.success) {
+      return res.status(409).json({
+        error: 'No seats available',
+        reason: result.reason
+      });
+    }
+
+    schedulePendingCameraTimeout(result.seat.id);
+    console.log(`[join:passkey] admitted seat ${result.seat.id} for ${username} (${payer})`);
+    return res.json(passkeyJoinSuccessResponse(result.seat, verified));
+  } catch (error) {
+    console.error('[join:passkey] error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Passkey join failed', message: error.message });
+    }
+  }
+});
+
+// MetaMask / Circle Gateway join — prepaid session via x402 (unchanged).
 app.post('/api/join', async (req, res) => {
   try {
     const { username, address } = req.body;
@@ -756,100 +928,15 @@ app.post('/api/join', async (req, res) => {
       return res.status(400).json({ error: 'Username required' });
     }
 
-    const walletMode = req.get('x-wallet-mode') || 'metamask';
-    const paymentHeader = req.headers['payment-signature'];
-    const modularPaymentHeader = req.headers['x-modular-payment'];
-
-    // ── Passkey path: gasless userOp USDC transfer already submitted ──────────
-    if (walletMode === 'passkey' && modularPaymentHeader) {
-      let modPay;
-      try {
-        modPay = b64decodeJson(modularPaymentHeader);
-      } catch {
-        return res.status(400).json({ error: 'Malformed X-Modular-Payment header' });
-      }
-      const txHash = modPay.txHash;
-      const payer = modPay.payer || address;
-      let sessionAtomic;
-      try {
-        sessionAtomic = BigInt(modPay.amount || '0');
-      } catch {
-        sessionAtomic = 0n;
-      }
-      if (!/^0x[0-9a-fA-F]{64}$/.test(txHash || '')) {
-        return res.status(400).json({ error: 'Invalid txHash in modular payment' });
-      }
-      if (!/^0x[0-9a-fA-F]{40}$/.test(payer || '')) {
-        return res.status(400).json({ error: 'Invalid payer address' });
-      }
-      if (sessionAtomic <= 0n) {
-        return res.status(400).json({ error: 'Modular payment has no amount' });
-      }
-      if (sessionAtomic > MAX_SESSION_ATOMIC) {
-        return res.status(400).json({
-          error: 'Payment exceeds session cap',
-          reason: 'over_cap',
-          maxSession: MAX_SESSION
-        });
-      }
-
-      const verified = await verifyModularUsdcApproval(txHash, payer, sessionAtomic);
-      if (!verified.ok) {
-        return res.status(402).json({
-          error: 'Modular approval verification failed',
-          reason: verified.reason
-        });
-      }
-
-      const result = addParticipant(username, {
-        remainingAtomic: sessionAtomic,
-        payer: verified.payer,
-        viewerAddress: payer,
-        depositTx: verified.txHash,
-        paymentMode: 'passkey_stream',
-        sessionCapAtomic: sessionAtomic,
-      });
-
-      if (!result.success) {
-        return res.status(409).json({
-          error: 'No seats available',
-          reason: result.reason
-        });
-      }
-
-      const pendingSeatId = result.seat.id;
-      setTimeout(() => {
-        const s = activeSeats.get(pendingSeatId);
-        if (s && !s.live) {
-          console.log(`[seat] ${pendingSeatId}: camera not approved in time — releasing + refunding`);
-          removeParticipant(pendingSeatId, 'camera_timeout');
-        }
-      }, PENDING_CAMERA_TIMEOUT_MS);
-
-      const ticksLeft = PASSKEY_TICK_PRICE_ATOMIC > 0n
-        ? Number(result.seat.remainingAtomic / PASSKEY_TICK_PRICE_ATOMIC)
-        : 0;
-
-      return res.json({
-        success: true,
-        message: 'Seat assigned! Open this link to go live:',
-        pushUrl: result.seat.pushUrl,
-        seatId: result.seat.id,
-        remaining: atomicToUsdc(result.seat.remainingAtomic),
-        tickPrice: PASSKEY_TICK_PRICE,
-        tickSeconds: PASSKEY_TICK_SECONDS,
-        maxSession: MAX_SESSION,
-        secondsLeft: ticksLeft * PASSKEY_TICK_SECONDS,
-        paymentMode: 'passkey_stream',
-        payment: {
-          payer: verified.payer,
-          transaction: verified.txHash,
-          network: ARC_NETWORK,
-          mode: 'passkey_stream',
-          approach: PASSKEY_METER_APPROACH,
-        }
+    if (req.get('x-wallet-mode') === 'passkey' || req.headers['x-modular-payment']) {
+      return res.status(400).json({
+        error: 'Passkey wallets must use POST /api/join/passkey',
+        redirect: '/api/join/passkey',
+        path: 'gateway'
       });
     }
+
+    const paymentHeader = req.headers['payment-signature'];
 
     let kind;
     try {
@@ -866,9 +953,7 @@ app.post('/api/join', async (req, res) => {
 
       let bal;
       try {
-        bal = walletMode === 'passkey'
-          ? await getOnChainUsdcBalance(address)
-          : await getGatewayBalance(address);
+        bal = await getGatewayBalance(address);
       } catch (err) {
         return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
       }
@@ -877,34 +962,26 @@ app.post('/api/join', async (req, res) => {
         ? bal.availableAtomic
         : MAX_SESSION_ATOMIC;
 
-      const minTickAtomic = walletMode === 'passkey'
-        ? PASSKEY_TICK_PRICE_ATOMIC
-        : TICK_PRICE_ATOMIC;
-
-      if (sessionAtomic < minTickAtomic) {
+      if (sessionAtomic < TICK_PRICE_ATOMIC) {
         return res.status(402).json({
-          error: walletMode === 'passkey' ? 'Insufficient USDC balance' : 'Insufficient Gateway balance',
+          error: 'Insufficient Gateway balance',
           reason: 'insufficient_balance',
           available: bal.available,
           pending: bal.pending,
-          needAtLeast: walletMode === 'passkey' ? PASSKEY_TICK_PRICE : TICK_PRICE,
-          hint: walletMode === 'passkey'
-            ? 'Fund your smart account from faucet.circle.com (Arc Testnet).'
-            : (bal.hasRecord
-              ? 'Deposit more USDC into the Gateway to watch.'
-              : 'No finalized Gateway balance yet — your deposit may still be finalizing.')
+          needAtLeast: TICK_PRICE,
+          hint: bal.hasRecord
+            ? 'Deposit more USDC into the Gateway to watch.'
+            : 'No finalized Gateway balance yet — your deposit may still be finalizing.',
+          path: 'gateway'
         });
       }
 
-      const meterDesc = walletMode === 'passkey'
-        ? `Passkey stream — approve ${atomicToUsdc(sessionAtomic)} USDC cap, ${PASSKEY_TICK_PRICE} USDC / ${PASSKEY_TICK_SECONDS}s on-chain pulls`
-        : `Co-stream seat — prepaid ${atomicToUsdc(sessionAtomic)} USDC, metered ${TICK_PRICE} USDC / ${TICK_SECONDS}s`;
       const requirements = buildRequirements(kind, sessionAtomic);
       const paymentRequired = {
         x402Version: 2,
         resource: {
           url: '/api/join',
-          description: meterDesc,
+          description: `Co-stream seat — prepaid ${atomicToUsdc(sessionAtomic)} USDC, metered ${TICK_PRICE} USDC / ${TICK_SECONDS}s`,
           mimeType: 'application/json'
         },
         accepts: [requirements]
@@ -912,14 +989,16 @@ app.post('/api/join', async (req, res) => {
       res.statusCode = 402;
       res.setHeader('PAYMENT-REQUIRED', b64encodeJson(paymentRequired));
       res.setHeader('Content-Type', 'application/json');
+      console.log(`[join:gateway] 402 session terms for ${address}: ${atomicToUsdc(sessionAtomic)} USDC cap`);
       return res.end(JSON.stringify({
         sessionAmount: atomicToUsdc(sessionAtomic),
         sessionAmountAtomic: sessionAtomic.toString(),
         payTo: SELLER_WALLET_ADDRESS,
-        walletMode,
-        tickPrice: walletMode === 'passkey' ? PASSKEY_TICK_PRICE : TICK_PRICE,
-        tickSeconds: walletMode === 'passkey' ? PASSKEY_TICK_SECONDS : TICK_SECONDS,
-        meterApproach: walletMode === 'passkey' ? PASSKEY_METER_APPROACH : 'gateway_prepaid'
+        walletMode: 'metamask',
+        tickPrice: TICK_PRICE,
+        tickSeconds: TICK_SECONDS,
+        meterApproach: 'gateway_prepaid',
+        path: 'gateway'
       }));
     }
 
@@ -985,17 +1064,9 @@ app.post('/api/join', async (req, res) => {
       });
     }
 
-    // The seat is paid but PENDING until the camera goes live. If the joiner
-    // never approves their camera, release the seat and refund the full prepaid
-    // amount so funds aren't stranded.
     const pendingSeatId = result.seat.id;
-    setTimeout(() => {
-      const s = activeSeats.get(pendingSeatId);
-      if (s && !s.live) {
-        console.log(`[seat] ${pendingSeatId}: camera not approved in time — releasing + refunding`);
-        removeParticipant(pendingSeatId, 'camera_timeout');
-      }
-    }, PENDING_CAMERA_TIMEOUT_MS);
+    schedulePendingCameraTimeout(pendingSeatId);
+    console.log(`[join:gateway] admitted seat ${result.seat.id} for ${username}`);
 
     const ticksLeft = TICK_PRICE_ATOMIC > 0n
       ? Number(result.seat.remainingAtomic / TICK_PRICE_ATOMIC)
