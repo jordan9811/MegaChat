@@ -40,13 +40,13 @@ function storeCredential(credential) {
   localStorage.setItem(CREDENTIAL_KEY, JSON.stringify(credential));
 }
 
-function encodeApprove(spender, amount) {
+function encodeApprove(spender, amount, tokenAddress) {
   const data = encodeFunctionData({
     abi: erc20Abi,
     functionName: 'approve',
     args: [spender, amount],
   });
-  return { data, to: ContractAddress.ArcTestnet_USDC };
+  return { data, to: tokenAddress };
 }
 
 /** Build Circle transports + clients. Throws if config missing. */
@@ -131,16 +131,19 @@ export async function getPasskeyUsdcBalance() {
  * Phase 2 join: ONE gasless userOp approving the seller to pull up to sessionCap.
  * After this, the server pulls TICK_PRICE every tick via transferFrom — no further prompts.
  */
-export async function authorizeSessionGasless(sessionCapAtomic, sellerAddress) {
+export async function authorizeSessionGasless(sessionCapAtomic, sellerAddress, tokenAddress) {
   if (!isPasskeyReady()) throw new Error('Passkey wallet not connected');
   const amount = BigInt(sessionCapAtomic);
   if (amount <= 0n) throw new Error('Invalid session cap');
+  const token = tokenAddress || ContractAddress.ArcTestnet_USDC;
 
-  const callData = encodeApprove(sellerAddress, amount);
+  const callData = encodeApprove(sellerAddress, amount, token);
   console.log(
     '[passkey] authorizing stream pulls:',
     formatUnits(amount, USDC_DECIMALS),
-    'USDC cap for seller',
+    'token',
+    token,
+    'cap for seller',
     sellerAddress
   );
   const userOpHash = await bundlerClient.sendUserOperation({
@@ -158,12 +161,13 @@ export async function authorizeSessionGasless(sessionCapAtomic, sellerAddress) {
     payer: smartAccountAddress,
     amount: sessionCapAtomic,
     seller: sellerAddress,
+    tokenAddress: token,
   };
 }
 
 /** @deprecated Phase 1 upfront transfer — kept for reference; join uses authorizeSessionGasless. */
-export async function payJoinGasless(amountAtomic, sellerAddress) {
-  return authorizeSessionGasless(amountAtomic, sellerAddress);
+export async function payJoinGasless(amountAtomic, sellerAddress, tokenAddress) {
+  return authorizeSessionGasless(amountAtomic, sellerAddress, tokenAddress);
 }
 
 /** Smoke-test client construction without WebAuthn (for automated gate). */

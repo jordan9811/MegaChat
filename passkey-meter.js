@@ -18,22 +18,23 @@ export function streamSecondsLeft(seat, tickPriceAtomic, tickSeconds) {
   return ticks * tickSeconds;
 }
 
-export function streamMeterPayload(seat, tickPriceAtomic, tickSeconds) {
+export function streamMeterPayload(seat, tickPriceAtomic, tickSeconds, decimals = 6) {
   const secondsLeft = streamSecondsLeft(seat, tickPriceAtomic, tickSeconds);
   return {
     seatId: seat.id,
-    remaining: formatAtomic(seat.remainingAtomic),
-    spent: formatAtomic(seat.spentAtomic ?? 0n),
+    remaining: formatAtomic(seat.remainingAtomic, decimals),
+    spent: formatAtomic(seat.spentAtomic ?? 0n, decimals),
     secondsLeft,
     minutesLeft: Math.floor(secondsLeft / 60),
     mode: 'passkey_stream',
   };
 }
 
-function formatAtomic(atomic) {
+function formatAtomic(atomic, decimals = 6) {
   const v = BigInt(atomic);
-  const whole = v / 1000000n;
-  const frac = (v % 1000000n).toString().padStart(6, '0').replace(/0+$/, '');
+  const base = 10n ** BigInt(decimals);
+  const whole = v / base;
+  const frac = (v % base).toString().padStart(decimals, '0').replace(/0+$/, '');
   return frac ? `${whole}.${frac}` : `${whole}`;
 }
 

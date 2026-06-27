@@ -22,6 +22,9 @@ export function getEnvDefaults() {
     passkeyTickPrice: String(process.env.PASSKEY_TICK_PRICE || '0.001'),
     maxSession: String(process.env.MAX_SESSION || '2'),
     maxSeats: Math.min(3, Math.max(1, Number(process.env.MAX_SEATS || 3))),
+    paymentTokenAddress: process.env.USDC_ADDRESS || '0x3600000000000000000000000000000000000000',
+    paymentTokenSymbol: 'USDC',
+    paymentTokenDecimals: 6,
   };
 }
 
@@ -114,6 +117,9 @@ export function resolveRoomConfig(roomId) {
     passkeyTickPrice: String(cfg.passkeyTickPrice ?? defaults.passkeyTickPrice),
     maxSession: String(cfg.maxSession ?? defaults.maxSession),
     maxSeats,
+    paymentTokenAddress: String(cfg.paymentTokenAddress ?? defaults.paymentTokenAddress),
+    paymentTokenSymbol: String(cfg.paymentTokenSymbol ?? defaults.paymentTokenSymbol),
+    paymentTokenDecimals: Number(cfg.paymentTokenDecimals ?? defaults.paymentTokenDecimals),
   };
 }
 

@@ -19,6 +19,13 @@ import {
   DEFAULT_ROOM_ID,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
+import {
+  toAtomic,
+  fromAtomic,
+  readTokenBalance,
+  readTokenAllowance,
+  validatePaymentToken,
+} from './token-utils.js';
 import { createWalletClient, createPublicClient, http, erc20Abi, decodeEventLog } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
@@ -108,10 +115,13 @@ const PASSKEY_TICK_PRICE_ATOMIC = usdcToAtomic(PASSKEY_TICK_PRICE);
 const MAX_SESSION_ATOMIC = usdcToAtomic(MAX_SESSION);
 
 function roomAtomics(roomCfg) {
+  const gwDec = 6;
+  const pkDec = roomCfg.paymentTokenDecimals;
   return {
-    tickPriceAtomic: usdcToAtomic(roomCfg.tickPrice),
-    passkeyTickPriceAtomic: usdcToAtomic(roomCfg.passkeyTickPrice),
-    maxSessionAtomic: usdcToAtomic(roomCfg.maxSession),
+    tickPriceAtomic: toAtomic(roomCfg.tickPrice, gwDec),
+    gatewayMaxSessionAtomic: toAtomic(roomCfg.maxSession, gwDec),
+    passkeyTickPriceAtomic: toAtomic(roomCfg.passkeyTickPrice, pkDec),
+    maxSessionAtomic: toAtomic(roomCfg.maxSession, pkDec),
   };
 }
 
@@ -273,24 +283,14 @@ async function getOnChainUsdcBalance(address) {
 }
 
 // Verify passkey stream join: on-chain allowance (primary) + optional approve tx receipt.
-async function verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash) {
+async function verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash, tokenAddress) {
   if (!/^0x[0-9a-fA-F]{40}$/.test(payer || '')) {
     return { ok: false, reason: 'invalid_payer' };
   }
 
-  const readAllowance = async () => {
-    const client = createPublicClient({
-      chain: arcViemChain,
-      transport: http(ARC_RPC_URL)
-    });
-    const raw = await client.readContract({
-      address: USDC_ADDRESS,
-      abi: erc20Abi,
-      functionName: 'allowance',
-      args: [payer, SELLER_WALLET_ADDRESS]
-    });
-    return BigInt(raw);
-  };
+  const readAllowance = async () => readTokenAllowance(
+    tokenAddress, payer, SELLER_WALLET_ADDRESS, ARC_RPC_URL, ARC_CHAIN_ID
+  );
 
   let allowance;
   try {
@@ -299,7 +299,6 @@ async function verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash) {
     return { ok: false, reason: 'allowance_read_failed', message: err.message };
   }
 
-  // UserOp receipt can land before RPC allowance index catches up.
   if (allowance < sessionAtomic && txHash) {
     await new Promise((r) => setTimeout(r, 1500));
     try {
@@ -309,8 +308,8 @@ async function verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash) {
 
   if (allowance < sessionAtomic) {
     console.warn(
-      `[join:passkey] insufficient allowance ${atomicToUsdc(allowance)} USDC `
-      + `(need ${atomicToUsdc(sessionAtomic)}) for ${payer}`
+      `[join:passkey] insufficient allowance for token ${tokenAddress}: `
+      + `${allowance} < ${sessionAtomic} for ${payer}`
     );
     return { ok: false, reason: 'insufficient_allowance', allowance };
   }
@@ -325,14 +324,11 @@ async function verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash) {
       if (!receipt || receipt.status !== 'success') {
         return { ok: false, reason: 'tx_not_success' };
       }
-    } catch {
-      // Allowance is authoritative once confirmed on-chain.
-    }
+    } catch { /* allowance is authoritative */ }
   }
 
   console.log(
-    `[join:passkey] verified allowance ${atomicToUsdc(allowance)} USDC `
-    + `(session cap ${atomicToUsdc(sessionAtomic)}) for ${payer}`
+    `[join:passkey] verified allowance ${allowance} (atomic) on ${tokenAddress} for ${payer}`
   );
   return { ok: true, payer, allowance, amount: allowance, txHash: txHash || null };
 }
@@ -463,6 +459,11 @@ app.get('/api/config', (req, res) => {
     passkeyTickSeconds: cfg.passkeyTickSeconds,
     passkeyTickPrice: cfg.passkeyTickPrice,
     passkeyMeterApproach: PASSKEY_METER_APPROACH,
+    paymentTokenAddress: cfg.paymentTokenAddress,
+    paymentTokenSymbol: cfg.paymentTokenSymbol,
+    paymentTokenDecimals: cfg.paymentTokenDecimals,
+    gatewayTokenSymbol: 'USDC',
+    gatewayNote: 'MetaMask/Gateway path always uses USDC on Arc',
     modularWallets
   });
 });
@@ -614,6 +615,9 @@ function addParticipant(username, meta = {}) {
     passkeyTickSeconds: roomCfg.passkeyTickSeconds,
     passkeyTickPriceAtomic: atomics.passkeyTickPriceAtomic,
     maxSessionAtomic: atomics.maxSessionAtomic,
+    paymentTokenAddress: roomCfg.paymentTokenAddress,
+    paymentTokenSymbol: roomCfg.paymentTokenSymbol,
+    paymentTokenDecimals: roomCfg.paymentTokenDecimals,
     lastMeterAt: 0,
     _tickInFlight: false,
   };
@@ -718,6 +722,9 @@ async function tickPasskeyStreamSeat(seat) {
   if (seat._tickInFlight) return;
   const tickPrice = seat.passkeyTickPriceAtomic ?? PASSKEY_TICK_PRICE_ATOMIC;
   const tickSec = seat.passkeyTickSeconds ?? PASSKEY_TICK_SECONDS;
+  const tokenAddress = seat.paymentTokenAddress || USDC_ADDRESS;
+  const tokenDec = seat.paymentTokenDecimals ?? 6;
+  const tokenSym = seat.paymentTokenSymbol || 'USDC';
   if (seat.remainingAtomic < tickPrice) {
     removeParticipant(seat.id, 'out_of_funds');
     return;
@@ -727,18 +734,17 @@ async function tickPasskeyStreamSeat(seat) {
   try {
     if (sellerWalletClient) {
       const tx = await sellerWalletClient.writeContract({
-        address: USDC_ADDRESS,
+        address: tokenAddress,
         abi: erc20Abi,
         functionName: 'transferFrom',
         args: [seat.viewerAddress, SELLER_WALLET_ADDRESS, tickPrice]
       });
       console.log(
-        `[meter:passkey] seat ${seat.id} (room ${seat.streamRoomId}): `
-        + `pulled ${atomicToUsdc(tickPrice)} USDC (tx ${tx})`
+        `[meter:passkey] seat ${seat.id}: pulled ${fromAtomic(tickPrice, tokenDec)} ${tokenSym} (tx ${tx})`
       );
     } else {
       console.log(
-        `[meter:passkey] seat ${seat.id}: DRY pull ${atomicToUsdc(tickPrice)} USDC (no SELLER_PRIVATE_KEY)`
+        `[meter:passkey] seat ${seat.id}: DRY pull ${fromAtomic(tickPrice, tokenDec)} ${tokenSym}`
       );
     }
 
@@ -747,9 +753,10 @@ async function tickPasskeyStreamSeat(seat) {
       return;
     }
 
-    const payload = streamMeterPayload(seat, tickPrice, tickSec);
-    payload.remaining = atomicToUsdc(seat.remainingAtomic);
-    payload.spent = atomicToUsdc(seat.spentAtomic);
+    const payload = streamMeterPayload(seat, tickPrice, tickSec, tokenDec);
+    payload.remaining = fromAtomic(seat.remainingAtomic, tokenDec);
+    payload.spent = fromAtomic(seat.spentAtomic, tokenDec);
+    payload.tokenSymbol = tokenSym;
     broadcastMeterUpdate(seat, payload);
 
     if (seat.remainingAtomic < tickPrice) {
@@ -859,6 +866,8 @@ function schedulePendingCameraTimeout(seatId) {
 function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
   const tickPrice = roomCfg.passkeyTickPrice;
   const tickSec = roomCfg.passkeyTickSeconds;
+  const dec = roomCfg.paymentTokenDecimals;
+  const sym = roomCfg.paymentTokenSymbol;
   const priceAtomic = seat.passkeyTickPriceAtomic;
   const ticksLeft = priceAtomic > 0n ? Number(seat.remainingAtomic / priceAtomic) : 0;
   return {
@@ -867,16 +876,18 @@ function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
     pushUrl: seat.pushUrl,
     seatId: seat.id,
     roomId: roomCfg.id,
-    remaining: atomicToUsdc(seat.remainingAtomic),
+    remaining: fromAtomic(seat.remainingAtomic, dec),
     tickPrice,
     tickSeconds: tickSec,
     maxSession: roomCfg.maxSession,
     secondsLeft: ticksLeft * tickSec,
     paymentMode: 'passkey_stream',
+    paymentTokenSymbol: sym,
     payment: {
       payer: verified.payer,
       transaction: verified.txHash,
-      allowance: atomicToUsdc(verified.allowance),
+      allowance: fromAtomic(verified.allowance, dec),
+      tokenSymbol: sym,
       network: ARC_NETWORK,
       mode: 'passkey_stream',
       approach: PASSKEY_METER_APPROACH,
@@ -915,24 +926,28 @@ app.post('/api/join/passkey', async (req, res) => {
         });
       }
 
-      let bal;
+      let rawBal;
       try {
-        bal = await getOnChainUsdcBalance(address);
+        rawBal = await readTokenBalance(
+          cfg.paymentTokenAddress, address, ARC_RPC_URL, ARC_CHAIN_ID
+        );
       } catch (err) {
         return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
       }
 
-      const sessionAtomic = bal.availableAtomic < atomics.maxSessionAtomic
-        ? bal.availableAtomic
+      const sessionAtomic = rawBal < atomics.maxSessionAtomic
+        ? rawBal
         : atomics.maxSessionAtomic;
+      const sym = cfg.paymentTokenSymbol;
 
       if (sessionAtomic < atomics.passkeyTickPriceAtomic) {
         return res.status(402).json({
-          error: 'Insufficient USDC balance',
+          error: `Insufficient ${sym} balance`,
           reason: 'insufficient_balance',
-          available: bal.available,
+          available: fromAtomic(rawBal, cfg.paymentTokenDecimals),
           needAtLeast: cfg.passkeyTickPrice,
-          hint: 'Fund your smart account from faucet.circle.com (Arc Testnet).',
+          tokenSymbol: sym,
+          hint: 'Fund your smart account on Arc Testnet.',
           path: 'passkey',
           roomId
         });
@@ -940,16 +955,19 @@ app.post('/api/join/passkey', async (req, res) => {
 
       console.log(
         `[join:passkey] room ${roomId} session terms for ${address}: `
-        + `cap ${atomicToUsdc(sessionAtomic)} USDC, `
-        + `${cfg.passkeyTickPrice} USDC / ${cfg.passkeyTickSeconds}s stream meter`
+        + `cap ${fromAtomic(sessionAtomic, cfg.paymentTokenDecimals)} ${sym}, `
+        + `${cfg.passkeyTickPrice} ${sym} / ${cfg.passkeyTickSeconds}s stream meter`
       );
 
       return res.json({
         needsApprove: true,
         roomId,
-        sessionAmount: atomicToUsdc(sessionAtomic),
+        sessionAmount: fromAtomic(sessionAtomic, cfg.paymentTokenDecimals),
         sessionAmountAtomic: sessionAtomic.toString(),
         payTo: SELLER_WALLET_ADDRESS,
+        paymentTokenAddress: cfg.paymentTokenAddress,
+        paymentTokenSymbol: sym,
+        paymentTokenDecimals: cfg.paymentTokenDecimals,
         tickPrice: cfg.passkeyTickPrice,
         tickSeconds: cfg.passkeyTickSeconds,
         maxSession: cfg.maxSession,
@@ -989,7 +1007,9 @@ app.post('/api/join/passkey', async (req, res) => {
       });
     }
 
-    const verified = await verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash);
+    const verified = await verifyPasskeyStreamAllowance(
+      payer, sessionAtomic, txHash, cfg.paymentTokenAddress
+    );
     if (!verified.ok) {
       return res.status(402).json({
         error: 'Passkey allowance verification failed',
@@ -1082,9 +1102,9 @@ app.post('/api/join', async (req, res) => {
         return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
       }
 
-      const sessionAtomic = bal.availableAtomic < atomics.maxSessionAtomic
+      const sessionAtomic = bal.availableAtomic < atomics.gatewayMaxSessionAtomic
         ? bal.availableAtomic
-        : atomics.maxSessionAtomic;
+        : atomics.gatewayMaxSessionAtomic;
 
       if (sessionAtomic < atomics.tickPriceAtomic) {
         return res.status(402).json({
@@ -1266,6 +1286,8 @@ attachDashboardRoutes(app, {
   dashboardKey: STREAMER_DASHBOARD_KEY,
   dashboardHtmlPath: path.join(__dirname, 'public', 'dashboard.html'),
   baseUrl: BASE_URL,
+  rpcUrl: ARC_RPC_URL,
+  chainId: ARC_CHAIN_ID,
   activeSeats,
   removeParticipant,
   atomicToUsdc,

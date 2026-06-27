@@ -127,6 +127,11 @@
           <label>Max seats (1–3)</label>
           <input id="maxSeats" type="number" min="1" max="3">
         </div>
+        <div style="flex:1;min-width:280px">
+          <label>Passkey payment token (Arc ERC-20)</label>
+          <input id="paymentTokenAddress" type="text" placeholder="0x3600… USDC default">
+          <p class="sub" style="margin-top:4px">MetaMask/Gateway always uses USDC. Custom tokens = passkey path only.</p>
+        </div>
       </div>
       <button type="button" onclick="saveConfig()">Save config</button>
       <button type="button" class="secondary" onclick="startRoom()">Start room</button>
@@ -242,6 +247,11 @@
       document.getElementById('passkeyTickSeconds').value = room.passkeyTickSeconds;
       document.getElementById('maxSession').value = room.maxSession;
       document.getElementById('maxSeats').value = room.maxSeats;
+      document.getElementById('paymentTokenAddress').value = room.paymentTokenAddress || '';
+      if (room.paymentTokenSymbol) {
+        document.getElementById('paymentTokenAddress').title =
+          `${room.paymentTokenSymbol} (${room.paymentTokenDecimals} decimals)`;
+      }
       document.getElementById('joinUrl').textContent = joinUrl;
       document.getElementById('overlayUrl').textContent = overlayUrl;
     }
@@ -285,6 +295,7 @@
           passkeyTickSeconds: Number(document.getElementById('passkeyTickSeconds').value),
           maxSession: document.getElementById('maxSession').value,
           maxSeats: Number(document.getElementById('maxSeats').value),
+          paymentTokenAddress: document.getElementById('paymentTokenAddress').value.trim(),
         }
       };
       const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId), {

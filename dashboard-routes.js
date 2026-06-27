@@ -9,6 +9,7 @@ import {
   setRoomActive,
   normalizeRoomId,
 } from './rooms-store.js';
+import { validatePaymentToken } from './token-utils.js';
 
 export function attachDashboardRoutes(app, deps) {
   const {
@@ -85,10 +86,25 @@ export function attachDashboardRoutes(app, deps) {
     });
   });
 
-  app.put('/api/dashboard/rooms/:roomId', requireDashboardAuth, (req, res) => {
+  app.put('/api/dashboard/rooms/:roomId', requireDashboardAuth, async (req, res) => {
     const id = normalizeRoomId(req.params.roomId);
     if (!id) return res.status(400).json({ error: 'Invalid room id' });
-    const room = updateRoom(id, req.body || {});
+    const body = req.body || {};
+    if (body.config && body.config.paymentTokenAddress) {
+      try {
+        const meta = await validatePaymentToken(
+          body.config.paymentTokenAddress,
+          deps.rpcUrl,
+          deps.chainId
+        );
+        body.config.paymentTokenSymbol = meta.symbol;
+        body.config.paymentTokenDecimals = meta.decimals;
+        console.log(`[dashboard] token ${meta.symbol} (${meta.decimals} dec) @ ${meta.address}`);
+      } catch (err) {
+        return res.status(400).json({ error: 'Invalid payment token', message: err.message });
+      }
+    }
+    const room = updateRoom(id, body);
     if (!room) return res.status(404).json({ error: 'Room not found' });
     console.log(`[dashboard] updated room ${room.id}`);
     res.json({ room });

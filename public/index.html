@@ -481,8 +481,17 @@
       updatePriceDisplay();
     }
 
+    function tokenSymbol() {
+      if (!CONFIG) return 'USDC';
+      if (walletMode === 'passkey' && CONFIG.paymentTokenSymbol) {
+        return CONFIG.paymentTokenSymbol;
+      }
+      return CONFIG.gatewayTokenSymbol || 'USDC';
+    }
+
     function updatePriceDisplay() {
       if (!CONFIG) return;
+      const sym = tokenSymbol();
       const amt = document.getElementById('priceAmount');
       const lbl = document.getElementById('priceLabel');
       const tickPrice = walletMode === 'passkey'
@@ -491,11 +500,11 @@
       const tickSec = walletMode === 'passkey'
         ? (CONFIG.passkeyTickSeconds || CONFIG.tickSeconds)
         : CONFIG.tickSeconds;
-      if (amt) amt.textContent = `${tickPrice} USDC`;
+      if (amt) amt.textContent = `${tickPrice} ${sym}`;
       if (lbl) {
         lbl.textContent = walletMode === 'passkey'
-          ? `passkey stream · ${tickPrice} USDC/s · cap ${CONFIG.maxSession} USDC`
-          : `pay-as-you-watch · per ${tickSec}s · up to ${CONFIG.maxSession} USDC/session`;
+          ? `passkey stream · ${tickPrice} ${sym}/s · cap ${CONFIG.maxSession} ${sym}`
+          : `Gateway · ${tickPrice} USDC / ${tickSec}s · cap ${CONFIG.maxSession} USDC`;
       }
     }
 
@@ -507,10 +516,11 @@
     }
 
     function showMeter(remaining, spent, secondsLeft) {
+      const sym = tokenSymbol();
       const box = document.getElementById('meter');
       box.classList.add('show');
-      document.getElementById('meterRemaining').textContent = `${remaining} USDC`;
-      document.getElementById('meterSpent').textContent = `${spent} USDC`;
+      document.getElementById('meterRemaining').textContent = `${remaining} ${sym}`;
+      document.getElementById('meterSpent').textContent = `${spent} ${sym}`;
       document.getElementById('meterTime').textContent = formatTimeLeft(secondsLeft);
     }
 
@@ -965,7 +975,8 @@
       btn.textContent = '⏳ Passkey authorize (one prompt)…';
       const payment = await PW.authorizeSessionGasless(
         terms.sessionAmountAtomic,
-        terms.payTo
+        terms.payTo,
+        terms.paymentTokenAddress
       );
 
       btn.textContent = '⏳ Confirming seat…';
