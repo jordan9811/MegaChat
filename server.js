@@ -13,6 +13,12 @@ import {
   applyStreamTick,
   streamMeterPayload,
 } from './passkey-meter.js';
+import {
+  resolveRoomConfig,
+  normalizeRoomId,
+  DEFAULT_ROOM_ID,
+} from './rooms-store.js';
+import { attachDashboardRoutes } from './dashboard-routes.js';
 import { createWalletClient, createPublicClient, http, erc20Abi, decodeEventLog } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
@@ -80,6 +86,9 @@ const PASSKEY_TICK_PRICE = process.env.PASSKEY_TICK_PRICE || '0.001';
 // one upfront approve userOp + seller transferFrom each tick (silent after join).
 const PASSKEY_METER_APPROACH = 'B';
 
+// Streamer dashboard demo auth (secrets stay in .env).
+const STREAMER_DASHBOARD_KEY = process.env.STREAMER_DASHBOARD_KEY || 'changeme';
+
 // USDC has 6 decimals. Convert a decimal USDC string to atomic units (BigInt).
 function usdcToAtomic(amountStr) {
   const [whole, frac = ''] = String(amountStr).split('.');
@@ -97,6 +106,23 @@ function atomicToUsdc(atomic) {
 const TICK_PRICE_ATOMIC = usdcToAtomic(TICK_PRICE);
 const PASSKEY_TICK_PRICE_ATOMIC = usdcToAtomic(PASSKEY_TICK_PRICE);
 const MAX_SESSION_ATOMIC = usdcToAtomic(MAX_SESSION);
+
+function roomAtomics(roomCfg) {
+  return {
+    tickPriceAtomic: usdcToAtomic(roomCfg.tickPrice),
+    passkeyTickPriceAtomic: usdcToAtomic(roomCfg.passkeyTickPrice),
+    maxSessionAtomic: usdcToAtomic(roomCfg.maxSession),
+  };
+}
+
+function resolveRoomFromRequest(body, query) {
+  const raw = (body && body.room != null) ? body.room : (query && query.room);
+  const roomId = normalizeRoomId(raw);
+  if (!roomId) return { error: 'invalid_room_id' };
+  const cfg = resolveRoomConfig(roomId);
+  if (!cfg) return { error: 'room_not_found', roomId };
+  return { roomId, cfg, atomics: roomAtomics(cfg) };
+}
 
 // Circle Gateway facilitator client — verifies + settles the signed authorization.
 const facilitator = new BatchFacilitatorClient({ url: FACILITATOR_URL });
@@ -401,6 +427,14 @@ app.use(express.static('public', {
 
 // Expose the Arc / Gateway config the frontend needs to build payments.
 app.get('/api/config', (req, res) => {
+  const resolved = resolveRoomFromRequest(null, req.query);
+  if (resolved.error === 'invalid_room_id') {
+    return res.status(400).json({ error: 'Invalid room id' });
+  }
+  if (resolved.error === 'room_not_found') {
+    return res.status(404).json({ error: 'Room not found', roomId: resolved.roomId });
+  }
+  const { roomId, cfg } = resolved;
   const modularWallets = (CIRCLE_CLIENT_KEY && CIRCLE_CLIENT_URL)
     ? {
         clientKey: CIRCLE_CLIENT_KEY,
@@ -409,6 +443,9 @@ app.get('/api/config', (req, res) => {
       }
     : null;
   res.json({
+    roomId,
+    roomName: cfg.name,
+    roomActive: cfg.active,
     chainId: ARC_CHAIN_ID,
     chainIdHex: '0x' + ARC_CHAIN_ID.toString(16),
     network: ARC_NETWORK,
@@ -419,11 +456,12 @@ app.get('/api/config', (req, res) => {
     explorerUrl: EXPLORER_URL,
     sellerAddress: SELLER_WALLET_ADDRESS,
     seatPrice: SEAT_PRICE,
-    tickSeconds: TICK_SECONDS,
-    tickPrice: TICK_PRICE,
-    maxSession: MAX_SESSION,
-    passkeyTickSeconds: PASSKEY_TICK_SECONDS,
-    passkeyTickPrice: PASSKEY_TICK_PRICE,
+    tickSeconds: cfg.tickSeconds,
+    tickPrice: cfg.tickPrice,
+    maxSession: cfg.maxSession,
+    maxSeats: cfg.maxSeats,
+    passkeyTickSeconds: cfg.passkeyTickSeconds,
+    passkeyTickPrice: cfg.passkeyTickPrice,
     passkeyMeterApproach: PASSKEY_METER_APPROACH,
     modularWallets
   });
@@ -437,23 +475,34 @@ app.get('/api/balance/:address', async (req, res) => {
   if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) {
     return res.status(400).json({ error: 'Invalid address' });
   }
+  const resolved = resolveRoomFromRequest(null, req.query);
+  if (resolved.error) {
+    return res.status(resolved.error === 'room_not_found' ? 404 : 400).json({
+      error: resolved.error === 'room_not_found' ? 'Room not found' : 'Invalid room id',
+      roomId: resolved.roomId
+    });
+  }
+  const { cfg, atomics } = resolved;
   const passkeyMode = req.get('x-wallet-mode') === 'passkey'
     || req.query.mode === 'passkey';
+  const minTick = passkeyMode ? atomics.passkeyTickPriceAtomic : atomics.tickPriceAtomic;
   try {
     const bal = passkeyMode
       ? await getOnChainUsdcBalance(address)
       : await getGatewayBalance(address);
-    const spendableAtomic = bal.availableAtomic < MAX_SESSION_ATOMIC
+    const spendableAtomic = bal.availableAtomic < atomics.maxSessionAtomic
       ? bal.availableAtomic
-      : MAX_SESSION_ATOMIC;
+      : atomics.maxSessionAtomic;
     return res.json({
       address,
+      roomId: cfg.id,
       available: bal.available,
       pending: bal.pending,
       hasRecord: bal.hasRecord,
       spendable: atomicToUsdc(spendableAtomic),
-      maxSession: MAX_SESSION,
-      canJoin: spendableAtomic >= TICK_PRICE_ATOMIC,
+      maxSession: cfg.maxSession,
+      canJoin: spendableAtomic >= minTick && cfg.active,
+      roomActive: cfg.active,
       source: passkeyMode ? 'onchain' : 'gateway'
     });
   } catch (err) {
@@ -465,17 +514,10 @@ app.get('/api/balance/:address', async (req, res) => {
 // Each seat has: { id, username, roomId, pushUrl, viewUrl, joinedAt, expiresAt,
 //                  spentAtomic, remainingAtomic, payer, depositTx }
 const activeSeats = new Map();
-const MAX_SEATS = 6;
-// Estimated max session length (ms) for the overlay countdown, derived from the
-// prepaid cap. The real cutoff is the meter (remaining balance), not a fixed timer.
-const SESSION_TICKS = TICK_PRICE_ATOMIC > 0n
-  ? Number(MAX_SESSION_ATOMIC / TICK_PRICE_ATOMIC)
-  : 0;
-const ESTIMATED_SESSION_MS = SESSION_TICKS * TICK_SECONDS * 1000;
 
 // Generate VDO.Ninja room
 function generateVDORoom(username) {
-  const roomId = randomUUID().slice(0, 8); // Short room ID
+  const roomId = randomUUID().slice(0, 8); // Short stream id (not dashboard room)
 
   return {
     roomId,
@@ -484,39 +526,80 @@ function generateVDORoom(username) {
   };
 }
 
-// Broadcast to all connected clients
+function broadcastToRoom(streamRoomId, message) {
+  const target = streamRoomId || DEFAULT_ROOM_ID;
+  wss.clients.forEach((client) => {
+    if (client.readyState !== 1) return;
+    const sub = client.__streamRoomId || DEFAULT_ROOM_ID;
+    if (sub !== target) return;
+    client.send(JSON.stringify(message));
+  });
+}
+
+function broadcastMeterUpdate(seat, payload) {
+  const msg = { type: 'meter_update', ...payload };
+  if (seat.ownerWs && seat.ownerWs.readyState === 1) {
+    seat.ownerWs.send(JSON.stringify(msg));
+  }
+  broadcastToRoom(seat.streamRoomId, msg);
+}
+
+function sendInitialState(ws) {
+  const roomId = ws.__streamRoomId || DEFAULT_ROOM_ID;
+  ws.send(JSON.stringify({
+    type: 'initial_state',
+    room: roomId,
+    seats: Array.from(activeSeats.values()).filter((s) => s.live && s.streamRoomId === roomId).map((s) => ({
+      id: s.id,
+      username: s.username,
+      viewUrl: s.viewUrl,
+      expiresAt: s.expiresAt
+    }))
+  }));
+}
+
+// Legacy alias — prefer broadcastToRoom for seat events.
 function broadcast(message) {
-  wss.clients.forEach(client => {
-    if (client.readyState === 1) {
-      client.send(JSON.stringify(message));
-    }
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) client.send(JSON.stringify(message));
   });
 }
 
 // Add participant (Pass B: metered, no fixed timer).
 // `meta` carries the prepaid session balance signed by the viewer.
 function addParticipant(username, meta = {}) {
-  if (activeSeats.size >= MAX_SEATS) {
+  const streamRoomId = meta.streamRoomId || DEFAULT_ROOM_ID;
+  const roomCfg = resolveRoomConfig(streamRoomId);
+  if (!roomCfg) {
+    return { success: false, reason: 'room_not_found' };
+  }
+  if (!roomCfg.active) {
+    return { success: false, reason: 'room_stopped' };
+  }
+
+  const roomSeatCount = [...activeSeats.values()]
+    .filter((s) => s.streamRoomId === streamRoomId).length;
+  if (roomSeatCount >= roomCfg.maxSeats) {
     return { success: false, reason: 'no_seats_available' };
   }
 
+  const atomics = roomAtomics(roomCfg);
   const seatId = randomUUID();
   const vdoRoom = generateVDORoom(username);
   const now = Date.now();
-  const remainingAtomic = meta.remainingAtomic ?? MAX_SESSION_ATOMIC;
+  const remainingAtomic = meta.remainingAtomic ?? atomics.maxSessionAtomic;
 
   const seat = {
     id: seatId,
     username,
+    streamRoomId,
     roomId: vdoRoom.roomId,
     pushUrl: vdoRoom.pushUrl,
     viewUrl: vdoRoom.viewUrl,
     joinedAt: now,
-    // 'live' gates everything: a tile is only shown, and the meter only ticks,
-    // once the joiner signals camera_ready (see activateSeatLive).
     live: false,
     liveAt: null,
-    expiresAt: 0, // set when the camera goes live
+    expiresAt: 0,
     spentAtomic: 0n,
     remainingAtomic,
     payer: meta.payer || null,
@@ -524,9 +607,14 @@ function addParticipant(username, meta = {}) {
     depositTx: meta.depositTx || null,
     refunded: false,
     ownerWs: null,
-    // 'gateway' = MetaMask prepaid block; 'passkey_stream' = approve + per-tick pull
     paymentMode: meta.paymentMode || 'gateway',
     sessionCapAtomic: meta.sessionCapAtomic ?? remainingAtomic,
+    gatewayTickSeconds: roomCfg.tickSeconds,
+    gatewayTickPriceAtomic: atomics.tickPriceAtomic,
+    passkeyTickSeconds: roomCfg.passkeyTickSeconds,
+    passkeyTickPriceAtomic: atomics.passkeyTickPriceAtomic,
+    maxSessionAtomic: atomics.maxSessionAtomic,
+    lastMeterAt: 0,
     _tickInFlight: false,
   };
 
@@ -549,18 +637,17 @@ function activateSeatLive(seatId, ws) {
   if (ws) { ws.__seatId = seatId; seat.ownerWs = ws; }
 
   const tickPrice = seat.paymentMode === 'passkey_stream'
-    ? PASSKEY_TICK_PRICE_ATOMIC
-    : TICK_PRICE_ATOMIC;
+    ? seat.passkeyTickPriceAtomic
+    : seat.gatewayTickPriceAtomic;
   const tickSec = seat.paymentMode === 'passkey_stream'
-    ? PASSKEY_TICK_SECONDS
-    : TICK_SECONDS;
+    ? seat.passkeyTickSeconds
+    : seat.gatewayTickSeconds;
   const ticksLeft = tickPrice > 0n
     ? Number(seat.remainingAtomic / tickPrice)
     : 0;
-  // Overlay countdown estimate; the meter is the real cutoff. Starts NOW (live).
   seat.expiresAt = Date.now() + ticksLeft * tickSec * 1000;
 
-  broadcast({
+  broadcastToRoom(seat.streamRoomId, {
     type: 'seat_added',
     seat: {
       id: seat.id,
@@ -570,7 +657,10 @@ function activateSeatLive(seatId, ws) {
     }
   });
   const modeLabel = seat.paymentMode === 'passkey_stream' ? 'stream meter' : 'prepaid meter';
-  console.log(`[seat] ${seat.id}: camera live — ${modeLabel} started (${atomicToUsdc(seat.remainingAtomic)} USDC cap)`);
+  console.log(
+    `[seat] ${seat.id} (room ${seat.streamRoomId}): camera live — ${modeLabel} `
+    + `(${atomicToUsdc(seat.remainingAtomic)} USDC cap)`
+  );
   return true;
 }
 
@@ -582,8 +672,7 @@ function removeParticipant(seatId, reason = 'left') {
 
   activeSeats.delete(seatId);
 
-  // Broadcast removal (tile disappears instantly for everyone).
-  broadcast({
+  broadcastToRoom(seat.streamRoomId, {
     type: 'seat_removed',
     seatId,
     reason
@@ -597,21 +686,20 @@ function removeParticipant(seatId, reason = 'left') {
 
 // ─── Pass B meter (MetaMask/Gateway prepaid block) ─────────────────────────
 function tickPrepaidSeat(seat) {
-  if (seat.remainingAtomic < TICK_PRICE_ATOMIC) {
+  const tickPrice = seat.gatewayTickPriceAtomic ?? TICK_PRICE_ATOMIC;
+  const tickSec = seat.gatewayTickSeconds ?? TICK_SECONDS;
+  if (seat.remainingAtomic < tickPrice) {
     removeParticipant(seat.id, 'out_of_funds');
     return;
   }
 
-  seat.remainingAtomic -= TICK_PRICE_ATOMIC;
-  seat.spentAtomic += TICK_PRICE_ATOMIC;
+  seat.remainingAtomic -= tickPrice;
+  seat.spentAtomic += tickPrice;
 
-  const ticksLeft = TICK_PRICE_ATOMIC > 0n
-    ? Number(seat.remainingAtomic / TICK_PRICE_ATOMIC)
-    : 0;
-  const secondsLeft = ticksLeft * TICK_SECONDS;
+  const ticksLeft = tickPrice > 0n ? Number(seat.remainingAtomic / tickPrice) : 0;
+  const secondsLeft = ticksLeft * tickSec;
 
-  broadcast({
-    type: 'meter_update',
+  broadcastMeterUpdate(seat, {
     seatId: seat.id,
     remaining: atomicToUsdc(seat.remainingAtomic),
     spent: atomicToUsdc(seat.spentAtomic),
@@ -620,7 +708,7 @@ function tickPrepaidSeat(seat) {
     mode: 'gateway'
   });
 
-  if (seat.remainingAtomic < TICK_PRICE_ATOMIC) {
+  if (seat.remainingAtomic < tickPrice) {
     removeParticipant(seat.id, 'out_of_funds');
   }
 }
@@ -628,7 +716,9 @@ function tickPrepaidSeat(seat) {
 // ─── Phase 2 passkey stream meter: on-chain transferFrom each tick ─────────
 async function tickPasskeyStreamSeat(seat) {
   if (seat._tickInFlight) return;
-  if (seat.remainingAtomic < PASSKEY_TICK_PRICE_ATOMIC) {
+  const tickPrice = seat.passkeyTickPriceAtomic ?? PASSKEY_TICK_PRICE_ATOMIC;
+  const tickSec = seat.passkeyTickSeconds ?? PASSKEY_TICK_SECONDS;
+  if (seat.remainingAtomic < tickPrice) {
     removeParticipant(seat.id, 'out_of_funds');
     return;
   }
@@ -640,28 +730,29 @@ async function tickPasskeyStreamSeat(seat) {
         address: USDC_ADDRESS,
         abi: erc20Abi,
         functionName: 'transferFrom',
-        args: [seat.viewerAddress, SELLER_WALLET_ADDRESS, PASSKEY_TICK_PRICE_ATOMIC]
+        args: [seat.viewerAddress, SELLER_WALLET_ADDRESS, tickPrice]
       });
       console.log(
-        `[meter:passkey] seat ${seat.id}: pulled ${atomicToUsdc(PASSKEY_TICK_PRICE_ATOMIC)} USDC (tx ${tx})`
+        `[meter:passkey] seat ${seat.id} (room ${seat.streamRoomId}): `
+        + `pulled ${atomicToUsdc(tickPrice)} USDC (tx ${tx})`
       );
     } else {
       console.log(
-        `[meter:passkey] seat ${seat.id}: DRY pull ${atomicToUsdc(PASSKEY_TICK_PRICE_ATOMIC)} USDC (no SELLER_PRIVATE_KEY)`
+        `[meter:passkey] seat ${seat.id}: DRY pull ${atomicToUsdc(tickPrice)} USDC (no SELLER_PRIVATE_KEY)`
       );
     }
 
-    if (!applyStreamTick(seat, PASSKEY_TICK_PRICE_ATOMIC)) {
+    if (!applyStreamTick(seat, tickPrice)) {
       removeParticipant(seat.id, 'out_of_funds');
       return;
     }
 
-    const payload = streamMeterPayload(seat, PASSKEY_TICK_PRICE_ATOMIC, PASSKEY_TICK_SECONDS);
+    const payload = streamMeterPayload(seat, tickPrice, tickSec);
     payload.remaining = atomicToUsdc(seat.remainingAtomic);
     payload.spent = atomicToUsdc(seat.spentAtomic);
-    broadcast({ type: 'meter_update', ...payload });
+    broadcastMeterUpdate(seat, payload);
 
-    if (seat.remainingAtomic < PASSKEY_TICK_PRICE_ATOMIC) {
+    if (seat.remainingAtomic < tickPrice) {
       removeParticipant(seat.id, 'out_of_funds');
     }
   } catch (err) {
@@ -672,65 +763,56 @@ async function tickPasskeyStreamSeat(seat) {
   }
 }
 
-function tickMeterGateway() {
+function tickAllMeters() {
+  const now = Date.now();
   for (const seat of activeSeats.values()) {
     if (!seat.live) continue;
-    if (seat.paymentMode === 'passkey_stream') continue;
-    tickPrepaidSeat(seat);
+    if (seat.paymentMode === 'passkey_stream') {
+      const interval = (seat.passkeyTickSeconds ?? PASSKEY_TICK_SECONDS) * 1000;
+      if (now - (seat.lastMeterAt || 0) < interval) continue;
+      tickPasskeyStreamSeat(seat)
+        .then(() => { seat.lastMeterAt = now; })
+        .catch((e) => console.error(`[meter:passkey] seat ${seat.id} unexpected:`, e));
+    } else {
+      const interval = (seat.gatewayTickSeconds ?? TICK_SECONDS) * 1000;
+      if (now - (seat.lastMeterAt || 0) < interval) continue;
+      tickPrepaidSeat(seat);
+      seat.lastMeterAt = now;
+    }
   }
 }
 
-function tickMeterPasskey() {
-  for (const seat of activeSeats.values()) {
-    if (!seat.live) continue;
-    if (seat.paymentMode !== 'passkey_stream') continue;
-    tickPasskeyStreamSeat(seat).catch((e) =>
-      console.error(`[meter:passkey] seat ${seat.id} unexpected:`, e)
-    );
-  }
-}
-
-const gatewayMeterInterval = setInterval(tickMeterGateway, TICK_SECONDS * 1000);
-const passkeyMeterInterval = setInterval(tickMeterPasskey, PASSKEY_TICK_SECONDS * 1000);
-if (typeof gatewayMeterInterval.unref === 'function') gatewayMeterInterval.unref();
-if (typeof passkeyMeterInterval.unref === 'function') passkeyMeterInterval.unref();
+const meterInterval = setInterval(tickAllMeters, 1000);
+if (typeof meterInterval.unref === 'function') meterInterval.unref();
 
 // WebSocket connection
 wss.on('connection', (ws) => {
   console.log('Client connected');
+  ws.__streamRoomId = DEFAULT_ROOM_ID;
 
-  // Send current state — only LIVE seats render on the overlay.
-  ws.send(JSON.stringify({
-    type: 'initial_state',
-    seats: Array.from(activeSeats.values()).filter(s => s.live).map(s => ({
-      id: s.id,
-      username: s.username,
-      viewUrl: s.viewUrl,
-      expiresAt: s.expiresAt
-    }))
-  }));
-
-  // Seat lifecycle messages from a joiner's page.
   ws.on('message', (data) => {
     let msg;
     try { msg = JSON.parse(data.toString()); } catch { return; }
 
+    if (msg.type === 'subscribe_room' && typeof msg.room === 'string') {
+      const roomId = normalizeRoomId(msg.room);
+      if (roomId && resolveRoomConfig(roomId)) {
+        ws.__streamRoomId = roomId;
+        sendInitialState(ws);
+      }
+      return;
+    }
+
     if (msg.type === 'register_seat' && typeof msg.seatId === 'string') {
-      // Bind this socket to the seat so a tab close instantly frees + refunds it,
-      // even if the camera never went live.
       const seat = activeSeats.get(msg.seatId);
       if (seat) { ws.__seatId = msg.seatId; seat.ownerWs = ws; }
     } else if (msg.type === 'camera_ready' && typeof msg.seatId === 'string') {
-      // Camera approved + publishing -> show the tile and start the meter.
       activateSeatLive(msg.seatId, ws);
     }
-    // rewards_* messages are handled by the rewards.js connection listener.
   });
 
   ws.on('close', () => {
     console.log('Client disconnected');
-    // If this socket owned a seat, remove it the moment the viewer drops —
-    // stops the meter and refunds the unused balance immediately.
     if (ws.__seatId && activeSeats.has(ws.__seatId)) {
       console.log(`[seat] ${ws.__seatId}: owner disconnected — removing + refunding`);
       removeParticipant(ws.__seatId, 'disconnected');
@@ -774,20 +856,22 @@ function schedulePendingCameraTimeout(seatId) {
   }, PENDING_CAMERA_TIMEOUT_MS);
 }
 
-function passkeyJoinSuccessResponse(seat, verified) {
-  const ticksLeft = PASSKEY_TICK_PRICE_ATOMIC > 0n
-    ? Number(seat.remainingAtomic / PASSKEY_TICK_PRICE_ATOMIC)
-    : 0;
+function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
+  const tickPrice = roomCfg.passkeyTickPrice;
+  const tickSec = roomCfg.passkeyTickSeconds;
+  const priceAtomic = seat.passkeyTickPriceAtomic;
+  const ticksLeft = priceAtomic > 0n ? Number(seat.remainingAtomic / priceAtomic) : 0;
   return {
     success: true,
     message: 'Seat assigned! Open this link to go live:',
     pushUrl: seat.pushUrl,
     seatId: seat.id,
+    roomId: roomCfg.id,
     remaining: atomicToUsdc(seat.remainingAtomic),
-    tickPrice: PASSKEY_TICK_PRICE,
-    tickSeconds: PASSKEY_TICK_SECONDS,
-    maxSession: MAX_SESSION,
-    secondsLeft: ticksLeft * PASSKEY_TICK_SECONDS,
+    tickPrice,
+    tickSeconds: tickSec,
+    maxSession: roomCfg.maxSession,
+    secondsLeft: ticksLeft * tickSec,
     paymentMode: 'passkey_stream',
     payment: {
       payer: verified.payer,
@@ -811,10 +895,26 @@ app.post('/api/join/passkey', async (req, res) => {
       return res.status(400).json({ error: 'Smart account address required' });
     }
 
+    const resolved = resolveRoomFromRequest(req.body, req.query);
+    if (resolved.error === 'invalid_room_id') {
+      return res.status(400).json({ error: 'Invalid room id' });
+    }
+    if (resolved.error === 'room_not_found') {
+      return res.status(404).json({ error: 'Room not found', roomId: resolved.roomId });
+    }
+    const { roomId, cfg, atomics } = resolved;
+
     const modularPaymentHeader = req.headers['x-modular-payment'];
 
-    // Step 1 — session terms (on-chain balance only; no Gateway 402).
     if (!modularPaymentHeader) {
+      if (!cfg.active) {
+        return res.status(403).json({
+          error: 'Room is not accepting joins',
+          reason: 'room_stopped',
+          roomId
+        });
+      }
+
       let bal;
       try {
         bal = await getOnChainUsdcBalance(address);
@@ -822,41 +922,46 @@ app.post('/api/join/passkey', async (req, res) => {
         return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
       }
 
-      const sessionAtomic = bal.availableAtomic < MAX_SESSION_ATOMIC
+      const sessionAtomic = bal.availableAtomic < atomics.maxSessionAtomic
         ? bal.availableAtomic
-        : MAX_SESSION_ATOMIC;
+        : atomics.maxSessionAtomic;
 
-      if (sessionAtomic < PASSKEY_TICK_PRICE_ATOMIC) {
+      if (sessionAtomic < atomics.passkeyTickPriceAtomic) {
         return res.status(402).json({
           error: 'Insufficient USDC balance',
           reason: 'insufficient_balance',
           available: bal.available,
-          needAtLeast: PASSKEY_TICK_PRICE,
+          needAtLeast: cfg.passkeyTickPrice,
           hint: 'Fund your smart account from faucet.circle.com (Arc Testnet).',
-          path: 'passkey'
+          path: 'passkey',
+          roomId
         });
       }
 
       console.log(
-        `[join:passkey] session terms for ${address}: `
+        `[join:passkey] room ${roomId} session terms for ${address}: `
         + `cap ${atomicToUsdc(sessionAtomic)} USDC, `
-        + `${PASSKEY_TICK_PRICE} USDC / ${PASSKEY_TICK_SECONDS}s stream meter`
+        + `${cfg.passkeyTickPrice} USDC / ${cfg.passkeyTickSeconds}s stream meter`
       );
 
       return res.json({
         needsApprove: true,
+        roomId,
         sessionAmount: atomicToUsdc(sessionAtomic),
         sessionAmountAtomic: sessionAtomic.toString(),
         payTo: SELLER_WALLET_ADDRESS,
-        tickPrice: PASSKEY_TICK_PRICE,
-        tickSeconds: PASSKEY_TICK_SECONDS,
-        maxSession: MAX_SESSION,
+        tickPrice: cfg.passkeyTickPrice,
+        tickSeconds: cfg.passkeyTickSeconds,
+        maxSession: cfg.maxSession,
         meterApproach: PASSKEY_METER_APPROACH,
         path: 'passkey'
       });
     }
 
-    // Step 2 — approve confirmed client-side; verify allowance and admit.
+    if (!cfg.active) {
+      return res.status(403).json({ error: 'Room is not accepting joins', reason: 'room_stopped', roomId });
+    }
+
     let modPay;
     try {
       modPay = b64decodeJson(modularPaymentHeader);
@@ -876,11 +981,11 @@ app.post('/api/join/passkey', async (req, res) => {
     if (sessionAtomic <= 0n) {
       return res.status(400).json({ error: 'Modular payment has no session cap' });
     }
-    if (sessionAtomic > MAX_SESSION_ATOMIC) {
+    if (sessionAtomic > atomics.maxSessionAtomic) {
       return res.status(400).json({
         error: 'Session cap exceeds max',
         reason: 'over_cap',
-        maxSession: MAX_SESSION
+        maxSession: cfg.maxSession
       });
     }
 
@@ -889,7 +994,8 @@ app.post('/api/join/passkey', async (req, res) => {
       return res.status(402).json({
         error: 'Passkey allowance verification failed',
         reason: verified.reason,
-        path: 'passkey'
+        path: 'passkey',
+        roomId
       });
     }
 
@@ -900,18 +1006,21 @@ app.post('/api/join/passkey', async (req, res) => {
       depositTx: verified.txHash,
       paymentMode: 'passkey_stream',
       sessionCapAtomic: sessionAtomic,
+      streamRoomId: roomId,
     });
 
     if (!result.success) {
-      return res.status(409).json({
-        error: 'No seats available',
-        reason: result.reason
+      const status = result.reason === 'room_stopped' ? 403 : 409;
+      return res.status(status).json({
+        error: result.reason === 'room_stopped' ? 'Room is not accepting joins' : 'No seats available',
+        reason: result.reason,
+        roomId
       });
     }
 
     schedulePendingCameraTimeout(result.seat.id);
-    console.log(`[join:passkey] admitted seat ${result.seat.id} for ${username} (${payer})`);
-    return res.json(passkeyJoinSuccessResponse(result.seat, verified));
+    console.log(`[join:passkey] room ${roomId} admitted seat ${result.seat.id} for ${username} (${payer})`);
+    return res.json(passkeyJoinSuccessResponse(result.seat, verified, cfg));
   } catch (error) {
     console.error('[join:passkey] error:', error);
     if (!res.headersSent) {
@@ -936,6 +1045,15 @@ app.post('/api/join', async (req, res) => {
       });
     }
 
+    const resolved = resolveRoomFromRequest(req.body, req.query);
+    if (resolved.error === 'invalid_room_id') {
+      return res.status(400).json({ error: 'Invalid room id' });
+    }
+    if (resolved.error === 'room_not_found') {
+      return res.status(404).json({ error: 'Room not found', roomId: resolved.roomId });
+    }
+    const { roomId, cfg, atomics } = resolved;
+
     const paymentHeader = req.headers['payment-signature'];
 
     let kind;
@@ -945,8 +1063,14 @@ app.post('/api/join', async (req, res) => {
       return res.status(503).json({ error: 'Gateway unavailable', message: err.message });
     }
 
-    // Step 1 — no payment yet: read balance and emit 402 for the spendable session.
     if (!paymentHeader) {
+      if (!cfg.active) {
+        return res.status(403).json({
+          error: 'Room is not accepting joins',
+          reason: 'room_stopped',
+          roomId
+        });
+      }
       if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) {
         return res.status(400).json({ error: 'Wallet address required to price the session' });
       }
@@ -958,21 +1082,22 @@ app.post('/api/join', async (req, res) => {
         return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
       }
 
-      const sessionAtomic = bal.availableAtomic < MAX_SESSION_ATOMIC
+      const sessionAtomic = bal.availableAtomic < atomics.maxSessionAtomic
         ? bal.availableAtomic
-        : MAX_SESSION_ATOMIC;
+        : atomics.maxSessionAtomic;
 
-      if (sessionAtomic < TICK_PRICE_ATOMIC) {
+      if (sessionAtomic < atomics.tickPriceAtomic) {
         return res.status(402).json({
           error: 'Insufficient Gateway balance',
           reason: 'insufficient_balance',
           available: bal.available,
           pending: bal.pending,
-          needAtLeast: TICK_PRICE,
+          needAtLeast: cfg.tickPrice,
           hint: bal.hasRecord
             ? 'Deposit more USDC into the Gateway to watch.'
             : 'No finalized Gateway balance yet — your deposit may still be finalizing.',
-          path: 'gateway'
+          path: 'gateway',
+          roomId
         });
       }
 
@@ -981,7 +1106,7 @@ app.post('/api/join', async (req, res) => {
         x402Version: 2,
         resource: {
           url: '/api/join',
-          description: `Co-stream seat — prepaid ${atomicToUsdc(sessionAtomic)} USDC, metered ${TICK_PRICE} USDC / ${TICK_SECONDS}s`,
+          description: `Co-stream seat — prepaid ${atomicToUsdc(sessionAtomic)} USDC, metered ${cfg.tickPrice} USDC / ${cfg.tickSeconds}s`,
           mimeType: 'application/json'
         },
         accepts: [requirements]
@@ -989,22 +1114,25 @@ app.post('/api/join', async (req, res) => {
       res.statusCode = 402;
       res.setHeader('PAYMENT-REQUIRED', b64encodeJson(paymentRequired));
       res.setHeader('Content-Type', 'application/json');
-      console.log(`[join:gateway] 402 session terms for ${address}: ${atomicToUsdc(sessionAtomic)} USDC cap`);
+      console.log(`[join:gateway] room ${roomId} 402 session terms for ${address}: ${atomicToUsdc(sessionAtomic)} USDC cap`);
       return res.end(JSON.stringify({
         sessionAmount: atomicToUsdc(sessionAtomic),
         sessionAmountAtomic: sessionAtomic.toString(),
         payTo: SELLER_WALLET_ADDRESS,
+        roomId,
         walletMode: 'metamask',
-        tickPrice: TICK_PRICE,
-        tickSeconds: TICK_SECONDS,
+        tickPrice: cfg.tickPrice,
+        tickSeconds: cfg.tickSeconds,
+        maxSession: cfg.maxSession,
         meterApproach: 'gateway_prepaid',
         path: 'gateway'
       }));
     }
 
-    // Step 2 — verify + settle the signed authorization. The settled amount is
-    // exactly what the viewer signed (their available balance, capped at the
-    // session max), so the requirements we verify against must use that value.
+    if (!cfg.active) {
+      return res.status(403).json({ error: 'Room is not accepting joins', reason: 'room_stopped', roomId });
+    }
+
     let paymentPayload;
     try {
       paymentPayload = b64decodeJson(paymentHeader);
@@ -1021,11 +1149,11 @@ app.post('/api/join', async (req, res) => {
     if (sessionAtomic <= 0n) {
       return res.status(400).json({ error: 'Signed authorization has no value' });
     }
-    if (sessionAtomic > MAX_SESSION_ATOMIC) {
+    if (sessionAtomic > atomics.maxSessionAtomic) {
       return res.status(400).json({
         error: 'Authorization exceeds session cap',
         reason: 'over_cap',
-        maxSession: MAX_SESSION
+        maxSession: cfg.maxSession
       });
     }
 
@@ -1039,7 +1167,6 @@ app.post('/api/join', async (req, res) => {
       });
     }
 
-    // Settle the prepaid session once (Circle Gateway batch-settles on Arc).
     const settle = await facilitator.settle(paymentPayload, requirements);
     if (!settle.success) {
       return res.status(402).json({
@@ -1054,35 +1181,37 @@ app.post('/api/join', async (req, res) => {
       viewerAddress: (address && /^0x[0-9a-fA-F]{40}$/.test(address))
         ? address
         : (settle.payer || verify.payer || null),
-      depositTx: settle.transaction || null
+      depositTx: settle.transaction || null,
+      streamRoomId: roomId,
     });
 
     if (!result.success) {
-      return res.status(409).json({
-        error: 'No seats available',
-        reason: result.reason
+      const status = result.reason === 'room_stopped' ? 403 : 409;
+      return res.status(status).json({
+        error: result.reason === 'room_stopped' ? 'Room is not accepting joins' : 'No seats available',
+        reason: result.reason,
+        roomId
       });
     }
 
-    const pendingSeatId = result.seat.id;
-    schedulePendingCameraTimeout(pendingSeatId);
-    console.log(`[join:gateway] admitted seat ${result.seat.id} for ${username}`);
+    schedulePendingCameraTimeout(result.seat.id);
+    console.log(`[join:gateway] room ${roomId} admitted seat ${result.seat.id} for ${username}`);
 
-    const ticksLeft = TICK_PRICE_ATOMIC > 0n
-      ? Number(result.seat.remainingAtomic / TICK_PRICE_ATOMIC)
-      : 0;
+    const tickPrice = result.seat.gatewayTickPriceAtomic;
+    const tickSec = result.seat.gatewayTickSeconds;
+    const ticksLeft = tickPrice > 0n ? Number(result.seat.remainingAtomic / tickPrice) : 0;
 
-    // Return the push URL for user to open their camera
     return res.json({
       success: true,
       message: 'Seat assigned! Open this link to go live:',
       pushUrl: result.seat.pushUrl,
       seatId: result.seat.id,
+      roomId,
       remaining: atomicToUsdc(result.seat.remainingAtomic),
-      tickPrice: TICK_PRICE,
-      tickSeconds: TICK_SECONDS,
-      maxSession: MAX_SESSION,
-      secondsLeft: ticksLeft * TICK_SECONDS,
+      tickPrice: cfg.tickPrice,
+      tickSeconds: cfg.tickSeconds,
+      maxSession: cfg.maxSession,
+      secondsLeft: ticksLeft * tickSec,
       payment: {
         payer: settle.payer || verify.payer || null,
         transaction: settle.transaction || null,
@@ -1111,18 +1240,37 @@ app.post('/api/leave/:seatId', (req, res) => {
 
 // Get current seats
 app.get('/api/seats', (req, res) => {
-  res.json({
-    seats: Array.from(activeSeats.values()).map(s => ({
+  const resolved = resolveRoomFromRequest(null, req.query);
+  const roomId = resolved.error ? DEFAULT_ROOM_ID : resolved.roomId;
+  const seats = Array.from(activeSeats.values())
+    .filter((s) => s.streamRoomId === roomId)
+    .map((s) => ({
       id: s.id,
       username: s.username,
-      expiresAt: s.expiresAt
-    })),
-    available: MAX_SEATS - activeSeats.size,
-    maxSeats: MAX_SEATS
+      expiresAt: s.expiresAt,
+      live: s.live
+    }));
+  const maxSeats = resolved.error ? 3 : resolved.cfg.maxSeats;
+  res.json({
+    roomId,
+    seats,
+    available: maxSeats - seats.length,
+    maxSeats
   });
 });
 
 const PORT = Number(process.env.PORT || 3000);
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+
+attachDashboardRoutes(app, {
+  dashboardKey: STREAMER_DASHBOARD_KEY,
+  dashboardHtmlPath: path.join(__dirname, 'public', 'dashboard.html'),
+  baseUrl: BASE_URL,
+  activeSeats,
+  removeParticipant,
+  atomicToUsdc,
+});
+
 server.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════╗

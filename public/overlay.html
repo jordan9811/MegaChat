@@ -140,6 +140,12 @@
     const CRT_MS = 460;    // CHANGE 5 leave animation duration
     const JOIN_MS = 700;   // CHANGE 4 join animation duration
 
+    let streamRoomId = 'default';
+    try {
+      const q = new URLSearchParams(location.search).get('room');
+      if (q && /^[a-z0-9-]{1,32}$/i.test(q)) streamRoomId = q.toLowerCase();
+    } catch { /* default */ }
+
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${wsProto}//${location.host}`);
     const stage = document.getElementById('stage');
@@ -228,7 +234,12 @@
       setTimeout(send, 3500);
     }
 
-    ws.onopen = () => console.log('Overlay connected to server');
+    ws.onopen = () => {
+      console.log('Overlay connected to server');
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'subscribe_room', room: streamRoomId }));
+      }
+    };
 
     ws.onmessage = (event) => {
       let msg;

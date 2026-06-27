@@ -5,6 +5,7 @@
   "scripts": {
     "build:passkey": "node scripts/build-passkey.mjs",
     "gate:phase2": "node _gate-phase2.mjs",
+    "gate:dashboard": "node _gate-dashboard-phase1.mjs",
     "start": "node server.js"
   },
   "dependencies": {

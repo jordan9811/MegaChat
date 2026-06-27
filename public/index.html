@@ -427,6 +427,16 @@
     let hasWallet = false;
     let walletMode = null; // null | 'metamask' | 'passkey'
     let passkeyModuleLoaded = false;
+    let streamRoomId = 'default';
+
+    function parseStreamRoomFromUrl() {
+      try {
+        const q = new URLSearchParams(location.search).get('room');
+        if (q && /^[a-z0-9-]{1,32}$/i.test(q)) return q.toLowerCase();
+      } catch { /* ignore */ }
+      return 'default';
+    }
+    streamRoomId = parseStreamRoomFromUrl();
 
     // Safe provider accessor: never throws, returns null when no injected wallet.
     function getProvider() {
@@ -439,7 +449,12 @@
 
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${wsProto}//${location.host}`);
-    ws.onopen = () => console.log('Connected');
+    ws.onopen = () => {
+      console.log('Connected');
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'subscribe_room', room: streamRoomId }));
+      }
+    };
     ws.onerror = (err) => console.error('WebSocket error:', err);
 
     // NOTE: the EIP-712 domain/types/message for the GatewayWalletBatched
@@ -449,8 +464,20 @@
     // in the temporal dead zone.
 
     async function loadConfig() {
-      const res = await fetch('/api/config');
+      const res = await fetch('/api/config?room=' + encodeURIComponent(streamRoomId));
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to load room config');
+      }
       CONFIG = await res.json();
+      if (CONFIG.roomName) {
+        document.title = CONFIG.roomName + ' — Join';
+      }
+      if (CONFIG.roomActive === false) {
+        showMessage('This room is not accepting new joins right now.', 'error');
+        const joinBtn = document.getElementById('joinBtn');
+        if (joinBtn) joinBtn.disabled = true;
+      }
       updatePriceDisplay();
     }
 
@@ -729,7 +756,7 @@
       if (!account || mySeatId) return;
       try {
         const headers = walletMode === 'passkey' ? { 'X-Wallet-Mode': 'passkey' } : {};
-        const res = await fetch(`/api/balance/${account}`, { headers });
+        const res = await fetch(`/api/balance/${account}?room=${encodeURIComponent(streamRoomId)}`, { headers });
         const data = await res.json();
         if (!res.ok) return;
         const tickPrice = parseFloat(CONFIG.tickPrice || '0.1') || 0.1;
@@ -921,7 +948,7 @@
       const first = await fetch('/api/join/passkey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, address: account })
+        body: JSON.stringify({ username, address: account, room: streamRoomId })
       });
 
       const terms = await first.json().catch(() => ({}));
@@ -948,7 +975,7 @@
           'Content-Type': 'application/json',
           'X-Modular-Payment': b64encode(payment)
         },
-        body: JSON.stringify({ username, address: account })
+        body: JSON.stringify({ username, address: account, room: streamRoomId })
       });
       const data = await paid.json();
       if (paid.ok && data.success) {
@@ -991,7 +1018,7 @@
         const first = await fetch('/api/join', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, address: account })
+          body: JSON.stringify({ username, address: account, room: streamRoomId })
         });
 
         if (first.status === 402) {
@@ -1018,7 +1045,7 @@
               'Content-Type': 'application/json',
               'Payment-Signature': paymentHeader
             },
-            body: JSON.stringify({ username, address: account })
+            body: JSON.stringify({ username, address: account, room: streamRoomId })
           });
           const data = await paid.json();
           if (paid.ok && data.success) {

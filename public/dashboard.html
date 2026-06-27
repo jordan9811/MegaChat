@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Streamer Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0a0a12;
+      color: #e8e8f0;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    h1 { color: #0ff; margin-bottom: 8px; }
+    .sub { color: #888; margin-bottom: 24px; font-size: 14px; }
+    .card {
+      background: #12121c;
+      border: 1px solid #2a2a3a;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      max-width: 900px;
+    }
+    label { display: block; font-size: 13px; color: #aaa; margin: 12px 0 4px; }
+    input, select, button {
+      font: inherit;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #1a1a28;
+      color: #fff;
+    }
+    input { width: 100%; max-width: 280px; }
+    button {
+      cursor: pointer;
+      background: #1a3a3a;
+      border-color: #0ff;
+      color: #0ff;
+      margin-right: 8px;
+      margin-top: 8px;
+    }
+    button:hover { background: #0ff; color: #000; }
+    button.danger { border-color: #f55; color: #f88; }
+    button.danger:hover { background: #f55; color: #000; }
+    button.secondary { border-color: #666; color: #ccc; }
+    .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+    .status { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; }
+    .status.live { background: #0f3; color: #000; }
+    .status.stopped { background: #633; color: #fff; }
+    .url-box {
+      background: #0d0d14;
+      padding: 10px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 12px;
+      word-break: break-all;
+      margin: 8px 0;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #2a2a3a; }
+    .msg { padding: 10px; border-radius: 8px; margin-bottom: 16px; max-width: 900px; }
+    .msg.error { background: #3a1010; color: #faa; }
+    .msg.ok { background: #103a20; color: #afa; }
+    #authGate { max-width: 400px; }
+    .hidden { display: none !important; }
+    ol { margin: 12px 0 0 20px; line-height: 1.6; color: #bbb; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="authGate" class="card">
+    <h1>Streamer Dashboard</h1>
+    <p class="sub">Enter your dashboard key (set STREAMER_DASHBOARD_KEY in .env)</p>
+    <label for="dashKey">Dashboard key</label>
+    <input id="dashKey" type="password" placeholder="Dashboard key">
+    <button type="button" onclick="unlock()">Unlock</button>
+    <div id="authMsg" class="msg error hidden"></div>
+  </div>
+
+  <div id="app" class="hidden">
+    <h1>Streamer Dashboard</h1>
+    <p class="sub">Configure your room — no .env editing required.</p>
+    <div id="flash" class="msg hidden"></div>
+
+    <div class="card">
+      <h2 style="font-size:18px;margin-bottom:12px">Rooms</h2>
+      <div class="row">
+        <div>
+          <label for="newRoomName">New room name</label>
+          <input id="newRoomName" placeholder="My Saturday Stream">
+        </div>
+        <button type="button" onclick="createRoom()">+ Create room</button>
+      </div>
+      <label for="roomSelect">Active room</label>
+      <select id="roomSelect" onchange="selectRoom()"></select>
+    </div>
+
+    <div id="roomEditor" class="card hidden">
+      <div class="row" style="align-items:center;margin-bottom:12px">
+        <h2 style="font-size:18px" id="roomTitle">Room</h2>
+        <span id="roomStatus" class="status live">LIVE</span>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Gateway tick price (MetaMask) USDC</label>
+          <input id="tickPrice" type="text">
+        </div>
+        <div>
+          <label>Gateway tick interval (seconds)</label>
+          <input id="tickSeconds" type="number" min="1">
+        </div>
+        <div>
+          <label>Passkey tick price USDC</label>
+          <input id="passkeyTickPrice" type="text">
+        </div>
+        <div>
+          <label>Passkey tick interval (seconds)</label>
+          <input id="passkeyTickSeconds" type="number" min="1">
+        </div>
+        <div>
+          <label>Session cap USDC</label>
+          <input id="maxSession" type="text">
+        </div>
+        <div>
+          <label>Max seats (1–3)</label>
+          <input id="maxSeats" type="number" min="1" max="3">
+        </div>
+      </div>
+      <button type="button" onclick="saveConfig()">Save config</button>
+      <button type="button" class="secondary" onclick="startRoom()">Start room</button>
+      <button type="button" class="danger" onclick="stopRoom()">Stop room</button>
+
+      <h3 style="margin-top:20px;font-size:15px">Share links</h3>
+      <p class="sub" style="margin-bottom:8px">JOIN — viewers open this to pay and go on camera</p>
+      <div class="url-box" id="joinUrl">—</div>
+      <button type="button" onclick="copyJoin()">Copy JOIN URL</button>
+      <p class="sub" style="margin:16px 0 8px">OVERLAY — paste into OBS as Browser Source</p>
+      <div class="url-box" id="overlayUrl">—</div>
+      <button type="button" onclick="copyOverlay()">Copy OVERLAY URL</button>
+
+      <h3 style="margin-top:20px;font-size:15px">OBS setup (one screen)</h3>
+      <ol>
+        <li>Copy the <strong>OVERLAY URL</strong> above.</li>
+        <li>In OBS: Sources → Add → <strong>Browser</strong>.</li>
+        <li>Paste the overlay URL, set width <strong>340</strong> × height <strong>620</strong> (adjust for tile count).</li>
+        <li>Check <strong>Shutdown source when not visible</strong> off; refresh browser source if tiles stick.</li>
+        <li>Share the <strong>JOIN URL</strong> in chat — viewers join with passkey or MetaMask.</li>
+      </ol>
+    </div>
+
+    <div id="liveCard" class="card hidden">
+      <h2 style="font-size:16px;margin-bottom:12px">Live seats</h2>
+      <table>
+        <thead>
+          <tr><th>User</th><th>Status</th><th>Spent</th><th>Remaining</th><th></th></tr>
+        </thead>
+        <tbody id="seatRows"></tbody>
+      </table>
+      <p class="sub" id="noSeats" style="margin-top:8px">No viewers in seats yet.</p>
+    </div>
+  </div>
+
+  <script>
+    let dashKey = '';
+    let rooms = [];
+    let currentRoomId = null;
+    let pollTimer = null;
+
+    function showFlash(text, ok) {
+      const el = document.getElementById('flash');
+      if (!el) return;
+      el.textContent = text;
+      el.className = 'msg ' + (ok ? 'ok' : 'error');
+      el.classList.remove('hidden');
+      setTimeout(() => el.classList.add('hidden'), 4000);
+    }
+
+    function headers() {
+      return dashKey ? { 'X-Dashboard-Key': dashKey, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+    }
+
+    async function unlock() {
+      dashKey = document.getElementById('dashKey').value.trim();
+      try {
+        const res = await fetch('/api/dashboard/auth-check', { headers: headers() });
+        if (!res.ok) throw new Error('Invalid dashboard key');
+        document.getElementById('authGate').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        await loadRooms();
+        pollTimer = setInterval(refreshLive, 3000);
+      } catch (e) {
+        const m = document.getElementById('authMsg');
+        m.textContent = e.message || 'Auth failed';
+        m.classList.remove('hidden');
+      }
+    }
+
+    async function loadRooms() {
+      const res = await fetch('/api/dashboard/rooms', { headers: headers() });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load rooms');
+      rooms = data.rooms || [];
+      const sel = document.getElementById('roomSelect');
+      sel.innerHTML = '';
+      rooms.forEach((r) => {
+        const opt = document.createElement('option');
+        opt.value = r.id;
+        opt.textContent = `${r.name} (${r.id})${r.active ? '' : ' [stopped]'}`;
+        sel.appendChild(opt);
+      });
+      if (rooms.length && !currentRoomId) currentRoomId = rooms[0].id;
+      if (currentRoomId) sel.value = currentRoomId;
+      selectRoom();
+    }
+
+    async function createRoom() {
+      const name = document.getElementById('newRoomName').value.trim() || 'My Stream';
+      const res = await fetch('/api/dashboard/rooms', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ name })
+      });
+      const data = await res.json();
+      if (!res.ok) { showFlash(data.error || 'Create failed', false); return; }
+      currentRoomId = data.room.id;
+      showFlash('Room created: ' + data.room.id, true);
+      await loadRooms();
+    }
+
+    function fillEditor(room, joinUrl, overlayUrl) {
+      document.getElementById('roomEditor').classList.remove('hidden');
+      document.getElementById('liveCard').classList.remove('hidden');
+      document.getElementById('roomTitle').textContent = room.name + ' (' + room.id + ')';
+      const st = document.getElementById('roomStatus');
+      st.textContent = room.active ? 'ACCEPTING JOINS' : 'STOPPED';
+      st.className = 'status ' + (room.active ? 'live' : 'stopped');
+      document.getElementById('tickPrice').value = room.tickPrice;
+      document.getElementById('tickSeconds').value = room.tickSeconds;
+      document.getElementById('passkeyTickPrice').value = room.passkeyTickPrice;
+      document.getElementById('passkeyTickSeconds').value = room.passkeyTickSeconds;
+      document.getElementById('maxSession').value = room.maxSession;
+      document.getElementById('maxSeats').value = room.maxSeats;
+      document.getElementById('joinUrl').textContent = joinUrl;
+      document.getElementById('overlayUrl').textContent = overlayUrl;
+    }
+
+    async function selectRoom() {
+      const sel = document.getElementById('roomSelect');
+      if (!sel || !sel.value) return;
+      currentRoomId = sel.value;
+      await refreshLive();
+    }
+
+    async function refreshLive() {
+      if (!currentRoomId) return;
+      const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId), { headers: headers() });
+      const data = await res.json();
+      if (!res.ok) return;
+      fillEditor(data.room, data.joinUrl, data.overlayUrl);
+      const tbody = document.getElementById('seatRows');
+      tbody.innerHTML = '';
+      const seats = data.seats || [];
+      document.getElementById('noSeats').style.display = seats.length ? 'none' : 'block';
+      seats.forEach((s) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${s.username}</td>
+          <td>${s.live ? 'live' : 'pending'}</td>
+          <td>${s.spent} USDC</td>
+          <td>${s.remaining} USDC</td>
+          <td><button class="danger" type="button" data-seat="${s.id}">Kick</button></td>`;
+        tr.querySelector('button').onclick = () => kickSeat(s.id);
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function saveConfig() {
+      const body = {
+        config: {
+          tickPrice: document.getElementById('tickPrice').value,
+          tickSeconds: Number(document.getElementById('tickSeconds').value),
+          passkeyTickPrice: document.getElementById('passkeyTickPrice').value,
+          passkeyTickSeconds: Number(document.getElementById('passkeyTickSeconds').value),
+          maxSession: document.getElementById('maxSession').value,
+          maxSeats: Number(document.getElementById('maxSeats').value),
+        }
+      };
+      const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId), {
+        method: 'PUT', headers: headers(), body: JSON.stringify(body)
+      });
+      if (res.ok) showFlash('Config saved', true);
+      else showFlash('Save failed', false);
+      await refreshLive();
+    }
+
+    async function startRoom() {
+      await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/start', { method: 'POST', headers: headers() });
+      showFlash('Room started', true);
+      await refreshLive();
+    }
+
+    async function stopRoom() {
+      await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/stop', { method: 'POST', headers: headers() });
+      showFlash('Room stopped — no new joins', true);
+      await refreshLive();
+    }
+
+    async function kickSeat(seatId) {
+      await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/kick/' + encodeURIComponent(seatId), {
+        method: 'POST', headers: headers()
+      });
+      showFlash('Kicked ' + seatId.slice(0, 8), true);
+      await refreshLive();
+    }
+
+    function copyJoin() {
+      const t = document.getElementById('joinUrl').textContent;
+      navigator.clipboard.writeText(t).then(() => showFlash('JOIN URL copied', true));
+    }
+
+    function copyOverlay() {
+      const t = document.getElementById('overlayUrl').textContent;
+      navigator.clipboard.writeText(t).then(() => showFlash('OVERLAY URL copied', true));
+    }
+  </script>
+</body>
+</html>

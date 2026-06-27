@@ -58,7 +58,7 @@ try {
     fail('Passkey bundle not referenced from index');
   } else ok('index.html references passkey client');
 
-  const cfgRes = await fetch(`${BASE}/api/config`);
+  const cfgRes = await fetch(`${BASE}/api/config?room=default`);
   const config = await cfgRes.json();
   if (config.passkeyTickSeconds !== 1 && config.passkeyTickSeconds != null) {
     // default 1 — allow env override
