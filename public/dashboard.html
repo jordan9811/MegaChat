@@ -17,9 +17,7 @@
 
   <div id="entryGate" class="app-shell">
     <header class="hero">
-      <p class="hero-eyebrow">Streamer</p>
-      <h1 class="hero-title">Run metered on-camera slots.</h1>
-      <p class="hero-lede">Set your price. Viewers pay per second while live.</p>
+      <h1 class="hero-title">MegaChats</h1>
     </header>
 
     <div class="entry-tabs">
@@ -44,7 +42,8 @@
   </div>
 
   <section class="card card-primary app-shell hidden" id="setupPanel">
-    <p class="section-label" id="setupPanelDesc">Pricing</p>
+    <p class="section-label" id="setupPanelDesc">MegaChat Settings</p>
+    <p class="settings-intro">Set your price. Viewers pay per second while live.</p>
 
     <div class="field field-full" style="margin-bottom:20px">
       <label for="newRoomName">Room name</label>
@@ -91,7 +90,7 @@
       <div class="field">
         <label for="tokenPreset">
           Payment token
-          <span class="info-tip" data-tip="MetaMask viewers always pay via Circle Gateway USDC.">?</span>
+          <span class="info-tip" data-tip="USDC charged each interval.">?</span>
         </label>
         <select id="tokenPreset">
           <option value="usdc" selected>USDC</option>
@@ -110,15 +109,18 @@
     </div>
 
     <details class="advanced">
-      <summary>MetaMask pricing</summary>
-      <div class="advanced-body grid-2">
-        <div class="field">
-          <label for="tickPrice">Charge amount (USDC)</label>
-          <input id="tickPrice" type="text" value="0.1">
-        </div>
-        <div class="field">
-          <label for="tickSeconds">Interval (sec)</label>
-          <input id="tickSeconds" type="number" min="1" value="10">
+      <summary>Advanced</summary>
+      <div class="advanced-body">
+        <p class="advanced-subhead">MetaMask pricing</p>
+        <div class="grid-2">
+          <div class="field">
+            <label for="tickPrice">Charge amount (USDC)</label>
+            <input id="tickPrice" type="text" value="0.1">
+          </div>
+          <div class="field">
+            <label for="tickSeconds">Interval (sec)</label>
+            <input id="tickSeconds" type="number" min="1" value="10">
+          </div>
         </div>
       </div>
     </details>
