@@ -293,7 +293,6 @@
       syncTokenUi();
       updatePerMinuteHint();
       if (!pollTimer) pollTimer = setInterval(refreshLive, 4000);
-      refreshLive();
     }
 
     function switchRoom() {
@@ -414,6 +413,7 @@
           'Adjust pricing and limits. Save changes with your room password.';
         showResultPanel(data.joinUrl, data.overlayUrl);
         fillFormFromRoom(data.room);
+        await refreshLive();
       } catch (e) {
         msg.textContent = e.message || 'Invalid room ID or password';
         msg.classList.remove('hidden');
@@ -431,13 +431,17 @@
       const btn = document.getElementById('createRoomBtn');
       btn.disabled = true;
       try {
-        const res = await fetch('/api/dashboard/rooms', {
+        const res = await fetch('/api/dashboard/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, config, password }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || data.message || 'Create failed');
+        if (!res.ok) {
+          const hint = data.hint ? ` (${data.hint})` : '';
+          throw new Error((data.error || data.message || 'Create failed') + hint);
+        }
+        if (!data.room?.id) throw new Error('Create succeeded but room id missing');
         roomPassword = password;
         enterManageView(data.room.id);
         document.getElementById('setupPanelDesc').textContent =
@@ -445,6 +449,7 @@
         showResultPanel(data.joinUrl, data.overlayUrl);
         showFlash('Room created — share your links below', true);
         fillFormFromRoom(data.room);
+        await refreshLive();
       } catch (e) {
         showFlash(e.message, false);
       } finally {

@@ -12,11 +12,10 @@ import {
 } from './rooms-store.js';
 import { validatePaymentToken } from './token-utils.js';
 
-function getRoomPassword(req) {
+/** Management routes only — never read body.password (create sends password in body). */
+function getManagePassword(req) {
   const fromHeader = req.get('x-room-password');
-  if (fromHeader) return fromHeader;
-  if (req.body && typeof req.body.password === 'string') return req.body.password;
-  return null;
+  return typeof fromHeader === 'string' && fromHeader.length > 0 ? fromHeader : null;
 }
 
 export function attachDashboardRoutes(app, deps) {
@@ -29,7 +28,7 @@ export function attachDashboardRoutes(app, deps) {
   async function requireRoomPassword(req, res, next) {
     const id = normalizeRoomId(req.params.roomId);
     if (!id) return res.status(400).json({ error: 'Invalid room id' });
-    const password = getRoomPassword(req);
+    const password = getManagePassword(req);
     if (!password) {
       return res.status(401).json({ error: 'Unauthorized', hint: 'Room password required' });
     }
@@ -62,6 +61,36 @@ export function attachDashboardRoutes(app, deps) {
     }
   }
 
+  /** Public — no room-password middleware. Sets hash on new room from body.password. */
+  async function handleCreateRoom(req, res) {
+    const { name, config, password } = req.body || {};
+    console.log('[dashboard:create] create room request received');
+    if (!password || typeof password !== 'string' || password.length < 4) {
+      return res.status(400).json({ error: 'Room password required (min 4 characters)' });
+    }
+    let mergedConfig = config || {};
+    try {
+      await validateConfigTokens(mergedConfig);
+    } catch (err) {
+      return res.status(400).json({
+        error: err.message.includes('reward') ? 'Invalid reward token' : 'Invalid payment token',
+        message: err.message,
+      });
+    }
+    let room;
+    try {
+      room = await createRoomWithPassword(name, mergedConfig, password);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.log(`[dashboard:create] room ${room.id} (${room.name}) created — password hashed`);
+    res.status(201).json({
+      room,
+      joinUrl: `${deps.baseUrl}/?room=${room.id}`,
+      overlayUrl: `${deps.baseUrl}/overlay?room=${room.id}`,
+    });
+  }
+
   app.get('/dashboard', (req, res) => {
     res.sendFile(deps.dashboardHtmlPath);
   });
@@ -85,30 +114,9 @@ export function attachDashboardRoutes(app, deps) {
     });
   });
 
-  app.post('/api/dashboard/rooms', async (req, res) => {
-    const { name, config, password } = req.body || {};
-    if (!password || typeof password !== 'string' || password.length < 4) {
-      return res.status(400).json({ error: 'Room password required (min 4 characters)' });
-    }
-    let mergedConfig = config || {};
-    try {
-      await validateConfigTokens(mergedConfig);
-    } catch (err) {
-      return res.status(400).json({ error: err.message.includes('reward') ? 'Invalid reward token' : 'Invalid payment token', message: err.message });
-    }
-    let room;
-    try {
-      room = await createRoomWithPassword(name, mergedConfig, password);
-    } catch (err) {
-      return res.status(400).json({ error: err.message });
-    }
-    console.log(`[dashboard] created room ${room.id} (${room.name})`);
-    res.status(201).json({
-      room,
-      joinUrl: `${deps.baseUrl}/?room=${room.id}`,
-      overlayUrl: `${deps.baseUrl}/overlay?room=${room.id}`,
-    });
-  });
+  // Public create — register BEFORE any /rooms/:roomId management routes.
+  app.post('/api/dashboard/create', handleCreateRoom);
+  app.post('/api/dashboard/rooms', handleCreateRoom);
 
   app.get('/api/dashboard/rooms/:roomId', requireRoomPassword, (req, res) => {
     const room = resolveRoomConfig(req.roomId);

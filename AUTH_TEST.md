@@ -19,8 +19,8 @@ Rooms created before this change (including `default`) get a hashed password fro
 
 1. Open `/dashboard` → **Create a new room**
 2. Fill config + room password (min 4 chars) → **Create room**
-3. Note room ID in header badge; copy JOIN + overlay links
-4. Open `data/rooms.json` — confirm `passwordHash` exists and **no plaintext password**
+3. Server log: `[dashboard:create] room … created — password hashed`
+4. No 401; JOIN + overlay links appear in result panel
 
 ### Dashboard manage
 

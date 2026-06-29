@@ -58,7 +58,7 @@ try {
   if (!dashHtml.includes('manageRoomId')) fail('manage flow missing room id');
   else ok('manage flow has room id + password');
 
-  const created = await fetch(`${BASE}/api/dashboard/rooms`, {
+  const created = await fetch(`${BASE}/api/dashboard/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
