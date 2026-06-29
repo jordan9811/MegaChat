@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
+import { hashPassword, verifyPassword } from './room-auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, 'data');
@@ -78,6 +79,43 @@ function loadStore() {
   return cache;
 }
 
+/** Assign hashed default password to legacy rooms missing passwordHash. */
+export async function migrateLegacyRoomPasswords() {
+  const store = loadStore();
+  const defaultPwd = process.env.ROOM_DEFAULT_PASSWORD || 'changeme';
+  let count = 0;
+  for (const rec of Object.values(store.rooms)) {
+    if (!rec.passwordHash) {
+      rec.passwordHash = await hashPassword(defaultPwd);
+      count++;
+    }
+  }
+  if (count > 0) {
+    saveStore(store);
+    console.log(
+      `[rooms] migrated ${count} legacy room(s) without password — `
+      + 'use ROOM_DEFAULT_PASSWORD from .env, then set a new password in dashboard'
+    );
+  }
+}
+
+export async function verifyRoomPassword(roomId, password) {
+  const rec = getRoomRecord(roomId);
+  if (!rec?.passwordHash) return false;
+  return verifyPassword(password, rec.passwordHash);
+}
+
+export async function setRoomPassword(roomId, newPassword) {
+  const id = normalizeRoomId(roomId);
+  if (!id) return null;
+  const store = loadStore();
+  const rec = store.rooms[id];
+  if (!rec) return null;
+  rec.passwordHash = await hashPassword(newPassword);
+  saveStore(store);
+  return true;
+}
+
 function saveStore(store) {
   ensureDataDir();
   fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2));
@@ -147,7 +185,7 @@ export function resolveRoomConfig(roomId) {
   };
 }
 
-export function createRoom(name, config = {}) {
+export function createRoom(name, config = {}, passwordHash = null) {
   const store = loadStore();
   let id;
   do {
@@ -160,6 +198,7 @@ export function createRoom(name, config = {}) {
     name: String(name || 'My Stream').slice(0, 64),
     active: true,
     createdAt: new Date().toISOString(),
+    passwordHash,
     config: {
       ...defaults,
       ...config,
@@ -169,6 +208,11 @@ export function createRoom(name, config = {}) {
   store.rooms[id] = rec;
   saveStore(store);
   return resolveRoomConfig(id);
+}
+
+export async function createRoomWithPassword(name, config, password) {
+  const passwordHash = await hashPassword(password);
+  return createRoom(name, config, passwordHash);
 }
 
 export function updateRoom(roomId, patch) {

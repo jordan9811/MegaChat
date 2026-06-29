@@ -13,7 +13,7 @@ Optional for on-chain USDC pool payout: `REWARD_POOL_PRIVATE_KEY` in `.env`. Wit
 
 ## Dashboard
 
-1. Open `/dashboard`, unlock with `STREAMER_DASHBOARD_KEY`.
+1. Open `/dashboard` → create room with password OR manage with room ID + password
 2. Select a room (or create one).
 3. Expand **🎁 Rewards (optional)**.
 4. Enable rewards; set interval (e.g. 60s), amount (e.g. `0.1`), cap (e.g. `5`).

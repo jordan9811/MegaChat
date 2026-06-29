@@ -9,6 +9,7 @@ Branch: **`streamer-dashboard`**
 | **Baseline** | — | `baseline: before part A/B UX and rewards pass` | — |
 | **Part A — UX overhaul** | `npm run gate:ui-a` ✓ | `part A: app-wide UX overhaul` | [UI_TEST.md](UI_TEST.md) |
 | **Part B — Optional rewards** | `npm run gate:rewards-b` ✓ | `part B: optional rewards primitive (first pass)` | [REWARDS_TEST.md](REWARDS_TEST.md) |
+| **Auth — Per-room passwords** | `npm run gate:auth` ✓ | `auth: per-room passwords + entry flow` | [AUTH_TEST.md](AUTH_TEST.md) |
 
 ## Earlier phases (still must pass)
 
@@ -25,7 +26,7 @@ npm run build:passkey
 npm start
 ```
 
-`.env`: `STREAMER_DASHBOARD_KEY`, `CIRCLE_CLIENT_KEY`, `SELLER_WALLET_ADDRESS`, `SELLER_PRIVATE_KEY`.  
+`.env`: `ROOM_DEFAULT_PASSWORD` (legacy rooms), `CIRCLE_CLIENT_KEY`, `SELLER_WALLET_ADDRESS`, `SELLER_PRIVATE_KEY`.  
 Optional: `REWARD_POOL_PRIVATE_KEY` for on-chain USDC reward payout (otherwise local/dry-run credits).
 
 ## Verify in order
@@ -61,6 +62,7 @@ Optional: `REWARD_POOL_PRIVATE_KEY` for on-chain USDC reward payout (otherwise l
 ```bash
 npm run gate:ui-a
 npm run gate:rewards-b
+npm run gate:auth
 npm run gate:dashboard
 npm run gate:tokens
 npm run gate:phase2

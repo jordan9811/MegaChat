@@ -12,7 +12,7 @@ import { resolveRoomConfig, _resetCacheForTests } from './rooms-store.js';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.GATE_PORT || 3002;
 const BASE = `http://127.0.0.1:${PORT}`;
-const DASH_KEY = process.env.STREAMER_DASHBOARD_KEY || 'changeme';
+const ROOM_PW = process.env.GATE_ROOM_PASSWORD || 'dashboard-gate-secret';
 const fails = [];
 
 function ok(msg) { console.log('  ✓', msg); }
@@ -40,7 +40,7 @@ let serverProc;
 try {
   serverProc = spawn('node', ['server.js'], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), STREAMER_DASHBOARD_KEY: DASH_KEY },
+    env: { ...process.env, PORT: String(PORT), ROOM_DEFAULT_PASSWORD: 'changeme' },
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: true,
   });
@@ -63,8 +63,12 @@ try {
 
   const created = await fetch(`${BASE}/api/dashboard/rooms`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Dashboard-Key': DASH_KEY },
-    body: JSON.stringify({ name: 'Gate Test Room', config: { passkeyTickPrice: '0.002' } }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'Gate Test Room',
+      password: ROOM_PW,
+      config: { passkeyTickPrice: '0.002' },
+    }),
   });
   const createData = await created.json();
   if (!created.ok || !createData.room?.id) fail('create room failed');
@@ -83,11 +87,11 @@ try {
   if (bundle.status !== 200) fail('passkey bundle not served');
   else ok('passkey bundle still served');
 
-  const badAuth = await fetch(`${BASE}/api/dashboard/rooms`, {
-    headers: { 'X-Dashboard-Key': 'wrong' },
+  const badAuth = await fetch(`${BASE}/api/dashboard/rooms/${createData.room.id}`, {
+    headers: { 'X-Room-Password': 'wrong' },
   });
-  if (badAuth.status !== 401) fail('dashboard auth should reject bad key');
-  else ok('dashboard auth rejects bad key');
+  if (badAuth.status !== 401) fail('dashboard auth should reject bad room password');
+  else ok('dashboard auth rejects bad room password');
 
 } catch (e) {
   fail('HTTP: ' + e.message);

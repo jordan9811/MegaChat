@@ -18,6 +18,7 @@ import {
   resolveRoomConfig,
   normalizeRoomId,
   DEFAULT_ROOM_ID,
+  migrateLegacyRoomPasswords,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
 import {
@@ -93,9 +94,6 @@ const PASSKEY_TICK_PRICE = process.env.PASSKEY_TICK_PRICE || '0.001';
 // Documented approach: B — session keys (A) not in SDK yet; streamed pulls via
 // one upfront approve userOp + seller transferFrom each tick (silent after join).
 const PASSKEY_METER_APPROACH = 'B';
-
-// Streamer dashboard demo auth (secrets stay in .env).
-const STREAMER_DASHBOARD_KEY = process.env.STREAMER_DASHBOARD_KEY || 'changeme';
 
 // USDC has 6 decimals. Convert a decimal USDC string to atomic units (BigInt).
 function usdcToAtomic(amountStr) {
@@ -1472,7 +1470,6 @@ const PORT = Number(process.env.PORT || 3000);
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 attachDashboardRoutes(app, {
-  dashboardKey: STREAMER_DASHBOARD_KEY,
   dashboardHtmlPath: path.join(__dirname, 'public', 'dashboard.html'),
   baseUrl: BASE_URL,
   rpcUrl: ARC_RPC_URL,
@@ -1481,6 +1478,8 @@ attachDashboardRoutes(app, {
   removeParticipant,
   atomicToUsdc,
 });
+
+await migrateLegacyRoomPasswords();
 
 server.listen(PORT, () => {
   console.log(`

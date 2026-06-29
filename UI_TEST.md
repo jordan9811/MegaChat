@@ -16,7 +16,7 @@ npm run gate:ui-a
 
 ### Dashboard
 
-1. Open `/dashboard` → unlock with `STREAMER_DASHBOARD_KEY`
+1. Open `/dashboard` → create a room with password or manage with room ID + password
 2. Confirm **no JOIN/OVERLAY URLs** until you click **Create room**
 3. Token picker defaults **USDC**; **Custom token…** reveals address field only
 4. USDC contract hidden behind **ⓘ view contract address** tooltip

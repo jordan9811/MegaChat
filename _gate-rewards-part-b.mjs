@@ -10,7 +10,7 @@ import WebSocket from 'ws';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.GATE_PORT || 3004;
 const BASE = `http://127.0.0.1:${PORT}`;
-const DASH_KEY = process.env.STREAMER_DASHBOARD_KEY || 'changeme';
+const ROOM_PW = process.env.GATE_ROOM_PASSWORD || 'rewards-gate-secret';
 const ARC_USDC = '0x3600000000000000000000000000000000000000';
 const TEST_WALLET = '0x0000000000000000000000000000000000000001';
 const fails = [];
@@ -22,7 +22,7 @@ let serverProc;
 try {
   serverProc = spawn('node', ['server.js'], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), STREAMER_DASHBOARD_KEY: DASH_KEY },
+    env: { ...process.env, PORT: String(PORT), ROOM_DEFAULT_PASSWORD: 'changeme' },
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: true,
   });
@@ -45,9 +45,10 @@ try {
 
   const created = await fetch(`${BASE}/api/dashboard/rooms`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Dashboard-Key': DASH_KEY },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: 'Rewards Gate Room',
+      password: ROOM_PW,
       config: {
         passkeyTickPrice: '1',
         passkeyTickSeconds: 1,
@@ -157,9 +158,10 @@ try {
 
   const offRoom = await fetch(`${BASE}/api/dashboard/rooms`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Dashboard-Key': DASH_KEY },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: 'No Rewards',
+      password: ROOM_PW,
       config: { paymentTokenAddress: ARC_USDC, rewards: { enabled: false } },
     }),
   });

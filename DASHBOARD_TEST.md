@@ -18,7 +18,7 @@ Also run `npm run gate:phase2` to confirm passkey meter math still passes.
 
 ### Prerequisites
 
-1. `.env` with `STREAMER_DASHBOARD_KEY=changeme` (or your key), Circle keys, seller wallet.
+1. `.env` with `ROOM_DEFAULT_PASSWORD` (legacy rooms only), Circle keys, seller wallet.
 2. `npm start`
 
 ### Dashboard

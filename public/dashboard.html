@@ -9,38 +9,65 @@
     table { width: 100%; border-collapse: collapse; font-size: 0.875rem; margin-top: 12px; }
     th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
     th { color: var(--text-muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; }
-    #authGate { max-width: 400px; margin: 80px auto; }
+    #entryGate { max-width: 720px; margin: 40px auto; }
+    .entry-tabs { display: flex; gap: 8px; margin-bottom: 24px; }
+    .path-tab {
+      flex: 1; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: transparent; color: var(--text-muted); cursor: pointer; font-size: 0.9rem;
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+    }
+    .path-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(45, 212, 191, 0.08); }
+    .path-tab:hover:not(.active) { border-color: var(--text-muted); color: var(--text); }
+    .room-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+    .room-id-badge { font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--text-muted); padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; }
     .result-panel { animation: fadeIn 0.4s ease; }
     .stub-btn { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body class="theme-app">
-  <div id="authGate" class="card app-shell">
+  <div id="flash" class="flash hidden app-shell" style="margin-top:16px"></div>
+  <div id="entryGate" class="app-shell">
     <div class="app-header">
       <h1>Streamer dashboard</h1>
-      <p class="tagline">Sign in to configure pay-to-join rooms</p>
+      <p class="tagline">Create or manage a pay-to-join room</p>
     </div>
-    <div class="field">
-      <label for="dashKey">Dashboard key</label>
-      <input id="dashKey" type="password" placeholder="From STREAMER_DASHBOARD_KEY in .env" autocomplete="off">
+
+    <div class="entry-tabs">
+      <button type="button" class="path-tab active" id="tabCreate" data-path="create">Create a new room</button>
+      <button type="button" class="path-tab" id="tabManage" data-path="manage">Manage existing</button>
     </div>
-    <button type="button" class="btn btn-primary" id="unlockBtn">Unlock</button>
-    <div id="authMsg" class="flash err hidden"></div>
+
+    <div id="managePath" class="hidden">
+      <div class="card">
+        <p class="card-desc">Enter the room ID and password you set when the room was created. Share the password with mods.</p>
+        <div class="field">
+          <label for="manageRoomId">Room ID</label>
+          <input id="manageRoomId" placeholder="e.g. a1b2c3d4 or default" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="manageRoomPassword">Room password</label>
+          <input id="manageRoomPassword" type="password" autocomplete="current-password">
+        </div>
+        <button type="button" class="btn btn-primary" id="manageUnlockBtn">Unlock management</button>
+        <div id="entryMsg" class="flash err hidden" style="margin-top:16px"></div>
+      </div>
+    </div>
+
+    <div id="createPath">
+      <p class="card-desc" style="margin-bottom:16px">Configure pricing below, set a room password, then create. Viewer links require no password.</p>
+      <div class="field">
+        <label for="createRoomPassword">Room password</label>
+        <input id="createRoomPassword" type="password" placeholder="Min 4 characters — share with mods" autocomplete="new-password">
+        <p class="hint">Used to manage this room, save config, start/stop joins, and kick viewers.</p>
+      </div>
+      <button type="button" class="btn btn-primary" id="createRoomBtn" style="margin-top:8px">Create room</button>
+    </div>
   </div>
 
-  <div id="app" class="app-shell hidden">
-    <header class="app-header">
-      <h1>Pay to join your stream</h1>
-      <p class="tagline">Viewers pay per second to put their camera on your broadcast — mega chats, metered live.</p>
-      <p class="product-note">Configure pricing below, create a room, then share the viewer link and OBS overlay.</p>
-    </header>
-
-    <div id="flash" class="flash hidden"></div>
-
-    <!-- PRIMARY: pay-to-join setup (no URLs until room exists) -->
-    <section class="card" id="setupPanel">
-      <h2 class="card-title">New pay-to-join room</h2>
-      <p class="card-desc">Set how viewers are charged before you create the room. Links appear after creation.</p>
+  <!-- Shared config form (create + manage) -->
+  <section class="card app-shell" id="setupPanel">
+    <h2 class="card-title">Room configuration</h2>
+    <p class="card-desc" id="setupPanelDesc">Set how viewers are charged.</p>
 
       <div class="field">
         <label for="newRoomName">Room name</label>
@@ -110,11 +137,19 @@
           </div>
         </div>
       </details>
+  </section>
 
-      <button type="button" class="btn btn-primary" id="createRoomBtn" style="margin-top:20px">Create room</button>
-    </section>
+  <div id="app" class="app-shell hidden">
+    <header class="app-header">
+      <div class="room-meta">
+        <h1 style="margin:0">Pay to join your stream</h1>
+        <span class="room-id-badge" id="managedRoomBadge">room —</span>
+        <button type="button" class="btn btn-secondary" id="switchRoomBtn" style="padding:6px 12px;font-size:0.8rem">Switch room</button>
+      </div>
+      <p class="tagline">Viewers pay per second to put their camera on your broadcast — mega chats, metered live.</p>
+    </header>
 
-    <!-- RESULT: only after room created -->
+    <!-- RESULT: URLs for this room -->
     <section class="card result-panel hidden" id="resultPanel">
       <h2 class="card-title">Your room is ready</h2>
       <p class="card-desc">Share the viewer link in chat. Paste the overlay link into OBS as a Browser Source.</p>
@@ -133,13 +168,8 @@
       </div>
     </section>
 
-    <!-- Manage existing rooms -->
     <section class="card hidden" id="managePanel">
-      <h2 class="card-title">Manage room</h2>
-      <div class="field">
-        <label for="roomSelect">Select room</label>
-        <select id="roomSelect"></select>
-      </div>
+      <h2 class="card-title">Room controls</h2>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
         <span id="roomTitle" style="font-weight:600"></span>
         <span id="roomStatus" class="status-pill live">Live</span>
@@ -221,9 +251,10 @@
   <script>
     const ARC_USDC = '0x3600000000000000000000000000000000000000';
 
-    let dashKey = '';
+    let roomPassword = '';
     let currentRoomId = null;
     let pollTimer = null;
+    let entryMode = 'create';
 
     function showFlash(text, ok) {
       const el = document.getElementById('flash');
@@ -237,8 +268,45 @@
 
     function headers() {
       const h = { 'Content-Type': 'application/json' };
-      if (dashKey) h['X-Dashboard-Key'] = dashKey;
+      if (roomPassword) h['X-Room-Password'] = roomPassword;
       return h;
+    }
+
+    function showEntryPath(path) {
+      entryMode = path;
+      document.getElementById('tabCreate').classList.toggle('active', path === 'create');
+      document.getElementById('tabManage').classList.toggle('active', path === 'manage');
+      document.getElementById('createPath').classList.toggle('hidden', path !== 'create');
+      document.getElementById('managePath').classList.toggle('hidden', path !== 'manage');
+      document.getElementById('setupPanel').classList.toggle('hidden', path !== 'create');
+    }
+
+    function enterManageView(roomId) {
+      currentRoomId = roomId;
+      document.getElementById('entryGate').classList.add('hidden');
+      document.getElementById('createPath').classList.add('hidden');
+      document.getElementById('setupPanel').classList.remove('hidden');
+      document.getElementById('app').classList.remove('hidden');
+      document.getElementById('managedRoomBadge').textContent = 'room ' + roomId;
+      document.getElementById('managePanel').classList.remove('hidden');
+      document.getElementById('liveCard').classList.remove('hidden');
+      syncTokenUi();
+      updatePerMinuteHint();
+      if (!pollTimer) pollTimer = setInterval(refreshLive, 4000);
+      refreshLive();
+    }
+
+    function switchRoom() {
+      roomPassword = '';
+      currentRoomId = null;
+      clearInterval(pollTimer);
+      pollTimer = null;
+      document.getElementById('app').classList.add('hidden');
+      document.getElementById('entryGate').classList.remove('hidden');
+      document.getElementById('resultPanel').classList.add('hidden');
+      document.getElementById('managePanel').classList.add('hidden');
+      document.getElementById('liveCard').classList.add('hidden');
+      showEntryPath('manage');
     }
 
     function updatePerMinuteHint() {
@@ -327,61 +395,56 @@
       document.getElementById('resultPanel').classList.remove('hidden');
     }
 
-    async function unlock() {
-      dashKey = document.getElementById('dashKey').value.trim();
+    async function manageUnlock() {
+      const roomId = document.getElementById('manageRoomId').value.trim();
+      const password = document.getElementById('manageRoomPassword').value;
+      const msg = document.getElementById('entryMsg');
+      msg.classList.add('hidden');
       try {
-        const res = await fetch('/api/dashboard/auth-check', { headers: headers() });
-        if (!res.ok) throw new Error('Invalid dashboard key');
-        document.getElementById('authGate').classList.add('hidden');
-        document.getElementById('app').classList.remove('hidden');
-        syncTokenUi();
-        updatePerMinuteHint();
-        await loadRooms();
-        pollTimer = setInterval(refreshLive, 4000);
+        const res = await fetch('/api/dashboard/unlock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Unlock failed');
+        roomPassword = password;
+        enterManageView(data.room.id);
+        document.getElementById('setupPanelDesc').textContent =
+          'Adjust pricing and limits. Save changes with your room password.';
+        showResultPanel(data.joinUrl, data.overlayUrl);
+        fillFormFromRoom(data.room);
       } catch (e) {
-        const m = document.getElementById('authMsg');
-        m.textContent = e.message || 'Auth failed';
-        m.classList.remove('hidden');
+        msg.textContent = e.message || 'Invalid room ID or password';
+        msg.classList.remove('hidden');
       }
-    }
-
-    async function loadRooms() {
-      const res = await fetch('/api/dashboard/rooms', { headers: headers() });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to load rooms');
-      const sel = document.getElementById('roomSelect');
-      sel.innerHTML = '';
-      (data.rooms || []).forEach((r) => {
-        const opt = document.createElement('option');
-        opt.value = r.id;
-        opt.textContent = r.name + ' (' + r.id + ')' + (r.active ? '' : ' · stopped');
-        sel.appendChild(opt);
-      });
-      const hasRooms = (data.rooms || []).length > 0;
-      document.getElementById('managePanel').classList.toggle('hidden', !hasRooms);
-      document.getElementById('liveCard').classList.toggle('hidden', !hasRooms);
-      if (hasRooms && !currentRoomId) currentRoomId = data.rooms[0].id;
-      if (currentRoomId) sel.value = currentRoomId;
-      if (hasRooms) await refreshLive();
     }
 
     async function createRoom() {
       const name = document.getElementById('newRoomName').value.trim() || 'My Stream';
+      const password = document.getElementById('createRoomPassword').value;
+      if (!password || password.length < 4) {
+        showFlash('Room password required (min 4 characters)', false);
+        return;
+      }
       const config = gatherConfig();
       const btn = document.getElementById('createRoomBtn');
       btn.disabled = true;
       try {
         const res = await fetch('/api/dashboard/rooms', {
           method: 'POST',
-          headers: headers(),
-          body: JSON.stringify({ name, config }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, config, password }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || data.message || 'Create failed');
-        currentRoomId = data.room.id;
+        roomPassword = password;
+        enterManageView(data.room.id);
+        document.getElementById('setupPanelDesc').textContent =
+          'Adjust pricing and limits. Save changes with your room password.';
         showResultPanel(data.joinUrl, data.overlayUrl);
         showFlash('Room created — share your links below', true);
-        await loadRooms();
+        fillFormFromRoom(data.room);
       } catch (e) {
         showFlash(e.message, false);
       } finally {
@@ -393,7 +456,10 @@
       if (!currentRoomId) return;
       const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId), { headers: headers() });
       const data = await res.json();
-      if (!res.ok) return;
+      if (!res.ok) {
+        if (res.status === 401) switchRoom();
+        return;
+      }
       const room = data.room;
       document.getElementById('roomTitle').textContent = room.name;
       const st = document.getElementById('roomStatus');
@@ -419,27 +485,36 @@
       const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId), {
         method: 'PUT', headers: headers(), body: JSON.stringify({ config: gatherConfig() }),
       });
+      if (res.status === 401) { showFlash('Session expired — unlock again', false); switchRoom(); return; }
       if (res.ok) showFlash('Saved', true);
       else showFlash('Save failed', false);
       await refreshLive();
     }
 
     async function startRoom() {
-      await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/start', { method: 'POST', headers: headers() });
+      const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/start', { method: 'POST', headers: headers() });
+      if (res.status === 401) { switchRoom(); return; }
       showFlash('Room accepting joins', true);
       await refreshLive();
     }
 
     async function stopRoom() {
-      await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/stop', { method: 'POST', headers: headers() });
+      const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/stop', { method: 'POST', headers: headers() });
+      if (res.status === 401) { switchRoom(); return; }
       showFlash('New joins stopped', true);
       await refreshLive();
     }
 
     async function kickSeat(seatId) {
-      await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/kick/' + encodeURIComponent(seatId), {
+      const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/kick/' + encodeURIComponent(seatId), {
         method: 'POST', headers: headers(),
       });
+      if (res.status === 401) { showFlash('Session expired — unlock again', false); switchRoom(); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showFlash(data.error || 'Kick failed', false);
+        return;
+      }
       showFlash('Viewer removed', true);
       await refreshLive();
     }
@@ -450,17 +525,16 @@
       navigator.clipboard.writeText(t).then(() => showFlash('Copied', true));
     }
 
-    document.getElementById('unlockBtn').addEventListener('click', unlock);
+    document.getElementById('tabCreate').addEventListener('click', () => showEntryPath('create'));
+    document.getElementById('tabManage').addEventListener('click', () => showEntryPath('manage'));
+    document.getElementById('manageUnlockBtn').addEventListener('click', manageUnlock);
+    document.getElementById('switchRoomBtn').addEventListener('click', switchRoom);
     document.getElementById('createRoomBtn').addEventListener('click', createRoom);
     document.getElementById('copyJoinBtn').addEventListener('click', () => copyText('joinUrl'));
     document.getElementById('copyOverlayBtn').addEventListener('click', () => copyText('overlayUrl'));
     document.getElementById('saveConfigBtn').addEventListener('click', saveConfig);
     document.getElementById('startRoomBtn').addEventListener('click', startRoom);
     document.getElementById('stopRoomBtn').addEventListener('click', stopRoom);
-    document.getElementById('roomSelect').addEventListener('change', () => {
-      currentRoomId = document.getElementById('roomSelect').value;
-      refreshLive();
-    });
     document.getElementById('tokenPreset').addEventListener('change', syncTokenUi);
     document.getElementById('rewardsEnabled').addEventListener('change', syncRewardsUi);
     document.getElementById('rewardsType').addEventListener('change', syncRewardsUi);
@@ -469,6 +543,8 @@
     document.getElementById('usdcContractLabel').addEventListener('click', () => {
       navigator.clipboard.writeText(ARC_USDC).then(() => showFlash('USDC contract copied', true));
     });
+
+    showEntryPath('create');
   </script>
 </body>
 </html>
