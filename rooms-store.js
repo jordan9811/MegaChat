@@ -25,6 +25,29 @@ export function getEnvDefaults() {
     paymentTokenAddress: process.env.USDC_ADDRESS || '0x3600000000000000000000000000000000000000',
     paymentTokenSymbol: 'USDC',
     paymentTokenDecimals: 6,
+    rewards: {
+      enabled: false,
+      earnInterval: Number(process.env.EARN_INTERVAL || 60),
+      earnAmount: String(process.env.EARN_AMOUNT || '0.1'),
+      earnCap: String(process.env.EARN_CAP || '5'),
+      rewardType: 'usdc',
+      rewardTokenAddress: null,
+    },
+  };
+}
+
+function resolveRewards(cfg, defaults) {
+  const r = cfg.rewards || {};
+  const d = defaults.rewards;
+  return {
+    enabled: r.enabled === true,
+    earnInterval: Number(r.earnInterval ?? d.earnInterval),
+    earnAmount: String(r.earnAmount ?? d.earnAmount),
+    earnCap: String(r.earnCap ?? d.earnCap),
+    rewardType: String(r.rewardType ?? d.rewardType),
+    rewardTokenAddress: r.rewardTokenAddress ?? d.rewardTokenAddress,
+    rewardTokenSymbol: r.rewardTokenSymbol ?? null,
+    rewardTokenDecimals: r.rewardTokenDecimals ?? null,
   };
 }
 
@@ -120,6 +143,7 @@ export function resolveRoomConfig(roomId) {
     paymentTokenAddress: String(cfg.paymentTokenAddress ?? defaults.paymentTokenAddress),
     paymentTokenSymbol: String(cfg.paymentTokenSymbol ?? defaults.paymentTokenSymbol),
     paymentTokenDecimals: Number(cfg.paymentTokenDecimals ?? defaults.paymentTokenDecimals),
+    rewards: resolveRewards(cfg, defaults),
   };
 }
 

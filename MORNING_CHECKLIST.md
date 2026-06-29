@@ -1,61 +1,67 @@
 # Morning checklist — streamer-dashboard branch
 
-Branch: **`streamer-dashboard`** (off `modular-wallets`)
+Branch: **`streamer-dashboard`**
 
-## Phase status
+## Part status (this pass)
 
-| Phase | Gate | Commit | Live verification |
-|-------|------|--------|-------------------|
-| **1 — Streamer dashboard** | `npm run gate:dashboard` ✓ | `phase 1: streamer dashboard` | [DASHBOARD_TEST.md](DASHBOARD_TEST.md) |
-| **2 — Pluggable token** | `npm run gate:tokens` ✓ | `phase 2: pluggable payment token` | [TOKENS_TEST.md](TOKENS_TEST.md) |
-| **3 — Payout/reward token** | Not started | — | Stretch; rewards still use global `.env` |
+| Part | Gate | Commit | Live doc |
+|------|------|--------|----------|
+| **Baseline** | — | `baseline: before part A/B UX and rewards pass` | — |
+| **Part A — UX overhaul** | `npm run gate:ui-a` ✓ | `part A: app-wide UX overhaul` | [UI_TEST.md](UI_TEST.md) |
+| **Part B — Optional rewards** | `npm run gate:rewards-b` ✓ | `part B: optional rewards primitive (first pass)` | [REWARDS_TEST.md](REWARDS_TEST.md) |
 
-## Before you test
+## Earlier phases (still must pass)
+
+| Phase | Gate | Doc |
+|-------|------|-----|
+| Dashboard + rooms | `npm run gate:dashboard` | [DASHBOARD_TEST.md](DASHBOARD_TEST.md) |
+| Pluggable token | `npm run gate:tokens` | [TOKENS_TEST.md](TOKENS_TEST.md) |
+| Passkey join fix | `npm run gate:phase2` | [PHASE2_TEST.md](PHASE2_TEST.md) |
+
+## Before you test live
 
 ```bash
 npm run build:passkey
 npm start
 ```
 
-Set in `.env`: `STREAMER_DASHBOARD_KEY`, `CIRCLE_CLIENT_KEY`, `SELLER_WALLET_ADDRESS`, `SELLER_PRIVATE_KEY`.
+`.env`: `STREAMER_DASHBOARD_KEY`, `CIRCLE_CLIENT_KEY`, `SELLER_WALLET_ADDRESS`, `SELLER_PRIVATE_KEY`.  
+Optional: `REWARD_POOL_PRIVATE_KEY` for on-chain USDC reward payout (otherwise local/dry-run credits).
 
-## Tomorrow — verify in order
+## Verify in order
 
-### 1. Dashboard (Phase 1)
+### 1. Product spine — pay to join
 
-- [ ] http://localhost:3000/dashboard — unlock with dashboard key
-- [ ] Create room → save tick prices → copy JOIN + OVERLAY URLs
-- [ ] OBS browser source with overlay URL (`?room=…`)
-- [ ] Passkey join on JOIN URL — one approve, meter ticks, tile on overlay
-- [ ] MetaMask join on same room — Gateway flow unchanged
-- [ ] Stop room → join rejected; kick removes seat
+- [ ] `/dashboard` — create room; config **above** Create; URLs only in result panel
+- [ ] JOIN link `/?room=…` — passkey: one approve, per-second meter, overlay tile
+- [ ] Same room — MetaMask Gateway join unchanged
+- [ ] Stop room → join rejected; kick works
 
-### 2. Custom token (Phase 2)
+### 2. Part A UX
 
-- [ ] Dashboard → set passkey payment token (or leave USDC default)
-- [ ] Join page shows correct **symbol** in meter
-- [ ] Passkey approve/pull uses chosen token on Arcscan
-- [ ] MetaMask still shows USDC / Gateway only
+- [ ] Token dropdown defaults USDC; custom address only when chosen
+- [ ] Plain-language labels; Advanced expander for dual pricing
+- [ ] Join + overlay pages use mint/teal theme; **overlay.html not restyled**
 
-### 3. Regression (must not break)
+### 3. Part B rewards (optional)
 
-- [ ] http://localhost:3000/ without `?room=` uses **default** room
-- [ ] Overlay animations, leave/refund, vdo.ninja camera flow
-- [ ] No console TDZ errors on load
+- [ ] Dashboard **Rewards (optional)** — enable, save, persists
+- [ ] Join page shows **earned toward join** when enabled
+- [ ] Focused watch → balance accrues; spend toward join (free/cheaper)
+- [ ] Room with rewards **off** — identical to pre-rewards join
 
-### 4. Phase 2 passkey join fix (prior)
+### 4. Regression
 
-- [ ] After approve, **no** 402 / `transfer_not_found` on join
-- [ ] Server logs `[join:passkey] verified allowance …`
+- [ ] `/` without `?room=` → default room
+- [ ] No console TDZ / null errors on `/`, `/dashboard`, `/overlay`
+- [ ] vdo.ninja camera, leave, animations, room-scoped WS
 
-## Automated gates (run anytime)
+## Automated gates
 
 ```bash
+npm run gate:ui-a
+npm run gate:rewards-b
 npm run gate:dashboard
 npm run gate:tokens
 npm run gate:phase2
 ```
-
-## Phase 3 (not landed)
-
-Watch-to-earn reward token / points from dashboard — still global `EARN_*` in `.env`. Next step: extend `rewards.js` + dashboard fields per room without touching join/meter paths.

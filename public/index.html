@@ -363,9 +363,9 @@
         <span>≈ time left</span>
         <span class="meter-val" id="meterTime">—</span>
       </div>
-      <div class="meter-row" id="earnedRow">
-        <span>earned this session</span>
-        <span class="meter-val" id="rewardsEarned">0 USDC</span>
+      <div class="meter-row" id="earnedRow" style="display:none">
+        <span>earned toward join</span>
+        <span class="meter-val" id="rewardsEarned">0</span>
       </div>
     </div>
 
@@ -443,6 +443,7 @@
       return 'default';
     }
     streamRoomId = parseStreamRoomFromUrl();
+    window.__streamRoomId = streamRoomId;
 
     // Safe provider accessor: never throws, returns null when no injected wallet.
     function getProvider() {
@@ -476,6 +477,12 @@
         throw new Error(err.error || 'Failed to load room config');
       }
       CONFIG = await res.json();
+      window.__streamRoomId = streamRoomId;
+      window.dispatchEvent(new CustomEvent('stream:room'));
+      const earnedRow = document.getElementById('earnedRow');
+      if (earnedRow) {
+        earnedRow.style.display = (CONFIG.rewards && CONFIG.rewards.enabled) ? '' : 'none';
+      }
       if (CONFIG.roomName) {
         document.title = CONFIG.roomName + ' — Join';
       }
@@ -973,6 +980,26 @@
           ? ` (available ${terms.available} USDC)`
           : '';
         throw new Error((terms.hint || terms.error || 'Cannot join') + detail);
+      }
+      if (terms.useRewardCredit) {
+        btn.textContent = '⏳ Joining with earned balance…';
+        const paid = await fetch('/api/join/passkey', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username,
+            address: account,
+            room: streamRoomId,
+            useRewardCredit: true,
+          }),
+        });
+        const data = await paid.json();
+        if (paid.ok && data.success) {
+          onJoinSuccess(data);
+        } else {
+          throw new Error(data.reason || data.error || 'Reward join was not accepted');
+        }
+        return;
       }
       if (!terms.needsApprove) {
         throw new Error('Unexpected passkey join response');

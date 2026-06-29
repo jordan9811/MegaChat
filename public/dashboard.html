@@ -160,15 +160,52 @@
       <p class="hint" id="noSeats">No viewers in seats yet.</p>
     </section>
 
-    <!-- SECONDARY: rewards stub (Part B wires settings) -->
+    <!-- SECONDARY: optional rewards (promo lever — not a separate mode) -->
     <details class="optional-section card" id="rewardsSection" style="padding:0;border:none;background:transparent;box-shadow:none">
       <summary>🎁 Rewards (optional) — give viewers drops to encourage joins</summary>
       <div class="optional-body card" style="margin:0">
-        <p class="card-desc">A crypto-native promo lever: viewers earn while watching, then spend toward joining. Off by default.</p>
+        <p class="card-desc">Viewers earn while watching (focused tab), then spend toward joining — same balance the meter draws from. Off by default.</p>
         <div class="field">
-          <label><input type="checkbox" id="rewardsEnabled" disabled> Enable rewards for this room <em>(Part B)</em></label>
+          <label><input type="checkbox" id="rewardsEnabled"> Enable rewards for this room</label>
         </div>
-        <p class="hint">Settings will appear here once rewards is enabled in the next update.</p>
+        <div id="rewardsFields" class="hidden">
+          <div class="grid-2">
+            <div class="field">
+              <label for="rewardsEarnInterval">
+                Earn interval (seconds)
+                <span class="info-tip" data-tip="How long a focused viewer waits between drops">?</span>
+              </label>
+              <input id="rewardsEarnInterval" type="number" min="5" value="60">
+            </div>
+            <div class="field">
+              <label for="rewardsEarnAmount">
+                Amount per drop
+                <span class="info-tip" data-tip="earnAmount — credited to join balance each interval">?</span>
+              </label>
+              <input id="rewardsEarnAmount" type="text" value="0.1">
+            </div>
+            <div class="field">
+              <label for="rewardsEarnCap">
+                Max per session
+                <span class="info-tip" data-tip="earnCap — cap on farming per watch session">?</span>
+              </label>
+              <input id="rewardsEarnCap" type="text" value="5">
+            </div>
+            <div class="field">
+              <label for="rewardsType">Reward type</label>
+              <select id="rewardsType">
+                <option value="usdc">USDC (local credit / pool payout)</option>
+                <option value="token">Custom ERC-20</option>
+                <option value="points">Points (non-monetary)</option>
+              </select>
+            </div>
+          </div>
+          <div class="field hidden" id="rewardsTokenWrap">
+            <label for="rewardsTokenAddress">Reward token contract (Arc)</label>
+            <input id="rewardsTokenAddress" placeholder="0x…">
+          </div>
+          <p class="hint">On-chain payout requires <code>REWARD_POOL_PRIVATE_KEY</code> in .env; otherwise credits accrue locally (dry-run) and still work for cheaper joins.</p>
+        </div>
       </div>
     </details>
 
@@ -225,12 +262,27 @@
       if (tip) tip.setAttribute('data-tip', 'Arc Testnet USDC: ' + ARC_USDC);
     }
 
+    function syncRewardsUi() {
+      const on = document.getElementById('rewardsEnabled').checked;
+      document.getElementById('rewardsFields').classList.toggle('hidden', !on);
+      const isToken = document.getElementById('rewardsType').value === 'token';
+      document.getElementById('rewardsTokenWrap').classList.toggle('hidden', !isToken);
+    }
+
     function gatherConfig() {
       const preset = document.getElementById('tokenPreset');
       let paymentTokenAddress = ARC_USDC;
       if (preset && preset.value === 'custom') {
         paymentTokenAddress = (document.getElementById('customTokenAddress').value || '').trim();
       }
+      const rewards = {
+        enabled: document.getElementById('rewardsEnabled').checked,
+        earnInterval: Number(document.getElementById('rewardsEarnInterval').value) || 60,
+        earnAmount: document.getElementById('rewardsEarnAmount').value,
+        earnCap: document.getElementById('rewardsEarnCap').value,
+        rewardType: document.getElementById('rewardsType').value,
+        rewardTokenAddress: (document.getElementById('rewardsTokenAddress').value || '').trim() || null,
+      };
       return {
         passkeyTickPrice: document.getElementById('passkeyTickPrice').value,
         passkeyTickSeconds: Number(document.getElementById('passkeyTickSeconds').value),
@@ -239,6 +291,7 @@
         tickPrice: document.getElementById('tickPrice').value,
         tickSeconds: Number(document.getElementById('tickSeconds').value),
         paymentTokenAddress,
+        rewards,
       };
     }
 
@@ -258,6 +311,14 @@
       }
       syncTokenUi();
       updatePerMinuteHint();
+      const rw = room.rewards || {};
+      document.getElementById('rewardsEnabled').checked = !!rw.enabled;
+      document.getElementById('rewardsEarnInterval').value = rw.earnInterval ?? 60;
+      document.getElementById('rewardsEarnAmount').value = rw.earnAmount ?? '0.1';
+      document.getElementById('rewardsEarnCap').value = rw.earnCap ?? '5';
+      document.getElementById('rewardsType').value = rw.rewardType || 'usdc';
+      document.getElementById('rewardsTokenAddress').value = rw.rewardTokenAddress || '';
+      syncRewardsUi();
     }
 
     function showResultPanel(joinUrl, overlayUrl) {
@@ -401,6 +462,8 @@
       refreshLive();
     });
     document.getElementById('tokenPreset').addEventListener('change', syncTokenUi);
+    document.getElementById('rewardsEnabled').addEventListener('change', syncRewardsUi);
+    document.getElementById('rewardsType').addEventListener('change', syncRewardsUi);
     document.getElementById('passkeyTickPrice').addEventListener('input', updatePerMinuteHint);
     document.getElementById('passkeyTickSeconds').addEventListener('input', updatePerMinuteHint);
     document.getElementById('usdcContractLabel').addEventListener('click', () => {

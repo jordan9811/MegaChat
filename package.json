@@ -7,6 +7,7 @@
     "gate:phase2": "node _gate-phase2.mjs",
     "gate:dashboard": "node _gate-dashboard-phase1.mjs",
     "gate:ui-a": "node _gate-ui-part-a.mjs",
+    "gate:rewards-b": "node _gate-rewards-part-b.mjs",
     "start": "node server.js"
   },
   "dependencies": {

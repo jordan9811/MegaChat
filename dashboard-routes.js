@@ -63,6 +63,19 @@ export function attachDashboardRoutes(app, deps) {
         return res.status(400).json({ error: 'Invalid payment token', message: err.message });
       }
     }
+    if (mergedConfig.rewards?.rewardType === 'token' && mergedConfig.rewards.rewardTokenAddress) {
+      try {
+        const meta = await validatePaymentToken(
+          mergedConfig.rewards.rewardTokenAddress,
+          deps.rpcUrl,
+          deps.chainId
+        );
+        mergedConfig.rewards.rewardTokenSymbol = meta.symbol;
+        mergedConfig.rewards.rewardTokenDecimals = meta.decimals;
+      } catch (err) {
+        return res.status(400).json({ error: 'Invalid reward token', message: err.message });
+      }
+    }
     const room = createRoom(name, mergedConfig);
     console.log(`[dashboard] created room ${room.id} (${room.name})`);
     res.status(201).json({
@@ -116,6 +129,19 @@ export function attachDashboardRoutes(app, deps) {
         console.log(`[dashboard] token ${meta.symbol} (${meta.decimals} dec) @ ${meta.address}`);
       } catch (err) {
         return res.status(400).json({ error: 'Invalid payment token', message: err.message });
+      }
+    }
+    if (body.config?.rewards?.rewardType === 'token' && body.config.rewards.rewardTokenAddress) {
+      try {
+        const meta = await validatePaymentToken(
+          body.config.rewards.rewardTokenAddress,
+          deps.rpcUrl,
+          deps.chainId
+        );
+        body.config.rewards.rewardTokenSymbol = meta.symbol;
+        body.config.rewards.rewardTokenDecimals = meta.decimals;
+      } catch (err) {
+        return res.status(400).json({ error: 'Invalid reward token', message: err.message });
       }
     }
     const room = updateRoom(id, body);

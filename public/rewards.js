@@ -1,14 +1,14 @@
-// ─── Pass C: watch-to-earn (isolated client) ─────────────────────────────────
-//
-// Self-contained. Opens its OWN WebSocket, tracks the connected wallet + tab
-// focus (Page Visibility API), and shows "earned this session" next to the
-// spend meter. It never touches the Pass A / Pass B join code.
+// ─── Optional rewards client (isolated — never touches join/meter core) ───────
 (function () {
   'use strict';
 
   let wallet = null;
   let ws = null;
   let cfg = null;
+
+  function getRoomId() {
+    return window.__streamRoomId || 'default';
+  }
 
   function connect() {
     try {
@@ -39,12 +39,11 @@
           console.warn('[rewards] payout error:', msg.message);
           break;
         default:
-          break; // ignore A/B traffic
+          break;
       }
     });
 
     ws.addEventListener('close', () => {
-      // Reconnect so earning resumes after a blip.
       setTimeout(connect, 3000);
     });
 
@@ -58,7 +57,9 @@
   }
 
   function registerWallet() {
-    if (wallet) send({ type: 'rewards_register', wallet });
+    if (wallet) {
+      send({ type: 'rewards_register', wallet, roomId: getRoomId() });
+    }
   }
 
   function sendVisibility() {
@@ -74,32 +75,38 @@
   function updateLabel() {
     const el = document.getElementById('earnedRow');
     if (!el || !cfg) return;
+    if (!cfg.enabled) {
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = '';
     const label = el.querySelector('span');
     if (label) {
       label.textContent = cfg.dryRun
-        ? 'earned this session (sim)'
-        : 'earned this session';
+        ? 'earned toward join (sim)'
+        : 'earned toward join';
     }
   }
 
   function renderEarned(msg) {
+    if (cfg && cfg.enabled === false) return;
     const meter = document.getElementById('meter');
-    if (meter) meter.classList.add('show'); // reveal so earnings show pre-join
+    if (meter) meter.classList.add('show');
     const el = document.getElementById('rewardsEarned');
     if (el) {
-      const amount = msg.earnedSession != null ? msg.earnedSession : '0';
-      el.textContent = `${amount} USDC` + (msg.capped ? ' (cap)' : '');
+      const sym = msg.symbol || 'USDC';
+      const amount = msg.joinBalance != null ? msg.joinBalance : (msg.earnedSession != null ? msg.earnedSession : '0');
+      el.textContent = `${amount} ${sym}` + (msg.capped ? ' (cap)' : '');
     }
   }
 
-  // Track tab focus.
   document.addEventListener('visibilitychange', sendVisibility);
 
-  // Discover the wallet: react to the main UI connecting, and also pick up an
-  // already-authorized account on load.
   window.addEventListener('wallet:connected', (e) => {
     if (e.detail && e.detail.account) setWallet(e.detail.account);
   });
+
+  window.addEventListener('stream:room', () => registerWallet());
 
   if (window.ethereum) {
     window.ethereum.request({ method: 'eth_accounts' })

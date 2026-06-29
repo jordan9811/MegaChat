@@ -1,74 +1,44 @@
-// ─── Pass C: Watch-to-earn (fully isolated module) ───────────────────────────
-//
-// Viewers earn testnet USDC for time spent CONNECTED + FOCUSED on this site
-// (measured purely by the WebSocket session + Page Visibility API, so it works
-// even when the actual stream is on Twitch/Kick/Zora). Earnings are credited
-// straight into the viewer's Circle Gateway balance from a pre-funded pool
-// wallet via `GatewayClient.depositFor(amount, viewer)`, which makes them
-// immediately spendable through the Pass B meter.
-//
-// EVERYTHING watch-to-earn lives in this module. It attaches its own WebSocket
-// listeners and never touches the Pass A / Pass B code paths, so if rewards
-// fail to initialise (e.g. no pool key) the core app keeps working untouched.
-
+// ─── Optional rewards primitive (isolated — never breaks pay-to-join) ────────
 import { GatewayClient } from '@circle-fin/x402-batching/client';
+import { creditViewer, parseRewardAmount, formatRewardAmount, getCredit } from './reward-credits.js';
+import { toAtomic } from './token-utils.js';
 
 function usdcToAtomic(amountStr) {
-  const [whole, frac = ''] = String(amountStr).split('.');
-  const fracPadded = (frac + '000000').slice(0, 6);
-  return BigInt(whole || '0') * 1000000n + BigInt(fracPadded || '0');
+  return toAtomic(amountStr, 6);
 }
 function atomicToUsdc(atomic) {
-  const v = BigInt(atomic);
-  const whole = v / 1000000n;
-  const frac = (v % 1000000n).toString().padStart(6, '0').replace(/0+$/, '');
-  return frac ? `${whole}.${frac}` : `${whole}`;
+  return formatRewardAmount(atomic, 6);
 }
 
 /**
- * Attach watch-to-earn rewards to an existing WebSocketServer.
- *
  * @param {import('ws').WebSocketServer} wss
  * @param {object} opts
- * @param {number} [opts.earnInterval=60]  seconds of focused time per credit
- * @param {string} [opts.earnAmount="0.1"] USDC credited each interval
- * @param {string} [opts.earnCap="5"]      max USDC per wallet per session
- * @param {string} [opts.poolWallet]       reward pool wallet address (display)
- * @param {string} [opts.poolPrivateKey]   reward pool private key (payouts)
- * @param {string} [opts.rpcUrl]           Arc RPC url
+ * @param {Function} opts.getRoomConfig — (roomId) => room config or null
+ * @param {string} [opts.poolPrivateKey]
+ * @param {string} [opts.rpcUrl]
  */
 export function attachRewards(wss, opts = {}) {
-  const EARN_INTERVAL = Number(opts.earnInterval || 60);
-  const EARN_AMOUNT = String(opts.earnAmount || '0.1');
-  const EARN_CAP = String(opts.earnCap || '5');
-  const EARN_AMOUNT_ATOMIC = usdcToAtomic(EARN_AMOUNT);
-  const EARN_CAP_ATOMIC = usdcToAtomic(EARN_CAP);
+  const getRoomConfig = opts.getRoomConfig || (() => null);
   const RPC_URL = opts.rpcUrl || 'https://rpc.testnet.arc.network';
 
-  // Build the payout client only if a pool key is configured. Without it we run
-  // in "dry-run" mode: the earn loop still runs and the UI still ticks up so the
-  // loop is demonstrable, but no on-chain deposit is made.
   let gatewayClient = null;
-  let dryRun = true;
+  let poolDryRun = true;
   if (opts.poolPrivateKey && /^0x[0-9a-fA-F]{64}$/.test(opts.poolPrivateKey)) {
     try {
       gatewayClient = new GatewayClient({
         chain: 'arcTestnet',
         privateKey: opts.poolPrivateKey,
-        rpcUrl: RPC_URL
+        rpcUrl: RPC_URL,
       });
-      dryRun = false;
+      poolDryRun = false;
     } catch (err) {
-      console.warn('[rewards] payout client init failed, running dry-run:', err.message);
-      gatewayClient = null;
-      dryRun = true;
+      console.warn('[rewards] pool client init failed — credits accrue locally only:', err.message);
     }
   } else {
-    console.warn('[rewards] REWARD_POOL_PRIVATE_KEY not set — running in dry-run mode (no on-chain payouts).');
+    console.warn('[rewards] REWARD_POOL_PRIVATE_KEY not set — local credit mode (join balance still works).');
   }
 
-  // Per-connection session state.
-  const sessions = new Map(); // ws -> { wallet, visible, accruedMs, earnedAtomic, crediting }
+  const sessions = new Map();
 
   function send(ws, msg) {
     if (ws.readyState === 1) {
@@ -76,86 +46,132 @@ export function attachRewards(wss, opts = {}) {
     }
   }
 
-  async function creditViewer(ws, state) {
-    if (state.crediting) return;
-    if (!state.wallet) return;
-    if (state.earnedAtomic >= EARN_CAP_ATOMIC) {
+  function rewardMeta(roomCfg) {
+    const rw = roomCfg?.rewards || {};
+    if (rw.rewardType === 'points') {
+      return { type: 'points', symbol: 'PTS', decimals: 0 };
+    }
+    if (rw.rewardType === 'token' && rw.rewardTokenAddress) {
+      return {
+        type: 'token',
+        symbol: rw.rewardTokenSymbol || roomCfg.paymentTokenSymbol || 'TOKEN',
+        decimals: rw.rewardTokenDecimals ?? roomCfg.paymentTokenDecimals ?? 6,
+      };
+    }
+    return { type: 'usdc', symbol: 'USDC', decimals: 6 };
+  }
+
+  function earnAtomicForRoom(roomCfg) {
+    const rw = roomCfg.rewards;
+    const meta = rewardMeta(roomCfg);
+    return parseRewardAmount(rw.earnAmount, meta.decimals);
+  }
+
+  function capAtomicForRoom(roomCfg) {
+    const rw = roomCfg.rewards;
+    const meta = rewardMeta(roomCfg);
+    return parseRewardAmount(rw.earnCap, meta.decimals);
+  }
+
+  async function creditViewerSession(ws, state) {
+    if (state.crediting || !state.wallet || !state.roomId) return;
+    const roomCfg = getRoomConfig(state.roomId);
+    if (!roomCfg?.rewards?.enabled) return;
+
+    const earnAtomic = earnAtomicForRoom(roomCfg);
+    const capAtomic = capAtomicForRoom(roomCfg);
+    const meta = rewardMeta(roomCfg);
+
+    if (state.sessionEarned >= capAtomic) {
       send(ws, {
         type: 'rewards_earned',
         wallet: state.wallet,
-        earnedSession: atomicToUsdc(state.earnedAtomic),
+        roomId: state.roomId,
+        earnedSession: formatRewardAmount(state.sessionEarned, meta.decimals),
+        symbol: meta.symbol,
         capped: true,
-        dryRun
+        dryRun: poolDryRun,
       });
       return;
     }
 
-    // Clamp the credit so we never exceed the per-session cap.
-    let amountAtomic = EARN_AMOUNT_ATOMIC;
-    if (state.earnedAtomic + amountAtomic > EARN_CAP_ATOMIC) {
-      amountAtomic = EARN_CAP_ATOMIC - state.earnedAtomic;
+    let amountAtomic = earnAtomic;
+    if (state.sessionEarned + amountAtomic > capAtomic) {
+      amountAtomic = capAtomic - state.sessionEarned;
     }
     if (amountAtomic <= 0n) return;
-    const amountStr = atomicToUsdc(amountAtomic);
 
     state.crediting = true;
     let txHash = null;
     try {
-      if (gatewayClient) {
-        const result = await gatewayClient.depositFor(amountStr, state.wallet);
+      if (meta.type === 'usdc' && gatewayClient && !poolDryRun) {
+        const result = await gatewayClient.depositFor(
+          formatRewardAmount(amountAtomic, 6),
+          state.wallet
+        );
         txHash = result.depositTxHash || null;
       }
-      state.earnedAtomic += amountAtomic;
+      creditViewer(state.roomId, state.wallet, amountAtomic, meta);
+      state.sessionEarned += amountAtomic;
+      const bal = getCredit(state.roomId, state.wallet);
       send(ws, {
         type: 'rewards_earned',
         wallet: state.wallet,
-        credited: amountStr,
-        earnedSession: atomicToUsdc(state.earnedAtomic),
+        roomId: state.roomId,
+        credited: formatRewardAmount(amountAtomic, meta.decimals),
+        earnedSession: formatRewardAmount(state.sessionEarned, meta.decimals),
+        joinBalance: formatRewardAmount(bal.atomic, meta.decimals),
+        symbol: meta.symbol,
         txHash,
-        capped: state.earnedAtomic >= EARN_CAP_ATOMIC,
-        dryRun
+        capped: state.sessionEarned >= capAtomic,
+        dryRun: poolDryRun || meta.type !== 'usdc',
       });
-      console.log(`[rewards] credited ${amountStr} USDC to ${state.wallet}` +
-        (txHash ? ` (tx ${txHash})` : ' (dry-run)'));
+      console.log(
+        `[rewards] room ${state.roomId} credited ${formatRewardAmount(amountAtomic, meta.decimals)} ${meta.symbol} → ${state.wallet}`
+      );
     } catch (err) {
-      console.warn(`[rewards] payout to ${state.wallet} failed:`, err.message);
-      send(ws, { type: 'rewards_error', wallet: state.wallet, message: err.message });
+      creditViewer(state.roomId, state.wallet, amountAtomic, meta);
+      state.sessionEarned += amountAtomic;
+      send(ws, {
+        type: 'rewards_earned',
+        wallet: state.wallet,
+        roomId: state.roomId,
+        credited: formatRewardAmount(amountAtomic, meta.decimals),
+        earnedSession: formatRewardAmount(state.sessionEarned, meta.decimals),
+        symbol: meta.symbol,
+        dryRun: true,
+        note: 'local credit (pool payout failed)',
+      });
     } finally {
       state.crediting = false;
     }
   }
 
-  // One shared 1s ticker accrues focused time and triggers credits.
   const ticker = setInterval(() => {
     for (const [ws, state] of sessions.entries()) {
-      if (!state.wallet || !state.visible) continue;
+      if (!state.wallet || !state.visible || !state.roomId) continue;
+      const roomCfg = getRoomConfig(state.roomId);
+      if (!roomCfg?.rewards?.enabled) continue;
+      const intervalSec = roomCfg.rewards.earnInterval || 60;
       state.accruedMs += 1000;
-      if (state.accruedMs >= EARN_INTERVAL * 1000) {
-        state.accruedMs -= EARN_INTERVAL * 1000;
-        // Fire and forget; creditViewer guards against overlap.
-        creditViewer(ws, state);
+      if (state.accruedMs >= intervalSec * 1000) {
+        state.accruedMs -= intervalSec * 1000;
+        creditViewerSession(ws, state).catch((e) =>
+          console.warn('[rewards] credit error:', e.message)
+        );
       }
     }
   }, 1000);
   if (typeof ticker.unref === 'function') ticker.unref();
 
-  // Attach our OWN connection listener (additive — does not affect A/B).
   wss.on('connection', (ws) => {
     sessions.set(ws, {
       wallet: null,
+      roomId: null,
       visible: true,
       accruedMs: 0,
-      earnedAtomic: 0n,
-      crediting: false
-    });
-
-    send(ws, {
-      type: 'rewards_config',
-      earnInterval: EARN_INTERVAL,
-      earnAmount: EARN_AMOUNT,
-      earnCap: EARN_CAP,
-      poolWallet: opts.poolWallet || null,
-      dryRun
+      sessionEarned: 0n,
+      crediting: false,
     });
 
     ws.on('message', (data) => {
@@ -165,31 +181,52 @@ export function attachRewards(wss, opts = {}) {
       if (!state) return;
 
       switch (msg.type) {
-        case 'rewards_register':
+        case 'rewards_register': {
           if (typeof msg.wallet === 'string' && /^0x[0-9a-fA-F]{40}$/.test(msg.wallet)) {
             state.wallet = msg.wallet;
+            state.roomId = typeof msg.roomId === 'string' ? msg.roomId : null;
             state.accruedMs = 0;
+            state.sessionEarned = 0n;
+          }
+          const roomCfg = state.roomId ? getRoomConfig(state.roomId) : null;
+          const rw = roomCfg?.rewards;
+          send(ws, {
+            type: 'rewards_config',
+            roomId: state.roomId,
+            enabled: !!(rw && rw.enabled),
+            earnInterval: rw?.earnInterval ?? 60,
+            earnAmount: rw?.earnAmount ?? '0.1',
+            earnCap: rw?.earnCap ?? '5',
+            rewardType: rw?.rewardType ?? 'usdc',
+            dryRun: poolDryRun,
+          });
+          if (state.wallet && state.roomId) {
+            const meta = roomCfg ? rewardMeta(roomCfg) : { symbol: 'USDC', decimals: 6 };
+            const bal = getCredit(state.roomId, state.wallet);
             send(ws, {
               type: 'rewards_earned',
               wallet: state.wallet,
-              earnedSession: atomicToUsdc(state.earnedAtomic),
-              dryRun
+              roomId: state.roomId,
+              earnedSession: formatRewardAmount(bal.atomic, meta.decimals),
+              joinBalance: formatRewardAmount(bal.atomic, meta.decimals),
+              symbol: meta.symbol,
+              dryRun: poolDryRun,
             });
           }
           break;
+        }
         case 'rewards_visibility':
           state.visible = !!msg.visible;
           break;
         default:
-          break; // ignore A/B messages
+          break;
       }
     });
 
-    ws.on('close', () => {
-      sessions.delete(ws);
-    });
+    ws.on('close', () => sessions.delete(ws));
   });
 
-  console.log(`[rewards] watch-to-earn active: ${EARN_AMOUNT} USDC / ${EARN_INTERVAL}s ` +
-    `(cap ${EARN_CAP} USDC/session)` + (dryRun ? ' [DRY-RUN]' : ''));
+  console.log('[rewards] optional per-room rewards attached' + (poolDryRun ? ' [local/dry-run credits]' : ''));
 }
+
+export { getCredit, consumeCredit, formatRewardAmount } from './reward-credits.js';

@@ -9,6 +9,7 @@ import {
   GATEWAY_AUTH_VALIDITY_WINDOW_SECONDS
 } from '@circle-fin/x402-batching/server';
 import { attachRewards } from './rewards.js';
+import { getCredit, consumeCredit, creditViewer } from './reward-credits.js';
 import {
   applyStreamTick,
   streamMeterPayload,
@@ -170,12 +171,29 @@ if (SELLER_PRIVATE_KEY && /^0x[0-9a-fA-F]{64}$/.test(SELLER_PRIVATE_KEY)) {
 // to the viewer. Passkey stream seats skip this — unspent USDC never left the wallet.
 async function refundSeat(seat) {
   if (!seat || seat.refunded) return;
-  if (seat.paymentMode === 'passkey_stream') {
+  if (
+    seat.paymentMode === 'passkey_stream'
+    || seat.paymentMode === 'credit_stream'
+    || seat.paymentMode === 'points_stream'
+  ) {
     seat.refunded = true;
     if (seat.remainingAtomic > 0n) {
-      console.log(
-        `[refund] stream seat ${seat.id}: ${atomicToUsdc(seat.remainingAtomic)} USDC was never pulled — remains in viewer wallet`
-      );
+      if (seat.paymentMode === 'passkey_stream') {
+        console.log(
+          `[refund] stream seat ${seat.id}: ${atomicToUsdc(seat.remainingAtomic)} USDC was never pulled — remains in viewer wallet`
+        );
+      } else {
+        const dec = seat.paymentTokenDecimals ?? 6;
+        const sym = seat.paymentTokenSymbol || 'CREDIT';
+        creditViewer(seat.streamRoomId, seat.viewerAddress, seat.remainingAtomic, {
+          type: seat.paymentMode === 'points_stream' ? 'points' : 'usdc',
+          symbol: sym,
+          decimals: dec,
+        });
+        console.log(
+          `[refund] credit seat ${seat.id}: returned ${fromAtomic(seat.remainingAtomic, dec)} ${sym} to earned balance`
+        );
+      }
     }
     return;
   }
@@ -464,6 +482,7 @@ app.get('/api/config', (req, res) => {
     paymentTokenDecimals: cfg.paymentTokenDecimals,
     gatewayTokenSymbol: 'USDC',
     gatewayNote: 'MetaMask/Gateway path always uses USDC on Arc',
+    rewards: cfg.rewards,
     modularWallets
   });
 });
@@ -616,8 +635,8 @@ function addParticipant(username, meta = {}) {
     passkeyTickPriceAtomic: atomics.passkeyTickPriceAtomic,
     maxSessionAtomic: atomics.maxSessionAtomic,
     paymentTokenAddress: roomCfg.paymentTokenAddress,
-    paymentTokenSymbol: roomCfg.paymentTokenSymbol,
-    paymentTokenDecimals: roomCfg.paymentTokenDecimals,
+    paymentTokenSymbol: meta.paymentTokenSymbol ?? roomCfg.paymentTokenSymbol,
+    paymentTokenDecimals: meta.paymentTokenDecimals ?? roomCfg.paymentTokenDecimals,
     lastMeterAt: 0,
     _tickInFlight: false,
   };
@@ -725,6 +744,7 @@ async function tickPasskeyStreamSeat(seat) {
   const tokenAddress = seat.paymentTokenAddress || USDC_ADDRESS;
   const tokenDec = seat.paymentTokenDecimals ?? 6;
   const tokenSym = seat.paymentTokenSymbol || 'USDC';
+  const localCredit = seat.paymentMode === 'credit_stream' || seat.paymentMode === 'points_stream';
   if (seat.remainingAtomic < tickPrice) {
     removeParticipant(seat.id, 'out_of_funds');
     return;
@@ -732,7 +752,11 @@ async function tickPasskeyStreamSeat(seat) {
 
   seat._tickInFlight = true;
   try {
-    if (sellerWalletClient) {
+    if (localCredit) {
+      console.log(
+        `[meter:credit] seat ${seat.id}: tick ${fromAtomic(tickPrice, tokenDec)} ${tokenSym}`
+      );
+    } else if (sellerWalletClient) {
       const tx = await sellerWalletClient.writeContract({
         address: tokenAddress,
         abi: erc20Abi,
@@ -774,7 +798,11 @@ function tickAllMeters() {
   const now = Date.now();
   for (const seat of activeSeats.values()) {
     if (!seat.live) continue;
-    if (seat.paymentMode === 'passkey_stream') {
+    if (
+      seat.paymentMode === 'passkey_stream'
+      || seat.paymentMode === 'credit_stream'
+      || seat.paymentMode === 'points_stream'
+    ) {
       const interval = (seat.passkeyTickSeconds ?? PASSKEY_TICK_SECONDS) * 1000;
       if (now - (seat.lastMeterAt || 0) < interval) continue;
       tickPasskeyStreamSeat(seat)
@@ -830,12 +858,9 @@ wss.on('connection', (ws) => {
 // ─── Pass C: watch-to-earn (isolated; never breaks Pass A / B) ───────────────
 try {
   attachRewards(wss, {
-    earnInterval: Number(process.env.EARN_INTERVAL || 60),
-    earnAmount: process.env.EARN_AMOUNT || '0.1',
-    earnCap: process.env.EARN_CAP || '5',
-    poolWallet: process.env.REWARD_POOL_WALLET_ADDRESS || null,
+    getRoomConfig: resolveRoomConfig,
     poolPrivateKey: process.env.REWARD_POOL_PRIVATE_KEY || null,
-    rpcUrl: ARC_RPC_URL
+    rpcUrl: ARC_RPC_URL,
   });
 } catch (err) {
   console.warn('[rewards] failed to attach, continuing without watch-to-earn:', err.message);
@@ -866,10 +891,30 @@ function schedulePendingCameraTimeout(seatId) {
 function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
   const tickPrice = roomCfg.passkeyTickPrice;
   const tickSec = roomCfg.passkeyTickSeconds;
-  const dec = roomCfg.paymentTokenDecimals;
-  const sym = roomCfg.paymentTokenSymbol;
+  const dec = seat.paymentTokenDecimals ?? roomCfg.paymentTokenDecimals;
+  const sym = seat.paymentTokenSymbol ?? roomCfg.paymentTokenSymbol;
   const priceAtomic = seat.passkeyTickPriceAtomic;
   const ticksLeft = priceAtomic > 0n ? Number(seat.remainingAtomic / priceAtomic) : 0;
+  const mode = seat.paymentMode || 'passkey_stream';
+  const payment = (mode === 'credit_stream' || mode === 'points_stream')
+    ? {
+        payer: verified.payer,
+        transaction: null,
+        allowance: fromAtomic(verified.allowance, dec),
+        tokenSymbol: sym,
+        network: ARC_NETWORK,
+        mode,
+        source: 'earned_balance',
+      }
+    : {
+        payer: verified.payer,
+        transaction: verified.txHash,
+        allowance: fromAtomic(verified.allowance, dec),
+        tokenSymbol: sym,
+        network: ARC_NETWORK,
+        mode: 'passkey_stream',
+        approach: PASSKEY_METER_APPROACH,
+      };
   return {
     success: true,
     message: 'Seat assigned! Open this link to go live:',
@@ -881,17 +926,9 @@ function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
     tickSeconds: tickSec,
     maxSession: roomCfg.maxSession,
     secondsLeft: ticksLeft * tickSec,
-    paymentMode: 'passkey_stream',
+    paymentMode: mode,
     paymentTokenSymbol: sym,
-    payment: {
-      payer: verified.payer,
-      transaction: verified.txHash,
-      allowance: fromAtomic(verified.allowance, dec),
-      tokenSymbol: sym,
-      network: ARC_NETWORK,
-      mode: 'passkey_stream',
-      approach: PASSKEY_METER_APPROACH,
-    }
+    payment,
   };
 }
 
@@ -914,8 +951,101 @@ app.post('/api/join/passkey', async (req, res) => {
       return res.status(404).json({ error: 'Room not found', roomId: resolved.roomId });
     }
     const { roomId, cfg, atomics } = resolved;
-
+    const rw = cfg.rewards;
     const modularPaymentHeader = req.headers['x-modular-payment'];
+    const useRewardCredit = req.body.useRewardCredit === true;
+
+    if (useRewardCredit && !modularPaymentHeader) {
+      if (!cfg.active) {
+        return res.status(403).json({ error: 'Room is not accepting joins', reason: 'room_stopped', roomId });
+      }
+      if (!rw?.enabled) {
+        return res.status(400).json({ error: 'Rewards not enabled for this room', roomId });
+      }
+
+      const credit = getCredit(roomId, address);
+      let sessionAtomic;
+      let paymentMode = 'credit_stream';
+      let tokenDec = cfg.paymentTokenDecimals;
+      let tokenSym = cfg.paymentTokenSymbol;
+
+      if (rw.rewardType === 'points') {
+        const tickAtomic = toAtomic(cfg.passkeyTickPrice, 0);
+        const maxAtomic = toAtomic(cfg.maxSession, 0);
+        sessionAtomic = credit.atomic < maxAtomic ? credit.atomic : maxAtomic;
+        if (sessionAtomic < tickAtomic) {
+          return res.status(402).json({
+            error: 'Not enough earned points to join',
+            reason: 'insufficient_rewards',
+            available: fromAtomic(credit.atomic, 0),
+            needAtLeast: cfg.passkeyTickPrice,
+            tokenSymbol: 'PTS',
+            path: 'passkey',
+            roomId,
+          });
+        }
+        paymentMode = 'points_stream';
+        tokenDec = 0;
+        tokenSym = 'PTS';
+      } else {
+        sessionAtomic = credit.atomic < atomics.maxSessionAtomic
+          ? credit.atomic
+          : atomics.maxSessionAtomic;
+        if (sessionAtomic < atomics.passkeyTickPriceAtomic) {
+          return res.status(402).json({
+            error: 'Not enough earned balance to join',
+            reason: 'insufficient_rewards',
+            available: fromAtomic(credit.atomic, cfg.paymentTokenDecimals),
+            needAtLeast: cfg.passkeyTickPrice,
+            tokenSymbol: cfg.paymentTokenSymbol,
+            path: 'passkey',
+            roomId,
+          });
+        }
+      }
+
+      const used = consumeCredit(roomId, address, sessionAtomic);
+      if (used < sessionAtomic) {
+        return res.status(402).json({
+          error: 'Earned balance changed — try again',
+          reason: 'insufficient_rewards',
+          roomId,
+        });
+      }
+
+      const result = addParticipant(username, {
+        remainingAtomic: sessionAtomic,
+        payer: address,
+        viewerAddress: address,
+        paymentMode,
+        sessionCapAtomic: sessionAtomic,
+        streamRoomId: roomId,
+        paymentTokenDecimals: tokenDec,
+        paymentTokenSymbol: tokenSym,
+      });
+
+      if (!result.success) {
+        creditViewer(roomId, address, used, {
+          type: rw.rewardType === 'points' ? 'points' : rw.rewardType,
+          symbol: tokenSym,
+          decimals: tokenDec,
+        });
+        const status = result.reason === 'room_stopped' ? 403 : 409;
+        return res.status(status).json({
+          error: result.reason === 'room_stopped' ? 'Room is not accepting joins' : 'No seats available',
+          reason: result.reason,
+          roomId,
+        });
+      }
+
+      schedulePendingCameraTimeout(result.seat.id);
+      console.log(`[join:passkey] room ${roomId} credit join seat ${result.seat.id} for ${username} (${address})`);
+      return res.json(passkeyJoinSuccessResponse(result.seat, {
+        payer: address,
+        txHash: null,
+        allowance: sessionAtomic,
+      }, cfg));
+    }
 
     if (!modularPaymentHeader) {
       if (!cfg.active) {
@@ -935,16 +1065,44 @@ app.post('/api/join/passkey', async (req, res) => {
         return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
       }
 
-      const sessionAtomic = rawBal < atomics.maxSessionAtomic
-        ? rawBal
-        : atomics.maxSessionAtomic;
+      const credit = getCredit(roomId, address);
       const sym = cfg.paymentTokenSymbol;
+
+      if (rw?.enabled && rw.rewardType === 'points' && credit.atomic >= toAtomic(cfg.passkeyTickPrice, 0)) {
+        const maxPts = toAtomic(cfg.maxSession, 0);
+        const sessionPts = credit.atomic < maxPts ? credit.atomic : maxPts;
+        return res.json({
+          needsApprove: false,
+          useRewardCredit: true,
+          rewardType: 'points',
+          roomId,
+          sessionAmount: fromAtomic(sessionPts, 0),
+          sessionAmountAtomic: sessionPts.toString(),
+          tickPrice: cfg.passkeyTickPrice,
+          tickSeconds: cfg.passkeyTickSeconds,
+          maxSession: cfg.maxSession,
+          paymentTokenSymbol: 'PTS',
+          paymentTokenDecimals: 0,
+          path: 'passkey',
+          hint: 'Join with earned points — no wallet approve needed.',
+        });
+      }
+
+      let totalAvailable = rawBal;
+      if (rw?.enabled && credit.atomic > 0n && rw.rewardType !== 'points') {
+        totalAvailable = rawBal + credit.atomic;
+      }
+
+      const sessionAtomic = totalAvailable < atomics.maxSessionAtomic
+        ? totalAvailable
+        : atomics.maxSessionAtomic;
 
       if (sessionAtomic < atomics.passkeyTickPriceAtomic) {
         return res.status(402).json({
           error: `Insufficient ${sym} balance`,
           reason: 'insufficient_balance',
           available: fromAtomic(rawBal, cfg.paymentTokenDecimals),
+          rewardBalance: rw?.enabled ? fromAtomic(credit.atomic, cfg.paymentTokenDecimals) : undefined,
           needAtLeast: cfg.passkeyTickPrice,
           tokenSymbol: sym,
           hint: 'Fund your smart account on Arc Testnet.',
@@ -953,17 +1111,48 @@ app.post('/api/join/passkey', async (req, res) => {
         });
       }
 
+      if (
+        rw?.enabled
+        && rw.rewardType !== 'points'
+        && rawBal < atomics.passkeyTickPriceAtomic
+        && credit.atomic >= atomics.passkeyTickPriceAtomic
+      ) {
+        const creditSession = credit.atomic < atomics.maxSessionAtomic
+          ? credit.atomic
+          : atomics.maxSessionAtomic;
+        return res.json({
+          needsApprove: false,
+          useRewardCredit: true,
+          rewardType: rw.rewardType,
+          roomId,
+          sessionAmount: fromAtomic(creditSession, cfg.paymentTokenDecimals),
+          sessionAmountAtomic: creditSession.toString(),
+          tickPrice: cfg.passkeyTickPrice,
+          tickSeconds: cfg.passkeyTickSeconds,
+          maxSession: cfg.maxSession,
+          paymentTokenAddress: cfg.paymentTokenAddress,
+          paymentTokenSymbol: sym,
+          paymentTokenDecimals: cfg.paymentTokenDecimals,
+          path: 'passkey',
+          hint: 'Join with earned balance — no wallet approve needed.',
+        });
+      }
+
+      const onChainSession = rawBal < atomics.maxSessionAtomic
+        ? rawBal
+        : atomics.maxSessionAtomic;
+
       console.log(
         `[join:passkey] room ${roomId} session terms for ${address}: `
-        + `cap ${fromAtomic(sessionAtomic, cfg.paymentTokenDecimals)} ${sym}, `
+        + `cap ${fromAtomic(onChainSession, cfg.paymentTokenDecimals)} ${sym}, `
         + `${cfg.passkeyTickPrice} ${sym} / ${cfg.passkeyTickSeconds}s stream meter`
       );
 
       return res.json({
         needsApprove: true,
         roomId,
-        sessionAmount: fromAtomic(sessionAtomic, cfg.paymentTokenDecimals),
-        sessionAmountAtomic: sessionAtomic.toString(),
+        sessionAmount: fromAtomic(onChainSession, cfg.paymentTokenDecimals),
+        sessionAmountAtomic: onChainSession.toString(),
         payTo: SELLER_WALLET_ADDRESS,
         paymentTokenAddress: cfg.paymentTokenAddress,
         paymentTokenSymbol: sym,
