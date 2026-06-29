@@ -1,269 +1,250 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Streamer Dashboard — Mega Chats</title>
+  <meta name="description" content="Configure pay-to-join stream rooms — metered on-camera slots for live broadcasts.">
+  <title>Streamer Dashboard · Mega Chats</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/app-theme.css">
-  <style>
-    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; margin-top: 12px; }
-    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
-    th { color: var(--text-muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; }
-    #entryGate { max-width: 720px; margin: 40px auto; }
-    .entry-tabs { display: flex; gap: 8px; margin-bottom: 24px; }
-    .path-tab {
-      flex: 1; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-      background: transparent; color: var(--text-muted); cursor: pointer; font-size: 0.9rem;
-      transition: border-color 0.2s, color 0.2s, background 0.2s;
-    }
-    .path-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(45, 212, 191, 0.08); }
-    .path-tab:hover:not(.active) { border-color: var(--text-muted); color: var(--text); }
-    .room-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
-    .room-id-badge { font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--text-muted); padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; }
-    .result-panel { animation: fadeIn 0.4s ease; }
-    .stub-btn { opacity: 0.5; cursor: not-allowed; }
-  </style>
 </head>
 <body class="theme-app">
-  <div id="flash" class="flash hidden app-shell" style="margin-top:16px"></div>
+  <div class="site-chrome">
+    <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+      <span data-theme-label>Light</span>
+    </button>
+  </div>
+
   <div id="entryGate" class="app-shell">
-    <div class="app-header">
-      <h1>Streamer dashboard</h1>
-      <p class="tagline">Create or manage a pay-to-join room</p>
-    </div>
+    <header class="hero">
+      <p class="hero-eyebrow">Streamer</p>
+      <h1 class="hero-title">Run metered on-camera slots.</h1>
+      <p class="hero-lede">Set your price. Viewers pay per second while live.</p>
+    </header>
 
     <div class="entry-tabs">
-      <button type="button" class="path-tab active" id="tabCreate" data-path="create">Create a new room</button>
-      <button type="button" class="path-tab" id="tabManage" data-path="manage">Manage existing</button>
+      <button type="button" class="path-tab active" id="tabCreate">Create room</button>
+      <button type="button" class="path-tab" id="tabManage">Manage</button>
     </div>
 
     <div id="managePath" class="hidden">
-      <div class="card">
-        <p class="card-desc">Enter the room ID and password you set when the room was created. Share the password with mods.</p>
+      <div class="card card-secondary">
         <div class="field">
           <label for="manageRoomId">Room ID</label>
-          <input id="manageRoomId" placeholder="e.g. a1b2c3d4 or default" autocomplete="off">
+          <input id="manageRoomId" placeholder="a1b2c3d4" autocomplete="off">
         </div>
-        <div class="field">
-          <label for="manageRoomPassword">Room password</label>
+        <div class="field" style="margin-top:16px">
+          <label for="manageRoomPassword">Password</label>
           <input id="manageRoomPassword" type="password" autocomplete="current-password">
         </div>
-        <button type="button" class="btn btn-primary" id="manageUnlockBtn">Unlock management</button>
-        <div id="entryMsg" class="flash err hidden" style="margin-top:16px"></div>
+        <button type="button" class="btn btn-primary" id="manageUnlockBtn" style="margin-top:20px;width:100%">Unlock</button>
+        <div id="entryMsg" class="toast-inline err hidden" style="margin-top:12px"></div>
       </div>
-    </div>
-
-    <div id="createPath">
-      <p class="card-desc" style="margin-bottom:16px">Configure pricing below, set a room password, then create. Viewer links require no password.</p>
-      <div class="field">
-        <label for="createRoomPassword">Room password</label>
-        <input id="createRoomPassword" type="password" placeholder="Min 4 characters — share with mods" autocomplete="new-password">
-        <p class="hint">Used to manage this room, save config, start/stop joins, and kick viewers.</p>
-      </div>
-      <button type="button" class="btn btn-primary" id="createRoomBtn" style="margin-top:8px">Create room</button>
     </div>
   </div>
 
-  <!-- Shared config form (create + manage) -->
-  <section class="card app-shell" id="setupPanel">
-    <h2 class="card-title">Room configuration</h2>
-    <p class="card-desc" id="setupPanelDesc">Set how viewers are charged.</p>
+  <section class="card card-primary app-shell hidden" id="setupPanel">
+    <p class="section-label" id="setupPanelDesc">Pricing</p>
 
-      <div class="field">
-        <label for="newRoomName">Room name</label>
-        <input id="newRoomName" placeholder="Saturday night co-stream">
+    <div class="field field-full" style="margin-bottom:20px">
+      <label for="newRoomName">Room name</label>
+      <input id="newRoomName" placeholder="Saturday co-stream">
+    </div>
+
+    <div class="grid-2">
+      <div class="field field-price">
+        <label for="passkeyTickPrice">
+          Price per charge
+          <span class="info-tip" data-tip="USDC pulled each tick from the viewer wallet.">?</span>
+        </label>
+        <input id="passkeyTickPrice" type="text" value="0.001">
+        <p class="derived" id="perMinuteHint">≈ $0.06 / min</p>
       </div>
-
-      <div class="grid-2">
-        <div class="field">
-          <label for="passkeyTickPrice">
-            Price per charge
-            <span class="info-tip" data-tip="passkeyTickPrice — USDC pulled each tick from the viewer's wallet">?</span>
-          </label>
-          <input id="passkeyTickPrice" type="text" value="0.001">
-          <p class="derived" id="perMinuteHint">≈ $0.06 / minute at current rate</p>
-        </div>
-        <div class="field">
-          <label for="passkeyTickSeconds">
-            How often viewers are charged
-            <span class="info-tip" data-tip="passkeyTickSeconds — interval between meter ticks">?</span>
-          </label>
-          <input id="passkeyTickSeconds" type="number" min="1" value="1">
-          <p class="hint">Seconds between each charge while live</p>
-        </div>
-        <div class="field">
-          <label for="maxSession">
-            Most a viewer can spend per session
-            <span class="info-tip" data-tip="MAX_SESSION — approval cap for one join">?</span>
-          </label>
-          <input id="maxSession" type="text" value="2">
-        </div>
-        <div class="field">
-          <label for="maxSeats">
-            How many can join on-camera at once
-            <span class="info-tip" data-tip="MAX_SEATS — simultaneous camera slots (1–3)">?</span>
-          </label>
-          <input id="maxSeats" type="number" min="1" max="3" value="3">
-        </div>
-      </div>
-
       <div class="field">
-        <label for="tokenPreset">Payment token (passkey viewers)</label>
+        <label for="passkeyTickSeconds">
+          Charge interval (sec)
+          <span class="info-tip" data-tip="Seconds between each charge while live.">?</span>
+        </label>
+        <input id="passkeyTickSeconds" type="number" min="1" value="1">
+      </div>
+      <div class="field">
+        <label for="maxSession">
+          Max spend
+          <span class="info-tip" data-tip="The most a viewer can spend in one session.">?</span>
+        </label>
+        <input id="maxSession" type="text" value="2">
+      </div>
+      <div class="field">
+        <label for="maxSeats">
+          Max seats
+          <span class="info-tip" data-tip="Max concurrent on-camera joiners.">?</span>
+        </label>
+        <input id="maxSeats" type="number" min="1" max="3" value="3">
+      </div>
+      <div class="field">
+        <label for="createRoomPassword">
+          Room password
+          <span class="info-tip" data-tip="Share with mods. Required to manage, pause, and kick.">?</span>
+        </label>
+        <input id="createRoomPassword" type="password" placeholder="Min 4 characters" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="tokenPreset">
+          Payment token
+          <span class="info-tip" data-tip="MetaMask viewers always pay via Circle Gateway USDC.">?</span>
+        </label>
         <select id="tokenPreset">
-          <option value="usdc" selected>USDC (default)</option>
-          <option value="custom">Custom token…</option>
+          <option value="usdc" selected>USDC</option>
+          <option value="custom">Custom…</option>
         </select>
-        <p class="hint">MetaMask viewers always pay via Circle Gateway USDC.</p>
         <span class="token-contract-hint">
           <span class="info-tip" id="usdcContractTip" data-tip="Arc Testnet USDC contract">ⓘ</span>
-          <span id="usdcContractLabel">view contract address</span>
+          <span id="usdcContractLabel">Contract</span>
         </span>
       </div>
-      <div class="field hidden" id="customTokenWrap">
-        <label for="customTokenAddress">Custom ERC-20 address (Arc)</label>
-        <input id="customTokenAddress" placeholder="0x…">
-      </div>
+    </div>
 
-      <details class="advanced">
-        <summary>Advanced — separate MetaMask vs passkey pricing</summary>
-        <div class="advanced-body grid-2">
-          <div class="field">
-            <label for="tickPrice">MetaMask price per charge (USDC)</label>
-            <input id="tickPrice" type="text" value="0.1">
-          </div>
-          <div class="field">
-            <label for="tickSeconds">MetaMask charge interval (seconds)</label>
-            <input id="tickSeconds" type="number" min="1" value="10">
-          </div>
-        </div>
-      </details>
-  </section>
+    <div class="field field-full hidden" id="customTokenWrap" style="margin-top:16px">
+      <label for="customTokenAddress">Token address</label>
+      <input id="customTokenAddress" placeholder="0x…">
+    </div>
 
-  <div id="app" class="app-shell hidden">
-    <header class="app-header">
-      <div class="room-meta">
-        <h1 style="margin:0">Pay to join your stream</h1>
-        <span class="room-id-badge" id="managedRoomBadge">room —</span>
-        <button type="button" class="btn btn-secondary" id="switchRoomBtn" style="padding:6px 12px;font-size:0.8rem">Switch room</button>
-      </div>
-      <p class="tagline">Viewers pay per second to put their camera on your broadcast — mega chats, metered live.</p>
-    </header>
-
-    <!-- RESULT: URLs for this room -->
-    <section class="card result-panel hidden" id="resultPanel">
-      <h2 class="card-title">Your room is ready</h2>
-      <p class="card-desc">Share the viewer link in chat. Paste the overlay link into OBS as a Browser Source.</p>
-
-      <div class="url-panel">
-        <div class="url-label">Viewer join link</div>
-        <div class="url-value" id="joinUrl">—</div>
-        <button type="button" class="btn btn-secondary" id="copyJoinBtn">Copy join link</button>
-      </div>
-
-      <div class="url-panel">
-        <div class="url-label">OBS overlay link</div>
-        <div class="url-value" id="overlayUrl">—</div>
-        <button type="button" class="btn btn-secondary" id="copyOverlayBtn">Copy overlay link</button>
-        <p class="hint" style="margin-top:10px">In OBS: Sources → Add → <strong>Browser</strong> → paste overlay URL. Size ~340×620 px, transparent background.</p>
-      </div>
-    </section>
-
-    <section class="card hidden" id="managePanel">
-      <h2 class="card-title">Room controls</h2>
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-        <span id="roomTitle" style="font-weight:600"></span>
-        <span id="roomStatus" class="status-pill live">Live</span>
-      </div>
-      <div class="btn-row">
-        <button type="button" class="btn btn-secondary" id="saveConfigBtn">Save changes</button>
-        <button type="button" class="btn btn-secondary" id="startRoomBtn">Start accepting joins</button>
-        <button type="button" class="btn btn-danger" id="stopRoomBtn">Stop new joins</button>
-      </div>
-    </section>
-
-    <section class="card hidden" id="liveCard">
-      <h2 class="card-title">Live on-camera viewers</h2>
-      <table>
-        <thead><tr><th>User</th><th>Status</th><th>Spent</th><th>Remaining</th><th></th></tr></thead>
-        <tbody id="seatRows"></tbody>
-      </table>
-      <p class="hint" id="noSeats">No viewers in seats yet.</p>
-    </section>
-
-    <!-- SECONDARY: optional rewards (promo lever — not a separate mode) -->
-    <details class="optional-section card" id="rewardsSection" style="padding:0;border:none;background:transparent;box-shadow:none">
-      <summary>🎁 Rewards (optional) — give viewers drops to encourage joins</summary>
-      <div class="optional-body card" style="margin:0">
-        <p class="card-desc">Viewers earn while watching (focused tab), then spend toward joining — same balance the meter draws from. Off by default.</p>
+    <details class="advanced">
+      <summary>MetaMask pricing</summary>
+      <div class="advanced-body grid-2">
         <div class="field">
-          <label><input type="checkbox" id="rewardsEnabled"> Enable rewards for this room</label>
+          <label for="tickPrice">Charge amount (USDC)</label>
+          <input id="tickPrice" type="text" value="0.1">
         </div>
-        <div id="rewardsFields" class="hidden">
-          <div class="grid-2">
-            <div class="field">
-              <label for="rewardsEarnInterval">
-                Earn interval (seconds)
-                <span class="info-tip" data-tip="How long a focused viewer waits between drops">?</span>
-              </label>
-              <input id="rewardsEarnInterval" type="number" min="5" value="60">
-            </div>
-            <div class="field">
-              <label for="rewardsEarnAmount">
-                Amount per drop
-                <span class="info-tip" data-tip="earnAmount — credited to join balance each interval">?</span>
-              </label>
-              <input id="rewardsEarnAmount" type="text" value="0.1">
-            </div>
-            <div class="field">
-              <label for="rewardsEarnCap">
-                Max per session
-                <span class="info-tip" data-tip="earnCap — cap on farming per watch session">?</span>
-              </label>
-              <input id="rewardsEarnCap" type="text" value="5">
-            </div>
-            <div class="field">
-              <label for="rewardsType">Reward type</label>
-              <select id="rewardsType">
-                <option value="usdc">USDC (local credit / pool payout)</option>
-                <option value="token">Custom ERC-20</option>
-                <option value="points">Points (non-monetary)</option>
-              </select>
-            </div>
-          </div>
-          <div class="field hidden" id="rewardsTokenWrap">
-            <label for="rewardsTokenAddress">Reward token contract (Arc)</label>
-            <input id="rewardsTokenAddress" placeholder="0x…">
-          </div>
-          <p class="hint">On-chain payout requires <code>REWARD_POOL_PRIVATE_KEY</code> in .env; otherwise credits accrue locally (dry-run) and still work for cheaper joins.</p>
+        <div class="field">
+          <label for="tickSeconds">Interval (sec)</label>
+          <input id="tickSeconds" type="number" min="1" value="10">
         </div>
       </div>
     </details>
 
-    <!-- Roadmap stub: external platform linking -->
-    <section class="card" style="opacity:0.55">
-      <h2 class="card-title">Connect Twitch / Kick account</h2>
-      <p class="card-desc">Coming soon — credit viewers for past watch time on external platforms.</p>
+    <div class="form-actions" id="createActions">
+      <button type="button" class="btn btn-primary" id="createRoomBtn">Create room</button>
+      <div id="inlineToast" class="toast-inline" aria-live="polite"></div>
+    </div>
+
+    <div class="result-panel hidden" id="resultPanel">
+      <div class="link-row">
+        <span class="link-label">Viewer join</span>
+        <span class="link-url" id="joinUrl">—</span>
+        <button type="button" class="copy-icon" id="copyJoinBtn" data-copy-target="joinUrl" aria-label="Copy join link" title="Copy">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+      </div>
+      <div class="link-row">
+        <span class="link-label">OBS overlay</span>
+        <span class="link-url" id="overlayUrl">—</span>
+        <button type="button" class="copy-icon" id="copyOverlayBtn" data-copy-target="overlayUrl" aria-label="Copy overlay link" title="Copy">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <span class="info-tip" data-tip="OBS: Sources → Browser → paste URL. ~340×620 px, transparent background.">?</span>
+      </div>
+    </div>
+  </section>
+
+  <div id="app" class="app-shell hidden">
+    <header class="hero hero-compact">
+      <div class="room-meta">
+        <span class="room-id-badge" id="managedRoomBadge">room —</span>
+        <button type="button" class="btn btn-ghost" id="switchRoomBtn" style="padding:6px 14px;font-size:0.75rem">Switch room</button>
+      </div>
+    </header>
+
+    <section class="card card-secondary hidden" id="managePanel">
+      <div class="control-bar">
+        <span class="room-name-display" id="roomTitle"></span>
+        <button type="button" class="join-toggle" id="joinToggleBtn" aria-pressed="true">
+          <span class="toggle-track" aria-hidden="true"></span>
+          <span id="joinToggleLabel">Accepting joins</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="liveCard">
+      <h2 class="section-title">On camera</h2>
+      <table class="viewer-table">
+        <thead><tr><th>User</th><th>Status</th><th>Spent</th><th>Left</th><th></th></tr></thead>
+        <tbody id="seatRows"></tbody>
+      </table>
+      <p class="empty-state" id="noSeats">No one on camera yet.</p>
+    </section>
+
+    <details class="optional-section card card-quiet" id="rewardsSection">
+      <summary>Rewards <span style="font-weight:400;color:var(--text-faint)">· optional</span></summary>
+      <div class="optional-body">
+        <div class="field field-full">
+          <label><input type="checkbox" id="rewardsEnabled"> Enable drops</label>
+        </div>
+        <div id="rewardsFields" class="hidden">
+          <div class="grid-2" style="margin-top:16px">
+            <div class="field">
+              <label for="rewardsEarnInterval">Interval (sec) <span class="info-tip" data-tip="Focused watch time between drops.">?</span></label>
+              <input id="rewardsEarnInterval" type="number" min="5" value="60">
+            </div>
+            <div class="field">
+              <label for="rewardsEarnAmount">Drop amount <span class="info-tip" data-tip="Credited toward join balance.">?</span></label>
+              <input id="rewardsEarnAmount" type="text" value="0.1">
+            </div>
+            <div class="field">
+              <label for="rewardsEarnCap">Session cap <span class="info-tip" data-tip="Max earned per watch session.">?</span></label>
+              <input id="rewardsEarnCap" type="text" value="5">
+            </div>
+            <div class="field">
+              <label for="rewardsType">Type</label>
+              <select id="rewardsType">
+                <option value="usdc">USDC</option>
+                <option value="token">ERC-20</option>
+                <option value="points">Points</option>
+              </select>
+            </div>
+          </div>
+          <div class="field field-full hidden" id="rewardsTokenWrap" style="margin-top:12px">
+            <label for="rewardsTokenAddress">Token address</label>
+            <input id="rewardsTokenAddress" placeholder="0x…">
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <section class="card card-quiet">
+      <p class="section-label" style="margin-bottom:12px">Integrations</p>
+      <button type="button" class="btn btn-ghost" disabled style="opacity:0.45;cursor:not-allowed;width:100%">Twitch / Kick — soon</button>
       <!-- ROADMAP: platformLink { provider: 'twitch'|'kick', oauthId, linkedAt } per room -->
-      <button type="button" class="btn btn-secondary stub-btn" disabled>Connect account (coming soon)</button>
     </section>
   </div>
 
+  <script src="/theme.js"></script>
   <script>
     const ARC_USDC = '0x3600000000000000000000000000000000000000';
 
     let roomPassword = '';
     let currentRoomId = null;
     let pollTimer = null;
+    let saveTimer = null;
     let entryMode = 'create';
+    let roomActive = true;
 
-    function showFlash(text, ok) {
-      const el = document.getElementById('flash');
+    function showToast(text, ok) {
+      const el = document.getElementById('inlineToast');
       if (!el) return;
-      el.textContent = text;
-      el.className = 'flash ' + (ok ? 'ok' : 'err');
-      el.classList.remove('hidden');
-      clearTimeout(showFlash._t);
-      showFlash._t = setTimeout(() => el.classList.add('hidden'), 4500);
+      el.textContent = '';
+      el.className = 'toast-inline show ' + (ok ? 'ok' : 'err');
+      if (ok && text) {
+        const tick = document.createElement('span');
+        tick.className = 'tick';
+        tick.textContent = '✓';
+        el.appendChild(tick);
+        el.appendChild(document.createTextNode(text));
+      } else {
+        el.textContent = text || '';
+      }
+      clearTimeout(showToast._t);
+      if (text) showToast._t = setTimeout(() => { el.className = 'toast-inline'; el.textContent = ''; }, 3200);
     }
 
     function headers() {
@@ -276,22 +257,25 @@
       entryMode = path;
       document.getElementById('tabCreate').classList.toggle('active', path === 'create');
       document.getElementById('tabManage').classList.toggle('active', path === 'manage');
-      document.getElementById('createPath').classList.toggle('hidden', path !== 'create');
       document.getElementById('managePath').classList.toggle('hidden', path !== 'manage');
-      document.getElementById('setupPanel').classList.toggle('hidden', path !== 'create');
+      const inApp = !document.getElementById('app').classList.contains('hidden');
+      if (!inApp) {
+        document.getElementById('setupPanel').classList.toggle('hidden', path !== 'create');
+      }
     }
 
     function enterManageView(roomId) {
       currentRoomId = roomId;
       document.getElementById('entryGate').classList.add('hidden');
-      document.getElementById('createPath').classList.add('hidden');
       document.getElementById('setupPanel').classList.remove('hidden');
       document.getElementById('app').classList.remove('hidden');
-      document.getElementById('managedRoomBadge').textContent = 'room ' + roomId;
+      document.getElementById('managedRoomBadge').textContent = roomId;
       document.getElementById('managePanel').classList.remove('hidden');
       document.getElementById('liveCard').classList.remove('hidden');
+      document.getElementById('createActions').classList.add('hidden');
       syncTokenUi();
       updatePerMinuteHint();
+      bindAutoSave();
       if (!pollTimer) pollTimer = setInterval(refreshLive, 4000);
     }
 
@@ -300,11 +284,15 @@
       currentRoomId = null;
       clearInterval(pollTimer);
       pollTimer = null;
+      clearTimeout(saveTimer);
       document.getElementById('app').classList.add('hidden');
       document.getElementById('entryGate').classList.remove('hidden');
+      document.getElementById('resultPanel').classList.remove('show');
       document.getElementById('resultPanel').classList.add('hidden');
       document.getElementById('managePanel').classList.add('hidden');
       document.getElementById('liveCard').classList.add('hidden');
+      document.getElementById('createActions').classList.remove('hidden');
+      document.getElementById('createRoomBtn').classList.remove('hidden');
       showEntryPath('manage');
     }
 
@@ -316,7 +304,7 @@
       const price = parseFloat(priceEl.value) || 0;
       const sec = parseFloat(secEl.value) || 1;
       const perMin = sec > 0 ? (price * 60 / sec) : 0;
-      hint.textContent = '≈ $' + perMin.toFixed(2) + ' / minute at current rate';
+      hint.textContent = '≈ $' + perMin.toFixed(2) + ' / min';
     }
 
     function syncTokenUi() {
@@ -324,16 +312,14 @@
       const customWrap = document.getElementById('customTokenWrap');
       const tip = document.getElementById('usdcContractTip');
       if (!preset || !customWrap) return;
-      const isCustom = preset.value === 'custom';
-      customWrap.classList.toggle('hidden', !isCustom);
+      customWrap.classList.toggle('hidden', preset.value !== 'custom');
       if (tip) tip.setAttribute('data-tip', 'Arc Testnet USDC: ' + ARC_USDC);
     }
 
     function syncRewardsUi() {
       const on = document.getElementById('rewardsEnabled').checked;
       document.getElementById('rewardsFields').classList.toggle('hidden', !on);
-      const isToken = document.getElementById('rewardsType').value === 'token';
-      document.getElementById('rewardsTokenWrap').classList.toggle('hidden', !isToken);
+      document.getElementById('rewardsTokenWrap').classList.toggle('hidden', document.getElementById('rewardsType').value !== 'token');
     }
 
     function gatherConfig() {
@@ -342,14 +328,6 @@
       if (preset && preset.value === 'custom') {
         paymentTokenAddress = (document.getElementById('customTokenAddress').value || '').trim();
       }
-      const rewards = {
-        enabled: document.getElementById('rewardsEnabled').checked,
-        earnInterval: Number(document.getElementById('rewardsEarnInterval').value) || 60,
-        earnAmount: document.getElementById('rewardsEarnAmount').value,
-        earnCap: document.getElementById('rewardsEarnCap').value,
-        rewardType: document.getElementById('rewardsType').value,
-        rewardTokenAddress: (document.getElementById('rewardsTokenAddress').value || '').trim() || null,
-      };
       return {
         passkeyTickPrice: document.getElementById('passkeyTickPrice').value,
         passkeyTickSeconds: Number(document.getElementById('passkeyTickSeconds').value),
@@ -358,7 +336,14 @@
         tickPrice: document.getElementById('tickPrice').value,
         tickSeconds: Number(document.getElementById('tickSeconds').value),
         paymentTokenAddress,
-        rewards,
+        rewards: {
+          enabled: document.getElementById('rewardsEnabled').checked,
+          earnInterval: Number(document.getElementById('rewardsEarnInterval').value) || 60,
+          earnAmount: document.getElementById('rewardsEarnAmount').value,
+          earnCap: document.getElementById('rewardsEarnCap').value,
+          rewardType: document.getElementById('rewardsType').value,
+          rewardTokenAddress: (document.getElementById('rewardsTokenAddress').value || '').trim() || null,
+        },
       };
     }
 
@@ -370,12 +355,9 @@
       document.getElementById('maxSeats').value = room.maxSeats;
       document.getElementById('tickPrice').value = room.tickPrice;
       document.getElementById('tickSeconds').value = room.tickSeconds;
-      const isUsdc = !room.paymentTokenAddress ||
-        room.paymentTokenAddress.toLowerCase() === ARC_USDC.toLowerCase();
+      const isUsdc = !room.paymentTokenAddress || room.paymentTokenAddress.toLowerCase() === ARC_USDC.toLowerCase();
       document.getElementById('tokenPreset').value = isUsdc ? 'usdc' : 'custom';
-      if (!isUsdc) {
-        document.getElementById('customTokenAddress').value = room.paymentTokenAddress;
-      }
+      if (!isUsdc) document.getElementById('customTokenAddress').value = room.paymentTokenAddress;
       syncTokenUi();
       updatePerMinuteHint();
       const rw = room.rewards || {};
@@ -386,12 +368,25 @@
       document.getElementById('rewardsType').value = rw.rewardType || 'usdc';
       document.getElementById('rewardsTokenAddress').value = rw.rewardTokenAddress || '';
       syncRewardsUi();
+      updateJoinToggle(room.active !== false);
     }
 
     function showResultPanel(joinUrl, overlayUrl) {
       document.getElementById('joinUrl').textContent = joinUrl;
       document.getElementById('overlayUrl').textContent = overlayUrl;
-      document.getElementById('resultPanel').classList.remove('hidden');
+      const panel = document.getElementById('resultPanel');
+      panel.classList.remove('hidden');
+      requestAnimationFrame(() => panel.classList.add('show'));
+    }
+
+    function updateJoinToggle(active) {
+      roomActive = !!active;
+      const btn = document.getElementById('joinToggleBtn');
+      const label = document.getElementById('joinToggleLabel');
+      if (!btn || !label) return;
+      btn.classList.toggle('is-paused', !roomActive);
+      btn.setAttribute('aria-pressed', roomActive ? 'true' : 'false');
+      label.textContent = roomActive ? 'Accepting joins' : 'Paused';
     }
 
     async function manageUnlock() {
@@ -409,14 +404,13 @@
         if (!res.ok) throw new Error(data.error || 'Unlock failed');
         roomPassword = password;
         enterManageView(data.room.id);
-        document.getElementById('setupPanelDesc').textContent =
-          'Adjust pricing and limits. Save changes with your room password.';
         showResultPanel(data.joinUrl, data.overlayUrl);
         fillFormFromRoom(data.room);
         await refreshLive();
       } catch (e) {
         msg.textContent = e.message || 'Invalid room ID or password';
         msg.classList.remove('hidden');
+        msg.classList.add('show', 'err');
       }
     }
 
@@ -424,34 +418,30 @@
       const name = document.getElementById('newRoomName').value.trim() || 'My Stream';
       const password = document.getElementById('createRoomPassword').value;
       if (!password || password.length < 4) {
-        showFlash('Room password required (min 4 characters)', false);
+        showToast('Password min 4 characters', false);
         return;
       }
-      const config = gatherConfig();
       const btn = document.getElementById('createRoomBtn');
       btn.disabled = true;
       try {
         const res = await fetch('/api/dashboard/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, config, password }),
+          body: JSON.stringify({ name, config: gatherConfig(), password }),
         });
         const data = await res.json();
-        if (!res.ok) {
-          const hint = data.hint ? ` (${data.hint})` : '';
-          throw new Error((data.error || data.message || 'Create failed') + hint);
-        }
-        if (!data.room?.id) throw new Error('Create succeeded but room id missing');
+        if (!res.ok) throw new Error((data.error || 'Create failed') + (data.hint ? ' ' + data.hint : ''));
+        if (!data.room?.id) throw new Error('Room id missing');
         roomPassword = password;
         enterManageView(data.room.id);
-        document.getElementById('setupPanelDesc').textContent =
-          'Adjust pricing and limits. Save changes with your room password.';
         showResultPanel(data.joinUrl, data.overlayUrl);
-        showFlash('Room created — share your links below', true);
+        showToast('Room created', true);
         fillFormFromRoom(data.room);
         await refreshLive();
       } catch (e) {
-        showFlash(e.message, false);
+        showToast(e.message, false);
+        btn.classList.add('shake');
+        setTimeout(() => btn.classList.remove('shake'), 400);
       } finally {
         btn.disabled = false;
       }
@@ -467,9 +457,7 @@
       }
       const room = data.room;
       document.getElementById('roomTitle').textContent = room.name;
-      const st = document.getElementById('roomStatus');
-      st.textContent = room.active ? 'Accepting joins' : 'Stopped';
-      st.className = 'status-pill ' + (room.active ? 'live' : 'stopped');
+      updateJoinToggle(room.active !== false);
       showResultPanel(data.joinUrl, data.overlayUrl);
       fillFormFromRoom(room);
       const tbody = document.getElementById('seatRows');
@@ -478,35 +466,52 @@
       document.getElementById('noSeats').style.display = seats.length ? 'none' : 'block';
       seats.forEach((s) => {
         const tr = document.createElement('tr');
-        tr.innerHTML = '<td>' + s.username + '</td><td>' + (s.live ? 'live' : 'pending') + '</td><td>' +
-          s.spent + '</td><td>' + s.remaining + '</td><td><button class="btn btn-danger" type="button">Kick</button></td>';
+        tr.innerHTML =
+          '<td>' + s.username + '</td>' +
+          '<td><span class="status-dot' + (s.live ? ' live' : '') + '"></span>' + (s.live ? 'live' : 'pending') + '</td>' +
+          '<td>' + s.spent + '</td><td>' + s.remaining + '</td>' +
+          '<td><button type="button" class="btn btn-danger-ghost" title="Kick">Remove</button></td>';
         tr.querySelector('button').onclick = () => kickSeat(s.id);
         tbody.appendChild(tr);
       });
     }
 
-    async function saveConfig() {
+    async function saveConfig(silent) {
       if (!currentRoomId) return;
       const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId), {
         method: 'PUT', headers: headers(), body: JSON.stringify({ config: gatherConfig() }),
       });
-      if (res.status === 401) { showFlash('Session expired — unlock again', false); switchRoom(); return; }
-      if (res.ok) showFlash('Saved', true);
-      else showFlash('Save failed', false);
-      await refreshLive();
+      if (res.status === 401) { switchRoom(); return; }
+      if (res.ok && !silent) showToast('Saved', true);
     }
 
-    async function startRoom() {
-      const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/start', { method: 'POST', headers: headers() });
-      if (res.status === 401) { switchRoom(); return; }
-      showFlash('Room accepting joins', true);
-      await refreshLive();
+    function scheduleAutoSave() {
+      if (!currentRoomId) return;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => saveConfig(true), 900);
     }
 
-    async function stopRoom() {
-      const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/stop', { method: 'POST', headers: headers() });
+    function bindAutoSave() {
+      const ids = ['passkeyTickPrice','passkeyTickSeconds','maxSession','maxSeats','tickPrice','tickSeconds',
+        'tokenPreset','customTokenAddress','rewardsEnabled','rewardsEarnInterval','rewardsEarnAmount',
+        'rewardsEarnCap','rewardsType','rewardsTokenAddress','newRoomName'];
+      ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && !el.dataset.autosave) {
+          el.dataset.autosave = '1';
+          el.addEventListener('change', scheduleAutoSave);
+          el.addEventListener('input', scheduleAutoSave);
+        }
+      });
+    }
+
+    async function toggleJoinAcceptance() {
+      if (!currentRoomId) return;
+      const path = roomActive ? 'stop' : 'start';
+      const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/' + path, {
+        method: 'POST', headers: headers(),
+      });
       if (res.status === 401) { switchRoom(); return; }
-      showFlash('New joins stopped', true);
       await refreshLive();
     }
 
@@ -514,20 +519,21 @@
       const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/kick/' + encodeURIComponent(seatId), {
         method: 'POST', headers: headers(),
       });
-      if (res.status === 401) { showFlash('Session expired — unlock again', false); switchRoom(); return; }
+      if (res.status === 401) { switchRoom(); return; }
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        showFlash(data.error || 'Kick failed', false);
+        showToast('Kick failed', false);
         return;
       }
-      showFlash('Viewer removed', true);
       await refreshLive();
     }
 
-    function copyText(id) {
-      const t = document.getElementById(id).textContent;
-      if (!t || t === '—') return;
-      navigator.clipboard.writeText(t).then(() => showFlash('Copied', true));
+    function copyLink(targetId, btn) {
+      const t = document.getElementById(targetId);
+      if (!t || !t.textContent || t.textContent === '—') return;
+      navigator.clipboard.writeText(t.textContent).then(() => {
+        btn.classList.add('copied');
+        setTimeout(() => btn.classList.remove('copied'), 1500);
+      });
     }
 
     document.getElementById('tabCreate').addEventListener('click', () => showEntryPath('create'));
@@ -535,21 +541,20 @@
     document.getElementById('manageUnlockBtn').addEventListener('click', manageUnlock);
     document.getElementById('switchRoomBtn').addEventListener('click', switchRoom);
     document.getElementById('createRoomBtn').addEventListener('click', createRoom);
-    document.getElementById('copyJoinBtn').addEventListener('click', () => copyText('joinUrl'));
-    document.getElementById('copyOverlayBtn').addEventListener('click', () => copyText('overlayUrl'));
-    document.getElementById('saveConfigBtn').addEventListener('click', saveConfig);
-    document.getElementById('startRoomBtn').addEventListener('click', startRoom);
-    document.getElementById('stopRoomBtn').addEventListener('click', stopRoom);
+    document.getElementById('copyJoinBtn').addEventListener('click', function () { copyLink('joinUrl', this); });
+    document.getElementById('copyOverlayBtn').addEventListener('click', function () { copyLink('overlayUrl', this); });
+    document.getElementById('joinToggleBtn').addEventListener('click', toggleJoinAcceptance);
     document.getElementById('tokenPreset').addEventListener('change', syncTokenUi);
     document.getElementById('rewardsEnabled').addEventListener('change', syncRewardsUi);
     document.getElementById('rewardsType').addEventListener('change', syncRewardsUi);
     document.getElementById('passkeyTickPrice').addEventListener('input', updatePerMinuteHint);
     document.getElementById('passkeyTickSeconds').addEventListener('input', updatePerMinuteHint);
     document.getElementById('usdcContractLabel').addEventListener('click', () => {
-      navigator.clipboard.writeText(ARC_USDC).then(() => showFlash('USDC contract copied', true));
+      navigator.clipboard.writeText(ARC_USDC).then(() => showToast('Contract copied', true));
     });
 
     showEntryPath('create');
+    document.getElementById('setupPanel').classList.remove('hidden');
   </script>
 </body>
 </html>

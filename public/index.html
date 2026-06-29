@@ -1,353 +1,30 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-theme="dark">
 <head>
-  <title>Join on camera — Mega Chats</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Pay by the second to put your camera on a live stream.">
+  <title>Join on camera · Mega Chats</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/app-theme.css">
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: var(--font, "Segoe UI", system-ui, sans-serif);
-      background: var(--bg, #0c0f12);
-      color: var(--text, #e8edf2);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-
-    .container {
-      max-width: 480px;
-      width: 100%;
-      background: var(--bg-card, #1a2229);
-      border: 1px solid var(--border, rgba(255,255,255,0.08));
-      border-radius: 16px;
-      padding: 36px 32px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
-    }
-
-    h1 {
-      text-align: center;
-      margin-bottom: 8px;
-      font-size: 1.65rem;
-      font-weight: 650;
-    }
-
-    .subtitle {
-      text-align: center;
-      color: var(--text-muted, #8b9aab);
-      margin-bottom: 28px;
-      font-size: 0.9rem;
-      line-height: 1.45;
-    }
-
-    .price {
-      background: var(--accent-glow, rgba(45, 212, 191, 0.12));
-      border: 1px solid var(--border-accent, rgba(45, 212, 191, 0.35));
-      padding: 20px;
-      border-radius: 12px;
-      text-align: center;
-      margin-bottom: 24px;
-    }
-
-    .price-amount {
-      font-size: 2rem;
-      font-weight: 700;
-      margin-bottom: 4px;
-      color: var(--accent, #2dd4bf);
-    }
-
-    .price-label {
-      color: var(--text-muted, #8b9aab);
-      font-size: 0.85rem;
-    }
-
-    input {
-      width: 100%;
-      padding: 14px 16px;
-      background: var(--bg-elevated, #141a1f);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-size: 1rem;
-      border-radius: 10px;
-      margin-bottom: 16px;
-    }
-
-    input:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-glow);
-    }
-
-    button {
-      width: 100%;
-      padding: 16px;
-      background: var(--accent, #2dd4bf);
-      color: #042f2e;
-      border: none;
-      font-size: 1rem;
-      font-weight: 600;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    button:hover {
-      background: var(--accent-dim, #14b8a6);
-      transform: translateY(-1px);
-    }
-
-    button:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    button.secondary {
-      background: transparent;
-      color: var(--text);
-      border: 1px solid var(--border);
-      margin-bottom: 12px;
-    }
-
-    button.secondary:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-      background: var(--accent-glow);
-    }
-
-    .wallet {
-      margin-bottom: 15px;
-    }
-
-    .wallet-info {
-      margin-top: 10px;
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      word-break: break-all;
-    }
-
-    .wallet-info .addr {
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .meter {
-      display: none;
-      margin-bottom: 20px;
-      padding: 16px 18px;
-      border: 1px solid var(--border-accent);
-      border-radius: 12px;
-      background: var(--accent-glow);
-    }
-
-    .meter.show { display: block; }
-
-    .meter-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 6px 0;
-      color: var(--text-muted);
-      font-size: 0.875rem;
-    }
-
-    .meter-val {
-      color: var(--accent);
-      font-weight: 600;
-      font-family: var(--font-mono, monospace);
-    }
-
-    .info {
-      margin-top: 30px;
-      padding-top: 30px;
-      border-top: 1px solid #0ff;
-    }
-
-    .info h3 {
-      margin-bottom: 15px;
-      font-size: 1.2rem;
-    }
-
-    .info ul {
-      list-style: none;
-    }
-
-    .info li {
-      padding: 8px 0;
-      color: #0aa;
-      font-size: 0.9rem;
-    }
-
-    .info li::before {
-      content: '▸ ';
-      color: #0ff;
-      font-weight: bold;
-    }
-
-    .message {
-      padding: 15px;
-      border-radius: 8px;
-      margin-top: 20px;
-      display: none;
-    }
-
-    .message.show {
-      display: block;
-    }
-
-    .message.success {
-      background: rgba(74, 222, 128, 0.1);
-      border: 1px solid rgba(74, 222, 128, 0.35);
-      color: var(--success, #4ade80);
-    }
-
-    .message.error {
-      background: rgba(248, 113, 113, 0.1);
-      border: 1px solid rgba(248, 113, 113, 0.35);
-      color: var(--danger, #f87171);
-    }
-
-    .camera-link {
-      background: #000;
-      padding: 15px;
-      border: 2px solid #0f0;
-      border-radius: 8px;
-      margin-top: 10px;
-      word-break: break-all;
-    }
-
-    .camera-link a {
-      color: #0f0;
-      text-decoration: none;
-      font-weight: bold;
-    }
-
-    .camera-link a:hover {
-      text-decoration: underline;
-    }
-
-    /* Inline camera-publish stage (replaces the old redirect flow). */
-    .camera-stage {
-      display: none;
-      margin-top: 20px;
-    }
-
-    .camera-stage.show { display: block; }
-
-    .cam-status {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.95rem;
-      font-weight: bold;
-      margin-bottom: 12px;
-    }
-
-    .cam-status .dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: #0aa;
-      animation: pulse 1.2s ease-in-out infinite;
-    }
-
-    .cam-status.live .dot { background: #f33; animation: none; box-shadow: 0 0 10px #f33; }
-    .cam-status.live { color: #f55; }
-    .cam-status.error .dot { background: #f00; animation: none; }
-    .cam-status.error { color: #f55; }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 0.3; }
-      50% { opacity: 1; }
-    }
-
-    .cam-frame {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 16 / 9;
-      background: #000;
-      border: 2px solid #0ff;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 0 25px rgba(0, 255, 255, 0.25);
-    }
-
-    .cam-frame iframe {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      border: 0;
-    }
-
-    /* Hidden self-view used only to confirm the local stream is actually
-       publishing (so we can auto-fire camera_ready). Kept active but invisible. */
-    .cam-detector {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      opacity: 0;
-      pointer-events: none;
-      left: -9999px;
-      top: -9999px;
-    }
-
-    .cam-hint {
-      margin-top: 12px;
-      font-size: 0.85rem;
-      color: #0aa;
-    }
-
-    #goLiveBtn { margin-top: 14px; display: none; }
-    #goLiveBtn.show { display: block; }
-    #camRetryBtn { margin-top: 12px; display: none; }
-    #camRetryBtn.show { display: block; }
-
-    /* Leave Stream — shown only while live; same effect as closing the tab. */
-    #leaveBtn {
-      margin-top: 14px;
-      display: none;
-      background: #200;
-      color: #f66;
-      border: 2px solid #f33;
-    }
-    #leaveBtn.show { display: block; }
-    #leaveBtn:hover { background: rgba(255, 51, 51, 0.15); }
-
-    .wallet-choice {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-
-    .wallet-choice button.secondary { margin-bottom: 0; }
-
-    #passkeyFundNote {
-      margin-top: 10px;
-      padding: 12px;
-      border: 1px dashed #0aa;
-      border-radius: 8px;
-      font-size: 0.82rem;
-      line-height: 1.45;
-    }
-  </style>
 </head>
-<body>
-  <div class="container">
-    <h1>Pay to go on camera</h1>
-    <p class="subtitle">Join the stream live — you're charged per second while your camera is on air.</p>
+<body class="theme-join">
+  <div class="site-chrome">
+    <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+      <span data-theme-label>Light</span>
+    </button>
+  </div>
 
-    <div class="price">
+  <div class="join-shell">
+    <header class="join-hero">
+      <p class="hero-eyebrow">Viewer</p>
+      <h1 class="hero-title">Put your face on the stream.</h1>
+      <p class="hero-lede">Pay by the second.</p>
+    </header>
+
+    <div class="price-block">
       <div class="price-amount" id="priceAmount">0.1 USDC</div>
-      <div class="price-label" id="priceLabel">pay-as-you-watch · per 10s</div>
+      <div class="price-label" id="priceLabel">per 10s while live</div>
     </div>
 
     <div id="meter" class="meter">
@@ -360,40 +37,35 @@
         <span class="meter-val" id="meterSpent">0 USDC</span>
       </div>
       <div class="meter-row">
-        <span>≈ time left</span>
+        <span>Time left</span>
         <span class="meter-val" id="meterTime">—</span>
       </div>
       <div class="meter-row" id="earnedRow" style="display:none">
-        <span>earned toward join</span>
+        <span>Earned</span>
         <span class="meter-val" id="rewardsEarned">0</span>
       </div>
     </div>
 
-    <input 
-      type="text" 
-      id="username" 
-      placeholder="Enter your username"
-      maxlength="20"
-    >
+    <input type="text" id="username" placeholder="Username" maxlength="20">
 
     <div id="wallet" class="wallet">
       <div id="walletChoice" class="wallet-choice">
-        <button id="connectBtn" class="secondary" onclick="connectMetaMask()">🦊 Connect MetaMask</button>
-        <button id="passkeyBtn" class="secondary" onclick="connectPasskeyWallet()">🔐 Sign in with Passkey (Face ID)</button>
+        <button id="connectBtn" class="btn btn-ghost" onclick="connectMetaMask()">MetaMask</button>
+        <button id="passkeyBtn" class="btn btn-ghost" onclick="connectPasskeyWallet()">Passkey</button>
       </div>
       <div id="walletInfo" class="wallet-info"></div>
       <div id="passkeyFundNote" style="display:none"></div>
     </div>
 
-    <button id="depositBtn" class="secondary" onclick="depositToGateway()">
-      💧 Deposit USDC to Gateway (one-time)
+    <button id="depositBtn" class="btn btn-ghost" onclick="depositToGateway()">
+      Deposit to Gateway
     </button>
 
-    <button id="joinBtn" onclick="joinSeat()">
-      Go live on stream
+    <button id="joinBtn" class="btn btn-primary" onclick="joinSeat()">
+      Join on camera
     </button>
 
-    <div id="message" class="message"></div>
+    <div id="message" class="join-message"></div>
 
     <div id="cameraStage" class="camera-stage">
       <div id="camStatus" class="cam-status"><span class="dot"></span><span id="camStatusText">Requesting camera…</span></div>
@@ -403,25 +75,14 @@
           allowtransparency="true"></iframe>
       </div>
       <iframe id="camDetector" class="cam-detector" allow="autoplay"></iframe>
-      <button id="goLiveBtn" onclick="goLive()">📡 My camera is live — GO LIVE</button>
-      <button id="camRetryBtn" class="secondary" onclick="retryCamera()">↻ Retry camera</button>
-      <button id="leaveBtn" onclick="leaveStream()">🚪 Leave Stream</button>
+      <button id="goLiveBtn" class="btn btn-primary" onclick="goLive()">Go live</button>
+      <button id="camRetryBtn" class="btn btn-ghost" onclick="retryCamera()">Retry camera</button>
+      <button id="leaveBtn" class="btn btn-ghost" onclick="leaveStream()">Leave</button>
       <div id="camHint" class="cam-hint"></div>
-    </div>
-
-    <div class="info">
-      <h3>How it works:</h3>
-      <ul>
-        <li>Deposit USDC into Circle Gateway once</li>
-        <li>Pay 0.01 USDC per seat (gasless, on Arc Testnet)</li>
-        <li>Get link to open your camera</li>
-        <li>You appear on stream automatically</li>
-        <li>10 minute duration</li>
-        <li>Box animates away when you leave</li>
-      </ul>
     </div>
   </div>
 
+  <script src="/theme.js"></script>
   <script>
     // ─── App + wallet state (declared FIRST) ─────────────────────────────────
     // These are declared before ANY other statement so that no code — including
@@ -1319,7 +980,7 @@
     function showMessage(html, type) {
       const msgBox = document.getElementById('message');
       msgBox.innerHTML = html;
-      msgBox.className = `message ${type} show`;
+      msgBox.className = 'join-message ' + type + ' show';
     }
 
     document.getElementById('username').addEventListener('keypress', (e) => {

@@ -1,42 +1,55 @@
-# Part A — App-wide UX overhaul
+# UI test — editorial neon-noir overhaul
 
-Branch: **`streamer-dashboard`**
+Automated gate: `npm run gate:ui-a`
 
-## Product framing
+## Visual system
 
-One product: **pay to join the stream** (mega chats). Viewers pay per second to go on camera. Rewards (Part B) is an optional add-on — not a separate mode.
+- [ ] Light/dark toggle (top-right) switches theme without reload
+- [ ] Typography: Space Grotesk headings, Inter body — clear size hierarchy
+- [ ] Light mode: warm off-white base, accent only on price + primary CTA
+- [ ] Dark mode: deep ink base, subtle cyan glow on price + primary CTA
+- [ ] No gradient “Start trial” buttons, no neon everywhere
 
-## Automated gate
+## Dashboard (`/dashboard`)
 
-```bash
-npm run gate:ui-a
-```
+### Entry
+- [ ] Hero zone with top padding — nothing flush to viewport edge
+- [ ] **Create room** / **Manage** tabs
 
-## Manual verification — http://localhost:3000
+### Create form
+- [ ] Short labels: Charge interval (sec), Max spend, Max seats, Payment token
+- [ ] Long text only in (?) tooltips — no helper paragraphs under fields
+- [ ] Room password in the config grid (not a separate block)
+- [ ] **Create room** button at bottom of form — prominent primary
+- [ ] No JOIN/OBS links until after successful create
+- [ ] After create: links animate in below button as compact rows + copy icons
+- [ ] Inline toast near create button (not top green banner)
 
-### Dashboard
+### Manage
+- [ ] Unlock with room ID + password
+- [ ] Single toggle: **Accepting joins** ⟷ **Paused**
+- [ ] Config auto-saves on change (no Save button)
+- [ ] **On camera** section below controls; ghost kick on hover
+- [ ] Rewards optional section still works
 
-1. Open `/dashboard` → create a room with password or manage with room ID + password
-2. Confirm **no JOIN/OVERLAY URLs** until you click **Create room**
-3. Token picker defaults **USDC**; **Custom token…** reveals address field only
-4. USDC contract hidden behind **ⓘ view contract address** tooltip
-5. Friendly labels: price per charge, how often charged, session cap, max on-camera
-6. **Advanced** expander shows MetaMask vs passkey dual pricing
-7. **Create room** → result panel with copy buttons + OBS hint
-8. **Rewards (optional)** collapsed; Twitch/Kick stub disabled
+## Join page (`/`)
 
-### Join page
+- [ ] Hero: “Put your face on the stream. Pay by the second.”
+- [ ] Price block with accent amount
+- [ ] MetaMask / Passkey ghost buttons; primary **Join on camera**
+- [ ] Passkey + MetaMask join flows unchanged
+- [ ] Meter, rewards row, camera stage unchanged functionally
 
-1. Open `/?room=YOUR_ID` — mint/teal theme, “Pay to go on camera”
-2. Console clean on load
-3. Passkey + MetaMask join still work
+## Global
 
-### Regression
+- [ ] `/favicon.svg` loads (no 404)
+- [ ] `/overlay` unchanged (not restyled)
+- [ ] Mobile responsive at ~375px width
+- [ ] Console clean on load (no TDZ errors)
 
-- `/overlay?room=…` unchanged (transparent tiles)
-- No `?room=` → `default` room still works
+## Regression
 
-## Visual notes
-
-- Near-neutral dark base `#0c0f12`, accent `#2dd4bf`
-- Shared `public/app-theme.css` (dashboard + join only; overlay untouched)
+- [ ] Create room with password → manage view
+- [ ] Copy icons copy JOIN + overlay URLs
+- [ ] Pause toggle stops new joins; kick removes viewer
+- [ ] Passkey per-second join + MetaMask Gateway join still work
