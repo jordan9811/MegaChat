@@ -47,9 +47,23 @@ export function attachDashboardRoutes(app, deps) {
     res.json({ rooms, authRequired: authEnabled });
   });
 
-  app.post('/api/dashboard/rooms', requireDashboardAuth, (req, res) => {
+  app.post('/api/dashboard/rooms', requireDashboardAuth, async (req, res) => {
     const { name, config } = req.body || {};
-    const room = createRoom(name, config);
+    let mergedConfig = config || {};
+    if (mergedConfig.paymentTokenAddress) {
+      try {
+        const meta = await validatePaymentToken(
+          mergedConfig.paymentTokenAddress,
+          deps.rpcUrl,
+          deps.chainId
+        );
+        mergedConfig.paymentTokenSymbol = meta.symbol;
+        mergedConfig.paymentTokenDecimals = meta.decimals;
+      } catch (err) {
+        return res.status(400).json({ error: 'Invalid payment token', message: err.message });
+      }
+    }
+    const room = createRoom(name, mergedConfig);
     console.log(`[dashboard] created room ${room.id} (${room.name})`);
     res.status(201).json({
       room,

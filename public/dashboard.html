@@ -3,173 +3,188 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Streamer Dashboard</title>
+  <title>Streamer Dashboard — Mega Chats</title>
+  <link rel="stylesheet" href="/app-theme.css">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #0a0a12;
-      color: #e8e8f0;
-      min-height: 100vh;
-      padding: 24px;
-    }
-    h1 { color: #0ff; margin-bottom: 8px; }
-    .sub { color: #888; margin-bottom: 24px; font-size: 14px; }
-    .card {
-      background: #12121c;
-      border: 1px solid #2a2a3a;
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 20px;
-      max-width: 900px;
-    }
-    label { display: block; font-size: 13px; color: #aaa; margin: 12px 0 4px; }
-    input, select, button {
-      font: inherit;
-      padding: 10px 12px;
-      border-radius: 8px;
-      border: 1px solid #333;
-      background: #1a1a28;
-      color: #fff;
-    }
-    input { width: 100%; max-width: 280px; }
-    button {
-      cursor: pointer;
-      background: #1a3a3a;
-      border-color: #0ff;
-      color: #0ff;
-      margin-right: 8px;
-      margin-top: 8px;
-    }
-    button:hover { background: #0ff; color: #000; }
-    button.danger { border-color: #f55; color: #f88; }
-    button.danger:hover { background: #f55; color: #000; }
-    button.secondary { border-color: #666; color: #ccc; }
-    .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
-    .status { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; }
-    .status.live { background: #0f3; color: #000; }
-    .status.stopped { background: #633; color: #fff; }
-    .url-box {
-      background: #0d0d14;
-      padding: 10px;
-      border-radius: 8px;
-      font-family: monospace;
-      font-size: 12px;
-      word-break: break-all;
-      margin: 8px 0;
-    }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #2a2a3a; }
-    .msg { padding: 10px; border-radius: 8px; margin-bottom: 16px; max-width: 900px; }
-    .msg.error { background: #3a1010; color: #faa; }
-    .msg.ok { background: #103a20; color: #afa; }
-    #authGate { max-width: 400px; }
-    .hidden { display: none !important; }
-    ol { margin: 12px 0 0 20px; line-height: 1.6; color: #bbb; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; margin-top: 12px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
+    th { color: var(--text-muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; }
+    #authGate { max-width: 400px; margin: 80px auto; }
+    .result-panel { animation: fadeIn 0.4s ease; }
+    .stub-btn { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
-<body>
-  <div id="authGate" class="card">
-    <h1>Streamer Dashboard</h1>
-    <p class="sub">Enter your dashboard key (set STREAMER_DASHBOARD_KEY in .env)</p>
-    <label for="dashKey">Dashboard key</label>
-    <input id="dashKey" type="password" placeholder="Dashboard key">
-    <button type="button" onclick="unlock()">Unlock</button>
-    <div id="authMsg" class="msg error hidden"></div>
+<body class="theme-app">
+  <div id="authGate" class="card app-shell">
+    <div class="app-header">
+      <h1>Streamer dashboard</h1>
+      <p class="tagline">Sign in to configure pay-to-join rooms</p>
+    </div>
+    <div class="field">
+      <label for="dashKey">Dashboard key</label>
+      <input id="dashKey" type="password" placeholder="From STREAMER_DASHBOARD_KEY in .env" autocomplete="off">
+    </div>
+    <button type="button" class="btn btn-primary" id="unlockBtn">Unlock</button>
+    <div id="authMsg" class="flash err hidden"></div>
   </div>
 
-  <div id="app" class="hidden">
-    <h1>Streamer Dashboard</h1>
-    <p class="sub">Configure your room — no .env editing required.</p>
-    <div id="flash" class="msg hidden"></div>
+  <div id="app" class="app-shell hidden">
+    <header class="app-header">
+      <h1>Pay to join your stream</h1>
+      <p class="tagline">Viewers pay per second to put their camera on your broadcast — mega chats, metered live.</p>
+      <p class="product-note">Configure pricing below, create a room, then share the viewer link and OBS overlay.</p>
+    </header>
 
-    <div class="card">
-      <h2 style="font-size:18px;margin-bottom:12px">Rooms</h2>
-      <div class="row">
-        <div>
-          <label for="newRoomName">New room name</label>
-          <input id="newRoomName" placeholder="My Saturday Stream">
-        </div>
-        <button type="button" onclick="createRoom()">+ Create room</button>
-      </div>
-      <label for="roomSelect">Active room</label>
-      <select id="roomSelect" onchange="selectRoom()"></select>
-    </div>
+    <div id="flash" class="flash hidden"></div>
 
-    <div id="roomEditor" class="card hidden">
-      <div class="row" style="align-items:center;margin-bottom:12px">
-        <h2 style="font-size:18px" id="roomTitle">Room</h2>
-        <span id="roomStatus" class="status live">LIVE</span>
+    <!-- PRIMARY: pay-to-join setup (no URLs until room exists) -->
+    <section class="card" id="setupPanel">
+      <h2 class="card-title">New pay-to-join room</h2>
+      <p class="card-desc">Set how viewers are charged before you create the room. Links appear after creation.</p>
+
+      <div class="field">
+        <label for="newRoomName">Room name</label>
+        <input id="newRoomName" placeholder="Saturday night co-stream">
       </div>
 
-      <div class="row">
-        <div>
-          <label>Gateway tick price (MetaMask) USDC</label>
-          <input id="tickPrice" type="text">
+      <div class="grid-2">
+        <div class="field">
+          <label for="passkeyTickPrice">
+            Price per charge
+            <span class="info-tip" data-tip="passkeyTickPrice — USDC pulled each tick from the viewer's wallet">?</span>
+          </label>
+          <input id="passkeyTickPrice" type="text" value="0.001">
+          <p class="derived" id="perMinuteHint">≈ $0.06 / minute at current rate</p>
         </div>
-        <div>
-          <label>Gateway tick interval (seconds)</label>
-          <input id="tickSeconds" type="number" min="1">
+        <div class="field">
+          <label for="passkeyTickSeconds">
+            How often viewers are charged
+            <span class="info-tip" data-tip="passkeyTickSeconds — interval between meter ticks">?</span>
+          </label>
+          <input id="passkeyTickSeconds" type="number" min="1" value="1">
+          <p class="hint">Seconds between each charge while live</p>
         </div>
-        <div>
-          <label>Passkey tick price USDC</label>
-          <input id="passkeyTickPrice" type="text">
+        <div class="field">
+          <label for="maxSession">
+            Most a viewer can spend per session
+            <span class="info-tip" data-tip="MAX_SESSION — approval cap for one join">?</span>
+          </label>
+          <input id="maxSession" type="text" value="2">
         </div>
-        <div>
-          <label>Passkey tick interval (seconds)</label>
-          <input id="passkeyTickSeconds" type="number" min="1">
-        </div>
-        <div>
-          <label>Session cap USDC</label>
-          <input id="maxSession" type="text">
-        </div>
-        <div>
-          <label>Max seats (1–3)</label>
-          <input id="maxSeats" type="number" min="1" max="3">
-        </div>
-        <div style="flex:1;min-width:280px">
-          <label>Passkey payment token (Arc ERC-20)</label>
-          <input id="paymentTokenAddress" type="text" placeholder="0x3600… USDC default">
-          <p class="sub" style="margin-top:4px">MetaMask/Gateway always uses USDC. Custom tokens = passkey path only.</p>
+        <div class="field">
+          <label for="maxSeats">
+            How many can join on-camera at once
+            <span class="info-tip" data-tip="MAX_SEATS — simultaneous camera slots (1–3)">?</span>
+          </label>
+          <input id="maxSeats" type="number" min="1" max="3" value="3">
         </div>
       </div>
-      <button type="button" onclick="saveConfig()">Save config</button>
-      <button type="button" class="secondary" onclick="startRoom()">Start room</button>
-      <button type="button" class="danger" onclick="stopRoom()">Stop room</button>
 
-      <h3 style="margin-top:20px;font-size:15px">Share links</h3>
-      <p class="sub" style="margin-bottom:8px">JOIN — viewers open this to pay and go on camera</p>
-      <div class="url-box" id="joinUrl">—</div>
-      <button type="button" onclick="copyJoin()">Copy JOIN URL</button>
-      <p class="sub" style="margin:16px 0 8px">OVERLAY — paste into OBS as Browser Source</p>
-      <div class="url-box" id="overlayUrl">—</div>
-      <button type="button" onclick="copyOverlay()">Copy OVERLAY URL</button>
+      <div class="field">
+        <label for="tokenPreset">Payment token (passkey viewers)</label>
+        <select id="tokenPreset">
+          <option value="usdc" selected>USDC (default)</option>
+          <option value="custom">Custom token…</option>
+        </select>
+        <p class="hint">MetaMask viewers always pay via Circle Gateway USDC.</p>
+        <span class="token-contract-hint">
+          <span class="info-tip" id="usdcContractTip" data-tip="Arc Testnet USDC contract">ⓘ</span>
+          <span id="usdcContractLabel">view contract address</span>
+        </span>
+      </div>
+      <div class="field hidden" id="customTokenWrap">
+        <label for="customTokenAddress">Custom ERC-20 address (Arc)</label>
+        <input id="customTokenAddress" placeholder="0x…">
+      </div>
 
-      <h3 style="margin-top:20px;font-size:15px">OBS setup (one screen)</h3>
-      <ol>
-        <li>Copy the <strong>OVERLAY URL</strong> above.</li>
-        <li>In OBS: Sources → Add → <strong>Browser</strong>.</li>
-        <li>Paste the overlay URL, set width <strong>340</strong> × height <strong>620</strong> (adjust for tile count).</li>
-        <li>Check <strong>Shutdown source when not visible</strong> off; refresh browser source if tiles stick.</li>
-        <li>Share the <strong>JOIN URL</strong> in chat — viewers join with passkey or MetaMask.</li>
-      </ol>
-    </div>
+      <details class="advanced">
+        <summary>Advanced — separate MetaMask vs passkey pricing</summary>
+        <div class="advanced-body grid-2">
+          <div class="field">
+            <label for="tickPrice">MetaMask price per charge (USDC)</label>
+            <input id="tickPrice" type="text" value="0.1">
+          </div>
+          <div class="field">
+            <label for="tickSeconds">MetaMask charge interval (seconds)</label>
+            <input id="tickSeconds" type="number" min="1" value="10">
+          </div>
+        </div>
+      </details>
 
-    <div id="liveCard" class="card hidden">
-      <h2 style="font-size:16px;margin-bottom:12px">Live seats</h2>
+      <button type="button" class="btn btn-primary" id="createRoomBtn" style="margin-top:20px">Create room</button>
+    </section>
+
+    <!-- RESULT: only after room created -->
+    <section class="card result-panel hidden" id="resultPanel">
+      <h2 class="card-title">Your room is ready</h2>
+      <p class="card-desc">Share the viewer link in chat. Paste the overlay link into OBS as a Browser Source.</p>
+
+      <div class="url-panel">
+        <div class="url-label">Viewer join link</div>
+        <div class="url-value" id="joinUrl">—</div>
+        <button type="button" class="btn btn-secondary" id="copyJoinBtn">Copy join link</button>
+      </div>
+
+      <div class="url-panel">
+        <div class="url-label">OBS overlay link</div>
+        <div class="url-value" id="overlayUrl">—</div>
+        <button type="button" class="btn btn-secondary" id="copyOverlayBtn">Copy overlay link</button>
+        <p class="hint" style="margin-top:10px">In OBS: Sources → Add → <strong>Browser</strong> → paste overlay URL. Size ~340×620 px, transparent background.</p>
+      </div>
+    </section>
+
+    <!-- Manage existing rooms -->
+    <section class="card hidden" id="managePanel">
+      <h2 class="card-title">Manage room</h2>
+      <div class="field">
+        <label for="roomSelect">Select room</label>
+        <select id="roomSelect"></select>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <span id="roomTitle" style="font-weight:600"></span>
+        <span id="roomStatus" class="status-pill live">Live</span>
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" id="saveConfigBtn">Save changes</button>
+        <button type="button" class="btn btn-secondary" id="startRoomBtn">Start accepting joins</button>
+        <button type="button" class="btn btn-danger" id="stopRoomBtn">Stop new joins</button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="liveCard">
+      <h2 class="card-title">Live on-camera viewers</h2>
       <table>
-        <thead>
-          <tr><th>User</th><th>Status</th><th>Spent</th><th>Remaining</th><th></th></tr>
-        </thead>
+        <thead><tr><th>User</th><th>Status</th><th>Spent</th><th>Remaining</th><th></th></tr></thead>
         <tbody id="seatRows"></tbody>
       </table>
-      <p class="sub" id="noSeats" style="margin-top:8px">No viewers in seats yet.</p>
-    </div>
+      <p class="hint" id="noSeats">No viewers in seats yet.</p>
+    </section>
+
+    <!-- SECONDARY: rewards stub (Part B wires settings) -->
+    <details class="optional-section card" id="rewardsSection" style="padding:0;border:none;background:transparent;box-shadow:none">
+      <summary>🎁 Rewards (optional) — give viewers drops to encourage joins</summary>
+      <div class="optional-body card" style="margin:0">
+        <p class="card-desc">A crypto-native promo lever: viewers earn while watching, then spend toward joining. Off by default.</p>
+        <div class="field">
+          <label><input type="checkbox" id="rewardsEnabled" disabled> Enable rewards for this room <em>(Part B)</em></label>
+        </div>
+        <p class="hint">Settings will appear here once rewards is enabled in the next update.</p>
+      </div>
+    </details>
+
+    <!-- Roadmap stub: external platform linking -->
+    <section class="card" style="opacity:0.55">
+      <h2 class="card-title">Connect Twitch / Kick account</h2>
+      <p class="card-desc">Coming soon — credit viewers for past watch time on external platforms.</p>
+      <!-- ROADMAP: platformLink { provider: 'twitch'|'kick', oauthId, linkedAt } per room -->
+      <button type="button" class="btn btn-secondary stub-btn" disabled>Connect account (coming soon)</button>
+    </section>
   </div>
 
   <script>
+    const ARC_USDC = '0x3600000000000000000000000000000000000000';
+
     let dashKey = '';
-    let rooms = [];
     let currentRoomId = null;
     let pollTimer = null;
 
@@ -177,13 +192,78 @@
       const el = document.getElementById('flash');
       if (!el) return;
       el.textContent = text;
-      el.className = 'msg ' + (ok ? 'ok' : 'error');
+      el.className = 'flash ' + (ok ? 'ok' : 'err');
       el.classList.remove('hidden');
-      setTimeout(() => el.classList.add('hidden'), 4000);
+      clearTimeout(showFlash._t);
+      showFlash._t = setTimeout(() => el.classList.add('hidden'), 4500);
     }
 
     function headers() {
-      return dashKey ? { 'X-Dashboard-Key': dashKey, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+      const h = { 'Content-Type': 'application/json' };
+      if (dashKey) h['X-Dashboard-Key'] = dashKey;
+      return h;
+    }
+
+    function updatePerMinuteHint() {
+      const priceEl = document.getElementById('passkeyTickPrice');
+      const secEl = document.getElementById('passkeyTickSeconds');
+      const hint = document.getElementById('perMinuteHint');
+      if (!priceEl || !secEl || !hint) return;
+      const price = parseFloat(priceEl.value) || 0;
+      const sec = parseFloat(secEl.value) || 1;
+      const perMin = sec > 0 ? (price * 60 / sec) : 0;
+      hint.textContent = '≈ $' + perMin.toFixed(2) + ' / minute at current rate';
+    }
+
+    function syncTokenUi() {
+      const preset = document.getElementById('tokenPreset');
+      const customWrap = document.getElementById('customTokenWrap');
+      const tip = document.getElementById('usdcContractTip');
+      if (!preset || !customWrap) return;
+      const isCustom = preset.value === 'custom';
+      customWrap.classList.toggle('hidden', !isCustom);
+      if (tip) tip.setAttribute('data-tip', 'Arc Testnet USDC: ' + ARC_USDC);
+    }
+
+    function gatherConfig() {
+      const preset = document.getElementById('tokenPreset');
+      let paymentTokenAddress = ARC_USDC;
+      if (preset && preset.value === 'custom') {
+        paymentTokenAddress = (document.getElementById('customTokenAddress').value || '').trim();
+      }
+      return {
+        passkeyTickPrice: document.getElementById('passkeyTickPrice').value,
+        passkeyTickSeconds: Number(document.getElementById('passkeyTickSeconds').value),
+        maxSession: document.getElementById('maxSession').value,
+        maxSeats: Number(document.getElementById('maxSeats').value),
+        tickPrice: document.getElementById('tickPrice').value,
+        tickSeconds: Number(document.getElementById('tickSeconds').value),
+        paymentTokenAddress,
+      };
+    }
+
+    function fillFormFromRoom(room) {
+      if (!room) return;
+      document.getElementById('passkeyTickPrice').value = room.passkeyTickPrice;
+      document.getElementById('passkeyTickSeconds').value = room.passkeyTickSeconds;
+      document.getElementById('maxSession').value = room.maxSession;
+      document.getElementById('maxSeats').value = room.maxSeats;
+      document.getElementById('tickPrice').value = room.tickPrice;
+      document.getElementById('tickSeconds').value = room.tickSeconds;
+      const isUsdc = !room.paymentTokenAddress ||
+        room.paymentTokenAddress.toLowerCase() === ARC_USDC.toLowerCase();
+      document.getElementById('tokenPreset').value = isUsdc ? 'usdc' : 'custom';
+      if (!isUsdc) {
+        document.getElementById('customTokenAddress').value = room.paymentTokenAddress;
+      }
+      syncTokenUi();
+      updatePerMinuteHint();
+    }
+
+    function showResultPanel(joinUrl, overlayUrl) {
+      document.getElementById('joinUrl').textContent = joinUrl;
+      document.getElementById('overlayUrl').textContent = overlayUrl;
+      document.getElementById('resultPanel').classList.remove('hidden');
     }
 
     async function unlock() {
@@ -193,8 +273,10 @@
         if (!res.ok) throw new Error('Invalid dashboard key');
         document.getElementById('authGate').classList.add('hidden');
         document.getElementById('app').classList.remove('hidden');
+        syncTokenUi();
+        updatePerMinuteHint();
         await loadRooms();
-        pollTimer = setInterval(refreshLive, 3000);
+        pollTimer = setInterval(refreshLive, 4000);
       } catch (e) {
         const m = document.getElementById('authMsg');
         m.textContent = e.message || 'Auth failed';
@@ -206,61 +288,44 @@
       const res = await fetch('/api/dashboard/rooms', { headers: headers() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load rooms');
-      rooms = data.rooms || [];
       const sel = document.getElementById('roomSelect');
       sel.innerHTML = '';
-      rooms.forEach((r) => {
+      (data.rooms || []).forEach((r) => {
         const opt = document.createElement('option');
         opt.value = r.id;
-        opt.textContent = `${r.name} (${r.id})${r.active ? '' : ' [stopped]'}`;
+        opt.textContent = r.name + ' (' + r.id + ')' + (r.active ? '' : ' · stopped');
         sel.appendChild(opt);
       });
-      if (rooms.length && !currentRoomId) currentRoomId = rooms[0].id;
+      const hasRooms = (data.rooms || []).length > 0;
+      document.getElementById('managePanel').classList.toggle('hidden', !hasRooms);
+      document.getElementById('liveCard').classList.toggle('hidden', !hasRooms);
+      if (hasRooms && !currentRoomId) currentRoomId = data.rooms[0].id;
       if (currentRoomId) sel.value = currentRoomId;
-      selectRoom();
+      if (hasRooms) await refreshLive();
     }
 
     async function createRoom() {
       const name = document.getElementById('newRoomName').value.trim() || 'My Stream';
-      const res = await fetch('/api/dashboard/rooms', {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify({ name })
-      });
-      const data = await res.json();
-      if (!res.ok) { showFlash(data.error || 'Create failed', false); return; }
-      currentRoomId = data.room.id;
-      showFlash('Room created: ' + data.room.id, true);
-      await loadRooms();
-    }
-
-    function fillEditor(room, joinUrl, overlayUrl) {
-      document.getElementById('roomEditor').classList.remove('hidden');
-      document.getElementById('liveCard').classList.remove('hidden');
-      document.getElementById('roomTitle').textContent = room.name + ' (' + room.id + ')';
-      const st = document.getElementById('roomStatus');
-      st.textContent = room.active ? 'ACCEPTING JOINS' : 'STOPPED';
-      st.className = 'status ' + (room.active ? 'live' : 'stopped');
-      document.getElementById('tickPrice').value = room.tickPrice;
-      document.getElementById('tickSeconds').value = room.tickSeconds;
-      document.getElementById('passkeyTickPrice').value = room.passkeyTickPrice;
-      document.getElementById('passkeyTickSeconds').value = room.passkeyTickSeconds;
-      document.getElementById('maxSession').value = room.maxSession;
-      document.getElementById('maxSeats').value = room.maxSeats;
-      document.getElementById('paymentTokenAddress').value = room.paymentTokenAddress || '';
-      if (room.paymentTokenSymbol) {
-        document.getElementById('paymentTokenAddress').title =
-          `${room.paymentTokenSymbol} (${room.paymentTokenDecimals} decimals)`;
+      const config = gatherConfig();
+      const btn = document.getElementById('createRoomBtn');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/dashboard/rooms', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({ name, config }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || data.message || 'Create failed');
+        currentRoomId = data.room.id;
+        showResultPanel(data.joinUrl, data.overlayUrl);
+        showFlash('Room created — share your links below', true);
+        await loadRooms();
+      } catch (e) {
+        showFlash(e.message, false);
+      } finally {
+        btn.disabled = false;
       }
-      document.getElementById('joinUrl').textContent = joinUrl;
-      document.getElementById('overlayUrl').textContent = overlayUrl;
-    }
-
-    async function selectRoom() {
-      const sel = document.getElementById('roomSelect');
-      if (!sel || !sel.value) return;
-      currentRoomId = sel.value;
-      await refreshLive();
     }
 
     async function refreshLive() {
@@ -268,73 +333,79 @@
       const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId), { headers: headers() });
       const data = await res.json();
       if (!res.ok) return;
-      fillEditor(data.room, data.joinUrl, data.overlayUrl);
+      const room = data.room;
+      document.getElementById('roomTitle').textContent = room.name;
+      const st = document.getElementById('roomStatus');
+      st.textContent = room.active ? 'Accepting joins' : 'Stopped';
+      st.className = 'status-pill ' + (room.active ? 'live' : 'stopped');
+      showResultPanel(data.joinUrl, data.overlayUrl);
+      fillFormFromRoom(room);
       const tbody = document.getElementById('seatRows');
       tbody.innerHTML = '';
       const seats = data.seats || [];
       document.getElementById('noSeats').style.display = seats.length ? 'none' : 'block';
       seats.forEach((s) => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${s.username}</td>
-          <td>${s.live ? 'live' : 'pending'}</td>
-          <td>${s.spent} USDC</td>
-          <td>${s.remaining} USDC</td>
-          <td><button class="danger" type="button" data-seat="${s.id}">Kick</button></td>`;
+        tr.innerHTML = '<td>' + s.username + '</td><td>' + (s.live ? 'live' : 'pending') + '</td><td>' +
+          s.spent + '</td><td>' + s.remaining + '</td><td><button class="btn btn-danger" type="button">Kick</button></td>';
         tr.querySelector('button').onclick = () => kickSeat(s.id);
         tbody.appendChild(tr);
       });
     }
 
     async function saveConfig() {
-      const body = {
-        config: {
-          tickPrice: document.getElementById('tickPrice').value,
-          tickSeconds: Number(document.getElementById('tickSeconds').value),
-          passkeyTickPrice: document.getElementById('passkeyTickPrice').value,
-          passkeyTickSeconds: Number(document.getElementById('passkeyTickSeconds').value),
-          maxSession: document.getElementById('maxSession').value,
-          maxSeats: Number(document.getElementById('maxSeats').value),
-          paymentTokenAddress: document.getElementById('paymentTokenAddress').value.trim(),
-        }
-      };
+      if (!currentRoomId) return;
       const res = await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId), {
-        method: 'PUT', headers: headers(), body: JSON.stringify(body)
+        method: 'PUT', headers: headers(), body: JSON.stringify({ config: gatherConfig() }),
       });
-      if (res.ok) showFlash('Config saved', true);
+      if (res.ok) showFlash('Saved', true);
       else showFlash('Save failed', false);
       await refreshLive();
     }
 
     async function startRoom() {
       await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/start', { method: 'POST', headers: headers() });
-      showFlash('Room started', true);
+      showFlash('Room accepting joins', true);
       await refreshLive();
     }
 
     async function stopRoom() {
       await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/stop', { method: 'POST', headers: headers() });
-      showFlash('Room stopped — no new joins', true);
+      showFlash('New joins stopped', true);
       await refreshLive();
     }
 
     async function kickSeat(seatId) {
       await fetch('/api/dashboard/rooms/' + encodeURIComponent(currentRoomId) + '/kick/' + encodeURIComponent(seatId), {
-        method: 'POST', headers: headers()
+        method: 'POST', headers: headers(),
       });
-      showFlash('Kicked ' + seatId.slice(0, 8), true);
+      showFlash('Viewer removed', true);
       await refreshLive();
     }
 
-    function copyJoin() {
-      const t = document.getElementById('joinUrl').textContent;
-      navigator.clipboard.writeText(t).then(() => showFlash('JOIN URL copied', true));
+    function copyText(id) {
+      const t = document.getElementById(id).textContent;
+      if (!t || t === '—') return;
+      navigator.clipboard.writeText(t).then(() => showFlash('Copied', true));
     }
 
-    function copyOverlay() {
-      const t = document.getElementById('overlayUrl').textContent;
-      navigator.clipboard.writeText(t).then(() => showFlash('OVERLAY URL copied', true));
-    }
+    document.getElementById('unlockBtn').addEventListener('click', unlock);
+    document.getElementById('createRoomBtn').addEventListener('click', createRoom);
+    document.getElementById('copyJoinBtn').addEventListener('click', () => copyText('joinUrl'));
+    document.getElementById('copyOverlayBtn').addEventListener('click', () => copyText('overlayUrl'));
+    document.getElementById('saveConfigBtn').addEventListener('click', saveConfig);
+    document.getElementById('startRoomBtn').addEventListener('click', startRoom);
+    document.getElementById('stopRoomBtn').addEventListener('click', stopRoom);
+    document.getElementById('roomSelect').addEventListener('change', () => {
+      currentRoomId = document.getElementById('roomSelect').value;
+      refreshLive();
+    });
+    document.getElementById('tokenPreset').addEventListener('change', syncTokenUi);
+    document.getElementById('passkeyTickPrice').addEventListener('input', updatePerMinuteHint);
+    document.getElementById('passkeyTickSeconds').addEventListener('input', updatePerMinuteHint);
+    document.getElementById('usdcContractLabel').addEventListener('click', () => {
+      navigator.clipboard.writeText(ARC_USDC).then(() => showFlash('USDC contract copied', true));
+    });
   </script>
 </body>
 </html>

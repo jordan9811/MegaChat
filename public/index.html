@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Join Stream</title>
+  <title>Join on camera — Mega Chats</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/app-theme.css">
   <style>
     * {
       margin: 0;
@@ -12,9 +13,9 @@
     }
 
     body {
-      font-family: Arial, sans-serif;
-      background: #000;
-      color: #0ff;
+      font-family: var(--font, "Segoe UI", system-ui, sans-serif);
+      background: var(--bg, #0c0f12);
+      color: var(--text, #e8edf2);
       min-height: 100vh;
       display: flex;
       align-items: center;
@@ -23,98 +24,103 @@
     }
 
     .container {
-      max-width: 600px;
+      max-width: 480px;
       width: 100%;
-      background: #111;
-      border: 2px solid #0ff;
-      border-radius: 10px;
-      padding: 40px;
-      box-shadow: 0 0 50px rgba(0, 255, 255, 0.3);
+      background: var(--bg-card, #1a2229);
+      border: 1px solid var(--border, rgba(255,255,255,0.08));
+      border-radius: 16px;
+      padding: 36px 32px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
     }
 
     h1 {
       text-align: center;
-      margin-bottom: 10px;
-      font-size: 2rem;
+      margin-bottom: 8px;
+      font-size: 1.65rem;
+      font-weight: 650;
     }
 
     .subtitle {
       text-align: center;
-      color: #0aa;
-      margin-bottom: 30px;
+      color: var(--text-muted, #8b9aab);
+      margin-bottom: 28px;
       font-size: 0.9rem;
+      line-height: 1.45;
     }
 
     .price {
-      background: rgba(0, 255, 255, 0.1);
-      border: 1px solid #0ff;
+      background: var(--accent-glow, rgba(45, 212, 191, 0.12));
+      border: 1px solid var(--border-accent, rgba(45, 212, 191, 0.35));
       padding: 20px;
-      border-radius: 8px;
+      border-radius: 12px;
       text-align: center;
-      margin-bottom: 30px;
+      margin-bottom: 24px;
     }
 
     .price-amount {
-      font-size: 2.5rem;
-      font-weight: bold;
-      margin-bottom: 5px;
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+      color: var(--accent, #2dd4bf);
     }
 
     .price-label {
-      color: #0aa;
-      font-size: 0.9rem;
+      color: var(--text-muted, #8b9aab);
+      font-size: 0.85rem;
     }
 
     input {
       width: 100%;
-      padding: 15px;
-      background: #000;
-      border: 2px solid #0ff;
-      color: #0ff;
+      padding: 14px 16px;
+      background: var(--bg-elevated, #141a1f);
+      border: 1px solid var(--border);
+      color: var(--text);
       font-size: 1rem;
-      border-radius: 8px;
-      margin-bottom: 20px;
+      border-radius: 10px;
+      margin-bottom: 16px;
     }
 
     input:focus {
       outline: none;
-      box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
     }
 
     button {
       width: 100%;
-      padding: 18px;
-      background: #0ff;
-      color: #000;
+      padding: 16px;
+      background: var(--accent, #2dd4bf);
+      color: #042f2e;
       border: none;
-      font-size: 1.1rem;
-      font-weight: bold;
-      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      border-radius: 10px;
       cursor: pointer;
-      transition: all 0.3s;
+      transition: all 0.2s ease;
     }
 
     button:hover {
-      background: #0dd;
-      transform: translateY(-2px);
-      box-shadow: 0 5px 20px rgba(0, 255, 255, 0.5);
+      background: var(--accent-dim, #14b8a6);
+      transform: translateY(-1px);
     }
 
     button:disabled {
-      opacity: 0.5;
+      opacity: 0.45;
       cursor: not-allowed;
       transform: none;
     }
 
     button.secondary {
       background: transparent;
-      color: #0ff;
-      border: 2px solid #0ff;
-      margin-bottom: 15px;
+      color: var(--text);
+      border: 1px solid var(--border);
+      margin-bottom: 12px;
     }
 
     button.secondary:hover {
-      background: rgba(0, 255, 255, 0.1);
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-glow);
     }
 
     .wallet {
@@ -124,22 +130,22 @@
     .wallet-info {
       margin-top: 10px;
       font-size: 0.8rem;
-      color: #0aa;
+      color: var(--text-muted);
       word-break: break-all;
     }
 
     .wallet-info .addr {
-      color: #0ff;
-      font-weight: bold;
+      color: var(--accent);
+      font-weight: 600;
     }
 
     .meter {
       display: none;
       margin-bottom: 20px;
-      padding: 15px 20px;
-      border: 1px solid #0ff;
-      border-radius: 8px;
-      background: rgba(0, 255, 255, 0.05);
+      padding: 16px 18px;
+      border: 1px solid var(--border-accent);
+      border-radius: 12px;
+      background: var(--accent-glow);
     }
 
     .meter.show { display: block; }
@@ -147,15 +153,15 @@
     .meter-row {
       display: flex;
       justify-content: space-between;
-      padding: 4px 0;
-      color: #0aa;
-      font-size: 0.9rem;
+      padding: 6px 0;
+      color: var(--text-muted);
+      font-size: 0.875rem;
     }
 
     .meter-val {
-      color: #0ff;
-      font-weight: bold;
-      font-family: monospace;
+      color: var(--accent);
+      font-weight: 600;
+      font-family: var(--font-mono, monospace);
     }
 
     .info {
@@ -197,15 +203,15 @@
     }
 
     .message.success {
-      background: rgba(0, 255, 100, 0.2);
-      border: 1px solid #0f0;
-      color: #0f0;
+      background: rgba(74, 222, 128, 0.1);
+      border: 1px solid rgba(74, 222, 128, 0.35);
+      color: var(--success, #4ade80);
     }
 
     .message.error {
-      background: rgba(255, 0, 100, 0.2);
-      border: 1px solid #f00;
-      color: #f00;
+      background: rgba(248, 113, 113, 0.1);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      color: var(--danger, #f87171);
     }
 
     .camera-link {
@@ -336,8 +342,8 @@
 </head>
 <body>
   <div class="container">
-    <h1>🎥 JOIN ON-CAMERA</h1>
-    <p class="subtitle">Get your webcam on the stream</p>
+    <h1>Pay to go on camera</h1>
+    <p class="subtitle">Join the stream live — you're charged per second while your camera is on air.</p>
 
     <div class="price">
       <div class="price-amount" id="priceAmount">0.1 USDC</div>
@@ -384,7 +390,7 @@
     </button>
 
     <button id="joinBtn" onclick="joinSeat()">
-      🎬 JOIN STREAM
+      Go live on stream
     </button>
 
     <div id="message" class="message"></div>
