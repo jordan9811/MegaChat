@@ -10,8 +10,8 @@
   --border: #E6E7EB;
   --border-strong: #D1D5DB;
   --text: #0E0F13;
-  --text-muted: #6B7280;
-  --text-faint: #9CA3AF;
+  --text-muted: #505562;
+  --text-faint: #727784;
   --accent: #16C5D6;
   --accent-dim: #12A8B8;
   --accent-secondary: #FF2E97;
@@ -29,7 +29,7 @@
   --font-mono: ui-monospace, "Cascadia Code", monospace;
   --shadow-sm: 0 1px 2px rgba(14, 15, 19, 0.04);
   --shadow-md: 0 8px 30px rgba(14, 15, 19, 0.06);
-  --hero-pad-top: 72px;
+  --hero-pad-top: 88px;
   --transition: 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -41,8 +41,8 @@
   --border: rgba(245, 246, 250, 0.08);
   --border-strong: rgba(245, 246, 250, 0.14);
   --text: #F5F6FA;
-  --text-muted: #9CA3AF;
-  --text-faint: #6B7280;
+  --text-muted: #BCC3CF;
+  --text-faint: #9098A8;
   --accent-glow: rgba(22, 197, 214, 0.14);
   --accent-glow-strong: rgba(22, 197, 214, 0.35);
   --danger-soft: rgba(220, 38, 38, 0.12);
@@ -113,8 +113,24 @@ body.theme-join {
 .app-shell {
   max-width: 680px;
   margin: 0 auto;
-  padding: var(--hero-pad-top) 24px 64px;
+  padding: 0 24px 64px;
   width: 100%;
+}
+
+#entryGate.app-shell {
+  padding-top: var(--hero-pad-top);
+}
+
+#entryGate:not(.hidden) ~ #setupPanel:not(.hidden) {
+  padding-top: 0;
+}
+
+#entryGate.hidden ~ #setupPanel:not(.hidden) {
+  padding-top: var(--hero-pad-top);
+}
+
+#app.app-shell {
+  padding-top: 0;
 }
 
 .hero {
@@ -207,7 +223,7 @@ body.theme-join {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
   margin-bottom: 20px;
 }
 
@@ -225,8 +241,25 @@ body.theme-join {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
   margin-bottom: 16px;
+}
+
+.advanced-subhead + .advanced-subhead,
+.stub-note + .advanced-subhead {
+  margin-top: 28px;
+}
+
+.stub-note {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: -8px 0 16px;
+}
+
+.stub-fields input:disabled,
+.stub-fields select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .section-title {
@@ -284,11 +317,28 @@ body.theme-join {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: var(--text-muted);
   margin-bottom: 8px;
   letter-spacing: 0.01em;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.checkbox-row.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .field-price label { color: var(--text); }
@@ -356,6 +406,16 @@ input, select, textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius-xs);
   transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
 }
 [data-theme="light"] input,
 [data-theme="light"] select { background: var(--bg-elevated); }
@@ -890,7 +950,11 @@ details .optional-body { padding: 20px 16px; }
 .btn-primary.shake { animation: shake 0.35s ease; }
 
 @media (max-width: 560px) {
-  .app-shell { padding: 56px 16px 48px; }
+  .app-shell { padding: 0 16px 48px; }
+  #entryGate.app-shell,
+  #entryGate.hidden ~ #setupPanel:not(.hidden) {
+    padding-top: 56px;
+  }
   .site-chrome { top: 12px; right: 12px; }
   .grid-2 { grid-template-columns: 1fr; }
   .link-label { flex: 0 0 72px; }

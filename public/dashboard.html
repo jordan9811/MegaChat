@@ -122,6 +122,31 @@
             <input id="tickSeconds" type="number" min="1" value="10">
           </div>
         </div>
+        <p class="advanced-subhead">Join gating</p>
+        <p class="stub-note">Coming soon — anti-spam and abuse controls.</p>
+        <div class="grid-2 stub-fields">
+          <div class="field">
+            <label for="gateMinWatchTime">Min watch time</label>
+            <input id="gateMinWatchTime" type="number" disabled placeholder="—">
+          </div>
+          <div class="field">
+            <label for="gateReputationScore">Reputation score gate</label>
+            <input id="gateReputationScore" type="number" disabled placeholder="—">
+          </div>
+          <div class="field field-full">
+            <span class="checkbox-row is-disabled">
+              <input type="checkbox" id="gateSubscribersOnly" disabled>
+              <span>Subscribers only</span>
+            </span>
+          </div>
+          <div class="field field-full">
+            <span class="checkbox-row is-disabled">
+              <input type="checkbox" id="gateFollowersOnly" disabled>
+              <span>Followers only</span>
+            </span>
+          </div>
+        </div>
+        <!-- ROADMAP: joinGating { minWatchSeconds, subscribersOnly, followersOnly, minReputation } -->
       </div>
     </details>
 
@@ -179,9 +204,10 @@
     <details class="optional-section card card-quiet" id="rewardsSection">
       <summary>Rewards <span style="font-weight:400;color:var(--text-faint)">· optional</span></summary>
       <div class="optional-body">
-        <div class="field field-full">
-          <label><input type="checkbox" id="rewardsEnabled"> Enable drops</label>
-        </div>
+        <label class="checkbox-row" for="rewardsEnabled">
+          <input type="checkbox" id="rewardsEnabled">
+          <span>Enable drops</span>
+        </label>
         <div id="rewardsFields" class="hidden">
           <div class="grid-2" style="margin-top:16px">
             <div class="field">
