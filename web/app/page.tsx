@@ -4,6 +4,7 @@ import { Hero } from '@/components/hero'
 import { MegaChatSettings } from '@/components/megachat-settings'
 import { OnCameraTable } from '@/components/on-camera-table'
 import { RewardsCard } from '@/components/rewards-card'
+import { RoomProvider } from '@/components/room-provider'
 
 export default function Page() {
   return (
@@ -34,13 +35,15 @@ export default function Page() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="lg:row-span-2">
-            <MegaChatSettings />
+        <RoomProvider>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="lg:row-span-2">
+              <MegaChatSettings />
+            </div>
+            <OnCameraTable />
+            <RewardsCard />
           </div>
-          <OnCameraTable />
-          <RewardsCard />
-        </div>
+        </RoomProvider>
       </main>
 
       <footer className="border-t border-border/60">

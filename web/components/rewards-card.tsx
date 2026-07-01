@@ -1,34 +1,39 @@
 'use client'
 
-import { useState } from 'react'
 import { Gift } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import {
   Field,
+  TextInput,
   InputAffix,
   SelectInput,
   Toggle,
 } from '@/components/form-primitives'
+import { useRoom } from '@/components/room-provider'
 import { cn } from '@/lib/utils'
 
 export function RewardsCard() {
-  const [enabled, setEnabled] = useState(true)
-  const [interval, setInterval] = useState('5')
-  const [amount, setAmount] = useState('1.00')
-  const [cap, setCap] = useState('50')
-  const [type, setType] = useState('random')
+  const { draft, updateDraft, room } = useRoom()
+  const enabled = draft.rewardsEnabled
+
+  const rewardSymbol =
+    draft.rewardsType === 'points'
+      ? 'PTS'
+      : draft.rewardsType === 'token'
+        ? room?.rewards?.rewardTokenSymbol || 'TOKEN'
+        : 'USDC'
 
   return (
     <GlassCard>
       <CardHeader
         icon={<Gift className="size-5" />}
         title="Rewards / drops"
-        description="Surprise on-camera viewers with token drops."
+        description="Viewers earn while they watch — spendable on camera time."
         accent="lime"
         action={
           <Toggle
             checked={enabled}
-            onChange={setEnabled}
+            onChange={(v) => updateDraft({ rewardsEnabled: v })}
             label="Enable rewards"
           />
         }
@@ -39,13 +44,17 @@ export function RewardsCard() {
           enabled ? 'opacity-100' : 'pointer-events-none opacity-40',
         )}
       >
-        <Field label="Drop interval" htmlFor="drop-interval">
+        <Field
+          label="Drop interval"
+          htmlFor="drop-interval"
+          hint="Focused watch time between drops."
+        >
           <InputAffix
             id="drop-interval"
-            affix="min"
+            affix="sec"
             inputMode="numeric"
-            value={interval}
-            onChange={(e) => setInterval(e.target.value)}
+            value={draft.rewardsEarnInterval}
+            onChange={(e) => updateDraft({ rewardsEarnInterval: e.target.value })}
             disabled={!enabled}
           />
         </Field>
@@ -53,37 +62,59 @@ export function RewardsCard() {
         <Field label="Amount per drop" htmlFor="drop-amount">
           <InputAffix
             id="drop-amount"
-            affix="USDC"
+            affix={rewardSymbol}
             inputMode="decimal"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            value={draft.rewardsEarnAmount}
+            onChange={(e) => updateDraft({ rewardsEarnAmount: e.target.value })}
             disabled={!enabled}
           />
         </Field>
 
-        <Field label="Session cap" htmlFor="drop-cap" hint="Max total per stream.">
+        <Field
+          label="Session cap"
+          htmlFor="drop-cap"
+          hint="Max earned per watch session."
+        >
           <InputAffix
             id="drop-cap"
-            affix="USDC"
+            affix={rewardSymbol}
             inputMode="decimal"
-            value={cap}
-            onChange={(e) => setCap(e.target.value)}
+            value={draft.rewardsEarnCap}
+            onChange={(e) => updateDraft({ rewardsEarnCap: e.target.value })}
             disabled={!enabled}
           />
         </Field>
 
-        <Field label="Drop type" htmlFor="drop-type">
+        <Field label="Reward type" htmlFor="drop-type">
           <SelectInput
             id="drop-type"
-            value={type}
-            onChange={(e) => setType(e.target.value)}
+            value={draft.rewardsType}
+            onChange={(e) => updateDraft({ rewardsType: e.target.value })}
             disabled={!enabled}
           >
-            <option value="random">Random viewer</option>
-            <option value="all">Split across all</option>
-            <option value="top">Top spender</option>
+            <option value="usdc">USDC</option>
+            <option value="token">ERC-20 token</option>
+            <option value="points">Points</option>
           </SelectInput>
         </Field>
+
+        {draft.rewardsType === 'token' ? (
+          <Field
+            label="Reward token address"
+            htmlFor="reward-token"
+            hint="ERC-20 contract on Arc Testnet."
+            className="sm:col-span-2"
+          >
+            <TextInput
+              id="reward-token"
+              value={draft.rewardsTokenAddress}
+              onChange={(e) => updateDraft({ rewardsTokenAddress: e.target.value })}
+              placeholder="0x…"
+              className="font-mono"
+              disabled={!enabled}
+            />
+          </Field>
+        ) : null}
       </div>
     </GlassCard>
   )

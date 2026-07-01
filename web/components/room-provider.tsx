@@ -1,0 +1,352 @@
+'use client'
+
+// Shared room session for the dashboard cards. Owns the create/manage
+// lifecycle (per-room password auth), the config draft (autosaved while
+// managing, exactly like the legacy dashboard), and live seats fed by the
+// backend WebSocket (seat_added / seat_removed / meter_update) with an
+// authenticated poll as fallback for pending (paid-but-not-live) seats.
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
+import {
+  ApiError,
+  createRoom as apiCreateRoom,
+  unlockRoom as apiUnlockRoom,
+  getRoomSession,
+  updateRoom,
+  setRoomActive,
+  kickSeat as apiKickSeat,
+  getPublicConfig,
+  type Room,
+  type Seat,
+  type RoomConfigPatch,
+} from '@/lib/api'
+import { backendWsUrl } from '@/lib/backend'
+
+// Arc Testnet USDC — same fallback constant the legacy dashboard used; the
+// real value is re-read from /api/config on mount.
+const ARC_USDC_FALLBACK = '0x3600000000000000000000000000000000000000'
+
+export type ConfigDraft = {
+  name: string
+  passkeyTickPrice: string
+  passkeyTickSeconds: string
+  maxSession: string
+  maxSeats: string
+  tickPrice: string
+  tickSeconds: string
+  tokenPreset: 'usdc' | 'custom'
+  customTokenAddress: string
+  rewardsEnabled: boolean
+  rewardsEarnInterval: string
+  rewardsEarnAmount: string
+  rewardsEarnCap: string
+  rewardsType: string
+  rewardsTokenAddress: string
+}
+
+// Defaults mirror the legacy dashboard form (backed by env defaults server-side).
+const DEFAULT_DRAFT: ConfigDraft = {
+  name: '',
+  passkeyTickPrice: '0.001',
+  passkeyTickSeconds: '1',
+  maxSession: '2',
+  maxSeats: '3',
+  tickPrice: '0.1',
+  tickSeconds: '10',
+  tokenPreset: 'usdc',
+  customTokenAddress: '',
+  rewardsEnabled: false,
+  rewardsEarnInterval: '60',
+  rewardsEarnAmount: '0.1',
+  rewardsEarnCap: '5',
+  rewardsType: 'usdc',
+  rewardsTokenAddress: '',
+}
+
+type RoomContextValue = {
+  mode: 'create' | 'managing'
+  room: Room | null
+  seats: Seat[]
+  joinUrl: string | null
+  overlayUrl: string | null
+  draft: ConfigDraft
+  usdcAddress: string
+  updateDraft: (patch: Partial<ConfigDraft>) => void
+  create: (password: string) => Promise<void>
+  unlock: (roomId: string, password: string) => Promise<void>
+  toggleActive: () => Promise<void>
+  kick: (seatId: string) => Promise<void>
+  switchRoom: () => void
+}
+
+const RoomContext = createContext<RoomContextValue | null>(null)
+
+export function useRoom() {
+  const ctx = useContext(RoomContext)
+  if (!ctx) throw new Error('useRoom must be used inside <RoomProvider>')
+  return ctx
+}
+
+function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch {
+  const paymentTokenAddress =
+    draft.tokenPreset === 'custom' && draft.customTokenAddress.trim()
+      ? draft.customTokenAddress.trim()
+      : usdcAddress
+  return {
+    passkeyTickPrice: draft.passkeyTickPrice,
+    passkeyTickSeconds: Number(draft.passkeyTickSeconds) || 1,
+    maxSession: draft.maxSession,
+    maxSeats: Number(draft.maxSeats) || 3,
+    tickPrice: draft.tickPrice,
+    tickSeconds: Number(draft.tickSeconds) || 10,
+    paymentTokenAddress,
+    rewards: {
+      enabled: draft.rewardsEnabled,
+      earnInterval: Number(draft.rewardsEarnInterval) || 60,
+      earnAmount: draft.rewardsEarnAmount,
+      earnCap: draft.rewardsEarnCap,
+      rewardType: draft.rewardsType,
+      rewardTokenAddress: draft.rewardsTokenAddress.trim() || null,
+    },
+  }
+}
+
+function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
+  const isUsdc =
+    !room.paymentTokenAddress ||
+    room.paymentTokenAddress.toLowerCase() === usdcAddress.toLowerCase()
+  const rw = room.rewards || ({} as Room['rewards'])
+  return {
+    name: room.name,
+    passkeyTickPrice: String(room.passkeyTickPrice),
+    passkeyTickSeconds: String(room.passkeyTickSeconds),
+    maxSession: String(room.maxSession),
+    maxSeats: String(room.maxSeats),
+    tickPrice: String(room.tickPrice),
+    tickSeconds: String(room.tickSeconds),
+    tokenPreset: isUsdc ? 'usdc' : 'custom',
+    customTokenAddress: isUsdc ? '' : room.paymentTokenAddress,
+    rewardsEnabled: !!rw.enabled,
+    rewardsEarnInterval: String(rw.earnInterval ?? 60),
+    rewardsEarnAmount: String(rw.earnAmount ?? '0.1'),
+    rewardsEarnCap: String(rw.earnCap ?? '5'),
+    rewardsType: rw.rewardType || 'usdc',
+    rewardsTokenAddress: rw.rewardTokenAddress || '',
+  }
+}
+
+export function RoomProvider({ children }: { children: ReactNode }) {
+  const [mode, setMode] = useState<'create' | 'managing'>('create')
+  const [room, setRoom] = useState<Room | null>(null)
+  const [seats, setSeats] = useState<Seat[]>([])
+  const [joinUrl, setJoinUrl] = useState<string | null>(null)
+  const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
+  const [draft, setDraft] = useState<ConfigDraft>(DEFAULT_DRAFT)
+  const [usdcAddress, setUsdcAddress] = useState(ARC_USDC_FALLBACK)
+
+  const passwordRef = useRef('')
+  const roomIdRef = useRef<string | null>(null)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const skipNextAutosaveRef = useRef(true)
+
+  useEffect(() => {
+    getPublicConfig()
+      .then((cfg) => cfg.usdcAddress && setUsdcAddress(cfg.usdcAddress))
+      .catch(() => {})
+  }, [])
+
+  const switchRoom = useCallback(() => {
+    passwordRef.current = ''
+    roomIdRef.current = null
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    setMode('create')
+    setRoom(null)
+    setSeats([])
+    setJoinUrl(null)
+    setOverlayUrl(null)
+  }, [])
+
+  const refresh = useCallback(async () => {
+    const roomId = roomIdRef.current
+    if (!roomId) return
+    try {
+      const data = await getRoomSession(roomId, passwordRef.current)
+      setRoom(data.room)
+      setSeats(data.seats)
+      setJoinUrl(data.joinUrl)
+      setOverlayUrl(data.overlayUrl)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) switchRoom()
+    }
+  }, [switchRoom])
+
+  const enterManaged = useCallback(
+    (r: Room, password: string, join: string, overlay: string) => {
+      passwordRef.current = password
+      roomIdRef.current = r.id
+      skipNextAutosaveRef.current = true
+      setRoom(r)
+      setDraft(roomToDraft(r, usdcAddress))
+      setJoinUrl(join)
+      setOverlayUrl(overlay)
+      setMode('managing')
+      void refresh()
+    },
+    [usdcAddress, refresh],
+  )
+
+  const create = useCallback(
+    async (password: string) => {
+      const name = draft.name.trim() || 'My Stream'
+      const data = await apiCreateRoom(name, draftToConfig(draft, usdcAddress), password)
+      enterManaged(data.room, password, data.joinUrl, data.overlayUrl)
+    },
+    [draft, usdcAddress, enterManaged],
+  )
+
+  const unlock = useCallback(
+    async (roomId: string, password: string) => {
+      const data = await apiUnlockRoom(roomId.trim(), password)
+      enterManaged(data.room, password, data.joinUrl, data.overlayUrl)
+    },
+    [enterManaged],
+  )
+
+  const updateDraft = useCallback((patch: Partial<ConfigDraft>) => {
+    setDraft((d) => ({ ...d, ...patch }))
+  }, [])
+
+  // Autosave while managing (debounced, same cadence as the legacy dashboard).
+  useEffect(() => {
+    if (mode !== 'managing' || !roomIdRef.current) return
+    if (skipNextAutosaveRef.current) {
+      skipNextAutosaveRef.current = false
+      return
+    }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(async () => {
+      const roomId = roomIdRef.current
+      if (!roomId) return
+      try {
+        const data = await updateRoom(roomId, passwordRef.current, {
+          name: draft.name.trim() || undefined,
+          config: draftToConfig(draft, usdcAddress),
+        })
+        setRoom(data.room)
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) switchRoom()
+      }
+    }, 900)
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    }
+  }, [draft, mode, usdcAddress, switchRoom])
+
+  const toggleActive = useCallback(async () => {
+    const roomId = roomIdRef.current
+    if (!roomId || !room) return
+    try {
+      const data = await setRoomActive(roomId, passwordRef.current, !room.active)
+      setRoom(data.room)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) switchRoom()
+    }
+  }, [room, switchRoom])
+
+  const kick = useCallback(
+    async (seatId: string) => {
+      const roomId = roomIdRef.current
+      if (!roomId) return
+      try {
+        await apiKickSeat(roomId, passwordRef.current, seatId)
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          switchRoom()
+          return
+        }
+      }
+      void refresh()
+    },
+    [refresh, switchRoom],
+  )
+
+  // Live seats: subscribe to the backend WebSocket for this room. seat_added /
+  // seat_removed trigger an authenticated refresh (WS payloads don't carry
+  // spent/remaining for other viewers); meter_update patches rows in place.
+  useEffect(() => {
+    if (mode !== 'managing' || !room?.id) return
+    let ws: WebSocket | null = null
+    let closed = false
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+
+    function connect() {
+      ws = new WebSocket(backendWsUrl())
+      ws.onopen = () => {
+        ws?.send(JSON.stringify({ type: 'subscribe_room', room: room!.id }))
+      }
+      ws.onmessage = (event) => {
+        let msg: any
+        try {
+          msg = JSON.parse(event.data)
+        } catch {
+          return
+        }
+        if (msg.type === 'seat_added' || msg.type === 'seat_removed') {
+          void refresh()
+        } else if (msg.type === 'meter_update' && msg.seatId) {
+          setSeats((prev) =>
+            prev.map((s) =>
+              s.id === msg.seatId
+                ? { ...s, remaining: msg.remaining, spent: msg.spent }
+                : s,
+            ),
+          )
+        }
+      }
+      ws.onclose = () => {
+        if (!closed) reconnectTimer = setTimeout(connect, 3000)
+      }
+    }
+    connect()
+
+    // Poll fallback also surfaces pending (paid, camera-not-live) seats.
+    const poll = setInterval(() => void refresh(), 5000)
+
+    return () => {
+      closed = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      clearInterval(poll)
+      ws?.close()
+    }
+  }, [mode, room?.id, refresh])
+
+  const value = useMemo<RoomContextValue>(
+    () => ({
+      mode,
+      room,
+      seats,
+      joinUrl,
+      overlayUrl,
+      draft,
+      usdcAddress,
+      updateDraft,
+      create,
+      unlock,
+      toggleActive,
+      kick,
+      switchRoom,
+    }),
+    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, updateDraft, create, unlock, toggleActive, kick, switchRoom],
+  )
+
+  return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>
+}
