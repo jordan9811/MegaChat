@@ -1,0 +1,1099 @@
+// @ts-nocheck
+/**
+ * Viewer join-page logic — ported VERBATIM from public/index.html (inline
+ * script) + public/rewards.js on the Express origin. The payment / join /
+ * meter / passkey / MetaMask / camera-lifecycle logic is unchanged.
+ *
+ * The ONLY differences from the originals (transport glue for the Next.js
+ * origin, no behavior change):
+ *   1. Wrapped in initJoinPage({ wsUrl }) with a cleanup return (React
+ *      mounts/unmounts) instead of top-level statements.
+ *   2. WebSockets connect to the backend origin (wsUrl) instead of
+ *      location.host — the Next dev server has no WS endpoint.
+ *   3. Button handlers attach via addEventListener instead of inline
+ *      onclick attributes (same functions, same order).
+ *   4. The passkey bundle dynamic import uses a bundler-ignore comment so
+ *      Next doesn't try to resolve it at build time (served via rewrite
+ *      proxy from the backend, same-origin at runtime).
+ *   5. The passkey fund-note copy no longer hardcodes localhost:3000.
+ */
+
+let CONFIG = null;
+let account = null;
+let mySeatId = null;
+let hasWallet = false;
+let walletMode = null; // null | 'metamask' | 'passkey'
+let passkeyModuleLoaded = false;
+let streamRoomId = 'default';
+
+let ws = null;
+let abort = null; // AbortController for window/document listeners
+
+function parseStreamRoomFromUrl() {
+  try {
+    const q = new URLSearchParams(location.search).get('room');
+    if (q && /^[a-z0-9-]{1,32}$/i.test(q)) return q.toLowerCase();
+  } catch { /* ignore */ }
+  return 'default';
+}
+
+// Safe provider accessor: never throws, returns null when no injected wallet.
+function getProvider() {
+  try {
+    return (typeof window !== 'undefined' && window.ethereum) ? window.ethereum : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadConfig() {
+  const res = await fetch('/api/config?room=' + encodeURIComponent(streamRoomId));
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to load room config');
+  }
+  CONFIG = await res.json();
+  window.__streamRoomId = streamRoomId;
+  window.dispatchEvent(new CustomEvent('stream:room'));
+  const earnedRow = document.getElementById('earnedRow');
+  if (earnedRow) {
+    earnedRow.style.display = (CONFIG.rewards && CONFIG.rewards.enabled) ? '' : 'none';
+  }
+  if (CONFIG.roomName) {
+    document.title = CONFIG.roomName + ' — Join';
+  }
+  if (CONFIG.roomActive === false) {
+    showMessage('This room is not accepting new joins right now.', 'error');
+    const joinBtn = document.getElementById('joinBtn');
+    if (joinBtn) joinBtn.disabled = true;
+  }
+  updatePriceDisplay();
+}
+
+function tokenSymbol() {
+  if (!CONFIG) return 'USDC';
+  if (walletMode === 'passkey' && CONFIG.paymentTokenSymbol) {
+    return CONFIG.paymentTokenSymbol;
+  }
+  return CONFIG.gatewayTokenSymbol || 'USDC';
+}
+
+function updatePriceDisplay() {
+  if (!CONFIG) return;
+  const sym = tokenSymbol();
+  const amt = document.getElementById('priceAmount');
+  const lbl = document.getElementById('priceLabel');
+  const tickPrice = walletMode === 'passkey'
+    ? (CONFIG.passkeyTickPrice || CONFIG.tickPrice)
+    : CONFIG.tickPrice;
+  const tickSec = walletMode === 'passkey'
+    ? (CONFIG.passkeyTickSeconds || CONFIG.tickSeconds)
+    : CONFIG.tickSeconds;
+  if (amt) amt.textContent = `${tickPrice} ${sym}`;
+  if (lbl) {
+    lbl.textContent = walletMode === 'passkey'
+      ? `passkey stream · ${tickPrice} ${sym}/s · cap ${CONFIG.maxSession} ${sym}`
+      : `Gateway · ${tickPrice} USDC / ${tickSec}s · cap ${CONFIG.maxSession} USDC`;
+  }
+}
+
+function formatTimeLeft(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, '0')}`;
+}
+
+function showMeter(remaining, spent, secondsLeft) {
+  const sym = tokenSymbol();
+  const box = document.getElementById('meter');
+  box.classList.add('show');
+  document.getElementById('meterRemaining').textContent = `${remaining} ${sym}`;
+  document.getElementById('meterSpent').textContent = `${spent} ${sym}`;
+  document.getElementById('meterTime').textContent = formatTimeLeft(secondsLeft);
+}
+
+// ─── helpers ─────────────────────────────────────────────────────────────
+function b64encode(obj) {
+  const json = JSON.stringify(obj);
+  // UTF-8 safe base64
+  return btoa(unescape(encodeURIComponent(json)));
+}
+function b64decode(str) {
+  return JSON.parse(decodeURIComponent(escape(atob(str))));
+}
+function strip0x(h) { return h.startsWith('0x') ? h.slice(2) : h; }
+function pad32(hexNo0x) { return hexNo0x.toLowerCase().padStart(64, '0'); }
+function encodeAddress(addr) { return pad32(strip0x(addr)); }
+function encodeUint(value) { return pad32(BigInt(value).toString(16)); }
+
+// parse a decimal USDC string into 6-decimal atomic units (BigInt)
+function parseUsdc(amountStr) {
+  const [whole, frac = ''] = String(amountStr).split('.');
+  const fracPadded = (frac + '000000').slice(0, 6);
+  return BigInt(whole || '0') * 1000000n + BigInt(fracPadded || '0');
+}
+function formatUsdc(atomic) {
+  const v = BigInt(atomic);
+  const whole = v / 1000000n;
+  const frac = (v % 1000000n).toString().padStart(6, '0').replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : `${whole}`;
+}
+function randomNonce() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function ensureEthereum() {
+  const eth = getProvider();
+  if (!eth) {
+    throw new Error('No wallet detected. Install MetaMask or open this page in a wallet browser.');
+  }
+  return eth;
+}
+
+async function loadPasskeyModule() {
+  if (passkeyModuleLoaded && window.PasskeyWallet) return window.PasskeyWallet;
+  // Served same-origin via the Next.js rewrite proxy to the backend.
+  const bundleUrl = '/passkey-wallet.bundle.js';
+  await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ bundleUrl);
+  passkeyModuleLoaded = true;
+  return window.PasskeyWallet;
+}
+
+async function connectMetaMask() {
+  walletMode = 'metamask';
+  return connectWallet();
+}
+
+async function connectPasskeyWallet() {
+  const username = document.getElementById('username').value.trim();
+  if (!username) {
+    showMessage('Enter a username first (used for passkey registration).', 'error');
+    return null;
+  }
+  if (!CONFIG || !CONFIG.modularWallets) {
+    showMessage('Passkey wallets not configured on server (CIRCLE_CLIENT_KEY / CIRCLE_CLIENT_URL).', 'error');
+    return null;
+  }
+  const btn = document.getElementById('passkeyBtn');
+  try {
+    btn.disabled = true;
+    btn.textContent = '⏳ Passkey…';
+    walletMode = 'passkey';
+    updatePriceDisplay();
+    account = null; // clear any stale MetaMask address
+
+    const PW = await loadPasskeyModule();
+    PW.initModularClients(CONFIG.modularWallets);
+    const addr = await PW.connectPasskey(username);
+    account = addr;
+    renderWallet();
+    window.dispatchEvent(new CustomEvent('wallet:connected', { detail: { account } }));
+    await refreshBalance();
+    showMessage('✅ Passkey smart account ready. Fund it from the faucet if balance is zero.', 'success');
+    return account;
+  } catch (err) {
+    walletMode = null;
+    account = null;
+    console.error('[passkey]', err);
+    const msg = err && err.name === 'NotAllowedError'
+      ? 'Passkey prompt cancelled or timed out.'
+      : (err && err.message) || 'Passkey sign-in failed';
+    showMessage('❌ ' + msg, 'error');
+    renderWallet();
+    return null;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔐 Sign in with Passkey (Face ID)';
+  }
+}
+
+async function connectWallet() {
+  try {
+    const eth = ensureEthereum();
+    // First account read happens HERE — only after an explicit Connect.
+    const accounts = await eth.request({ method: 'eth_requestAccounts' });
+    if (!accounts || !accounts.length) {
+      showMessage('🔒 Wallet is locked or no account is shared. Unlock MetaMask and try again.', 'error');
+      return null;
+    }
+    account = accounts[0];
+    walletMode = 'metamask';
+    await ensureArcChain();
+    renderWallet();
+    // Let the isolated watch-to-earn module know which wallet to credit.
+    window.dispatchEvent(new CustomEvent('wallet:connected', { detail: { account } }));
+    refreshBalance();
+    return account;
+  } catch (err) {
+    const msg = err && err.code === 4001
+      ? 'Connection request rejected in your wallet.'
+      : (err && err.message) || 'Wallet connection failed';
+    showMessage('❌ ' + msg, 'error');
+    return null;
+  }
+}
+
+// Add / switch MetaMask to Arc Testnet (chainId 0x4CEF52 = 5042002).
+async function ensureArcChain() {
+  const eth = getProvider();
+  if (!eth) {
+    throw new Error('No wallet detected. Install MetaMask or open this page in a wallet browser.');
+  }
+  if (!account) {
+    throw new Error('Connect your wallet first.');
+  }
+  if (!CONFIG) {
+    try { await loadConfig(); } catch { /* handled below */ }
+  }
+  if (!CONFIG || !CONFIG.chainIdHex) {
+    throw new Error('Network config not loaded yet — please try again in a moment.');
+  }
+  const hexChainId = CONFIG.chainIdHex; // e.g. 0x4cef52
+  try {
+    await eth.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: hexChainId }]
+    });
+  } catch (switchErr) {
+    // 4902 = chain not added yet — add it, then it becomes current.
+    if (switchErr.code === 4902 || /Unrecognized chain/i.test(switchErr.message || '')) {
+      await eth.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: hexChainId,
+          chainName: 'Arc Testnet',
+          nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+          rpcUrls: [CONFIG.rpcUrl],
+          blockExplorerUrls: [CONFIG.explorerUrl]
+        }]
+      });
+    } else {
+      throw switchErr;
+    }
+  }
+}
+
+function renderWallet() {
+  const info = document.getElementById('walletInfo');
+  const connectBtn = document.getElementById('connectBtn');
+  const passkeyBtn = document.getElementById('passkeyBtn');
+  const fundNote = document.getElementById('passkeyFundNote');
+  const dep = document.getElementById('depositBtn');
+  const join = document.getElementById('joinBtn');
+  if (!info || !connectBtn || !passkeyBtn) return;
+
+  if (account && walletMode === 'passkey') {
+    connectBtn.disabled = true;
+    passkeyBtn.disabled = true;
+    passkeyBtn.textContent = '🔐 Passkey connected';
+    connectBtn.textContent = '🦊 Connect MetaMask';
+    info.innerHTML = `Smart account: <span class="addr">${account}</span><br>Network: Arc Testnet (passkey)`;
+    if (fundNote) {
+      fundNote.style.display = 'block';
+      fundNote.innerHTML =
+        'Fund this address with testnet USDC from ' +
+        '<a class="addr" href="https://faucet.circle.com" target="_blank" rel="noopener">faucet.circle.com</a> ' +
+        '(select <strong>Arc Testnet</strong>). Passkeys need a secure origin ' +
+        '(localhost or https).';
+    }
+    if (dep) dep.style.display = 'none';
+    if (join) join.disabled = false;
+    return;
+  }
+
+  if (fundNote) fundNote.style.display = 'none';
+  if (dep) dep.style.display = '';
+
+  if (account && walletMode === 'metamask') {
+    connectBtn.textContent = '🦊 Connected';
+    connectBtn.disabled = true;
+    passkeyBtn.disabled = true;
+    const net = CONFIG && CONFIG.network ? CONFIG.network : 'Arc';
+    info.innerHTML = `Wallet: <span class="addr">${account}</span><br>Network: Arc Testnet (${net})`;
+    if (join) join.disabled = false;
+    return;
+  }
+
+  connectBtn.disabled = !hasWallet;
+  passkeyBtn.disabled = !(CONFIG && CONFIG.modularWallets);
+  if (!hasWallet) {
+    connectBtn.textContent = '🦊 No MetaMask detected';
+    info.innerHTML = hasWallet
+      ? ''
+      : 'No injected wallet — use <span class="addr">Sign in with Passkey</span> or install MetaMask.';
+  } else {
+    connectBtn.textContent = '🦊 Connect MetaMask';
+    info.textContent = '';
+  }
+  if (dep) dep.disabled = !account;
+  if (join) join.disabled = !account;
+}
+
+// Read the wallet's available Gateway balance and preview it as "Remaining".
+async function refreshBalance() {
+  if (!account || mySeatId) return;
+  try {
+    const headers = walletMode === 'passkey' ? { 'X-Wallet-Mode': 'passkey' } : {};
+    const res = await fetch(`/api/balance/${account}?room=${encodeURIComponent(streamRoomId)}`, { headers });
+    const data = await res.json();
+    if (!res.ok) return;
+    const tickPrice = parseFloat(CONFIG.tickPrice || '0.1') || 0.1;
+    const ticks = Math.floor(parseFloat(data.spendable || '0') / tickPrice);
+    showMeter(data.available, '0', ticks * (CONFIG.tickSeconds || 10));
+    if (parseFloat(data.available) === 0 && parseFloat(data.pending) > 0) {
+      document.getElementById('meterRemaining').textContent =
+        `${data.pending} USDC (finalizing…)`;
+    }
+  } catch (e) {
+    console.warn('balance refresh failed', e);
+  }
+}
+
+async function waitForTx(hash) {
+  const eth = ensureEthereum();
+  for (let i = 0; i < 60; i++) {
+    const receipt = await eth.request({
+      method: 'eth_getTransactionReceipt',
+      params: [hash]
+    });
+    if (receipt) return receipt;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  throw new Error('Timed out waiting for transaction ' + hash);
+}
+
+// One-time deposit of USDC into the Circle Gateway Wallet contract.
+async function depositToGateway() {
+  // ERC-20 / Gateway Wallet function selectors — declared here, above every
+  // use in this function, so they can never be read in the temporal dead zone.
+  const SEL_APPROVE = '0x095ea7b3';      // approve(address,uint256)
+  const SEL_DEPOSIT = '0x47e7ef24';      // deposit(address token,uint256 value)
+  const SEL_ALLOWANCE = '0xdd62ed3e';    // allowance(address,address)
+
+  const btn = document.getElementById('depositBtn');
+  try {
+    if (walletMode === 'passkey') {
+      showMessage('Use faucet.circle.com to fund your passkey smart account.', 'error');
+      return;
+    }
+    if (!account) await connectMetaMask();
+    if (!account) return; // connect failed/cancelled — connectWallet showed why
+    await ensureArcChain();
+
+    const amountStr = prompt('How much USDC to deposit into Gateway?', '1');
+    if (!amountStr) return;
+    const amount = parseUsdc(amountStr);
+    if (amount <= 0n) { showMessage('❌ Enter a positive amount', 'error'); return; }
+
+    const eth = ensureEthereum();
+    btn.disabled = true;
+    btn.textContent = '⏳ Approving USDC...';
+
+    // 1) Approve the Gateway Wallet to pull USDC (skip if already enough).
+    const allowanceData = SEL_ALLOWANCE +
+      encodeAddress(account) + encodeAddress(CONFIG.gatewayWalletAddress);
+    const currentAllowanceHex = await eth.request({
+      method: 'eth_call',
+      params: [{ to: CONFIG.usdcAddress, data: allowanceData }, 'latest']
+    });
+    const currentAllowance = BigInt(currentAllowanceHex || '0x0');
+
+    if (currentAllowance < amount) {
+      const approveData = SEL_APPROVE +
+        encodeAddress(CONFIG.gatewayWalletAddress) + encodeUint(amount);
+      const approveTx = await eth.request({
+        method: 'eth_sendTransaction',
+        params: [{ from: account, to: CONFIG.usdcAddress, data: approveData }]
+      });
+      await waitForTx(approveTx);
+    }
+
+    // 2) Deposit USDC into the Gateway Wallet: deposit(token, value).
+    btn.textContent = '⏳ Depositing...';
+    const depositData = SEL_DEPOSIT +
+      encodeAddress(CONFIG.usdcAddress) + encodeUint(amount);
+    const depositTx = await eth.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: account, to: CONFIG.gatewayWalletAddress, data: depositData }]
+    });
+    await waitForTx(depositTx);
+
+    showMessage(
+      `✅ Deposited ${amountStr} USDC into Gateway.<br>` +
+      `<a class="addr" href="${CONFIG.explorerUrl}/tx/${depositTx}" target="_blank">View on explorer</a>` +
+      `<p style="margin-top:10px;font-size:0.85rem;">Updating balance… (a fresh deposit may take a moment to finalize)</p>`,
+      'success'
+    );
+    // Reflect the new deposit in "Remaining". Retry a few times because the
+    // Gateway available balance can lag the on-chain deposit by a bit.
+    refreshBalance();
+    for (const delay of [4000, 8000, 15000]) {
+      setTimeout(refreshBalance, delay);
+    }
+  } catch (err) {
+    console.error(err);
+    showMessage('❌ Deposit failed: ' + (err.message || err), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💧 Deposit USDC to Gateway (one-time)';
+  }
+}
+
+// Build a signed Gateway payment (base64 PAYMENT-SIGNATURE header value)
+// for a given set of payment requirements decoded from a 402 response.
+async function buildPayment(requirements) {
+  const req = requirements.accepts.find(r => r.network === CONFIG.network)
+    || requirements.accepts[0];
+  if (!req) throw new Error('No Arc payment requirement offered by server');
+
+  const verifyingContract = req.extra && req.extra.verifyingContract;
+  if (!verifyingContract) throw new Error('Missing verifyingContract in requirements');
+
+  const chainId = parseInt(req.network.split(':')[1], 10);
+  const now = Math.floor(Date.now() / 1000);
+  const authorization = {
+    from: account,
+    to: req.payTo,
+    value: req.amount,                       // atomic units (string)
+    validAfter: (now - 600).toString(),      // 10 min skew (mirrors SDK)
+    validBefore: (now + req.maxTimeoutSeconds).toString(),
+    nonce: randomNonce()
+  };
+
+  // Build the EIP-712 structures HERE, immediately before signing, so every
+  // identifier is declared above its use (no TDZ). Values MUST stay
+  // byte-identical to what the Circle Gateway facilitator expects.
+  const CIRCLE_BATCHING_NAME = 'GatewayWalletBatched';
+  const CIRCLE_BATCHING_VERSION = '1';
+  const AUTHORIZATION_TYPES = {
+    TransferWithAuthorization: [
+      { name: 'from', type: 'address' },
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'validAfter', type: 'uint256' },
+      { name: 'validBefore', type: 'uint256' },
+      { name: 'nonce', type: 'bytes32' }
+    ]
+  };
+  const EIP712_DOMAIN_TYPE = [
+    { name: 'name', type: 'string' },
+    { name: 'version', type: 'string' },
+    { name: 'chainId', type: 'uint256' },
+    { name: 'verifyingContract', type: 'address' }
+  ];
+
+  const typedData = {
+    types: { EIP712Domain: EIP712_DOMAIN_TYPE, ...AUTHORIZATION_TYPES },
+    domain: {
+      name: CIRCLE_BATCHING_NAME,
+      version: CIRCLE_BATCHING_VERSION,
+      chainId,
+      verifyingContract
+    },
+    primaryType: 'TransferWithAuthorization',
+    message: authorization
+  };
+
+  const eth = ensureEthereum();
+  const signature = await eth.request({
+    method: 'eth_signTypedData_v4',
+    params: [account, JSON.stringify(typedData)]
+  });
+
+  const paymentPayload = {
+    x402Version: requirements.x402Version || 2,
+    // Circle Gateway's /v1/x402/verify requires `resource` to be echoed back.
+    resource: requirements.resource,
+    accepted: req,
+    payload: { authorization, signature }
+  };
+  return b64encode(paymentPayload);
+}
+
+async function joinSeatPasskey(username, btn) {
+  if (!account) await connectPasskeyWallet();
+  if (!account) {
+    btn.disabled = false;
+    btn.textContent = '🎬 JOIN STREAM';
+    return;
+  }
+  const PW = await loadPasskeyModule();
+  if (!PW.isPasskeyReady()) {
+    throw new Error('Passkey wallet not ready');
+  }
+
+  btn.textContent = '⏳ Requesting session terms...';
+  const first = await fetch('/api/join/passkey', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, address: account, room: streamRoomId })
+  });
+
+  const terms = await first.json().catch(() => ({}));
+  if (!first.ok) {
+    const detail = terms.available != null
+      ? ` (available ${terms.available} USDC)`
+      : '';
+    throw new Error((terms.hint || terms.error || 'Cannot join') + detail);
+  }
+  if (terms.useRewardCredit) {
+    btn.textContent = '⏳ Joining with earned balance…';
+    const paid = await fetch('/api/join/passkey', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username,
+        address: account,
+        room: streamRoomId,
+        useRewardCredit: true,
+      }),
+    });
+    const data = await paid.json();
+    if (paid.ok && data.success) {
+      onJoinSuccess(data);
+    } else {
+      throw new Error(data.reason || data.error || 'Reward join was not accepted');
+    }
+    return;
+  }
+  if (!terms.needsApprove) {
+    throw new Error('Unexpected passkey join response');
+  }
+
+  btn.textContent = '⏳ Passkey authorize (one prompt)…';
+  const payment = await PW.authorizeSessionGasless(
+    terms.sessionAmountAtomic,
+    terms.payTo,
+    terms.paymentTokenAddress
+  );
+
+  btn.textContent = '⏳ Confirming seat…';
+  const paid = await fetch('/api/join/passkey', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Modular-Payment': b64encode(payment)
+    },
+    body: JSON.stringify({ username, address: account, room: streamRoomId })
+  });
+  const data = await paid.json();
+  if (paid.ok && data.success) {
+    onJoinSuccess(data);
+  } else {
+    throw new Error(data.reason || data.error || 'Passkey join was not accepted');
+  }
+}
+
+async function joinSeat() {
+  const username = document.getElementById('username').value.trim();
+  const btn = document.getElementById('joinBtn');
+
+  if (!username) {
+    showMessage('Please enter a username', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Processing...';
+
+  try {
+    if (walletMode === 'passkey') {
+      await joinSeatPasskey(username, btn);
+      return;
+    }
+
+    if (!account) await connectMetaMask();
+    if (!account) {
+      btn.disabled = false;
+      btn.textContent = '🎬 JOIN STREAM';
+      return;
+    }
+    await ensureArcChain();
+
+    // 1) Hit the gate with no payment → expect 402 + Gateway requirements.
+    btn.textContent = '⏳ Requesting payment terms...';
+    const first = await fetch('/api/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, address: account, room: streamRoomId })
+    });
+
+    if (first.status === 402) {
+      const requiredHeader = first.headers.get('payment-required');
+      if (!requiredHeader) {
+        // No requirements header => the balance gate rejected us.
+        const errData = await first.json().catch(() => ({}));
+        const detail = errData.available != null
+          ? ` (available ${errData.available} USDC)`
+          : '';
+        throw new Error((errData.hint || errData.error || 'Insufficient Gateway balance') + detail);
+      }
+      const requirements = b64decode(requiredHeader);
+
+      // 2) Sign the Gateway EIP-3009 authorization with MetaMask.
+      btn.textContent = '⏳ Sign payment in MetaMask...';
+      const paymentHeader = await buildPayment(requirements);
+
+      // 3) Retry with the signed payment.
+      btn.textContent = '⏳ Settling payment...';
+      const paid = await fetch('/api/join', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Payment-Signature': paymentHeader
+        },
+        body: JSON.stringify({ username, address: account, room: streamRoomId })
+      });
+      const data = await paid.json();
+      if (paid.ok && data.success) {
+        onJoinSuccess(data);
+      } else {
+        throw new Error(data.reason || data.error || 'Payment was not accepted');
+      }
+    } else {
+      // No payment required (shouldn't happen on Arc gate) — handle anyway.
+      const data = await first.json();
+      if (first.ok && data.success) onJoinSuccess(data);
+      else throw new Error(data.error || 'Failed to join');
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    showMessage('❌ ' + (error.message || 'Connection error. Try again.'), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🎬 JOIN STREAM';
+  }
+}
+
+// ─── Inline camera-publish stage ────────────────────────────────────────
+// Vdo.ninja's official IFRAME API — see public/index.html for the full notes.
+const VDO_ORIGIN = 'https://vdo.ninja';
+let lastJoinData = null;
+let cameraLiveFired = false;
+let camFallbackTimer = null;
+let camErrorTimer = null;
+let camMsgBound = false;
+
+function onJoinSuccess(data) {
+  mySeatId = data.seatId;
+  lastJoinData = data;
+  const isPasskeyStream = walletMode === 'passkey'
+    || data.paymentMode === 'passkey_stream'
+    || (data.payment && data.payment.mode === 'passkey_stream');
+  // Bind this WS to the seat so closing the tab instantly frees + refunds it.
+  if (ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'register_seat', seatId: mySeatId }));
+  }
+  showMeter(data.remaining, '0', data.secondsLeft);
+  const txLink = data.payment && data.payment.transaction
+    ? ` · <a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">approval tx</a>`
+    : '';
+  const meterNote = isPasskeyStream
+    ? `${data.tickPrice} USDC pulled every ${data.tickSeconds}s while live (silent after authorize)`
+    : `${data.tickPrice} USDC every ${data.tickSeconds}s`;
+  const refundNote = isPasskeyStream
+    ? 'Unspent USDC stays in your smart account when you leave.'
+    : 'Unused USDC is refunded when you leave.';
+  showMessage(
+    `✅ Authorized! Allow camera access below — you go live automatically. Metering
+    (${meterNote}) starts when you're live; ${refundNote}${txLink}`,
+    'success'
+  );
+  startCameraStage(data);
+}
+
+function startCameraStage(data) {
+  cameraLiveFired = false;
+  const stage = document.getElementById('cameraStage');
+  const pub = document.getElementById('camPublisher');
+  const det = document.getElementById('camDetector');
+  const goBtn = document.getElementById('goLiveBtn');
+  const retryBtn = document.getElementById('camRetryBtn');
+
+  goBtn.classList.remove('show');
+  goBtn.disabled = false;
+  retryBtn.classList.remove('show');
+  setCamStatus('', 'Requesting camera…');
+  document.getElementById('camHint').textContent =
+    location.protocol === 'https:' || location.hostname === 'localhost'
+      ? 'Your camera preview is below. (On a phone you must use https.)'
+      : '⚠ Camera needs a secure context (https or localhost).';
+
+  // Bare in-page publisher: webcam, auto-start, current camera, minimal UI.
+  const sep = data.pushUrl.includes('?') ? '&' : '?';
+  pub.src = data.pushUrl + sep + 'webcam&autostart&prefercurrentcamera&cleanish';
+
+  // Hidden self-view on the same stream ID to confirm we're truly publishing.
+  let pushId = '';
+  try { pushId = new URL(data.pushUrl).searchParams.get('push') || ''; } catch {}
+  det.src = pushId
+    ? `${VDO_ORIGIN}/?view=${encodeURIComponent(pushId)}&cleanoutput&muted&autostart`
+    : '';
+
+  stage.classList.add('show');
+
+  if (!camMsgBound) {
+    window.addEventListener('message', onVdoMessage, { signal: abort.signal });
+    camMsgBound = true;
+  }
+
+  clearTimeout(camFallbackTimer);
+  clearTimeout(camErrorTimer);
+  // Fallback: reveal the manual button if auto-detect stalls.
+  camFallbackTimer = setTimeout(() => {
+    if (cameraLiveFired) return;
+    goBtn.classList.add('show');
+    document.getElementById('camHint').textContent =
+      "Camera live but not auto-detected? Click GO LIVE once your preview shows.";
+  }, 5000);
+  // Error path: surface retry if nothing happened (camera likely denied).
+  camErrorTimer = setTimeout(() => {
+    if (cameraLiveFired) return;
+    setCamStatus('error', 'Camera not detected — check permissions.');
+    retryBtn.classList.add('show');
+  }, 25000);
+}
+
+function onVdoMessage(e) {
+  if (e.origin !== VDO_ORIGIN) return; // verify it's really vdo.ninja
+  const pub = document.getElementById('camPublisher');
+  const det = document.getElementById('camDetector');
+  if (e.source !== pub.contentWindow && e.source !== det.contentWindow) return;
+  const d = e.data;
+  if (!d || typeof d !== 'object') return;
+  console.log('[vdo]', e.source === pub.contentWindow ? 'publisher' : 'detector', d);
+
+  // Documented connect signals (value truthy = connected).
+  const a = d.action;
+  const connected = d.value === true || (d.value && d.value !== false);
+  if (
+    (a === 'push-connection' && connected) ||
+    (a === 'view-connection' && connected) ||
+    (a === 'guest-connected' && connected)
+  ) {
+    fireCameraReady('auto');
+  }
+}
+
+function setCamStatus(cls, text) {
+  const s = document.getElementById('camStatus');
+  s.className = 'cam-status' + (cls ? ' ' + cls : '');
+  document.getElementById('camStatusText').textContent = text;
+}
+
+// Tell the server the camera is live -> the tile appears and the meter starts.
+function fireCameraReady(source) {
+  if (cameraLiveFired || !mySeatId) return;
+  cameraLiveFired = true;
+  clearTimeout(camFallbackTimer);
+  clearTimeout(camErrorTimer);
+  if (ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'camera_ready', seatId: mySeatId }));
+  }
+  console.log(`[camera] camera_ready fired via ${source}`);
+  setCamStatus('live', "You're LIVE on stream");
+  document.getElementById('camHint').textContent = walletMode === 'passkey'
+    ? 'Leaving (button or closing the tab) stops the meter. Unspent USDC stays in your wallet.'
+    : 'Leaving (button or closing the tab) stops the meter and refunds unused USDC.';
+  const goBtn = document.getElementById('goLiveBtn');
+  goBtn.classList.remove('show');
+  document.getElementById('camRetryBtn').classList.remove('show');
+  // Now live — offer an explicit Leave button (same effect as a tab close).
+  document.getElementById('leaveBtn').classList.add('show');
+  // Detector self-view has done its job; tear it down to save bandwidth.
+  const det = document.getElementById('camDetector');
+  det.src = 'about:blank';
+}
+
+// Leave instantly — same as closing the tab.
+async function leaveStream() {
+  const seatId = mySeatId;
+  if (!seatId) return;
+  const leaveBtn = document.getElementById('leaveBtn');
+  leaveBtn.disabled = true;
+  // Stop reacting to this seat locally right away so the meter stops instantly.
+  mySeatId = null;
+  teardownCameraStage();
+  try {
+    await fetch(`/api/leave/${seatId}`, { method: 'POST' });
+  } catch (e) {
+    console.warn('leave request failed (server still drops seat on disconnect)', e);
+  }
+  leaveBtn.disabled = false;
+  const joinBtn = document.getElementById('joinBtn');
+  if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = '🎬 JOIN STREAM'; }
+  showMessage(
+    walletMode === 'passkey'
+      ? '👋 You left the stream. Unspent USDC remains in your smart account.'
+      : '👋 You left the stream. Unused USDC has been refunded.',
+    'success'
+  );
+  // Back to pre-join: show the wallet's available balance as "Remaining".
+  refreshBalance();
+}
+
+// Manual fallback button.
+function goLive() { fireCameraReady('manual'); }
+
+// Stop publishing + hide the stage (seat ended).
+function teardownCameraStage() {
+  clearTimeout(camFallbackTimer);
+  clearTimeout(camErrorTimer);
+  const stage = document.getElementById('cameraStage');
+  const pub = document.getElementById('camPublisher');
+  const det = document.getElementById('camDetector');
+  const leaveBtn = document.getElementById('leaveBtn');
+  if (pub) pub.src = 'about:blank';
+  if (det) det.src = 'about:blank';
+  if (stage) stage.classList.remove('show');
+  if (leaveBtn) leaveBtn.classList.remove('show');
+  cameraLiveFired = false;
+}
+
+// Rebuild the camera stage after a permission failure.
+function retryCamera() {
+  const pub = document.getElementById('camPublisher');
+  const det = document.getElementById('camDetector');
+  pub.src = 'about:blank';
+  det.src = 'about:blank';
+  if (lastJoinData) setTimeout(() => startCameraStage(lastJoinData), 200);
+}
+
+function showMessage(html, type) {
+  const msgBox = document.getElementById('message');
+  msgBox.innerHTML = html;
+  msgBox.className = 'join-message ' + type + ' show';
+}
+
+// ─── Init (runs after all state is initialized) ──────────────────────────
+function initWallet() {
+  const eth = getProvider();
+  hasWallet = !!eth;
+  if (eth && typeof eth.on === 'function') {
+    try {
+      // Reflect account/network changes once a wallet is connected.
+      eth.on('accountsChanged', (accs) => {
+        if (walletMode === 'passkey') return;
+        account = (accs && accs[0]) || null;
+        if (account) walletMode = 'metamask';
+        renderWallet();
+        if (account) refreshBalance();
+      });
+      eth.on('chainChanged', () => { /* user can re-trigger via actions */ });
+    } catch (e) {
+      console.warn('wallet listener setup failed', e);
+    }
+  }
+  // Note: account stays null here on purpose — we only read it on Connect.
+  renderWallet();
+}
+
+async function init() {
+  try {
+    await loadConfig();
+  } catch (err) {
+    console.error('Failed to load config', err);
+  }
+  initWallet();
+}
+
+// ─── Pass C: watch-to-earn (ported verbatim from public/rewards.js) ──────
+function initRewardsClient(wsUrl) {
+  let wallet = null;
+  let rws = null;
+  let cfg = null;
+  let reconnectTimer = null;
+
+  function getRoomId() {
+    return window.__streamRoomId || 'default';
+  }
+
+  function connect() {
+    if (abort.signal.aborted) return;
+    try {
+      rws = new WebSocket(wsUrl);
+    } catch (e) {
+      console.warn('[rewards] ws connect failed', e);
+      return;
+    }
+
+    rws.addEventListener('open', () => {
+      sendVisibility();
+      registerWallet();
+    });
+
+    rws.addEventListener('message', (event) => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+      switch (msg.type) {
+        case 'rewards_config':
+          cfg = msg;
+          updateLabel();
+          break;
+        case 'rewards_earned':
+          renderEarned(msg);
+          break;
+        case 'rewards_error':
+          console.warn('[rewards] payout error:', msg.message);
+          break;
+        default:
+          break;
+      }
+    });
+
+    rws.addEventListener('close', () => {
+      reconnectTimer = setTimeout(connect, 3000);
+    });
+
+    rws.addEventListener('error', () => { /* close handler will retry */ });
+  }
+
+  function send(obj) {
+    if (rws && rws.readyState === 1) {
+      try { rws.send(JSON.stringify(obj)); } catch { /* ignore */ }
+    }
+  }
+
+  function registerWallet() {
+    if (wallet) {
+      send({ type: 'rewards_register', wallet, roomId: getRoomId() });
+    }
+  }
+
+  function sendVisibility() {
+    send({ type: 'rewards_visibility', visible: document.visibilityState === 'visible' });
+  }
+
+  function setWallet(addr) {
+    if (!addr) return;
+    wallet = addr;
+    registerWallet();
+  }
+
+  function updateLabel() {
+    const el = document.getElementById('earnedRow');
+    if (!el || !cfg) return;
+    if (!cfg.enabled) {
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = '';
+    const label = el.querySelector('span');
+    if (label) {
+      label.textContent = cfg.dryRun
+        ? 'earned toward join (sim)'
+        : 'earned toward join';
+    }
+  }
+
+  function renderEarned(msg) {
+    if (cfg && cfg.enabled === false) return;
+    const meter = document.getElementById('meter');
+    if (meter) meter.classList.add('show');
+    const el = document.getElementById('rewardsEarned');
+    if (el) {
+      const sym = msg.symbol || 'USDC';
+      const amount = msg.joinBalance != null ? msg.joinBalance : (msg.earnedSession != null ? msg.earnedSession : '0');
+      el.textContent = `${amount} ${sym}` + (msg.capped ? ' (cap)' : '');
+    }
+  }
+
+  document.addEventListener('visibilitychange', sendVisibility, { signal: abort.signal });
+
+  window.addEventListener('wallet:connected', (e) => {
+    if (e.detail && e.detail.account) setWallet(e.detail.account);
+  }, { signal: abort.signal });
+
+  window.addEventListener('stream:room', () => registerWallet(), { signal: abort.signal });
+
+  if (window.ethereum) {
+    window.ethereum.request({ method: 'eth_accounts' })
+      .then((accts) => { if (accts && accts[0]) setWallet(accts[0]); })
+      .catch(() => {});
+    window.ethereum.on && window.ethereum.on('accountsChanged', (accts) => {
+      if (accts && accts[0]) setWallet(accts[0]);
+    });
+  }
+
+  connect();
+
+  return () => {
+    clearTimeout(reconnectTimer);
+    if (rws) { try { rws.close(); } catch { /* ignore */ } }
+  };
+}
+
+/**
+ * Mount the join page. Call once from the page's useEffect; returns cleanup.
+ */
+export function initJoinPage({ wsUrl }) {
+  streamRoomId = parseStreamRoomFromUrl();
+  window.__streamRoomId = streamRoomId;
+  mySeatId = null;
+  abort = new AbortController();
+  camMsgBound = false;
+
+  ws = new WebSocket(wsUrl);
+  ws.onopen = () => {
+    console.log('Connected');
+    if (ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'subscribe_room', room: streamRoomId }));
+    }
+  };
+  ws.onerror = (err) => console.error('WebSocket error:', err);
+
+  // Live meter + seat lifecycle updates from the server.
+  ws.onmessage = (event) => {
+    let msg;
+    try { msg = JSON.parse(event.data); } catch { return; }
+    if (!mySeatId) return;
+    if (msg.type === 'meter_update' && msg.seatId === mySeatId) {
+      showMeter(msg.remaining, msg.spent, msg.secondsLeft);
+    } else if (msg.type === 'seat_removed' && msg.seatId === mySeatId) {
+      document.getElementById('meterTime').textContent = '0:00';
+      if (msg.reason === 'out_of_funds') {
+        showMessage('⚠️ Out of funds — your seat ended. Deposit more USDC and rejoin.', 'error');
+      }
+      teardownCameraStage();
+      mySeatId = null;
+    }
+  };
+
+  // Same handlers the original page bound via inline onclick attributes.
+  const on = (id, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', fn, { signal: abort.signal });
+  };
+  on('connectBtn', connectMetaMask);
+  on('passkeyBtn', connectPasskeyWallet);
+  on('depositBtn', depositToGateway);
+  on('joinBtn', joinSeat);
+  on('goLiveBtn', goLive);
+  on('camRetryBtn', retryCamera);
+  on('leaveBtn', leaveStream);
+
+  document.getElementById('username').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') joinSeat();
+  }, { signal: abort.signal });
+
+  // Exposed for parity with the original global-scope page (and testing).
+  Object.assign(window, {
+    connectMetaMask, connectPasskeyWallet, depositToGateway, joinSeat,
+    goLive, retryCamera, leaveStream, onJoinSuccess,
+  });
+
+  init();
+  const cleanupRewards = initRewardsClient(wsUrl);
+
+  const wsRef = ws;
+  return () => {
+    abort.abort();
+    cleanupRewards();
+    clearTimeout(camFallbackTimer);
+    clearTimeout(camErrorTimer);
+    try { wsRef.close(); } catch { /* ignore */ }
+  };
+}

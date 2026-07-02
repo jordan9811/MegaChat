@@ -5,6 +5,7 @@ import { MegaChatSettings } from '@/components/megachat-settings'
 import { OnCameraTable } from '@/components/on-camera-table'
 import { RewardsCard } from '@/components/rewards-card'
 import { RoomProvider } from '@/components/room-provider'
+import { IntegrationsCard } from '@/components/integrations-card'
 
 export default function Page() {
   return (
@@ -42,6 +43,7 @@ export default function Page() {
             </div>
             <OnCameraTable />
             <RewardsCard />
+            <IntegrationsCard />
           </div>
         </RoomProvider>
       </main>

@@ -1,0 +1,126 @@
+/* Join-page state styles. The ported script (lib/join-page.ts) toggles the
+   same classes the legacy page used (.show, .success, .error, .live, .addr);
+   these rules give them the MegaChat design-system look. Elements whose
+   className the script overwrites entirely (#message, #camStatus) are styled
+   here rather than with Tailwind utilities. */
+
+/* Wallet address / inline link chips injected via innerHTML */
+.join-shell .addr {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--neon-cyan);
+  word-break: break-all;
+}
+a.addr {
+  text-decoration: underline;
+}
+
+/* Status / result message under the join button */
+.join-message {
+  display: none;
+  margin-top: 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--input) 40%, transparent);
+}
+.join-message.show {
+  display: block;
+}
+.join-message.success {
+  border-color: color-mix(in oklab, var(--neon-lime) 45%, transparent);
+  box-shadow: 0 0 18px color-mix(in oklab, var(--neon-lime) 12%, transparent);
+}
+.join-message.error {
+  border-color: color-mix(in oklab, var(--neon-magenta) 55%, transparent);
+  color: var(--neon-magenta);
+}
+
+/* Balance / live meter — hidden until the script reveals it */
+#meter {
+  display: none;
+}
+#meter.show {
+  display: block;
+}
+
+/* Camera stage + buttons revealed by the seat lifecycle */
+#cameraStage {
+  display: none;
+}
+#cameraStage.show {
+  display: block;
+}
+#goLiveBtn,
+#camRetryBtn,
+#leaveBtn {
+  display: none;
+}
+#goLiveBtn.show,
+#camRetryBtn.show,
+#leaveBtn.show {
+  display: inline-flex;
+}
+
+/* Camera status pill — script overwrites className with cam-status [live|error] */
+.cam-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--input) 40%, transparent);
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.cam-status .dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: var(--muted-foreground);
+}
+.cam-status.live {
+  color: var(--neon-lime);
+  border-color: color-mix(in oklab, var(--neon-lime) 50%, transparent);
+}
+.cam-status.live .dot {
+  background: var(--neon-lime);
+  animation: neon-pulse 2.4s ease-in-out infinite;
+}
+.cam-status.error {
+  color: var(--neon-magenta);
+  border-color: color-mix(in oklab, var(--neon-magenta) 55%, transparent);
+}
+.cam-status.error .dot {
+  background: var(--neon-magenta);
+}
+
+/* vdo.ninja publisher frame + hidden self-view detector */
+.cam-frame {
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: black;
+}
+.cam-frame iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border: 0;
+}
+.cam-detector {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
+}

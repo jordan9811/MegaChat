@@ -345,6 +345,59 @@ export function MegaChatSettings() {
                 />
               </Field>
             </div>
+
+            {/* Join gating — anti-spam / abuse controls. Stubs only: no
+                server enforcement yet (see ROADMAP.md → Join gating). */}
+            <div className="mt-6 border-t border-border/50 pt-5">
+              <p className="mb-1 text-sm font-semibold text-foreground/90">
+                Join gating{' '}
+                <span className="font-normal text-muted-foreground">
+                  — anti-spam / abuse controls
+                </span>
+              </p>
+              <p className="mb-4 text-xs text-muted-foreground">
+                Coming soon. Throttle low-signal or abusive join attempts
+                before they reach a camera seat.
+              </p>
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <span title="Coming soon" className="cursor-not-allowed">
+                  <Field label="Minimum watch time" htmlFor="gate-min-watch">
+                    <InputAffix
+                      id="gate-min-watch"
+                      affix="sec"
+                      placeholder="—"
+                      disabled
+                      className="opacity-50"
+                    />
+                  </Field>
+                </span>
+                <span title="Coming soon" className="cursor-not-allowed">
+                  <Field label="Reputation score gate" htmlFor="gate-reputation">
+                    <InputAffix
+                      id="gate-reputation"
+                      affix="min"
+                      placeholder="—"
+                      disabled
+                      className="opacity-50"
+                    />
+                  </Field>
+                </span>
+                <label
+                  title="Coming soon"
+                  className="flex cursor-not-allowed items-center gap-2.5 text-sm font-medium text-muted-foreground opacity-60"
+                >
+                  <input type="checkbox" id="gate-subscribers" disabled className="size-4" />
+                  Subscribers only
+                </label>
+                <label
+                  title="Coming soon"
+                  className="flex cursor-not-allowed items-center gap-2.5 text-sm font-medium text-muted-foreground opacity-60"
+                >
+                  <input type="checkbox" id="gate-followers" disabled className="size-4" />
+                  Followers only
+                </label>
+              </div>
+            </div>
           </details>
 
           {/* Create room */}
@@ -378,7 +431,10 @@ export function MegaChatSettings() {
         </>
       )}
 
-      {/* Result panel — real links from the backend */}
+      {/* Result panel — viewer link points at the new Next.js join page
+          (primary); the OBS overlay URL comes from the backend, which still
+          serves the overlay. The legacy Express join page remains a fallback
+          at the backend origin. */}
       {managing && joinUrl && overlayUrl && room ? (
         <div className="border-t border-border/70 bg-input/20 px-5 py-5 sm:px-6">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -387,7 +443,14 @@ export function MegaChatSettings() {
             {room.active ? 'is live' : 'is paused'}
           </div>
           <div className="flex flex-col gap-2">
-            <CopyRow label="Viewer" value={joinUrl} />
+            <CopyRow
+              label="Viewer"
+              value={
+                typeof window !== 'undefined'
+                  ? `${window.location.origin}/join?room=${room.id}`
+                  : joinUrl
+              }
+            />
             <CopyRow label="OBS" value={overlayUrl} />
           </div>
           <p className="mt-3 text-xs text-muted-foreground">

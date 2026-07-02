@@ -12,6 +12,12 @@ const nextConfig = {
   async rewrites() {
     return [
       { source: '/api/:path*', destination: `${BACKEND_URL}/api/:path*` },
+      // Passkey wallet ESM bundle (built by scripts/build-passkey.mjs, served
+      // by Express) — proxied so the join page can import it same-origin.
+      {
+        source: '/passkey-wallet.bundle.js',
+        destination: `${BACKEND_URL}/passkey-wallet.bundle.js`,
+      },
     ]
   },
   typescript: {

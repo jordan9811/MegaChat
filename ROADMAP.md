@@ -27,6 +27,20 @@ joinGating: {
 ## Integrations
 
 - **Twitch / Kick OAuth** — link channel for subscriber/follower gates and future discovery (`platformLink { provider, oauthId, linkedAt }` per room).
+- **Real Twitch Drops OAuth** — credit viewers for external (Twitch/Kick) watch time toward join balance; viewer-side "link to earn drops from watching" stub lives on the join page.
+
+## Rooms
+
+- **Persistent room names** — human-readable, reserved room slugs that survive restarts and can be re-claimed by the owning wallet (today room IDs are random 8-char hex).
+
+## Moderation
+
+- **Sybil-resistant bans** — bans keyed on wallet + linked platform identity (Twitch/Kick OAuth), so a kicked viewer can't rejoin with a fresh burner wallet.
+
+## Stingers (transitions)
+
+- **Stinger transition catalogue + default** — a built-in set of join/leave stinger transitions for camera tiles, with a default that ships enabled.
+- **Stinger marketplace** — creators publish/sell custom stingers; streamers equip them per room.
 
 ## Rewards (optional module)
 
