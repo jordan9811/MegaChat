@@ -61,7 +61,7 @@ export function Hero() {
             />
             {/* clickable region over the baked-in GRAB 10 SEC button */}
             <a
-              href="#dashboard"
+              href="#browse"
               aria-label="Grab 10 seconds on camera"
               className="absolute bottom-[3%] left-[3%] h-[16%] w-[80%] rounded-full transition-transform hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--neon-lime)]"
             />
@@ -73,7 +73,7 @@ export function Hero() {
       <div className="relative z-10 border-t border-border/70">
         <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-3 px-6 py-4 text-sm font-semibold text-muted-foreground sm:flex-row sm:items-center">
           <nav className="flex items-center gap-6">
-            <a href="#dashboard" className="transition-colors hover:text-foreground">
+            <a href="/dashboard" className="transition-colors hover:text-foreground">
               Dashboard
             </a>
             <a href="#" className="transition-colors hover:text-foreground">

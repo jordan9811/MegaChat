@@ -172,6 +172,9 @@ export function resolveRoomConfig(roomId) {
     id: rec.id,
     name: rec.name || rec.id,
     active: rec.active !== false,
+    // Rooms are public/listed by default; unlisted rooms still work by
+    // direct link but are hidden from the browse directory.
+    unlisted: cfg.unlisted === true,
     tickSeconds: Number(cfg.tickSeconds ?? defaults.tickSeconds),
     tickPrice: String(cfg.tickPrice ?? defaults.tickPrice),
     passkeyTickSeconds: Number(cfg.passkeyTickSeconds ?? defaults.passkeyTickSeconds),

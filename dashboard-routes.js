@@ -91,9 +91,8 @@ export function attachDashboardRoutes(app, deps) {
     });
   }
 
-  app.get('/dashboard', (req, res) => {
-    res.sendFile(deps.dashboardHtmlPath);
-  });
+  // NOTE: /dashboard is served by the Next.js frontend (streamer dashboard).
+  // The legacy static dashboard remains reachable at /dashboard.html.
 
   app.post('/api/dashboard/unlock', async (req, res) => {
     const { roomId: rawId, password } = req.body || {};

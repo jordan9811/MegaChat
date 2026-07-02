@@ -346,6 +346,27 @@ export function MegaChatSettings() {
               </Field>
             </div>
 
+            {/* Visibility — rooms are public/listed in browse by default. */}
+            <div className="mt-6 border-t border-border/50 pt-5">
+              <p className="mb-1 text-sm font-semibold text-foreground/90">
+                Visibility
+              </p>
+              <p className="mb-4 text-xs text-muted-foreground">
+                Public rooms appear on the browse page while accepting joins.
+                Unlisted rooms still work by direct link.
+              </p>
+              <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
+                <input
+                  type="checkbox"
+                  id="room-unlisted"
+                  className="size-4 accent-[var(--neon-magenta)]"
+                  checked={draft.unlisted}
+                  onChange={(e) => updateDraft({ unlisted: e.target.checked })}
+                />
+                Unlisted (opt out of browse)
+              </label>
+            </div>
+
             {/* Join gating — anti-spam / abuse controls. Stubs only: no
                 server enforcement yet (see ROADMAP.md → Join gating). */}
             <div className="mt-6 border-t border-border/50 pt-5">

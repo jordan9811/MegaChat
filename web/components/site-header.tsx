@@ -9,7 +9,7 @@ export function SiteHeader() {
         <div className="flex items-center gap-2">
           <ThemeToggle />
           <a
-            href="#dashboard"
+            href="/dashboard"
             className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.03]"
           >
             Go live

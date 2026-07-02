@@ -19,6 +19,7 @@ import {
   normalizeRoomId,
   DEFAULT_ROOM_ID,
   migrateLegacyRoomPasswords,
+  listRooms,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
 import {
@@ -1480,11 +1481,44 @@ app.get('/api/seats', (req, res) => {
   });
 });
 
+// Public browse directory — active rooms that haven't opted out (unlisted).
+// Reuses rooms-store + the live seat map; no duplicated state. Sorted hottest
+// first: live on-camera count, then queued viewers (paid, camera pending).
+app.get('/api/rooms/public', (req, res) => {
+  const rooms = [];
+  for (const r of listRooms()) {
+    if (!r.active) continue;
+    const cfg = r.config;
+    if (!cfg || cfg.unlisted) continue;
+    let live = 0;
+    let waiting = 0;
+    for (const s of activeSeats.values()) {
+      if (s.streamRoomId !== r.id) continue;
+      if (s.live) live++; else waiting++;
+    }
+    rooms.push({
+      id: r.id,
+      name: cfg.name,
+      live,
+      waiting,
+      maxSeats: cfg.maxSeats,
+      passkeyTickPrice: cfg.passkeyTickPrice,
+      passkeyTickSeconds: cfg.passkeyTickSeconds,
+      paymentTokenSymbol: cfg.paymentTokenSymbol,
+      rewardsEnabled: !!cfg.rewards?.enabled,
+      createdAt: r.createdAt,
+    });
+  }
+  rooms.sort((a, b) => (b.live - a.live)
+    || (b.waiting - a.waiting)
+    || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  res.json({ rooms });
+});
+
 const PORT = Number(process.env.PORT || 3000);
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 attachDashboardRoutes(app, {
-  dashboardHtmlPath: path.join(__dirname, 'public', 'dashboard.html'),
   baseUrl: BASE_URL,
   rpcUrl: ARC_RPC_URL,
   chainId: ARC_CHAIN_ID,

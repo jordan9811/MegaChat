@@ -37,6 +37,7 @@ const ARC_USDC_FALLBACK = '0x3600000000000000000000000000000000000000'
 
 export type ConfigDraft = {
   name: string
+  unlisted: boolean
   passkeyTickPrice: string
   passkeyTickSeconds: string
   maxSession: string
@@ -56,6 +57,7 @@ export type ConfigDraft = {
 // Defaults mirror the legacy dashboard form (backed by env defaults server-side).
 const DEFAULT_DRAFT: ConfigDraft = {
   name: '',
+  unlisted: false,
   passkeyTickPrice: '0.001',
   passkeyTickSeconds: '1',
   maxSession: '2',
@@ -102,6 +104,7 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
       ? draft.customTokenAddress.trim()
       : usdcAddress
   return {
+    unlisted: draft.unlisted,
     passkeyTickPrice: draft.passkeyTickPrice,
     passkeyTickSeconds: Number(draft.passkeyTickSeconds) || 1,
     maxSession: draft.maxSession,
@@ -127,6 +130,7 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
   const rw = room.rewards || ({} as Room['rewards'])
   return {
     name: room.name,
+    unlisted: !!room.unlisted,
     passkeyTickPrice: String(room.passkeyTickPrice),
     passkeyTickSeconds: String(room.passkeyTickSeconds),
     maxSession: String(room.maxSession),

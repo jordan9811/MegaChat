@@ -17,6 +17,7 @@ export type Room = {
   id: string
   name: string
   active: boolean
+  unlisted: boolean
   tickSeconds: number
   tickPrice: string
   passkeyTickSeconds: number
@@ -50,6 +51,7 @@ export type RoomSession = {
 
 /** Config the dashboard PUTs/POSTs — matches gatherConfig() in the old UI. */
 export type RoomConfigPatch = {
+  unlisted: boolean
   passkeyTickPrice: string
   passkeyTickSeconds: number
   maxSession: string
@@ -95,6 +97,25 @@ async function request<T>(
     throw new ApiError(res.status, msg)
   }
   return data as T
+}
+
+/** One card in the public browse directory (/api/rooms/public). */
+export type PublicRoomCard = {
+  id: string
+  name: string
+  live: number
+  waiting: number
+  maxSeats: number
+  passkeyTickPrice: string
+  passkeyTickSeconds: number
+  paymentTokenSymbol: string
+  rewardsEnabled: boolean
+  createdAt: string
+}
+
+/** Active, listed rooms sorted hottest first (live count, then waiting). */
+export function listPublicRooms() {
+  return request<{ rooms: PublicRoomCard[] }>('/api/rooms/public')
 }
 
 /** Public room + chain config (also exposes the real Arc USDC address). */
