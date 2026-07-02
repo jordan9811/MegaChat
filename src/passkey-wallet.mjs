@@ -9,6 +9,7 @@ import { arcTestnet } from 'viem/chains';
 import { createBundlerClient, toWebAuthnAccount } from 'viem/account-abstraction';
 import {
   WebAuthnMode,
+  getUserOperationGasPrice,
   toCircleSmartAccount,
   toModularTransport,
   toPasskeyTransport,
@@ -18,6 +19,53 @@ import {
 
 const CREDENTIAL_KEY = 'vstream_passkey_credential_v1';
 const USDC_DECIMALS = 6;
+
+// Arc's bundler rejects any userOp below 1 gwei priority fee ("precheck failed:
+// maxPriorityFeePerGas is X but must be at least 1000000000"), but the network
+// fee estimate can come back lower (~0.82 gwei). Every userOp built here MUST
+// go through arcFeesWithFloor() — both via the bundler-client hook and the
+// explicit values passed to sendUserOperation.
+const MIN_PRIORITY_FEE_WEI = 1_000_000_000n; // 1 gwei bundler floor
+const FALLBACK_BASE_FEE_BUDGET_WEI = 2_000_000_000n; // base-fee headroom if estimation fails
+
+/**
+ * Fee estimate clamped to the Arc bundler floor; maxFee keeps its headroom
+ * above priority. Prefers Circle's own bundler oracle
+ * (circle_getUserOperationGasPrice) so we track what the bundler will accept,
+ * then falls back to the network estimate — the floor applies either way.
+ */
+async function arcFeesWithFloor(client) {
+  let est = null;
+  try {
+    const gp = await getUserOperationGasPrice(client);
+    if (gp?.medium?.maxPriorityFeePerGas && gp?.medium?.maxFeePerGas) {
+      est = {
+        maxFeePerGas: BigInt(gp.medium.maxFeePerGas),
+        maxPriorityFeePerGas: BigInt(gp.medium.maxPriorityFeePerGas),
+      };
+    }
+  } catch {
+    // Circle oracle unavailable — try the plain network estimate.
+  }
+  if (!est) {
+    try {
+      est = await client.estimateFeesPerGas();
+    } catch {
+      // RPC estimation unavailable — fall through to the floor values.
+    }
+  }
+  const estPriority = est?.maxPriorityFeePerGas ?? 0n;
+  const maxPriorityFeePerGas =
+    estPriority > MIN_PRIORITY_FEE_WEI ? estPriority : MIN_PRIORITY_FEE_WEI;
+  const baseFeeBudget =
+    est && est.maxFeePerGas > estPriority
+      ? est.maxFeePerGas - estPriority
+      : FALLBACK_BASE_FEE_BUDGET_WEI;
+  return {
+    maxFeePerGas: baseFeeBudget + maxPriorityFeePerGas,
+    maxPriorityFeePerGas,
+  };
+}
 
 let modularConfig = null;
 let passkeyTransport = null;
@@ -38,6 +86,24 @@ function loadStoredCredential() {
 
 function storeCredential(credential) {
   localStorage.setItem(CREDENTIAL_KEY, JSON.stringify(credential));
+}
+
+function isDuplicateUsernameError(err) {
+  const text = [
+    err?.message,
+    err?.shortMessage,
+    err?.details,
+    err?.cause?.message,
+  ].filter(Boolean).join(' ');
+  return /username is duplicated/i.test(text);
+}
+
+async function loginPasskeyCredential() {
+  console.log('[passkey] logging in with existing passkey…');
+  return toWebAuthnCredential({
+    transport: passkeyTransport,
+    mode: WebAuthnMode.Login,
+  });
 }
 
 function encodeApprove(spender, amount, tokenAddress) {
@@ -68,6 +134,12 @@ export function initModularClients(config) {
   bundlerClient = createBundlerClient({
     chain: arcTestnet,
     transport: modularTransport,
+    userOperation: {
+      // Fee source for EVERY userOp prepared through this client. Without this
+      // viem falls back to the raw network estimate, which sits below Arc's
+      // 1 gwei precheck floor and gets the op rejected.
+      estimateFeesPerGas: () => arcFeesWithFloor(publicClient),
+    },
   });
   console.log('[passkey] modular clients ready (Arc path:', chainPath + ')');
   return { publicClient, bundlerClient };
@@ -82,17 +154,20 @@ export async function connectPasskey(username) {
   let credential;
   if (stored) {
     console.log('[passkey] logging in with stored credential…');
-    credential = await toWebAuthnCredential({
-      transport: passkeyTransport,
-      mode: WebAuthnMode.Login,
-    });
+    credential = await loginPasskeyCredential();
   } else {
     console.log('[passkey] registering new passkey for', username);
-    credential = await toWebAuthnCredential({
-      transport: passkeyTransport,
-      mode: WebAuthnMode.Register,
-      username,
-    });
+    try {
+      credential = await toWebAuthnCredential({
+        transport: passkeyTransport,
+        mode: WebAuthnMode.Register,
+        username,
+      });
+    } catch (err) {
+      if (!isDuplicateUsernameError(err)) throw err;
+      console.log('[passkey] username already registered on Circle — switching to login');
+      credential = await loginPasskeyCredential();
+    }
   }
 
   storeCredential(credential);
@@ -146,10 +221,15 @@ export async function authorizeSessionGasless(sessionCapAtomic, sellerAddress, t
     'cap for seller',
     sellerAddress
   );
+  // Explicit fees at the call site as well — belt and suspenders with the
+  // bundler-client hook, so a future client refactor can't drop the floor.
+  const { maxFeePerGas, maxPriorityFeePerGas } = await arcFeesWithFloor(publicClient);
   const userOpHash = await bundlerClient.sendUserOperation({
     account: smartAccount,
     calls: [callData],
     paymaster: true,
+    maxFeePerGas,
+    maxPriorityFeePerGas,
   });
 
   const { receipt } = await bundlerClient.waitForUserOperationReceipt({ hash: userOpHash });
@@ -187,5 +267,7 @@ window.PasskeyWallet = {
   authorizeSessionGasless,
   payJoinGasless,
   selfTestClients,
+  arcFeesWithFloor,
+  MIN_PRIORITY_FEE_WEI,
   parseUsdcAmount: (str) => parseUnits(String(str), USDC_DECIMALS).toString(),
 };

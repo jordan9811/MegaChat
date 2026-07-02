@@ -10,6 +10,37 @@ const arcChain = (chainId, rpcUrl) => ({
   rpcUrls: { default: { http: [rpcUrl] }, public: { http: [rpcUrl] } },
 });
 
+// ─── Arc gas floor ───────────────────────────────────────────────────────────
+// Arc rejects transactions/userOps whose priority fee is under 1 gwei (the
+// bundler surfaces it as "precheck failed: maxPriorityFeePerGas is X but must
+// be at least 1000000000"), while the network estimate can come back lower
+// (~0.82 gwei observed). EVERY write sent to Arc must clamp through these.
+export const MIN_PRIORITY_FEE_WEI = 1_000_000_000n; // 1 gwei floor
+export const FALLBACK_BASE_FEE_BUDGET_WEI = 2_000_000_000n; // headroom if estimation fails
+
+/** Clamp a viem fee estimate to the Arc floor; maxFee keeps its headroom above priority. */
+export function clampFeesToArcFloor(est) {
+  const estPriority = est?.maxPriorityFeePerGas ?? 0n;
+  const maxPriorityFeePerGas =
+    estPriority > MIN_PRIORITY_FEE_WEI ? estPriority : MIN_PRIORITY_FEE_WEI;
+  const baseFeeBudget =
+    est && est.maxFeePerGas > estPriority
+      ? est.maxFeePerGas - estPriority
+      : FALLBACK_BASE_FEE_BUDGET_WEI;
+  return { maxFeePerGas: baseFeeBudget + maxPriorityFeePerGas, maxPriorityFeePerGas };
+}
+
+/** Network fee estimate clamped to the Arc floor. Never throws. */
+export async function estimateArcFeesWithFloor(publicClient) {
+  let est = null;
+  try {
+    est = await publicClient.estimateFeesPerGas();
+  } catch {
+    // RPC estimation unavailable — clampFeesToArcFloor falls back to the floor values.
+  }
+  return clampFeesToArcFloor(est);
+}
+
 export function toAtomic(amountStr, decimals) {
   const d = Number(decimals);
   if (!Number.isFinite(d) || d < 0 || d > 36) throw new Error('Invalid decimals');

@@ -28,6 +28,7 @@ import {
   readTokenBalance,
   readTokenAllowance,
   validatePaymentToken,
+  estimateArcFeesWithFloor,
 } from './token-utils.js';
 import { createWalletClient, createPublicClient, http, erc20Abi, decodeEventLog } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -147,6 +148,22 @@ const arcViemChain = {
   nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
   rpcUrls: { default: { http: [ARC_RPC_URL] }, public: { http: [ARC_RPC_URL] } }
 };
+// Arc rejects writes whose priority fee is under 1 gwei — see the Arc gas floor
+// block in token-utils.js. EVERY seller-wallet write on Arc must spread
+// arcFeesWithFloor() into its call — the refund transfer and the per-tick
+// transferFrom both do.
+const FEE_CACHE_MS = 30_000; // ticks fire every second — don't re-estimate each time
+
+const arcFeeClient = createPublicClient({ chain: arcViemChain, transport: http(ARC_RPC_URL) });
+let feeCache = { fees: null, at: 0 };
+
+async function arcFeesWithFloor() {
+  if (feeCache.fees && Date.now() - feeCache.at < FEE_CACHE_MS) return feeCache.fees;
+  const fees = await estimateArcFeesWithFloor(arcFeeClient);
+  feeCache = { fees, at: Date.now() };
+  return fees;
+}
+
 let sellerAccount = null;
 let sellerWalletClient = null;
 if (SELLER_PRIVATE_KEY && /^0x[0-9a-fA-F]{64}$/.test(SELLER_PRIVATE_KEY)) {
@@ -210,11 +227,12 @@ async function refundSeat(seat) {
     return;
   }
 
-  const transfer = () => sellerWalletClient.writeContract({
+  const transfer = async () => sellerWalletClient.writeContract({
     address: USDC_ADDRESS,
     abi: erc20Abi,
     functionName: 'transfer',
-    args: [to, refundAtomic]
+    args: [to, refundAtomic],
+    ...(await arcFeesWithFloor())
   });
 
   try {
@@ -420,6 +438,15 @@ const server = createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
 app.use(express.json());
+// Passkeys + localStorage require localhost (Circle Console domain). Redirect
+// 127.0.0.1 so Chrome bookmarks don't land on a separate broken origin.
+app.use((req, res, next) => {
+  if (req.hostname === '127.0.0.1') {
+    const port = Number(process.env.PORT || 3000);
+    return res.redirect(301, `http://localhost:${port}${req.originalUrl}`);
+  }
+  next();
+});
 // Never cache the frontend during development — guarantees the browser always
 // runs the latest index.html / overlay.html / rewards.js (no stale-bundle bugs).
 // Next.js assets (/_next/*) manage their own caching (immutable hashed chunks).
@@ -769,7 +796,8 @@ async function tickPasskeyStreamSeat(seat) {
         address: tokenAddress,
         abi: erc20Abi,
         functionName: 'transferFrom',
-        args: [seat.viewerAddress, SELLER_WALLET_ADDRESS, tickPrice]
+        args: [seat.viewerAddress, SELLER_WALLET_ADDRESS, tickPrice],
+        ...(await arcFeesWithFloor())
       });
       console.log(
         `[meter:passkey] seat ${seat.id}: pulled ${fromAtomic(tickPrice, tokenDec)} ${tokenSym} (tx ${tx})`
