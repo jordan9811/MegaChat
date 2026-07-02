@@ -3,13 +3,16 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js --prod",
+    "build": "npm --prefix web run build",
+    "postinstall": "npm --prefix web install",
     "build:passkey": "node scripts/build-passkey.mjs",
     "gate:phase2": "node _gate-phase2.mjs",
     "gate:dashboard": "node _gate-dashboard-phase1.mjs",
     "gate:ui-a": "node _gate-ui-part-a.mjs",
     "gate:rewards-b": "node _gate-rewards-part-b.mjs",
-    "gate:auth": "node _gate-auth.mjs",
-    "start": "node server.js"
+    "gate:auth": "node _gate-auth.mjs"
   },
   "dependencies": {
     "@circle-fin/modular-wallets-core": "^1.0.13",

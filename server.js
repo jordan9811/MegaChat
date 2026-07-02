@@ -413,13 +413,19 @@ async function getGatewayBalance(address) {
 
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
+// noServer + manual upgrade routing so the Next.js dev/HMR websocket
+// (/_next/*) can coexist on the same port. App clients connect to the root
+// path (ws://host/) exactly as before — connection/message logic unchanged.
+const wss = new WebSocketServer({ noServer: true });
 
 app.use(express.json());
 // Never cache the frontend during development — guarantees the browser always
 // runs the latest index.html / overlay.html / rewards.js (no stale-bundle bugs).
+// Next.js assets (/_next/*) manage their own caching (immutable hashed chunks).
 app.use((req, res, next) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  if (!req.path.startsWith('/_next/')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  }
   next();
 });
 
@@ -431,7 +437,10 @@ function staticJsHeaders(res, filePath) {
   }
 }
 
+// index: false — the app root (/) is owned by the Next.js frontend below; the
+// legacy viewer page stays reachable at /index.html as a fallback.
 app.use(express.static('public', {
+  index: false,
   etag: false,
   lastModified: false,
   setHeaders: staticJsHeaders,
@@ -866,9 +875,14 @@ try {
 
 // Routes
 
-// Main viewer page (where users pay and join)
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// Root is served by the Next.js frontend (fallthrough handler below). Old
+// viewer links of the form /?room=<id> redirect to the new join page; the
+// legacy Express viewer page itself remains available at /index.html?room=<id>.
+app.get('/', (req, res, next) => {
+  if (req.query.room) {
+    return res.redirect(`/join?room=${encodeURIComponent(String(req.query.room))}`);
+  }
+  next();
 });
 
 // OBS overlay page (just video boxes)
@@ -1481,12 +1495,73 @@ attachDashboardRoutes(app, {
 
 await migrateLegacyRoomPasswords();
 
+// ─── Next.js frontend (single-process mount) ────────────────────────────────
+// The Next app in web/ (dashboard, /join page, /_next assets) runs INSIDE this
+// process as the fallthrough handler: every request Express doesn't claim
+// (APIs, /overlay, public/ static) is handed to Next. Why this direction and
+// not Next API routes: the meter interval, seat Map, WebSocket server, and
+// Gateway facilitator are long-lived singletons that must not be re-created
+// per route — mounting Next here keeps all payment/meter/WS logic untouched.
+const NEXT_DIR = path.join(__dirname, 'web');
+const nextDev = !process.argv.includes('--prod')
+  && process.env.NODE_ENV !== 'production';
+
+const { createRequire } = await import('module');
+const requireFromWeb = createRequire(path.join(NEXT_DIR, 'package.json'));
+let createNextApp;
+try {
+  createNextApp = requireFromWeb('next');
+} catch (err) {
+  console.error(
+    '[next] Could not load the frontend. Run "npm install" once at the project '
+    + `root (it also installs web/ dependencies). Underlying error: ${err.message}`
+  );
+  process.exit(1);
+}
+
+const nextApp = createNextApp({ dev: nextDev, dir: NEXT_DIR });
+const nextHandle = nextApp.getRequestHandler();
+await nextApp.prepare();
+const nextUpgrade = nextApp.getUpgradeHandler();
+
+// Everything not matched above (Next pages + /_next assets) goes to Next.
+app.use((req, res) => nextHandle(req, res));
+
+// Upgrade routing: app clients open ws://host/ (root path — unchanged);
+// /_next/* upgrades belong to the Next dev/HMR websocket.
+// CAUTION: Next dev lazily attaches its OWN 'upgrade' listener to this server
+// on the first proxied request (via req.socket.server) and destroys sockets
+// it doesn't recognize — that would kill every app WebSocket. Trap upgrade
+// listeners added after ours and give them /_next traffic only.
+let nextLazyUpgrade = null;
+server.on('upgrade', (req, socket, head) => {
+  const pathname = (req.url || '/').split('?')[0];
+  if (pathname.startsWith('/_next')) {
+    (nextLazyUpgrade || nextUpgrade)(req, socket, head);
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
+});
+for (const method of ['on', 'addListener', 'prependListener']) {
+  const original = server[method].bind(server);
+  server[method] = (event, listener) => {
+    if (event === 'upgrade') {
+      nextLazyUpgrade = listener;
+      return server;
+    }
+    return original(event, listener);
+  };
+}
+
 server.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════╗
-║  VIDEO STREAM SERVER RUNNING (ARC TESTNET) ║
+║  MEGACHAT — UNIFIED APP (ARC TESTNET)      ║
 ╠═══════════════════════════════════════════╣
-║  Main:    http://localhost:${PORT}           ║
+║  App:     http://localhost:${PORT}  [next ${nextDev ? 'dev' : 'prod'}]
+║  Join:    http://localhost:${PORT}/join?room=<id>
 ║  Overlay: http://localhost:${PORT}/overlay   ║
 ╠═══════════════════════════════════════════╣
 ║  Chain:   ${ARC_NETWORK}
