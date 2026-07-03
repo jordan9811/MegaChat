@@ -2,8 +2,26 @@ import { SiteHeader } from '@/components/site-header'
 import { GlitchBackground } from '@/components/glitch-background'
 import { Hero } from '@/components/hero'
 import { BrowseDirectory } from '@/components/browse-directory'
+import type { PublicRoomCard } from '@/lib/api'
 
-export default function Page() {
+export const dynamic = 'force-dynamic'
+
+async function loadInitialRooms(): Promise<PublicRoomCard[]> {
+  const port = process.env.PORT || '3000'
+  const base = process.env.BASE_URL || `http://127.0.0.1:${port}`
+  try {
+    const res = await fetch(`${base}/api/rooms/public`, { cache: 'no-store' })
+    if (!res.ok) return []
+    const data = (await res.json()) as { rooms?: PublicRoomCard[] }
+    return data.rooms ?? []
+  } catch {
+    return []
+  }
+}
+
+export default async function Page() {
+  const initialRooms = await loadInitialRooms()
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <SiteHeader />
@@ -16,7 +34,7 @@ export default function Page() {
 
       {/* Public browse directory — active rooms, hottest first */}
       <main>
-        <BrowseDirectory />
+        <BrowseDirectory initialRooms={initialRooms} />
       </main>
 
       <footer className="border-t border-border/60">

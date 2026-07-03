@@ -2,6 +2,8 @@
 // Mirrors the calls the legacy public/dashboard.html made — same endpoints,
 // same X-Room-Password header auth, no payment logic here.
 
+import { backendHttpUrl } from './backend'
+
 export type RewardsConfig = {
   enabled: boolean
   earnInterval: number
@@ -84,7 +86,8 @@ async function request<T>(
 ): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (opts.password) headers['X-Room-Password'] = opts.password
-  const res = await fetch(path, {
+  const url = path.startsWith('http') ? path : `${backendHttpUrl()}${path}`
+  const res = await fetch(url, {
     method: opts.method || 'GET',
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,

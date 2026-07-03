@@ -79,8 +79,9 @@ function RoomCard({ room }: { room: PublicRoomCard }) {
   )
 }
 
-export function BrowseDirectory() {
-  const [rooms, setRooms] = useState<PublicRoomCard[] | null>(null)
+export function BrowseDirectory({ initialRooms = [] }: { initialRooms?: PublicRoomCard[] }) {
+  const [rooms, setRooms] = useState<PublicRoomCard[] | null>(initialRooms)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [directHit, setDirectHit] = useState<{ id: string; name: string } | null>(null)
   const directLookupRef = useRef(0)
@@ -89,8 +90,18 @@ export function BrowseDirectory() {
     let stop = false
     const load = () =>
       listPublicRooms()
-        .then((d) => { if (!stop) setRooms(d.rooms) })
-        .catch(() => {})
+        .then((d) => {
+          if (!stop) {
+            setRooms(d.rooms)
+            setLoadError(null)
+          }
+        })
+        .catch((err) => {
+          if (!stop) {
+            setLoadError(err instanceof Error ? err.message : 'Could not load rooms')
+            setRooms((prev) => prev ?? [])
+          }
+        })
     void load()
     const t = setInterval(load, POLL_MS)
     return () => { stop = true; clearInterval(t) }
@@ -151,6 +162,16 @@ export function BrowseDirectory() {
           className="w-full rounded-xl border border-border bg-input/30 py-3 pl-11 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-[var(--neon-magenta)]/70 focus:outline-none"
         />
       </div>
+
+      {loadError ? (
+        <p className="mb-4 text-sm text-[var(--neon-magenta)]">
+          {loadError} — try{' '}
+          <a href="http://localhost:3000" className="underline">
+            http://localhost:3000
+          </a>{' '}
+          and hard refresh (Ctrl+Shift+R).
+        </p>
+      ) : null}
 
       {filtered === null ? (
         <p className="text-sm text-muted-foreground">Loading rooms…</p>

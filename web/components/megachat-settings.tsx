@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Radio, Rocket, Link2, RefreshCw, KeyRound, ChevronDown } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import {
@@ -34,6 +34,8 @@ export function MegaChatSettings() {
   const [managePassword, setManagePassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const resultRef = useRef<HTMLDivElement>(null)
 
   const managing = mode === 'managing'
   const token = draft.tokenPreset === 'custom' ? 'TOKEN' : 'USDC'
@@ -41,6 +43,7 @@ export function MegaChatSettings() {
 
   async function handleCreate() {
     setError(null)
+    setSuccess(null)
     if (!password || password.length < 4) {
       setError('Room password required (min 4 characters).')
       return
@@ -48,6 +51,10 @@ export function MegaChatSettings() {
     setBusy(true)
     try {
       await create(password)
+      setSuccess('Room created — copy your links below.')
+      requestAnimationFrame(() => {
+        resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Create failed')
     } finally {
@@ -456,8 +463,17 @@ export function MegaChatSettings() {
           (primary); the OBS overlay URL comes from the backend, which still
           serves the overlay. The legacy Express join page remains a fallback
           at the backend origin. */}
+      {success ? (
+        <p className="border-t border-border/70 px-5 py-3 text-sm text-[var(--neon-lime)] sm:px-6" aria-live="polite">
+          {success}
+        </p>
+      ) : null}
+
       {managing && joinUrl && overlayUrl && room ? (
-        <div className="border-t border-border/70 bg-input/20 px-5 py-5 sm:px-6">
+        <div
+          ref={resultRef}
+          className="border-t border-border/70 bg-input/20 px-5 py-5 sm:px-6"
+        >
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
             <Link2 className="size-4 text-[var(--neon-lime)]" />
             Room <span className="font-mono text-[var(--neon-lime)]">{room.id}</span>{' '}
