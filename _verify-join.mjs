@@ -98,7 +98,12 @@ async function nodeEth(method, params) {
 const browser = await puppeteer.launch({
   executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   headless: 'new',
-  args: ['--no-first-run', '--disable-features=Translate'],
+  args: [
+    '--no-first-run', '--disable-features=Translate',
+    // Fake camera so the vdo.ninja publisher can actually acquire media.
+    '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-capture',
+    '--autoplay-policy=no-user-gesture-required',
+  ],
 });
 
 async function newPage({ withWallet }) {
@@ -309,6 +314,130 @@ console.log(`\n═══ [B] Passkey flow, brand-new user (${MODE}) ═══`);
     note(`baseline passkey result: walletInfo="${info}" message="${msg}"`);
     await shot(page, 'B4-passkey-attempt');
   }
+  await page.close();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+if (MODE === 'full') {
+  console.log('\n═══ [C] Join button state machine — passkey-first click (unfunded) ═══');
+  const page = await newPage({ withWallet: false });
+  const cdp = await page.createCDPSession();
+  await cdp.send('WebAuthn.enable');
+  await cdp.send('WebAuthn.addVirtualAuthenticator', {
+    options: {
+      protocol: 'ctap2', transport: 'internal',
+      hasResidentKey: true, hasUserVerification: true,
+      isUserVerified: true, automaticPresenceSimulation: true,
+    },
+  });
+
+  await page.goto(`${BASE}/join?room=default`, { waitUntil: 'networkidle2', timeout: 60000 });
+  await page.waitForSelector('#joinBtn', { timeout: 30000 });
+  await page.evaluate(() => localStorage.clear());
+  await sleep(1500);
+
+  const initialLabel = await $text(page, '#joinBtn');
+  const initialDisabled = await $disabled(page, '#joinBtn');
+  expect(/Join Stream/i.test(initialLabel) && initialDisabled === false,
+    `join button starts enabled as "${initialLabel}" while DISCONNECTED (passkey-first)`,
+    `join button wrong initial state: "${initialLabel}" disabled=${initialDisabled}`);
+
+  // Passkey buttons above MetaMask (prominence) — compare DOM positions.
+  const passkeyAboveMM = await page.evaluate(() => {
+    const pk = document.getElementById('passkeyCreateBtn');
+    const mm = document.getElementById('connectBtn');
+    return !!(pk && mm) && (pk.compareDocumentPosition(mm) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  });
+  expect(passkeyAboveMM, 'passkey buttons render ABOVE MetaMask (primary path)', 'MetaMask still above passkey');
+
+  const user = `flow-${Date.now().toString(36)}`;
+  await page.type('#username', user);
+  note(`username: ${user} — clicking JOIN with no wallet connected`);
+  await page.click('#joinBtn');
+  // Auto passkey register → connected → terms → zero balance error.
+  await page.waitForFunction(
+    () => /❌/.test(document.getElementById('message')?.textContent || ''),
+    { timeout: 90000 },
+  );
+  const info = await $text(page, '#walletInfo');
+  const msg = await $text(page, '#message');
+  expect(/🟢 Connected/.test(info) && /0x[0-9a-fA-F]{6}/.test(info),
+    `clicking Join ran passkey auth and shows connected state ("${(info || '').slice(0, 70)}…")`,
+    `no connected state after Join click (info="${info}")`);
+  note(`unfunded join result (expected funds error): "${(msg || '').slice(0, 110)}"`);
+  await sleep(1000);
+  const labelAfterFail = await $text(page, '#joinBtn');
+  expect(/Join Stream/i.test(labelAfterFail) && (await $disabled(page, '#joinBtn')) === false,
+    'button returned to idle "Join Stream" after funds error',
+    `button stuck: "${labelAfterFail}"`);
+  await shot(page, 'C1-connected-unfunded');
+
+  console.log('\n═══ [D] Funded passkey ride: Join → camera above button → Go Live → LIVE ═══');
+  const smartAddr = await page.evaluate(() => window.PasskeyWallet.getPasskeyAddress());
+  note(`funding smart account ${smartAddr} with 0.5 USDC from seller…`);
+  const fees = await estimateArcFeesWithFloor(pub);
+  const fundTx = await sellerWallet.writeContract({
+    address: USDC, abi: erc20Abi, functionName: 'transfer',
+    args: [smartAddr, 500_000n], ...fees,
+  });
+  await pub.waitForTransactionReceipt({ hash: fundTx });
+
+  await page.click('#joinBtn');
+  // Only a VISIBLE message counts — joinSeat clears the stale one on entry.
+  await page.waitForFunction(
+    () => {
+      const m = document.getElementById('message');
+      return !!m && m.classList.contains('show') && /Authorized|❌/.test(m.textContent);
+    },
+    { timeout: 240000 },
+  );
+  const joinMsg = await $text(page, '#message');
+  expect(/Authorized/.test(joinMsg), 'passkey JOIN succeeded (approve userOp accepted, seat granted)', `passkey join failed: "${joinMsg}"`);
+
+  const stageShown = await page.$eval('#cameraStage', (el) => el.classList.contains('show'));
+  expect(stageShown, 'camera stage appeared after seat granted', 'camera stage not shown');
+  const stageAboveBtn = await page.evaluate(() => {
+    const stage = document.getElementById('cameraStage');
+    const btn = document.getElementById('joinBtn');
+    return (stage.compareDocumentPosition(btn) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  });
+  expect(stageAboveBtn, 'camera preview renders ABOVE the join button', 'camera stage not above the button');
+  note(`button right after seat: "${await $text(page, '#joinBtn')}"`);
+
+  // Detection or the 5s fallback must turn the SAME button into GO LIVE.
+  await page.waitForFunction(
+    () => /Go Live/i.test(document.getElementById('joinBtn')?.textContent || ''),
+    { timeout: 20000 },
+  );
+  ok('SAME button relabeled to "Go Live" once camera stage was up');
+  const fit = await page.evaluate(() => {
+    const s = document.getElementById('cameraStage').getBoundingClientRect();
+    const b = document.getElementById('joinBtn').getBoundingClientRect();
+    return { span: Math.round(b.bottom - s.top), stageTop: Math.round(s.top), btnBottom: Math.round(b.bottom) };
+  });
+  expect(fit.span > 0 && fit.span < 900,
+    `camera box + button fit one viewport together (span ${fit.span}px)`,
+    `camera box and button too far apart (span ${fit.span}px)`);
+  await shot(page, 'D1-go-live-ready');
+
+  await page.click('#joinBtn');
+  await page.waitForFunction(
+    () => /LIVE/i.test(document.getElementById('joinBtn')?.textContent || ''),
+    { timeout: 15000 },
+  );
+  const liveStatus = await page.$eval('#camStatus', (el) => el.className);
+  expect(/live/.test(liveStatus), `GO LIVE click → LIVE state (camStatus="${liveStatus}")`, `camStatus not live: "${liveStatus}"`);
+  note(`button now: "${await $text(page, '#joinBtn')}" — letting the meter tick ~6s (real transferFrom pulls)…`);
+  await sleep(6000);
+  await shot(page, 'D2-live');
+
+  await page.click('#leaveBtn');
+  await page.waitForFunction(
+    () => /Join Stream/i.test(document.getElementById('joinBtn')?.textContent || ''),
+    { timeout: 15000 },
+  );
+  ok('leave resets the button to idle "Join Stream"');
+  await shot(page, 'D3-after-leave');
   await page.close();
 }
 

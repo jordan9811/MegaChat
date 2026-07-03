@@ -52,14 +52,13 @@ a.addr {
   display: none;
 }
 #cameraStage.show {
-  display: block;
+  display: flex;
+  flex-direction: column;
 }
-#goLiveBtn,
 #camRetryBtn,
 #leaveBtn {
   display: none;
 }
-#goLiveBtn.show,
 #camRetryBtn.show,
 #leaveBtn.show {
   display: inline-flex;
@@ -114,6 +113,9 @@ a.addr {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 10;
+  /* Compact preview: the camera box and the (morphing) join button must fit
+     in one viewport together — no scrolling between them. */
+  max-height: 240px;
   border: 0;
 }
 .cam-detector {

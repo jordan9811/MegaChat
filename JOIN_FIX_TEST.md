@@ -103,10 +103,66 @@ rendering `Remaining 10 USDC` — proving the balance pipe was never the problem
 `.env` untouched this pass (no vars added, removed, or modified). Keys verified live at
 boot: `[refund] seller refund wallet ready` + rewards attached non-dry-run.
 
+---
+
+# Join button state machine + passkey prominence (2026-07-02, follow-up)
+
+The join flow was restructured around ONE morphing button — no separate Go Live button,
+no scrolling between camera and controls:
+
+```
+🎬 Join Stream ──click──▶ 🔐 Connecting passkey… ──▶ ⏳ Authorize/Confirm…
+      ▲                        (connected state: 🟢 + address)
+      │                                   │ seat granted
+      │                                   ▼
+   leave / out_of_funds        ⏳ Waiting for camera…   (camera preview appears ABOVE)
+      │                                   │ camera detected (or 5 s fallback)
+      │                                   ▼
+      └───────────── 🔴 You're LIVE ◀──click── 🎥 Go Live
+```
+
+- **Passkey primary**: Create/Sign-in buttons render larger and above the compact
+  MetaMask + Deposit row (`web/components/join/join-client.tsx`). Clicking **Join Stream
+  while disconnected runs passkey auth automatically** (register or sign-in), shows the
+  🟢 connected state, then continues into the seat purchase — no separate connect step.
+- **State machine** (`setJoinState` in `web/lib/join-page.ts`): every transition goes
+  through one owner; `renderWallet`, error paths, `seat_removed`, and `leaveStream` can
+  no longer leave the label stale. Repeat clicks in non-idle states are ignored.
+- **Camera above the button**: the stage moved inside the card directly above `#joinBtn`
+  (preview capped at 240 px). Camera detection (or the 5 s fallback) relabels the SAME
+  button to **Go Live**; clicking it starts the meter. A stale error message is cleared
+  when a new attempt starts.
+
+## Verified end-to-end (`node _verify-join.mjs full` — VERIFY FULL PASS)
+
+```
+═══ [C] state machine — passkey-first click (unfunded) ═══
+  ✅ join button starts enabled as "🎬 Join Stream" while DISCONNECTED (passkey-first)
+  ✅ passkey buttons render ABOVE MetaMask (primary path)
+  ✅ clicking Join ran passkey auth and shows connected state ("🟢 Connected · Smart account: 0xbfcc…")
+  ✅ button returned to idle "Join Stream" after funds error
+═══ [D] funded passkey ride ═══
+  ✅ passkey JOIN succeeded (approve userOp accepted, seat granted)   ← real sponsored userOp
+  ✅ camera stage appeared after seat granted
+  ✅ camera preview renders ABOVE the join button
+  button right after seat: "⏳ Waiting for camera…"
+  ✅ SAME button relabeled to "Go Live" once camera stage was up
+  ✅ camera box + button fit one viewport together (span 398px)
+  ✅ GO LIVE click → LIVE state (camStatus="cam-status live")
+  ✅ leave resets the button to idle "Join Stream"
+```
+
+Sections [A] (MetaMask deposit→join) and [B] (passkey create/sign-in) from the previous
+fix still pass unchanged in the same run. New screenshots: `full-C1-connected-unfunded.png`,
+`full-D1-go-live-ready.png`, `full-D2-live.png`, `full-D3-after-leave.png`.
+
+The legacy `/index.html` page keeps its original flow (separate Go Live button) — the
+state machine applies to the Next join page only.
+
 ## Re-verify after future changes
 
 ```
-node _verify-join.mjs full     # needs Chrome; funds a fresh viewer from the seller
+node _verify-join.mjs full     # needs Chrome; funds a fresh viewer + passkey account from the seller
 node _gate-phase2.mjs
 npm run build:passkey          # if src/passkey-wallet.mjs changed
 ```

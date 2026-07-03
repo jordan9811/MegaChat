@@ -153,6 +153,37 @@ function ensureEthereum() {
   return eth;
 }
 
+// ─── Join button state machine ────────────────────────────────────────────
+// ONE button morphs through the whole flow (no separate Go Live button):
+//   idle → busy (connect/authorize) → awaiting-camera → go-live → live
+// Click routing lives in the joinBtn handler; every transition goes through
+// setJoinState so no code path can leave the label out of sync again.
+let joinBtnState = 'idle';
+
+const JOIN_BTN_STATES = {
+  idle: { label: '🎬 Join Stream', disabled: false },
+  busy: { label: '⏳ Processing…', disabled: true },
+  'awaiting-camera': { label: '⏳ Waiting for camera…', disabled: true },
+  'go-live': { label: '🎥 Go Live', disabled: false },
+  live: { label: "🔴 You're LIVE", disabled: true },
+};
+
+function setJoinState(state, labelOverride) {
+  const preset = JOIN_BTN_STATES[state] || JOIN_BTN_STATES.idle;
+  joinBtnState = JOIN_BTN_STATES[state] ? state : 'idle';
+  const btn = document.getElementById('joinBtn');
+  if (!btn) return;
+  btn.textContent = labelOverride || preset.label;
+  btn.disabled = preset.disabled
+    || (joinBtnState === 'idle' && CONFIG && CONFIG.roomActive === false);
+}
+
+function onJoinButtonClick() {
+  if (joinBtnState === 'go-live') return goLive();
+  if (joinBtnState === 'idle') return joinSeat();
+  // busy / awaiting-camera / live: disabled anyway — ignore stray clicks.
+}
+
 async function loadPasskeyModule() {
   if (passkeyModuleLoaded && window.PasskeyWallet) return window.PasskeyWallet;
   // Served same-origin via the Next.js rewrite proxy to the backend.
@@ -341,7 +372,7 @@ function renderWallet() {
         '(localhost or https).';
     }
     if (dep) dep.style.display = 'none';
-    if (join) join.disabled = false;
+    if (join && joinBtnState === 'idle') setJoinState('idle');
     return;
   }
 
@@ -360,7 +391,7 @@ function renderWallet() {
     // as a wallet is connected (this early-returned without enabling before,
     // leaving the button permanently greyed).
     if (dep) dep.disabled = false;
-    if (join) join.disabled = false;
+    if (join && joinBtnState === 'idle') setJoinState('idle');
     return;
   }
 
@@ -380,7 +411,9 @@ function renderWallet() {
   // depositToGateway() connects the wallet itself when needed, so any injected
   // wallet is enough to make the button useful.
   if (dep) dep.disabled = !hasWallet;
-  if (join) join.disabled = !account;
+  // Join stays enabled while disconnected — clicking it runs passkey auth
+  // (the primary path). The state machine owns it outside idle.
+  if (join && joinBtnState === 'idle') setJoinState('idle');
 }
 
 // Read the wallet's available Gateway balance and preview it as "Remaining".
@@ -489,7 +522,7 @@ async function depositToGateway() {
     showMessage('❌ Deposit failed: ' + (err.message || err), 'error');
   } finally {
     btn.disabled = false;
-    btn.textContent = '💧 Deposit USDC to Gateway (one-time)';
+    btn.textContent = '💧 Deposit USDC to Gateway';
   }
 }
 
@@ -564,11 +597,10 @@ async function buildPayment(requirements) {
   return b64encode(paymentPayload);
 }
 
-async function joinSeatPasskey(username, btn) {
-  if (!account) await connectPasskeyWallet();
+async function joinSeatPasskey(username) {
+  if (!account) await connectPasskeyWallet('auto');
   if (!account) {
-    btn.disabled = false;
-    btn.textContent = '🎬 JOIN STREAM';
+    setJoinState('idle');
     return;
   }
   const PW = await loadPasskeyModule();
@@ -576,7 +608,7 @@ async function joinSeatPasskey(username, btn) {
     throw new Error('Passkey wallet not ready');
   }
 
-  btn.textContent = '⏳ Requesting session terms...';
+  setJoinState('busy', '⏳ Requesting session terms…');
   const first = await fetch('/api/join/passkey', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -591,7 +623,7 @@ async function joinSeatPasskey(username, btn) {
     throw new Error((terms.hint || terms.error || 'Cannot join') + detail);
   }
   if (terms.useRewardCredit) {
-    btn.textContent = '⏳ Joining with earned balance…';
+    setJoinState('busy', '⏳ Joining with earned balance…');
     const paid = await fetch('/api/join/passkey', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -614,14 +646,14 @@ async function joinSeatPasskey(username, btn) {
     throw new Error('Unexpected passkey join response');
   }
 
-  btn.textContent = '⏳ Passkey authorize (one prompt)…';
+  setJoinState('busy', '⏳ Passkey authorize (one prompt)…');
   const payment = await PW.authorizeSessionGasless(
     terms.sessionAmountAtomic,
     terms.payTo,
     terms.paymentTokenAddress
   );
 
-  btn.textContent = '⏳ Confirming seat…';
+  setJoinState('busy', '⏳ Confirming seat…');
   const paid = await fetch('/api/join/passkey', {
     method: 'POST',
     headers: {
@@ -640,32 +672,43 @@ async function joinSeatPasskey(username, btn) {
 
 async function joinSeat() {
   const username = document.getElementById('username').value.trim();
-  const btn = document.getElementById('joinBtn');
 
   if (!username) {
     showMessage('Please enter a username', 'error');
     return;
   }
+  if (joinBtnState !== 'idle') return;
 
-  btn.disabled = true;
-  btn.textContent = '⏳ Processing...';
+  // Clear the previous attempt's result — a stale error next to a freshly
+  // spinning button reads as an instant failure.
+  const msgBox = document.getElementById('message');
+  if (msgBox) msgBox.className = 'join-message';
+
+  setJoinState('busy');
 
   try {
+    // Passkey is the PRIMARY path: an unconnected click runs passkey auth
+    // right here (register or sign in), shows the connected state, then
+    // continues straight into the seat purchase. MetaMask users connect via
+    // the secondary button first, which sets walletMode below.
+    if (!account) {
+      setJoinState('busy', '🔐 Connecting passkey…');
+      const addr = await connectPasskeyWallet('auto');
+      if (!addr) {
+        setJoinState('idle');
+        return;
+      }
+    }
+
     if (walletMode === 'passkey') {
-      await joinSeatPasskey(username, btn);
+      await joinSeatPasskey(username);
       return;
     }
 
-    if (!account) await connectMetaMask();
-    if (!account) {
-      btn.disabled = false;
-      btn.textContent = '🎬 JOIN STREAM';
-      return;
-    }
     await ensureArcChain();
 
     // 1) Hit the gate with no payment → expect 402 + Gateway requirements.
-    btn.textContent = '⏳ Requesting payment terms...';
+    setJoinState('busy', '⏳ Requesting payment terms…');
     const first = await fetch('/api/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -685,11 +728,11 @@ async function joinSeat() {
       const requirements = b64decode(requiredHeader);
 
       // 2) Sign the Gateway EIP-3009 authorization with MetaMask.
-      btn.textContent = '⏳ Sign payment in MetaMask...';
+      setJoinState('busy', '⏳ Sign payment in MetaMask…');
       const paymentHeader = await buildPayment(requirements);
 
       // 3) Retry with the signed payment.
-      btn.textContent = '⏳ Settling payment...';
+      setJoinState('busy', '⏳ Settling payment…');
       const paid = await fetch('/api/join', {
         method: 'POST',
         headers: {
@@ -714,8 +757,9 @@ async function joinSeat() {
     console.error('Error:', error);
     showMessage('❌ ' + (error.message || 'Connection error. Try again.'), 'error');
   } finally {
-    btn.disabled = false;
-    btn.textContent = '🎬 JOIN STREAM';
+    // Success hands the button to the camera states (awaiting-camera →
+    // go-live → live); only reset to idle when no seat was granted.
+    if (!mySeatId) setJoinState('idle');
   }
 }
 
@@ -749,11 +793,12 @@ function onJoinSuccess(data) {
     ? 'Unspent USDC stays in your smart account when you leave.'
     : 'Unused USDC is refunded when you leave.';
   showMessage(
-    `✅ Authorized! Allow camera access below — you go live automatically. Metering
+    `✅ Authorized! Allow camera access above, then hit GO LIVE on the same button. Metering
     (${meterNote}) starts when you're live; ${refundNote}${txLink}`,
     'success'
   );
   startCameraStage(data);
+  setJoinState('awaiting-camera');
 }
 
 function startCameraStage(data) {
@@ -761,11 +806,8 @@ function startCameraStage(data) {
   const stage = document.getElementById('cameraStage');
   const pub = document.getElementById('camPublisher');
   const det = document.getElementById('camDetector');
-  const goBtn = document.getElementById('goLiveBtn');
   const retryBtn = document.getElementById('camRetryBtn');
 
-  goBtn.classList.remove('show');
-  goBtn.disabled = false;
   retryBtn.classList.remove('show');
   setCamStatus('', 'Requesting camera…');
   document.getElementById('camHint').textContent =
@@ -793,12 +835,12 @@ function startCameraStage(data) {
 
   clearTimeout(camFallbackTimer);
   clearTimeout(camErrorTimer);
-  // Fallback: reveal the manual button if auto-detect stalls.
+  // Fallback: offer GO LIVE on the join button even if auto-detect stalls.
   camFallbackTimer = setTimeout(() => {
-    if (cameraLiveFired) return;
-    goBtn.classList.add('show');
+    if (cameraLiveFired || joinBtnState !== 'awaiting-camera') return;
+    setJoinState('go-live');
     document.getElementById('camHint').textContent =
-      "Camera live but not auto-detected? Click GO LIVE once your preview shows.";
+      'Camera preview showing? Hit GO LIVE above to start.';
   }, 5000);
   // Error path: surface retry if nothing happened (camera likely denied).
   camErrorTimer = setTimeout(() => {
@@ -817,7 +859,8 @@ function onVdoMessage(e) {
   if (!d || typeof d !== 'object') return;
   console.log('[vdo]', e.source === pub.contentWindow ? 'publisher' : 'detector', d);
 
-  // Documented connect signals (value truthy = connected).
+  // Documented connect signals (value truthy = connected). Camera granted →
+  // the join button becomes GO LIVE; the user starts the meter explicitly.
   const a = d.action;
   const connected = d.value === true || (d.value && d.value !== false);
   if (
@@ -825,7 +868,12 @@ function onVdoMessage(e) {
     (a === 'view-connection' && connected) ||
     (a === 'guest-connected' && connected)
   ) {
-    fireCameraReady('auto');
+    if (!cameraLiveFired && joinBtnState === 'awaiting-camera') {
+      setJoinState('go-live');
+      setCamStatus('', 'Camera ready — hit GO LIVE');
+      document.getElementById('camHint').textContent =
+        'Camera connected. Hit GO LIVE above to start your stream.';
+    }
   }
 }
 
@@ -845,12 +893,11 @@ function fireCameraReady(source) {
     ws.send(JSON.stringify({ type: 'camera_ready', seatId: mySeatId }));
   }
   console.log(`[camera] camera_ready fired via ${source}`);
+  setJoinState('live');
   setCamStatus('live', "You're LIVE on stream");
   document.getElementById('camHint').textContent = walletMode === 'passkey'
     ? 'Leaving (button or closing the tab) stops the meter. Unspent USDC stays in your wallet.'
     : 'Leaving (button or closing the tab) stops the meter and refunds unused USDC.';
-  const goBtn = document.getElementById('goLiveBtn');
-  goBtn.classList.remove('show');
   document.getElementById('camRetryBtn').classList.remove('show');
   // Now live — offer an explicit Leave button (same effect as a tab close).
   document.getElementById('leaveBtn').classList.add('show');
@@ -874,8 +921,7 @@ async function leaveStream() {
     console.warn('leave request failed (server still drops seat on disconnect)', e);
   }
   leaveBtn.disabled = false;
-  const joinBtn = document.getElementById('joinBtn');
-  if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = '🎬 JOIN STREAM'; }
+  setJoinState('idle');
   showMessage(
     walletMode === 'passkey'
       ? '👋 You left the stream. Unspent USDC remains in your smart account.'
@@ -1118,6 +1164,7 @@ export function initJoinPage({ wsUrl }) {
       }
       teardownCameraStage();
       mySeatId = null;
+      setJoinState('idle');
     }
   };
 
@@ -1130,8 +1177,9 @@ export function initJoinPage({ wsUrl }) {
   on('passkeyBtn', () => connectPasskeyWallet('login'));
   on('passkeyCreateBtn', () => connectPasskeyWallet('register'));
   on('depositBtn', depositToGateway);
-  on('joinBtn', joinSeat);
-  on('goLiveBtn', goLive);
+  // ONE button through the whole flow: Join Stream → (connect/authorize) →
+  // Waiting for camera → Go Live → You're LIVE.
+  on('joinBtn', onJoinButtonClick);
   on('camRetryBtn', retryCamera);
   on('leaveBtn', leaveStream);
 

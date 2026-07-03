@@ -16,6 +16,14 @@ const primaryBtn =
 const ghostBtn =
   'flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-input/30 px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-input/50 disabled:opacity-50 disabled:hover:bg-input/30'
 
+// Passkey = primary wallet path: bigger, brighter, above the fold.
+const passkeyBtnCls =
+  'flex w-full items-center justify-center gap-2 rounded-xl border border-primary/50 bg-primary/15 px-4 py-3.5 text-sm font-bold text-foreground transition-colors hover:bg-primary/25 disabled:opacity-50 disabled:hover:bg-primary/15'
+
+// MetaMask/Gateway = secondary path: compact row under the passkey buttons.
+const miniBtn =
+  'flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-input/20 px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-input/40 hover:text-foreground disabled:opacity-50 disabled:hover:bg-input/20'
+
 export function JoinClient() {
   useEffect(() => {
     return initJoinPage({ wsUrl: backendWsUrl() })
@@ -90,17 +98,15 @@ export function JoinClient() {
             className="h-11 w-full rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground/70 focus-visible:border-primary/70 focus-visible:ring-2 focus-visible:ring-primary/30"
           />
 
-          {/* Wallet choice — same IDs/flows as the legacy page. New users
-              CREATE a passkey; returning users sign in with an existing one. */}
+          {/* Wallet choice — passkey is the PRIMARY path (bigger, on top);
+              MetaMask/Gateway is the secondary row below. Clicking Join
+              while disconnected runs passkey auth automatically. */}
           <div className="flex flex-col gap-2">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <button id="connectBtn" type="button" className={`${ghostBtn} sm:col-span-2`}>
-                🦊 Connect MetaMask
-              </button>
-              <button id="passkeyCreateBtn" type="button" className={ghostBtn}>
+              <button id="passkeyCreateBtn" type="button" className={passkeyBtnCls}>
                 ✨ Create passkey (new here?)
               </button>
-              <button id="passkeyBtn" type="button" className={ghostBtn}>
+              <button id="passkeyBtn" type="button" className={passkeyBtnCls}>
                 🔐 Sign in with existing passkey
               </button>
             </div>
@@ -110,25 +116,20 @@ export function JoinClient() {
               className="rounded-lg border border-border bg-input/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground"
               style={{ display: 'none' }}
             />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button id="connectBtn" type="button" className={miniBtn}>
+                🦊 Connect MetaMask
+              </button>
+              <button id="depositBtn" type="button" className={miniBtn}>
+                💧 Deposit USDC to Gateway
+              </button>
+            </div>
           </div>
 
-          <button id="depositBtn" type="button" className={ghostBtn}>
-            💧 Deposit USDC to Gateway (one-time)
-          </button>
-
-          <button id="joinBtn" type="button" className={primaryBtn}>
-            🎬 JOIN STREAM
-          </button>
-
-          {/* className is fully overwritten by the script — styled in join.css */}
-          <div id="message" className="join-message" aria-live="polite" />
-        </div>
-      </GlassCard>
-
-      {/* Camera stage (script toggles .show once a seat is paid) */}
-      <div id="cameraStage">
-        <GlassCard>
-          <div className="relative flex flex-col gap-3 px-5 py-6 sm:px-6">
+          {/* Camera stage — ABOVE the join button so the preview and the
+              (morphing) button stay in view together. Shown once a seat is
+              paid; the join button itself relabels to GO LIVE. */}
+          <div id="cameraStage" className="flex flex-col gap-3">
             <div id="camStatus" className="cam-status">
               <span className="dot" />
               <span id="camStatusText">Requesting camera…</span>
@@ -141,19 +142,25 @@ export function JoinClient() {
               />
             </div>
             <iframe id="camDetector" title="Publish detector" className="cam-detector" allow="autoplay" />
-            <button id="goLiveBtn" type="button" className={primaryBtn}>
-              Go live
-            </button>
             <button id="camRetryBtn" type="button" className={ghostBtn}>
               Retry camera
             </button>
-            <button id="leaveBtn" type="button" className={ghostBtn}>
-              Leave
-            </button>
             <div id="camHint" className="text-xs leading-relaxed text-muted-foreground" />
           </div>
-        </GlassCard>
-      </div>
+
+          {/* THE button: Join Stream → connecting → authorizing → Waiting for
+              camera → Go Live → You're LIVE (state machine in join-page.ts). */}
+          <button id="joinBtn" type="button" className={primaryBtn}>
+            🎬 Join Stream
+          </button>
+          <button id="leaveBtn" type="button" className={ghostBtn}>
+            Leave stream
+          </button>
+
+          {/* className is fully overwritten by the script — styled in join.css */}
+          <div id="message" className="join-message" aria-live="polite" />
+        </div>
+      </GlassCard>
 
       {/* Viewer-side platform link stub — no logic yet */}
       <div className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-input/10 px-4 py-3">
