@@ -253,15 +253,22 @@ async function connectPasskeyWallet(mode) {
     walletMode = null;
     account = null;
     console.error('[passkey]', err);
+    const errText = [err?.message, err?.details, err?.cause?.message]
+      .filter(Boolean).join(' ');
     const msg = err && err.name === 'NotAllowedError'
       ? (mode === 'login'
         ? `No passkey found on this device (or the prompt was cancelled). New here? Use “${PASSKEY_CREATE_LABEL}”.`
         : 'Passkey prompt cancelled or timed out.')
-      : err && err.code === 'USERNAME_TAKEN'
-        ? err.message
-        : /username is duplicated/i.test(String(err?.message || err?.details || ''))
-          ? `This username already has a passkey — use “${PASSKEY_SIGNIN_LABEL}”.`
-          : (err && err.message) || 'Passkey sign-in failed';
+      : /invalid credentials/i.test(errText)
+        // Circle domain-locks the client key: it validates the page hostname
+        // on every RPC. New deploy domains must be allowlisted in the Console.
+        ? `This domain (${location.hostname}) isn't authorized for the Circle passkey key. `
+          + 'Add it in Circle Console → Programmable Wallets → Modular Wallets → your client key → allowed domains, then reload.'
+        : err && err.code === 'USERNAME_TAKEN'
+          ? err.message
+          : /username is duplicated/i.test(errText)
+            ? `This username already has a passkey — use “${PASSKEY_SIGNIN_LABEL}”.`
+            : (err && err.message) || 'Passkey sign-in failed';
     showMessage('❌ ' + msg, 'error');
     renderWallet();
     return null;

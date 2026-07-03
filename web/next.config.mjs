@@ -6,6 +6,10 @@
 // rewrites/proxying is needed (a /api rewrite here would loop back into the
 // same server).
 const nextConfig = {
+  // Dev-only: Next 16 rejects /_next requests whose Host isn't allowlisted,
+  // which breaks testing the DEV server through cloudflared tunnels or other
+  // mapped hostnames ("Unauthorized" on /_next/*). Prod builds are unaffected.
+  allowedDevOrigins: ['*.trycloudflare.com', '*.up.railway.app', 'railway-sim.test'],
   turbopack: {
     root: import.meta.dirname,
   },
