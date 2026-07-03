@@ -53,7 +53,9 @@ try {
   if (home.status !== 200) fail(`GET / returned ${home.status}`);
   else ok('GET / returns 200');
 
-  const html = await home.text();
+  // Post-unification, / is the Next.js app — the legacy viewer lives at /index.html.
+  const legacy = await fetch(`${BASE}/index.html`);
+  const html = await legacy.text();
   if (!html.includes('authorizeSessionGasless') && !html.includes('passkey-wallet.bundle.js')) {
     fail('Passkey bundle not referenced from index');
   } else ok('index.html references passkey client');

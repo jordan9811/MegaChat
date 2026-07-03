@@ -145,41 +145,70 @@ export function initModularClients(config) {
   return { publicClient, bundlerClient };
 }
 
-/** Register or login passkey, create Circle Smart Account, return address. */
+async function toSmartAccountFromCredential(credential, name) {
+  storeCredential(credential);
+  smartAccount = await toCircleSmartAccount({
+    client: publicClient,
+    owner: toWebAuthnAccount({ credential }),
+    ...(name ? { name } : {}),
+  });
+  smartAccountAddress = smartAccount.address;
+  console.log('[passkey] smart account:', smartAccountAddress);
+  return smartAccountAddress;
+}
+
+/** First-time user: CREATE a passkey (WebAuthn register), then build the smart account. */
+export async function registerPasskey(username) {
+  if (!modularConfig) throw new Error('Call initModularClients first');
+  if (!username) throw new Error('Username required to create a passkey');
+  console.log('[passkey] registering new passkey for', username);
+  let credential;
+  try {
+    credential = await toWebAuthnCredential({
+      transport: passkeyTransport,
+      mode: WebAuthnMode.Register,
+      username,
+    });
+  } catch (err) {
+    if (isDuplicateUsernameError(err)) {
+      const friendly = new Error(
+        `Username "${username}" already has a passkey — use "Sign in with existing passkey" instead.`
+      );
+      friendly.code = 'USERNAME_TAKEN';
+      throw friendly;
+    }
+    throw err;
+  }
+  return toSmartAccountFromCredential(credential, username);
+}
+
+/** Returning user: sign in with an existing passkey (WebAuthn discoverable login). */
+export async function loginPasskey(username) {
+  if (!modularConfig) throw new Error('Call initModularClients first');
+  const credential = await loginPasskeyCredential();
+  return toSmartAccountFromCredential(credential, username || undefined);
+}
+
+/**
+ * Auto mode (legacy entry point): stored credential -> login, otherwise
+ * register; a duplicate username on register falls back to login.
+ */
 export async function connectPasskey(username) {
   if (!modularConfig) throw new Error('Call initModularClients first');
   if (!username) throw new Error('Username required for passkey registration');
 
   const stored = loadStoredCredential();
-  let credential;
   if (stored) {
     console.log('[passkey] logging in with stored credential…');
-    credential = await loginPasskeyCredential();
-  } else {
-    console.log('[passkey] registering new passkey for', username);
-    try {
-      credential = await toWebAuthnCredential({
-        transport: passkeyTransport,
-        mode: WebAuthnMode.Register,
-        username,
-      });
-    } catch (err) {
-      if (!isDuplicateUsernameError(err)) throw err;
-      console.log('[passkey] username already registered on Circle — switching to login');
-      credential = await loginPasskeyCredential();
-    }
+    return loginPasskey(username);
   }
-
-  storeCredential(credential);
-
-  smartAccount = await toCircleSmartAccount({
-    client: publicClient,
-    owner: toWebAuthnAccount({ credential }),
-    name: username,
-  });
-  smartAccountAddress = smartAccount.address;
-  console.log('[passkey] smart account:', smartAccountAddress);
-  return smartAccountAddress;
+  try {
+    return await registerPasskey(username);
+  } catch (err) {
+    if (err?.code !== 'USERNAME_TAKEN') throw err;
+    console.log('[passkey] username already registered on Circle — switching to login');
+    return loginPasskey(username);
+  }
 }
 
 export function getPasskeyAddress() {
@@ -261,6 +290,8 @@ export function selfTestClients(config) {
 window.PasskeyWallet = {
   initModularClients,
   connectPasskey,
+  registerPasskey,
+  loginPasskey,
   getPasskeyAddress,
   isPasskeyReady,
   getPasskeyUsdcBalance,

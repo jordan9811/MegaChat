@@ -156,7 +156,7 @@ function ensureEthereum() {
 async function loadPasskeyModule() {
   if (passkeyModuleLoaded && window.PasskeyWallet) return window.PasskeyWallet;
   // Served same-origin via the Next.js rewrite proxy to the backend.
-  const bundleUrl = '/passkey-wallet.bundle.js';
+  const bundleUrl = '/passkey-wallet.bundle.js?v=2';
   await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ bundleUrl);
   passkeyModuleLoaded = true;
   return window.PasskeyWallet;
@@ -167,10 +167,21 @@ async function connectMetaMask() {
   return connectWallet();
 }
 
-async function connectPasskeyWallet() {
+const PASSKEY_SIGNIN_LABEL = '🔐 Sign in with existing passkey';
+const PASSKEY_CREATE_LABEL = '✨ Create passkey (new here?)';
+
+/**
+ * mode: 'register' (first-time user creates a passkey), 'login' (returning
+ * user signs in with an existing one), or 'auto' (legacy: stored credential
+ * decides — used by the join button's implicit connect).
+ */
+async function connectPasskeyWallet(mode) {
+  if (mode !== 'register' && mode !== 'login') mode = 'auto';
   const username = document.getElementById('username').value.trim();
-  if (!username) {
-    showMessage('Enter a username first (used for passkey registration).', 'error');
+  // Sign-in uses the passkey itself (discoverable credential) — only creating
+  // a NEW passkey needs a username.
+  if (!username && mode !== 'login') {
+    showMessage('Enter a username first (it names your new passkey).', 'error');
     return null;
   }
   if (!CONFIG || !CONFIG.modularWallets) {
@@ -178,35 +189,63 @@ async function connectPasskeyWallet() {
     return null;
   }
   const btn = document.getElementById('passkeyBtn');
+  const createBtn = document.getElementById('passkeyCreateBtn');
+  const clicked = mode === 'register' ? (createBtn || btn) : btn;
   try {
     btn.disabled = true;
-    btn.textContent = '⏳ Passkey…';
+    if (createBtn) createBtn.disabled = true;
+    clicked.textContent = mode === 'register' ? '⏳ Creating passkey…' : '⏳ Waiting for passkey…';
     walletMode = 'passkey';
     updatePriceDisplay();
     account = null; // clear any stale MetaMask address
 
     const PW = await loadPasskeyModule();
     PW.initModularClients(CONFIG.modularWallets);
-    const addr = await PW.connectPasskey(username);
+    const addr = mode === 'register'
+      ? await PW.registerPasskey(username)
+      : mode === 'login'
+        ? await PW.loginPasskey(username)
+        : await PW.connectPasskey(username);
     account = addr;
     renderWallet();
     window.dispatchEvent(new CustomEvent('wallet:connected', { detail: { account } }));
     await refreshBalance();
-    showMessage('✅ Passkey smart account ready. Fund it from the faucet if balance is zero.', 'success');
+    showMessage(
+      (mode === 'register'
+        ? '✅ Passkey created — smart account ready.'
+        : '✅ Signed in — smart account ready.')
+      + ' Fund it from the faucet if balance is zero.',
+      'success'
+    );
     return account;
   } catch (err) {
     walletMode = null;
     account = null;
     console.error('[passkey]', err);
     const msg = err && err.name === 'NotAllowedError'
-      ? 'Passkey prompt cancelled or timed out.'
-      : (err && err.message) || 'Passkey sign-in failed';
+      ? (mode === 'login'
+        ? `No passkey found on this device (or the prompt was cancelled). New here? Use “${PASSKEY_CREATE_LABEL}”.`
+        : 'Passkey prompt cancelled or timed out.')
+      : err && err.code === 'USERNAME_TAKEN'
+        ? err.message
+        : /username is duplicated/i.test(String(err?.message || err?.details || ''))
+          ? `This username already has a passkey — use “${PASSKEY_SIGNIN_LABEL}”.`
+          : (err && err.message) || 'Passkey sign-in failed';
     showMessage('❌ ' + msg, 'error');
     renderWallet();
     return null;
   } finally {
-    btn.disabled = false;
-    btn.textContent = '🔐 Sign in with Passkey (Face ID)';
+    // Restore idle labels ONLY when not connected — renderWallet() owns the
+    // connected state (this used to clobber “connected” right after success,
+    // so the UI never showed any feedback).
+    if (!(account && walletMode === 'passkey')) {
+      btn.disabled = false;
+      btn.textContent = PASSKEY_SIGNIN_LABEL;
+      if (createBtn) {
+        createBtn.disabled = false;
+        createBtn.textContent = PASSKEY_CREATE_LABEL;
+      }
+    }
   }
 }
 
@@ -280,6 +319,7 @@ function renderWallet() {
   const info = document.getElementById('walletInfo');
   const connectBtn = document.getElementById('connectBtn');
   const passkeyBtn = document.getElementById('passkeyBtn');
+  const passkeyCreateBtn = document.getElementById('passkeyCreateBtn');
   const fundNote = document.getElementById('passkeyFundNote');
   const dep = document.getElementById('depositBtn');
   const join = document.getElementById('joinBtn');
@@ -288,9 +328,10 @@ function renderWallet() {
   if (account && walletMode === 'passkey') {
     connectBtn.disabled = true;
     passkeyBtn.disabled = true;
-    passkeyBtn.textContent = '🔐 Passkey connected';
+    passkeyBtn.textContent = '🟢 Passkey connected';
+    if (passkeyCreateBtn) passkeyCreateBtn.style.display = 'none';
     connectBtn.textContent = '🦊 Connect MetaMask';
-    info.innerHTML = `Smart account: <span class="addr">${account}</span><br>Network: Arc Testnet (passkey)`;
+    info.innerHTML = `🟢 Connected · Smart account: <span class="addr">${account}</span><br>Network: Arc Testnet (passkey)`;
     if (fundNote) {
       fundNote.style.display = 'block';
       fundNote.innerHTML =
@@ -306,29 +347,39 @@ function renderWallet() {
 
   if (fundNote) fundNote.style.display = 'none';
   if (dep) dep.style.display = '';
+  if (passkeyCreateBtn) passkeyCreateBtn.style.display = '';
 
   if (account && walletMode === 'metamask') {
-    connectBtn.textContent = '🦊 Connected';
+    connectBtn.textContent = '🟢 🦊 Connected';
     connectBtn.disabled = true;
     passkeyBtn.disabled = true;
+    if (passkeyCreateBtn) passkeyCreateBtn.disabled = true;
     const net = CONFIG && CONFIG.network ? CONFIG.network : 'Arc';
-    info.innerHTML = `Wallet: <span class="addr">${account}</span><br>Network: Arc Testnet (${net})`;
+    info.innerHTML = `🟢 Connected · Wallet: <span class="addr">${account}</span><br>Network: Arc Testnet (${net})`;
+    // Deposit is THE way to fund the Gateway balance — must be usable as soon
+    // as a wallet is connected (this early-returned without enabling before,
+    // leaving the button permanently greyed).
+    if (dep) dep.disabled = false;
     if (join) join.disabled = false;
     return;
   }
 
   connectBtn.disabled = !hasWallet;
-  passkeyBtn.disabled = !(CONFIG && CONFIG.modularWallets);
+  const passkeyReady = !!(CONFIG && CONFIG.modularWallets);
+  passkeyBtn.disabled = !passkeyReady;
+  if (passkeyCreateBtn) passkeyCreateBtn.disabled = !passkeyReady;
   if (!hasWallet) {
     connectBtn.textContent = '🦊 No MetaMask detected';
     info.innerHTML = hasWallet
       ? ''
-      : 'No injected wallet — use <span class="addr">Sign in with Passkey</span> or install MetaMask.';
+      : 'No injected wallet — use a passkey (create one if you\'re new) or install MetaMask.';
   } else {
     connectBtn.textContent = '🦊 Connect MetaMask';
     info.textContent = '';
   }
-  if (dep) dep.disabled = !account;
+  // depositToGateway() connects the wallet itself when needed, so any injected
+  // wallet is enough to make the button useful.
+  if (dep) dep.disabled = !hasWallet;
   if (join) join.disabled = !account;
 }
 
@@ -896,6 +947,14 @@ async function init() {
     await loadConfig();
   } catch (err) {
     console.error('Failed to load config', err);
+    const lbl = document.getElementById('priceLabel');
+    if (lbl) {
+      lbl.textContent = (err && err.message) || 'Failed to load room';
+    }
+    showMessage(
+      'Could not load room. Open http://localhost:3000 (not 127.0.0.1) and refresh.',
+      'error',
+    );
   }
   initWallet();
 }
@@ -1068,21 +1127,25 @@ export function initJoinPage({ wsUrl }) {
     if (el) el.addEventListener('click', fn, { signal: abort.signal });
   };
   on('connectBtn', connectMetaMask);
-  on('passkeyBtn', connectPasskeyWallet);
+  on('passkeyBtn', () => connectPasskeyWallet('login'));
+  on('passkeyCreateBtn', () => connectPasskeyWallet('register'));
   on('depositBtn', depositToGateway);
   on('joinBtn', joinSeat);
   on('goLiveBtn', goLive);
   on('camRetryBtn', retryCamera);
   on('leaveBtn', leaveStream);
 
-  document.getElementById('username').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') joinSeat();
-  }, { signal: abort.signal });
+  const usernameEl = document.getElementById('username');
+  if (usernameEl) {
+    usernameEl.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') joinSeat();
+    }, { signal: abort.signal });
+  }
 
   // Exposed for parity with the original global-scope page (and testing).
   Object.assign(window, {
     connectMetaMask, connectPasskeyWallet, depositToGateway, joinSeat,
-    goLive, retryCamera, leaveStream, onJoinSuccess,
+    goLive, retryCamera, leaveStream, onJoinSuccess, refreshBalance,
   });
 
   init();

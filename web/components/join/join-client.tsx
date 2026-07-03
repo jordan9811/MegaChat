@@ -90,14 +90,18 @@ export function JoinClient() {
             className="h-11 w-full rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground/70 focus-visible:border-primary/70 focus-visible:ring-2 focus-visible:ring-primary/30"
           />
 
-          {/* Wallet choice — same IDs/flows as the legacy page */}
+          {/* Wallet choice — same IDs/flows as the legacy page. New users
+              CREATE a passkey; returning users sign in with an existing one. */}
           <div className="flex flex-col gap-2">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <button id="connectBtn" type="button" className={ghostBtn}>
+              <button id="connectBtn" type="button" className={`${ghostBtn} sm:col-span-2`}>
                 🦊 Connect MetaMask
               </button>
+              <button id="passkeyCreateBtn" type="button" className={ghostBtn}>
+                ✨ Create passkey (new here?)
+              </button>
               <button id="passkeyBtn" type="button" className={ghostBtn}>
-                🔐 Sign in with Passkey (Face ID)
+                🔐 Sign in with existing passkey
               </button>
             </div>
             <div id="walletInfo" className="text-xs leading-relaxed text-muted-foreground" />
