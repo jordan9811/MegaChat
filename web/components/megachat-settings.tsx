@@ -488,7 +488,17 @@ export function MegaChatSettings() {
                   : joinUrl
               }
             />
-            <CopyRow label="OBS" value={overlayUrl} />
+            <CopyRow
+              label="OBS"
+              value={
+                // Overlay is served same-origin (Express /overlay). Build from
+                // the browser origin so it works on any deploy; the backend
+                // overlayUrl uses BASE_URL which is unset on Railway (→ localhost).
+                typeof window !== 'undefined'
+                  ? `${window.location.origin}/overlay?room=${room.id}`
+                  : overlayUrl
+              }
+            />
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
             Drop the viewer link in chat. Add the OBS link as a Browser Source
