@@ -1,6 +1,27 @@
 # NIGHT_CHECKLIST — night pass 2026-07-04
 
-All four parts landed, gated, and committed separately. `.env` untouched.
+> **Deploy status: ALL LIVE on `megachat-production.up.railway.app`** — every
+> commit below was pushed to GitHub `v0-ui-migration` and verified on the live
+> URL (Railway auto-builds `npm run build` + `--prod`). Earlier in the night the
+> feature commits sat unpushed, which is why the deployed site looked unchanged;
+> that's fixed — nothing is stranded local now.
+
+## AAA polish pass (after the 4 feature parts)
+| Polish | Commit | Live-verified |
+|--------|--------|---------------|
+| Global feel — motion keyframes, neon scrollbar, selection, reduced-motion | `052b83e` | ✅ |
+| Hero — staggered reveals, metallic animated wordmark, IPO stat strip | `052b83e` | ✅ |
+| Browse — killed localhost dev-ism, skeleton loaders, live pulse stat | `052b83e` | ✅ |
+| Header — neon hairline + glowing CTA | `052b83e` | ✅ |
+| Social share cards (OG + Twitter) + branded 404 | `02351f3` | ✅ |
+| Join + dashboard entrance motion (consistency) | `6805db6` | ✅ |
+
+Every polish push passed a real `npm run build` (Railway parity), both themes,
+and a zero-console-error sweep. Screenshots: `join-fix-evidence/polish-*.png`.
+
+---
+
+All four feature parts landed, gated, and committed separately. `.env` untouched.
 
 | Part | Commit | Gate |
 |------|--------|------|
