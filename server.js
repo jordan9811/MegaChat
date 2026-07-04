@@ -1630,6 +1630,10 @@ const nextHandle = nextApp.getRequestHandler();
 await nextApp.prepare();
 const nextUpgrade = nextApp.getUpgradeHandler();
 
+// Browsers implicitly request /favicon.ico; the app icon lives at /icon.svg
+// (Next metadata). Redirect instead of 404ing every page load.
+app.get('/favicon.ico', (_req, res) => res.redirect(301, '/icon.svg'));
+
 // Everything not matched above (Next pages + /_next assets) goes to Next.
 app.use((req, res) => nextHandle(req, res));
 

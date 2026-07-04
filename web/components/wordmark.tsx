@@ -20,10 +20,12 @@ export function Wordmark({
         WebkitBackgroundClip: 'text',
         backgroundClip: 'text',
         WebkitTextFillColor: 'transparent',
+        // Theme-aware outline (near-white on dark, dark plum on light) — the
+        // hardcoded white stroke made the mark illegible on the light header.
         WebkitTextStroke:
           size === 'lg'
-            ? '2px oklch(0.98 0.02 320 / 0.85)'
-            : '1px oklch(0.98 0.02 320 / 0.7)',
+            ? '2px var(--wordmark-stroke)'
+            : '1px var(--wordmark-stroke)',
         paintOrder: 'stroke fill',
       }}
     >
