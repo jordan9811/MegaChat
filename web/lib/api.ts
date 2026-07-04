@@ -36,6 +36,7 @@ export type Seat = {
   id: string
   username: string
   live: boolean
+  pinned?: boolean
   paymentMode: string
   remaining: string
   spent: string
@@ -171,5 +172,13 @@ export function kickSeat(roomId: string, password: string, seatId: string) {
   return request<{ success: boolean }>(
     `/api/dashboard/rooms/${encodeURIComponent(roomId)}/kick/${encodeURIComponent(seatId)}`,
     { method: 'POST', password },
+  )
+}
+
+/** Pin/unpin a seat as free co-host (meter paused while pinned). */
+export function pinSeat(roomId: string, password: string, seatId: string, pinned: boolean) {
+  return request<{ success: boolean; pinned: boolean }>(
+    `/api/dashboard/rooms/${encodeURIComponent(roomId)}/pin/${encodeURIComponent(seatId)}`,
+    { method: 'POST', password, body: { pinned } },
   )
 }

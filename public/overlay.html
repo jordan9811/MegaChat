@@ -75,6 +75,25 @@
       z-index: 5;
     }
 
+    /* Pinned co-host badge — top-left, quiet lime chip. */
+    .pin-badge {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: var(--noir-ink);
+      color: var(--neon-lime);
+      border: 1px solid color-mix(in oklab, var(--neon-lime) 55%, transparent);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font: 700 10px/1 'Space Grotesk', Arial, sans-serif;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      z-index: 10;
+      pointer-events: none;
+      display: none;
+    }
+    .tile.pinned .pin-badge { display: block; }
+
     /* Name chip: noir glass slab with a magenta accent bar and a whisper of
        chromatic aberration on the text — MegaChat glitch energy, kept quiet. */
     .username-label {
@@ -465,6 +484,11 @@
         case 'seat_removed':
           removeVideoBox(msg.seatId);
           break;
+        case 'seat_pinned': {
+          const box = videoBoxes.get(msg.seatId);
+          if (box) box.classList.toggle('pinned', !!msg.pinned);
+          break;
+        }
       }
     };
 
@@ -513,9 +537,15 @@
       label.className = 'username-label';
       label.textContent = seat.username;
 
+      const pinBadge = document.createElement('div');
+      pinBadge.className = 'pin-badge';
+      pinBadge.textContent = '📌 CO-HOST';
+      if (seat.pinned) box.classList.add('pinned');
+
       box.appendChild(iframe);
       box.appendChild(flash);
       box.appendChild(label);
+      box.appendChild(pinBadge);
 
       // Optional stinger fx overlay (clouds / light bar / rings / banner /
       // scan sweep) — self-removing, never outlives the entrance.

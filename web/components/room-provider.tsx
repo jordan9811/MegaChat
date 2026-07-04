@@ -24,6 +24,7 @@ import {
   updateRoom,
   setRoomActive,
   kickSeat as apiKickSeat,
+  pinSeat as apiPinSeat,
   getPublicConfig,
   type Room,
   type Seat,
@@ -87,6 +88,7 @@ type RoomContextValue = {
   unlock: (roomId: string, password: string) => Promise<void>
   toggleActive: () => Promise<void>
   kick: (seatId: string) => Promise<void>
+  pin: (seatId: string, pinned: boolean) => Promise<void>
   switchRoom: () => void
 }
 
@@ -283,6 +285,23 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     [refresh, switchRoom],
   )
 
+  const pin = useCallback(
+    async (seatId: string, pinned: boolean) => {
+      const roomId = roomIdRef.current
+      if (!roomId) return
+      try {
+        await apiPinSeat(roomId, passwordRef.current, seatId, pinned)
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          switchRoom()
+          return
+        }
+      }
+      void refresh()
+    },
+    [refresh, switchRoom],
+  )
+
   // Live seats: subscribe to the backend WebSocket for this room. seat_added /
   // seat_removed trigger an authenticated refresh (WS payloads don't carry
   // spent/remaining for other viewers); meter_update patches rows in place.
@@ -347,9 +366,10 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       unlock,
       toggleActive,
       kick,
+      pin,
       switchRoom,
     }),
-    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, updateDraft, create, unlock, toggleActive, kick, switchRoom],
+    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

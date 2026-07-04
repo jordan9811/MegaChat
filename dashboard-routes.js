@@ -22,6 +22,7 @@ export function attachDashboardRoutes(app, deps) {
   const {
     activeSeats,
     removeParticipant,
+    setSeatPinned,
     atomicToUsdc,
   } = deps;
 
@@ -128,6 +129,7 @@ export function attachDashboardRoutes(app, deps) {
         id: seat.id,
         username: seat.username,
         live: !!seat.live,
+        pinned: !!seat.pinned,
         paymentMode: seat.paymentMode,
         remaining: atomicToUsdc(seat.remainingAtomic),
         spent: atomicToUsdc(seat.spentAtomic),
@@ -190,5 +192,19 @@ export function attachDashboardRoutes(app, deps) {
     removeParticipant(seat.id, 'kicked');
     console.log(`[dashboard] kicked seat ${seat.id} from room ${room.id}`);
     res.json({ success: true, seatId: seat.id });
+  });
+
+  // Pin/unpin a live seat as free co-host (meter paused while pinned).
+  // Same password gate as kick.
+  app.post('/api/dashboard/rooms/:roomId/pin/:seatId', requireRoomPassword, (req, res) => {
+    const room = resolveRoomConfig(req.roomId);
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+    const seat = activeSeats.get(req.params.seatId);
+    if (!seat || seat.streamRoomId !== room.id) {
+      return res.status(404).json({ error: 'Seat not found in this room' });
+    }
+    const pinned = req.body?.pinned !== false; // default: pin
+    setSeatPinned(seat.id, pinned);
+    res.json({ success: true, seatId: seat.id, pinned: !!seat.pinned });
   });
 }

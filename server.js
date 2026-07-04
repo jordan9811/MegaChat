@@ -610,7 +610,8 @@ function sendInitialState(ws) {
       viewUrl: s.viewUrl,
       expiresAt: s.expiresAt,
       flyIn: s.flyIn,
-      flyOut: s.flyOut
+      flyOut: s.flyOut,
+      pinned: !!s.pinned
     }))
   }));
 }
@@ -642,8 +643,10 @@ function addParticipant(username, meta = {}) {
     return { success: false, reason: 'room_stopped' };
   }
 
+  // Pinned co-host seats ride for free ON TOP of the paid seats — they don't
+  // consume a slot, so a full room + pinned guest still admits maxSeats payers.
   const roomSeatCount = [...activeSeats.values()]
-    .filter((s) => s.streamRoomId === streamRoomId).length;
+    .filter((s) => s.streamRoomId === streamRoomId && !s.pinned).length;
   if (roomSeatCount >= roomCfg.maxSeats) {
     return { success: false, reason: 'no_seats_available' };
   }
@@ -734,6 +737,25 @@ function activateSeatLive(seatId, ws) {
     + `(${atomicToUsdc(seat.remainingAtomic)} USDC cap)`
   );
   return true;
+}
+
+// Pin/unpin a seat as co-host (dashboard action, room-password gated).
+// Pinned = free seat: the meter loop skips it entirely (no pulls, no local
+// deduction), it doesn't count toward maxSeats for new joins, and the overlay
+// shows a CO-HOST badge. Unpin resumes normal metering from now (no catch-up
+// charge for the pinned time).
+function setSeatPinned(seatId, pinned) {
+  const seat = activeSeats.get(seatId);
+  if (!seat) return null;
+  seat.pinned = !!pinned;
+  if (!seat.pinned) seat.lastMeterAt = Date.now(); // no instant tick on unpin
+  broadcastToRoom(seat.streamRoomId, {
+    type: 'seat_pinned',
+    seatId: seat.id,
+    pinned: seat.pinned,
+  });
+  console.log(`[seat] ${seat.id}: ${seat.pinned ? 'PINNED (co-host, meter paused)' : 'unpinned (meter resumed)'}`);
+  return seat;
 }
 
 // Remove participant. Frees the seat immediately and (if any prepaid balance is
@@ -848,6 +870,7 @@ function tickAllMeters() {
   const now = Date.now();
   for (const seat of activeSeats.values()) {
     if (!seat.live) continue;
+    if (seat.pinned) continue; // co-host seat: meter fully paused, zero charges
     if (
       seat.paymentMode === 'passkey_stream'
       || seat.paymentMode === 'credit_stream'
@@ -1572,6 +1595,7 @@ attachDashboardRoutes(app, {
   chainId: ARC_CHAIN_ID,
   activeSeats,
   removeParticipant,
+  setSeatPinned,
   atomicToUsdc,
 });
 
