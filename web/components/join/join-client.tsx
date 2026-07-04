@@ -126,6 +126,45 @@ export function JoinClient() {
             </div>
           </div>
 
+          {/* Advanced — overlay stinger picker. Opt-in: untouched selects send
+              nothing and the overlay keeps its default animations. */}
+          <details className="rounded-xl border border-border bg-input/10 px-4 py-2">
+            <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Advanced — on-stream entrance &amp; exit
+            </summary>
+            <div className="grid grid-cols-1 gap-3 pb-2 pt-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                Fly-in stinger
+                <select
+                  id="flyInSelect"
+                  defaultValue=""
+                  className="h-9 rounded-lg border border-border bg-input/40 px-2 text-sm text-foreground"
+                >
+                  <option value="">Default (pulse blip)</option>
+                  <option value="storm">⛈️ Storm — lightning reveal</option>
+                  <option value="proroll">🎬 Pro Roll — clean wipe</option>
+                  <option value="callme">📟 Call Me — beeper pop</option>
+                  <option value="breaking">🚨 Breaking News — banner slam</option>
+                  <option value="wildin">👾 Wild Card — glitch materialize</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                Fly-out stinger
+                <select
+                  id="flyOutSelect"
+                  defaultValue=""
+                  className="h-9 rounded-lg border border-border bg-input/40 px-2 text-sm text-foreground"
+                >
+                  <option value="">Default (CRT off)</option>
+                  <option value="crt">📺 CRT Off — deluxe scanline</option>
+                  <option value="crumble">🧱 Crumble — collapse down</option>
+                  <option value="zapped">⚡ Zapped — electro glitch</option>
+                  <option value="wildout">📡 Wild Card — signal lost</option>
+                </select>
+              </label>
+            </div>
+          </details>
+
           {/* Camera stage — ABOVE the join button so the preview and the
               (morphing) button stay in view together. Shown once a seat is
               paid; the join button itself relabels to GO LIVE. */}

@@ -153,6 +153,13 @@ function ensureEthereum() {
   return eth;
 }
 
+// Opt-in overlay stinger picks from the Advanced expander. Empty selection
+// sends nothing → server stores null → overlay plays its defaults.
+function stingerSelections() {
+  const val = (id) => document.getElementById(id)?.value || undefined;
+  return { flyIn: val('flyInSelect'), flyOut: val('flyOutSelect') };
+}
+
 // ─── Join button state machine ────────────────────────────────────────────
 // ONE button morphs through the whole flow (no separate Go Live button):
 //   idle → busy (connect/authorize) → awaiting-camera → go-live → live
@@ -619,7 +626,7 @@ async function joinSeatPasskey(username) {
   const first = await fetch('/api/join/passkey', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, address: account, room: streamRoomId })
+    body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections() })
   });
 
   const terms = await first.json().catch(() => ({}));
@@ -667,7 +674,7 @@ async function joinSeatPasskey(username) {
       'Content-Type': 'application/json',
       'X-Modular-Payment': b64encode(payment)
     },
-    body: JSON.stringify({ username, address: account, room: streamRoomId })
+    body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections() })
   });
   const data = await paid.json();
   if (paid.ok && data.success) {
@@ -719,7 +726,7 @@ async function joinSeat() {
     const first = await fetch('/api/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, address: account, room: streamRoomId })
+      body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections() })
     });
 
     if (first.status === 402) {
@@ -746,7 +753,7 @@ async function joinSeat() {
           'Content-Type': 'application/json',
           'Payment-Signature': paymentHeader
         },
-        body: JSON.stringify({ username, address: account, room: streamRoomId })
+        body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections() })
       });
       const data = await paid.json();
       if (paid.ok && data.success) {

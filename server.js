@@ -608,7 +608,9 @@ function sendInitialState(ws) {
       id: s.id,
       username: s.username,
       viewUrl: s.viewUrl,
-      expiresAt: s.expiresAt
+      expiresAt: s.expiresAt,
+      flyIn: s.flyIn,
+      flyOut: s.flyOut
     }))
   }));
 }
@@ -619,6 +621,14 @@ function broadcast(message) {
     if (client.readyState === 1) client.send(JSON.stringify(message));
   });
 }
+
+// Overlay stinger choices travel with the seat (cosmetic only — the overlay
+// picks the entrance/exit animation from these). Unknown values become null,
+// which the overlay renders with its default animations.
+const FLY_IN_STINGERS = new Set(['storm', 'proroll', 'callme', 'breaking', 'wildin']);
+const FLY_OUT_STINGERS = new Set(['crt', 'crumble', 'zapped', 'wildout']);
+const sanitizeStinger = (v, allowed) =>
+  (typeof v === 'string' && allowed.has(v)) ? v : null;
 
 // Add participant (Pass B: metered, no fixed timer).
 // `meta` carries the prepaid session balance signed by the viewer.
@@ -674,6 +684,8 @@ function addParticipant(username, meta = {}) {
     paymentTokenDecimals: meta.paymentTokenDecimals ?? roomCfg.paymentTokenDecimals,
     lastMeterAt: 0,
     _tickInFlight: false,
+    flyIn: sanitizeStinger(meta.flyIn, FLY_IN_STINGERS),
+    flyOut: sanitizeStinger(meta.flyOut, FLY_OUT_STINGERS),
   };
 
   activeSeats.set(seatId, seat);
@@ -711,7 +723,9 @@ function activateSeatLive(seatId, ws) {
       id: seat.id,
       username: seat.username,
       viewUrl: seat.viewUrl,
-      expiresAt: seat.expiresAt
+      expiresAt: seat.expiresAt,
+      flyIn: seat.flyIn,
+      flyOut: seat.flyOut
     }
   });
   const modeLabel = seat.paymentMode === 'passkey_stream' ? 'stream meter' : 'prepaid meter';
@@ -1063,6 +1077,8 @@ app.post('/api/join/passkey', async (req, res) => {
         streamRoomId: roomId,
         paymentTokenDecimals: tokenDec,
         paymentTokenSymbol: tokenSym,
+        flyIn: req.body.flyIn,
+        flyOut: req.body.flyOut,
       });
 
       if (!result.success) {
@@ -1257,6 +1273,8 @@ app.post('/api/join/passkey', async (req, res) => {
       paymentMode: 'passkey_stream',
       sessionCapAtomic: sessionAtomic,
       streamRoomId: roomId,
+      flyIn: req.body.flyIn,
+      flyOut: req.body.flyOut,
     });
 
     if (!result.success) {
@@ -1433,6 +1451,8 @@ app.post('/api/join', async (req, res) => {
         : (settle.payer || verify.payer || null),
       depositTx: settle.transaction || null,
       streamRoomId: roomId,
+      flyIn: req.body.flyIn,
+      flyOut: req.body.flyOut,
     });
 
     if (!result.success) {
