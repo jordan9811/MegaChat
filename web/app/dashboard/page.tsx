@@ -20,7 +20,7 @@ export default function DashboardPage() {
         id="dashboard"
         className="mx-auto max-w-6xl scroll-mt-20 px-6 py-14 md:py-20"
       >
-        <div className="mb-8 flex flex-col gap-1">
+        <div className="reveal mb-8 flex flex-col gap-1">
           <span className="text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]">
             Streamer dashboard
           </span>
@@ -35,12 +35,18 @@ export default function DashboardPage() {
 
         <RoomProvider>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="lg:row-span-2">
+            <div className="reveal lg:row-span-2" style={{ ['--reveal-delay' as string]: '0.08s' }}>
               <MegaChatSettings />
             </div>
-            <OnCameraTable />
-            <RewardsCard />
-            <IntegrationsCard />
+            <div className="reveal" style={{ ['--reveal-delay' as string]: '0.16s' }}>
+              <OnCameraTable />
+            </div>
+            <div className="reveal" style={{ ['--reveal-delay' as string]: '0.24s' }}>
+              <RewardsCard />
+            </div>
+            <div className="reveal" style={{ ['--reveal-delay' as string]: '0.32s' }}>
+              <IntegrationsCard />
+            </div>
           </div>
         </RoomProvider>
       </main>

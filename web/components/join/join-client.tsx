@@ -31,7 +31,7 @@ export function JoinClient() {
 
   return (
     <div className="join-shell mx-auto flex w-full max-w-xl flex-col gap-6 px-6 py-10 md:py-14">
-      <header className="flex flex-col gap-1">
+      <header className="reveal flex flex-col gap-1">
         <span className="text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]">
           Viewer
         </span>
@@ -43,6 +43,7 @@ export function JoinClient() {
         </p>
       </header>
 
+      <div className="reveal" style={{ ['--reveal-delay' as string]: '0.1s' }}>
       <GlassCard>
         <div className="flex flex-col gap-5 px-5 py-6 sm:px-6">
           {/* Price block */}
@@ -200,6 +201,7 @@ export function JoinClient() {
           <div id="message" className="join-message" aria-live="polite" />
         </div>
       </GlassCard>
+      </div>
 
       {/* Viewer-side platform link stub — no logic yet */}
       <div className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-input/10 px-4 py-3">
