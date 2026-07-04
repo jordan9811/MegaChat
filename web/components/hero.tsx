@@ -7,31 +7,55 @@ const FEATURES = [
   { top: 'BUILT FOR', bottom: 'GO VIRAL' },
 ]
 
+const STATS = [
+  { value: 'Per-second', label: 'USDC settlement' },
+  { value: 'One tap', label: 'Passkey to live' },
+  { value: '0 risk', label: 'Unused balance refunds' },
+  { value: 'On-chain', label: 'Arc network' },
+]
+
 export function Hero() {
   return (
     <section className="relative overflow-hidden">
       <div className="relative z-10 mx-auto grid max-w-6xl grid-cols-1 items-center gap-8 px-6 pt-16 pb-14 md:pt-24 md:pb-20 lg:grid-cols-[1.15fr_0.85fr]">
         {/* left copy */}
         <div className="flex flex-col items-start">
-          <span className="dashed-neon mb-6 inline-block -rotate-2 rounded-md bg-[var(--neon-lime)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[oklch(0.2_0.06_140)]">
+          <span
+            className="reveal dashed-neon mb-6 inline-block -rotate-2 rounded-md bg-[var(--neon-lime)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[oklch(0.2_0.06_140)]"
+            style={{ ['--reveal-delay' as string]: '0.05s' }}
+          >
             For creators. By creators.
           </span>
 
           <h1 className="sr-only">MegaChat — Skip the chat. Be the stream.</h1>
-          <Wordmark />
+          <span
+            className="reveal inline-block"
+            style={{ ['--reveal-delay' as string]: '0.12s' }}
+          >
+            <Wordmark animated />
+          </span>
 
-          <p className="chromatic mt-5 font-heading text-2xl font-bold italic leading-tight text-[var(--neon-magenta)] md:text-4xl">
+          <p
+            className="reveal chromatic mt-5 font-heading text-2xl font-bold italic leading-tight text-[var(--neon-magenta)] md:text-4xl"
+            style={{ ['--reveal-delay' as string]: '0.2s' }}
+          >
             Skip the chat.
             <br />
             Be the stream.
           </p>
 
-          <p className="mt-5 max-w-md text-pretty text-base leading-relaxed text-foreground/80">
+          <p
+            className="reveal mt-5 max-w-md text-pretty text-base leading-relaxed text-foreground/80"
+            style={{ ['--reveal-delay' as string]: '0.28s' }}
+          >
             Viewers pay per-second in USDC to put their camera on your live
             broadcast. You keep the mic, they get the moment.
           </p>
 
-          <ul className="mt-9 flex flex-wrap items-center gap-x-5 gap-y-3">
+          <ul
+            className="reveal mt-9 flex flex-wrap items-center gap-x-5 gap-y-3"
+            style={{ ['--reveal-delay' as string]: '0.36s' }}
+          >
             {FEATURES.map((f, i) => (
               <li key={f.top} className="flex items-center gap-5">
                 {i > 0 ? (
@@ -48,7 +72,10 @@ export function Hero() {
         </div>
 
         {/* right visual — crowned glitch mic + GRAB 10 SEC as one unit, sitting on the bg */}
-        <div className="relative mx-auto flex w-full max-w-md items-center justify-center">
+        <div
+          className="reveal relative mx-auto flex w-full max-w-md items-center justify-center"
+          style={{ ['--reveal-delay' as string]: '0.22s' }}
+        >
           <div className="absolute left-1/2 top-1/2 h-3/4 w-3/4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--neon-magenta)] opacity-25 blur-[110px]" />
           <div className="animate-float-slow relative z-10 w-full">
             <Image
@@ -67,6 +94,25 @@ export function Hero() {
             />
           </div>
         </div>
+      </div>
+
+      {/* IPO-grade trust strip — the numbers that make it look like a company. */}
+      <div
+        className="reveal relative z-10 border-y border-border/60 bg-background/40 backdrop-blur-sm"
+        style={{ ['--reveal-delay' as string]: '0.44s' }}
+      >
+        <dl className="mx-auto grid max-w-6xl grid-cols-2 divide-x divide-border/40 px-6 sm:grid-cols-4">
+          {STATS.map((s) => (
+            <div key={s.label} className="flex flex-col gap-0.5 px-4 py-5 first:pl-0">
+              <dt className="tabular font-heading text-xl font-bold text-foreground md:text-2xl">
+                {s.value}
+              </dt>
+              <dd className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {s.label}
+              </dd>
+            </div>
+          ))}
+        </dl>
       </div>
 
       {/* footer strip */}

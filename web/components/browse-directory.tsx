@@ -136,19 +136,34 @@ export function BrowseDirectory({ initialRooms = [] }: { initialRooms?: PublicRo
     return () => clearTimeout(t)
   }, [q, filtered])
 
+  const liveNow = rooms?.reduce((n, r) => n + (r.live > 0 ? 1 : 0), 0) ?? 0
+  const seatsLive = rooms?.reduce((n, r) => n + r.live, 0) ?? 0
+
   return (
     <section id="browse" className="mx-auto max-w-6xl scroll-mt-20 px-6 py-14 md:py-20">
-      <div className="mb-8 flex flex-col gap-1">
-        <span className="text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]">
-          Browse rooms
-        </span>
-        <h2 className="font-heading text-3xl font-bold text-foreground">
-          Live now — grab a camera seat
-        </h2>
-        <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
-          Hottest rooms first. Pay by the second, leave whenever — unused
-          balance comes back to you.
-        </p>
+      <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]">
+            Browse rooms
+          </span>
+          <h2 className="font-heading text-3xl font-bold text-foreground">
+            Live now — grab a camera seat
+          </h2>
+          <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
+            Hottest rooms first. Pay by the second, leave whenever — unused
+            balance comes back to you.
+          </p>
+        </div>
+        {seatsLive > 0 ? (
+          <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-[var(--neon-lime)]/50 bg-[var(--neon-lime)]/10 px-3.5 py-1.5 text-sm font-bold text-[var(--neon-lime)]">
+            <span className="relative inline-flex size-2 text-[var(--neon-lime)]">
+              <span className="pulse-ring absolute inset-0" />
+              <span className="relative size-2 rounded-full bg-[var(--neon-lime)]" />
+            </span>
+            <span className="tabular">{seatsLive}</span> on camera ·{' '}
+            <span className="tabular">{liveNow}</span> rooms hot
+          </span>
+        ) : null}
       </div>
 
       <div className="relative mb-8 max-w-md">
@@ -165,16 +180,37 @@ export function BrowseDirectory({ initialRooms = [] }: { initialRooms?: PublicRo
 
       {loadError ? (
         <p className="mb-4 text-sm text-[var(--neon-magenta)]">
-          {loadError} — try{' '}
-          <a href="http://localhost:3000" className="underline">
-            http://localhost:3000
-          </a>{' '}
-          and hard refresh (Ctrl+Shift+R).
+          {loadError} — retrying automatically. If this persists, refresh the
+          page (Ctrl/Cmd+Shift+R).
         </p>
       ) : null}
 
       {filtered === null ? (
-        <p className="text-sm text-muted-foreground">Loading rooms…</p>
+        <div
+          aria-hidden="true"
+          className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
+        >
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="flex animate-pulse flex-col gap-4 rounded-2xl border border-border/60 bg-card/40 p-5"
+              style={{ animationDelay: `${(i % 3) * 0.12}s` }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-2">
+                  <div className="h-4 w-32 rounded bg-foreground/10" />
+                  <div className="h-3 w-16 rounded bg-foreground/10" />
+                </div>
+                <div className="h-6 w-14 rounded-full bg-foreground/10" />
+              </div>
+              <div className="h-3 w-40 rounded bg-foreground/10" />
+              <div className="mt-2 flex items-center justify-between border-t border-border/50 pt-3">
+                <div className="h-4 w-20 rounded bg-foreground/10" />
+                <div className="h-4 w-12 rounded bg-foreground/10" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : filtered.length === 0 && !directHit ? (
         <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 px-6 py-10 text-center">
           <p className="font-heading text-lg font-bold text-foreground">
