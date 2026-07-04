@@ -5,6 +5,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
+    /* MegaChat design system (neon-noir) — matches web/app/globals.css tokens. */
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap');
+    :root {
+      --neon-magenta: oklch(0.68 0.27 340);
+      --neon-lime: oklch(0.88 0.22 128);
+      --neon-cyan: oklch(0.8 0.14 200);
+      --noir-ink: rgba(10, 7, 18, 0.78);
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     /* OBS browser source: fully transparent canvas. Only live tiles paint. */
@@ -13,7 +22,7 @@
     }
     body {
       overflow: hidden;
-      font-family: Arial, sans-serif;
+      font-family: 'Space Grotesk', Arial, sans-serif;
     }
 
     /* Transparent, shrink-wrapped column anchored top-right. No background, no
@@ -36,6 +45,12 @@
       border-radius: 10px;
       overflow: hidden;
       transform-origin: center center;
+      /* Broadcast-clean neon chrome: hairline magenta edge + faint cyan halo.
+         Subtle on purpose — this sits over live gameplay. */
+      border: 1px solid color-mix(in oklab, var(--neon-magenta) 45%, transparent);
+      box-shadow:
+        0 0 0 1px color-mix(in oklab, var(--neon-cyan) 16%, transparent),
+        0 6px 22px rgba(0, 0, 0, 0.35);
       /* CHANGE 3 — slide-up reflow: animating `top` closes the gap smoothly. */
       transition: top 300ms cubic-bezier(.2, .8, .2, 1);
       will-change: top, clip-path, transform, opacity;
@@ -60,39 +75,32 @@
       z-index: 5;
     }
 
+    /* Name chip: noir glass slab with a magenta accent bar and a whisper of
+       chromatic aberration on the text — MegaChat glitch energy, kept quiet. */
     .username-label {
       position: absolute;
       bottom: 8px;
       left: 8px;
-      background: rgba(0, 0, 0, 0.7);
-      color: #0ff;
-      padding: 4px 10px;
-      border-radius: 14px;
-      font-weight: bold;
+      background: var(--noir-ink);
+      color: #f4f2fa;
+      padding: 4px 10px 4px 12px;
+      border-radius: 4px;
+      border-left: 3px solid var(--neon-magenta);
+      clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
+      font-family: 'Space Grotesk', Arial, sans-serif;
+      font-weight: 700;
       font-size: 12px;
-      border: 1px solid #0ff;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      text-shadow:
+        1px 0 color-mix(in oklab, var(--neon-cyan) 55%, transparent),
+        -1px 0 color-mix(in oklab, var(--neon-magenta) 45%, transparent);
       z-index: 10;
       pointer-events: none;
       max-width: calc(100% - 16px);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-    }
-
-    .timer {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      background: rgba(0, 0, 0, 0.7);
-      color: #0ff;
-      padding: 3px 9px;
-      border-radius: 12px;
-      font-size: 11px;
-      font-weight: bold;
-      border: 1px solid #0ff;
-      z-index: 10;
-      font-family: monospace;
-      pointer-events: none;
     }
 
     /* CHANGE 4 — JOIN: heart-rate-monitor blip (a thin bright horizontal line)
@@ -286,13 +294,9 @@
       label.className = 'username-label';
       label.textContent = seat.username;
 
-      const timer = document.createElement('div');
-      timer.className = 'timer';
-
       box.appendChild(iframe);
       box.appendChild(flash);
       box.appendChild(label);
-      box.appendChild(timer);
       stage.appendChild(box);
 
       videoBoxes.set(seat.id, box);
@@ -301,8 +305,6 @@
 
       // Drop the joining class once the entrance finishes (so it won't replay).
       setTimeout(() => box.classList.remove('joining'), JOIN_MS);
-
-      updateTimer(seat.id, seat.expiresAt, timer);
     }
 
     function removeVideoBox(seatId) {
@@ -342,18 +344,16 @@
       stage.style.height = i > 0 ? (i * (TILE_H + GAP) - GAP) + 'px' : '0px';
     }
 
-    function updateTimer(seatId, expiresAt, timerEl) {
-      const tick = () => {
-        const box = videoBoxes.get(seatId);
-        if (!box || box.classList.contains('leaving')) return;
-        const remaining = Math.max(0, expiresAt - Date.now());
-        const m = Math.floor(remaining / 60000);
-        const s = Math.floor((remaining % 60000) / 1000);
-        timerEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
-        if (remaining > 0) setTimeout(tick, 1000);
-      };
-      tick();
-    }
+    // (The old 10s-block countdown chip is gone: per-second metering made the
+    // expiresAt timer meaningless on the broadcast layer.)
+
+    // Test hook for automated gates — lets a driver inject/remove fake seats
+    // without a WebSocket round-trip. Not used by production code paths.
+    window.OverlayTest = {
+      addSeat: (seat) => addVideoBox(seat),
+      removeSeat: (seatId) => removeVideoBox(seatId),
+      count: () => videoBoxes.size,
+    };
 
     // ─── CHANGE 6 — best-effort SFX ──────────────────────────────────────────
     // Short synthesized blips via WebAudio (no external assets). CRITICAL: this
