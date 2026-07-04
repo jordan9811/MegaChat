@@ -15,11 +15,52 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 })
 
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  'https://megachat-production.up.railway.app'
+const SITE_TITLE = 'MegaChat — Skip the chat. Be the stream.'
+const SITE_DESC =
+  'Viewers pay per-second in USDC to put their camera on your live broadcast. One-tap passkey to go live, unused balance refunds automatically. Turn chat into content.'
+
 export const metadata: Metadata = {
-  title: 'MegaChat — Skip the chat. Be the stream.',
-  description:
-    'MegaChat lets viewers pay per-second in USDC to put their camera on your live broadcast. Turn chat into content.',
-  generator: 'v0.app',
+  metadataBase: new URL(SITE_URL),
+  title: SITE_TITLE,
+  description: SITE_DESC,
+  applicationName: 'MegaChat',
+  keywords: [
+    'live streaming',
+    'creator monetization',
+    'USDC',
+    'pay per second',
+    'OBS overlay',
+    'passkey wallet',
+    'Arc network',
+  ],
+  openGraph: {
+    type: 'website',
+    url: SITE_URL,
+    siteName: 'MegaChat',
+    title: SITE_TITLE,
+    description: SITE_DESC,
+    images: [
+      {
+        url: '/megachat-hero.png',
+        width: 697,
+        height: 985,
+        alt: 'MegaChat — crowned glitch microphone',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: SITE_TITLE,
+    description: SITE_DESC,
+    images: ['/megachat-hero.png'],
+  },
+  icons: {
+    icon: '/icon.svg',
+    apple: '/apple-icon.png',
+  },
 }
 
 export const viewport: Viewport = {
