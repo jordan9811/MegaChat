@@ -7,6 +7,7 @@
 import { useEffect } from 'react'
 import { Link2 } from 'lucide-react'
 import { GlassCard } from '@/components/glass-card'
+import { StingerPreview } from '@/components/join/stinger-preview'
 import { initJoinPage } from '@/lib/join-page'
 import { backendWsUrl } from '@/lib/backend'
 
@@ -128,20 +129,17 @@ export function JoinClient() {
           </div>
 
           {/* Advanced — overlay stinger picker. Opt-in: untouched selects send
-              nothing and the overlay keeps its default animations. */}
+              nothing and the overlay keeps its default animations. The mock
+              camera square previews the picked animation (never the real cam). */}
           <details className="rounded-xl border border-border bg-input/10 px-4 py-2">
             <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Advanced — on-stream entrance &amp; exit
             </summary>
-            <div className="grid grid-cols-1 gap-3 pb-2 pt-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            <div className="grid grid-cols-1 gap-3 pb-3 pt-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Fly-in stinger
-                <select
-                  id="flyInSelect"
-                  defaultValue=""
-                  className="h-9 rounded-lg border border-border bg-input/40 px-2 text-sm text-foreground"
-                >
-                  <option value="">Default (pulse blip)</option>
+                <select id="flyInSelect" defaultValue="" className="stinger-select">
+                  <option value="">Default — pulse blip</option>
                   <option value="storm">⛈️ Storm — lightning reveal</option>
                   <option value="proroll">🎬 Pro Roll — clean wipe</option>
                   <option value="callme">📟 Call Me — beeper pop</option>
@@ -149,20 +147,17 @@ export function JoinClient() {
                   <option value="wildin">👾 Wild Card — glitch materialize</option>
                 </select>
               </label>
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Fly-out stinger
-                <select
-                  id="flyOutSelect"
-                  defaultValue=""
-                  className="h-9 rounded-lg border border-border bg-input/40 px-2 text-sm text-foreground"
-                >
-                  <option value="">Default (CRT off)</option>
+                <select id="flyOutSelect" defaultValue="" className="stinger-select">
+                  <option value="">Default — CRT off</option>
                   <option value="crt">📺 CRT Off — deluxe scanline</option>
                   <option value="crumble">🧱 Crumble — collapse down</option>
                   <option value="zapped">⚡ Zapped — electro glitch</option>
                   <option value="wildout">📡 Wild Card — signal lost</option>
                 </select>
               </label>
+              <StingerPreview />
             </div>
           </details>
 

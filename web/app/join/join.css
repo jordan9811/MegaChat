@@ -126,3 +126,335 @@ a.addr {
   pointer-events: none;
   border: 0;
 }
+
+/* ═══ Stinger picker + mock preview ══════════════════════════════════════
+   The join card sits on the dark-locked page, but the toggle can put the
+   ROOT html in light mode — native <select> popups follow color-scheme, which
+   made the option list white-on-near-white. Solid popover colors + an
+   explicit dark color-scheme fix readability everywhere. */
+.stinger-select {
+  height: 2.5rem;
+  width: 100%;
+  appearance: none;
+  color-scheme: dark;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in oklab, var(--neon-magenta) 35%, transparent);
+  background-color: oklch(0.19 0.05 303);
+  color: oklch(0.97 0.01 320);
+  padding: 0 2.2rem 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  /* neon chevron */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23f22bbb' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  transition: border-color 0.15s;
+}
+.stinger-select:hover,
+.stinger-select:focus-visible {
+  border-color: color-mix(in oklab, var(--neon-magenta) 70%, transparent);
+  outline: none;
+}
+.stinger-select option {
+  background-color: oklch(0.19 0.05 303);
+  color: oklch(0.97 0.01 320);
+}
+
+/* Mock camera square — 16:9 stage the stinger animations play on. This is a
+   FAKE tile (gradient + avatar silhouette), never the real camera. */
+.sp-stage {
+  display: flex;
+  justify-content: center;
+  padding: 0.9rem;
+  border-radius: 0.75rem;
+  border: 1px dashed color-mix(in oklab, var(--neon-cyan) 30%, transparent);
+  background:
+    linear-gradient(oklch(0.7 0.12 320 / 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.7 0.12 320 / 0.05) 1px, transparent 1px),
+    oklch(0.13 0.04 305);
+  background-size: 21px 21px, 21px 21px, auto;
+}
+.sp-tile {
+  position: relative;
+  width: 240px;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--neon-magenta) 45%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--neon-cyan) 16%, transparent),
+    0 6px 22px rgba(0, 0, 0, 0.35);
+  will-change: clip-path, transform, opacity, filter;
+}
+.sp-cam {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background:
+    radial-gradient(80% 90% at 50% 15%, oklch(0.38 0.12 300) 0%, oklch(0.22 0.06 290) 70%),
+    oklch(0.22 0.06 290);
+}
+/* head + shoulders silhouette — universal "camera feed" shorthand */
+.sp-avatar {
+  position: relative;
+  width: 46%;
+  height: 34%;
+  border-radius: 50% 50% 0 0;
+  background: oklch(0.12 0.03 300);
+}
+.sp-avatar::before {
+  content: '';
+  position: absolute;
+  bottom: 92%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 52%;
+  height: 130%;
+  border-radius: 50%;
+  background: oklch(0.12 0.03 300);
+}
+.sp-label {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  background: rgba(10, 7, 18, 0.78);
+  color: #f4f2fa;
+  padding: 3px 8px 3px 10px;
+  border-radius: 4px;
+  border-left: 3px solid var(--neon-magenta);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  z-index: 10;
+}
+.sp-tile .crt-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.stinger-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+
+/* ═══ Stinger animations — ported VERBATIM from public/overlay.html so the
+   preview is exactly what the OBS overlay will play. ═════════════════════ */
+.sp-tile.joining { animation: tileJoin 650ms cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes tileJoin {
+  0%   { clip-path: inset(50% 0% 50% 0%); opacity: .35;
+         box-shadow: 0 0 16px 3px rgba(0,255,255,.9); filter: brightness(1.7); }
+  14%  { clip-path: inset(49% 0% 49% 0%); opacity: 1;
+         box-shadow: 0 0 28px 8px rgba(0,255,255,1); }
+  26%  { clip-path: inset(44.5% 0% 44.5% 0%); }
+  36%  { clip-path: inset(48.5% 0% 48.5% 0%); }
+  46%  { clip-path: inset(43% 0% 43% 0%); }
+  100% { clip-path: inset(0% 0% 0% 0%); opacity: 1;
+         box-shadow: 0 0 0 0 rgba(0,255,255,0); filter: brightness(1); }
+}
+
+.sp-tile.out-default { animation: crtOff 460ms ease-in forwards; }
+@keyframes crtOff {
+  0%   { clip-path: inset(0 0 0 0); transform: scale(1); filter: brightness(1); }
+  40%  { clip-path: inset(46% 0 46% 0); transform: scale(1); filter: brightness(1.6); }
+  62%  { clip-path: inset(49.4% 0 49.4% 0); filter: brightness(3.2); }
+  80%  { clip-path: inset(49.4% 43% 49.4% 43%); transform: scaleX(.5); }
+  100% { clip-path: inset(50% 50% 50% 50%); transform: scale(.15); opacity: 0; }
+}
+.sp-tile.out-default .crt-flash { animation: crtFlash 460ms ease-in forwards; }
+@keyframes crtFlash {
+  0%, 38% { opacity: 0; }
+  60%     { opacity: .95; }
+  100%    { opacity: 0; }
+}
+
+.sp-tile.in-storm { animation: stormReveal 1400ms ease-out both; }
+@keyframes stormReveal {
+  0%   { opacity: 0; filter: brightness(0.2) saturate(0.4); }
+  45%  { opacity: .55; filter: brightness(0.35) saturate(0.5); }
+  52%  { opacity: 1; filter: brightness(2.6) saturate(1.4) contrast(1.3); }
+  58%  { opacity: .75; filter: brightness(0.5); }
+  66%  { opacity: 1; filter: brightness(3.2) contrast(1.5); }
+  74%  { filter: brightness(0.9); }
+  100% { opacity: 1; filter: brightness(1) saturate(1); }
+}
+.fx-storm { overflow: hidden; }
+.fx-storm::before {
+  content: ''; position: absolute; inset: -40% -20%;
+  background:
+    radial-gradient(38% 55% at 22% 28%, rgba(24,20,38,.95), transparent 70%),
+    radial-gradient(45% 60% at 55% 18%, rgba(16,13,28,.92), transparent 70%),
+    radial-gradient(40% 50% at 82% 30%, rgba(28,22,44,.95), transparent 70%),
+    radial-gradient(60% 70% at 50% 55%, rgba(12,10,22,.85), transparent 75%);
+  animation: stormClouds 1400ms ease-in-out both;
+}
+@keyframes stormClouds {
+  0%   { transform: translateY(-110%); opacity: 1; }
+  35%  { transform: translateY(0); opacity: 1; }
+  70%  { transform: translateY(6%); opacity: .9; }
+  100% { transform: translateY(115%); opacity: 0; }
+}
+.fx-storm::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 44%; width: 14%;
+  background: linear-gradient(178deg, #fff, var(--neon-cyan) 60%, transparent);
+  clip-path: polygon(48% 0, 62% 0, 40% 42%, 58% 42%, 22% 100%, 38% 55%, 20% 55%);
+  opacity: 0; filter: drop-shadow(0 0 8px var(--neon-cyan));
+  animation: stormBolt 1400ms linear both;
+}
+@keyframes stormBolt {
+  0%, 48%  { opacity: 0; }
+  52%, 55% { opacity: 1; }
+  58%      { opacity: 0; }
+  64%, 67% { opacity: .9; transform: translateX(18%) scaleX(-1); }
+  70%, 100% { opacity: 0; }
+}
+
+.sp-tile.in-proroll { animation: prorollReveal 900ms cubic-bezier(.25,.9,.3,1) both; }
+@keyframes prorollReveal {
+  0%   { clip-path: inset(0 100% 0 0); }
+  100% { clip-path: inset(0 0 0 0); }
+}
+.fx-proroll::before {
+  content: ''; position: absolute; top: -4%; bottom: -4%; width: 4px; left: 0;
+  background: linear-gradient(var(--neon-cyan), #fff, var(--neon-magenta));
+  box-shadow: 0 0 14px 2px color-mix(in oklab, var(--neon-cyan) 70%, transparent);
+  animation: prorollBar 900ms cubic-bezier(.25,.9,.3,1) both;
+}
+@keyframes prorollBar {
+  0%   { left: 0; opacity: 1; }
+  92%  { opacity: 1; }
+  100% { left: calc(100% - 4px); opacity: 0; }
+}
+
+.sp-tile.in-callme { animation: callmePop 1200ms cubic-bezier(.34,1.56,.64,1) both; }
+@keyframes callmePop {
+  0%   { transform: scale(.25) rotate(-4deg); opacity: 0; }
+  38%  { transform: scale(1.06) rotate(2.5deg); opacity: 1; }
+  52%  { transform: scale(.97) rotate(-2deg); }
+  64%  { transform: scale(1.02) rotate(1.2deg); }
+  76%  { transform: scale(.995) rotate(-.6deg); }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+.fx-callme::before, .fx-callme::after {
+  content: ''; position: absolute; top: 50%; left: 50%; width: 40px; height: 40px;
+  margin: -20px 0 0 -20px; border-radius: 50%;
+  border: 2px solid var(--neon-lime); opacity: 0;
+}
+.fx-callme::before { animation: callmeRing 600ms ease-out 80ms 2; }
+.fx-callme::after  { animation: callmeRing 600ms ease-out 280ms 2; }
+@keyframes callmeRing {
+  0%   { transform: scale(.4); opacity: .9; }
+  100% { transform: scale(4.2); opacity: 0; }
+}
+
+.sp-tile.in-breaking { animation: breakingSlam 1300ms cubic-bezier(.2,1.1,.3,1) both; }
+@keyframes breakingSlam {
+  0%   { transform: translateY(-130%); opacity: 0; }
+  34%  { transform: translateY(0); opacity: 1; filter: brightness(1.7); }
+  42%  { transform: translateY(-3%); filter: brightness(1); }
+  50%  { transform: translateY(0); }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.fx-breaking::before {
+  content: '● LIVE — BREAKING'; position: absolute; left: -6%; right: -6%;
+  top: 38%; height: 24%;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(90deg, var(--neon-magenta), oklch(0.55 0.24 25));
+  color: #fff; font: 700 11px/1 var(--font-heading), sans-serif;
+  letter-spacing: .18em; text-transform: uppercase;
+  transform: translateX(-120%) skewX(-12deg);
+  box-shadow: 0 0 18px rgba(0,0,0,.5);
+  animation: breakingBanner 1300ms cubic-bezier(.6,0,.2,1) both;
+}
+@keyframes breakingBanner {
+  0%   { transform: translateX(-120%) skewX(-12deg); }
+  28%  { transform: translateX(0) skewX(-12deg); }
+  64%  { transform: translateX(0) skewX(-12deg); opacity: 1; }
+  100% { transform: translateX(125%) skewX(-12deg); opacity: 0; }
+}
+
+.sp-tile.in-wildin { animation: wildinGlitch 1400ms steps(1, end) both; }
+@keyframes wildinGlitch {
+  0%   { opacity: 0; }
+  8%   { opacity: 1; clip-path: inset(0 0 78% 0); transform: translateX(-6px); filter: hue-rotate(90deg) saturate(3); }
+  18%  { clip-path: inset(30% 0 40% 0); transform: translateX(5px); filter: hue-rotate(-70deg) contrast(1.6); }
+  30%  { clip-path: inset(62% 0 8% 0); transform: translateX(-4px); filter: saturate(2.4); }
+  42%  { clip-path: inset(12% 0 55% 0); transform: translateX(3px); filter: hue-rotate(45deg); }
+  54%  { clip-path: inset(0 0 0 0); transform: translateX(-2px); filter: contrast(1.4) saturate(1.6); }
+  68%  { transform: translateX(1px); filter: none; }
+  100% { opacity: 1; clip-path: inset(0 0 0 0); transform: none; filter: none; }
+}
+.fx-scanline::before {
+  content: ''; position: absolute; left: 0; right: 0; height: 3px; top: 0;
+  background: linear-gradient(90deg, transparent, var(--neon-lime), transparent);
+  box-shadow: 0 0 12px 1px color-mix(in oklab, var(--neon-lime) 60%, transparent);
+  animation: scanSweep 1400ms linear both;
+}
+@keyframes scanSweep {
+  0%   { top: 0; opacity: 1; }
+  85%  { opacity: 1; }
+  100% { top: calc(100% - 3px); opacity: 0; }
+}
+
+.sp-tile.out-crt { animation: crtOff2 800ms ease-in forwards; }
+@keyframes crtOff2 {
+  0%   { clip-path: inset(0 0 0 0); filter: brightness(1); }
+  34%  { clip-path: inset(42% 0 42% 0); filter: brightness(1.5) saturate(1.3); }
+  48%  { clip-path: inset(49.2% 0 49.2% 0); filter: brightness(3.5); }
+  68%  { clip-path: inset(49.4% 0 49.4% 0); filter: brightness(4) blur(.4px); }
+  82%  { clip-path: inset(49.5% 46% 49.5% 46%); filter: brightness(5); }
+  92%  { clip-path: inset(49.6% 49.4% 49.6% 49.4%); transform: scale(1.02); filter: brightness(6) blur(1px); }
+  100% { clip-path: inset(50% 50% 50% 50%); opacity: 0; }
+}
+.sp-tile.out-crt .crt-flash { animation: crtFlash2 800ms ease-in forwards; }
+@keyframes crtFlash2 {
+  0%, 30% { opacity: 0; }
+  46%     { opacity: .9; }
+  60%     { opacity: .25; }
+  74%     { opacity: .6; }
+  100%    { opacity: 0; }
+}
+
+.sp-tile.out-crumble { animation: crumbleFall 1200ms ease-in forwards; }
+@keyframes crumbleFall {
+  0%   { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); transform: none; }
+  18%  { clip-path: polygon(0 6%, 18% 0, 38% 7%, 61% 1%, 82% 8%, 100% 3%, 100% 100%, 0 100%); transform: rotate(.6deg); }
+  38%  { clip-path: polygon(0 24%, 15% 15%, 36% 26%, 58% 17%, 79% 27%, 100% 20%, 100% 100%, 0 100%); transform: rotate(-.8deg) translateY(3%); }
+  58%  { clip-path: polygon(0 48%, 17% 38%, 39% 51%, 60% 41%, 83% 52%, 100% 44%, 100% 100%, 0 100%); transform: rotate(1deg) translateY(9%); }
+  78%  { clip-path: polygon(0 74%, 16% 66%, 37% 78%, 62% 69%, 81% 80%, 100% 72%, 100% 100%, 0 100%); transform: rotate(-.7deg) translateY(18%); opacity: .85; }
+  100% { clip-path: polygon(0 100%, 20% 98%, 40% 100%, 60% 99%, 80% 100%, 100% 99%, 100% 100%, 0 100%); transform: translateY(30%); opacity: 0; }
+}
+
+.sp-tile.out-zapped { animation: zappedOut 1100ms linear forwards; }
+@keyframes zappedOut {
+  0%, 12% { filter: none; transform: none; }
+  16%  { filter: invert(1) contrast(2); transform: translateX(-3px); }
+  22%  { filter: invert(0) saturate(3) hue-rotate(120deg); transform: translateX(3px); }
+  28%  { filter: invert(1) contrast(2.4) brightness(1.6); transform: translateX(-2px) skewX(2deg); }
+  36%  { filter: invert(0) hue-rotate(-100deg) saturate(2.5); transform: translateX(2px); }
+  44%  { filter: invert(1) brightness(2); transform: skewX(-2deg); }
+  56%  { filter: invert(.85) contrast(1.8) brightness(1.4); transform: none; }
+  100% { filter: invert(.9) brightness(.1) blur(6px); opacity: 0; transform: scale(.96); }
+}
+
+.sp-tile.out-wildout { animation: signalLost 1000ms steps(1, end) forwards; }
+@keyframes signalLost {
+  0%   { filter: none; }
+  14%  { filter: drop-shadow(3px 0 0 color-mix(in oklab, var(--neon-cyan) 80%, transparent))
+               drop-shadow(-3px 0 0 color-mix(in oklab, var(--neon-magenta) 80%, transparent)); }
+  28%  { clip-path: inset(0 0 0 0); transform: translateY(-8%); filter: contrast(1.6) saturate(.4); }
+  42%  { transform: translateY(7%); filter: contrast(2) saturate(.2) brightness(1.3); }
+  56%  { transform: translateY(-4%); clip-path: inset(12% 0 12% 0); filter: saturate(0) contrast(2.2); }
+  72%  { transform: none; clip-path: inset(46% 0 46% 0); filter: brightness(2.6) saturate(0); }
+  86%  { clip-path: inset(49.4% 0 49.4% 0); filter: brightness(4); }
+  100% { clip-path: inset(50% 0 50% 0); opacity: 0; }
+}

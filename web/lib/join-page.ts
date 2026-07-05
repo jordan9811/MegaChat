@@ -360,6 +360,13 @@ async function ensureArcChain() {
   }
 }
 
+// Display-only: middle-truncated address so the connected line never wraps.
+// Full address stays available via the title tooltip.
+function shortAddr(addr) {
+  const a = String(addr || '');
+  return a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
+}
+
 function renderWallet() {
   const info = document.getElementById('walletInfo');
   const connectBtn = document.getElementById('connectBtn');
@@ -376,7 +383,7 @@ function renderWallet() {
     passkeyBtn.textContent = '🟢 Passkey connected';
     if (passkeyCreateBtn) passkeyCreateBtn.style.display = 'none';
     connectBtn.textContent = '🦊 Connect MetaMask';
-    info.innerHTML = `🟢 Connected · Smart account: <span class="addr">${account}</span><br>Network: Arc Testnet (passkey)`;
+    info.innerHTML = `🟢 Connected · Smart account: <span class="addr" title="${account}">${shortAddr(account)}</span><br>Network: Arc Testnet (passkey)`;
     if (fundNote) {
       fundNote.style.display = 'block';
       fundNote.innerHTML =
@@ -400,7 +407,7 @@ function renderWallet() {
     passkeyBtn.disabled = true;
     if (passkeyCreateBtn) passkeyCreateBtn.disabled = true;
     const net = CONFIG && CONFIG.network ? CONFIG.network : 'Arc';
-    info.innerHTML = `🟢 Connected · Wallet: <span class="addr">${account}</span><br>Network: Arc Testnet (${net})`;
+    info.innerHTML = `🟢 Connected · Wallet: <span class="addr" title="${account}">${shortAddr(account)}</span><br>Network: Arc Testnet (${net})`;
     // Deposit is THE way to fund the Gateway balance — must be usable as soon
     // as a wallet is connected (this early-returned without enabling before,
     // leaving the button permanently greyed).
