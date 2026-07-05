@@ -1,3 +1,32 @@
+# NIGHT_CHECKLIST — multi-fix pass 2026-07-05
+
+Six groups, each gated + committed separately off baseline `35402fc`.
+Production `npm run build` passes; full-site sweep (7 pages) = zero console
+errors, zero dead links, zero stale copy.
+
+| Group | Commit | Gate |
+|-------|--------|------|
+| 1 — landing cleanup: LEVEL UP deleted, nav bottom-right (Dashboard / How it works / Roadmap / FAQ / Contact via `CONTACT_URL`), tagline promoted, hero copy trimmed | `49a0318` | rendered-HTML greps + zero console errors |
+| 2 — /how-it-works (+FAQ merged as `#faq`) and /roadmap from ROADMAP.md | `4fa7234` | 200s + section greps + accordion click |
+| 3 — light mode reaches the whole landing page (var-driven .bg-noir/.bg-grid; join stays dark-locked by design) | `08328c1` | `_gate-theme.mjs` PASS + new pages shot both themes |
+| 4 — graffiti tagline (Kaushan Script) centered under wordmark, GRAB hitbox realigned to the button art + hover tilt / click rattle, ticket badge | `957aa7e` | click-center-of-pill navigates `#browse`; screenshots `join-fix-evidence/g4-*` |
+| 5 — wallet line no longer wraps (middle-truncated addr), stinger selects readable + mock camera-square preview playing the real overlay animations | `78b90ec` | contrast/height measurements + animation playback assertions; `join-fix-evidence/g5-*` |
+| 6 — WS reconnect grace (30s, `SEAT_RECONNECT_GRACE_MS`), client auto-reconnect + re-register, pagehide leave beacon, dashboard Signal column (good/unstable), overlay `buffer=300&retrytimeout=2000` | `d4e9e0d` | `_gate-stability.mjs` PASS on a real Gateway-paid seat |
+
+## Needs a human (this pass)
+1. **Set `CONTACT_URL` on Railway** — the footer Contact link falls back to a
+   placeholder (`https://x.com/megachat`). Set the real X/Twitter URL in
+   Railway → Variables (also appended to local `.env`); no code edit needed.
+2. **Arc USDC deposit quirk (gate harness knowledge)** — the Arc ERC-20 USDC
+   mirrors the native balance; Gateway deposits of ~90% of a wallet's balance
+   revert with "transfer amount exceeds balance". Keep gate deposits well
+   under half the funded amount (`_gate-stability.mjs` comments).
+3. **Turbopack dev cache can go stale on OneDrive** — if new Tailwind classes
+   silently don't apply in dev, delete `web/.next` and restart. Prod builds
+   unaffected.
+
+---
+
 # NIGHT_CHECKLIST — night pass 2026-07-04
 
 > **Deploy status: ALL LIVE on `megachat-production.up.railway.app`** — every
