@@ -13,35 +13,34 @@ export function Hero({ contactHref }: { contactHref: string }) {
   return (
     <section className="relative overflow-hidden">
       <div className="relative z-10 mx-auto grid max-w-6xl grid-cols-1 items-center gap-8 px-6 pt-16 pb-14 md:pt-24 md:pb-20 lg:grid-cols-[1.15fr_0.85fr]">
-        {/* left copy — minimal on purpose: badge, mark, tagline, ONE line.
+        {/* left copy — minimal on purpose: ticket, mark, tagline, ONE line.
             The longer product copy lives on /how-it-works now. */}
         <div className="flex flex-col items-start">
+          {/* admission-ticket chip — copy pulled from the app's own lines */}
           <span
-            className="reveal dashed-neon mb-6 inline-block -rotate-2 rounded-md bg-[var(--neon-lime)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[oklch(0.2_0.06_140)]"
+            className="reveal ticket mb-6 -rotate-2 text-xs font-bold uppercase tracking-wide"
             style={{ ['--reveal-delay' as string]: '0.05s' }}
           >
-            For creators. By creators.
+            <span className="ticket-stub">ADMIT 1</span>
+            <span className="ticket-body">Turn chat into content</span>
           </span>
 
           <h1 className="sr-only">MegaChat — Skip the chat. Be the stream.</h1>
-          <span
-            className="reveal inline-block"
+          {/* wordmark + tagline as one centered unit */}
+          <div
+            className="reveal flex flex-col items-center"
             style={{ ['--reveal-delay' as string]: '0.12s' }}
           >
             <Wordmark animated />
-          </span>
+            <p className="graffiti-tag font-graffiti mt-4 -rotate-3 text-center text-3xl leading-tight md:text-5xl">
+              Skip the chat.
+              <br />
+              Be the stream.
+            </p>
+          </div>
 
           <p
-            className="reveal chromatic mt-5 font-heading text-2xl font-bold italic leading-tight text-[var(--neon-magenta)] md:text-4xl"
-            style={{ ['--reveal-delay' as string]: '0.2s' }}
-          >
-            Skip the chat.
-            <br />
-            Be the stream.
-          </p>
-
-          <p
-            className="reveal mt-5 max-w-md text-pretty text-base leading-relaxed text-foreground/80"
+            className="reveal mt-7 max-w-md text-pretty text-base leading-relaxed text-foreground/80"
             style={{ ['--reveal-delay' as string]: '0.28s' }}
           >
             Viewers pay per-second in USDC to put their camera on your live
@@ -55,7 +54,7 @@ export function Hero({ contactHref }: { contactHref: string }) {
           style={{ ['--reveal-delay' as string]: '0.22s' }}
         >
           <div className="absolute left-1/2 top-1/2 h-3/4 w-3/4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--neon-magenta)] opacity-25 blur-[110px]" />
-          <div className="animate-float-slow relative z-10 w-full">
+          <div className="grab-unit animate-float-slow relative z-10 w-full">
             <Image
               src="/megachat-hero.png"
               alt="Crowned glitch microphone with a lime Grab 10 seconds button"
@@ -64,11 +63,12 @@ export function Hero({ contactHref }: { contactHref: string }) {
               priority
               className="h-auto w-full drop-shadow-[0_0_60px_oklch(0.68_0.27_340/0.35)]"
             />
-            {/* clickable region over the baked-in GRAB 10 SEC button */}
+            {/* clickable region aligned to the baked-in GRAB 10 SEC pill
+                (button art spans ~5-85% x, ~72.5-89.5% y of the PNG) */}
             <a
               href="#browse"
               aria-label="Grab 10 seconds on camera"
-              className="absolute bottom-[3%] left-[3%] h-[16%] w-[80%] rounded-full transition-transform hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--neon-lime)]"
+              className="grab-hitbox absolute bottom-[10.5%] left-[5%] h-[17%] w-[80%] rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--neon-lime)]"
             />
           </div>
         </div>
