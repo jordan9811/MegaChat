@@ -43,6 +43,10 @@ export type Seat = {
   viewerAddress: string | null
   joinedAt: number
   liveAt: number | null
+  /** Control-WS currently open for this seat. */
+  connected?: boolean
+  /** 'unstable' = socket down or blipped in the last 2 min; null while queued. */
+  quality?: 'good' | 'unstable' | null
 }
 
 export type RoomSession = {

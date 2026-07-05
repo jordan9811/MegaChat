@@ -1162,32 +1162,71 @@ export function initJoinPage({ wsUrl }) {
   abort = new AbortController();
   camMsgBound = false;
 
-  ws = new WebSocket(wsUrl);
-  ws.onopen = () => {
-    console.log('Connected');
-    if (ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'subscribe_room', room: streamRoomId }));
-    }
-  };
-  ws.onerror = (err) => console.error('WebSocket error:', err);
+  // Control WS with auto-reconnect: a network blip must NOT kill the seat.
+  // On reconnect we re-subscribe the room and re-register the seat so the
+  // server cancels its grace timer and meter updates resume on the fresh
+  // socket. Transport-only — message handling is unchanged.
+  let wsRetries = 0;
+  let wsReconnectTimer = null;
 
-  // Live meter + seat lifecycle updates from the server.
-  ws.onmessage = (event) => {
-    let msg;
-    try { msg = JSON.parse(event.data); } catch { return; }
-    if (!mySeatId) return;
-    if (msg.type === 'meter_update' && msg.seatId === mySeatId) {
-      showMeter(msg.remaining, msg.spent, msg.secondsLeft);
-    } else if (msg.type === 'seat_removed' && msg.seatId === mySeatId) {
-      document.getElementById('meterTime').textContent = '0:00';
-      if (msg.reason === 'out_of_funds') {
-        showMessage('⚠️ Out of funds — your seat ended. Deposit more USDC and rejoin.', 'error');
+  const connectSeatWs = () => {
+    if (abort.signal.aborted) return;
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      wsRetries = 0;
+      console.log('Connected');
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'subscribe_room', room: streamRoomId }));
+        if (mySeatId) {
+          ws.send(JSON.stringify({ type: 'register_seat', seatId: mySeatId }));
+        }
       }
-      teardownCameraStage();
-      mySeatId = null;
-      setJoinState('idle');
-    }
+    };
+    ws.onerror = (err) => console.error('WebSocket error:', err);
+    ws.onclose = () => {
+      if (abort.signal.aborted) return;
+      const delay = Math.min(15000, 1000 * 2 ** Math.min(wsRetries, 4))
+        + Math.floor(Math.random() * 400);
+      wsRetries += 1;
+      console.log(`[ws] connection lost — retrying in ${delay}ms`);
+      wsReconnectTimer = setTimeout(connectSeatWs, delay);
+    };
+
+    // Live meter + seat lifecycle updates from the server.
+    ws.onmessage = (event) => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+      if (!mySeatId) return;
+      if (msg.type === 'meter_update' && msg.seatId === mySeatId) {
+        showMeter(msg.remaining, msg.spent, msg.secondsLeft);
+      } else if (msg.type === 'seat_removed' && msg.seatId === mySeatId) {
+        document.getElementById('meterTime').textContent = '0:00';
+        if (msg.reason === 'out_of_funds') {
+          showMessage('⚠️ Out of funds — your seat ended. Deposit more USDC and rejoin.', 'error');
+        } else if (msg.reason === 'not_found') {
+          // We reconnected after the server's grace expired.
+          showMessage(
+            '⚠️ Connection was down too long — your seat ended and unused balance was returned. Rejoin when ready.',
+            'error'
+          );
+        }
+        teardownCameraStage();
+        mySeatId = null;
+        setJoinState('idle');
+      }
+    };
   };
+  connectSeatWs();
+
+  // Deliberate exits (tab close / navigate away) still free the seat
+  // instantly: the WS close alone now has a reconnect grace on the server,
+  // so fire an explicit leave beacon.
+  window.addEventListener('pagehide', (e) => {
+    if (mySeatId && !e.persisted) {
+      try { navigator.sendBeacon(`/api/leave/${mySeatId}`); } catch { /* best effort */ }
+    }
+  }, { signal: abort.signal });
 
   // Same handlers the original page bound via inline onclick attributes.
   const on = (id, fn) => {
@@ -1220,12 +1259,13 @@ export function initJoinPage({ wsUrl }) {
   init();
   const cleanupRewards = initRewardsClient(wsUrl);
 
-  const wsRef = ws;
   return () => {
     abort.abort();
     cleanupRewards();
     clearTimeout(camFallbackTimer);
     clearTimeout(camErrorTimer);
-    try { wsRef.close(); } catch { /* ignore */ }
+    clearTimeout(wsReconnectTimer);
+    // ws always points at the CURRENT socket (reconnects rebind it).
+    try { ws.close(); } catch { /* ignore */ }
   };
 }

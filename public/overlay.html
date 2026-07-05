@@ -431,6 +431,11 @@
         'obsoff',
         'muted',
         'autostart',
+        // Resilience on shaky viewer uplinks: a little playout buffer smooths
+        // jitter instead of hard-dropping frames, and failed connections
+        // retry fast (vdo.ninja ignores params it doesn't know).
+        'buffer=300',
+        'retrytimeout=2000',
         `viewwidth=${TILE_W}`,
         `viewheight=${TILE_H}`,
         `css=${encodeURIComponent(css)}`,

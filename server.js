@@ -689,6 +689,12 @@ function addParticipant(username, meta = {}) {
     _tickInFlight: false,
     flyIn: sanitizeStinger(meta.flyIn, FLY_IN_STINGERS),
     flyOut: sanitizeStinger(meta.flyOut, FLY_OUT_STINGERS),
+    // Control-plane WS health: reconnect grace + flakiness signal for the
+    // dashboard. Never touches metering — the seat stays live (and billing)
+    // through a blip, exactly like the video itself.
+    disconnects: 0,
+    lastDisconnectAt: 0,
+    _graceTimer: null,
   };
 
   activeSeats.set(seatId, seat);
@@ -765,6 +771,7 @@ function removeParticipant(seatId, reason = 'left') {
   if (!seat) return { success: false };
 
   activeSeats.delete(seatId);
+  if (seat._graceTimer) { clearTimeout(seat._graceTimer); seat._graceTimer = null; }
 
   broadcastToRoom(seat.streamRoomId, {
     type: 'seat_removed',
@@ -893,10 +900,21 @@ function tickAllMeters() {
 const meterInterval = setInterval(tickAllMeters, 1000);
 if (typeof meterInterval.unref === 'function') meterInterval.unref();
 
+// Seat-owner sockets get a reconnect grace window before the seat is freed:
+// flaky networks blip the control WS while the WebRTC video keeps flowing.
+// Deliberate exits stay instant — the join page fires an explicit leave
+// beacon on pagehide, and kick / POST /api/leave still remove immediately.
+const SEAT_RECONNECT_GRACE_MS = Math.max(
+  5000,
+  parseInt(process.env.SEAT_RECONNECT_GRACE_MS || '30000', 10) || 30000
+);
+
 // WebSocket connection
 wss.on('connection', (ws) => {
   console.log('Client connected');
   ws.__streamRoomId = DEFAULT_ROOM_ID;
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', (data) => {
     let msg;
@@ -913,7 +931,20 @@ wss.on('connection', (ws) => {
 
     if (msg.type === 'register_seat' && typeof msg.seatId === 'string') {
       const seat = activeSeats.get(msg.seatId);
-      if (seat) { ws.__seatId = msg.seatId; seat.ownerWs = ws; }
+      if (seat) {
+        ws.__seatId = msg.seatId;
+        seat.ownerWs = ws;
+        if (seat._graceTimer) {
+          clearTimeout(seat._graceTimer);
+          seat._graceTimer = null;
+          console.log(`[seat] ${seat.id}: owner reconnected within grace — seat kept`);
+        }
+      } else {
+        // Seat died while this client was offline — tell it to tear down.
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'seat_removed', seatId: msg.seatId, reason: 'not_found' }));
+        }
+      }
     } else if (msg.type === 'camera_ready' && typeof msg.seatId === 'string') {
       activateSeatLive(msg.seatId, ws);
     }
@@ -921,12 +952,40 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     console.log('Client disconnected');
-    if (ws.__seatId && activeSeats.has(ws.__seatId)) {
-      console.log(`[seat] ${ws.__seatId}: owner disconnected — removing + refunding`);
-      removeParticipant(ws.__seatId, 'disconnected');
-    }
+    const seatId = ws.__seatId;
+    if (!seatId) return;
+    const seat = activeSeats.get(seatId);
+    // A newer socket may have already re-bound this seat (reconnect landed
+    // before the old socket's close event) — then this close means nothing.
+    if (!seat || seat.ownerWs !== ws) return;
+    seat.ownerWs = null;
+    seat.disconnects = (seat.disconnects || 0) + 1;
+    seat.lastDisconnectAt = Date.now();
+    if (seat._graceTimer) clearTimeout(seat._graceTimer);
+    seat._graceTimer = setTimeout(() => {
+      seat._graceTimer = null;
+      if (activeSeats.has(seatId) && !seat.ownerWs) {
+        console.log(`[seat] ${seatId}: reconnect grace expired — removing + refunding`);
+        removeParticipant(seatId, 'disconnected');
+      }
+    }, SEAT_RECONNECT_GRACE_MS);
+    console.log(
+      `[seat] ${seatId}: owner disconnected — ${Math.round(SEAT_RECONNECT_GRACE_MS / 1000)}s reconnect grace`
+    );
   });
 });
+
+// Detect half-dead sockets (NAT timeouts, sleeping devices): an unanswered
+// ping terminates the socket, which routes seat owners into the grace flow
+// above instead of leaving a zombie binding.
+const wsHeartbeat = setInterval(() => {
+  wss.clients.forEach((client) => {
+    if (client.isAlive === false) return client.terminate();
+    client.isAlive = false;
+    try { client.ping(); } catch { /* socket already closing */ }
+  });
+}, 15000);
+if (typeof wsHeartbeat.unref === 'function') wsHeartbeat.unref();
 
 // ─── Pass C: watch-to-earn (isolated; never breaks Pass A / B) ───────────────
 try {

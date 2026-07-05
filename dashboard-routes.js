@@ -123,8 +123,13 @@ export function attachDashboardRoutes(app, deps) {
     if (!room) return res.status(404).json({ error: 'Room not found' });
 
     const seats = [];
+    const now = Date.now();
     for (const seat of activeSeats.values()) {
       if (seat.streamRoomId !== room.id) continue;
+      const connected = !!(seat.ownerWs && seat.ownerWs.readyState === 1);
+      // 'unstable' = control WS currently down, or blipped in the last 2 min —
+      // the streamer sees who's riding a flaky connection.
+      const recentBlip = seat.lastDisconnectAt && now - seat.lastDisconnectAt < 120000;
       seats.push({
         id: seat.id,
         username: seat.username,
@@ -136,6 +141,8 @@ export function attachDashboardRoutes(app, deps) {
         viewerAddress: seat.viewerAddress,
         joinedAt: seat.joinedAt,
         liveAt: seat.liveAt,
+        connected,
+        quality: seat.live ? (connected && !recentBlip ? 'good' : 'unstable') : null,
       });
     }
 

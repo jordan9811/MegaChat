@@ -97,6 +97,15 @@
     let passkeyModuleLoaded = false;
     let streamRoomId = 'default';
 
+    // Deliberate exits free the seat instantly: the server now grants a
+    // reconnect grace on bare WS closes (flaky-network protection), so a real
+    // tab close must say goodbye explicitly.
+    window.addEventListener('pagehide', (e) => {
+      if (mySeatId && !e.persisted) {
+        try { navigator.sendBeacon(`/api/leave/${mySeatId}`); } catch { /* best effort */ }
+      }
+    });
+
     function parseStreamRoomFromUrl() {
       try {
         const q = new URLSearchParams(location.search).get('room');

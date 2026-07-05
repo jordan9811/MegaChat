@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Video, Circle, X, Pin, PinOff } from 'lucide-react'
+import { Video, Circle, X, Pin, PinOff, Wifi, WifiOff } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import { useRoom } from '@/components/room-provider'
 
@@ -61,13 +61,14 @@ export function OnCameraTable() {
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm">
+          <table className="w-full min-w-[600px] text-sm">
             <thead>
               <tr className="border-b border-border/70 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-5 py-3 font-medium sm:px-6">Viewer</th>
                 <th className="px-3 py-3 font-medium">Wallet</th>
                 <th className="px-3 py-3 font-medium">On for</th>
                 <th className="px-3 py-3 font-medium">Spent</th>
+                <th className="px-3 py-3 font-medium">Signal</th>
                 <th className="px-3 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 sm:px-6">
                   <span className="sr-only">Actions</span>
@@ -91,6 +92,32 @@ export function OnCameraTable() {
                   </td>
                   <td className="px-3 py-3 font-mono text-foreground/90">
                     {s.spent} {tokenSymbol}
+                  </td>
+                  <td className="px-3 py-3">
+                    {/* per-seat connection quality — who's riding a flaky link */}
+                    {s.quality === 'unstable' ? (
+                      <span
+                        title={s.connected ? 'Reconnected after a recent drop' : 'Connection lost — reconnect grace running'}
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[oklch(0.82_0.16_80)]"
+                      >
+                        {s.connected ? (
+                          <Wifi className="size-3.5 animate-neon-pulse" />
+                        ) : (
+                          <WifiOff className="size-3.5 animate-neon-pulse" />
+                        )}
+                        Unstable
+                      </span>
+                    ) : s.quality === 'good' ? (
+                      <span
+                        title="Connection healthy"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--neon-lime)]"
+                      >
+                        <Wifi className="size-3.5" />
+                        Good
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-3">
                     {s.pinned ? (
