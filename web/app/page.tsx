@@ -28,8 +28,9 @@ export default async function Page() {
     <div className="min-h-screen bg-background text-foreground">
       <SiteHeader />
 
-      {/* Hero with loud brand energy — always dark backdrop */}
-      <div className="dark relative bg-background text-foreground">
+      {/* Hero with loud brand energy — follows the theme toggle (the old
+          `dark` lock kept the body noir while the header went light). */}
+      <div className="relative bg-background text-foreground">
         <GlitchBackground />
         <Hero contactHref={contactHref} />
       </div>
