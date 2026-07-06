@@ -1,6 +1,6 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Inter, Space_Grotesk, Geist_Mono, Kaushan_Script } from 'next/font/google'
+import { Inter, Space_Grotesk, Geist_Mono, Pacifico } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
 import './globals.css'
 
@@ -14,9 +14,10 @@ const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
   subsets: ['latin'],
 })
-// Brush-script graffiti face for the hero tagline (brand reference match).
-const kaushan = Kaushan_Script({
-  variable: '--font-kaushan',
+// Brush-script graffiti face for the hero tagline — Pacifico is thick and
+// smooth like the brand reference (Kaushan read too thin/gritty).
+const graffiti = Pacifico({
+  variable: '--font-graffiti',
   subsets: ['latin'],
   weight: '400',
 })
@@ -86,7 +87,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${inter.variable} ${spaceGrotesk.variable} ${geistMono.variable} ${kaushan.variable}`}
+      className={`${inter.variable} ${spaceGrotesk.variable} ${geistMono.variable} ${graffiti.variable}`}
     >
       <body className="bg-background font-sans antialiased">
         <ThemeProvider

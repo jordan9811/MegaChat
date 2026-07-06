@@ -2,11 +2,12 @@ import Image from 'next/image'
 import { Wordmark } from '@/components/wordmark'
 import { FooterNav } from '@/components/site-footer'
 
-const STATS = [
-  { value: 'Per-second', label: 'USDC settlement' },
-  { value: 'One tap', label: 'Passkey to live' },
-  { value: '0 risk', label: 'Unused balance refunds' },
-  { value: 'On-chain', label: 'Arc network' },
+// The white marketing cluster that belongs on the hero (the stats strip was
+// the one meant to go — it lives on /how-it-works now).
+const FEATURES = [
+  { top: 'TURN CHAT', bottom: 'INTO CONTENT' },
+  { top: '10 SEC CLIPS', bottom: 'THAT POP' },
+  { top: 'BUILT FOR', bottom: 'GO VIRAL' },
 ]
 
 export function Hero({ contactHref }: { contactHref: string }) {
@@ -32,7 +33,7 @@ export function Hero({ contactHref }: { contactHref: string }) {
             style={{ ['--reveal-delay' as string]: '0.12s' }}
           >
             <Wordmark animated />
-            <p className="graffiti-tag font-graffiti mt-4 -rotate-3 text-center text-3xl leading-tight md:text-5xl">
+            <p className="graffiti-tag font-graffiti mt-4 -rotate-3 text-center text-4xl leading-snug md:text-5xl md:leading-snug">
               Skip the chat.
               <br />
               Be the stream.
@@ -46,6 +47,24 @@ export function Hero({ contactHref }: { contactHref: string }) {
             Viewers pay per-second in USDC to put their camera on your live
             broadcast.
           </p>
+
+          <ul
+            className="reveal mt-9 flex flex-wrap items-center gap-x-5 gap-y-3"
+            style={{ ['--reveal-delay' as string]: '0.36s' }}
+          >
+            {FEATURES.map((f, i) => (
+              <li key={f.top} className="flex items-center gap-5">
+                {i > 0 ? (
+                  <span className="h-8 w-px bg-border" aria-hidden="true" />
+                ) : null}
+                <span className="font-heading text-sm font-bold uppercase leading-tight tracking-wide text-foreground">
+                  {f.top}
+                  <br />
+                  {f.bottom}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
 
         {/* right visual — crowned glitch mic + GRAB 10 SEC as one unit, sitting on the bg */}
@@ -54,52 +73,44 @@ export function Hero({ contactHref }: { contactHref: string }) {
           style={{ ['--reveal-delay' as string]: '0.22s' }}
         >
           <div className="absolute left-1/2 top-1/2 h-3/4 w-3/4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--neon-magenta)] opacity-25 blur-[110px]" />
+          {/* The hero art is sliced at the banner's top edge (y=719 of 1008)
+              so the GRAB 10 SEC pill can tilt/rattle on its own — the mic
+              stays still. Pixels are identical to the original PNG. */}
           <div className="grab-unit animate-float-slow relative z-10 w-full">
             <Image
-              src="/megachat-hero.png"
-              alt="Crowned glitch microphone with a lime Grab 10 seconds button"
-              width={697}
-              height={985}
+              src="/megachat-hero-mic.png"
+              alt="Crowned glitch microphone"
+              width={698}
+              height={719}
               priority
               className="h-auto w-full drop-shadow-[0_0_60px_oklch(0.68_0.27_340/0.35)]"
             />
-            {/* clickable region aligned to the baked-in GRAB 10 SEC pill
-                (button art spans ~5-85% x, ~72.5-89.5% y of the PNG) */}
-            <a
-              href="#browse"
-              aria-label="Grab 10 seconds on camera"
-              className="grab-hitbox absolute bottom-[10.5%] left-[5%] h-[17%] w-[80%] rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--neon-lime)]"
-            />
+            <div className="grab-banner relative">
+              <Image
+                src="/megachat-hero-grab.png"
+                alt=""
+                aria-hidden
+                width={698}
+                height={289}
+                priority
+                className="h-auto w-full drop-shadow-[0_0_60px_oklch(0.68_0.27_340/0.35)]"
+              />
+              {/* clickable region aligned to the pill inside the banner slice
+                  (pill spans ~5-85% x, top ~0-64% y of this part) */}
+              <a
+                href="#browse"
+                aria-label="Grab 10 seconds on camera"
+                className="grab-hitbox absolute left-[5%] top-0 h-[64%] w-[80%] rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--neon-lime)]"
+              />
+            </div>
           </div>
         </div>
       </div>
 
-      {/* IPO-grade trust strip — the numbers that make it look like a company. */}
-      <div
-        className="reveal relative z-10 border-y border-border/60 bg-background/40 backdrop-blur-sm"
-        style={{ ['--reveal-delay' as string]: '0.44s' }}
-      >
-        <dl className="mx-auto grid max-w-6xl grid-cols-2 divide-x divide-border/40 px-6 sm:grid-cols-4">
-          {STATS.map((s) => (
-            <div key={s.label} className="flex flex-col gap-0.5 px-4 py-5 first:pl-0">
-              <dt className="tabular font-heading text-xl font-bold text-foreground md:text-2xl">
-                {s.value}
-              </dt>
-              <dd className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {s.label}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-
-      {/* footer strip — tagline is the standard line bottom-left, nav bottom-right */}
+      {/* footer strip — nav only, bottom-right. The ONE tagline lives under
+          the wordmark; no duplicates down here. */}
       <div className="relative z-10 border-t border-border/70">
-        <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-3 px-6 py-4 text-sm font-semibold text-muted-foreground sm:flex-row sm:items-center">
-          <span className="font-heading font-bold italic tracking-wide text-foreground">
-            Skip the chat.{' '}
-            <span className="text-[var(--neon-magenta)]">Be the stream.</span>
-          </span>
+        <div className="mx-auto flex max-w-6xl justify-end px-6 py-4 text-sm font-semibold text-muted-foreground">
           <FooterNav contactHref={contactHref} />
         </div>
       </div>

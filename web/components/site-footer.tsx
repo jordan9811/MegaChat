@@ -40,15 +40,13 @@ export function FooterNav({
   )
 }
 
-// The brand line is THE footer statement — tagline left, nav right.
+// Brand name left, nav right. The tagline appears exactly once in the app —
+// under the hero wordmark — so it deliberately does NOT repeat here.
 export function SiteFooter({ contactHref }: { contactHref: string }) {
   return (
     <footer className="border-t border-border/60">
       <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-3 px-6 py-6 text-sm font-semibold text-muted-foreground sm:flex-row sm:items-center">
-        <span className="font-heading font-bold italic tracking-wide text-foreground">
-          Skip the chat.{' '}
-          <span className="text-[var(--neon-magenta)]">Be the stream.</span>
-        </span>
+        <span className="font-heading font-bold tracking-wide text-foreground">MegaChat</span>
         <FooterNav contactHref={contactHref} />
       </div>
     </footer>

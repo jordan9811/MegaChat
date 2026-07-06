@@ -26,8 +26,13 @@ export const metadata: Metadata = {
     'Viewers pay per-second in USDC to put their camera on a live broadcast. How the join flow works, how streamers set up rooms, and every question answered.',
 }
 
-// The long-form copy that used to crowd the landing hero lives here now.
-const FEATURE_CHIPS = ['Turn chat into content', '10 sec clips that pop', 'Built to go viral']
+// Trust stats moved off the landing hero — they summarize the rails below.
+const STATS = [
+  { value: 'Per-second', label: 'USDC settlement' },
+  { value: 'One tap', label: 'Passkey to live' },
+  { value: '0 risk', label: 'Unused balance refunds' },
+  { value: 'On-chain', label: 'Arc network' },
+]
 
 const VIEWER_STEPS = [
   {
@@ -239,19 +244,22 @@ export default function HowItWorksPage() {
               broadcast. You keep the mic, they get the moment — a face on
               stream beats a wall of chat every time.
             </p>
-            <ul
-              className="reveal mt-7 flex flex-wrap gap-2.5"
+            {/* trust strip — relocated from the landing hero */}
+            <dl
+              className="reveal mt-9 grid grid-cols-2 gap-y-4 divide-border/40 rounded-2xl border border-border/60 bg-card/40 px-6 py-5 backdrop-blur-sm sm:grid-cols-4 sm:divide-x"
               style={{ ['--reveal-delay' as string]: '0.28s' }}
             >
-              {FEATURE_CHIPS.map((c) => (
-                <li
-                  key={c}
-                  className="rounded-full border border-[var(--neon-lime)]/40 bg-[var(--neon-lime)]/10 px-3.5 py-1.5 text-xs font-bold uppercase tracking-wide text-[var(--neon-lime)]"
-                >
-                  {c}
-                </li>
+              {STATS.map((s) => (
+                <div key={s.label} className="flex flex-col gap-0.5 px-2 first:pl-0 sm:px-4">
+                  <dt className="tabular font-heading text-xl font-bold text-foreground">
+                    {s.value}
+                  </dt>
+                  <dd className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {s.label}
+                  </dd>
+                </div>
               ))}
-            </ul>
+            </dl>
           </section>
 
           {/* Viewers */}
@@ -322,8 +330,8 @@ export default function HowItWorksPage() {
           <section className="border-t border-border/50">
             <div className="mx-auto flex max-w-6xl flex-col items-start gap-5 px-6 py-12 sm:flex-row sm:items-center sm:justify-between md:py-14">
               <p className="font-heading text-2xl font-bold italic text-foreground md:text-3xl">
-                Skip the chat.{' '}
-                <span className="text-[var(--neon-magenta)]">Be the stream.</span>
+                Put your face{' '}
+                <span className="text-[var(--neon-magenta)]">on the stream.</span>
               </p>
               <div className="flex flex-wrap gap-3">
                 <a
