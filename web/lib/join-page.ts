@@ -361,10 +361,68 @@ async function ensureArcChain() {
 }
 
 // Display-only: middle-truncated address so the connected line never wraps.
-// Full address stays available via the title tooltip.
+// Full address stays available via the title tooltip AND click-to-copy.
 function shortAddr(addr) {
   const a = String(addr || '');
   return a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
+}
+
+// Copy helper with a plain-http fallback: the passkey flow needs a secure
+// origin, but MetaMask/Gateway can run on http where navigator.clipboard is
+// unavailable — fall back to a hidden textarea + execCommand there.
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* fall through to legacy path */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+// Clickable, abbreviated address chip that copies the FULL value.
+function addrChip(address) {
+  const full = String(address || '');
+  return (
+    `<button type="button" class="addr-copy" data-copy="${full}" ` +
+    `title="Copy full address · ${full}" aria-label="Copy full address ${full}">` +
+    `<span class="addr">${shortAddr(full)}</span>` +
+    `<span class="addr-copy-icon" aria-hidden="true">⧉</span>` +
+    `</button>`
+  );
+}
+
+// Delegated on #walletInfo so it survives the innerHTML rerenders.
+function onWalletInfoCopyClick(e) {
+  const btn = e.target.closest && e.target.closest('.addr-copy');
+  if (!btn) return;
+  const full = btn.getAttribute('data-copy');
+  if (!full) return;
+  copyText(full).then((ok) => {
+    const icon = btn.querySelector('.addr-copy-icon');
+    if (!icon) return;
+    if (ok) {
+      btn.classList.add('copied');
+      icon.textContent = '✓';
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        icon.textContent = '⧉';
+      }, 1500);
+    }
+  });
 }
 
 function renderWallet() {
@@ -383,7 +441,7 @@ function renderWallet() {
     passkeyBtn.textContent = '🟢 Passkey connected';
     if (passkeyCreateBtn) passkeyCreateBtn.style.display = 'none';
     connectBtn.textContent = '🦊 Connect MetaMask';
-    info.innerHTML = `🟢 Connected · Smart account: <span class="addr" title="${account}">${shortAddr(account)}</span><br>Network: Arc Testnet (passkey)`;
+    info.innerHTML = `🟢 Connected · Smart account: ${addrChip(account)}<br>Network: Arc Testnet (passkey)`;
     if (fundNote) {
       fundNote.style.display = 'block';
       fundNote.innerHTML =
@@ -407,7 +465,7 @@ function renderWallet() {
     passkeyBtn.disabled = true;
     if (passkeyCreateBtn) passkeyCreateBtn.disabled = true;
     const net = CONFIG && CONFIG.network ? CONFIG.network : 'Arc';
-    info.innerHTML = `🟢 Connected · Wallet: <span class="addr" title="${account}">${shortAddr(account)}</span><br>Network: Arc Testnet (${net})`;
+    info.innerHTML = `🟢 Connected · Wallet: ${addrChip(account)}<br>Network: Arc Testnet (${net})`;
     // Deposit is THE way to fund the Gateway balance — must be usable as soon
     // as a wallet is connected (this early-returned without enabling before,
     // leaving the button permanently greyed).
@@ -1242,6 +1300,9 @@ export function initJoinPage({ wsUrl }) {
   on('joinBtn', onJoinButtonClick);
   on('camRetryBtn', retryCamera);
   on('leaveBtn', leaveStream);
+  // Click-to-copy the connected address (delegated: the chip is re-injected
+  // whenever renderWallet rewrites #walletInfo).
+  on('walletInfo', onWalletInfoCopyClick);
 
   const usernameEl = document.getElementById('username');
   if (usernameEl) {

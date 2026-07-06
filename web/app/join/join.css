@@ -15,6 +15,51 @@ a.addr {
   text-decoration: underline;
 }
 
+/* Click-to-copy address chip (wallet-info line). Abbreviated for layout, the
+   full value is copied on click — the address itself is no longer selectable
+   text after the wrap fix, so this is the way to grab it. */
+.addr-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  vertical-align: baseline;
+  margin: 0;
+  padding: 0.05rem 0.4rem;
+  border-radius: 0.4rem;
+  border: 1px solid color-mix(in oklab, var(--neon-cyan) 35%, transparent);
+  background: color-mix(in oklab, var(--neon-cyan) 8%, transparent);
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
+}
+.addr-copy:hover {
+  border-color: color-mix(in oklab, var(--neon-cyan) 60%, transparent);
+  background: color-mix(in oklab, var(--neon-cyan) 16%, transparent);
+}
+.addr-copy:focus-visible {
+  outline: 2px solid var(--neon-cyan);
+  outline-offset: 2px;
+}
+.addr-copy .addr {
+  word-break: normal;
+}
+.addr-copy-icon {
+  font-size: 0.72rem;
+  line-height: 1;
+  color: var(--neon-cyan);
+}
+.addr-copy.copied {
+  border-color: color-mix(in oklab, var(--neon-lime) 60%, transparent);
+  background: color-mix(in oklab, var(--neon-lime) 14%, transparent);
+}
+.addr-copy.copied .addr,
+.addr-copy.copied .addr-copy-icon {
+  color: var(--neon-lime);
+}
+
 /* Status / result message under the join button */
 .join-message {
   display: none;
