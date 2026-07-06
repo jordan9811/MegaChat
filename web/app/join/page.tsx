@@ -15,7 +15,9 @@ export default function JoinPage() {
       <GlitchBackground />
       <div className="relative z-10">
         <header className="mx-auto flex w-full max-w-xl items-center justify-between px-6 py-4">
-          <Wordmark size="sm" />
+          <a href="/" aria-label="MegaChat home" className="transition-opacity hover:opacity-90">
+            <Wordmark size="sm" />
+          </a>
         </header>
         <JoinClient />
       </div>
