@@ -372,6 +372,18 @@ export function MegaChatSettings() {
                 />
                 Unlisted (opt out of browse)
               </label>
+              <Field
+                label="Payout wallet"
+                hint="Viewer payments settle straight to this address on Tempo. Leave empty to use the platform wallet."
+              >
+                <TextInput
+                  id="room-payout"
+                  placeholder="0x… (optional)"
+                  value={draft.payoutAddress}
+                  onChange={(e) => updateDraft({ payoutAddress: e.target.value })}
+                  spellCheck={false}
+                />
+              </Field>
             </div>
 
             {/* Join gating — anti-spam / abuse controls. Stubs only: no

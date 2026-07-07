@@ -1,5 +1,7 @@
 // ─── Optional rewards primitive (isolated — never breaks pay-to-join) ────────
-import { GatewayClient } from '@circle-fin/x402-batching/client';
+import { createWalletClient, http, erc20Abi } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { tempo as tempoChain } from 'viem/chains';
 import { creditViewer, parseRewardAmount, formatRewardAmount, getCredit } from './reward-credits.js';
 import { toAtomic } from './token-utils.js';
 
@@ -19,16 +21,20 @@ function atomicToUsdc(atomic) {
  */
 export function attachRewards(wss, opts = {}) {
   const getRoomConfig = opts.getRoomConfig || (() => null);
-  const RPC_URL = opts.rpcUrl || 'https://rpc.testnet.arc.network';
+  const RPC_URL = opts.rpcUrl || 'https://rpc.tempo.xyz';
+  // Real USDC payouts on Tempo are a plain TIP-20 transfer from the pool
+  // wallet (fees paid from the same stablecoin balance). The Circle Gateway
+  // deposit path from the Arc build is gone.
+  const usdcAddress = opts.usdcAddress || null;
 
-  let gatewayClient = null;
+  let poolWalletClient = null;
   let poolDryRun = true;
-  if (opts.poolPrivateKey && /^0x[0-9a-fA-F]{64}$/.test(opts.poolPrivateKey)) {
+  if (opts.poolPrivateKey && /^0x[0-9a-fA-F]{64}$/.test(opts.poolPrivateKey) && usdcAddress) {
     try {
-      gatewayClient = new GatewayClient({
-        chain: 'arcTestnet',
-        privateKey: opts.poolPrivateKey,
-        rpcUrl: RPC_URL,
+      poolWalletClient = createWalletClient({
+        account: privateKeyToAccount(opts.poolPrivateKey),
+        chain: tempoChain,
+        transport: http(RPC_URL),
       });
       poolDryRun = false;
     } catch (err) {
@@ -104,12 +110,13 @@ export function attachRewards(wss, opts = {}) {
     state.crediting = true;
     let txHash = null;
     try {
-      if (meta.type === 'usdc' && gatewayClient && !poolDryRun) {
-        const result = await gatewayClient.depositFor(
-          formatRewardAmount(amountAtomic, 6),
-          state.wallet
-        );
-        txHash = result.depositTxHash || null;
+      if (meta.type === 'usdc' && poolWalletClient && !poolDryRun) {
+        txHash = await poolWalletClient.writeContract({
+          address: usdcAddress,
+          abi: erc20Abi,
+          functionName: 'transfer',
+          args: [state.wallet, amountAtomic],
+        });
       }
       creditViewer(state.roomId, state.wallet, amountAtomic, meta);
       state.sessionEarned += amountAtomic;

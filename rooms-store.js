@@ -185,6 +185,11 @@ export function resolveRoomConfig(roomId) {
     maxSession: String(cfg.maxSession ?? defaults.maxSession),
     maxSeats,
     ...resolvePaymentToken(cfg, defaults),
+    // Streamer payout wallet — session settlements pay here directly.
+    // null → the platform seller wallet (env) receives.
+    payoutAddress: /^0x[0-9a-fA-F]{40}$/.test(String(cfg.payoutAddress || ''))
+      ? String(cfg.payoutAddress)
+      : null,
     rewards: resolveRewards(cfg, defaults),
   };
 }

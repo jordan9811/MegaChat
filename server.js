@@ -572,6 +572,7 @@ function addParticipant(username, meta = {}) {
     paymentTokenAddress: roomCfg.paymentTokenAddress,
     paymentTokenSymbol: meta.paymentTokenSymbol ?? roomCfg.paymentTokenSymbol,
     paymentTokenDecimals: meta.paymentTokenDecimals ?? roomCfg.paymentTokenDecimals,
+    payoutAddress: roomCfg.payoutAddress || null,
     lastMeterAt: 0,
     _tickInFlight: false,
     flyIn: sanitizeStinger(meta.flyIn, FLY_IN_STINGERS),
@@ -729,7 +730,7 @@ async function tickPasskeyStreamSeat(seat) {
         address: tokenAddress,
         abi: erc20Abi,
         functionName: 'transferFrom',
-        args: [seat.viewerAddress, SELLER_WALLET_ADDRESS, tickPrice]
+        args: [seat.viewerAddress, seat.payoutAddress || SELLER_WALLET_ADDRESS, tickPrice]
       });
       console.log(
         `[meter:passkey] seat ${seat.id}: pulled ${fromAtomic(tickPrice, tokenDec)} ${tokenSym} (tx ${tx})`
@@ -893,6 +894,7 @@ try {
     getRoomConfig: resolveRoomConfig,
     poolPrivateKey: process.env.REWARD_POOL_PRIVATE_KEY || null,
     rpcUrl: RPC_URL,
+    usdcAddress: USDC_ADDRESS,
   });
 } catch (err) {
   console.warn('[rewards] failed to attach, continuing without watch-to-earn:', err.message);
@@ -1407,12 +1409,26 @@ app.all('/api/meter/tick', async (req, res) => {
     const seatId = String(req.query.seat || '');
     const seat = activeSeats.get(seatId) || null;
 
+    // Pinned co-host = free seat: acknowledge the tick WITHOUT charging so
+    // the client loop keeps running and billing resumes seamlessly on unpin.
+    if (seat && seat.pinned) {
+      seat.lastPaidAt = Date.now();
+      return res.json({
+        ok: true,
+        pinned: true,
+        seatId: seat.id,
+        remaining: fromAtomic(seat.remainingAtomic, cfg.paymentTokenDecimals),
+        spent: fromAtomic(seat.spentAtomic, cfg.paymentTokenDecimals),
+      });
+    }
+
     const result = await mppMeter.handleTick(toWebRequest(req), {
       amount: cfg.passkeyTickPrice,
       currency: cfg.paymentTokenAddress,
       decimals: cfg.paymentTokenDecimals,
       unitType: 'tick',
-      recipient: SELLER_WALLET_ADDRESS,
+      // Session settlements pay the streamer's payout wallet directly.
+      recipient: cfg.payoutAddress || SELLER_WALLET_ADDRESS,
       suggestedDeposit: seat
         ? fromAtomic(seat.sessionCapAtomic, cfg.paymentTokenDecimals)
         : cfg.maxSession,

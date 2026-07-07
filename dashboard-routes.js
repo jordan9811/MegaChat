@@ -51,6 +51,15 @@ export function attachDashboardRoutes(app, deps) {
       config.paymentTokenSymbol = meta.symbol;
       config.paymentTokenDecimals = meta.decimals;
     }
+    // Streamer payout wallet: empty/null clears it (platform wallet receives);
+    // anything else must be a well-formed address.
+    if (config.payoutAddress != null && config.payoutAddress !== '') {
+      if (!/^0x[0-9a-fA-F]{40}$/.test(String(config.payoutAddress))) {
+        throw new Error('Invalid payout wallet address');
+      }
+    } else if ('payoutAddress' in config) {
+      config.payoutAddress = null;
+    }
     if (config.rewards?.rewardType === 'token' && config.rewards.rewardTokenAddress) {
       const meta = await validatePaymentToken(
         config.rewards.rewardTokenAddress,

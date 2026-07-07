@@ -29,6 +29,8 @@ export type Room = {
   paymentTokenAddress: string
   paymentTokenSymbol: string
   paymentTokenDecimals: number
+  /** Streamer payout wallet — session settlements pay here (null = platform). */
+  payoutAddress: string | null
   rewards: RewardsConfig
 }
 
@@ -66,6 +68,7 @@ export type RoomConfigPatch = {
   tickPrice: string
   tickSeconds: number
   paymentTokenAddress: string
+  payoutAddress: string | null
   rewards: {
     enabled: boolean
     earnInterval: number

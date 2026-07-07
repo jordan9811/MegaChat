@@ -113,6 +113,12 @@ export function createMppMeter({ account, rpcUrl, chainId, feeToken, log = conso
         currency: opts.currency,
         decimals: opts.decimals,
         unitType: opts.unitType || 'tick',
+        // Channels pay the streamer's wallet (recipient/payee) but are
+        // OPERATED by the platform account: TIP-1034 only lets the payee or
+        // a designated operator settle, and server-side settlement (kick,
+        // vanish) is signed by the platform key (mainnet lesson: settle
+        // reverts with "tx sender is not the channel payee" otherwise).
+        operator: account.address,
         ...(opts.recipient ? { recipient: opts.recipient } : {}),
         ...(opts.suggestedDeposit ? { suggestedDeposit: opts.suggestedDeposit } : {}),
       })(webRequest);
@@ -149,7 +155,14 @@ export function createMppMeter({ account, rpcUrl, chainId, feeToken, log = conso
     async settleChannel(channelId, reason = 'seat_ended') {
       if (!channelId) return null;
       try {
-        const txHash = await tempo.session.settle(store, walletClient, channelId, { account });
+        // feeToken must be explicit here: the method-level feeToken only
+        // covers SCHEDULED settlements, and the resolver otherwise prefers
+        // the chain default fee token (pathUSD) which this account may not
+        // hold (mainnet lesson: "total cost exceeds the balance").
+        const txHash = await tempo.session.settle(store, walletClient, channelId, {
+          account,
+          feeToken,
+        });
         log.log(`[meter:mpp] settled channel ${channelId} (${reason}) tx ${txHash}`);
         return txHash;
       } catch (err) {

@@ -32,13 +32,14 @@ import {
 } from '@/lib/api'
 import { backendWsUrl } from '@/lib/backend'
 
-// Arc Testnet USDC — same fallback constant the legacy dashboard used; the
-// real value is re-read from /api/config on mount.
-const ARC_USDC_FALLBACK = '0x3600000000000000000000000000000000000000'
+// Tempo mainnet USDC.e — fallback only; the real value is re-read from
+// /api/config on mount.
+const USDC_FALLBACK = '0x20c000000000000000000000b9537d11c60e8b50'
 
 export type ConfigDraft = {
   name: string
   unlisted: boolean
+  payoutAddress: string
   passkeyTickPrice: string
   passkeyTickSeconds: string
   maxSession: string
@@ -59,6 +60,7 @@ export type ConfigDraft = {
 const DEFAULT_DRAFT: ConfigDraft = {
   name: '',
   unlisted: false,
+  payoutAddress: '',
   passkeyTickPrice: '0.001',
   passkeyTickSeconds: '1',
   maxSession: '2',
@@ -107,6 +109,7 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
       : usdcAddress
   return {
     unlisted: draft.unlisted,
+    payoutAddress: draft.payoutAddress.trim() || null,
     passkeyTickPrice: draft.passkeyTickPrice,
     passkeyTickSeconds: Number(draft.passkeyTickSeconds) || 1,
     maxSession: draft.maxSession,
@@ -133,6 +136,7 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
   return {
     name: room.name,
     unlisted: !!room.unlisted,
+    payoutAddress: room.payoutAddress || '',
     passkeyTickPrice: String(room.passkeyTickPrice),
     passkeyTickSeconds: String(room.passkeyTickSeconds),
     maxSession: String(room.maxSession),
@@ -157,7 +161,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const [joinUrl, setJoinUrl] = useState<string | null>(null)
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
   const [draft, setDraft] = useState<ConfigDraft>(DEFAULT_DRAFT)
-  const [usdcAddress, setUsdcAddress] = useState(ARC_USDC_FALLBACK)
+  const [usdcAddress, setUsdcAddress] = useState(USDC_FALLBACK)
 
   const passwordRef = useRef('')
   const roomIdRef = useRef<string | null>(null)
