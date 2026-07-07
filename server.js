@@ -25,6 +25,7 @@ import {
   readTokenAllowance,
   validatePaymentToken,
 } from './token-utils.js';
+import { createMppMeter, toWebRequest } from './meter-mpp.js';
 import { createWalletClient, createPublicClient, http, erc20Abi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
@@ -158,10 +159,39 @@ if (SELLER_PRIVATE_KEY && /^0x[0-9a-fA-F]{64}$/.test(SELLER_PRIVATE_KEY)) {
   console.warn('[refund] SELLER_PRIVATE_KEY not set — unused-balance refunds disabled.');
 }
 
+// ─── Phase 2: MPP session meter (TIP-1034 payment channels) ─────────────────
+// The primary meter on Tempo. null when no seller key is configured — MPP
+// joins then 503 and the legacy allowance path still works.
+const mppMeter = createMppMeter({
+  account: sellerAccount,
+  rpcUrl: RPC_URL,
+  chainId: CHAIN_ID,
+  feeToken: USDC_ADDRESS,
+});
+if (mppMeter) console.log('[meter:mpp] TIP-1034 session meter ready');
+else console.warn('[meter:mpp] disabled (no SELLER_PRIVATE_KEY) — falling back to allowance meter only');
+
+// How long a live MPP seat may go without a PAID tick before it is kicked.
+// Covers channel-open latency, tab hiccups, and slow voucher signatures.
+const MPP_STALE_MS = Math.max(10_000, Number(process.env.MPP_STALE_MS || 20_000));
+
 // Refund the unused prepaid balance (settled - consumed = remainingAtomic) back
-// to the viewer. Passkey stream seats skip this — unspent USDC never left the wallet.
+// to the viewer. Stream/MPP seats skip this — unspent funds never left the
+// wallet (allowance) or return straight from channel escrow (MPP settle).
 async function refundSeat(seat) {
   if (!seat || seat.refunded) return;
+  if (seat.paymentMode === 'mpp_session') {
+    seat.refunded = true;
+    if (seat.channelId && mppMeter) {
+      // Newest voucher settles on-chain; escrow refunds the viewer's remainder.
+      mppMeter.settleChannel(seat.channelId, 'seat_ended').catch(() => {});
+    } else if (seat.remainingAtomic > 0n) {
+      console.log(
+        `[refund] mpp seat ${seat.id}: no channel opened — nothing ever left the viewer wallet`
+      );
+    }
+    return;
+  }
   if (
     seat.paymentMode === 'passkey_stream'
     || seat.paymentMode === 'credit_stream'
@@ -371,6 +401,8 @@ app.get('/api/config', (req, res) => {
     paymentTokenSymbol: cfg.paymentTokenSymbol,
     paymentTokenDecimals: cfg.paymentTokenDecimals,
     rewards: cfg.rewards,
+    // MPP session meter (TIP-1034 channels) — primary on Tempo.
+    meterMode: mppMeter ? 'mpp_session' : 'allowance',
     // Legacy key kept null so the old Arc pages degrade cleanly if opened.
     modularWallets: null,
     privy: PRIVY_APP_ID ? { appId: PRIVY_APP_ID } : null
@@ -568,14 +600,17 @@ function activateSeatLive(seatId, ws) {
 
   seat.live = true;
   seat.liveAt = Date.now();
+  // MPP: the staleness clock starts now; the first paid tick (which also
+  // opens the channel) must land within MPP_STALE_MS.
+  seat.lastPaidAt = Date.now();
   if (ws) { ws.__seatId = seatId; seat.ownerWs = ws; }
 
-  const tickPrice = seat.paymentMode === 'passkey_stream'
-    ? seat.passkeyTickPriceAtomic
-    : seat.gatewayTickPriceAtomic;
-  const tickSec = seat.paymentMode === 'passkey_stream'
-    ? seat.passkeyTickSeconds
-    : seat.gatewayTickSeconds;
+  const tickPrice = seat.paymentMode === 'gateway'
+    ? seat.gatewayTickPriceAtomic
+    : seat.passkeyTickPriceAtomic;
+  const tickSec = seat.paymentMode === 'gateway'
+    ? seat.gatewayTickSeconds
+    : seat.passkeyTickSeconds;
   const ticksLeft = tickPrice > 0n
     ? Number(seat.remainingAtomic / tickPrice)
     : 0;
@@ -732,6 +767,17 @@ function tickAllMeters() {
   for (const seat of activeSeats.values()) {
     if (!seat.live) continue;
     if (seat.pinned) continue; // co-host seat: meter fully paused, zero charges
+    if (seat.paymentMode === 'mpp_session') {
+      // MPP seats are billed by CLIENT-driven signed vouchers hitting
+      // /api/meter/tick — the server side only enforces liveness: a live
+      // seat whose paid ticks stop arriving gets kicked (and its channel
+      // settled with the newest voucher via refundSeat).
+      if (now - (seat.lastPaidAt || seat.liveAt || 0) > MPP_STALE_MS) {
+        console.log(`[meter:mpp] seat ${seat.id}: paid ticks stalled — removing`);
+        removeParticipant(seat.id, 'payment_stalled');
+      }
+      continue;
+    }
     if (
       seat.paymentMode === 'passkey_stream'
       || seat.paymentMode === 'credit_stream'
@@ -1229,6 +1275,195 @@ app.post('/api/join/passkey', async (req, res) => {
     console.error('[join:passkey] error:', error);
     if (!res.headersSent) {
       res.status(500).json({ error: 'Passkey join failed', message: error.message });
+    }
+  }
+});
+
+// ─── Phase 2: MPP session join + metered tick ───────────────────────────────
+
+// MPP session join — no upfront transfer, no approve. The escrow channel
+// opens on the first paid tick after the camera goes live.
+app.post('/api/join/mpp', async (req, res) => {
+  try {
+    if (!mppMeter) {
+      return res.status(503).json({
+        error: 'MPP meter unavailable on this server',
+        hint: 'SELLER_PRIVATE_KEY missing'
+      });
+    }
+    const { username, address } = req.body;
+    if (!username) return res.status(400).json({ error: 'Username required' });
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) {
+      return res.status(400).json({ error: 'Wallet address required' });
+    }
+    const resolved = resolveRoomFromRequest(req.body, req.query);
+    if (resolved.error === 'invalid_room_id') {
+      return res.status(400).json({ error: 'Invalid room id' });
+    }
+    if (resolved.error === 'room_not_found') {
+      return res.status(404).json({ error: 'Room not found', roomId: resolved.roomId });
+    }
+    const { roomId, cfg, atomics } = resolved;
+    if (!cfg.active) {
+      return res.status(403).json({ error: 'Room is not accepting joins', reason: 'room_stopped', roomId });
+    }
+
+    let rawBal;
+    try {
+      rawBal = await readTokenBalance(cfg.paymentTokenAddress, address, RPC_URL, CHAIN_ID);
+    } catch (err) {
+      return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
+    }
+    // Tempo fees come out of the SAME stablecoin balance that funds the
+    // channel deposit. Depositing the full balance makes the open tx itself
+    // unpayable (learned on mainnet: InsufficientBalance at exactly the cap).
+    // Reserve headroom for the open + close fees (~$0.0006 each, 30x margin).
+    const feeHeadroom = toAtomic(process.env.MPP_FEE_HEADROOM || '0.02', cfg.paymentTokenDecimals);
+    const spendable = rawBal > feeHeadroom ? rawBal - feeHeadroom : 0n;
+    const sessionAtomic = spendable < atomics.maxSessionAtomic ? spendable : atomics.maxSessionAtomic;
+    if (sessionAtomic < atomics.passkeyTickPriceAtomic) {
+      return res.status(402).json({
+        error: `Insufficient ${cfg.paymentTokenSymbol} balance`,
+        reason: 'insufficient_balance',
+        available: fromAtomic(rawBal, cfg.paymentTokenDecimals),
+        needAtLeast: cfg.passkeyTickPrice,
+        tokenSymbol: cfg.paymentTokenSymbol,
+        hint: 'Fund your wallet with USDC on Tempo (keep ~0.02 for network fees).',
+        path: 'mpp',
+        roomId
+      });
+    }
+
+    const result = addParticipant(username, {
+      remainingAtomic: sessionAtomic,
+      payer: address,
+      viewerAddress: address,
+      paymentMode: 'mpp_session',
+      sessionCapAtomic: sessionAtomic,
+      streamRoomId: roomId,
+      flyIn: req.body.flyIn,
+      flyOut: req.body.flyOut,
+    });
+    if (!result.success) {
+      const status = result.reason === 'room_stopped' ? 403 : 409;
+      return res.status(status).json({
+        error: result.reason === 'room_stopped' ? 'Room is not accepting joins' : 'No seats available',
+        reason: result.reason,
+        roomId
+      });
+    }
+    schedulePendingCameraTimeout(result.seat.id);
+    const seat = result.seat;
+    const ticksLeft = atomics.passkeyTickPriceAtomic > 0n
+      ? Number(sessionAtomic / atomics.passkeyTickPriceAtomic)
+      : 0;
+    console.log(
+      `[join:mpp] room ${roomId} seat ${seat.id} for ${username} (${address}) `
+      + `cap ${fromAtomic(sessionAtomic, cfg.paymentTokenDecimals)} ${cfg.paymentTokenSymbol}`
+    );
+    return res.json({
+      success: true,
+      message: 'Seat assigned! Allow camera access to go live:',
+      pushUrl: seat.pushUrl,
+      seatId: seat.id,
+      roomId,
+      remaining: fromAtomic(sessionAtomic, cfg.paymentTokenDecimals),
+      sessionCap: fromAtomic(sessionAtomic, cfg.paymentTokenDecimals),
+      tickPrice: cfg.passkeyTickPrice,
+      tickSeconds: cfg.passkeyTickSeconds,
+      maxSession: cfg.maxSession,
+      secondsLeft: ticksLeft * cfg.passkeyTickSeconds,
+      paymentMode: 'mpp_session',
+      paymentTokenSymbol: cfg.paymentTokenSymbol,
+      paymentTokenAddress: cfg.paymentTokenAddress,
+      paymentTokenDecimals: cfg.paymentTokenDecimals,
+      tickUrl: `/api/meter/tick?seat=${seat.id}&room=${encodeURIComponent(roomId)}`,
+      payment: { payer: address, mode: 'mpp_session', network: NETWORK },
+    });
+  } catch (error) {
+    console.error('[join:mpp] error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'MPP join failed', message: error.message });
+    }
+  }
+});
+
+// Metered tick. Every request is a 402 challenge (first contact), a channel
+// OPEN credential (one on-chain deposit tx by the viewer), a signed off-chain
+// VOUCHER (every subsequent tick — zero gas), or a CLOSE action. The mppx
+// session method verifies each one; we only translate receipts into seat
+// meter state and WS broadcasts.
+app.all('/api/meter/tick', async (req, res) => {
+  try {
+    if (!mppMeter) return res.status(503).json({ error: 'MPP meter unavailable' });
+    const resolved = resolveRoomFromRequest(req.body, req.query);
+    if (resolved.error) {
+      return res.status(resolved.error === 'room_not_found' ? 404 : 400).json({
+        error: resolved.error,
+        roomId: resolved.roomId
+      });
+    }
+    const { cfg, atomics } = resolved;
+    const seatId = String(req.query.seat || '');
+    const seat = activeSeats.get(seatId) || null;
+
+    const result = await mppMeter.handleTick(toWebRequest(req), {
+      amount: cfg.passkeyTickPrice,
+      currency: cfg.paymentTokenAddress,
+      decimals: cfg.paymentTokenDecimals,
+      unitType: 'tick',
+      recipient: SELLER_WALLET_ADDRESS,
+      suggestedDeposit: seat
+        ? fromAtomic(seat.sessionCapAtomic, cfg.paymentTokenDecimals)
+        : cfg.maxSession,
+    });
+
+    if (result.status === 402) return result.respond(res);
+
+    const receipt = result.receipt;
+    if (seat && receipt) {
+      if (receipt.channelId) seat.channelId = receipt.channelId;
+      // SessionReceipt.spent is RAW atomic units (confirmed on mainnet:
+      // '8000' for 8 ticks of 0.001 with 6 decimals) — never re-scale it.
+      let spentAtomic = 0n;
+      try { spentAtomic = BigInt(receipt.spent ?? '0'); } catch { spentAtomic = seat.spentAtomic; }
+      seat.spentAtomic = spentAtomic;
+      seat.remainingAtomic = seat.sessionCapAtomic > spentAtomic
+        ? seat.sessionCapAtomic - spentAtomic
+        : 0n;
+      seat.lastPaidAt = Date.now();
+
+      const tickPrice = atomics.passkeyTickPriceAtomic;
+      const ticksLeft = tickPrice > 0n ? Number(seat.remainingAtomic / tickPrice) : 0;
+      const secondsLeft = ticksLeft * cfg.passkeyTickSeconds;
+      broadcastMeterUpdate(seat, {
+        seatId: seat.id,
+        remaining: fromAtomic(seat.remainingAtomic, cfg.paymentTokenDecimals),
+        spent: fromAtomic(seat.spentAtomic, cfg.paymentTokenDecimals),
+        secondsLeft,
+        minutesLeft: Math.floor(secondsLeft / 60),
+        mode: 'mpp_session',
+        tokenSymbol: cfg.paymentTokenSymbol,
+      });
+      if (seat.remainingAtomic < tickPrice) {
+        removeParticipant(seat.id, 'out_of_funds');
+      }
+      return result.respond(res, {
+        ok: true,
+        seatId: seat.id,
+        remaining: fromAtomic(seat.remainingAtomic, cfg.paymentTokenDecimals),
+        spent: fromAtomic(seat.spentAtomic, cfg.paymentTokenDecimals),
+        secondsLeft,
+      });
+    }
+
+    // Seat already gone (voucher/close landing after a kick) — acknowledge so
+    // the client can finish its close handshake; settlement is server-owned.
+    return result.respond(res, { ok: true, seat: 'gone' });
+  } catch (error) {
+    console.error('[meter:mpp] tick error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Tick failed', message: error.message });
     }
   }
 });

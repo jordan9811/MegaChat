@@ -496,10 +496,105 @@ async function fundWallet() {
   for (const delay of [5000, 12000]) setTimeout(refreshBalance, delay);
 }
 
-// Unified metered join (both wallet modes): fetch session terms, authorize
-// the session cap with ONE wallet action, then confirm the seat.
-// Phase 2 note: the authorize step is a plain ERC-20 approve for now (the
-// proven fallback); the MPP session channel replaces it in the next phase.
+// ─── MPP session meter (primary path, Privy embedded wallets) ─────────────
+// The seat is granted instantly; the escrow channel opens on the FIRST paid
+// tick after the camera goes live (one silent wallet transaction), then every
+// tick is a signed off-chain voucher. Leave closes the channel and the
+// unspent deposit returns to the viewer from escrow.
+let mppSession = null;
+let mppTickTimer = null;
+let mppInFlight = false;
+let mppFailures = 0;
+
+async function ensureMppSession(sessionCap) {
+  if (mppSession) return mppSession;
+  const provider = await getActiveProvider();
+  const viem = await import('viem');
+  const { tempo } = await import('viem/chains');
+  const client = viem.createWalletClient({
+    account,
+    chain: tempo,
+    transport: viem.custom(provider),
+  });
+  const mpp = await import('mppx/client');
+  mppSession = mpp.tempo.session.manager({
+    client,
+    account,
+    maxDeposit: String(sessionCap),
+    decimals: (CONFIG && CONFIG.paymentTokenDecimals) || 6,
+  });
+  return mppSession;
+}
+
+function startMppTicks(data) {
+  stopMppTicks(false);
+  const interval = (data.tickSeconds || 1) * 1000;
+  mppFailures = 0;
+  mppTickTimer = setInterval(async () => {
+    if (mppInFlight || !mySeatId) return;
+    mppInFlight = true;
+    try {
+      const session = await ensureMppSession(data.sessionCap);
+      const resp = await session.fetch(data.tickUrl, { method: 'POST' });
+      if (!resp.ok) throw new Error(`tick rejected (${resp.status})`);
+      mppFailures = 0;
+    } catch (err) {
+      mppFailures += 1;
+      console.warn('[mpp] tick failed', err);
+      if (mppFailures >= 3) {
+        showMessage(
+          '❌ Payment stream failed — leaving the stream. ' + (err?.message || ''),
+          'error'
+        );
+        leaveStream();
+      }
+    } finally {
+      mppInFlight = false;
+    }
+  }, interval);
+}
+
+function stopMppTicks(closeChannel) {
+  if (mppTickTimer) {
+    clearInterval(mppTickTimer);
+    mppTickTimer = null;
+  }
+  if (closeChannel && mppSession) {
+    const session = mppSession;
+    mppSession = null;
+    // Cooperative close: settles the streamed amount and refunds the unspent
+    // deposit from escrow. If it races a server-side settle (kick), the
+    // channel is already closed — ignore.
+    session.close().then((receipt) => {
+      if (receipt && receipt.txHash) {
+        console.log('[mpp] channel closed, settlement tx', receipt.txHash);
+      }
+    }).catch((err) => console.warn('[mpp] close skipped:', err?.message || err));
+  } else if (!closeChannel) {
+    mppSession = null;
+  }
+}
+
+async function joinSeatMpp(username) {
+  setJoinState('busy', '⏳ Requesting session terms…');
+  const r = await fetch('/api/join/mpp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections() })
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const detail = data.available != null
+      ? ` (available ${data.available} ${data.tokenSymbol || tokenSymbol()})`
+      : '';
+    throw new Error((data.hint || data.error || 'Cannot join') + detail);
+  }
+  onJoinSuccess(data);
+}
+
+// Unified metered join (fallback: MetaMask + servers without the MPP meter):
+// fetch session terms, authorize the session cap with ONE approve, then the
+// server pulls per tick via transferFrom.
 async function joinSeatMetered(username) {
   const SEL_APPROVE = '0x095ea7b3'; // approve(address,uint256)
 
@@ -610,8 +705,15 @@ async function joinSeat() {
     }
 
     await ensureTempoChain();
-    // ONE metered flow for both wallet modes on Tempo.
-    await joinSeatMetered(username);
+    if (walletMode === 'privy' && CONFIG && CONFIG.meterMode === 'mpp_session') {
+      // Primary: MPP session (TIP-1034 channel) — cap authorized once,
+      // per-second signed vouchers, unspent auto-refunds on close.
+      await joinSeatMpp(username);
+    } else {
+      // MetaMask (per-voucher popups would be unusable) and servers without
+      // the MPP meter use the proven allowance flow.
+      await joinSeatMetered(username);
+    }
   } catch (error) {
     console.error('Error:', error);
     showMessage('❌ ' + (error.message || 'Connection error. Try again.'), 'error');
@@ -747,6 +849,11 @@ function fireCameraReady(source) {
     ws.send(JSON.stringify({ type: 'camera_ready', seatId: mySeatId }));
   }
   console.log(`[camera] camera_ready fired via ${source}`);
+  // MPP seats: the meter is client-driven — start streaming paid ticks now.
+  // The first tick opens the escrow channel (one silent wallet transaction).
+  if (lastJoinData && lastJoinData.paymentMode === 'mpp_session') {
+    startMppTicks(lastJoinData);
+  }
   setJoinState('live');
   setCamStatus('live', "You're LIVE on stream");
   document.getElementById('camHint').textContent =
@@ -767,6 +874,7 @@ async function leaveStream() {
   leaveBtn.disabled = true;
   // Stop reacting to this seat locally right away so the meter stops instantly.
   mySeatId = null;
+  stopMppTicks(true); // close the channel → unspent deposit refunds from escrow
   teardownCameraStage();
   try {
     await fetch(`/api/leave/${seatId}`, { method: 'POST' });
@@ -1041,6 +1149,7 @@ export function initJoinPage({ wsUrl }) {
             'error'
           );
         }
+        stopMppTicks(true); // server already settles on kick; close is a no-op race
         teardownCameraStage();
         mySeatId = null;
         setJoinState('idle');
