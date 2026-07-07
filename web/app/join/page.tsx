@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { GlitchBackground } from '@/components/glitch-background'
 import { Wordmark } from '@/components/wordmark'
 import { JoinClient } from '@/components/join/join-client'
+import { TempoWalletProvider } from '@/components/providers/tempo-wallet'
 import './join.css'
 
 export const metadata: Metadata = {
@@ -19,7 +20,9 @@ export default function JoinPage() {
             <Wordmark size="sm" />
           </a>
         </header>
-        <JoinClient />
+        <TempoWalletProvider>
+          <JoinClient />
+        </TempoWalletProvider>
       </div>
     </div>
   )

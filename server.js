@@ -4,10 +4,6 @@ import { createServer } from 'http';
 import { randomUUID } from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import {
-  BatchFacilitatorClient,
-  GATEWAY_AUTH_VALIDITY_WINDOW_SECONDS
-} from '@circle-fin/x402-batching/server';
 import { attachRewards } from './rewards.js';
 import { getCredit, consumeCredit, creditViewer } from './reward-credits.js';
 import {
@@ -28,9 +24,8 @@ import {
   readTokenBalance,
   readTokenAllowance,
   validatePaymentToken,
-  estimateArcFeesWithFloor,
 } from './token-utils.js';
-import { createWalletClient, createPublicClient, http, erc20Abi, decodeEventLog } from 'viem';
+import { createWalletClient, createPublicClient, http, erc20Abi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
 // Load .env if present (Node >=20.6 native loader). Never throws if missing.
@@ -43,25 +38,21 @@ try {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ─── Arc Testnet constants (eip155:5042002) ──────────────────────────────────
-// These are the literal Arc Testnet values. We NEVER fall back to Base Sepolia.
-const ARC_CHAIN_ID = Number(process.env.ARC_CHAIN_ID || 5042002);
-const ARC_NETWORK = `eip155:${ARC_CHAIN_ID}`; // CAIP-2 identifier used by Gateway
-const ARC_RPC_URL = process.env.ARC_RPC_URL || 'https://rpc.testnet.arc.network';
+// ─── Tempo mainnet constants (eip155:4217) ───────────────────────────────────
+// Env-driven; TEMPO_* vars live ALONGSIDE the legacy ARC_* vars (append-only
+// .env policy) — this branch reads only the TEMPO_* ones. Values verified in
+// TEMPO_NOTES.md. Real chain, real money: default prices stay at dust levels.
+const CHAIN_ID = Number(process.env.TEMPO_CHAIN_ID || 4217);
+const NETWORK = `eip155:${CHAIN_ID}`; // CAIP-2 identifier
+const RPC_URL = process.env.TEMPO_RPC_URL || 'https://rpc.tempo.xyz';
+// USDC.e (Stargate-bridged USDC, 6 decimals) — the meter currency.
 const USDC_ADDRESS =
-  process.env.USDC_ADDRESS || '0x3600000000000000000000000000000000000000';
-const GATEWAY_WALLET_ADDRESS =
-  process.env.GATEWAY_WALLET_ADDRESS ||
-  '0x0077777d7EBA4688BDeF3E311b846F25870A19B9';
-const FACILITATOR_URL =
-  process.env.FACILITATOR_URL || 'https://gateway-api-testnet.circle.com';
-const EXPLORER_URL = process.env.EXPLORER_URL || 'https://testnet.arcscan.app';
+  process.env.TEMPO_USDC_ADDRESS || '0x20c000000000000000000000b9537d11c60e8b50';
+const EXPLORER_URL = process.env.TEMPO_EXPLORER_URL || 'https://explore.tempo.xyz';
 
-// Circle Modular Wallets (passkey path) — loaded from env, never logged.
-const CIRCLE_CLIENT_KEY = process.env.CIRCLE_CLIENT_KEY || null;
-const CIRCLE_CLIENT_URL = process.env.CIRCLE_CLIENT_URL || null;
-// Confirmed from Circle skill use-modular-wallets Transport URL Path Segments table.
-const CIRCLE_MODULAR_CHAIN_PATH = process.env.CIRCLE_MODULAR_CHAIN_PATH || 'arcTestnet';
+// Privy embedded wallets (browser wallet layer) — app id is public by design,
+// secret stays server-side and is never sent to the client.
+const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || process.env.PRIVY_APP_ID || null;
 
 // Seller receives the seat payments. Default is a placeholder; set in .env.
 const SELLER_WALLET_ADDRESS =
@@ -135,34 +126,18 @@ function resolveRoomFromRequest(body, query) {
   return { roomId, cfg, atomics: roomAtomics(cfg) };
 }
 
-// Circle Gateway facilitator client — verifies + settles the signed authorization.
-const facilitator = new BatchFacilitatorClient({ url: FACILITATOR_URL });
-
 // ─── Refund wallet (seller -> viewer) ────────────────────────────────────────
 // Used ONLY to return the unused prepaid USDC when a viewer leaves. Plain ERC-20
-// transfer via viem; independent of the Gateway payment path.
-const arcViemChain = {
-  id: ARC_CHAIN_ID,
-  name: 'Arc Testnet',
-  network: ARC_NETWORK,
-  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
-  rpcUrls: { default: { http: [ARC_RPC_URL] }, public: { http: [ARC_RPC_URL] } }
+// transfer via viem. NOTE: the Arc 1-gwei priority-fee floor was Arc-specific
+// and is deliberately NOT ported — Tempo takes standard fee estimation and
+// charges fees in the sender's stablecoin (TEMPO_NOTES.md).
+const tempoViemChain = {
+  id: CHAIN_ID,
+  name: 'Tempo',
+  network: NETWORK,
+  nativeCurrency: { name: 'USD', symbol: 'USD', decimals: 6 },
+  rpcUrls: { default: { http: [RPC_URL] }, public: { http: [RPC_URL] } }
 };
-// Arc rejects writes whose priority fee is under 1 gwei — see the Arc gas floor
-// block in token-utils.js. EVERY seller-wallet write on Arc must spread
-// arcFeesWithFloor() into its call — the refund transfer and the per-tick
-// transferFrom both do.
-const FEE_CACHE_MS = 30_000; // ticks fire every second — don't re-estimate each time
-
-const arcFeeClient = createPublicClient({ chain: arcViemChain, transport: http(ARC_RPC_URL) });
-let feeCache = { fees: null, at: 0 };
-
-async function arcFeesWithFloor() {
-  if (feeCache.fees && Date.now() - feeCache.at < FEE_CACHE_MS) return feeCache.fees;
-  const fees = await estimateArcFeesWithFloor(arcFeeClient);
-  feeCache = { fees, at: Date.now() };
-  return fees;
-}
 
 let sellerAccount = null;
 let sellerWalletClient = null;
@@ -171,8 +146,8 @@ if (SELLER_PRIVATE_KEY && /^0x[0-9a-fA-F]{64}$/.test(SELLER_PRIVATE_KEY)) {
     sellerAccount = privateKeyToAccount(SELLER_PRIVATE_KEY);
     sellerWalletClient = createWalletClient({
       account: sellerAccount,
-      chain: arcViemChain,
-      transport: http(ARC_RPC_URL)
+      chain: tempoViemChain,
+      transport: http(RPC_URL)
     });
     console.log(`[refund] seller refund wallet ready: ${sellerAccount.address}`);
   } catch (err) {
@@ -231,8 +206,7 @@ async function refundSeat(seat) {
     address: USDC_ADDRESS,
     abi: erc20Abi,
     functionName: 'transfer',
-    args: [to, refundAtomic],
-    ...(await arcFeesWithFloor())
+    args: [to, refundAtomic]
   });
 
   try {
@@ -249,39 +223,6 @@ async function refundSeat(seat) {
   }
 }
 
-// Cache the Arc "supported kind" (USDC asset + Gateway Wallet verifyingContract).
-let arcKindCache = null;
-async function getArcKind() {
-  if (arcKindCache) return arcKindCache;
-  const res = await fetch(`${FACILITATOR_URL}/v1/x402/supported`);
-  if (!res.ok) throw new Error(`Gateway /supported returned ${res.status}`);
-  const data = await res.json();
-  arcKindCache = (data.kinds || []).find(
-    (k) => k.network === ARC_NETWORK && k.extra?.verifyingContract
-  );
-  if (!arcKindCache) throw new Error(`Arc (${ARC_NETWORK}) not advertised by Gateway`);
-  return arcKindCache;
-}
-
-// Build x402 PaymentRequirements for a given atomic amount on Arc.
-function buildRequirements(kind, amountAtomic) {
-  const usdc = (kind.extra.assets || []).find((a) => a.symbol === 'USDC');
-  if (!usdc) throw new Error('Gateway kind missing USDC asset');
-  return {
-    scheme: 'exact',
-    network: ARC_NETWORK,
-    asset: usdc.address,
-    amount: amountAtomic.toString(),
-    payTo: SELLER_WALLET_ADDRESS,
-    maxTimeoutSeconds: GATEWAY_AUTH_VALIDITY_WINDOW_SECONDS,
-    extra: {
-      name: 'GatewayWalletBatched',
-      version: '1',
-      verifyingContract: kind.extra.verifyingContract
-    }
-  };
-}
-
 function b64encodeJson(obj) {
   return Buffer.from(JSON.stringify(obj)).toString('base64');
 }
@@ -289,29 +230,13 @@ function b64decodeJson(str) {
   return JSON.parse(Buffer.from(str, 'base64').toString('utf-8'));
 }
 
-// Circle Gateway domain id for Arc Testnet (GATEWAY_DOMAINS.arcTestnet).
-const ARC_GATEWAY_DOMAIN = 26;
-
-// Read a depositor's *available* Gateway balance the same way the facilitator /
-// GatewayClient does: POST /v1/balances { token, sources:[{depositor, domain}] }.
-// `balance` is the available (spendable) amount; `pendingBatch` is awaiting batch
-// settlement. Amounts are decimal USDC strings (6 decimals) -> convert to atomic.
-// On-chain USDC balance for passkey smart accounts (6-decimal ERC-20).
-async function getOnChainUsdcBalance(address) {
-  const client = createPublicClient({
-    chain: arcViemChain,
-    transport: http(ARC_RPC_URL)
-  });
-  const raw = await client.readContract({
-    address: USDC_ADDRESS,
-    abi: erc20Abi,
-    functionName: 'balanceOf',
-    args: [address]
-  });
+// On-chain TIP-20/ERC-20 balance on Tempo (viewer wallets, seller, pool).
+async function getOnChainTokenBalance(tokenAddress, address, decimals = 6) {
+  const raw = await readTokenBalance(tokenAddress, address, RPC_URL, CHAIN_ID);
   return {
-    availableAtomic: BigInt(raw),
+    availableAtomic: raw,
     pendingAtomic: 0n,
-    available: atomicToUsdc(raw),
+    available: fromAtomic(raw, decimals),
     pending: '0',
     hasRecord: raw > 0n
   };
@@ -324,7 +249,7 @@ async function verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash, tokenA
   }
 
   const readAllowance = async () => readTokenAllowance(
-    tokenAddress, payer, SELLER_WALLET_ADDRESS, ARC_RPC_URL, ARC_CHAIN_ID
+    tokenAddress, payer, SELLER_WALLET_ADDRESS, RPC_URL, CHAIN_ID
   );
 
   let allowance;
@@ -352,8 +277,8 @@ async function verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash, tokenA
   if (txHash && /^0x[0-9a-fA-F]{64}$/.test(txHash)) {
     try {
       const client = createPublicClient({
-        chain: arcViemChain,
-        transport: http(ARC_RPC_URL)
+        chain: tempoViemChain,
+        transport: http(RPC_URL)
       });
       const receipt = await client.getTransactionReceipt({ hash: txHash });
       if (!receipt || receipt.status !== 'success') {
@@ -366,68 +291,6 @@ async function verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash, tokenA
     `[join:passkey] verified allowance ${allowance} (atomic) on ${tokenAddress} for ${payer}`
   );
   return { ok: true, payer, allowance, amount: allowance, txHash: txHash || null };
-}
-
-// Legacy Phase 1 transfer verifier — not used by passkey stream join.
-async function verifyModularUsdcPayment(txHash, expectedFrom, expectedAmountAtomic) {
-  const client = createPublicClient({
-    chain: arcViemChain,
-    transport: http(ARC_RPC_URL)
-  });
-  const receipt = await client.getTransactionReceipt({ hash: txHash });
-  if (!receipt || receipt.status !== 'success') {
-    return { ok: false, reason: 'tx_not_success' };
-  }
-  for (const log of receipt.logs) {
-    if (log.address.toLowerCase() !== USDC_ADDRESS.toLowerCase()) continue;
-    try {
-      const decoded = decodeEventLog({
-        abi: erc20Abi,
-        data: log.data,
-        topics: log.topics
-      });
-      if (decoded.eventName !== 'Transfer') continue;
-      const from = decoded.args.from;
-      const to = decoded.args.to;
-      const value = BigInt(decoded.args.value);
-      if (from.toLowerCase() !== expectedFrom.toLowerCase()) continue;
-      if (to.toLowerCase() !== SELLER_WALLET_ADDRESS.toLowerCase()) continue;
-      if (value < expectedAmountAtomic) continue;
-      return { ok: true, payer: from, amount: value, txHash };
-    } catch {
-      continue;
-    }
-  }
-  return { ok: false, reason: 'transfer_not_found' };
-}
-
-async function getGatewayBalance(address) {
-  const res = await fetch(`${FACILITATOR_URL}/v1/balances`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      token: 'USDC',
-      sources: [{ depositor: address, domain: ARC_GATEWAY_DOMAIN }]
-    })
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.message || `Gateway /balances returned ${res.status}`);
-  }
-  // No record yet (e.g. deposit not finalized) -> treat as zero available.
-  const entry = (data.balances || []).find(
-    (b) => (b.depositor || '').toLowerCase() === address.toLowerCase()
-  ) || (data.balances || [])[0] || null;
-
-  const availableStr = entry?.balance ?? '0';
-  const pendingStr = entry?.pendingBatch ?? '0';
-  return {
-    availableAtomic: usdcToAtomic(availableStr),
-    pendingAtomic: usdcToAtomic(pendingStr),
-    available: atomicToUsdc(usdcToAtomic(availableStr)),
-    pending: atomicToUsdc(usdcToAtomic(pendingStr)),
-    hasRecord: !!entry
-  };
 }
 
 const app = express();
@@ -484,24 +347,16 @@ app.get('/api/config', (req, res) => {
     return res.status(404).json({ error: 'Room not found', roomId: resolved.roomId });
   }
   const { roomId, cfg } = resolved;
-  const modularWallets = (CIRCLE_CLIENT_KEY && CIRCLE_CLIENT_URL)
-    ? {
-        clientKey: CIRCLE_CLIENT_KEY,
-        clientUrl: CIRCLE_CLIENT_URL,
-        chainPath: CIRCLE_MODULAR_CHAIN_PATH
-      }
-    : null;
   res.json({
     roomId,
     roomName: cfg.name,
     roomActive: cfg.active,
-    chainId: ARC_CHAIN_ID,
-    chainIdHex: '0x' + ARC_CHAIN_ID.toString(16),
-    network: ARC_NETWORK,
-    rpcUrl: ARC_RPC_URL,
+    chainId: CHAIN_ID,
+    chainIdHex: '0x' + CHAIN_ID.toString(16),
+    chainName: 'Tempo',
+    network: NETWORK,
+    rpcUrl: RPC_URL,
     usdcAddress: USDC_ADDRESS,
-    gatewayWalletAddress: GATEWAY_WALLET_ADDRESS,
-    facilitatorUrl: FACILITATOR_URL,
     explorerUrl: EXPLORER_URL,
     sellerAddress: SELLER_WALLET_ADDRESS,
     seatPrice: SEAT_PRICE,
@@ -515,10 +370,10 @@ app.get('/api/config', (req, res) => {
     paymentTokenAddress: cfg.paymentTokenAddress,
     paymentTokenSymbol: cfg.paymentTokenSymbol,
     paymentTokenDecimals: cfg.paymentTokenDecimals,
-    gatewayTokenSymbol: 'USDC',
-    gatewayNote: 'MetaMask/Gateway path always uses USDC on Arc',
     rewards: cfg.rewards,
-    modularWallets
+    // Legacy key kept null so the old Arc pages degrade cleanly if opened.
+    modularWallets: null,
+    privy: PRIVY_APP_ID ? { appId: PRIVY_APP_ID } : null
   });
 });
 
@@ -538,13 +393,13 @@ app.get('/api/balance/:address', async (req, res) => {
     });
   }
   const { cfg, atomics } = resolved;
-  const passkeyMode = req.get('x-wallet-mode') === 'passkey'
-    || req.query.mode === 'passkey';
-  const minTick = passkeyMode ? atomics.passkeyTickPriceAtomic : atomics.tickPriceAtomic;
+  // Tempo: every wallet mode (Privy embedded, MetaMask) reads the same
+  // on-chain TIP-20 balance — the Circle Gateway ledger no longer exists.
+  const minTick = atomics.passkeyTickPriceAtomic;
   try {
-    const bal = passkeyMode
-      ? await getOnChainUsdcBalance(address)
-      : await getGatewayBalance(address);
+    const bal = await getOnChainTokenBalance(
+      cfg.paymentTokenAddress, address, cfg.paymentTokenDecimals
+    );
     const spendableAtomic = bal.availableAtomic < atomics.maxSessionAtomic
       ? bal.availableAtomic
       : atomics.maxSessionAtomic;
@@ -554,11 +409,11 @@ app.get('/api/balance/:address', async (req, res) => {
       available: bal.available,
       pending: bal.pending,
       hasRecord: bal.hasRecord,
-      spendable: atomicToUsdc(spendableAtomic),
+      spendable: fromAtomic(spendableAtomic, cfg.paymentTokenDecimals),
       maxSession: cfg.maxSession,
       canJoin: spendableAtomic >= minTick && cfg.active,
       roomActive: cfg.active,
-      source: passkeyMode ? 'onchain' : 'gateway'
+      source: 'onchain'
     });
   } catch (err) {
     return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
@@ -839,8 +694,7 @@ async function tickPasskeyStreamSeat(seat) {
         address: tokenAddress,
         abi: erc20Abi,
         functionName: 'transferFrom',
-        args: [seat.viewerAddress, SELLER_WALLET_ADDRESS, tickPrice],
-        ...(await arcFeesWithFloor())
+        args: [seat.viewerAddress, SELLER_WALLET_ADDRESS, tickPrice]
       });
       console.log(
         `[meter:passkey] seat ${seat.id}: pulled ${fromAtomic(tickPrice, tokenDec)} ${tokenSym} (tx ${tx})`
@@ -992,7 +846,7 @@ try {
   attachRewards(wss, {
     getRoomConfig: resolveRoomConfig,
     poolPrivateKey: process.env.REWARD_POOL_PRIVATE_KEY || null,
-    rpcUrl: ARC_RPC_URL,
+    rpcUrl: RPC_URL,
   });
 } catch (err) {
   console.warn('[rewards] failed to attach, continuing without watch-to-earn:', err.message);
@@ -1039,7 +893,7 @@ function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
         transaction: null,
         allowance: fromAtomic(verified.allowance, dec),
         tokenSymbol: sym,
-        network: ARC_NETWORK,
+        network: NETWORK,
         mode,
         source: 'earned_balance',
       }
@@ -1048,7 +902,7 @@ function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
         transaction: verified.txHash,
         allowance: fromAtomic(verified.allowance, dec),
         tokenSymbol: sym,
-        network: ARC_NETWORK,
+        network: NETWORK,
         mode: 'passkey_stream',
         approach: PASSKEY_METER_APPROACH,
       };
@@ -1198,7 +1052,7 @@ app.post('/api/join/passkey', async (req, res) => {
       let rawBal;
       try {
         rawBal = await readTokenBalance(
-          cfg.paymentTokenAddress, address, ARC_RPC_URL, ARC_CHAIN_ID
+          cfg.paymentTokenAddress, address, RPC_URL, CHAIN_ID
         );
       } catch (err) {
         return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
@@ -1379,203 +1233,15 @@ app.post('/api/join/passkey', async (req, res) => {
   }
 });
 
-// MetaMask / Circle Gateway join — prepaid session via x402 (unchanged).
-app.post('/api/join', async (req, res) => {
-  try {
-    const { username, address } = req.body;
-    if (!username) {
-      return res.status(400).json({ error: 'Username required' });
-    }
-
-    if (req.get('x-wallet-mode') === 'passkey' || req.headers['x-modular-payment']) {
-      return res.status(400).json({
-        error: 'Passkey wallets must use POST /api/join/passkey',
-        redirect: '/api/join/passkey',
-        path: 'gateway'
-      });
-    }
-
-    const resolved = resolveRoomFromRequest(req.body, req.query);
-    if (resolved.error === 'invalid_room_id') {
-      return res.status(400).json({ error: 'Invalid room id' });
-    }
-    if (resolved.error === 'room_not_found') {
-      return res.status(404).json({ error: 'Room not found', roomId: resolved.roomId });
-    }
-    const { roomId, cfg, atomics } = resolved;
-
-    const paymentHeader = req.headers['payment-signature'];
-
-    let kind;
-    try {
-      kind = await getArcKind();
-    } catch (err) {
-      return res.status(503).json({ error: 'Gateway unavailable', message: err.message });
-    }
-
-    if (!paymentHeader) {
-      if (!cfg.active) {
-        return res.status(403).json({
-          error: 'Room is not accepting joins',
-          reason: 'room_stopped',
-          roomId
-        });
-      }
-      if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) {
-        return res.status(400).json({ error: 'Wallet address required to price the session' });
-      }
-
-      let bal;
-      try {
-        bal = await getGatewayBalance(address);
-      } catch (err) {
-        return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
-      }
-
-      const sessionAtomic = bal.availableAtomic < atomics.gatewayMaxSessionAtomic
-        ? bal.availableAtomic
-        : atomics.gatewayMaxSessionAtomic;
-
-      if (sessionAtomic < atomics.tickPriceAtomic) {
-        return res.status(402).json({
-          error: 'Insufficient Gateway balance',
-          reason: 'insufficient_balance',
-          available: bal.available,
-          pending: bal.pending,
-          needAtLeast: cfg.tickPrice,
-          hint: bal.hasRecord
-            ? 'Deposit more USDC into the Gateway to watch.'
-            : 'No finalized Gateway balance yet — your deposit may still be finalizing.',
-          path: 'gateway',
-          roomId
-        });
-      }
-
-      const requirements = buildRequirements(kind, sessionAtomic);
-      const paymentRequired = {
-        x402Version: 2,
-        resource: {
-          url: '/api/join',
-          description: `Co-stream seat — prepaid ${atomicToUsdc(sessionAtomic)} USDC, metered ${cfg.tickPrice} USDC / ${cfg.tickSeconds}s`,
-          mimeType: 'application/json'
-        },
-        accepts: [requirements]
-      };
-      res.statusCode = 402;
-      res.setHeader('PAYMENT-REQUIRED', b64encodeJson(paymentRequired));
-      res.setHeader('Content-Type', 'application/json');
-      console.log(`[join:gateway] room ${roomId} 402 session terms for ${address}: ${atomicToUsdc(sessionAtomic)} USDC cap`);
-      return res.end(JSON.stringify({
-        sessionAmount: atomicToUsdc(sessionAtomic),
-        sessionAmountAtomic: sessionAtomic.toString(),
-        payTo: SELLER_WALLET_ADDRESS,
-        roomId,
-        walletMode: 'metamask',
-        tickPrice: cfg.tickPrice,
-        tickSeconds: cfg.tickSeconds,
-        maxSession: cfg.maxSession,
-        meterApproach: 'gateway_prepaid',
-        path: 'gateway'
-      }));
-    }
-
-    if (!cfg.active) {
-      return res.status(403).json({ error: 'Room is not accepting joins', reason: 'room_stopped', roomId });
-    }
-
-    let paymentPayload;
-    try {
-      paymentPayload = b64decodeJson(paymentHeader);
-    } catch {
-      return res.status(400).json({ error: 'Malformed Payment-Signature header' });
-    }
-
-    let sessionAtomic;
-    try {
-      sessionAtomic = BigInt(paymentPayload?.payload?.authorization?.value ?? '0');
-    } catch {
-      sessionAtomic = 0n;
-    }
-    if (sessionAtomic <= 0n) {
-      return res.status(400).json({ error: 'Signed authorization has no value' });
-    }
-    if (sessionAtomic > atomics.maxSessionAtomic) {
-      return res.status(400).json({
-        error: 'Authorization exceeds session cap',
-        reason: 'over_cap',
-        maxSession: cfg.maxSession
-      });
-    }
-
-    const requirements = buildRequirements(kind, sessionAtomic);
-
-    const verify = await facilitator.verify(paymentPayload, requirements);
-    if (!verify.isValid) {
-      return res.status(402).json({
-        error: 'Payment verification failed',
-        reason: verify.invalidReason
-      });
-    }
-
-    const settle = await facilitator.settle(paymentPayload, requirements);
-    if (!settle.success) {
-      return res.status(402).json({
-        error: 'Payment settlement failed',
-        reason: settle.errorReason
-      });
-    }
-
-    const result = addParticipant(username, {
-      remainingAtomic: sessionAtomic,
-      payer: settle.payer || verify.payer || null,
-      viewerAddress: (address && /^0x[0-9a-fA-F]{40}$/.test(address))
-        ? address
-        : (settle.payer || verify.payer || null),
-      depositTx: settle.transaction || null,
-      streamRoomId: roomId,
-      flyIn: req.body.flyIn,
-      flyOut: req.body.flyOut,
-    });
-
-    if (!result.success) {
-      const status = result.reason === 'room_stopped' ? 403 : 409;
-      return res.status(status).json({
-        error: result.reason === 'room_stopped' ? 'Room is not accepting joins' : 'No seats available',
-        reason: result.reason,
-        roomId
-      });
-    }
-
-    schedulePendingCameraTimeout(result.seat.id);
-    console.log(`[join:gateway] room ${roomId} admitted seat ${result.seat.id} for ${username}`);
-
-    const tickPrice = result.seat.gatewayTickPriceAtomic;
-    const tickSec = result.seat.gatewayTickSeconds;
-    const ticksLeft = tickPrice > 0n ? Number(result.seat.remainingAtomic / tickPrice) : 0;
-
-    return res.json({
-      success: true,
-      message: 'Seat assigned! Open this link to go live:',
-      pushUrl: result.seat.pushUrl,
-      seatId: result.seat.id,
-      roomId,
-      remaining: atomicToUsdc(result.seat.remainingAtomic),
-      tickPrice: cfg.tickPrice,
-      tickSeconds: cfg.tickSeconds,
-      maxSession: cfg.maxSession,
-      secondsLeft: ticksLeft * tickSec,
-      payment: {
-        payer: settle.payer || verify.payer || null,
-        transaction: settle.transaction || null,
-        network: ARC_NETWORK
-      }
-    });
-  } catch (error) {
-    console.error('join error:', error);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Payment processing error', message: error.message });
-    }
-  }
+// Legacy Circle Gateway join (Arc) — retired on Tempo. MetaMask viewers go
+// through the same unified meter as embedded wallets from Phase 2 onward.
+app.post('/api/join', (req, res) => {
+  res.status(501).json({
+    error: 'The Gateway prepaid join was retired in the Tempo migration.',
+    hint: 'Use the join page flow (unified meter) — POST /api/join/passkey.',
+    redirect: '/api/join/passkey',
+    path: 'gateway'
+  });
 });
 
 // Leave seat
@@ -1650,8 +1316,8 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 attachDashboardRoutes(app, {
   baseUrl: BASE_URL,
-  rpcUrl: ARC_RPC_URL,
-  chainId: ARC_CHAIN_ID,
+  rpcUrl: RPC_URL,
+  chainId: CHAIN_ID,
   activeSeats,
   removeParticipant,
   setSeatPinned,
@@ -1727,15 +1393,15 @@ for (const method of ['on', 'addListener', 'prependListener']) {
 server.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════╗
-║  MEGACHAT — UNIFIED APP (ARC TESTNET)      ║
+║  MEGACHAT — UNIFIED APP (TEMPO MAINNET)    ║
 ╠═══════════════════════════════════════════╣
 ║  App:     http://localhost:${PORT}  [next ${nextDev ? 'dev' : 'prod'}]
 ║  Join:    http://localhost:${PORT}/join?room=<id>
 ║  Overlay: http://localhost:${PORT}/overlay   ║
 ╠═══════════════════════════════════════════╣
-║  Chain:   ${ARC_NETWORK}
-║  Meter (MetaMask): ${TICK_PRICE} USDC / ${TICK_SECONDS}s
-║  Meter (Passkey):  ${PASSKEY_TICK_PRICE} USDC / ${PASSKEY_TICK_SECONDS}s  [approach ${PASSKEY_METER_APPROACH}]
+║  Chain:   ${NETWORK} (Tempo)
+║  Meter (legacy prepaid): ${TICK_PRICE} USDC / ${TICK_SECONDS}s
+║  Meter (stream):   ${PASSKEY_TICK_PRICE} USDC / ${PASSKEY_TICK_SECONDS}s  [approach ${PASSKEY_METER_APPROACH}]
 ║  Session cap:      ${MAX_SESSION} USDC
 ║  Seller:  ${SELLER_WALLET_ADDRESS}
 ╚═══════════════════════════════════════════╝

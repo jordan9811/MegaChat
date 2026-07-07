@@ -1,45 +1,19 @@
 /**
- * ERC-20 helpers — dynamic decimals (never hardcode 6/18).
+ * TIP-20 / ERC-20 helpers — dynamic decimals (never hardcode 6/18).
+ *
+ * Tempo note: TIP-20 stablecoins expose the full ERC-20 read interface
+ * (decimals/symbol/balanceOf/allowance), so viem's erc20Abi works unchanged.
+ * The Arc Testnet 1-gwei priority-fee floor hack that used to live here was
+ * Arc-specific and is intentionally gone (see TEMPO_NOTES.md).
  */
 import { createPublicClient, http, erc20Abi } from 'viem';
 
-const arcChain = (chainId, rpcUrl) => ({
+const tokenChain = (chainId, rpcUrl) => ({
   id: chainId,
-  name: 'Arc Testnet',
-  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+  name: 'Tempo',
+  nativeCurrency: { name: 'USD', symbol: 'USD', decimals: 6 },
   rpcUrls: { default: { http: [rpcUrl] }, public: { http: [rpcUrl] } },
 });
-
-// ─── Arc gas floor ───────────────────────────────────────────────────────────
-// Arc rejects transactions/userOps whose priority fee is under 1 gwei (the
-// bundler surfaces it as "precheck failed: maxPriorityFeePerGas is X but must
-// be at least 1000000000"), while the network estimate can come back lower
-// (~0.82 gwei observed). EVERY write sent to Arc must clamp through these.
-export const MIN_PRIORITY_FEE_WEI = 1_000_000_000n; // 1 gwei floor
-export const FALLBACK_BASE_FEE_BUDGET_WEI = 2_000_000_000n; // headroom if estimation fails
-
-/** Clamp a viem fee estimate to the Arc floor; maxFee keeps its headroom above priority. */
-export function clampFeesToArcFloor(est) {
-  const estPriority = est?.maxPriorityFeePerGas ?? 0n;
-  const maxPriorityFeePerGas =
-    estPriority > MIN_PRIORITY_FEE_WEI ? estPriority : MIN_PRIORITY_FEE_WEI;
-  const baseFeeBudget =
-    est && est.maxFeePerGas > estPriority
-      ? est.maxFeePerGas - estPriority
-      : FALLBACK_BASE_FEE_BUDGET_WEI;
-  return { maxFeePerGas: baseFeeBudget + maxPriorityFeePerGas, maxPriorityFeePerGas };
-}
-
-/** Network fee estimate clamped to the Arc floor. Never throws. */
-export async function estimateArcFeesWithFloor(publicClient) {
-  let est = null;
-  try {
-    est = await publicClient.estimateFeesPerGas();
-  } catch {
-    // RPC estimation unavailable — clampFeesToArcFloor falls back to the floor values.
-  }
-  return clampFeesToArcFloor(est);
-}
 
 export function toAtomic(amountStr, decimals) {
   const d = Number(decimals);
@@ -58,9 +32,9 @@ export function fromAtomic(atomic, decimals) {
   return frac ? `${whole}.${frac}` : `${whole}`;
 }
 
-export async function readTokenMetadata(tokenAddress, rpcUrl, chainId = 5042002) {
+export async function readTokenMetadata(tokenAddress, rpcUrl, chainId = 4217) {
   const client = createPublicClient({
-    chain: arcChain(chainId, rpcUrl),
+    chain: tokenChain(chainId, rpcUrl),
     transport: http(rpcUrl),
   });
   const addr = tokenAddress;
@@ -80,9 +54,9 @@ export async function readTokenMetadata(tokenAddress, rpcUrl, chainId = 5042002)
   return { address: addr, decimals, symbol };
 }
 
-export async function readTokenBalance(tokenAddress, owner, rpcUrl, chainId = 5042002) {
+export async function readTokenBalance(tokenAddress, owner, rpcUrl, chainId = 4217) {
   const client = createPublicClient({
-    chain: arcChain(chainId, rpcUrl),
+    chain: tokenChain(chainId, rpcUrl),
     transport: http(rpcUrl),
   });
   const raw = await client.readContract({
@@ -94,9 +68,9 @@ export async function readTokenBalance(tokenAddress, owner, rpcUrl, chainId = 50
   return BigInt(raw);
 }
 
-export async function readTokenAllowance(tokenAddress, owner, spender, rpcUrl, chainId = 5042002) {
+export async function readTokenAllowance(tokenAddress, owner, spender, rpcUrl, chainId = 4217) {
   const client = createPublicClient({
-    chain: arcChain(chainId, rpcUrl),
+    chain: tokenChain(chainId, rpcUrl),
     transport: http(rpcUrl),
   });
   const raw = await client.readContract({
@@ -108,8 +82,8 @@ export async function readTokenAllowance(tokenAddress, owner, spender, rpcUrl, c
   return BigInt(raw);
 }
 
-/** Validate Arc ERC-20 and return metadata for room config. */
-export async function validatePaymentToken(tokenAddress, rpcUrl, chainId = 5042002) {
+/** Validate a Tempo TIP-20/ERC-20 and return metadata for room config. */
+export async function validatePaymentToken(tokenAddress, rpcUrl, chainId = 4217) {
   if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress || '')) {
     throw new Error('Invalid token address');
   }

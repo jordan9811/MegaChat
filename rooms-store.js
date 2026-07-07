@@ -23,8 +23,11 @@ export function getEnvDefaults() {
     passkeyTickPrice: String(process.env.PASSKEY_TICK_PRICE || '0.001'),
     maxSession: String(process.env.MAX_SESSION || '2'),
     maxSeats: Math.min(3, Math.max(1, Number(process.env.MAX_SEATS || 3))),
-    paymentTokenAddress: process.env.USDC_ADDRESS || '0x3600000000000000000000000000000000000000',
-    paymentTokenSymbol: 'USDC',
+    // USDC.e on Tempo mainnet (TEMPO_NOTES.md). The legacy USDC_ADDRESS var
+    // stays in .env for the Arc branches but is ignored here.
+    paymentTokenAddress:
+      process.env.TEMPO_USDC_ADDRESS || '0x20c000000000000000000000b9537d11c60e8b50',
+    paymentTokenSymbol: 'USDC.e',
     paymentTokenDecimals: 6,
     rewards: {
       enabled: false,
@@ -181,10 +184,32 @@ export function resolveRoomConfig(roomId) {
     passkeyTickPrice: String(cfg.passkeyTickPrice ?? defaults.passkeyTickPrice),
     maxSession: String(cfg.maxSession ?? defaults.maxSession),
     maxSeats,
-    paymentTokenAddress: String(cfg.paymentTokenAddress ?? defaults.paymentTokenAddress),
+    ...resolvePaymentToken(cfg, defaults),
+    rewards: resolveRewards(cfg, defaults),
+  };
+}
+
+// data/rooms.json is SHARED with the Arc branches (gitignored, one working
+// dir), so persisted rooms may still carry Arc Testnet token addresses. Remap
+// them to the Tempo default AT READ TIME — never rewrite the file in place,
+// or the Arc fallback branches would inherit Tempo addresses.
+const LEGACY_ARC_TOKENS = new Set([
+  '0x3600000000000000000000000000000000000000', // Arc Testnet USDC
+]);
+
+function resolvePaymentToken(cfg, defaults) {
+  const raw = String(cfg.paymentTokenAddress ?? '').toLowerCase();
+  if (!raw || LEGACY_ARC_TOKENS.has(raw)) {
+    return {
+      paymentTokenAddress: defaults.paymentTokenAddress,
+      paymentTokenSymbol: defaults.paymentTokenSymbol,
+      paymentTokenDecimals: defaults.paymentTokenDecimals,
+    };
+  }
+  return {
+    paymentTokenAddress: String(cfg.paymentTokenAddress),
     paymentTokenSymbol: String(cfg.paymentTokenSymbol ?? defaults.paymentTokenSymbol),
     paymentTokenDecimals: Number(cfg.paymentTokenDecimals ?? defaults.paymentTokenDecimals),
-    rewards: resolveRewards(cfg, defaults),
   };
 }
 

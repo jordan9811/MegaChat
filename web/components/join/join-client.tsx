@@ -100,16 +100,16 @@ export function JoinClient() {
             className="h-11 w-full rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground/70 focus-visible:border-primary/70 focus-visible:ring-2 focus-visible:ring-primary/30"
           />
 
-          {/* Wallet choice — passkey is the PRIMARY path (bigger, on top);
-              MetaMask/Gateway is the secondary row below. Clicking Join
-              while disconnected runs passkey auth automatically. */}
+          {/* Wallet choice — Privy (email/social/passkey) is the PRIMARY path
+              (bigger, on top); MetaMask is the secondary row below. Clicking
+              Join while disconnected runs the Privy sign-in automatically. */}
           <div className="flex flex-col gap-2">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button id="passkeyCreateBtn" type="button" className={passkeyBtnCls}>
-                ✨ Create passkey (new here?)
+                ✨ Sign up — email or passkey
               </button>
               <button id="passkeyBtn" type="button" className={passkeyBtnCls}>
-                🔐 Sign in with existing passkey
+                🔐 Sign in
               </button>
             </div>
             <div id="walletInfo" className="text-xs leading-relaxed text-muted-foreground" />
@@ -123,7 +123,7 @@ export function JoinClient() {
                 🦊 Connect MetaMask
               </button>
               <button id="depositBtn" type="button" className={miniBtn}>
-                💧 Deposit USDC to Gateway
+                💧 Fund wallet
               </button>
             </div>
           </div>

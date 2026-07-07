@@ -1,29 +1,23 @@
 // @ts-nocheck
 /**
- * Viewer join-page logic — ported VERBATIM from public/index.html (inline
- * script) + public/rewards.js on the Express origin. The payment / join /
- * meter / passkey / MetaMask / camera-lifecycle logic is unchanged.
+ * Viewer join-page logic (Tempo mainnet).
  *
- * The ONLY differences from the originals (transport glue for the Next.js
- * origin, no behavior change):
- *   1. Wrapped in initJoinPage({ wsUrl }) with a cleanup return (React
- *      mounts/unmounts) instead of top-level statements.
- *   2. WebSockets connect to the backend origin (wsUrl) instead of
- *      location.host — the Next dev server has no WS endpoint.
- *   3. Button handlers attach via addEventListener instead of inline
- *      onclick attributes (same functions, same order).
- *   4. The passkey bundle dynamic import uses a bundler-ignore comment so
- *      Next doesn't try to resolve it at build time (served via rewrite
- *      proxy from the backend, same-origin at runtime).
- *   5. The passkey fund-note copy no longer hardcodes localhost:3000.
+ * Originally ported verbatim from the Arc-era public/index.html; the camera
+ * lifecycle, WS transport, seat state machine, and rewards client are
+ * unchanged. The WALLET + PAYMENT layer was rebuilt for Tempo:
+ *   - Privy embedded wallets (email/social/passkey) via the window.MegaWallet
+ *     bridge installed by components/providers/tempo-wallet.tsx — primary.
+ *   - MetaMask stays as the secondary injected-provider path (chain 4217).
+ *   - ONE metered join flow for both modes against /api/join/passkey
+ *     (session-cap authorize → seat). Circle Gateway deposits/EIP-3009 are
+ *     gone — funding is a plain TIP-20 transfer on Tempo.
  */
 
 let CONFIG = null;
 let account = null;
 let mySeatId = null;
 let hasWallet = false;
-let walletMode = null; // null | 'metamask' | 'passkey'
-let passkeyModuleLoaded = false;
+let walletMode = null; // null | 'metamask' | 'privy'
 let streamRoomId = 'default';
 
 let ws = null;
@@ -72,10 +66,7 @@ async function loadConfig() {
 
 function tokenSymbol() {
   if (!CONFIG) return 'USDC';
-  if (walletMode === 'passkey' && CONFIG.paymentTokenSymbol) {
-    return CONFIG.paymentTokenSymbol;
-  }
-  return CONFIG.gatewayTokenSymbol || 'USDC';
+  return CONFIG.paymentTokenSymbol || 'USDC';
 }
 
 function updatePriceDisplay() {
@@ -83,17 +74,13 @@ function updatePriceDisplay() {
   const sym = tokenSymbol();
   const amt = document.getElementById('priceAmount');
   const lbl = document.getElementById('priceLabel');
-  const tickPrice = walletMode === 'passkey'
-    ? (CONFIG.passkeyTickPrice || CONFIG.tickPrice)
-    : CONFIG.tickPrice;
-  const tickSec = walletMode === 'passkey'
-    ? (CONFIG.passkeyTickSeconds || CONFIG.tickSeconds)
-    : CONFIG.tickSeconds;
+  // One meter on Tempo — every wallet mode streams at the same per-second rate.
+  const tickPrice = CONFIG.passkeyTickPrice || CONFIG.tickPrice;
+  const tickSec = CONFIG.passkeyTickSeconds || 1;
   if (amt) amt.textContent = `${tickPrice} ${sym}`;
   if (lbl) {
-    lbl.textContent = walletMode === 'passkey'
-      ? `passkey stream · ${tickPrice} ${sym}/s · cap ${CONFIG.maxSession} ${sym}`
-      : `Gateway · ${tickPrice} USDC / ${tickSec}s · cap ${CONFIG.maxSession} USDC`;
+    lbl.textContent =
+      `${tickPrice} ${sym} / ${tickSec}s · cap ${CONFIG.maxSession} ${sym} · Tempo`;
   }
 }
 
@@ -191,104 +178,74 @@ function onJoinButtonClick() {
   // busy / awaiting-camera / live: disabled anyway — ignore stray clicks.
 }
 
-async function loadPasskeyModule() {
-  if (passkeyModuleLoaded && window.PasskeyWallet) return window.PasskeyWallet;
-  // Served same-origin via the Next.js rewrite proxy to the backend.
-  const bundleUrl = '/passkey-wallet.bundle.js?v=2';
-  await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ bundleUrl);
-  passkeyModuleLoaded = true;
-  return window.PasskeyWallet;
-}
-
 async function connectMetaMask() {
   walletMode = 'metamask';
   return connectWallet();
 }
 
-const PASSKEY_SIGNIN_LABEL = '🔐 Sign in with existing passkey';
-const PASSKEY_CREATE_LABEL = '✨ Create passkey (new here?)';
+const PRIVY_SIGNIN_LABEL = '🔐 Sign in';
+const PRIVY_CREATE_LABEL = '✨ Sign up — email or passkey';
+
+/** The window bridge installed by components/providers/tempo-wallet.tsx. */
+function getMegaWallet() {
+  return (typeof window !== 'undefined' && window.MegaWallet) || null;
+}
+
+/** EIP-1193 provider for the ACTIVE wallet mode (Privy embedded or MetaMask). */
+async function getActiveProvider() {
+  if (walletMode === 'privy') {
+    const MW = getMegaWallet();
+    if (!MW || !MW.configured) throw new Error('Privy wallet not available');
+    return MW.getProvider();
+  }
+  return ensureEthereum();
+}
 
 /**
- * mode: 'register' (first-time user creates a passkey), 'login' (returning
- * user signs in with an existing one), or 'auto' (legacy: stored credential
- * decides — used by the join button's implicit connect).
+ * Privy embedded wallet connect (email / social / passkey — one modal covers
+ * both new and returning users, so 'register' vs 'login' only changes labels).
  */
-async function connectPasskeyWallet(mode) {
-  if (mode !== 'register' && mode !== 'login') mode = 'auto';
-  const username = document.getElementById('username').value.trim();
-  // Sign-in uses the passkey itself (discoverable credential) — only creating
-  // a NEW passkey needs a username.
-  if (!username && mode !== 'login') {
-    showMessage('Enter a username first (it names your new passkey).', 'error');
-    return null;
-  }
-  if (!CONFIG || !CONFIG.modularWallets) {
-    showMessage('Passkey wallets not configured on server (CIRCLE_CLIENT_KEY / CIRCLE_CLIENT_URL).', 'error');
-    return null;
-  }
+async function connectPrivyWallet(mode) {
   const btn = document.getElementById('passkeyBtn');
   const createBtn = document.getElementById('passkeyCreateBtn');
   const clicked = mode === 'register' ? (createBtn || btn) : btn;
+  const MW = getMegaWallet();
+  if (!MW || !MW.configured) {
+    showMessage(
+      'Privy sign-in is not configured on this server yet (set NEXT_PUBLIC_PRIVY_APP_ID in .env and restart). MetaMask still works below.',
+      'error'
+    );
+    return null;
+  }
   try {
     btn.disabled = true;
     if (createBtn) createBtn.disabled = true;
-    clicked.textContent = mode === 'register' ? '⏳ Creating passkey…' : '⏳ Waiting for passkey…';
-    walletMode = 'passkey';
+    clicked.textContent = '⏳ Waiting for sign-in…';
+    walletMode = 'privy';
     updatePriceDisplay();
     account = null; // clear any stale MetaMask address
 
-    const PW = await loadPasskeyModule();
-    PW.initModularClients(CONFIG.modularWallets);
-    const addr = mode === 'register'
-      ? await PW.registerPasskey(username)
-      : mode === 'login'
-        ? await PW.loginPasskey(username)
-        : await PW.connectPasskey(username);
+    const addr = await MW.connect();
     account = addr;
     renderWallet();
     window.dispatchEvent(new CustomEvent('wallet:connected', { detail: { account } }));
     await refreshBalance();
-    showMessage(
-      (mode === 'register'
-        ? '✅ Passkey created — smart account ready.'
-        : '✅ Signed in — smart account ready.')
-      + ' Fund it from the faucet if balance is zero.',
-      'success'
-    );
+    showMessage('✅ Signed in — wallet ready on Tempo.', 'success');
     return account;
   } catch (err) {
     walletMode = null;
     account = null;
-    console.error('[passkey]', err);
-    const errText = [err?.message, err?.details, err?.cause?.message]
-      .filter(Boolean).join(' ');
-    const msg = err && err.name === 'NotAllowedError'
-      ? (mode === 'login'
-        ? `No passkey found on this device (or the prompt was cancelled). New here? Use “${PASSKEY_CREATE_LABEL}”.`
-        : 'Passkey prompt cancelled or timed out.')
-      : /invalid credentials/i.test(errText)
-        // Circle domain-locks the client key: it validates the page hostname
-        // on every RPC. New deploy domains must be allowlisted in the Console.
-        ? `This domain (${location.hostname}) isn't authorized for the Circle passkey key. `
-          + 'Add it in Circle Console → Programmable Wallets → Modular Wallets → your client key → allowed domains, then reload.'
-        : err && err.code === 'USERNAME_TAKEN'
-          ? err.message
-          : /username is duplicated/i.test(errText)
-            ? `This username already has a passkey — use “${PASSKEY_SIGNIN_LABEL}”.`
-            : (err && err.message) || 'Passkey sign-in failed';
-    showMessage('❌ ' + msg, 'error');
+    console.error('[privy]', err);
+    showMessage('❌ ' + ((err && err.message) || 'Sign-in failed'), 'error');
     renderWallet();
     return null;
   } finally {
-    // Restore idle labels ONLY when not connected — renderWallet() owns the
-    // connected state (this used to clobber “connected” right after success,
-    // so the UI never showed any feedback).
-    if (!(account && walletMode === 'passkey')) {
+    if (!(account && walletMode === 'privy')) {
       btn.disabled = false;
-      btn.textContent = PASSKEY_SIGNIN_LABEL;
+      btn.textContent = PRIVY_SIGNIN_LABEL;
       if (createBtn) {
         createBtn.disabled = false;
-        createBtn.textContent = PASSKEY_CREATE_LABEL;
+        createBtn.textContent = PRIVY_CREATE_LABEL;
       }
     }
   }
@@ -305,7 +262,7 @@ async function connectWallet() {
     }
     account = accounts[0];
     walletMode = 'metamask';
-    await ensureArcChain();
+    await ensureTempoChain();
     renderWallet();
     // Let the isolated watch-to-earn module know which wallet to credit.
     window.dispatchEvent(new CustomEvent('wallet:connected', { detail: { account } }));
@@ -320,8 +277,10 @@ async function connectWallet() {
   }
 }
 
-// Add / switch MetaMask to Arc Testnet (chainId 0x4CEF52 = 5042002).
-async function ensureArcChain() {
+// Add / switch MetaMask to Tempo mainnet (chainId 0x1079 = 4217). Privy
+// embedded wallets are created on Tempo already — this is MetaMask-only.
+async function ensureTempoChain() {
+  if (walletMode === 'privy') return; // embedded wallet lives on Tempo
   const eth = getProvider();
   if (!eth) {
     throw new Error('No wallet detected. Install MetaMask or open this page in a wallet browser.');
@@ -335,7 +294,7 @@ async function ensureArcChain() {
   if (!CONFIG || !CONFIG.chainIdHex) {
     throw new Error('Network config not loaded yet — please try again in a moment.');
   }
-  const hexChainId = CONFIG.chainIdHex; // e.g. 0x4cef52
+  const hexChainId = CONFIG.chainIdHex; // 0x1079
   try {
     await eth.request({
       method: 'wallet_switchEthereumChain',
@@ -348,8 +307,10 @@ async function ensureArcChain() {
         method: 'wallet_addEthereumChain',
         params: [{
           chainId: hexChainId,
-          chainName: 'Arc Testnet',
-          nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+          chainName: CONFIG.chainName || 'Tempo',
+          // Tempo has no native gas token (fees come out of stablecoins);
+          // MetaMask hard-requires decimals 18 here, display-only.
+          nativeCurrency: { name: 'USD', symbol: 'USD', decimals: 18 },
           rpcUrls: [CONFIG.rpcUrl],
           blockExplorerUrls: [CONFIG.explorerUrl]
         }]
@@ -367,9 +328,9 @@ function shortAddr(addr) {
   return a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
 }
 
-// Copy helper with a plain-http fallback: the passkey flow needs a secure
-// origin, but MetaMask/Gateway can run on http where navigator.clipboard is
-// unavailable — fall back to a hidden textarea + execCommand there.
+// Copy helper with a plain-http fallback: Privy needs a secure origin, but
+// MetaMask can run on http where navigator.clipboard is unavailable — fall
+// back to a hidden textarea + execCommand there.
 async function copyText(text) {
   try {
     if (navigator.clipboard && window.isSecureContext) {
@@ -435,22 +396,20 @@ function renderWallet() {
   const join = document.getElementById('joinBtn');
   if (!info || !connectBtn || !passkeyBtn) return;
 
-  if (account && walletMode === 'passkey') {
+  if (account && walletMode === 'privy') {
     connectBtn.disabled = true;
     passkeyBtn.disabled = true;
-    passkeyBtn.textContent = '🟢 Passkey connected';
+    passkeyBtn.textContent = '🟢 Signed in';
     if (passkeyCreateBtn) passkeyCreateBtn.style.display = 'none';
     connectBtn.textContent = '🦊 Connect MetaMask';
-    info.innerHTML = `🟢 Connected · Smart account: ${addrChip(account)}<br>Network: Arc Testnet (passkey)`;
+    info.innerHTML = `🟢 Connected · Wallet: ${addrChip(account)}<br>Network: Tempo`;
     if (fundNote) {
       fundNote.style.display = 'block';
       fundNote.innerHTML =
-        'Fund this address with testnet USDC from ' +
-        '<a class="addr" href="https://faucet.circle.com" target="_blank" rel="noopener">faucet.circle.com</a> ' +
-        '(select <strong>Arc Testnet</strong>). Passkeys need a secure origin ' +
-        '(localhost or https).';
+        `Fund this wallet by sending <strong>${tokenSymbol()}</strong> on ` +
+        '<strong>Tempo</strong> to the address above (tap it to copy).';
     }
-    if (dep) dep.style.display = 'none';
+    if (dep) { dep.style.display = ''; dep.disabled = false; }
     if (join && joinBtnState === 'idle') setJoinState('idle');
     return;
   }
@@ -464,59 +423,49 @@ function renderWallet() {
     connectBtn.disabled = true;
     passkeyBtn.disabled = true;
     if (passkeyCreateBtn) passkeyCreateBtn.disabled = true;
-    const net = CONFIG && CONFIG.network ? CONFIG.network : 'Arc';
-    info.innerHTML = `🟢 Connected · Wallet: ${addrChip(account)}<br>Network: Arc Testnet (${net})`;
-    // Deposit is THE way to fund the Gateway balance — must be usable as soon
-    // as a wallet is connected (this early-returned without enabling before,
-    // leaving the button permanently greyed).
+    info.innerHTML = `🟢 Connected · Wallet: ${addrChip(account)}<br>Network: Tempo (MetaMask)`;
     if (dep) dep.disabled = false;
     if (join && joinBtnState === 'idle') setJoinState('idle');
     return;
   }
 
   connectBtn.disabled = !hasWallet;
-  const passkeyReady = !!(CONFIG && CONFIG.modularWallets);
-  passkeyBtn.disabled = !passkeyReady;
-  if (passkeyCreateBtn) passkeyCreateBtn.disabled = !passkeyReady;
+  const MW = getMegaWallet();
+  const privyReady = !!(MW && MW.configured);
+  passkeyBtn.disabled = !privyReady;
+  if (passkeyCreateBtn) passkeyCreateBtn.disabled = !privyReady;
   if (!hasWallet) {
     connectBtn.textContent = '🦊 No MetaMask detected';
-    info.innerHTML = hasWallet
-      ? ''
-      : 'No injected wallet — use a passkey (create one if you\'re new) or install MetaMask.';
+    info.innerHTML =
+      'No injected wallet — sign in with email or passkey above, or install MetaMask.';
   } else {
     connectBtn.textContent = '🦊 Connect MetaMask';
     info.textContent = '';
   }
-  // depositToGateway() connects the wallet itself when needed, so any injected
-  // wallet is enough to make the button useful.
-  if (dep) dep.disabled = !hasWallet;
-  // Join stays enabled while disconnected — clicking it runs passkey auth
+  // Fund shows the connected address; useless before any wallet exists.
+  if (dep) dep.disabled = !hasWallet && !privyReady;
+  // Join stays enabled while disconnected — clicking it runs the Privy sign-in
   // (the primary path). The state machine owns it outside idle.
   if (join && joinBtnState === 'idle') setJoinState('idle');
 }
 
-// Read the wallet's available Gateway balance and preview it as "Remaining".
+// Read the wallet's on-chain balance on Tempo and preview it as "Remaining".
 async function refreshBalance() {
   if (!account || mySeatId) return;
   try {
-    const headers = walletMode === 'passkey' ? { 'X-Wallet-Mode': 'passkey' } : {};
-    const res = await fetch(`/api/balance/${account}?room=${encodeURIComponent(streamRoomId)}`, { headers });
+    const res = await fetch(`/api/balance/${account}?room=${encodeURIComponent(streamRoomId)}`);
     const data = await res.json();
     if (!res.ok) return;
-    const tickPrice = parseFloat(CONFIG.tickPrice || '0.1') || 0.1;
+    const tickPrice = parseFloat(CONFIG.passkeyTickPrice || CONFIG.tickPrice || '0.001') || 0.001;
     const ticks = Math.floor(parseFloat(data.spendable || '0') / tickPrice);
-    showMeter(data.available, '0', ticks * (CONFIG.tickSeconds || 10));
-    if (parseFloat(data.available) === 0 && parseFloat(data.pending) > 0) {
-      document.getElementById('meterRemaining').textContent =
-        `${data.pending} USDC (finalizing…)`;
-    }
+    showMeter(data.available, '0', ticks * (CONFIG.passkeyTickSeconds || 1));
   } catch (e) {
     console.warn('balance refresh failed', e);
   }
 }
 
-async function waitForTx(hash) {
-  const eth = ensureEthereum();
+async function waitForTx(hash, provider) {
+  const eth = provider || await getActiveProvider();
   for (let i = 0; i < 60; i++) {
     const receipt = await eth.request({
       method: 'eth_getTransactionReceipt',
@@ -528,164 +477,31 @@ async function waitForTx(hash) {
   throw new Error('Timed out waiting for transaction ' + hash);
 }
 
-// One-time deposit of USDC into the Circle Gateway Wallet contract.
-async function depositToGateway() {
-  // ERC-20 / Gateway Wallet function selectors — declared here, above every
-  // use in this function, so they can never be read in the temporal dead zone.
-  const SEL_APPROVE = '0x095ea7b3';      // approve(address,uint256)
-  const SEL_DEPOSIT = '0x47e7ef24';      // deposit(address token,uint256 value)
-  const SEL_ALLOWANCE = '0xdd62ed3e';    // allowance(address,address)
-
-  const btn = document.getElementById('depositBtn');
-  try {
-    if (walletMode === 'passkey') {
-      showMessage('Use faucet.circle.com to fund your passkey smart account.', 'error');
-      return;
-    }
-    if (!account) await connectMetaMask();
-    if (!account) return; // connect failed/cancelled — connectWallet showed why
-    await ensureArcChain();
-
-    const amountStr = prompt('How much USDC to deposit into Gateway?', '1');
-    if (!amountStr) return;
-    const amount = parseUsdc(amountStr);
-    if (amount <= 0n) { showMessage('❌ Enter a positive amount', 'error'); return; }
-
-    const eth = ensureEthereum();
-    btn.disabled = true;
-    btn.textContent = '⏳ Approving USDC...';
-
-    // 1) Approve the Gateway Wallet to pull USDC (skip if already enough).
-    const allowanceData = SEL_ALLOWANCE +
-      encodeAddress(account) + encodeAddress(CONFIG.gatewayWalletAddress);
-    const currentAllowanceHex = await eth.request({
-      method: 'eth_call',
-      params: [{ to: CONFIG.usdcAddress, data: allowanceData }, 'latest']
-    });
-    const currentAllowance = BigInt(currentAllowanceHex || '0x0');
-
-    if (currentAllowance < amount) {
-      const approveData = SEL_APPROVE +
-        encodeAddress(CONFIG.gatewayWalletAddress) + encodeUint(amount);
-      const approveTx = await eth.request({
-        method: 'eth_sendTransaction',
-        params: [{ from: account, to: CONFIG.usdcAddress, data: approveData }]
-      });
-      await waitForTx(approveTx);
-    }
-
-    // 2) Deposit USDC into the Gateway Wallet: deposit(token, value).
-    btn.textContent = '⏳ Depositing...';
-    const depositData = SEL_DEPOSIT +
-      encodeAddress(CONFIG.usdcAddress) + encodeUint(amount);
-    const depositTx = await eth.request({
-      method: 'eth_sendTransaction',
-      params: [{ from: account, to: CONFIG.gatewayWalletAddress, data: depositData }]
-    });
-    await waitForTx(depositTx);
-
-    showMessage(
-      `✅ Deposited ${amountStr} USDC into Gateway.<br>` +
-      `<a class="addr" href="${CONFIG.explorerUrl}/tx/${depositTx}" target="_blank">View on explorer</a>` +
-      `<p style="margin-top:10px;font-size:0.85rem;">Updating balance… (a fresh deposit may take a moment to finalize)</p>`,
-      'success'
-    );
-    // Reflect the new deposit in "Remaining". Retry a few times because the
-    // Gateway available balance can lag the on-chain deposit by a bit.
-    refreshBalance();
-    for (const delay of [4000, 8000, 15000]) {
-      setTimeout(refreshBalance, delay);
-    }
-  } catch (err) {
-    console.error(err);
-    showMessage('❌ Deposit failed: ' + (err.message || err), 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '💧 Deposit USDC to Gateway';
-  }
-}
-
-// Build a signed Gateway payment (base64 PAYMENT-SIGNATURE header value)
-// for a given set of payment requirements decoded from a 402 response.
-async function buildPayment(requirements) {
-  const req = requirements.accepts.find(r => r.network === CONFIG.network)
-    || requirements.accepts[0];
-  if (!req) throw new Error('No Arc payment requirement offered by server');
-
-  const verifyingContract = req.extra && req.extra.verifyingContract;
-  if (!verifyingContract) throw new Error('Missing verifyingContract in requirements');
-
-  const chainId = parseInt(req.network.split(':')[1], 10);
-  const now = Math.floor(Date.now() / 1000);
-  const authorization = {
-    from: account,
-    to: req.payTo,
-    value: req.amount,                       // atomic units (string)
-    validAfter: (now - 600).toString(),      // 10 min skew (mirrors SDK)
-    validBefore: (now + req.maxTimeoutSeconds).toString(),
-    nonce: randomNonce()
-  };
-
-  // Build the EIP-712 structures HERE, immediately before signing, so every
-  // identifier is declared above its use (no TDZ). Values MUST stay
-  // byte-identical to what the Circle Gateway facilitator expects.
-  const CIRCLE_BATCHING_NAME = 'GatewayWalletBatched';
-  const CIRCLE_BATCHING_VERSION = '1';
-  const AUTHORIZATION_TYPES = {
-    TransferWithAuthorization: [
-      { name: 'from', type: 'address' },
-      { name: 'to', type: 'address' },
-      { name: 'value', type: 'uint256' },
-      { name: 'validAfter', type: 'uint256' },
-      { name: 'validBefore', type: 'uint256' },
-      { name: 'nonce', type: 'bytes32' }
-    ]
-  };
-  const EIP712_DOMAIN_TYPE = [
-    { name: 'name', type: 'string' },
-    { name: 'version', type: 'string' },
-    { name: 'chainId', type: 'uint256' },
-    { name: 'verifyingContract', type: 'address' }
-  ];
-
-  const typedData = {
-    types: { EIP712Domain: EIP712_DOMAIN_TYPE, ...AUTHORIZATION_TYPES },
-    domain: {
-      name: CIRCLE_BATCHING_NAME,
-      version: CIRCLE_BATCHING_VERSION,
-      chainId,
-      verifyingContract
-    },
-    primaryType: 'TransferWithAuthorization',
-    message: authorization
-  };
-
-  const eth = ensureEthereum();
-  const signature = await eth.request({
-    method: 'eth_signTypedData_v4',
-    params: [account, JSON.stringify(typedData)]
-  });
-
-  const paymentPayload = {
-    x402Version: requirements.x402Version || 2,
-    // Circle Gateway's /v1/x402/verify requires `resource` to be echoed back.
-    resource: requirements.resource,
-    accepted: req,
-    payload: { authorization, signature }
-  };
-  return b64encode(paymentPayload);
-}
-
-async function joinSeatPasskey(username) {
-  if (!account) await connectPasskeyWallet('auto');
+// "Fund wallet": there is no Gateway deposit on Tempo — funding is a plain
+// TIP-20 transfer to the connected address. Show it, copy it, link explorer.
+async function fundWallet() {
   if (!account) {
-    setJoinState('idle');
-    return;
+    const MW = getMegaWallet();
+    if (MW && MW.configured) await connectPrivyWallet('login');
+    else await connectMetaMask();
   }
-  const PW = await loadPasskeyModule();
-  if (!PW.isPasskeyReady()) {
-    throw new Error('Passkey wallet not ready');
-  }
+  if (!account) return;
+  showMessage(
+    `💧 Send <strong>${tokenSymbol()}</strong> on <strong>Tempo</strong> to ${addrChip(account)}<br>` +
+    `<a class="addr" href="${CONFIG.explorerUrl}/address/${account}" target="_blank" rel="noopener">View on explorer</a>` +
+    `<p style="margin-top:10px;font-size:0.85rem;">Balance updates automatically once the transfer lands.</p>`,
+    'success'
+  );
+  refreshBalance();
+  for (const delay of [5000, 12000]) setTimeout(refreshBalance, delay);
+}
+
+// Unified metered join (both wallet modes): fetch session terms, authorize
+// the session cap with ONE wallet action, then confirm the seat.
+// Phase 2 note: the authorize step is a plain ERC-20 approve for now (the
+// proven fallback); the MPP session channel replaces it in the next phase.
+async function joinSeatMetered(username) {
+  const SEL_APPROVE = '0x095ea7b3'; // approve(address,uint256)
 
   setJoinState('busy', '⏳ Requesting session terms…');
   const first = await fetch('/api/join/passkey', {
@@ -697,7 +513,7 @@ async function joinSeatPasskey(username) {
   const terms = await first.json().catch(() => ({}));
   if (!first.ok) {
     const detail = terms.available != null
-      ? ` (available ${terms.available} USDC)`
+      ? ` (available ${terms.available} ${terms.tokenSymbol || tokenSymbol()})`
       : '';
     throw new Error((terms.hint || terms.error || 'Cannot join') + detail);
   }
@@ -722,15 +538,29 @@ async function joinSeatPasskey(username) {
     return;
   }
   if (!terms.needsApprove) {
-    throw new Error('Unexpected passkey join response');
+    throw new Error('Unexpected join response');
   }
 
-  setJoinState('busy', '⏳ Passkey authorize (one prompt)…');
-  const payment = await PW.authorizeSessionGasless(
-    terms.sessionAmountAtomic,
-    terms.payTo,
-    terms.paymentTokenAddress
-  );
+  setJoinState('busy', walletMode === 'privy'
+    ? '⏳ Authorizing session…'
+    : '⏳ Approve in MetaMask…');
+  const eth = await getActiveProvider();
+  const approveData = SEL_APPROVE +
+    encodeAddress(terms.payTo) + encodeUint(BigInt(terms.sessionAmountAtomic));
+  const approveTx = await eth.request({
+    method: 'eth_sendTransaction',
+    params: [{ from: account, to: terms.paymentTokenAddress, data: approveData }]
+  });
+  await waitForTx(approveTx, eth);
+
+  const payment = {
+    type: 'approve',
+    txHash: approveTx,
+    payer: account,
+    amount: terms.sessionAmountAtomic,
+    seller: terms.payTo,
+    tokenAddress: terms.paymentTokenAddress,
+  };
 
   setJoinState('busy', '⏳ Confirming seat…');
   const paid = await fetch('/api/join/passkey', {
@@ -745,7 +575,7 @@ async function joinSeatPasskey(username) {
   if (paid.ok && data.success) {
     onJoinSuccess(data);
   } else {
-    throw new Error(data.reason || data.error || 'Passkey join was not accepted');
+    throw new Error(data.reason || data.error || 'Join was not accepted');
   }
 }
 
@@ -766,72 +596,22 @@ async function joinSeat() {
   setJoinState('busy');
 
   try {
-    // Passkey is the PRIMARY path: an unconnected click runs passkey auth
-    // right here (register or sign in), shows the connected state, then
-    // continues straight into the seat purchase. MetaMask users connect via
-    // the secondary button first, which sets walletMode below.
+    // Privy is the PRIMARY path: an unconnected click runs the sign-in modal
+    // right here, shows the connected state, then continues straight into the
+    // seat authorization. MetaMask users connect via the secondary button
+    // first, which sets walletMode below.
     if (!account) {
-      setJoinState('busy', '🔐 Connecting passkey…');
-      const addr = await connectPasskeyWallet('auto');
+      setJoinState('busy', '🔐 Signing in…');
+      const addr = await connectPrivyWallet('auto');
       if (!addr) {
         setJoinState('idle');
         return;
       }
     }
 
-    if (walletMode === 'passkey') {
-      await joinSeatPasskey(username);
-      return;
-    }
-
-    await ensureArcChain();
-
-    // 1) Hit the gate with no payment → expect 402 + Gateway requirements.
-    setJoinState('busy', '⏳ Requesting payment terms…');
-    const first = await fetch('/api/join', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections() })
-    });
-
-    if (first.status === 402) {
-      const requiredHeader = first.headers.get('payment-required');
-      if (!requiredHeader) {
-        // No requirements header => the balance gate rejected us.
-        const errData = await first.json().catch(() => ({}));
-        const detail = errData.available != null
-          ? ` (available ${errData.available} USDC)`
-          : '';
-        throw new Error((errData.hint || errData.error || 'Insufficient Gateway balance') + detail);
-      }
-      const requirements = b64decode(requiredHeader);
-
-      // 2) Sign the Gateway EIP-3009 authorization with MetaMask.
-      setJoinState('busy', '⏳ Sign payment in MetaMask…');
-      const paymentHeader = await buildPayment(requirements);
-
-      // 3) Retry with the signed payment.
-      setJoinState('busy', '⏳ Settling payment…');
-      const paid = await fetch('/api/join', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Payment-Signature': paymentHeader
-        },
-        body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections() })
-      });
-      const data = await paid.json();
-      if (paid.ok && data.success) {
-        onJoinSuccess(data);
-      } else {
-        throw new Error(data.reason || data.error || 'Payment was not accepted');
-      }
-    } else {
-      // No payment required (shouldn't happen on Arc gate) — handle anyway.
-      const data = await first.json();
-      if (first.ok && data.success) onJoinSuccess(data);
-      else throw new Error(data.error || 'Failed to join');
-    }
+    await ensureTempoChain();
+    // ONE metered flow for both wallet modes on Tempo.
+    await joinSeatMetered(username);
   } catch (error) {
     console.error('Error:', error);
     showMessage('❌ ' + (error.message || 'Connection error. Try again.'), 'error');
@@ -854,23 +634,18 @@ let camMsgBound = false;
 function onJoinSuccess(data) {
   mySeatId = data.seatId;
   lastJoinData = data;
-  const isPasskeyStream = walletMode === 'passkey'
-    || data.paymentMode === 'passkey_stream'
-    || (data.payment && data.payment.mode === 'passkey_stream');
+  const sym = data.paymentTokenSymbol || tokenSymbol();
   // Bind this WS to the seat so closing the tab instantly frees + refunds it.
   if (ws.readyState === 1) {
     ws.send(JSON.stringify({ type: 'register_seat', seatId: mySeatId }));
   }
   showMeter(data.remaining, '0', data.secondsLeft);
   const txLink = data.payment && data.payment.transaction
-    ? ` · <a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">approval tx</a>`
+    ? ` · <a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">authorization tx</a>`
     : '';
-  const meterNote = isPasskeyStream
-    ? `${data.tickPrice} USDC pulled every ${data.tickSeconds}s while live (silent after authorize)`
-    : `${data.tickPrice} USDC every ${data.tickSeconds}s`;
-  const refundNote = isPasskeyStream
-    ? 'Unspent USDC stays in your smart account when you leave.'
-    : 'Unused USDC is refunded when you leave.';
+  const meterNote =
+    `${data.tickPrice} ${sym} every ${data.tickSeconds}s while live (silent after authorize)`;
+  const refundNote = `Unspent ${sym} stays in your wallet when you leave.`;
   showMessage(
     `✅ Authorized! Allow camera access above, then hit GO LIVE on the same button. Metering
     (${meterNote}) starts when you're live; ${refundNote}${txLink}`,
@@ -974,9 +749,8 @@ function fireCameraReady(source) {
   console.log(`[camera] camera_ready fired via ${source}`);
   setJoinState('live');
   setCamStatus('live', "You're LIVE on stream");
-  document.getElementById('camHint').textContent = walletMode === 'passkey'
-    ? 'Leaving (button or closing the tab) stops the meter. Unspent USDC stays in your wallet.'
-    : 'Leaving (button or closing the tab) stops the meter and refunds unused USDC.';
+  document.getElementById('camHint').textContent =
+    'Leaving (button or closing the tab) stops the meter. Unspent balance stays in your wallet.';
   document.getElementById('camRetryBtn').classList.remove('show');
   // Now live — offer an explicit Leave button (same effect as a tab close).
   document.getElementById('leaveBtn').classList.add('show');
@@ -1002,9 +776,7 @@ async function leaveStream() {
   leaveBtn.disabled = false;
   setJoinState('idle');
   showMessage(
-    walletMode === 'passkey'
-      ? '👋 You left the stream. Unspent USDC remains in your smart account.'
-      : '👋 You left the stream. Unused USDC has been refunded.',
+    '👋 You left the stream. Unspent balance remains in your wallet.',
     'success'
   );
   // Back to pre-join: show the wallet's available balance as "Remaining".
@@ -1052,7 +824,7 @@ function initWallet() {
     try {
       // Reflect account/network changes once a wallet is connected.
       eth.on('accountsChanged', (accs) => {
-        if (walletMode === 'passkey') return;
+        if (walletMode === 'privy') return;
         account = (accs && accs[0]) || null;
         if (account) walletMode = 'metamask';
         renderWallet();
@@ -1292,9 +1064,9 @@ export function initJoinPage({ wsUrl }) {
     if (el) el.addEventListener('click', fn, { signal: abort.signal });
   };
   on('connectBtn', connectMetaMask);
-  on('passkeyBtn', () => connectPasskeyWallet('login'));
-  on('passkeyCreateBtn', () => connectPasskeyWallet('register'));
-  on('depositBtn', depositToGateway);
+  on('passkeyBtn', () => connectPrivyWallet('login'));
+  on('passkeyCreateBtn', () => connectPrivyWallet('register'));
+  on('depositBtn', fundWallet);
   // ONE button through the whole flow: Join Stream → (connect/authorize) →
   // Waiting for camera → Go Live → You're LIVE.
   on('joinBtn', onJoinButtonClick);
@@ -1311,9 +1083,23 @@ export function initJoinPage({ wsUrl }) {
     }, { signal: abort.signal });
   }
 
+  // Re-render wallet buttons whenever the Privy bridge state changes (it
+  // mounts after this init runs, and login completes asynchronously).
+  window.addEventListener('megawallet:changed', () => {
+    const MW = getMegaWallet();
+    // Adopt a session restored by Privy (returning user, still signed in).
+    if (MW && MW.configured && MW.authenticated && MW.address && !account) {
+      walletMode = 'privy';
+      account = MW.address;
+      window.dispatchEvent(new CustomEvent('wallet:connected', { detail: { account } }));
+      refreshBalance();
+    }
+    renderWallet();
+  }, { signal: abort.signal });
+
   // Exposed for parity with the original global-scope page (and testing).
   Object.assign(window, {
-    connectMetaMask, connectPasskeyWallet, depositToGateway, joinSeat,
+    connectMetaMask, connectPrivyWallet, fundWallet, joinSeat,
     goLive, retryCamera, leaveStream, onJoinSuccess, refreshBalance,
   });
 
