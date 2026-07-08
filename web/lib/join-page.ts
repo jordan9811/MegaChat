@@ -506,15 +506,99 @@ let mppTickTimer = null;
 let mppInFlight = false;
 let mppFailures = 0;
 
+// Wallet providers are trustworthy SIGNERS but not trustworthy RPCs: Privy's
+// embedded provider proxies reads through its own infrastructure, which does
+// not speak Tempo — eth_call against the channel precompile returned '0x'
+// ("Cannot convert 0x to a BigInt") and killed every embedded-wallet session.
+// So: signing/broadcast stays on the wallet, every read goes to the public
+// Tempo RPC. (Privy sends work fine on Tempo — proven by its own send UI.)
+const WALLET_ONLY_METHODS = new Set([
+  'eth_sendTransaction',
+  'eth_signTransaction',
+  'personal_sign',
+  'eth_sign',
+  'eth_signTypedData',
+  'eth_signTypedData_v3',
+  'eth_signTypedData_v4',
+  'eth_accounts',
+  'eth_requestAccounts',
+  'wallet_switchEthereumChain',
+  'wallet_addEthereumChain',
+]);
+
 async function ensureMppSession(sessionCap) {
   if (mppSession) return mppSession;
   const provider = await getActiveProvider();
   const viem = await import('viem');
   const { tempo } = await import('viem/chains');
+
+  // Preflight: the SIGNER must be on Tempo (reads below are pinned to the
+  // public RPC regardless). Fail with a human error, not a viem stack trace.
+  const expectHex = '0x' + tempo.id.toString(16);
+  const walletChain = await provider.request({ method: 'eth_chainId' }).catch(() => null);
+  if (walletChain && parseInt(walletChain, 16) !== tempo.id) {
+    try {
+      await provider.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: expectHex }],
+      });
+    } catch {
+      throw new Error(
+        `Wallet is on chain ${parseInt(walletChain, 16)} instead of Tempo (${tempo.id}) — reconnect your wallet and try again.`
+      );
+    }
+  }
+
+  const rpcUrl = (CONFIG && CONFIG.rpcUrl) || tempo.rpcUrls.default.http[0];
+  const readClient = viem.createPublicClient({ chain: tempo, transport: viem.http(rpcUrl) });
+  // mppx broadcasts via the Tempo-idiomatic triplet: eth_fillTransaction
+  // (node fills nonce/gas/fees — public RPC), eth_signTransaction (wallet),
+  // eth_sendRawTransaction (public RPC). The fill returns a Tempo type-0x76
+  // batch envelope whose empty fields come back as bare "0x" — embedded
+  // wallet parsers do BigInt("0x") and die ("Cannot convert 0x to a BigInt",
+  // the exact error that kicked every embedded viewer seconds after going
+  // live). Retry with a normalized envelope ("0x" → "0x0"). NO further
+  // fallback: Tempo has no native token (plain eip1559 can't pay fees), and
+  // letting the wallet SEND instead of sign strands the deposit — mppx
+  // derives its channel bookkeeping from the raw bytes (gate-proven: a
+  // wallet-broadcast open landed on-chain but the session never recognized
+  // it). Failing clean with no money moved is the only safe behavior.
+  const normalizeTempoTx = (tx) => {
+    const fix = (v) => (v === '0x' ? '0x0' : v);
+    const out = { ...tx };
+    for (const k of ['value', 'gas', 'maxFeePerGas', 'maxPriorityFeePerGas', 'nonce']) {
+      if (out[k] !== undefined) out[k] = fix(out[k]);
+    }
+    if (Array.isArray(out.calls)) {
+      out.calls = out.calls.map((c) => (c && typeof c === 'object' ? { ...c, value: fix(c.value) } : c));
+    }
+    return out;
+  };
   const client = viem.createWalletClient({
     account,
     chain: tempo,
-    transport: viem.custom(provider),
+    transport: viem.custom({
+      async request(args) {
+        if (args.method === 'eth_signTransaction') {
+          const [tx] = args.params || [];
+          try {
+            return await provider.request(args);
+          } catch (errRaw) {
+            const norm = normalizeTempoTx(tx || {});
+            try {
+              return await provider.request({ method: 'eth_signTransaction', params: [norm] });
+            } catch (errNorm) {
+              console.warn('[mpp] wallet cannot sign the Tempo envelope:', errNorm?.message || errNorm);
+              throw new Error(
+                'This wallet cannot sign Tempo channel transactions — connect MetaMask (or another Tempo-compatible wallet) to join.'
+              );
+            }
+          }
+        }
+        if (WALLET_ONLY_METHODS.has(args.method)) return provider.request(args);
+        return readClient.request(args);
+      },
+    }),
   });
   const mpp = await import('mppx/client');
   mppSession = mpp.tempo.session.manager({

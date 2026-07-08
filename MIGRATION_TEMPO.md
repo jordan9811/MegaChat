@@ -82,6 +82,12 @@ Run them against a booted server: `node server.js` then `node _gate-tempo-phaseN
   gate attempts (fee-sizing + payee-settle bugs found and fixed during
   gating): `0x8711…`, `0x0698…`, `0xadbc…` (+ the phase-3 attempt-1/2 rooms).
   Recoverable by the test viewer via channel close/expiry; dust, not urgent.
+- +~1.49 USDC.e stranded 2026-07-08 while developing `_gate-mpp-clientpath`:
+  a wallet-broadcast channel open landed on-chain but mppx never adopted the
+  channel (its bookkeeping derives from the raw bytes), so ZERO vouchers were
+  signed — the full deposit is reclaimable by the test viewer at channel
+  expiry. This is the experiment that proved the wallet-send fallback is
+  unsafe (now removed; incapable wallets fail clean instead).
 - Production build (`npm run build`) not exercised — all gates ran the
   unified dev server. Run once before deploying to Railway.
 - MetaMask `wallet_addEthereumChain` uses `decimals: 18` for the display
@@ -104,3 +110,13 @@ Run them against a booted server: `node server.js` then `node _gate-tempo-phaseN
 4. `SessionReceipt.spent` is RAW atomic units; mppx clones the incoming
    Request, so correlate `onPaymentSuccess` receipts by URL, not by object.
 5. The Arc 1-gwei priority-fee floor is Arc-specific — do NOT port it.
+6. Wallet providers (Privy embedded) are SIGNERS, not RPCs. Route every read
+   (`eth_call`, `eth_fillTransaction`, receipts) to the public Tempo RPC;
+   only signing goes to the wallet. The fill's Tempo 0x76 envelope encodes
+   empty fields as bare `"0x"` — embedded parsers do `BigInt("0x")` and die
+   ("Cannot convert 0x to a BigInt"), so retry `eth_signTransaction` once
+   with `"0x"→"0x0"` normalized. NEVER fall back to a wallet-side SEND for
+   channel opens: mppx derives channel bookkeeping from the raw signed bytes,
+   so a wallet-broadcast open strands the whole deposit (gate-proven). And
+   plain eip1559 is impossible on Tempo — no native token to pay fees.
+   Gate: `_gate-mpp-clientpath.mjs` (17/0 incl. fail-safe + refund checks).
