@@ -91,7 +91,11 @@ Run them against a booted server: `node server.js` then `node _gate-tempo-phaseN
 ## Mainnet lessons encoded in the code (so nobody re-learns them)
 
 1. Tempo fees come out of the SAME stablecoin balance being deposited —
-   always leave `MPP_FEE_HEADROOM` (default $0.02) when sizing a channel.
+   always leave `MPP_FEE_HEADROOM` (default $0.10) when sizing a channel.
+   $0.02 was NOT enough: padded wallet estimators (Privy embedded) quote
+   ~$0.022 for a plain transfer, so any wallet with balance < cap + headroom
+   had an unpayable channel open and got auto-kicked ~3s after going live
+   (found live 2026-07-07; raw-key gates estimated lean and never hit it).
 2. TIP-1034 settle must be sent by the channel **payee or operator** — with
    per-room payout wallets, open channels with the platform as `operator`.
 3. `tempo.session.settle(...)` needs an explicit `feeToken` — the resolver

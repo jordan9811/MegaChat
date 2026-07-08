@@ -175,6 +175,15 @@ else console.warn('[meter:mpp] disabled (no SELLER_PRIVATE_KEY) — falling back
 // Covers channel-open latency, tab hiccups, and slow voucher signatures.
 const MPP_STALE_MS = Math.max(10_000, Number(process.env.MPP_STALE_MS || 20_000));
 
+// Fee headroom reserved from the wallet balance when sizing a channel deposit
+// (Tempo fees come out of the SAME stablecoin). Raw viem estimates the open
+// tx at ~$0.003, but padded wallet estimators (Privy embedded) quote ~$0.022
+// for a plain transfer — a $0.02 reserve made every small wallet's channel
+// open unpayable (deposit + padded max fee > balance → wallet refuses → the
+// viewer was auto-kicked seconds after going live). Wallets richer than
+// cap + headroom never hit this, which is why the raw-key gates passed.
+const MPP_FEE_HEADROOM = process.env.MPP_FEE_HEADROOM || '0.10';
+
 // Refund the unused prepaid balance (settled - consumed = remainingAtomic) back
 // to the viewer. Stream/MPP seats skip this — unspent funds never left the
 // wallet (allowance) or return straight from channel escrow (MPP settle).
@@ -432,8 +441,14 @@ app.get('/api/balance/:address', async (req, res) => {
     const bal = await getOnChainTokenBalance(
       cfg.paymentTokenAddress, address, cfg.paymentTokenDecimals
     );
-    const spendableAtomic = bal.availableAtomic < atomics.maxSessionAtomic
-      ? bal.availableAtomic
+    // Preview must match what /api/join/mpp will actually grant: the fee
+    // headroom is reserved from the same stablecoin balance.
+    const headroomAtomic = toAtomic(MPP_FEE_HEADROOM, cfg.paymentTokenDecimals);
+    const spendCapAtomic = bal.availableAtomic > headroomAtomic
+      ? bal.availableAtomic - headroomAtomic
+      : 0n;
+    const spendableAtomic = spendCapAtomic < atomics.maxSessionAtomic
+      ? spendCapAtomic
       : atomics.maxSessionAtomic;
     return res.json({
       address,
@@ -1319,8 +1334,9 @@ app.post('/api/join/mpp', async (req, res) => {
     // Tempo fees come out of the SAME stablecoin balance that funds the
     // channel deposit. Depositing the full balance makes the open tx itself
     // unpayable (learned on mainnet: InsufficientBalance at exactly the cap).
-    // Reserve headroom for the open + close fees (~$0.0006 each, 30x margin).
-    const feeHeadroom = toAtomic(process.env.MPP_FEE_HEADROOM || '0.02', cfg.paymentTokenDecimals);
+    // Reserve headroom for the open + close fees (see MPP_FEE_HEADROOM above —
+    // padded wallet estimators need far more room than the raw ~$0.0006 cost).
+    const feeHeadroom = toAtomic(MPP_FEE_HEADROOM, cfg.paymentTokenDecimals);
     const spendable = rawBal > feeHeadroom ? rawBal - feeHeadroom : 0n;
     const sessionAtomic = spendable < atomics.maxSessionAtomic ? spendable : atomics.maxSessionAtomic;
     if (sessionAtomic < atomics.passkeyTickPriceAtomic) {

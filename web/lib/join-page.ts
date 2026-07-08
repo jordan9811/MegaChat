@@ -529,6 +529,10 @@ async function ensureMppSession(sessionCap) {
 function startMppTicks(data) {
   stopMppTicks(false);
   const interval = (data.tickSeconds || 1) * 1000;
+  // Transient blips must not nuke the seat: keep retrying for ~12s of
+  // consecutive failures (the server tolerates 20s without a paid tick)
+  // before giving up.
+  const maxStrikes = Math.max(3, Math.ceil(12000 / interval));
   mppFailures = 0;
   mppTickTimer = setInterval(async () => {
     if (mppInFlight || !mySeatId) return;
@@ -540,13 +544,16 @@ function startMppTicks(data) {
       mppFailures = 0;
     } catch (err) {
       mppFailures += 1;
-      console.warn('[mpp] tick failed', err);
-      if (mppFailures >= 3) {
+      console.warn(`[mpp] tick failed (${mppFailures}/${maxStrikes})`, err);
+      if (mppFailures >= maxStrikes) {
+        // quiet leave: THIS message is the notification — leaveStream must
+        // not paper over it with the friendly "you left" line.
         showMessage(
-          '❌ Payment stream failed — leaving the stream. ' + (err?.message || ''),
+          '❌ Payment stream failed — leaving the stream.<br>' +
+          `<span style="font-size:0.85em;opacity:0.85">${err?.message || 'unknown error'}</span>`,
           'error'
         );
-        leaveStream();
+        leaveStream(true);
       }
     } finally {
       mppInFlight = false;
@@ -866,8 +873,9 @@ function fireCameraReady(source) {
   det.src = 'about:blank';
 }
 
-// Leave instantly — same as closing the tab.
-async function leaveStream() {
+// Leave instantly — same as closing the tab. `quiet` skips the friendly
+// goodbye message so failure paths can keep their own error on screen.
+async function leaveStream(quiet) {
   const seatId = mySeatId;
   if (!seatId) return;
   const leaveBtn = document.getElementById('leaveBtn');
@@ -883,10 +891,12 @@ async function leaveStream() {
   }
   leaveBtn.disabled = false;
   setJoinState('idle');
-  showMessage(
-    '👋 You left the stream. Unspent balance remains in your wallet.',
-    'success'
-  );
+  if (!quiet) {
+    showMessage(
+      '👋 You left the stream. Unspent balance remains in your wallet.',
+      'success'
+    );
+  }
   // Back to pre-join: show the wallet's available balance as "Remaining".
   refreshBalance();
 }
@@ -1140,8 +1150,20 @@ export function initJoinPage({ wsUrl }) {
         showMeter(msg.remaining, msg.spent, msg.secondsLeft);
       } else if (msg.type === 'seat_removed' && msg.seatId === mySeatId) {
         document.getElementById('meterTime').textContent = '0:00';
+        // Every way a seat can end gets its own message — a viewer should
+        // never have to guess whether they left, got kicked, or broke.
         if (msg.reason === 'out_of_funds') {
           showMessage('⚠️ Out of funds — your seat ended. Deposit more USDC and rejoin.', 'error');
+        } else if (msg.reason === 'kicked') {
+          showMessage(
+            '🚫 The streamer removed you from the stream. You were only charged for the time you were on camera — the rest stays in your wallet.',
+            'error'
+          );
+        } else if (msg.reason === 'payment_stalled') {
+          showMessage(
+            '⚠️ Your payment ticks stopped reaching the server, so the seat ended. Unspent balance stays in your wallet — rejoin when your connection is stable.',
+            'error'
+          );
         } else if (msg.reason === 'not_found') {
           // We reconnected after the server's grace expired.
           showMessage(
@@ -1180,7 +1202,8 @@ export function initJoinPage({ wsUrl }) {
   // Waiting for camera → Go Live → You're LIVE.
   on('joinBtn', onJoinButtonClick);
   on('camRetryBtn', retryCamera);
-  on('leaveBtn', leaveStream);
+  // Wrapped: the click MouseEvent must not land in leaveStream's `quiet` arg.
+  on('leaveBtn', () => leaveStream());
   // Click-to-copy the connected address (delegated: the chip is re-injected
   // whenever renderWallet rewrites #walletInfo).
   on('walletInfo', onWalletInfoCopyClick);
