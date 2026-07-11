@@ -17,6 +17,9 @@ import {
   migrateLegacyRoomPasswords,
   listRooms,
   letterPriceFor,
+  getRoomByHandle,
+  setRoomHandle,
+  createRoomWithPassword,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
 import {
@@ -377,6 +380,19 @@ app.use(express.static('public', {
   setHeaders: staticJsHeaders,
 }));
 
+// ─── Permanent room links: /r/<handle> (+ /overlay) ─────────────────────────
+// Handles are forever; the underlying room id keeps working untouched.
+app.get('/r/:handle', (req, res) => {
+  const room = getRoomByHandle(req.params.handle);
+  if (!room) return res.redirect(302, '/?missing=' + encodeURIComponent(req.params.handle));
+  res.redirect(302, `/join?room=${room.id}`);
+});
+app.get('/r/:handle/overlay', (req, res) => {
+  const room = getRoomByHandle(req.params.handle);
+  if (!room) return res.status(404).send('No such room');
+  res.redirect(302, `/overlay?room=${room.id}`);
+});
+
 // Expose the Arc / Gateway config the frontend needs to build payments.
 app.get('/api/config', (req, res) => {
   const resolved = resolveRoomFromRequest(null, req.query);
@@ -420,6 +436,8 @@ app.get('/api/config', (req, res) => {
           moderation: cfg.letters.moderation,
         }
       : { enabled: false },
+    handle: cfg.handle,
+    isDemo: !!cfg.isDemo,
     rewards: cfg.rewards,
     // MPP session meter (TIP-1034 channels) — primary on Tempo.
     meterMode: mppMeter ? 'mpp_session' : 'allowance',
@@ -1616,6 +1634,43 @@ attachDashboardRoutes(app, {
 });
 
 await migrateLegacyRoomPasswords();
+
+// ─── Always-on demo room at /r/demo ──────────────────────────────────────────
+// A living showcase: dust live pricing, tiny point drops, letters on. Anyone
+// can watch the mechanics move for pennies.
+try {
+  if (!getRoomByHandle('demo')) {
+    const demoPassword = process.env.DEMO_ROOM_PASSWORD
+      || Buffer.from(crypto.getRandomValues(new Uint8Array(12))).toString('base64url');
+    const room = await createRoomWithPassword(
+      'MegaChat Demo — try everything for pennies',
+      {
+        isDemo: true,
+        passkeyTickPrice: '0.001',
+        passkeyTickSeconds: 1,
+        maxSession: '0.03',
+        maxSeats: 3,
+        letters: { enabled: true, maxSeconds: 10, price: null, moderation: 'auto' },
+        rewards: {
+          enabled: true,
+          earnInterval: 30,
+          earnAmount: '1',
+          earnCap: '50',
+          rewardType: 'points',
+          rewardTokenAddress: null,
+        },
+      },
+      demoPassword,
+    );
+    setRoomHandle(room.id, 'demo');
+    console.log(
+      `[demo] seeded demo room ${room.id} at /r/demo`
+      + (process.env.DEMO_ROOM_PASSWORD ? '' : ` (password: ${demoPassword} — set DEMO_ROOM_PASSWORD to pin it)`)
+    );
+  }
+} catch (err) {
+  console.warn('[demo] demo room seed failed:', err.message);
+}
 
 // ─── Next.js frontend (single-process mount) ────────────────────────────────
 // The Next app in web/ (dashboard, /join page, /_next assets) runs INSIDE this

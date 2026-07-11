@@ -44,6 +44,17 @@ export function JoinClient() {
         </p>
       </header>
 
+      {/* Demo-room banner (join-page.ts shows it when config.isDemo) */}
+      <div
+        id="demoBanner"
+        className="rounded-xl border border-[var(--neon-lime)]/40 bg-[var(--neon-lime)]/10 px-4 py-3 text-sm font-semibold text-[var(--neon-lime)]"
+        style={{ display: 'none' }}
+      >
+        🧪 This is a live demo room. Farm drops by watching, send a letter,
+        go live for pennies — everything here runs the real machinery at dust
+        prices.
+      </div>
+
       {/* TRUE-LIVE return feed: while this viewer holds a live slot, the
           host's camera streams here sub-second over vdo.ninja (the app's own
           WebRTC pipe) so both sides can hold a real conversation. The delayed

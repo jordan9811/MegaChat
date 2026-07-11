@@ -43,6 +43,9 @@ export type Room = {
   twitchChannel: string | null
   letters: LettersConfig
   rewards: RewardsConfig
+  /** Permanent /r/<handle> identity (null until claimed). */
+  handle: string | null
+  isDemo?: boolean
 }
 
 export type Seat = {
@@ -154,10 +157,15 @@ export function getPublicConfig(room = 'default') {
   )
 }
 
-export function createRoom(name: string, config: RoomConfigPatch, password: string) {
+export function createRoom(
+  name: string,
+  config: RoomConfigPatch,
+  password: string,
+  handle?: string | null,
+) {
   return request<{ room: Room; joinUrl: string; overlayUrl: string }>(
     '/api/dashboard/create',
-    { method: 'POST', body: { name, config, password } },
+    { method: 'POST', body: { name, config, password, handle: handle || null } },
   )
 }
 
@@ -178,7 +186,7 @@ export function getRoomSession(roomId: string, password: string) {
 export function updateRoom(
   roomId: string,
   password: string,
-  patch: { name?: string; config?: RoomConfigPatch },
+  patch: { name?: string; config?: RoomConfigPatch; handle?: string | null },
 ) {
   return request<{ room: Room }>(
     `/api/dashboard/rooms/${encodeURIComponent(roomId)}`,

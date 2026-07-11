@@ -219,6 +219,22 @@ export function MegaChatSettings() {
             </Field>
 
             <Field
+              label="Handle"
+              htmlFor="room-handle"
+              hint="Claims your permanent link: /r/your_name (viewer) and /r/your_name/overlay (OBS). Letters, numbers, underscore."
+              className="sm:col-span-2"
+            >
+              <TextInput
+                id="room-handle"
+                value={draft.handle}
+                onChange={(e) => updateDraft({ handle: e.target.value })}
+                placeholder="your_name"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </Field>
+
+            <Field
               label="Twitch channel"
               htmlFor="twitch-channel"
               hint="Embeds your live stream on the join page so viewers can watch while they decide. Leave empty to skip."
@@ -576,10 +592,22 @@ export function MegaChatSettings() {
               label="Viewer"
               value={
                 typeof window !== 'undefined'
-                  ? `${window.location.origin}/join?room=${room.id}`
+                  ? room.handle
+                    ? `${window.location.origin}/r/${room.handle}`
+                    : `${window.location.origin}/join?room=${room.id}`
                   : joinUrl
               }
             />
+            {room.handle ? (
+              <CopyRow
+                label="OBS ∞"
+                value={
+                  typeof window !== 'undefined'
+                    ? `${window.location.origin}/r/${room.handle}/overlay`
+                    : `/r/${room.handle}/overlay`
+                }
+              />
+            ) : null}
             <CopyRow
               label="OBS"
               value={

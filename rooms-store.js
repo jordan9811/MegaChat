@@ -161,6 +161,56 @@ function ensureDefaultRoom(store) {
   };
 }
 
+// ─── Persistent handles (/r/<handle> permanent room links) ──────────────────
+const RESERVED_HANDLES = new Set([
+  'api', 'join', 'dashboard', 'overlay', 'r', 'admin', 'www', 'assets',
+  'static', 'how-it-works', 'roadmap', 'index', 'login', 'auth',
+]);
+
+/** 3-20 chars, a-z 0-9 _ ; lowercased. Null if unset/invalid/reserved. */
+export function sanitizeHandle(raw) {
+  if (raw == null) return null;
+  const h = String(raw).trim().replace(/^@/, '').toLowerCase();
+  if (!/^[a-z0-9_]{3,20}$/.test(h)) return null;
+  if (RESERVED_HANDLES.has(h)) return null;
+  return h;
+}
+
+export function getRoomByHandle(handle) {
+  const h = sanitizeHandle(handle);
+  if (!h) return null;
+  const store = loadStore();
+  for (const rec of Object.values(store.rooms)) {
+    if (rec.handle === h) return resolveRoomConfig(rec.id);
+  }
+  return null;
+}
+
+/** Claim (or change) a room's handle. Returns the handle, or throws on conflict. */
+export function setRoomHandle(roomId, rawHandle) {
+  const id = normalizeRoomId(roomId);
+  const store = loadStore();
+  const rec = id ? store.rooms[id] : null;
+  if (!rec) throw new Error('Room not found');
+  if (rawHandle == null || rawHandle === '') {
+    delete rec.handle;
+    saveStore(store);
+    return null;
+  }
+  const h = sanitizeHandle(rawHandle);
+  if (!h) throw new Error('Invalid handle: 3-20 chars, letters/numbers/underscore');
+  for (const other of Object.values(store.rooms)) {
+    if (other.id !== rec.id && other.handle === h) {
+      const err = new Error('Handle already taken');
+      err.code = 'handle_taken';
+      throw err;
+    }
+  }
+  rec.handle = h;
+  saveStore(store);
+  return h;
+}
+
 /** Twitch login names: 3-25 chars, alphanumeric + underscore. Null if unset/bad. */
 export function sanitizeTwitchChannel(raw) {
   if (raw == null) return null;
@@ -201,6 +251,7 @@ export function resolveRoomConfig(roomId) {
   if (!rec) return null;
   const defaults = getEnvDefaults();
   const cfg = rec.config || {};
+  const handle = rec.handle || null;
   const maxSeats = Math.min(3, Math.max(1, Number(cfg.maxSeats ?? defaults.maxSeats)));
   return {
     id: rec.id,
@@ -227,6 +278,10 @@ export function resolveRoomConfig(roomId) {
     twitchChannel: sanitizeTwitchChannel(cfg.twitchChannel),
     letters: resolveLetters(cfg),
     rewards: resolveRewards(cfg, defaults),
+    // Permanent identity: /r/<handle> resolves here forever; old id links
+    // keep working untouched.
+    handle,
+    isDemo: cfg.isDemo === true,
   };
 }
 

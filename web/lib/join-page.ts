@@ -1359,6 +1359,8 @@ async function init() {
     await loadConfig();
     mountStreamPreview();
     initLetterUi();
+    const demo = document.getElementById('demoBanner');
+    if (demo && CONFIG && CONFIG.isDemo) demo.style.display = '';
   } catch (err) {
     console.error('Failed to load config', err);
     const lbl = document.getElementById('priceLabel');

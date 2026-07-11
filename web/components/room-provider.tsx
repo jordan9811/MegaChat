@@ -42,6 +42,7 @@ const USDC_FALLBACK = '0x20c000000000000000000000b9537d11c60e8b50'
 
 export type ConfigDraft = {
   name: string
+  handle: string
   unlisted: boolean
   payoutAddress: string
   twitchChannel: string
@@ -68,6 +69,7 @@ export type ConfigDraft = {
 // Defaults mirror the legacy dashboard form (backed by env defaults server-side).
 const DEFAULT_DRAFT: ConfigDraft = {
   name: '',
+  handle: '',
   unlisted: false,
   payoutAddress: '',
   twitchChannel: '',
@@ -161,6 +163,7 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
   const rw = room.rewards || ({} as Room['rewards'])
   return {
     name: room.name,
+    handle: room.handle || '',
     unlisted: !!room.unlisted,
     payoutAddress: room.payoutAddress || '',
     twitchChannel: room.twitchChannel || '',
@@ -248,7 +251,12 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const create = useCallback(
     async (password: string) => {
       const name = draft.name.trim() || 'My Stream'
-      const data = await apiCreateRoom(name, draftToConfig(draft, usdcAddress), password)
+      const data = await apiCreateRoom(
+        name,
+        draftToConfig(draft, usdcAddress),
+        password,
+        draft.handle.trim() || null,
+      )
       enterManaged(data.room, password, data.joinUrl, data.overlayUrl)
     },
     [draft, usdcAddress, enterManaged],
@@ -280,6 +288,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       try {
         const data = await updateRoom(roomId, passwordRef.current, {
           name: draft.name.trim() || undefined,
+          handle: draft.handle.trim() || null,
           config: draftToConfig(draft, usdcAddress),
         })
         setRoom(data.room)

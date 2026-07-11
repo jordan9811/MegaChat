@@ -9,6 +9,9 @@ import {
   normalizeRoomId,
   verifyRoomPassword,
   setRoomPassword,
+  sanitizeHandle,
+  getRoomByHandle,
+  setRoomHandle,
 } from './rooms-store.js';
 import { validatePaymentToken } from './token-utils.js';
 
@@ -73,10 +76,20 @@ export function attachDashboardRoutes(app, deps) {
 
   /** Public — no room-password middleware. Sets hash on new room from body.password. */
   async function handleCreateRoom(req, res) {
-    const { name, config, password } = req.body || {};
+    const { name, config, password, handle } = req.body || {};
     console.log('[dashboard:create] create room request received');
     if (!password || typeof password !== 'string' || password.length < 4) {
       return res.status(400).json({ error: 'Room password required (min 4 characters)' });
+    }
+    // Handle claim is validated BEFORE the room exists so a conflict never
+    // leaves a half-created room behind.
+    if (handle != null && handle !== '') {
+      if (!sanitizeHandle(handle)) {
+        return res.status(400).json({ error: 'Invalid handle: 3-20 chars, letters/numbers/underscore' });
+      }
+      if (getRoomByHandle(handle)) {
+        return res.status(409).json({ error: 'Handle already taken' });
+      }
     }
     let mergedConfig = config || {};
     try {
@@ -90,6 +103,10 @@ export function attachDashboardRoutes(app, deps) {
     let room;
     try {
       room = await createRoomWithPassword(name, mergedConfig, password);
+      if (handle != null && handle !== '') {
+        setRoomHandle(room.id, handle);
+        room = resolveRoomConfig(room.id);
+      }
     } catch (err) {
       return res.status(400).json({ error: err.message });
     }
@@ -177,6 +194,13 @@ export function attachDashboardRoutes(app, deps) {
         return res.status(400).json({ error: 'New password must be at least 4 characters' });
       }
       await setRoomPassword(req.roomId, body.newPassword);
+    }
+    if (body.handle !== undefined) {
+      try {
+        setRoomHandle(req.roomId, body.handle);
+      } catch (err) {
+        return res.status(err.code === 'handle_taken' ? 409 : 400).json({ error: err.message });
+      }
     }
     const room = updateRoom(req.roomId, body);
     if (!room) return res.status(404).json({ error: 'Room not found' });
