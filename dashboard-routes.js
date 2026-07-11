@@ -14,6 +14,7 @@ import {
   setRoomHandle,
 } from './rooms-store.js';
 import { validatePaymentToken } from './token-utils.js';
+import { isHandleTakenByIdentity } from './identity-store.js';
 
 /** Management routes only — never read body.password (create sends password in body). */
 function getManagePassword(req) {
@@ -84,10 +85,12 @@ export function attachDashboardRoutes(app, deps) {
     // Handle claim is validated BEFORE the room exists so a conflict never
     // leaves a half-created room behind.
     if (handle != null && handle !== '') {
-      if (!sanitizeHandle(handle)) {
+      const clean = sanitizeHandle(handle);
+      if (!clean) {
         return res.status(400).json({ error: 'Invalid handle: 3-20 chars, letters/numbers/underscore' });
       }
-      if (getRoomByHandle(handle)) {
+      // Both registries: rooms AND OAuth identities own handles.
+      if (getRoomByHandle(clean) || isHandleTakenByIdentity(clean)) {
         return res.status(409).json({ error: 'Handle already taken' });
       }
     }
@@ -196,6 +199,10 @@ export function attachDashboardRoutes(app, deps) {
       await setRoomPassword(req.roomId, body.newPassword);
     }
     if (body.handle !== undefined) {
+      const clean = body.handle === '' || body.handle === null ? null : sanitizeHandle(body.handle);
+      if (clean && isHandleTakenByIdentity(clean) && resolveRoomConfig(req.roomId)?.handle !== clean) {
+        return res.status(409).json({ error: 'Handle already taken' });
+      }
       try {
         setRoomHandle(req.roomId, body.handle);
       } catch (err) {

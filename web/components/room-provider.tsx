@@ -206,6 +206,16 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     getPublicConfig()
       .then((cfg) => cfg.usdcAddress && setUsdcAddress(cfg.usdcAddress))
       .catch(() => {})
+    // Streamers signed in via Twitch/X get their reserved handle prefilled
+    // for the /r/<handle> room claim (identity-only integration).
+    fetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((me) => {
+        if (me?.identity?.handle) {
+          setDraft((d) => (d.handle ? d : { ...d, handle: me.identity.handle }))
+        }
+      })
+      .catch(() => {})
   }, [])
 
   const switchRoom = useCallback(() => {

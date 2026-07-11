@@ -1354,11 +1354,58 @@ async function sendLetter() {
   }
 }
 
+// ─── OAuth identity (Twitch / X) — identity only ────────────────────────────
+async function initAuthUi() {
+  const twitchBtn = document.getElementById('authTwitchBtn');
+  const xBtn = document.getElementById('authXBtn');
+  const who = document.getElementById('authIdentity');
+  if (!twitchBtn || !xBtn) return;
+  try {
+    const providers = await (await fetch('/api/auth/providers')).json();
+    const wire = (btn, name, on, label) => {
+      if (on) {
+        btn.disabled = false;
+        btn.title = `Continue with ${label}`;
+        btn.textContent = `Continue with ${label}`;
+        btn.addEventListener('click', () => { location.href = `/auth/${name}`; });
+      } else {
+        btn.disabled = true;
+        btn.title = `${label} login not configured on this server`;
+        btn.textContent = `${label} — not configured`;
+      }
+    };
+    wire(twitchBtn, 'twitch', !!providers.twitch, 'Twitch');
+    wire(xBtn, 'x', !!providers.x, 'X');
+  } catch { /* auth optional — buttons stay disabled */ }
+
+  try {
+    const me = await (await fetch('/api/auth/me')).json();
+    if (me.identity && who) {
+      who.style.display = '';
+      who.innerHTML =
+        `Signed in as <strong>@${me.identity.handle}</strong> via ${me.identity.provider}. ` +
+        '<a href="#" id="authLogout" class="addr">Sign out</a>';
+      const input = document.getElementById('username');
+      if (input && !input.value) input.value = me.identity.handle;
+      document.getElementById('authLogout')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await fetch('/api/auth/logout', { method: 'POST' });
+        location.reload();
+      });
+    }
+    const welcome = new URLSearchParams(location.search).get('welcome');
+    if (welcome) {
+      showMessage(`✅ Handle <strong>@${welcome}</strong> is yours — it's your display name and your /r/${welcome} link.`, 'success');
+    }
+  } catch { /* ignore */ }
+}
+
 async function init() {
   try {
     await loadConfig();
     mountStreamPreview();
     initLetterUi();
+    void initAuthUi();
     const demo = document.getElementById('demoBanner');
     if (demo && CONFIG && CONFIG.isDemo) demo.style.display = '';
   } catch (err) {

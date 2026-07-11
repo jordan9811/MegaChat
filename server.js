@@ -944,6 +944,15 @@ try {
   console.warn('[rewards] failed to attach, continuing without watch-to-earn:', err.message);
 }
 
+// ─── OAuth identity (Twitch / X — identity only, env-gated) ─────────────────
+app.set('trust proxy', 1); // Railway terminates TLS; req.protocol must be https
+try {
+  const { attachAuth } = await import('./auth.js');
+  attachAuth(app);
+} catch (err) {
+  console.warn('[auth] failed to attach, continuing without OAuth identity:', err.message);
+}
+
 // ─── Letter mode (isolated; reuses the MPP payment rails read-only) ─────────
 try {
   const { attachLetters } = await import('./letters.js');

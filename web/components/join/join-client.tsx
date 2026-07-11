@@ -136,6 +136,28 @@ export function JoinClient() {
             </div>
           </div>
 
+          {/* Platform identity (Phase 5) — IDENTITY ONLY: reserves your
+              handle as display name + /r/ link. join-page.ts enables the
+              buttons per /api/auth/providers; without creds they stay
+              disabled ("not configured"), nothing is faked. */}
+          <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <button id="authTwitchBtn" type="button" className={miniBtn} disabled title="Checking…">
+                Twitch
+              </button>
+              <button id="authXBtn" type="button" className={miniBtn} disabled title="Checking…">
+                𝕏
+              </button>
+              <button type="button" className={miniBtn} disabled title="Coming soon">
+                Kick — soon
+              </button>
+              <button type="button" className={miniBtn} disabled title="Coming soon">
+                TikTok — soon
+              </button>
+            </div>
+            <div id="authIdentity" className="text-xs text-muted-foreground" style={{ display: 'none' }} />
+          </div>
+
           <input
             type="text"
             id="username"
