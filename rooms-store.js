@@ -282,6 +282,9 @@ export function resolveRoomConfig(roomId) {
     // keep working untouched.
     handle,
     isDemo: cfg.isDemo === true,
+    // Camera transport: vdo.ninja iframes (default, untouched) or LiveKit
+    // (flag-gated on LIVEKIT_* env). Existing rooms resolve to 'vdo'.
+    transport: cfg.transport === 'livekit' ? 'livekit' : 'vdo',
   };
 }
 

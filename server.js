@@ -438,6 +438,9 @@ app.get('/api/config', (req, res) => {
       : { enabled: false },
     handle: cfg.handle,
     isDemo: !!cfg.isDemo,
+    transport: cfg.transport,
+    livekitConfigured: !!livekit,
+    ...(cfg.transport === 'livekit' && livekit ? { livekitUrl: livekit.url } : {}),
     rewards: cfg.rewards,
     // MPP session meter (TIP-1034 channels) — primary on Tempo.
     meterMode: mppMeter ? 'mpp_session' : 'allowance',
@@ -707,6 +710,14 @@ function removeParticipant(seatId, reason = 'left') {
 
   activeSeats.delete(seatId);
   if (seat._graceTimer) { clearTimeout(seat._graceTimer); seat._graceTimer = null; }
+  // LiveKit rooms: the SFU drops the participant NOW (kick/leave enforcement
+  // server-side, not just client goodwill). vdo rooms: no-op.
+  {
+    const roomCfg = resolveRoomConfig(seat.streamRoomId);
+    if (roomCfg?.transport === 'livekit' && livekit) {
+      void livekit.kickParticipant(seat.streamRoomId, `seat:${seatId}`);
+    }
+  }
 
   broadcastToRoom(seat.streamRoomId, {
     type: 'seat_removed',
@@ -943,6 +954,46 @@ try {
 } catch (err) {
   console.warn('[rewards] failed to attach, continuing without watch-to-earn:', err.message);
 }
+
+// ─── LiveKit transport (flag-gated parallel to vdo; vdo stays default) ──────
+import { createLivekitService } from './livekit.js';
+const livekit = createLivekitService();
+if (livekit) console.log('[livekit] transport available at', livekit.url);
+
+// Token minting — publisher tokens require the seat the join flow granted.
+app.post('/api/livekit/token', async (req, res) => {
+  try {
+    const { role, seatId } = req.body || {};
+    const resolved = resolveRoomFromRequest(req.body, req.query);
+    if (resolved.error) {
+      return res.status(resolved.error === 'room_not_found' ? 404 : 400).json({ error: resolved.error });
+    }
+    const { roomId, cfg } = resolved;
+    if (cfg.transport !== 'livekit') {
+      return res.status(400).json({ error: 'Room does not use the LiveKit transport' });
+    }
+    if (!livekit) {
+      return res.status(503).json({ error: 'LiveKit is not configured on this server' });
+    }
+    if (role === 'publisher') {
+      const seat = activeSeats.get(String(seatId || ''));
+      if (!seat || seat.streamRoomId !== roomId) {
+        return res.status(403).json({ error: 'No authorized seat — join first' });
+      }
+      const token = await livekit.publisherToken(roomId, seat);
+      return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity: `seat:${seat.id}` });
+    }
+    if (role === 'subscriber') {
+      const identity = `viewer:${Math.random().toString(36).slice(2, 10)}`;
+      const token = await livekit.subscriberToken(roomId, identity);
+      return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity });
+    }
+    return res.status(400).json({ error: 'Unknown role' });
+  } catch (err) {
+    console.warn('[livekit] token error:', err.message);
+    res.status(500).json({ error: 'Token minting failed' });
+  }
+});
 
 // ─── OAuth identity (Twitch / X — identity only, env-gated) ─────────────────
 app.set('trust proxy', 1); // Railway terminates TLS; req.protocol must be https

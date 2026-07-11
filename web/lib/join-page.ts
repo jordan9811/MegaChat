@@ -856,6 +856,8 @@ function onJoinSuccess(data) {
 }
 
 function startCameraStage(data) {
+  // LiveKit rooms publish via the SDK — the vdo iframe path never runs.
+  if (isLivekitRoom()) return void startLivekitCameraStage(data);
   cameraLiveFired = false;
   const stage = document.getElementById('cameraStage');
   const pub = document.getElementById('camPublisher');
@@ -1001,6 +1003,7 @@ function goLive() { fireCameraReady('manual'); }
 function teardownCameraStage() {
   clearTimeout(camFallbackTimer);
   clearTimeout(camErrorTimer);
+  teardownLivekit();
   // Live slot over (leave/kick/removal all land here): drop the real-time
   // host feed, bring the delayed spectate embed back.
   unmountHostFeed();
@@ -1018,6 +1021,11 @@ function teardownCameraStage() {
 
 // Rebuild the camera stage after a permission failure.
 function retryCamera() {
+  if (isLivekitRoom()) {
+    teardownLivekit();
+    if (lastJoinData) setTimeout(() => startLivekitCameraStage(lastJoinData), 200);
+    return;
+  }
   const pub = document.getElementById('camPublisher');
   const det = document.getElementById('camDetector');
   pub.src = 'about:blank';
@@ -1134,6 +1142,89 @@ function unmountHostFeed() {
   const mount = document.getElementById('hostLiveMount');
   if (mount) mount.innerHTML = '';
   if (wrap) wrap.style.display = 'none';
+}
+
+// ─── LiveKit transport (flag-gated; vdo stays the default, untouched) ───────
+// Joiner publish path for rooms with transport === 'livekit'. Same UI state
+// machine as vdo: stage → camera preview → GO LIVE → live. The vdo iframes
+// are simply never created for these rooms.
+let lkRoom = null;
+let lkLocalVideo = null;
+
+function isLivekitRoom() {
+  return CONFIG && CONFIG.transport === 'livekit';
+}
+
+async function startLivekitCameraStage(data) {
+  cameraLiveFired = false;
+  const stage = document.getElementById('cameraStage');
+  const pub = document.getElementById('camPublisher');
+  const det = document.getElementById('camDetector');
+  const retryBtn = document.getElementById('camRetryBtn');
+  retryBtn.classList.remove('show');
+  setCamStatus('', 'Requesting camera…');
+  // vdo iframes stay dormant for livekit rooms
+  if (pub) pub.style.display = 'none';
+  if (det) det.src = '';
+  stage.classList.add('show');
+  document.getElementById('camHint').textContent =
+    'Your camera preview is below (LiveKit). Nothing is broadcast until you hit GO LIVE.';
+
+  try {
+    const tokRes = await fetch('/api/livekit/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ room: streamRoomId, role: 'publisher', seatId: data.seatId }),
+    });
+    const tok = await tokRes.json().catch(() => ({}));
+    if (!tokRes.ok || !tok.token) throw new Error(tok.error || `token failed (${tokRes.status})`);
+
+    const lk = await import('livekit-client');
+    lkRoom = new lk.Room({
+      adaptiveStream: true,
+      // simulcast for smooth degradation (phase 3 requirement, on by default)
+      publishDefaults: { simulcast: true },
+    });
+    await lkRoom.connect(tok.url || (CONFIG && CONFIG.livekitUrl), tok.token);
+    await lkRoom.localParticipant.enableCameraAndMicrophone();
+
+    // Local self-view in the SAME frame the vdo iframe used.
+    const frame = pub ? pub.parentElement : stage.querySelector('.cam-frame');
+    if (frame && !lkLocalVideo) {
+      lkLocalVideo = document.createElement('video');
+      lkLocalVideo.muted = true;
+      lkLocalVideo.playsInline = true;
+      lkLocalVideo.className = 'lk-self'; // sized by join.css, stays IN the frame
+      frame.appendChild(lkLocalVideo);
+    }
+    const camPub = [...lkRoom.localParticipant.videoTrackPublications.values()][0];
+    if (camPub && camPub.track && lkLocalVideo) camPub.track.attach(lkLocalVideo);
+
+    // Published — same UX beat as the vdo detector firing.
+    if (joinBtnState === 'awaiting-camera') {
+      setJoinState('go-live');
+      setCamStatus('', 'Camera ready — hit GO LIVE');
+      document.getElementById('camHint').textContent =
+        'Camera connected over LiveKit. Hit GO LIVE above to start your stream.';
+    }
+  } catch (err) {
+    console.error('[livekit] publish failed:', err);
+    setCamStatus('error', 'Camera failed — ' + (err?.message || 'unknown'));
+    retryBtn.classList.add('show');
+  }
+}
+
+function teardownLivekit() {
+  if (lkRoom) {
+    try { lkRoom.disconnect(); } catch { /* already down */ }
+    lkRoom = null;
+  }
+  if (lkLocalVideo) {
+    lkLocalVideo.remove();
+    lkLocalVideo = null;
+  }
+  const pub = document.getElementById('camPublisher');
+  if (pub) pub.style.display = '';
 }
 
 // ─── Letter mode: record → preview → pay flat → one-shot upload ─────────────

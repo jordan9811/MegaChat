@@ -46,6 +46,8 @@ export type Room = {
   /** Permanent /r/<handle> identity (null until claimed). */
   handle: string | null
   isDemo?: boolean
+  /** Camera transport: vdo.ninja iframes (default) or LiveKit (env-gated). */
+  transport: 'vdo' | 'livekit' | string
 }
 
 export type Seat = {
@@ -84,6 +86,7 @@ export type RoomConfigPatch = {
   paymentTokenAddress: string
   payoutAddress: string | null
   twitchChannel: string | null
+  transport: string
   letters: {
     enabled: boolean
     maxSeconds: number
@@ -152,9 +155,11 @@ export function listPublicRooms() {
 
 /** Public room + chain config (also exposes the real Arc USDC address). */
 export function getPublicConfig(room = 'default') {
-  return request<{ usdcAddress: string; paymentTokenSymbol: string }>(
-    `/api/config?room=${encodeURIComponent(room)}`,
-  )
+  return request<{
+    usdcAddress: string
+    paymentTokenSymbol: string
+    livekitConfigured?: boolean
+  }>(`/api/config?room=${encodeURIComponent(room)}`)
 }
 
 export function createRoom(

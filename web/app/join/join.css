@@ -246,10 +246,20 @@ a.addr {
 
 /* vdo.ninja publisher frame + hidden self-view detector */
 .cam-frame {
+  position: relative; /* children must never escape the frame */
   overflow: hidden;
   border-radius: 0.75rem;
   border: 1px solid var(--border);
   background: black;
+}
+/* LiveKit self-view — same footprint as the vdo iframe it replaces. */
+.cam-frame video.lk-self {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  max-height: 240px;
+  object-fit: cover;
+  transform: scaleX(-1); /* mirror, like every self-view */
 }
 .cam-frame iframe {
   display: block;

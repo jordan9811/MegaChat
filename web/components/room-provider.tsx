@@ -64,6 +64,7 @@ export type ConfigDraft = {
   lettersMaxSeconds: string
   lettersPrice: string
   lettersModeration: 'auto' | 'approve'
+  transport: 'vdo' | 'livekit'
 }
 
 // Defaults mirror the legacy dashboard form (backed by env defaults server-side).
@@ -91,6 +92,7 @@ const DEFAULT_DRAFT: ConfigDraft = {
   lettersMaxSeconds: '10',
   lettersPrice: '',
   lettersModeration: 'auto',
+  transport: 'vdo',
 }
 
 type RoomContextValue = {
@@ -101,6 +103,7 @@ type RoomContextValue = {
   overlayUrl: string | null
   draft: ConfigDraft
   usdcAddress: string
+  livekitConfigured: boolean
   updateDraft: (patch: Partial<ConfigDraft>) => void
   create: (password: string) => Promise<void>
   unlock: (roomId: string, password: string) => Promise<void>
@@ -139,6 +142,7 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
     tickPrice: draft.tickPrice,
     tickSeconds: Number(draft.tickSeconds) || 10,
     paymentTokenAddress,
+    transport: draft.transport,
     letters: {
       enabled: draft.lettersEnabled,
       maxSeconds: Number(draft.lettersMaxSeconds) || 10,
@@ -185,6 +189,7 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     lettersMaxSeconds: String(room.letters?.maxSeconds ?? 10),
     lettersPrice: room.letters?.price || '',
     lettersModeration: room.letters?.moderation === 'approve' ? 'approve' : 'auto',
+    transport: room.transport === 'livekit' ? 'livekit' : 'vdo',
   }
 }
 
@@ -196,6 +201,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
   const [draft, setDraft] = useState<ConfigDraft>(DEFAULT_DRAFT)
   const [usdcAddress, setUsdcAddress] = useState(USDC_FALLBACK)
+  const [livekitConfigured, setLivekitConfigured] = useState(false)
 
   const passwordRef = useRef('')
   const roomIdRef = useRef<string | null>(null)
@@ -204,7 +210,10 @@ export function RoomProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     getPublicConfig()
-      .then((cfg) => cfg.usdcAddress && setUsdcAddress(cfg.usdcAddress))
+      .then((cfg) => {
+        if (cfg.usdcAddress) setUsdcAddress(cfg.usdcAddress)
+        setLivekitConfigured(!!cfg.livekitConfigured)
+      })
       .catch(() => {})
     // Streamers signed in via Twitch/X get their reserved handle prefilled
     // for the /r/<handle> room claim (identity-only integration).
@@ -435,6 +444,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       overlayUrl,
       draft,
       usdcAddress,
+      livekitConfigured,
       updateDraft,
       create,
       unlock,
@@ -444,7 +454,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       switchRoom,
       lettersAdmin,
     }),
-    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin],
+    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

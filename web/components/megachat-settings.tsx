@@ -26,6 +26,7 @@ export function MegaChatSettings() {
     unlock,
     toggleActive,
     switchRoom,
+    livekitConfigured,
   } = useRoom()
 
   const [tab, setTab] = useState<'create' | 'manage'>('create')
@@ -415,6 +416,32 @@ export function MegaChatSettings() {
                   onChange={(e) => updateDraft({ payoutAddress: e.target.value })}
                   spellCheck={false}
                 />
+              </Field>
+            </div>
+
+            {/* Camera transport — vdo.ninja (default) or LiveKit (env-gated). */}
+            <div className="mt-6 border-t border-border/50 pt-5">
+              <p className="mb-1 text-sm font-semibold text-foreground/90">
+                Camera transport
+              </p>
+              <p className="mb-4 text-xs text-muted-foreground">
+                How viewer cameras travel. vdo.ninja is the battle-tested
+                default; LiveKit adds smoother reconnection and per-viewer
+                connection quality. Existing rooms stay on vdo untouched.
+              </p>
+              <Field label="Transport" htmlFor="room-transport">
+                <SelectInput
+                  id="room-transport"
+                  value={draft.transport}
+                  onChange={(e) =>
+                    updateDraft({ transport: e.target.value as 'vdo' | 'livekit' })
+                  }
+                >
+                  <option value="vdo">vdo.ninja (default)</option>
+                  <option value="livekit" disabled={!livekitConfigured}>
+                    {livekitConfigured ? 'LiveKit' : 'LiveKit — not configured'}
+                  </option>
+                </SelectInput>
               </Field>
             </div>
 

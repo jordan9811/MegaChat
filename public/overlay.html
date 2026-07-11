@@ -467,6 +467,84 @@
       setTimeout(send, 3500);
     }
 
+    // ─── LiveKit transport (flag-gated; vdo tiles untouched by default) ──
+    // For rooms with transport === 'livekit' the tile CONTENT is a LiveKit
+    // <video> track instead of a vdo iframe. Everything else — slots,
+    // stingers, labels, WS-driven lifecycle — is byte-identical.
+    let lkMode = false;
+    let lkOverlayRoom = null;
+    const lkTracks = new Map(); // identity → { video, audio }
+    const lkTileEls = new Map(); // identity → video element awaiting a track
+
+    // Seats can arrive over the WS BEFORE we know the room's transport (the
+    // config fetch is async) — buffer them so a livekit room never renders
+    // vdo iframes by racing. Falls back to vdo after 4s if config never loads.
+    let transportKnown = false;
+    const pendingSeats = [];
+    function transportResolved() {
+      if (transportKnown) return;
+      transportKnown = true;
+      while (pendingSeats.length) addVideoBox(pendingSeats.shift());
+    }
+    setTimeout(transportResolved, 4000);
+
+    function lkAttach(identity) {
+      const el = lkTileEls.get(identity);
+      const tr = lkTracks.get(identity);
+      if (!el || !tr) return;
+      if (tr.video) tr.video.attach(el);
+      if (tr.audio) {
+        const a = tr.audio.attach();
+        a.style.display = 'none';
+        el.parentElement && el.parentElement.appendChild(a);
+      }
+    }
+
+    async function initLivekitOverlay() {
+      try {
+        const cfg = await (await fetch(`/api/config?room=${encodeURIComponent(streamRoomId)}`)).json();
+        if (cfg.transport !== 'livekit') {
+          transportResolved(); // vdo room — flush any buffered seats as iframes
+          return;
+        }
+        lkMode = true;
+        transportResolved(); // livekit confirmed — buffered seats become <video> tiles
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = '/vendor/livekit-client.umd.js';
+          s.onload = resolve;
+          s.onerror = () => reject(new Error('livekit-client failed to load'));
+          document.head.appendChild(s);
+        });
+        const tokRes = await fetch('/api/livekit/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ room: streamRoomId, role: 'subscriber' }),
+        });
+        const tok = await tokRes.json();
+        if (!tokRes.ok || !tok.token) throw new Error(tok.error || 'no token');
+        const LK = window.LivekitClient;
+        lkOverlayRoom = new LK.Room({ adaptiveStream: false });
+        lkOverlayRoom.on(LK.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+          const id = participant.identity;
+          const entry = lkTracks.get(id) || {};
+          if (track.kind === 'video') entry.video = track;
+          if (track.kind === 'audio') entry.audio = track;
+          lkTracks.set(id, entry);
+          lkAttach(id);
+        });
+        lkOverlayRoom.on(LK.RoomEvent.ParticipantDisconnected, (p) => {
+          lkTracks.delete(p.identity);
+          // tile removal stays WS-driven (seat_removed → stinger out)
+        });
+        await lkOverlayRoom.connect(tok.url, tok.token);
+        console.log('[overlay] LiveKit subscriber connected');
+      } catch (err) {
+        console.error('[overlay] LiveKit init failed:', err.message);
+      }
+    }
+    initLivekitOverlay();
+
     ws.onopen = () => {
       console.log('Overlay connected to server');
       if (ws.readyState === 1) {
@@ -520,6 +598,7 @@
     };
 
     function addVideoBox(seat) {
+      if (!transportKnown) { pendingSeats.push(seat); return; }
       if (videoBoxes.has(seat.id)) return;
       if (liveCount() >= MAX_SEATS) return; // CHANGE 2 — never render a 4th
 
@@ -533,13 +612,25 @@
       // Place it in its final slot BEFORE insertion so it doesn't slide on add.
       box.style.top = (liveCount() * (TILE_H + GAP)) + 'px';
 
-      const iframe = document.createElement('iframe');
-      iframe.src = buildOverlayViewUrl(seat.viewUrl);
-      iframe.allow = 'autoplay; camera; microphone';
-      iframe.setAttribute('allowtransparency', 'true');
-      iframe.style.background = 'transparent';
-      iframe.style.backgroundColor = 'transparent';
-      injectVdoOverlayStyles(iframe);
+      // Tile CONTENT: LiveKit <video> for livekit rooms, vdo iframe otherwise.
+      let content;
+      if (lkMode) {
+        content = document.createElement('video');
+        content.autoplay = true;
+        content.playsInline = true;
+        content.style.cssText = 'width:100%;height:100%;object-fit:cover;background:transparent;';
+        lkTileEls.set('seat:' + seat.id, content);
+        lkAttach('seat:' + seat.id); // track may have arrived before the seat broadcast
+      } else {
+        const iframe = document.createElement('iframe');
+        iframe.src = buildOverlayViewUrl(seat.viewUrl);
+        iframe.allow = 'autoplay; camera; microphone';
+        iframe.setAttribute('allowtransparency', 'true');
+        iframe.style.background = 'transparent';
+        iframe.style.backgroundColor = 'transparent';
+        injectVdoOverlayStyles(iframe);
+        content = iframe;
+      }
 
       const flash = document.createElement('div');
       flash.className = 'crt-flash';
@@ -553,7 +644,7 @@
       pinBadge.textContent = '📌 CO-HOST';
       if (seat.pinned) box.classList.add('pinned');
 
-      box.appendChild(iframe);
+      box.appendChild(content);
       box.appendChild(flash);
       box.appendChild(label);
       box.appendChild(pinBadge);
@@ -628,6 +719,7 @@
     }
 
     function removeVideoBox(seatId) {
+      lkTileEls.delete('seat:' + seatId);
       const box = videoBoxes.get(seatId);
       if (!box || box.classList.contains('leaving')) return;
 
