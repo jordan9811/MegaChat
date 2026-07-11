@@ -20,6 +20,7 @@ import {
   getRoomByHandle,
   setRoomHandle,
   createRoomWithPassword,
+  verifyRoomPassword,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
 import {
@@ -987,6 +988,14 @@ app.post('/api/livekit/token', async (req, res) => {
       const identity = `viewer:${Math.random().toString(36).slice(2, 10)}`;
       const token = await livekit.subscriberToken(roomId, identity);
       return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity });
+    }
+    if (role === 'host') {
+      // The streamer's own camera — dashboard-grade auth (room password).
+      const password = req.get('x-room-password');
+      const okPwd = password && (await verifyRoomPassword(roomId, password));
+      if (!okPwd) return res.status(401).json({ error: 'Room password required' });
+      const token = await livekit.hostToken(roomId);
+      return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity: `host:${roomId}` });
     }
     return res.status(400).json({ error: 'Unknown role' });
   } catch (err) {

@@ -646,10 +646,12 @@ export function MegaChatSettings() {
                   : overlayUrl
               }
             />
-            <CopyRow
-              label="Host cam"
-              value={`https://vdo.ninja/?push=mc-host-${room.id}&webcam&quality=1080&stereo&autostart`}
-            />
+            {room.transport !== 'livekit' ? (
+              <CopyRow
+                label="Host cam"
+                value={`https://vdo.ninja/?push=mc-host-${room.id}&webcam&quality=1080&stereo&autostart`}
+              />
+            ) : null}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
             Drop the viewer link in chat. Add the OBS link as a Browser Source

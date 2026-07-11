@@ -4,6 +4,7 @@ import { MegaChatSettings } from '@/components/megachat-settings'
 import { OnCameraTable } from '@/components/on-camera-table'
 import { RewardsCard } from '@/components/rewards-card'
 import { LettersQueueCard } from '@/components/letters-queue-card'
+import { HostCamCard } from '@/components/host-cam-card'
 import { RoomProvider } from '@/components/room-provider'
 import { IntegrationsCard } from '@/components/integrations-card'
 
@@ -52,6 +53,9 @@ export default function DashboardPage() {
             </div>
             <div className="reveal" style={{ ['--reveal-delay' as string]: '0.4s' }}>
               <LettersQueueCard />
+            </div>
+            <div className="reveal" style={{ ['--reveal-delay' as string]: '0.48s' }}>
+              <HostCamCard />
             </div>
           </div>
         </RoomProvider>

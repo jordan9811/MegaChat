@@ -116,6 +116,8 @@ type RoomContextValue = {
     approve: (letterId: string) => Promise<void>
     reject: (letterId: string) => Promise<void>
   }
+  /** LiveKit host publish grant (password-gated server-side). */
+  hostToken: () => Promise<{ token: string; url: string }>
 }
 
 const RoomContext = createContext<RoomContextValue | null>(null)
@@ -415,6 +417,19 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     }
   }, [mode, room?.id, refresh])
 
+  const hostToken = useCallback(async () => {
+    const roomId = roomIdRef.current
+    if (!roomId) throw new Error('No room')
+    const res = await fetch('/api/livekit/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Room-Password': passwordRef.current },
+      body: JSON.stringify({ room: roomId, role: 'host' }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data.token) throw new Error(data.error || 'Host token failed')
+    return { token: data.token as string, url: data.url as string }
+  }, [])
+
   const lettersAdmin = useMemo(
     () => ({
       list: async () => {
@@ -453,8 +468,9 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       pin,
       switchRoom,
       lettersAdmin,
+      hostToken,
     }),
-    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin],
+    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

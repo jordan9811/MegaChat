@@ -1116,6 +1116,7 @@ function mountHostFeed() {
   const mount = document.getElementById('hostLiveMount');
   if (!wrap || !mount) return;
   hideStreamPreview(); // echo safety: the delayed embed is REMOVED, not muted
+  if (isLivekitRoom()) return mountLivekitHostFeed(wrap, mount);
   if (!mount.querySelector('iframe')) {
     const iframe = document.createElement('iframe');
     const q = [
@@ -1140,8 +1141,64 @@ function mountHostFeed() {
 function unmountHostFeed() {
   const wrap = document.getElementById('hostLiveFeed');
   const mount = document.getElementById('hostLiveMount');
+  if (lkHostFeedCleanup) {
+    lkHostFeedCleanup();
+    lkHostFeedCleanup = null;
+  }
   if (mount) mount.innerHTML = '';
   if (wrap) wrap.style.display = 'none';
+}
+
+// LiveKit return feed: the joiner is ALREADY connected (publisher tokens
+// carry canSubscribe) — attach the host's tracks when they exist and follow
+// them live. Sub-second by construction; no second connection needed.
+let lkHostFeedCleanup = null;
+
+async function mountLivekitHostFeed(wrap, mount) {
+  if (!lkRoom) return;
+  const lk = await import('livekit-client');
+  const hostIdentity = 'host:' + ((CONFIG && CONFIG.roomId) || streamRoomId);
+  let video = mount.querySelector('video');
+  if (!video) {
+    video = document.createElement('video');
+    video.autoplay = true;
+    video.playsInline = true;
+    video.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
+    mount.appendChild(video);
+  }
+  const audioEls = [];
+  const attachIfHost = (track, participant) => {
+    if (participant.identity !== hostIdentity) return;
+    console.log('[livekit] host feed: attaching', track.kind);
+    if (track.kind === 'video') track.attach(video);
+    if (track.kind === 'audio') {
+      const a = track.attach();
+      a.style.display = 'none';
+      mount.appendChild(a);
+      audioEls.push(a);
+    }
+  };
+  // host may already be on air — attach existing tracks now
+  console.log(
+    '[livekit] host feed mount — remotes:',
+    [...lkRoom.remoteParticipants.values()]
+      .map((p) => `${p.identity}(${p.trackPublications.size} pubs, subscribed=${[...p.trackPublications.values()].map((x) => x.isSubscribed).join('/')})`)
+      .join(', ') || 'none',
+  );
+  for (const p of lkRoom.remoteParticipants.values()) {
+    if (p.identity !== hostIdentity) continue;
+    for (const pub of p.trackPublications.values()) {
+      if (pub.track) attachIfHost(pub.track, p);
+      else if (pub.setSubscribed) pub.setSubscribed(true);
+    }
+  }
+  const onSub = (track, pub, participant) => attachIfHost(track, participant);
+  lkRoom.on(lk.RoomEvent.TrackSubscribed, onSub);
+  lkHostFeedCleanup = () => {
+    try { lkRoom && lkRoom.off(lk.RoomEvent.TrackSubscribed, onSub); } catch { /* down */ }
+    audioEls.forEach((a) => a.remove());
+  };
+  wrap.style.display = '';
 }
 
 // ─── LiveKit transport (flag-gated; vdo stays the default, untouched) ───────
