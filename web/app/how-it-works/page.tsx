@@ -276,6 +276,79 @@ export default function HowItWorksPage() {
             </div>
           </section>
 
+          {/* Latency architecture — the settled design, in plain words. */}
+          <section className="border-t border-border/50">
+            <div className="mx-auto max-w-6xl px-6 py-12 md:py-16">
+              <SectionHeading kicker="The clock" title="Why you're never actually late" accent="cyan" />
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                <div className="reveal rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm">
+                  <h3 className="font-heading text-base font-bold text-foreground">👀 Spectating is delayed</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    The broadcast you watch runs ~15 seconds behind reality —
+                    every big platform buffers like that, for every viewer.
+                    That&apos;s normal and nothing here changes it.
+                  </p>
+                </div>
+                <div
+                  className="reveal rounded-2xl border border-[var(--neon-lime)]/40 bg-card/60 p-5 backdrop-blur-sm"
+                  style={{ ['--reveal-delay' as string]: '0.08s' }}
+                >
+                  <h3 className="font-heading text-base font-bold text-foreground">🎬 Going live is instant</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    Your camera doesn&apos;t ride the broadcast — it rides
+                    MegaChat&apos;s own connection, straight to the streamer,
+                    in well under a second. You two talk in real time; the
+                    broadcast relays your moment to everyone else at its usual
+                    delay.
+                  </p>
+                </div>
+                <div
+                  className="reveal rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm"
+                  style={{ ['--reveal-delay' as string]: '0.16s' }}
+                >
+                  <h3 className="font-heading text-base font-bold text-foreground">✉ Letters skip the clock</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    A letter is recorded, so delay can&apos;t touch it. Record
+                    your take, send it, and watch it pop onto the stream like
+                    everyone else does.
+                  </p>
+                </div>
+              </div>
+
+              {/* One-glance diagram: the two pipes and their clocks. */}
+              <div className="reveal mt-8 overflow-x-auto" style={{ ['--reveal-delay' as string]: '0.2s' }}>
+                <svg
+                  viewBox="0 0 720 150"
+                  role="img"
+                  aria-label="Diagram: your camera reaches the streamer in under a second over MegaChat's pipe; the public broadcast reaches all spectators about fifteen seconds later"
+                  className="mx-auto block min-w-[560px] max-w-3xl"
+                >
+                  <defs>
+                    <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+                      <path d="M0 0 L8 4 L0 8 z" fill="currentColor" />
+                    </marker>
+                  </defs>
+                  <g fontFamily="var(--font-space-grotesk), sans-serif" fontSize="13">
+                    <rect x="8" y="52" width="120" height="44" rx="10" fill="none" stroke="var(--neon-magenta)" />
+                    <text x="68" y="78" textAnchor="middle" fill="currentColor" fontWeight="700">YOU</text>
+                    <rect x="300" y="52" width="130" height="44" rx="10" fill="none" stroke="var(--neon-cyan)" />
+                    <text x="365" y="78" textAnchor="middle" fill="currentColor" fontWeight="700">STREAMER</text>
+                    <rect x="590" y="52" width="122" height="44" rx="10" fill="none" stroke="var(--border)" />
+                    <text x="651" y="78" textAnchor="middle" fill="currentColor" fontWeight="700">EVERYONE</text>
+                    <g color="var(--neon-lime)">
+                      <line x1="132" y1="66" x2="292" y2="66" stroke="currentColor" strokeWidth="2" markerEnd="url(#arr)" />
+                    </g>
+                    <text x="212" y="52" textAnchor="middle" fill="var(--neon-lime)" fontWeight="700">MegaChat pipe · &lt;1s</text>
+                    <g color="var(--muted-foreground)">
+                      <line x1="434" y1="82" x2="582" y2="82" stroke="currentColor" strokeWidth="2" strokeDasharray="6 5" markerEnd="url(#arr)" />
+                    </g>
+                    <text x="508" y="112" textAnchor="middle" fill="var(--muted-foreground)">broadcast · ~15s</text>
+                  </g>
+                </svg>
+              </div>
+            </div>
+          </section>
+
           {/* Rails */}
           <section className="mx-auto max-w-6xl px-6 py-12 md:py-16">
             <SectionHeading kicker="Under the hood" title="The rails it runs on" accent="lime" />
