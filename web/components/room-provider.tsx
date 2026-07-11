@@ -26,6 +26,10 @@ import {
   kickSeat as apiKickSeat,
   pinSeat as apiPinSeat,
   getPublicConfig,
+  listLetters as apiListLetters,
+  approveLetter as apiApproveLetter,
+  rejectLetter as apiRejectLetter,
+  type LetterAdminItem,
   type Room,
   type Seat,
   type RoomConfigPatch,
@@ -55,6 +59,10 @@ export type ConfigDraft = {
   rewardsEarnCap: string
   rewardsType: string
   rewardsTokenAddress: string
+  lettersEnabled: boolean
+  lettersMaxSeconds: string
+  lettersPrice: string
+  lettersModeration: 'auto' | 'approve'
 }
 
 // Defaults mirror the legacy dashboard form (backed by env defaults server-side).
@@ -77,6 +85,10 @@ const DEFAULT_DRAFT: ConfigDraft = {
   rewardsEarnCap: '5',
   rewardsType: 'usdc',
   rewardsTokenAddress: '',
+  lettersEnabled: false,
+  lettersMaxSeconds: '10',
+  lettersPrice: '',
+  lettersModeration: 'auto',
 }
 
 type RoomContextValue = {
@@ -94,6 +106,11 @@ type RoomContextValue = {
   kick: (seatId: string) => Promise<void>
   pin: (seatId: string, pinned: boolean) => Promise<void>
   switchRoom: () => void
+  lettersAdmin: {
+    list: () => Promise<LetterAdminItem[]>
+    approve: (letterId: string) => Promise<void>
+    reject: (letterId: string) => Promise<void>
+  }
 }
 
 const RoomContext = createContext<RoomContextValue | null>(null)
@@ -120,6 +137,12 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
     tickPrice: draft.tickPrice,
     tickSeconds: Number(draft.tickSeconds) || 10,
     paymentTokenAddress,
+    letters: {
+      enabled: draft.lettersEnabled,
+      maxSeconds: Number(draft.lettersMaxSeconds) || 10,
+      price: draft.lettersPrice.trim() || null,
+      moderation: draft.lettersModeration,
+    },
     rewards: {
       enabled: draft.rewardsEnabled,
       earnInterval: Number(draft.rewardsEarnInterval) || 60,
@@ -155,6 +178,10 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     rewardsEarnCap: String(rw.earnCap ?? '5'),
     rewardsType: rw.rewardType || 'usdc',
     rewardsTokenAddress: rw.rewardTokenAddress || '',
+    lettersEnabled: !!room.letters?.enabled,
+    lettersMaxSeconds: String(room.letters?.maxSeconds ?? 10),
+    lettersPrice: room.letters?.price || '',
+    lettersModeration: room.letters?.moderation === 'approve' ? 'approve' : 'auto',
   }
 }
 
@@ -360,6 +387,26 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     }
   }, [mode, room?.id, refresh])
 
+  const lettersAdmin = useMemo(
+    () => ({
+      list: async () => {
+        const roomId = roomIdRef.current
+        if (!roomId) return []
+        const data = await apiListLetters(roomId, passwordRef.current)
+        return data.letters
+      },
+      approve: async (letterId: string) => {
+        const roomId = roomIdRef.current
+        if (roomId) await apiApproveLetter(roomId, passwordRef.current, letterId)
+      },
+      reject: async (letterId: string) => {
+        const roomId = roomIdRef.current
+        if (roomId) await apiRejectLetter(roomId, passwordRef.current, letterId)
+      },
+    }),
+    [],
+  )
+
   const value = useMemo<RoomContextValue>(
     () => ({
       mode,
@@ -376,8 +423,9 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       kick,
       pin,
       switchRoom,
+      lettersAdmin,
     }),
-    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom],
+    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

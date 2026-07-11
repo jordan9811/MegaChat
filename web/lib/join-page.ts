@@ -526,8 +526,10 @@ const WALLET_ONLY_METHODS = new Set([
   'wallet_addEthereumChain',
 ]);
 
-async function ensureMppSession(sessionCap) {
-  if (mppSession) return mppSession;
+// Build a fresh mppx session manager over the hybrid transport. Shared by
+// the seat meter (ensureMppSession) and one-shot letter payments — the
+// transport/preflight logic is IDENTICAL, only maxDeposit differs.
+async function buildMppManager(maxDeposit) {
   const provider = await getActiveProvider();
   const viem = await import('viem');
   const { tempo } = await import('viem/chains');
@@ -601,12 +603,17 @@ async function ensureMppSession(sessionCap) {
     }),
   });
   const mpp = await import('mppx/client');
-  mppSession = mpp.tempo.session.manager({
+  return mpp.tempo.session.manager({
     client,
     account,
-    maxDeposit: String(sessionCap),
+    maxDeposit: String(maxDeposit),
     decimals: (CONFIG && CONFIG.paymentTokenDecimals) || 6,
   });
+}
+
+async function ensureMppSession(sessionCap) {
+  if (mppSession) return mppSession;
+  mppSession = await buildMppManager(sessionCap);
   return mppSession;
 }
 
@@ -1129,10 +1136,229 @@ function unmountHostFeed() {
   if (wrap) wrap.style.display = 'none';
 }
 
+// ─── Letter mode: record → preview → pay flat → one-shot upload ─────────────
+// Recorded clips sidestep the broadcast delay entirely: the sender watches
+// the delayed embed and sees their letter pop up like any other spectator.
+let letterState = 'idle'; // idle | recording | preview | sending
+let letterRecorder = null;
+let letterChunks = [];
+let letterBlob = null;
+let letterStream = null;
+let letterCountdown = null;
+let letterDurationS = 0;
+let myLetterId = null;
+
+function lettersCfg() {
+  return CONFIG && CONFIG.letters && CONFIG.letters.enabled ? CONFIG.letters : null;
+}
+
+function initLetterUi() {
+  const btn = document.getElementById('letterBtn');
+  if (!btn) return;
+  const cfg = lettersCfg();
+  if (!cfg) {
+    btn.style.display = 'none';
+    return;
+  }
+  btn.style.display = '';
+  btn.textContent = `✉ Send a letter — ${cfg.price} ${tokenSymbol()} · up to ${cfg.maxSeconds}s`;
+}
+
+function setLetterStatus(text) {
+  const el = document.getElementById('letterStatus');
+  if (el) el.textContent = text || '';
+}
+
+function letterButtons({ record, redo, send }) {
+  const show = (id, on) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = on ? '' : 'none';
+  };
+  show('letterRecordBtn', record);
+  show('letterRedoBtn', redo);
+  show('letterSendBtn', send);
+}
+
+async function openLetterStage() {
+  const cfg = lettersCfg();
+  if (!cfg) return;
+  const stage = document.getElementById('letterStage');
+  const video = document.getElementById('letterVideo');
+  try {
+    letterStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  } catch (err) {
+    showMessage('❌ Camera/mic access is needed to record a letter.', 'error');
+    return;
+  }
+  stage.style.display = '';
+  video.srcObject = letterStream;
+  video.muted = true;
+  video.controls = false;
+  video.play().catch(() => {});
+  letterState = 'idle';
+  letterBlob = null;
+  letterButtons({ record: true, redo: false, send: false });
+  setLetterStatus(`Up to ${cfg.maxSeconds}s. Flat price ${cfg.price} ${tokenSymbol()} — plays once on stream.`);
+}
+
+function closeLetterStage() {
+  const stage = document.getElementById('letterStage');
+  const video = document.getElementById('letterVideo');
+  clearInterval(letterCountdown);
+  if (letterRecorder && letterRecorder.state === 'recording') {
+    try { letterRecorder.stop(); } catch { /* already stopping */ }
+  }
+  letterRecorder = null;
+  if (letterStream) {
+    letterStream.getTracks().forEach((t) => t.stop());
+    letterStream = null;
+  }
+  if (video) {
+    video.srcObject = null;
+    video.src = '';
+  }
+  if (stage) stage.style.display = 'none';
+  letterState = 'idle';
+}
+
+function pickRecorderMime() {
+  const candidates = ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+  for (const m of candidates) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+function toggleLetterRecording() {
+  const cfg = lettersCfg();
+  if (!cfg || !letterStream) return;
+  const recordBtn = document.getElementById('letterRecordBtn');
+  const video = document.getElementById('letterVideo');
+
+  if (letterState === 'recording') {
+    try { letterRecorder.stop(); } catch { /* noop */ }
+    return;
+  }
+
+  const mime = pickRecorderMime();
+  if (!mime) {
+    showMessage('❌ This browser cannot record video (no MediaRecorder).', 'error');
+    return;
+  }
+  letterChunks = [];
+  letterRecorder = new MediaRecorder(letterStream, { mimeType: mime });
+  letterRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) letterChunks.push(e.data);
+  };
+  const startedAt = Date.now();
+  letterRecorder.onstop = () => {
+    clearInterval(letterCountdown);
+    letterDurationS = Math.max(1, Math.ceil((Date.now() - startedAt) / 1000));
+    letterBlob = new Blob(letterChunks, { type: mime.split(';')[0] });
+    letterState = 'preview';
+    // Preview the take: swap the live camera for the recorded blob.
+    video.srcObject = null;
+    video.src = URL.createObjectURL(letterBlob);
+    video.muted = false;
+    video.controls = true;
+    recordBtn.textContent = '⏺ Record';
+    letterButtons({ record: false, redo: true, send: true });
+    setLetterStatus(`${letterDurationS}s take — happy with it? Send for ${cfg.price} ${tokenSymbol()}.`);
+  };
+  letterRecorder.start();
+  letterState = 'recording';
+  letterButtons({ record: true, redo: false, send: false });
+  let left = cfg.maxSeconds;
+  recordBtn.textContent = `⏹ Stop (${left}s)`;
+  letterCountdown = setInterval(() => {
+    left -= 1;
+    recordBtn.textContent = `⏹ Stop (${left}s)`;
+    if (left <= 0 && letterRecorder && letterRecorder.state === 'recording') {
+      try { letterRecorder.stop(); } catch { /* noop */ }
+    }
+  }, 1000);
+}
+
+async function redoLetter() {
+  const video = document.getElementById('letterVideo');
+  letterBlob = null;
+  letterState = 'idle';
+  video.src = '';
+  video.srcObject = letterStream;
+  video.muted = true;
+  video.controls = false;
+  video.play().catch(() => {});
+  letterButtons({ record: true, redo: false, send: false });
+  setLetterStatus('Rolling again — hit Record when ready.');
+}
+
+async function sendLetter() {
+  const cfg = lettersCfg();
+  if (!cfg || !letterBlob || letterState === 'sending') return;
+  const username = (document.getElementById('username').value || '').trim();
+  if (!username) {
+    showMessage('Pick a username first — it labels your letter on stream.', 'error');
+    return;
+  }
+  if (!account) {
+    const MW = getMegaWallet();
+    if (MW && MW.configured) await connectPrivyWallet('login');
+    else await connectMetaMask();
+  }
+  if (!account) return;
+  letterState = 'sending';
+  setLetterStatus(`Paying ${cfg.price} ${tokenSymbol()}…`);
+  try {
+    // One-voucher session at the flat letter price (same rails as ticks).
+    const session = await buildMppManager(cfg.price);
+    const resp = await session.fetch(
+      `/api/letter/submit?room=${encodeURIComponent(streamRoomId)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          room: streamRoomId,
+          username,
+          address: account,
+          durationS: letterDurationS,
+          mime: letterBlob.type || 'video/webm',
+          ...stingerSelections(),
+        }),
+      },
+    );
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.letterId) {
+      throw new Error(data.error || `Letter submit failed (${resp.status})`);
+    }
+    session.close().catch(() => { /* nothing unspent; channel just closes */ });
+    myLetterId = data.letterId;
+    setLetterStatus('Uploading your clip…');
+    const up = await fetch(data.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': letterBlob.type || 'video/webm' },
+      body: letterBlob,
+    });
+    const upData = await up.json().catch(() => ({}));
+    if (!up.ok) throw new Error(upData.error || 'Upload failed');
+    closeLetterStage();
+    showMessage(
+      upData.status === 'pending_approval'
+        ? '📮 Letter sent — the streamer approves letters before they play. You were charged; rejects auto-refund.'
+        : '📮 Letter sent! It will pop up on stream shortly — watch the preview above (it runs ~15s behind).',
+      'success',
+    );
+  } catch (err) {
+    letterState = 'preview';
+    setLetterStatus('');
+    showMessage('❌ Letter failed: ' + (err?.message || 'unknown error'), 'error');
+  }
+}
+
 async function init() {
   try {
     await loadConfig();
     mountStreamPreview();
+    initLetterUi();
   } catch (err) {
     console.error('Failed to load config', err);
     const lbl = document.getElementById('priceLabel');
@@ -1322,6 +1548,12 @@ export function initJoinPage({ wsUrl }) {
     ws.onmessage = (event) => {
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
+      // Letter lifecycle toasts are seat-independent (senders usually have
+      // no seat) — handle them before the seat guard.
+      if (msg.type === 'letter_play' && msg.letter && msg.letter.id === myLetterId) {
+        showMessage('▶ Your letter is on stream RIGHT NOW — the preview above shows it in ~15s.', 'success');
+        return;
+      }
       if (!mySeatId) return;
       if (msg.type === 'meter_update' && msg.seatId === mySeatId) {
         showMeter(msg.remaining, msg.spent, msg.secondsLeft);
@@ -1381,6 +1613,12 @@ export function initJoinPage({ wsUrl }) {
   on('camRetryBtn', retryCamera);
   // Wrapped: the click MouseEvent must not land in leaveStream's `quiet` arg.
   on('leaveBtn', () => leaveStream());
+  // Letter mode controls (button hidden unless the room enables letters).
+  on('letterBtn', () => void openLetterStage());
+  on('letterRecordBtn', toggleLetterRecording);
+  on('letterRedoBtn', () => void redoLetter());
+  on('letterSendBtn', () => void sendLetter());
+  on('letterCancelBtn', closeLetterStage);
   // Click-to-copy the connected address (delegated: the chip is re-injected
   // whenever renderWallet rewrites #walletInfo).
   on('walletInfo', onWalletInfoCopyClick);

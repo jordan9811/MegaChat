@@ -494,6 +494,12 @@
           if (box) box.classList.toggle('pinned', !!msg.pinned);
           break;
         }
+        case 'letter_play':
+          addLetterBox(msg.letter);
+          break;
+        case 'letter_end':
+          removeVideoBox('letter:' + msg.letterId);
+          break;
       }
     };
 
@@ -567,6 +573,56 @@
       playJoinSound();
 
       // Drop the entrance class once it finishes (so it won't replay).
+      const inCls = fin ? fin.cls : 'joining';
+      setTimeout(() => box.classList.remove(inCls), fin ? fin.ms : JOIN_MS);
+    }
+
+    // Letter tile — same slot/stinger machinery as a seat, but the content is
+    // a one-shot <video> clip streamed from the server instead of a live cam.
+    function addLetterBox(letter) {
+      const key = 'letter:' + letter.id;
+      if (videoBoxes.has(key)) return;
+      if (liveCount() >= MAX_SEATS) return; // server schedules around this; belt+braces
+
+      const fin = FLY_INS[letter.flyIn] || null;
+      const box = document.createElement('div');
+      box.className = 'tile ' + (fin ? fin.cls : 'joining');
+      box.dataset.seatId = key;
+      box.dataset.flyOut = (letter.flyOut && FLY_OUTS[letter.flyOut]) ? letter.flyOut : '';
+      box.style.width = TILE_W + 'px';
+      box.style.height = TILE_H + 'px';
+      box.style.top = (liveCount() * (TILE_H + GAP)) + 'px';
+
+      const video = document.createElement('video');
+      video.src = letter.mediaUrl;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.style.cssText = 'width:100%;height:100%;object-fit:cover;background:#000;';
+      // When the clip finishes early (or stalls), fly out without waiting for
+      // the server's letter_end.
+      video.addEventListener('ended', () => removeVideoBox(key));
+
+      const flash = document.createElement('div');
+      flash.className = 'crt-flash';
+
+      const label = document.createElement('div');
+      label.className = 'username-label';
+      label.textContent = '✉ ' + letter.username;
+
+      box.appendChild(video);
+      box.appendChild(flash);
+      box.appendChild(label);
+
+      if (fin && fin.fx) {
+        const fx = document.createElement('div');
+        fx.className = 'stinger-fx ' + fin.fx;
+        box.appendChild(fx);
+        setTimeout(() => fx.remove(), fin.ms + 120);
+      }
+      stage.appendChild(box);
+      videoBoxes.set(key, box);
+      relayout();
+      playJoinSound();
       const inCls = fin ? fin.cls : 'joining';
       setTimeout(() => box.classList.remove(inCls), fin ? fin.ms : JOIN_MS);
     }

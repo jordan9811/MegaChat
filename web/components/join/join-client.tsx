@@ -225,6 +225,33 @@ export function JoinClient() {
             Leave stream
           </button>
 
+          {/* LETTER MODE — record a clip, pay flat, it plays once on stream.
+              Recorded content sidesteps the broadcast delay entirely.
+              Hidden unless the room enables letters (join-page.ts toggles). */}
+          <button id="letterBtn" type="button" className={ghostBtn} style={{ display: 'none' }}>
+            ✉ Send a letter
+          </button>
+          <div id="letterStage" className="letter-stage" style={{ display: 'none' }}>
+            <div className="cam-frame letter-frame">
+              <video id="letterVideo" playsInline muted />
+            </div>
+            <div className="letter-controls">
+              <button id="letterRecordBtn" type="button" className={ghostBtn}>
+                ⏺ Record
+              </button>
+              <button id="letterRedoBtn" type="button" className={ghostBtn} style={{ display: 'none' }}>
+                ↺ Re-record
+              </button>
+              <button id="letterSendBtn" type="button" className={primaryBtn} style={{ display: 'none' }}>
+                📮 Send
+              </button>
+              <button id="letterCancelBtn" type="button" className={ghostBtn}>
+                Cancel
+              </button>
+            </div>
+            <p id="letterStatus" className="text-xs text-muted-foreground" aria-live="polite" />
+          </div>
+
           {/* className is fully overwritten by the script — styled in join.css */}
           <div id="message" className="join-message" aria-live="polite" />
         </div>

@@ -16,6 +16,7 @@ import {
   DEFAULT_ROOM_ID,
   migrateLegacyRoomPasswords,
   listRooms,
+  letterPriceFor,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
 import {
@@ -411,6 +412,14 @@ app.get('/api/config', (req, res) => {
     paymentTokenDecimals: cfg.paymentTokenDecimals,
     twitchChannel: cfg.twitchChannel || null,
     rewardsEnabled: !!cfg.rewards?.enabled,
+    letters: cfg.letters?.enabled
+      ? {
+          enabled: true,
+          maxSeconds: cfg.letters.maxSeconds,
+          price: letterPriceFor(cfg),
+          moderation: cfg.letters.moderation,
+        }
+      : { enabled: false },
     rewards: cfg.rewards,
     // MPP session meter (TIP-1034 channels) — primary on Tempo.
     meterMode: mppMeter ? 'mpp_session' : 'allowance',
@@ -915,6 +924,19 @@ try {
   });
 } catch (err) {
   console.warn('[rewards] failed to attach, continuing without watch-to-earn:', err.message);
+}
+
+// ─── Letter mode (isolated; reuses the MPP payment rails read-only) ─────────
+try {
+  const { attachLetters } = await import('./letters.js');
+  attachLetters(app, {
+    mppMeter,
+    broadcastToRoom,
+    activeSeats,
+    sellerAddress: SELLER_WALLET_ADDRESS,
+  });
+} catch (err) {
+  console.warn('[letters] failed to attach, continuing without letter mode:', err.message);
 }
 
 // Routes

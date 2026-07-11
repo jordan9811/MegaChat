@@ -4,6 +4,14 @@
 
 import { backendHttpUrl } from './backend'
 
+export type LettersConfig = {
+  enabled: boolean
+  maxSeconds: number
+  /** null → derived: maxSeconds worth of the live per-second rate. */
+  price: string | null
+  moderation: 'auto' | 'approve' | string
+}
+
 export type RewardsConfig = {
   enabled: boolean
   earnInterval: number
@@ -33,6 +41,7 @@ export type Room = {
   payoutAddress: string | null
   /** Twitch login embedded on the join page as the delayed spectate surface. */
   twitchChannel: string | null
+  letters: LettersConfig
   rewards: RewardsConfig
 }
 
@@ -72,6 +81,12 @@ export type RoomConfigPatch = {
   paymentTokenAddress: string
   payoutAddress: string | null
   twitchChannel: string | null
+  letters: {
+    enabled: boolean
+    maxSeconds: number
+    price: string | null
+    moderation: string
+  }
   rewards: {
     enabled: boolean
     earnInterval: number
@@ -190,5 +205,38 @@ export function pinSeat(roomId: string, password: string, seatId: string, pinned
   return request<{ success: boolean; pinned: boolean }>(
     `/api/dashboard/rooms/${encodeURIComponent(roomId)}/pin/${encodeURIComponent(seatId)}`,
     { method: 'POST', password, body: { pinned } },
+  )
+}
+
+/** One letter in the moderation/queue list. */
+export type LetterAdminItem = {
+  id: string
+  username: string
+  durationS: number
+  price: string
+  status: 'pending_approval' | 'queued' | 'playing' | string
+  uploadedAt: number | null
+  mediaUrl: string | null
+}
+
+export function listLetters(roomId: string, password: string) {
+  return request<{ letters: LetterAdminItem[] }>(
+    `/api/dashboard/rooms/${encodeURIComponent(roomId)}/letters`,
+    { password },
+  )
+}
+
+export function approveLetter(roomId: string, password: string, letterId: string) {
+  return request<{ success: boolean }>(
+    `/api/dashboard/rooms/${encodeURIComponent(roomId)}/letters/${encodeURIComponent(letterId)}/approve`,
+    { method: 'POST', password },
+  )
+}
+
+/** Reject a pending letter — the payer is refunded from the platform wallet. */
+export function rejectLetter(roomId: string, password: string, letterId: string) {
+  return request<{ success: boolean; refunded: boolean }>(
+    `/api/dashboard/rooms/${encodeURIComponent(roomId)}/letters/${encodeURIComponent(letterId)}/reject`,
+    { method: 'POST', password },
   )
 }

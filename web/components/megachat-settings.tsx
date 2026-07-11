@@ -402,6 +402,70 @@ export function MegaChatSettings() {
               </Field>
             </div>
 
+            {/* Letter mode — recorded clips, flat price, one-shot playback. */}
+            <div className="mt-6 border-t border-border/50 pt-5">
+              <p className="mb-1 text-sm font-semibold text-foreground/90">
+                Letter mode{' '}
+                <span className="font-normal text-muted-foreground">
+                  — recorded clips that play once on stream
+                </span>
+              </p>
+              <p className="mb-4 text-xs text-muted-foreground">
+                Viewers record up to the max length, pay a flat price, and the
+                clip pops onto your overlay with the same stinger treatment.
+                Recorded means the ~15s broadcast delay never matters.
+              </p>
+              <label className="mb-4 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
+                <input
+                  type="checkbox"
+                  id="letters-enabled"
+                  className="size-4 accent-[var(--neon-magenta)]"
+                  checked={draft.lettersEnabled}
+                  onChange={(e) => updateDraft({ lettersEnabled: e.target.checked })}
+                />
+                Enable letters
+              </label>
+              {draft.lettersEnabled ? (
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                  <Field label="Max length" htmlFor="letters-max">
+                    <InputAffix
+                      id="letters-max"
+                      affix="sec"
+                      inputMode="numeric"
+                      value={draft.lettersMaxSeconds}
+                      onChange={(e) => updateDraft({ lettersMaxSeconds: e.target.value })}
+                    />
+                  </Field>
+                  <Field
+                    label="Flat price"
+                    htmlFor="letters-price"
+                    hint="Empty = max length × live per-second rate."
+                  >
+                    <InputAffix
+                      id="letters-price"
+                      affix={tokenSymbol}
+                      inputMode="decimal"
+                      placeholder="auto"
+                      value={draft.lettersPrice}
+                      onChange={(e) => updateDraft({ lettersPrice: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="Moderation" htmlFor="letters-moderation">
+                    <SelectInput
+                      id="letters-moderation"
+                      value={draft.lettersModeration}
+                      onChange={(e) =>
+                        updateDraft({ lettersModeration: e.target.value as 'auto' | 'approve' })
+                      }
+                    >
+                      <option value="auto">Auto-play (default)</option>
+                      <option value="approve">Approve queue</option>
+                    </SelectInput>
+                  </Field>
+                </div>
+              ) : null}
+            </div>
+
             {/* Join gating — anti-spam / abuse controls. Stubs only: no
                 server enforcement yet (see ROADMAP.md → Join gating). */}
             <div className="mt-6 border-t border-border/50 pt-5">

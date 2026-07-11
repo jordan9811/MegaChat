@@ -40,6 +40,30 @@ export function getEnvDefaults() {
   };
 }
 
+/** Letter mode — recorded clips paid at a flat price, played once on stream. */
+function resolveLetters(cfg) {
+  const l = cfg.letters || {};
+  const maxSeconds = Math.min(30, Math.max(3, Number(l.maxSeconds ?? 10) || 10));
+  const price =
+    typeof l.price === 'string' && parseFloat(l.price) > 0 ? String(l.price) : null;
+  return {
+    enabled: l.enabled === true,
+    maxSeconds,
+    // null → derived at read time: maxSeconds worth of the live per-second rate
+    price,
+    moderation: l.moderation === 'approve' ? 'approve' : 'auto',
+  };
+}
+
+/** Effective flat price for a letter in this room (token units, string). */
+export function letterPriceFor(cfg) {
+  if (cfg.letters?.price) return cfg.letters.price;
+  const perSecond = parseFloat(cfg.passkeyTickPrice || '0.001') /
+    Math.max(1, Number(cfg.passkeyTickSeconds || 1));
+  const p = perSecond * (cfg.letters?.maxSeconds ?? 10);
+  return String(Math.max(0.000001, Math.round(p * 1e6) / 1e6));
+}
+
 function resolveRewards(cfg, defaults) {
   const r = cfg.rewards || {};
   const d = defaults.rewards;
@@ -201,6 +225,7 @@ export function resolveRoomConfig(roomId) {
     // the delayed "spectate" surface. null → no embed. (Additive field;
     // rooms.json is branch-shared, Arc branches simply ignore it.)
     twitchChannel: sanitizeTwitchChannel(cfg.twitchChannel),
+    letters: resolveLetters(cfg),
     rewards: resolveRewards(cfg, defaults),
   };
 }
