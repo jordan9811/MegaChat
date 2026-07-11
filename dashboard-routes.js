@@ -157,8 +157,14 @@ export function attachDashboardRoutes(app, deps) {
       if (seat.streamRoomId !== room.id) continue;
       const connected = !!(seat.ownerWs && seat.ownerWs.readyState === 1);
       // 'unstable' = control WS currently down, or blipped in the last 2 min —
-      // the streamer sees who's riding a flaky connection.
+      // the streamer sees who's riding a flaky connection. LiveKit seats
+      // refine this with the SFU's own quality signal (good/poor).
       const recentBlip = seat.lastDisconnectAt && now - seat.lastDisconnectAt < 120000;
+      let quality = seat.live ? (connected && !recentBlip ? 'good' : 'unstable') : null;
+      if (quality === 'good' && seat.lkQuality) {
+        if (seat.lkQuality === 'poor') quality = 'poor';
+        else if (seat.lkQuality === 'lost') quality = 'unstable';
+      }
       seats.push({
         id: seat.id,
         username: seat.username,
@@ -171,7 +177,7 @@ export function attachDashboardRoutes(app, deps) {
         joinedAt: seat.joinedAt,
         liveAt: seat.liveAt,
         connected,
-        quality: seat.live ? (connected && !recentBlip ? 'good' : 'unstable') : null,
+        quality,
       });
     }
 

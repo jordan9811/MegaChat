@@ -627,6 +627,15 @@ function startMppTicks(data) {
   mppFailures = 0;
   mppTickTimer = setInterval(async () => {
     if (mppInFlight || !mySeatId) return;
+    // LiveKit rooms: while the transport is reconnecting, SKIP ticks
+    // entirely — no vouchers means no charges for dead air, and no failure
+    // strikes either. The seat survives on the server's grace window; ticks
+    // resume the moment the room is connected again.
+    if (isLivekitRoom() && lkRoom && lkRoom.state !== 'connected') {
+      const t = document.getElementById('meterTime');
+      if (t) t.textContent = '⏸ paused';
+      return;
+    }
     mppInFlight = true;
     try {
       const session = await ensureMppSession(data.sessionCap);
@@ -1257,6 +1266,30 @@ async function startLivekitCameraStage(data) {
     const camPub = [...lkRoom.localParticipant.videoTrackPublications.values()][0];
     if (camPub && camPub.track && lkLocalVideo) camPub.track.attach(lkLocalVideo);
 
+    // Phase-3 payoff: auto-reconnect + connection-quality signals.
+    lkRoom.on(lk.RoomEvent.ConnectionStateChanged, (state) => {
+      const s = String(state);
+      console.log('[livekit] connection state:', s);
+      // LiveKit reports 'signalReconnecting' first, then 'reconnecting' —
+      // both mean the pipe is down: pause the meter display, flag the dot.
+      if (/reconnect/i.test(s)) {
+        setCamStatus('', 'Reconnecting…');
+        renderLkQuality('lost'); // offline-safe: local UI truth, no network
+        const t = document.getElementById('meterTime');
+        if (t) t.textContent = '⏸ paused';
+      } else if (s === 'connected') {
+        console.log('[livekit] reconnected — meter resumes');
+        renderLkQuality('good');
+        lastReportedQuality = null; // re-report fresh quality to the server
+        if (joinBtnState === 'live') setCamStatus('live', "You're LIVE on stream");
+      }
+    });
+    lkRoom.on(lk.RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+      if (participant !== lkRoom.localParticipant) return;
+      renderLkQuality(String(quality));
+      reportLkQuality(String(quality), data.seatId);
+    });
+
     // Published — same UX beat as the vdo detector firing.
     if (joinBtnState === 'awaiting-camera') {
       setJoinState('go-live');
@@ -1282,6 +1315,31 @@ function teardownLivekit() {
   }
   const pub = document.getElementById('camPublisher');
   if (pub) pub.style.display = '';
+  const dot = document.getElementById('lkQualityDot');
+  if (dot) dot.style.display = 'none';
+  lastReportedQuality = null;
+}
+
+// Subtle connection-quality dot on the joiner's own UI + a report to the
+// server so the streamer's dashboard sees who's riding a bad link.
+let lastReportedQuality = null;
+
+function renderLkQuality(q) {
+  const dot = document.getElementById('lkQualityDot');
+  if (!dot) return;
+  dot.style.display = '';
+  dot.dataset.q = q;
+  dot.title = 'Connection: ' + q;
+}
+
+function reportLkQuality(q, seatId) {
+  if (q === lastReportedQuality || !seatId) return;
+  lastReportedQuality = q;
+  fetch('/api/seat/quality', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ seatId, quality: q }),
+  }).catch(() => { /* cosmetic signal — never block on it */ });
 }
 
 // ─── Letter mode: record → preview → pay flat → one-shot upload ─────────────
@@ -1717,9 +1775,24 @@ export function initJoinPage({ wsUrl }) {
   let wsRetries = 0;
   let wsReconnectTimer = null;
 
+  const scheduleSeatWsRetry = () => {
+    const delay = Math.min(15000, 1000 * 2 ** Math.min(wsRetries, 4))
+      + Math.floor(Math.random() * 400);
+    wsRetries += 1;
+    console.log(`[ws] connection lost — retrying in ${delay}ms`);
+    wsReconnectTimer = setTimeout(connectSeatWs, delay);
+  };
+
   const connectSeatWs = () => {
     if (abort.signal.aborted) return;
-    ws = new WebSocket(wsUrl);
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch {
+      // Constructor can throw synchronously (no network stack, exotic
+      // environments) — the retry loop must survive that too.
+      scheduleSeatWsRetry();
+      return;
+    }
 
     ws.onopen = () => {
       wsRetries = 0;
@@ -1734,12 +1807,9 @@ export function initJoinPage({ wsUrl }) {
     ws.onerror = (err) => console.error('WebSocket error:', err);
     ws.onclose = () => {
       if (abort.signal.aborted) return;
-      const delay = Math.min(15000, 1000 * 2 ** Math.min(wsRetries, 4))
-        + Math.floor(Math.random() * 400);
-      wsRetries += 1;
-      console.log(`[ws] connection lost — retrying in ${delay}ms`);
-      wsReconnectTimer = setTimeout(connectSeatWs, delay);
+      scheduleSeatWsRetry();
     };
+
 
     // Live meter + seat lifecycle updates from the server.
     ws.onmessage = (event) => {

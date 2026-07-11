@@ -234,6 +234,8 @@ export function JoinClient() {
             <div id="camStatus" className="cam-status">
               <span className="dot" />
               <span id="camStatusText">Requesting camera…</span>
+              {/* LiveKit connection quality (subtle; hidden on vdo rooms) */}
+              <span id="lkQualityDot" className="lk-quality" style={{ display: 'none' }} />
             </div>
             <div className="cam-frame">
               <iframe

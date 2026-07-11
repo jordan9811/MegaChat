@@ -95,7 +95,15 @@ export function OnCameraTable() {
                   </td>
                   <td className="px-3 py-3">
                     {/* per-seat connection quality — who's riding a flaky link */}
-                    {s.quality === 'unstable' ? (
+                    {s.quality === 'poor' ? (
+                      <span
+                        title="Weak connection (LiveKit link quality)"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[oklch(0.63_0.24_25)]"
+                      >
+                        <WifiOff className="size-3.5 animate-neon-pulse" />
+                        Poor
+                      </span>
+                    ) : s.quality === 'unstable' ? (
                       <span
                         title={s.connected ? 'Reconnected after a recent drop' : 'Connection lost — reconnect grace running'}
                         className="inline-flex items-center gap-1.5 text-xs font-semibold text-[oklch(0.82_0.16_80)]"

@@ -63,8 +63,8 @@ export type Seat = {
   liveAt: number | null
   /** Control-WS currently open for this seat. */
   connected?: boolean
-  /** 'unstable' = socket down or blipped in the last 2 min; null while queued. */
-  quality?: 'good' | 'unstable' | null
+  /** good | unstable (WS blip) | poor (LiveKit link quality); null while queued. */
+  quality?: 'good' | 'unstable' | 'poor' | null
 }
 
 export type RoomSession = {

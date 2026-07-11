@@ -86,6 +86,25 @@ a.addr {
   gap: 0.5rem;
 }
 
+/* LiveKit connection-quality dot (joiner's own link health, subtle). */
+.lk-quality {
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-left: auto;
+  border-radius: 9999px;
+  background: var(--neon-lime);
+  box-shadow: 0 0 8px var(--neon-lime);
+}
+.lk-quality[data-q='poor'] {
+  background: oklch(0.8 0.16 75);
+  box-shadow: 0 0 8px oklch(0.8 0.16 75);
+}
+.lk-quality[data-q='lost'] {
+  background: oklch(0.63 0.24 25);
+  box-shadow: 0 0 8px oklch(0.63 0.24 25);
+  animation: hostLivePulse 1.2s ease-in-out infinite;
+}
+
 /* True-live host feed — same frame, unmistakably LIVE. */
 .host-live-frame {
   border-color: color-mix(in oklab, var(--neon-lime) 55%, transparent);

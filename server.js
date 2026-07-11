@@ -829,7 +829,16 @@ function tickAllMeters() {
       // /api/meter/tick — the server side only enforces liveness: a live
       // seat whose paid ticks stop arriving gets kicked (and its channel
       // settled with the newest voucher via refundSeat).
-      if (now - (seat.lastPaidAt || seat.liveAt || 0) > MPP_STALE_MS) {
+      // LiveKit rooms: the transport auto-reconnects and the client pauses
+      // ticks (zero charges) during the blip, so those seats get a
+      // configurable grace window before the stale-kick (default 15s + tick
+      // margin, env LIVEKIT_SEAT_GRACE_S). Meter never charges dead air —
+      // vouchers simply don't exist while offline.
+      const roomCfg = resolveRoomConfig(seat.streamRoomId);
+      const staleMs = roomCfg?.transport === 'livekit'
+        ? Math.max(MPP_STALE_MS, (Number(process.env.LIVEKIT_SEAT_GRACE_S || 15) + 5) * 1000)
+        : MPP_STALE_MS;
+      if (now - (seat.lastPaidAt || seat.liveAt || 0) > staleMs) {
         console.log(`[meter:mpp] seat ${seat.id}: paid ticks stalled — removing`);
         removeParticipant(seat.id, 'payment_stalled');
       }
@@ -1000,8 +1009,23 @@ app.post('/api/livekit/token', async (req, res) => {
     return res.status(400).json({ error: 'Unknown role' });
   } catch (err) {
     console.warn('[livekit] token error:', err.message);
-    res.status(500).json({ error: 'Token minting failed' });
+    return res.status(500).json({ error: 'Token minting failed' });
   }
+});
+
+// LiveKit connection quality, reported by the joiner (possession of the
+// seat id — same trust level as camera_ready). Cosmetic signal only.
+app.post('/api/seat/quality', (req, res) => {
+  const { seatId, quality } = req.body || {};
+  const seat = activeSeats.get(String(seatId || ''));
+  if (!seat) return res.status(404).json({ error: 'Seat not found' });
+  const q = String(quality || '').toLowerCase();
+  if (!['excellent', 'good', 'poor', 'lost', 'unknown'].includes(q)) {
+    return res.status(400).json({ error: 'Bad quality value' });
+  }
+  seat.lkQuality = q;
+  seat.lkQualityAt = Date.now();
+  res.json({ ok: true });
 });
 
 // ─── OAuth identity (Twitch / X — identity only, env-gated) ─────────────────
