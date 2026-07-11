@@ -1041,9 +1041,49 @@ function initWallet() {
   renderWallet();
 }
 
+// ─── Delayed spectate surface (Twitch embed) ────────────────────────────────
+// True real-time exists only on the WebRTC layer; this embed is the normal
+// ~15s-delayed broadcast every spectator sees. Mounted when the room has a
+// twitchChannel configured. Removing the iframe (not just hiding) guarantees
+// silence — the live-slot flow relies on that for echo safety.
+function mountStreamPreview() {
+  const wrap = document.getElementById('streamPreview');
+  const mount = document.getElementById('streamPreviewMount');
+  if (!wrap || !mount) return;
+  const channel = CONFIG && CONFIG.twitchChannel;
+  if (!channel) {
+    wrap.style.display = 'none';
+    return;
+  }
+  if (!mount.querySelector('iframe')) {
+    const iframe = document.createElement('iframe');
+    iframe.src =
+      'https://player.twitch.tv/?channel=' + encodeURIComponent(channel) +
+      '&parent=' + encodeURIComponent(location.hostname) +
+      '&muted=true&autoplay=true';
+    iframe.allow = 'autoplay; fullscreen';
+    iframe.allowFullscreen = true;
+    iframe.title = 'Live stream preview';
+    mount.appendChild(iframe);
+  }
+  // Watch-to-earn hint straight from room config (the rewards WS refines it
+  // later, but this keeps the hint independent of wallet registration).
+  const drops = document.getElementById('streamPreviewDrops');
+  if (drops && CONFIG && CONFIG.rewardsEnabled) drops.style.display = '';
+  wrap.style.display = '';
+}
+
+function hideStreamPreview() {
+  const wrap = document.getElementById('streamPreview');
+  const mount = document.getElementById('streamPreviewMount');
+  if (mount) mount.innerHTML = ''; // iframe removed → guaranteed silent
+  if (wrap) wrap.style.display = 'none';
+}
+
 async function init() {
   try {
     await loadConfig();
+    mountStreamPreview();
   } catch (err) {
     console.error('Failed to load config', err);
     const lbl = document.getElementById('priceLabel');
@@ -1132,6 +1172,10 @@ function initRewardsClient(wsUrl) {
   }
 
   function updateLabel() {
+    // Watch-to-earn hint on the spectate surface (drops accrue while the
+    // tab is visible and a wallet is connected — same rules as always).
+    const drops = document.getElementById('streamPreviewDrops');
+    if (drops) drops.style.display = cfg && cfg.enabled ? '' : 'none';
     const el = document.getElementById('earnedRow');
     if (!el || !cfg) return;
     if (!cfg.enabled) {

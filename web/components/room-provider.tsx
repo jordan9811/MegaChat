@@ -40,6 +40,7 @@ export type ConfigDraft = {
   name: string
   unlisted: boolean
   payoutAddress: string
+  twitchChannel: string
   passkeyTickPrice: string
   passkeyTickSeconds: string
   maxSession: string
@@ -61,6 +62,7 @@ const DEFAULT_DRAFT: ConfigDraft = {
   name: '',
   unlisted: false,
   payoutAddress: '',
+  twitchChannel: '',
   passkeyTickPrice: '0.001',
   passkeyTickSeconds: '1',
   maxSession: '2',
@@ -110,6 +112,7 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
   return {
     unlisted: draft.unlisted,
     payoutAddress: draft.payoutAddress.trim() || null,
+    twitchChannel: draft.twitchChannel.trim().replace(/^@/, '') || null,
     passkeyTickPrice: draft.passkeyTickPrice,
     passkeyTickSeconds: Number(draft.passkeyTickSeconds) || 1,
     maxSession: draft.maxSession,
@@ -137,6 +140,7 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     name: room.name,
     unlisted: !!room.unlisted,
     payoutAddress: room.payoutAddress || '',
+    twitchChannel: room.twitchChannel || '',
     passkeyTickPrice: String(room.passkeyTickPrice),
     passkeyTickSeconds: String(room.passkeyTickSeconds),
     maxSession: String(room.maxSession),

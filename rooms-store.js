@@ -137,6 +137,13 @@ function ensureDefaultRoom(store) {
   };
 }
 
+/** Twitch login names: 3-25 chars, alphanumeric + underscore. Null if unset/bad. */
+export function sanitizeTwitchChannel(raw) {
+  if (raw == null) return null;
+  const name = String(raw).trim().replace(/^@/, '').toLowerCase();
+  return /^[a-z0-9_]{3,25}$/.test(name) ? name : null;
+}
+
 export function normalizeRoomId(raw) {
   if (raw == null || raw === '') return DEFAULT_ROOM_ID;
   const id = String(raw).trim().toLowerCase();
@@ -190,6 +197,10 @@ export function resolveRoomConfig(roomId) {
     payoutAddress: /^0x[0-9a-fA-F]{40}$/.test(String(cfg.payoutAddress || ''))
       ? String(cfg.payoutAddress)
       : null,
+    // Twitch login of the room's target stream — the join page embeds it as
+    // the delayed "spectate" surface. null → no embed. (Additive field;
+    // rooms.json is branch-shared, Arc branches simply ignore it.)
+    twitchChannel: sanitizeTwitchChannel(cfg.twitchChannel),
     rewards: resolveRewards(cfg, defaults),
   };
 }

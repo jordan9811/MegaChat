@@ -31,6 +31,8 @@ export type Room = {
   paymentTokenDecimals: number
   /** Streamer payout wallet — session settlements pay here (null = platform). */
   payoutAddress: string | null
+  /** Twitch login embedded on the join page as the delayed spectate surface. */
+  twitchChannel: string | null
   rewards: RewardsConfig
 }
 
@@ -69,6 +71,7 @@ export type RoomConfigPatch = {
   tickSeconds: number
   paymentTokenAddress: string
   payoutAddress: string | null
+  twitchChannel: string | null
   rewards: {
     enabled: boolean
     earnInterval: number

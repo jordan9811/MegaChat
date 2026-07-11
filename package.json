@@ -27,6 +27,7 @@
     "x402": "^1.2.0"
   },
   "devDependencies": {
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "puppeteer-core": "^25.3.0"
   }
 }

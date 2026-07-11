@@ -15,6 +15,50 @@ a.addr {
   text-decoration: underline;
 }
 
+/* ── Delayed spectate surface (Twitch embed / Phase-2 host feed) ─────────
+   The room's broadcast, ~15s behind live like every spectator sees it. */
+.stream-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.stream-preview-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 0.9rem;
+  border: 1px solid var(--border);
+  background: oklch(0.14 0.02 300);
+  box-shadow: 0 0 32px oklch(0.68 0.27 340 / 0.1);
+}
+.stream-preview-mount,
+.stream-preview-mount iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.stream-preview-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.stream-preview-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.stream-preview-drops {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--neon-lime);
+}
+
 /* Click-to-copy address chip (wallet-info line). Abbreviated for layout, the
    full value is copied on click — the address itself is no longer selectable
    text after the wrap fix, so this is the way to grab it. */

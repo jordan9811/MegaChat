@@ -219,6 +219,22 @@ export function MegaChatSettings() {
             </Field>
 
             <Field
+              label="Twitch channel"
+              htmlFor="twitch-channel"
+              hint="Embeds your live stream on the join page so viewers can watch while they decide. Leave empty to skip."
+              className="sm:col-span-2"
+            >
+              <TextInput
+                id="twitch-channel"
+                value={draft.twitchChannel}
+                onChange={(e) => updateDraft({ twitchChannel: e.target.value })}
+                placeholder="your_twitch_login"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </Field>
+
+            <Field
               label="Price per charge"
               htmlFor="price"
               hint="Pulled from the viewer wallet each interval while live."

@@ -44,6 +44,22 @@ export function JoinClient() {
         </p>
       </header>
 
+      {/* Delayed spectate surface: the room's Twitch stream (populated by
+          join-page.ts when the room has a channel set; hidden otherwise).
+          True real-time only exists on the WebRTC layer — this embed runs
+          ~15s behind live, which is normal for every spectator. */}
+      <div id="streamPreview" className="stream-preview reveal" style={{ display: 'none' }}>
+        <div className="stream-preview-frame">
+          <div id="streamPreviewMount" className="stream-preview-mount" />
+        </div>
+        <div className="stream-preview-caption">
+          <span className="stream-preview-label">Stream preview · ~15s behind live</span>
+          <span id="streamPreviewDrops" className="stream-preview-drops" style={{ display: 'none' }}>
+            💧 Watching earns drops in this room
+          </span>
+        </div>
+      </div>
+
       <div className="reveal" style={{ ['--reveal-delay' as string]: '0.1s' }}>
       <GlassCard>
         <div className="flex flex-col gap-5 px-5 py-6 sm:px-6">

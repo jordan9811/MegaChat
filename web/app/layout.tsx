@@ -1,4 +1,5 @@
-import { Analytics } from '@vercel/analytics/next'
+// NOTE: @vercel/analytics was removed — the app deploys on Railway, so the
+// injected /_vercel/insights/script.js could only ever 404 on every page.
 import type { Metadata, Viewport } from 'next'
 import { Inter, Space_Grotesk, Geist_Mono, Pacifico } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -98,7 +99,6 @@ export default function RootLayout({
         >
           {children}
         </ThemeProvider>
-        {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
   )

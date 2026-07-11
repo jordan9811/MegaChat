@@ -409,6 +409,8 @@ app.get('/api/config', (req, res) => {
     paymentTokenAddress: cfg.paymentTokenAddress,
     paymentTokenSymbol: cfg.paymentTokenSymbol,
     paymentTokenDecimals: cfg.paymentTokenDecimals,
+    twitchChannel: cfg.twitchChannel || null,
+    rewardsEnabled: !!cfg.rewards?.enabled,
     rewards: cfg.rewards,
     // MPP session meter (TIP-1034 channels) — primary on Tempo.
     meterMode: mppMeter ? 'mpp_session' : 'allowance',
