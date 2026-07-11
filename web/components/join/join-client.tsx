@@ -44,6 +44,23 @@ export function JoinClient() {
         </p>
       </header>
 
+      {/* TRUE-LIVE return feed: while this viewer holds a live slot, the
+          host's camera streams here sub-second over vdo.ninja (the app's own
+          WebRTC pipe) so both sides can hold a real conversation. The delayed
+          Twitch embed below is REMOVED during the slot (echo safety). */}
+      <div id="hostLiveFeed" className="stream-preview host-live" style={{ display: 'none' }}>
+        <div className="stream-preview-frame host-live-frame">
+          <div id="hostLiveMount" className="stream-preview-mount" />
+        </div>
+        <div className="stream-preview-caption">
+          <span className="host-live-label">
+            <span className="host-live-dot" aria-hidden="true" />
+            Real-time with the host — the public stream shows this in ~15s
+          </span>
+          <span className="stream-preview-label">Headphones recommended</span>
+        </div>
+      </div>
+
       {/* Delayed spectate surface: the room's Twitch stream (populated by
           join-page.ts when the room has a channel set; hidden otherwise).
           True real-time only exists on the WebRTC layer — this embed runs

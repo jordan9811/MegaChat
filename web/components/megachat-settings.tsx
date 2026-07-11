@@ -527,10 +527,17 @@ export function MegaChatSettings() {
                   : overlayUrl
               }
             />
+            <CopyRow
+              label="Host cam"
+              value={`https://vdo.ninja/?push=mc-host-${room.id}&webcam&quality=1080&stereo&autostart`}
+            />
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
             Drop the viewer link in chat. Add the OBS link as a Browser Source
             (~340×620 px, transparent background) to show cameras on your scene.
+            Keep the Host cam link open while you stream — viewers who go live
+            see and hear you through it in real time (the public broadcast runs
+            ~15s behind; this pipe doesn&apos;t).
           </p>
         </div>
       ) : null}

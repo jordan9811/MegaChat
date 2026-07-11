@@ -947,6 +947,8 @@ function fireCameraReady(source) {
   }
   setJoinState('live');
   setCamStatus('live', "You're LIVE on stream");
+  // Swap the delayed broadcast for the sub-second host feed for the slot.
+  mountHostFeed();
   document.getElementById('camHint').textContent =
     'Leaving (button or closing the tab) stops the meter. Unspent balance stays in your wallet.';
   document.getElementById('camRetryBtn').classList.remove('show');
@@ -992,6 +994,10 @@ function goLive() { fireCameraReady('manual'); }
 function teardownCameraStage() {
   clearTimeout(camFallbackTimer);
   clearTimeout(camErrorTimer);
+  // Live slot over (leave/kick/removal all land here): drop the real-time
+  // host feed, bring the delayed spectate embed back.
+  unmountHostFeed();
+  mountStreamPreview();
   const stage = document.getElementById('cameraStage');
   const pub = document.getElementById('camPublisher');
   const det = document.getElementById('camDetector');
@@ -1077,6 +1083,49 @@ function hideStreamPreview() {
   const wrap = document.getElementById('streamPreview');
   const mount = document.getElementById('streamPreviewMount');
   if (mount) mount.innerHTML = ''; // iframe removed → guaranteed silent
+  if (wrap) wrap.style.display = 'none';
+}
+
+// ─── True-live return feed (host cam over the app's own WebRTC pipe) ────────
+// While this viewer holds a live slot they watch the HOST sub-second via
+// vdo.ninja instead of the ~15s Twitch broadcast — that's what makes a real
+// two-way conversation possible. The host publishes to a deterministic
+// per-room stream id (push link in the dashboard); if the host cam isn't
+// open, vdo.ninja shows its waiting screen and recovers when it appears.
+function hostStreamId() {
+  return 'mc-host-' + ((CONFIG && CONFIG.roomId) || streamRoomId || 'default');
+}
+
+function mountHostFeed() {
+  const wrap = document.getElementById('hostLiveFeed');
+  const mount = document.getElementById('hostLiveMount');
+  if (!wrap || !mount) return;
+  hideStreamPreview(); // echo safety: the delayed embed is REMOVED, not muted
+  if (!mount.querySelector('iframe')) {
+    const iframe = document.createElement('iframe');
+    const q = [
+      `view=${encodeURIComponent(hostStreamId())}`,
+      'cleanviewer',
+      'cleanoutput',
+      'cover',
+      'hideplaybutton',
+      'autostart',
+      'noheader',
+      // low-latency defaults: no buffer param → vdo.ninja's sub-second path
+      'retrytimeout=2000',
+    ].join('&');
+    iframe.src = `https://vdo.ninja/?${q}`;
+    iframe.allow = 'autoplay; fullscreen';
+    iframe.title = 'Host camera (real-time)';
+    mount.appendChild(iframe);
+  }
+  wrap.style.display = '';
+}
+
+function unmountHostFeed() {
+  const wrap = document.getElementById('hostLiveFeed');
+  const mount = document.getElementById('hostLiveMount');
+  if (mount) mount.innerHTML = '';
   if (wrap) wrap.style.display = 'none';
 }
 

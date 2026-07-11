@@ -59,6 +59,32 @@ a.addr {
   color: var(--neon-lime);
 }
 
+/* True-live host feed — same frame, unmistakably LIVE. */
+.host-live-frame {
+  border-color: color-mix(in oklab, var(--neon-lime) 55%, transparent);
+  box-shadow: 0 0 36px oklch(0.87 0.24 130 / 0.18);
+}
+.host-live-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--neon-lime);
+}
+.host-live-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: var(--neon-lime);
+  box-shadow: 0 0 10px var(--neon-lime);
+  animation: hostLivePulse 1.6s ease-in-out infinite;
+}
+@keyframes hostLivePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 /* Click-to-copy address chip (wallet-info line). Abbreviated for layout, the
    full value is copied on click — the address itself is no longer selectable
    text after the wrap fix, so this is the way to grab it. */
