@@ -2,13 +2,8 @@ import Image from 'next/image'
 import { Wordmark } from '@/components/wordmark'
 import { FooterNav } from '@/components/site-footer'
 
-// The white marketing cluster that belongs on the hero (the stats strip was
-// the one meant to go — it lives on /how-it-works now).
-const FEATURES = [
-  { top: 'TURN CHAT', bottom: 'INTO CONTENT' },
-  { top: '10 SEC CLIPS', bottom: 'THAT POP' },
-  { top: 'BUILT FOR', bottom: 'GO VIRAL' },
-]
+// The hero funnels: what this is (copy above), where viewers go (Browse
+// rooms + the mic's GRAB button), where streamers go (Start a room).
 
 export function Hero({ contactHref }: { contactHref: string }) {
   return (
@@ -48,23 +43,23 @@ export function Hero({ contactHref }: { contactHref: string }) {
             broadcast.
           </p>
 
-          <ul
-            className="reveal mt-9 flex flex-wrap items-center gap-x-5 gap-y-3"
+          <div
+            className="reveal mt-9 flex flex-wrap gap-3"
             style={{ ['--reveal-delay' as string]: '0.36s' }}
           >
-            {FEATURES.map((f, i) => (
-              <li key={f.top} className="flex items-center gap-5">
-                {i > 0 ? (
-                  <span className="h-8 w-px bg-border" aria-hidden="true" />
-                ) : null}
-                <span className="font-heading text-sm font-bold uppercase leading-tight tracking-wide text-foreground">
-                  {f.top}
-                  <br />
-                  {f.bottom}
-                </span>
-              </li>
-            ))}
-          </ul>
+            <a
+              href="#browse"
+              className="glow-magenta rounded-full bg-primary px-6 py-3 text-sm font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:scale-[1.03]"
+            >
+              Browse rooms
+            </a>
+            <a
+              href="/dashboard"
+              className="rounded-full border border-[var(--neon-lime)]/60 bg-[var(--neon-lime)]/10 px-6 py-3 text-sm font-bold uppercase tracking-wide text-[var(--neon-lime)] transition-transform hover:scale-[1.03]"
+            >
+              Start a room
+            </a>
+          </div>
         </div>
 
         {/* right visual — crowned glitch mic + GRAB 10 SEC as one unit, sitting on the bg */}

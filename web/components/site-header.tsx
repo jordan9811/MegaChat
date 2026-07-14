@@ -1,5 +1,6 @@
 import { Wordmark } from '@/components/wordmark'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { HeaderAuth } from '@/components/header-auth'
 
 export function SiteHeader() {
   return (
@@ -15,12 +16,9 @@ export function SiteHeader() {
         </a>
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <a
-            href="/dashboard"
-            className="glow-magenta rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.03]"
-          >
-            Go live
-          </a>
+          {/* Go live moved into the hero funnels (Start a room); the header
+              slot now serves identity — useful since OAuth is live. */}
+          <HeaderAuth />
         </div>
       </div>
     </header>
