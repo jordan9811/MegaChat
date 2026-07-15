@@ -50,7 +50,7 @@ export function JoinClient() {
         className="rounded-xl border border-[var(--neon-lime)]/40 bg-[var(--neon-lime)]/10 px-4 py-3 text-sm font-semibold text-[var(--neon-lime)]"
         style={{ display: 'none' }}
       >
-        🧪 This is a live demo room. Farm drops by watching, send a letter,
+        🧪 This is a live demo room. Farm drops by watching, send a MegaChat,
         go live for pennies — everything here runs the real machinery at dust
         prices.
       </div>
@@ -260,11 +260,11 @@ export function JoinClient() {
             Leave stream
           </button>
 
-          {/* LETTER MODE — record a clip, pay flat, it plays once on stream.
+          {/* MEGACHATS — record a clip, pay flat, it plays once on stream.
               Recorded content sidesteps the broadcast delay entirely.
               Hidden unless the room enables letters (join-page.ts toggles). */}
           <button id="letterBtn" type="button" className={ghostBtn} style={{ display: 'none' }}>
-            ✉ Send a letter
+            📼 Send a MegaChat
           </button>
           <div id="letterStage" className="letter-stage" style={{ display: 'none' }}>
             <div className="cam-frame letter-frame">

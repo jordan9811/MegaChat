@@ -1,6 +1,6 @@
 'use client'
 
-// Letter moderation queue — visible while managing a room with letters in
+// MegaChat moderation queue — visible while managing a room with MegaChats in
 // approve mode (also shows the live queue in auto mode for visibility).
 // Rejecting refunds the payer from the platform wallet.
 
@@ -24,7 +24,7 @@ export function LettersQueueCard() {
       setLetters(await lettersAdmin.list())
       setError(null)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load letters')
+      setError(e instanceof Error ? e.message : 'Failed to load MegaChats')
     }
   }, [active, lettersAdmin])
 
@@ -54,7 +54,7 @@ export function LettersQueueCard() {
     <GlassCard>
       <CardHeader
         icon={<Mail className="size-5" />}
-        title="Letters"
+        title="MegaChats"
         description={
           room?.letters?.moderation === 'approve'
             ? 'Approve or reject before they hit the stream. Rejects auto-refund.'
@@ -64,7 +64,7 @@ export function LettersQueueCard() {
       />
       <div className="flex flex-col gap-2 px-5 py-5 sm:px-6">
         {letters.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No letters waiting.</p>
+          <p className="text-sm text-muted-foreground">No MegaChats waiting.</p>
         ) : (
           letters.map((l) => (
             <div
@@ -73,7 +73,7 @@ export function LettersQueueCard() {
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-foreground">
-                  ✉ {l.username}
+                  📼 {l.username}
                   <span className="ml-2 text-xs font-normal text-muted-foreground">
                     {l.durationS}s · {l.price} · {l.status.replace('_', ' ')}
                   </span>

@@ -1367,7 +1367,7 @@ function initLetterUi() {
     return;
   }
   btn.style.display = '';
-  btn.textContent = `✉ Send a letter — ${cfg.price} ${tokenSymbol()} · up to ${cfg.maxSeconds}s`;
+  btn.textContent = `📼 Send a MegaChat — ${cfg.price} ${tokenSymbol()} · up to ${cfg.maxSeconds}s`;
 }
 
 function setLetterStatus(text) {
@@ -1404,7 +1404,7 @@ async function openLetterStage() {
   letterState = 'idle';
   letterBlob = null;
   letterButtons({ record: true, redo: false, send: false });
-  setLetterStatus(`Up to ${cfg.maxSeconds}s. Flat price ${cfg.price} ${tokenSymbol()} — plays once on stream.`);
+  setLetterStatus(`Up to ${cfg.maxSeconds}s. Flat price ${cfg.price} ${tokenSymbol()} — your MegaChat plays once on stream.`);
 }
 
 function closeLetterStage() {
@@ -1503,7 +1503,7 @@ async function sendLetter() {
   if (!cfg || !letterBlob || letterState === 'sending') return;
   const username = (document.getElementById('username').value || '').trim();
   if (!username) {
-    showMessage('Pick a username first — it labels your letter on stream.', 'error');
+    showMessage('Pick a username first — it labels your MegaChat on stream.', 'error');
     return;
   }
   if (!account) {
@@ -1534,7 +1534,7 @@ async function sendLetter() {
     );
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || !data.letterId) {
-      throw new Error(data.error || `Letter submit failed (${resp.status})`);
+      throw new Error(data.error || `MegaChat submit failed (${resp.status})`);
     }
     session.close().catch(() => { /* nothing unspent; channel just closes */ });
     myLetterId = data.letterId;
@@ -1549,14 +1549,14 @@ async function sendLetter() {
     closeLetterStage();
     showMessage(
       upData.status === 'pending_approval'
-        ? '📮 Letter sent — the streamer approves letters before they play. You were charged; rejects auto-refund.'
-        : '📮 Letter sent! It will pop up on stream shortly — watch the preview above (it runs ~15s behind).',
+        ? '📮 MegaChat sent — the streamer approves MegaChats before they play. You were charged; rejects auto-refund.'
+        : '📮 MegaChat sent! It will pop up on stream shortly — watch the preview above (it runs ~15s behind).',
       'success',
     );
   } catch (err) {
     letterState = 'preview';
     setLetterStatus('');
-    showMessage('❌ Letter failed: ' + (err?.message || 'unknown error'), 'error');
+    showMessage('❌ MegaChat failed: ' + (err?.message || 'unknown error'), 'error');
   }
 }
 
@@ -1818,7 +1818,7 @@ export function initJoinPage({ wsUrl }) {
       // Letter lifecycle toasts are seat-independent (senders usually have
       // no seat) — handle them before the seat guard.
       if (msg.type === 'letter_play' && msg.letter && msg.letter.id === myLetterId) {
-        showMessage('▶ Your letter is on stream RIGHT NOW — the preview above shows it in ~15s.', 'success');
+        showMessage('▶ Your MegaChat is on stream RIGHT NOW — the preview above shows it in ~15s.', 'success');
         return;
       }
       if (!mySeatId) return;

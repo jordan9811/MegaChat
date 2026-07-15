@@ -448,15 +448,15 @@ export function MegaChatSettings() {
             {/* Letter mode — recorded clips, flat price, one-shot playback. */}
             <div className="mt-6 border-t border-border/50 pt-5">
               <p className="mb-1 text-sm font-semibold text-foreground/90">
-                Letter mode{' '}
+                MegaChats{' '}
                 <span className="font-normal text-muted-foreground">
                   — recorded clips that play once on stream
                 </span>
               </p>
               <p className="mb-4 text-xs text-muted-foreground">
-                Viewers record up to the max length, pay a flat price, and the
-                clip pops onto your overlay with the same stinger treatment.
-                Recorded means the ~15s broadcast delay never matters.
+                Viewers record a MegaChat up to the max length, pay a flat price,
+                and the clip pops onto your overlay with the same stinger
+                treatment. Recorded means the ~15s broadcast delay never matters.
               </p>
               <label className="mb-4 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
                 <input
@@ -466,7 +466,7 @@ export function MegaChatSettings() {
                   checked={draft.lettersEnabled}
                   onChange={(e) => updateDraft({ lettersEnabled: e.target.checked })}
                 />
-                Enable letters
+                Enable MegaChats
               </label>
               {draft.lettersEnabled ? (
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">

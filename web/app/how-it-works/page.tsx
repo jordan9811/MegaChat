@@ -306,9 +306,9 @@ export default function HowItWorksPage() {
                   className="reveal rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm"
                   style={{ ['--reveal-delay' as string]: '0.16s' }}
                 >
-                  <h3 className="font-heading text-base font-bold text-foreground">✉ Letters skip the clock</h3>
+                  <h3 className="font-heading text-base font-bold text-foreground">📼 MegaChats skip the clock</h3>
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    A letter is recorded, so delay can&apos;t touch it. Record
+                    A MegaChat is recorded, so delay can&apos;t touch it. Record
                     your take, send it, and watch it pop onto the stream like
                     everyone else does.
                   </p>
