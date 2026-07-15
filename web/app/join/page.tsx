@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { GlitchBackground } from '@/components/glitch-background'
 import { Wordmark } from '@/components/wordmark'
+import { ModeToggle } from '@/components/mode-toggle'
 import { JoinClient } from '@/components/join/join-client'
 import { TempoWalletProvider } from '@/components/providers/tempo-wallet'
 import './join.css'
@@ -19,6 +20,8 @@ export default function JoinPage() {
           <a href="/" aria-label="MegaChat home" className="transition-opacity hover:opacity-90">
             <Wordmark size="sm" />
           </a>
+          {/* Simple/Advanced matters most right here — the paying surface. */}
+          <ModeToggle />
         </header>
         <TempoWalletProvider>
           <JoinClient />

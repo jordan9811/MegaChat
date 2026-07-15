@@ -39,8 +39,14 @@ export function Hero({ contactHref }: { contactHref: string }) {
             className="reveal mt-7 max-w-md text-pretty text-base leading-relaxed text-foreground/80"
             style={{ ['--reveal-delay' as string]: '0.28s' }}
           >
-            Viewers pay per-second in USDC to put their camera on your live
-            broadcast.
+            <span className="adv-only">
+              Viewers pay per-second in USDC to put their camera on your live
+              broadcast.
+            </span>
+            <span className="simple-only">
+              Viewers spend credits by the second to put their camera on your
+              live broadcast.
+            </span>
           </p>
 
           <div

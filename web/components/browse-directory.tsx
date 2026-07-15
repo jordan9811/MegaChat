@@ -66,7 +66,10 @@ function RoomCard({ room }: { room: PublicRoomCard }) {
 
       <div className="mt-auto flex items-center justify-between border-t border-border/50 pt-3">
         <span className="text-sm font-semibold text-foreground/90">
-          {room.passkeyTickPrice} {room.paymentTokenSymbol}
+          <span className="adv-only">
+            {room.passkeyTickPrice} {room.paymentTokenSymbol}
+          </span>
+          <span className="simple-only">${room.passkeyTickPrice}</span>
           <span className="font-normal text-muted-foreground">
             {' '}/ {room.passkeyTickSeconds}s
           </span>

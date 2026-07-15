@@ -10,9 +10,11 @@ import {
   Toggle,
 } from '@/components/form-primitives'
 import { useRoom } from '@/components/room-provider'
+import { useUiMode } from '@/lib/ui-mode'
 import { cn } from '@/lib/utils'
 
 export function RewardsCard() {
+  const simple = useUiMode() === 'simple'
   const { draft, updateDraft, room } = useRoom()
   const enabled = draft.rewardsEnabled
 
@@ -21,7 +23,7 @@ export function RewardsCard() {
       ? 'PTS'
       : draft.rewardsType === 'token'
         ? room?.rewards?.rewardTokenSymbol || 'TOKEN'
-        : 'USDC'
+        : (simple ? 'cash' : 'USDC')
 
   return (
     <GlassCard>
@@ -92,7 +94,7 @@ export function RewardsCard() {
             onChange={(e) => updateDraft({ rewardsType: e.target.value })}
             disabled={!enabled}
           >
-            <option value="usdc">USDC</option>
+            <option value="usdc">{simple ? 'Cash (auto)' : 'USDC'}</option>
             <option value="token">ERC-20 token</option>
             <option value="points">Points</option>
           </SelectInput>

@@ -470,3 +470,11 @@
     opacity: 1 !important;
   }
 }
+
+
+/* ── Simple / Advanced presentation mode ─────────────────────────────────────
+   data-ui on <html> (set pre-paint). .adv-only content exists only in the
+   crypto-native view; .simple-only only in the consumer view. Pure CSS so
+   server components can ship both variants. */
+html[data-ui='simple'] .adv-only { display: none !important; }
+html[data-ui='advanced'] .simple-only { display: none !important; }

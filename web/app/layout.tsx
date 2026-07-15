@@ -91,6 +91,13 @@ export default function RootLayout({
       className={`${inter.variable} ${spaceGrotesk.variable} ${geistMono.variable} ${graffiti.variable}`}
     >
       <body className="bg-background font-sans antialiased">
+        {/* Simple/Advanced presentation mode — applied before paint. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var m=localStorage.getItem('mc-ui-mode');document.documentElement.dataset.ui=(m==='simple'?'simple':'advanced');}catch(e){document.documentElement.dataset.ui='advanced';}})()",
+          }}
+        />
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"

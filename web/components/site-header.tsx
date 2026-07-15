@@ -1,6 +1,7 @@
 import { Wordmark } from '@/components/wordmark'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { HeaderAuth } from '@/components/header-auth'
+import { ModeToggle } from '@/components/mode-toggle'
 
 export function SiteHeader() {
   return (
@@ -15,6 +16,7 @@ export function SiteHeader() {
           <Wordmark size="sm" />
         </a>
         <div className="flex items-center gap-2">
+          <ModeToggle />
           <ThemeToggle />
           {/* Go live moved into the hero funnels (Start a room); the header
               slot now serves identity — useful since OAuth is live. */}

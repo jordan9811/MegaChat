@@ -28,10 +28,10 @@ export const metadata: Metadata = {
 
 // Trust stats moved off the landing hero — they summarize the rails below.
 const STATS = [
-  { value: 'Per-second', label: 'USDC settlement' },
-  { value: 'One tap', label: 'Passkey to live' },
-  { value: '0 risk', label: 'Unused balance refunds' },
-  { value: 'On-chain', label: 'Arc network' },
+  { value: 'Per-second', label: 'USDC settlement', simpleLabel: 'billing, to the second' },
+  { value: 'One tap', label: 'Passkey to live', simpleLabel: 'sign-in to live' },
+  { value: '0 risk', label: 'Unused balance refunds', simpleLabel: 'unused credits stay yours' },
+  { value: 'On-chain', label: 'Tempo network', simpleLabel: 'always verifiable' },
 ]
 
 const VIEWER_STEPS = [
@@ -103,23 +103,27 @@ const STREAMER_STEPS = [
 const RAILS = [
   {
     icon: Fingerprint,
-    title: 'Passkey smart accounts',
-    body: 'Circle Modular Wallets turn a device passkey into a smart account on Arc Testnet. Your face, your key — nothing to install or back up.',
+    title: 'One-tap accounts',
+    body: 'Email, passkey, or socials spin up an embedded wallet on Tempo — nothing to install or back up.',
+    simpleBody: 'Sign in with email, a passkey, or your socials — your account and balance are ready instantly.',
   },
   {
     icon: Zap,
     title: 'True per-second settlement',
-    body: 'While you are live, the seat pulls the tick price on-chain every second against your one-time authorization. No lump sums, no subscriptions.',
+    body: 'Live seats bill through TIP-1034 payment channels: one on-chain escrow, then signed off-chain vouchers every second. No lump sums, no subscriptions.',
+    simpleBody: 'You are billed one credit per second you are actually on camera — never a lump sum, never a subscription.',
   },
   {
     icon: RefreshCcw,
     title: 'Unused money is your money',
-    body: 'The session cap is a ceiling, not a price. Leave early and the unspent balance never leaves your account — Gateway prepays refund on exit.',
+    body: 'The session cap is a ceiling, not a price. Leave early and the unspent escrow refunds straight back to your wallet on close.',
+    simpleBody: 'The cap is a ceiling, not a price. Leave early and unused credits go straight back to your balance.',
   },
   {
     icon: Wallet,
     title: 'Prefer MetaMask?',
-    body: 'A secondary path deposits USDC into Circle Gateway and prepays a block (default 0.1 USDC per 10s) with an EIP-3009 signature. Same seat, same refund guarantee.',
+    body: 'A secondary path meters through a one-time allowance on Tempo. Same seat, same refund guarantee.',
+    simpleBody: 'Power users can bring their own wallet — same seats, same refunds.',
   },
 ]
 
@@ -255,7 +259,8 @@ export default function HowItWorksPage() {
                     {s.value}
                   </dt>
                   <dd className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {s.label}
+                    <span className="adv-only">{s.label}</span>
+                    <span className="simple-only">{s.simpleLabel}</span>
                   </dd>
                 </div>
               ))}
@@ -364,7 +369,10 @@ export default function HowItWorksPage() {
                   </span>
                   <div>
                     <h3 className="font-heading text-base font-bold text-foreground">{r.title}</h3>
-                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{r.body}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                      <span className="adv-only">{r.body}</span>
+                      <span className="simple-only">{r.simpleBody}</span>
+                    </p>
                   </div>
                 </div>
               ))}

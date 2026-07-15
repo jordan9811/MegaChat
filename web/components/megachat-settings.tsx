@@ -12,6 +12,7 @@ import {
 } from '@/components/form-primitives'
 import { CopyRow } from '@/components/copy-row'
 import { useRoom } from '@/components/room-provider'
+import { useUiMode } from '@/lib/ui-mode'
 import { cn } from '@/lib/utils'
 
 export function MegaChatSettings() {
@@ -39,8 +40,12 @@ export function MegaChatSettings() {
   const resultRef = useRef<HTMLDivElement>(null)
 
   const managing = mode === 'managing'
+  const simple = useUiMode() === 'simple'
   const token = draft.tokenPreset === 'custom' ? 'TOKEN' : 'USDC'
   const tokenSymbol = room?.paymentTokenSymbol || token
+  // Simple mode: USDC is dollar-pegged, so amounts read as $ 1:1 and the
+  // per-second price IS the price per credit. Presentation only.
+  const amountAffix = simple ? '$' : tokenSymbol
 
   async function handleCreate() {
     setError(null)
@@ -252,20 +257,24 @@ export function MegaChatSettings() {
             </Field>
 
             <Field
-              label="Price per charge"
+              label={simple ? 'Price per credit' : 'Price per charge'}
               htmlFor="price"
-              hint="Pulled from the viewer wallet each interval while live."
+              hint={
+                simple
+                  ? 'What one credit (one second on camera) costs viewers.'
+                  : 'Pulled from the viewer wallet each interval while live.'
+              }
             >
               <InputAffix
                 id="price"
-                affix={tokenSymbol}
+                affix={amountAffix}
                 inputMode="decimal"
                 value={draft.passkeyTickPrice}
                 onChange={(e) => updateDraft({ passkeyTickPrice: e.target.value })}
               />
             </Field>
 
-            <Field label="Charge interval" htmlFor="interval">
+            <Field label="Charge interval" htmlFor="interval" className="adv-only">
               <InputAffix
                 id="interval"
                 affix="sec"
@@ -282,7 +291,7 @@ export function MegaChatSettings() {
             >
               <InputAffix
                 id="max-spend"
-                affix={tokenSymbol}
+                affix={amountAffix}
                 inputMode="decimal"
                 value={draft.maxSession}
                 onChange={(e) => updateDraft({ maxSession: e.target.value })}
@@ -306,7 +315,7 @@ export function MegaChatSettings() {
             <Field
               label="Payment token"
               htmlFor="token"
-              className={draft.tokenPreset === 'custom' ? undefined : 'sm:col-span-2'}
+              className={(draft.tokenPreset === 'custom' ? '' : 'sm:col-span-2 ') + 'adv-only'}
             >
               <SelectInput
                 id="token"
@@ -324,7 +333,8 @@ export function MegaChatSettings() {
               <Field
                 label="Token address"
                 htmlFor="custom-token"
-                hint="ERC-20 contract on Arc Testnet."
+                hint="TIP-20 contract on Tempo."
+                className="adv-only"
               >
                 <TextInput
                   id="custom-token"
@@ -359,9 +369,10 @@ export function MegaChatSettings() {
           <details className="group border-t border-border/70 px-5 py-4 sm:px-6">
             <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
               <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
-              Advanced — MetaMask / Gateway pricing
+              <span className="adv-only">Advanced — MetaMask / Gateway pricing</span>
+              <span className="simple-only">More settings</span>
             </summary>
-            <div className="grid grid-cols-1 gap-5 pt-5 sm:grid-cols-2">
+            <div className="adv-only grid grid-cols-1 gap-5 pt-5 sm:grid-cols-2">
               <Field
                 label="Charge amount"
                 htmlFor="mm-price"
@@ -408,6 +419,7 @@ export function MegaChatSettings() {
               <Field
                 label="Payout wallet"
                 hint="Viewer payments settle straight to this address on Tempo. Leave empty to use the platform wallet."
+                className="adv-only"
               >
                 <TextInput
                   id="room-payout"
@@ -499,7 +511,7 @@ export function MegaChatSettings() {
                   >
                     <InputAffix
                       id="letters-price"
-                      affix={tokenSymbol}
+                      affix={amountAffix}
                       inputMode="decimal"
                       placeholder="auto"
                       value={draft.lettersPrice}

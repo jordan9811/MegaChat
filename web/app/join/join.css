@@ -629,3 +629,15 @@ a.addr {
   86%  { clip-path: inset(49.4% 0 49.4% 0); filter: brightness(4); }
   100% { clip-path: inset(50% 0 50% 0); opacity: 0; }
 }
+
+
+/* ── Simple mode on the join page ──
+   MetaMask is crypto-native: hidden in simple; Add funds takes the full row. */
+html[data-ui='simple'] .join-shell #connectBtn { display: none !important; }
+html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
+.addr-details summary {
+  cursor: pointer;
+  color: var(--neon-cyan);
+  font-weight: 600;
+}
+.addr-details { margin-top: 0.25rem; }

@@ -69,6 +69,32 @@ function tokenSymbol() {
   return CONFIG.paymentTokenSymbol || 'USDC';
 }
 
+// ── Simple/Advanced presentation (see web/lib/ui-mode.ts) ──
+// PRESENTATION ONLY: 1 credit = 1 second of Join Stream at the room's rate.
+// Same balances, same transactions underneath — nothing in the payment
+// path reads this.
+function uiSimple() {
+  return typeof document !== 'undefined'
+    && document.documentElement.dataset.ui === 'simple';
+}
+function perCreditUsd() {
+  const p = parseFloat((CONFIG && (CONFIG.passkeyTickPrice || CONFIG.tickPrice)) || '0.001');
+  return p > 0 ? p : 0.001;
+}
+function credits(usdc) {
+  const n = parseFloat(usdc || '0');
+  if (!isFinite(n)) return '0';
+  return String(Math.max(0, Math.round(n / perCreditUsd())));
+}
+function fmtAmount(usdc) {
+  return uiSimple() ? `${credits(usdc)} credits` : `${usdc} ${tokenSymbol()}`;
+}
+let lastMeter = null;
+function applyModeText() {
+  const dep = document.getElementById('depositBtn');
+  if (dep) dep.textContent = uiSimple() ? '➕ Add funds' : '💧 Fund wallet';
+}
+
 function joinStreamEnabled() {
   // Older servers don't send the block — treat absent as enabled.
   return !CONFIG || !CONFIG.joinStream || CONFIG.joinStream.enabled !== false;
@@ -83,15 +109,20 @@ function updatePriceDisplay() {
   const tickSec = CONFIG.passkeyTickSeconds || 1;
   const mc = CONFIG.letters && CONFIG.letters.enabled ? CONFIG.letters : null;
   if (joinStreamEnabled()) {
-    // One meter on Tempo — every wallet mode streams at the same rate.
-    if (amt) amt.textContent = `${tickPrice} ${sym}`;
-    if (lbl) {
-      lbl.textContent =
-        `${tickPrice} ${sym} / ${tickSec}s · cap ${CONFIG.maxSession} ${sym} · Tempo`;
+    if (uiSimple()) {
+      if (amt) amt.textContent = '1 credit';
+      if (lbl) lbl.textContent = `per second on camera · session cap ${credits(CONFIG.maxSession)} credits`;
+    } else {
+      // One meter on Tempo — every wallet mode streams at the same rate.
+      if (amt) amt.textContent = `${tickPrice} ${sym}`;
+      if (lbl) {
+        lbl.textContent =
+          `${tickPrice} ${sym} / ${tickSec}s · cap ${CONFIG.maxSession} ${sym} · Tempo`;
+      }
     }
   } else if (mc) {
     // MegaChats-only room: the headline price is the flat MegaChat price.
-    if (amt) amt.textContent = `${mc.price} ${sym}`;
+    if (amt) amt.textContent = fmtAmount(mc.price);
     if (lbl) lbl.textContent = `per MegaChat · up to ${mc.maxSeconds}s · recorded, plays once`;
   } else {
     if (amt) amt.textContent = '—';
@@ -117,11 +148,11 @@ function formatTimeLeft(seconds) {
 }
 
 function showMeter(remaining, spent, secondsLeft) {
-  const sym = tokenSymbol();
+  lastMeter = { remaining, spent, secondsLeft };
   const box = document.getElementById('meter');
   box.classList.add('show');
-  document.getElementById('meterRemaining').textContent = `${remaining} ${sym}`;
-  document.getElementById('meterSpent').textContent = `${spent} ${sym}`;
+  document.getElementById('meterRemaining').textContent = fmtAmount(remaining);
+  document.getElementById('meterSpent').textContent = fmtAmount(spent);
   document.getElementById('meterTime').textContent = formatTimeLeft(secondsLeft);
 }
 
@@ -427,12 +458,18 @@ function renderWallet() {
     passkeyBtn.textContent = '🟢 Signed in';
     if (passkeyCreateBtn) passkeyCreateBtn.style.display = 'none';
     connectBtn.textContent = '🦊 Connect MetaMask';
-    info.innerHTML = `🟢 Connected · Wallet: ${addrChip(account)}<br>Network: Tempo`;
+    info.innerHTML =
+      `<span class="adv-only">🟢 Connected · Wallet: ${addrChip(account)}<br>Network: Tempo</span>` +
+      `<span class="simple-only">🟢 Signed in — your balance is ready.<br>` +
+      `<details class="addr-details"><summary>account details</summary>` +
+      `Account address (tap to copy): ${addrChip(account)}</details></span>`;
     if (fundNote) {
       fundNote.style.display = 'block';
       fundNote.innerHTML =
-        `Fund this wallet by sending <strong>${tokenSymbol()}</strong> on ` +
-        '<strong>Tempo</strong> to the address above (tap it to copy).';
+        `<span class="adv-only">Fund this wallet by sending <strong>${tokenSymbol()}</strong> on ` +
+        '<strong>Tempo</strong> to the address above (tap it to copy).</span>' +
+        '<span class="simple-only">Add funds any time — 1 credit costs $' +
+        String(perCreditUsd()) + '. Your account details are just above.</span>';
     }
     if (dep) { dep.style.display = ''; dep.disabled = false; }
     if (join && joinBtnState === 'idle') setJoinState('idle');
@@ -448,7 +485,11 @@ function renderWallet() {
     connectBtn.disabled = true;
     passkeyBtn.disabled = true;
     if (passkeyCreateBtn) passkeyCreateBtn.disabled = true;
-    info.innerHTML = `🟢 Connected · Wallet: ${addrChip(account)}<br>Network: Tempo (MetaMask)`;
+    info.innerHTML =
+      `<span class="adv-only">🟢 Connected · Wallet: ${addrChip(account)}<br>Network: Tempo (MetaMask)</span>` +
+      `<span class="simple-only">🟢 Signed in — your balance is ready.<br>` +
+      `<details class="addr-details"><summary>account details</summary>` +
+      `Account address (tap to copy): ${addrChip(account)}</details></span>`;
     if (dep) dep.disabled = false;
     if (join && joinBtnState === 'idle') setJoinState('idle');
     return;
@@ -462,7 +503,8 @@ function renderWallet() {
   if (!hasWallet) {
     connectBtn.textContent = '🦊 No MetaMask detected';
     info.innerHTML =
-      'No injected wallet — sign in with email or passkey above, or install MetaMask.';
+      '<span class="adv-only">No injected wallet — sign in with email or passkey above, or install MetaMask.</span>' +
+      '<span class="simple-only">Sign in with email or passkey above to get started.</span>';
   } else {
     connectBtn.textContent = '🦊 Connect MetaMask';
     info.textContent = '';
@@ -512,8 +554,10 @@ async function fundWallet() {
   }
   if (!account) return;
   showMessage(
-    `💧 Send <strong>${tokenSymbol()}</strong> on <strong>Tempo</strong> to ${addrChip(account)}<br>` +
-    `<a class="addr" href="${CONFIG.explorerUrl}/address/${account}" target="_blank" rel="noopener">View on explorer</a>` +
+    `<span class="adv-only">💧 Send <strong>${tokenSymbol()}</strong> on <strong>Tempo</strong> to ${addrChip(account)}<br>` +
+    `<a class="addr" href="${CONFIG.explorerUrl}/address/${account}" target="_blank" rel="noopener">View on explorer</a></span>` +
+    `<span class="simple-only">➕ Add funds by sending money to your account: ${addrChip(account)}<br>` +
+    `1 credit costs $${perCreditUsd()} in this room.</span>` +
     `<p style="margin-top:10px;font-size:0.85rem;">Balance updates automatically once the transfer lands.</p>`,
     'success'
   );
@@ -1394,7 +1438,7 @@ function initLetterUi() {
     return;
   }
   btn.style.display = '';
-  btn.textContent = `📼 Send a MegaChat — ${cfg.price} ${tokenSymbol()} · up to ${cfg.maxSeconds}s`;
+  btn.textContent = `📼 Send a MegaChat — ${fmtAmount(cfg.price)} · up to ${cfg.maxSeconds}s`;
 }
 
 function setLetterStatus(text) {
@@ -1664,6 +1708,7 @@ async function init() {
     mountStreamPreview();
     initLetterUi();
     applyFeatureVisibility();
+    applyModeText();
     void initAuthUi();
     const demo = document.getElementById('demoBanner');
     if (demo && CONFIG && CONFIG.isDemo) demo.style.display = '';
@@ -1946,6 +1991,15 @@ export function initJoinPage({ wsUrl }) {
   on('camRetryBtn', retryCamera);
   // Wrapped: the click MouseEvent must not land in leaveStream's `quiet` arg.
   on('leaveBtn', () => leaveStream());
+  // Re-render presentation on Simple/Advanced toggle (values unchanged).
+  window.addEventListener('mc-ui-mode-changed', () => {
+    updatePriceDisplay();
+    initLetterUi();
+    renderWallet();
+    applyModeText();
+    if (lastMeter) showMeter(lastMeter.remaining, lastMeter.spent, lastMeter.secondsLeft);
+  }, { signal: abort.signal });
+
   // Letter mode controls (button hidden unless the room enables letters).
   on('letterBtn', () => void openLetterStage());
   on('letterRecordBtn', toggleLetterRecording);
