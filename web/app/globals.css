@@ -81,6 +81,7 @@
   --neon-violet: oklch(0.6 0.24 295);
   --neon-lime: oklch(0.88 0.22 128);
   --neon-cyan: oklch(0.8 0.14 200);
+  --neon-amber: oklch(0.82 0.16 75);
   /* Wordmark outline — near-white pop on dark, dark plum on light. */
   --wordmark-stroke: oklch(0.98 0.02 320 / 0.85);
   /* Noir backdrop blooms + grid — variable-driven so .bg-noir follows the
@@ -132,6 +133,7 @@
   --neon-violet: oklch(0.52 0.24 295);
   --neon-lime: oklch(0.72 0.2 128);
   --neon-cyan: oklch(0.66 0.14 200);
+  --neon-amber: oklch(0.68 0.15 70);
   --wordmark-stroke: oklch(0.32 0.1 320 / 0.9);
   --noir-bloom-1: oklch(0.85 0.09 330 / 0.55);
   --noir-bloom-2: oklch(0.86 0.08 285 / 0.45);
