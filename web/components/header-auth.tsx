@@ -81,10 +81,12 @@ export function HeaderAuth() {
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-haspopup="menu"
-          className="glow-magenta flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.03]"
+          className="glow-magenta flex items-center gap-2 rounded-full bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.03] sm:px-4"
         >
           <UserRound className="size-4" />
-          Log in / Sign up
+          {/* full label needs more width than a 375px header has */}
+          <span className="hidden sm:inline">Log in / Sign up</span>
+          <span className="sm:hidden">Log in</span>
         </button>
       )}
 

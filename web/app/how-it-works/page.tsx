@@ -43,12 +43,16 @@ const VIEWER_STEPS = [
   {
     icon: Fingerprint,
     title: 'One tap, no seed phrase',
-    body: 'Pick a username and create a passkey. That single tap spins up a smart account for you on Arc — no wallet install, no extension, no 12 words. Already have one? Sign back in with the same passkey.',
+    body: 'Sign in with email, a passkey, or your socials — that single tap spins up an embedded wallet for you on Tempo. No extension, no 12 words. Coming back? Sign in the same way.',
+    simpleBody:
+      'Sign in with email, a passkey, or your socials — your account is ready instantly. Coming back? Sign in the same way.',
   },
   {
     icon: KeyRound,
     title: 'Authorize your session',
     body: 'One prompt approves a hard session cap in USDC (the room sets it — think 2 USDC max). That is the most a session can ever cost you. Billing is per-second from there, silently.',
+    simpleBody:
+      'One prompt approves a hard session cap in credits — the room sets it. That is the most a session can ever cost you. Billing is one credit per second from there, silently.',
   },
   {
     icon: Camera,
@@ -63,7 +67,9 @@ const VIEWER_STEPS = [
   {
     icon: LogOut,
     title: 'Leave whenever',
-    body: 'Hit Leave — or just close the tab. The meter stops instantly and every unspent cent stays yours: passkey sessions keep it in your smart account, Gateway sessions refund automatically.',
+    body: 'Hit Leave — or just close the tab. The meter stops instantly and every unspent cent refunds straight back to your wallet.',
+    simpleBody:
+      'Hit Leave — or just close the tab. The meter stops instantly and unused credits go straight back to your balance.',
   },
 ]
 
@@ -77,6 +83,8 @@ const STREAMER_STEPS = [
     icon: SlidersHorizontal,
     title: 'Price your seats',
     body: 'Set the per-second rate, the session cap, and how many camera seats run at once (up to 3). Default is 0.001 USDC per second — tune it to your audience. You can also list the room in the public directory or keep it unlisted.',
+    simpleBody:
+      'Set the price per credit, the session cap, and how many camera seats run at once (up to 3). Tune it to your audience — and list the room in the public directory or keep it unlisted.',
   },
   {
     icon: MonitorPlay,
@@ -97,6 +105,8 @@ const STREAMER_STEPS = [
     icon: Sparkles,
     title: 'Optional: watch-to-earn drops',
     body: 'Flip on rewards and viewers earn USDC toward their first seat just by watching. Fund the pool, set the drip rate and cap — it feeds joins, not chat.',
+    simpleBody:
+      'Flip on rewards and viewers earn credit toward their first seat just by watching. Fund the pool, set the drip rate and cap — it feeds joins, not chat.',
   },
 ]
 
@@ -186,34 +196,120 @@ function SectionHeading({
   )
 }
 
-function StepGrid({
-  steps,
-}: {
-  steps: { icon: React.ComponentType<{ className?: string }>; title: string; body: string }[]
-}) {
+type Step = {
+  icon: React.ComponentType<{ className?: string }>
+  title: string
+  body: string
+  simpleBody?: string
+}
+
+// One tile on the scoreboard. `tag` only shows on mobile, where the two
+// columns collapse into one and the side needs naming.
+function StepCard({ step, accent, tag }: { step: Step; accent: 'magenta' | 'cyan'; tag: string }) {
+  const chip =
+    accent === 'magenta'
+      ? 'border-[var(--neon-magenta)]/40 bg-[var(--neon-magenta)]/10 text-[var(--neon-magenta)]'
+      : 'border-[var(--neon-cyan)]/40 bg-[var(--neon-cyan)]/10 text-[var(--neon-cyan)]'
+  const hover =
+    accent === 'magenta'
+      ? 'hover:border-[var(--neon-magenta)]/50 hover:shadow-[0_0_24px_oklch(0.68_0.27_340/0.2)]'
+      : 'hover:border-[var(--neon-cyan)]/50 hover:shadow-[0_0_24px_oklch(0.78_0.15_210/0.2)]'
   return (
-    <ol className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-      {steps.map((s, i) => (
-        <li
-          key={s.title}
-          className="reveal group relative flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-[var(--neon-magenta)]/50 hover:shadow-[0_0_24px_oklch(0.68_0.27_340/0.2)]"
-          style={{ ['--reveal-delay' as string]: `${0.08 + i * 0.06}s` }}
+    <div
+      className={`flex h-full flex-col gap-3 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5 ${hover}`}
+    >
+      <div className="flex items-center justify-between">
+        <span className={`inline-flex size-9 items-center justify-center rounded-lg border ${chip}`}>
+          <step.icon className="size-4.5" />
+        </span>
+        <span
+          className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest md:hidden ${chip}`}
         >
-          <div className="flex items-center justify-between">
-            <span className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--neon-magenta)]/40 bg-[var(--neon-magenta)]/10 text-[var(--neon-magenta)]">
-              <s.icon className="size-4.5" />
-            </span>
-            <span className="font-heading text-2xl font-bold text-foreground/15 transition-colors group-hover:text-[var(--neon-lime)]/60">
-              {String(i + 1).padStart(2, '0')}
-            </span>
-          </div>
-          <h3 className="font-heading text-lg font-bold leading-snug text-foreground">
-            {s.title}
-          </h3>
-          <p className="text-sm leading-relaxed text-muted-foreground">{s.body}</p>
-        </li>
-      ))}
-    </ol>
+          {tag}
+        </span>
+      </div>
+      <h3 className="font-heading text-lg font-bold leading-snug text-foreground">{step.title}</h3>
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        {step.simpleBody ? (
+          <>
+            <span className="adv-only">{step.body}</span>
+            <span className="simple-only">{step.simpleBody}</span>
+          </>
+        ) : (
+          step.body
+        )}
+      </p>
+    </div>
+  )
+}
+
+// Darts-scoreboard layout: VIEWERS column left, STREAMERS right, step
+// numbers descending on a chalk spine between them. On mobile the spine
+// becomes a divider chip and each row stacks viewer-then-streamer.
+function Scoreboard() {
+  const rows = VIEWER_STEPS.map((viewer, i) => ({
+    viewer,
+    streamer: STREAMER_STEPS[i],
+    n: i + 1,
+  }))
+  return (
+    <>
+      {/* top rail — the two players (desktop; mobile relies on card tags) */}
+      <div
+        className="reveal mb-6 hidden items-stretch gap-x-6 md:grid md:grid-cols-[1fr_3.5rem_1fr]"
+        style={{ ['--reveal-delay' as string]: '0.05s' }}
+      >
+        <div className="rounded-2xl border border-[var(--neon-magenta)]/50 bg-[var(--neon-magenta)]/10 px-5 py-3 text-center">
+          <p className="font-heading text-xl font-bold uppercase tracking-widest text-[var(--neon-magenta)]">
+            Viewers
+          </p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            grab a seat
+          </p>
+        </div>
+        <div aria-hidden className="self-center text-center text-xl">
+          🎯
+        </div>
+        <div className="rounded-2xl border border-[var(--neon-cyan)]/50 bg-[var(--neon-cyan)]/10 px-5 py-3 text-center">
+          <p className="font-heading text-xl font-bold uppercase tracking-widest text-[var(--neon-cyan)]">
+            Streamers
+          </p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            run the room
+          </p>
+        </div>
+      </div>
+
+      <div className="relative">
+        {/* the chalk spine the step numbers sit on */}
+        <div
+          aria-hidden
+          className="absolute inset-y-2 left-1/2 hidden -translate-x-1/2 border-l border-dashed border-border/70 md:block"
+        />
+        <ol className="flex flex-col gap-10 md:gap-6">
+          {rows.map((row, i) => (
+            <li
+              key={row.n}
+              className="reveal grid grid-cols-1 gap-3 md:grid-cols-[1fr_3.5rem_1fr] md:items-stretch md:gap-x-6"
+              style={{ ['--reveal-delay' as string]: `${0.08 + i * 0.05}s` }}
+            >
+              <div className="flex items-center gap-3 md:col-start-2 md:row-start-1 md:justify-center md:self-center">
+                <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-[var(--neon-lime)]/60 bg-background font-heading text-sm font-bold text-[var(--neon-lime)] shadow-[0_0_14px_oklch(0.9_0.2_128/0.25)]">
+                  {String(row.n).padStart(2, '0')}
+                </span>
+                <span aria-hidden className="h-px flex-1 border-t border-dashed border-border/70 md:hidden" />
+              </div>
+              <div className="md:col-start-1 md:row-start-1">
+                <StepCard step={row.viewer} accent="magenta" tag="viewer" />
+              </div>
+              <div className="md:col-start-3 md:row-start-1">
+                <StepCard step={row.streamer} accent="cyan" tag="streamer" />
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </>
   )
 }
 
@@ -267,18 +363,14 @@ export default function HowItWorksPage() {
             </dl>
           </section>
 
-          {/* Viewers */}
+          {/* The scoreboard — viewers vs streamers, parallel steps down the page */}
           <section className="mx-auto max-w-6xl px-6 py-12 md:py-16">
-            <SectionHeading kicker="For viewers" title="Grab a seat in six steps" accent="magenta" />
-            <StepGrid steps={VIEWER_STEPS} />
-          </section>
-
-          {/* Streamers */}
-          <section className="border-y border-border/50 bg-background/40 backdrop-blur-sm">
-            <div className="mx-auto max-w-6xl px-6 py-12 md:py-16">
-              <SectionHeading kicker="For streamers" title="Set up a room in minutes" accent="cyan" />
-              <StepGrid steps={STREAMER_STEPS} />
-            </div>
+            <SectionHeading
+              kicker="The playbook, side by side"
+              title="Six steps to showtime"
+              accent="lime"
+            />
+            <Scoreboard />
           </section>
 
           {/* Latency architecture — the settled design, in plain words. */}
