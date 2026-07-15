@@ -320,6 +320,8 @@ export function resolveRoomConfig(roomId) {
     // Camera transport: vdo.ninja iframes (default, untouched) or LiveKit
     // (flag-gated on LIVEKIT_* env). Existing rooms resolve to 'vdo'.
     transport: cfg.transport === 'livekit' ? 'livekit' : 'vdo',
+    // Overlay stinger SFX (synthesized in-browser, master toggle, default on).
+    stingerSounds: cfg.stingerSounds !== false,
   };
 }
 

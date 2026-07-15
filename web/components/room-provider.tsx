@@ -67,6 +67,7 @@ export type ConfigDraft = {
   lettersAiStrictness: 'severe' | 'borderline'
   lettersAutoRefund: boolean
   transport: 'vdo' | 'livekit'
+  stingerSounds: boolean
   // per-feature gates: MegaChats own theirs; Join Stream inherits unless overridden
   mcMinWatch: string
   mcFollowersOnly: boolean
@@ -106,6 +107,7 @@ const DEFAULT_DRAFT: ConfigDraft = {
   lettersAiStrictness: 'severe',
   lettersAutoRefund: true,
   transport: 'vdo',
+  stingerSounds: true,
   mcMinWatch: '0',
   mcFollowersOnly: false,
   mcSubsOnly: false,
@@ -166,6 +168,7 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
     tickSeconds: Number(draft.tickSeconds) || 10,
     paymentTokenAddress,
     transport: draft.transport,
+    stingerSounds: draft.stingerSounds,
     letters: {
       enabled: draft.lettersEnabled,
       maxSeconds: Number(draft.lettersMaxSeconds) || 10,
@@ -231,6 +234,7 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     lettersAiStrictness: room.letters?.aiStrictness === 'borderline' ? 'borderline' : 'severe',
     lettersAutoRefund: room.letters ? room.letters.autoRefundOnReject !== false : true,
     transport: room.transport === 'livekit' ? 'livekit' : 'vdo',
+    stingerSounds: room.stingerSounds !== false,
     mcMinWatch: String(room.letters?.gates?.minWatchSeconds ?? 0),
     mcFollowersOnly: !!room.letters?.gates?.followersOnly,
     mcSubsOnly: !!room.letters?.gates?.subsOnly,

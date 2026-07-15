@@ -443,6 +443,19 @@ export function MegaChatSettings() {
                   </option>
                 </SelectInput>
               </Field>
+              <label className="mt-4 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
+                <input
+                  type="checkbox"
+                  id="stinger-sounds"
+                  className="size-4 accent-[var(--neon-magenta)]"
+                  checked={draft.stingerSounds}
+                  onChange={(e) => updateDraft({ stingerSounds: e.target.checked })}
+                />
+                Stinger sounds on the overlay
+                <span className="text-xs font-normal text-muted-foreground">
+                  — paired SFX for every entrance/exit
+                </span>
+              </label>
             </div>
 
             {/* Letter mode — recorded clips, flat price, one-shot playback. */}
@@ -741,6 +754,8 @@ export function MegaChatSettings() {
           <p className="mt-3 text-xs text-muted-foreground">
             Drop the viewer link in chat. Add the OBS link as a Browser Source
             (~340×620 px, transparent background) to show cameras on your scene.
+            For stinger sounds, enable &quot;Control audio via OBS&quot; on the
+            browser source so the SFX reach your stream mix.
             Keep the Host cam link open while you stream — viewers who go live
             see and hear you through it in real time (the public broadcast runs
             ~15s behind; this pipe doesn&apos;t).

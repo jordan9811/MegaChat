@@ -446,6 +446,7 @@ app.get('/api/config', (req, res) => {
     handle: cfg.handle,
     isDemo: !!cfg.isDemo,
     transport: cfg.transport,
+    stingerSounds: cfg.stingerSounds,
     livekitConfigured: !!livekit,
     ...(cfg.transport === 'livekit' && livekit ? { livekitUrl: livekit.url } : {}),
     rewards: cfg.rewards,

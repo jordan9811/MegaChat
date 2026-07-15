@@ -68,6 +68,8 @@ export type Room = {
   isDemo?: boolean
   /** Camera transport: vdo.ninja iframes (default) or LiveKit (env-gated). */
   transport: 'vdo' | 'livekit' | string
+  /** Overlay stinger SFX master toggle (default on). */
+  stingerSounds: boolean
 }
 
 export type Seat = {
@@ -107,6 +109,7 @@ export type RoomConfigPatch = {
   payoutAddress: string | null
   twitchChannel: string | null
   transport: string
+  stingerSounds: boolean
   letters: {
     enabled: boolean
     maxSeconds: number

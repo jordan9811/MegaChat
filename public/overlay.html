@@ -503,6 +503,7 @@
     async function initLivekitOverlay() {
       try {
         const cfg = await (await fetch(`/api/config?room=${encodeURIComponent(streamRoomId)}`)).json();
+        sfxEnabled = cfg.stingerSounds !== false; // room master toggle
         if (cfg.transport !== 'livekit') {
           transportResolved(); // vdo room — flush any buffered seats as iframes
           return;
@@ -661,7 +662,7 @@
 
       videoBoxes.set(seat.id, box);
       relayout();
-      playJoinSound();
+      playStinger('in', seat.flyIn || 'default');
 
       // Drop the entrance class once it finishes (so it won't replay).
       const inCls = fin ? fin.cls : 'joining';
@@ -713,7 +714,7 @@
       stage.appendChild(box);
       videoBoxes.set(key, box);
       relayout();
-      playJoinSound();
+      playStinger('in', letter.flyIn || 'default');
       const inCls = fin ? fin.cls : 'joining';
       setTimeout(() => box.classList.remove(inCls), fin ? fin.ms : JOIN_MS);
     }
@@ -727,7 +728,7 @@
       // others don't move yet. `.leaving` marks it, out-* animates it.
       const fout = FLY_OUTS[box.dataset.flyOut] || null;
       box.classList.add('leaving', fout ? fout.cls : 'out-default');
-      playLeaveSound();
+      playStinger('out', box.dataset.flyOut || 'default');
 
       setTimeout(() => {
         box.remove();
@@ -785,28 +786,94 @@
         return audioCtx;
       } catch { return null; }
     }
-    function blip(notes) {
+    // ═══ Stinger SFX — synthesized per stinger, timed to the animations. ═══
+    // WebAudio recipes (royalty-free by construction, no assets to load).
+    // Master toggle per room: stingerSounds (dashboard, default on). Volumes
+    // stay modest — this plays under live commentary. OBS captures it when
+    // the browser source has "Control audio via OBS" enabled.
+    let sfxEnabled = true; // refined from /api/config at boot
+    window.__sfxPlays = []; // diagnostic breadcrumb (gates read this)
+    const MASTER_VOL = 0.55;
+
+    let _noiseBuf = null;
+    function noiseBuf(ctx) {
+      if (_noiseBuf) return _noiseBuf;
+      const b = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
+      const d = b.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      _noiseBuf = b;
+      return b;
+    }
+    function tone(ctx, { type = 'sine', f0, f1, t, dur, peak = 0.2 }) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, t);
+      if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak * MASTER_VOL, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(ctx.destination);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    }
+    function noise(ctx, { t, dur, peak = 0.25, type = 'lowpass', f0 = 800, f1, q = 0.8 }) {
+      const src = ctx.createBufferSource();
+      src.buffer = noiseBuf(ctx);
+      src.loop = true;
+      const flt = ctx.createBiquadFilter();
+      flt.type = type;
+      flt.frequency.setValueAtTime(f0, t);
+      if (f1 && f1 !== f0) flt.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+      flt.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak * MASTER_VOL, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(flt).connect(g).connect(ctx.destination);
+      src.start(t);
+      src.stop(t + dur + 0.05);
+    }
+
+    // Each recipe is cut to its animation's beats (documented next to the
+    // keyframes above): storm cracks land on the two lightning strikes,
+    // breaking's thud on the banner slam, crt's hiss on the white flash…
+    const SFX = {
+      'in:default':  (x, t) => { tone(x, { f0: 660, t, dur: 0.18, peak: 0.22 }); tone(x, { f0: 990, t: t + 0.12, dur: 0.18, peak: 0.22 }); },
+      'in:storm':    (x, t) => { noise(x, { t, dur: 1.1, peak: 0.16, f0: 220, f1: 120 });
+                                 noise(x, { t: t + 0.70, dur: 0.16, peak: 0.5, type: 'highpass', f0: 800 });
+                                 noise(x, { t: t + 0.90, dur: 0.24, peak: 0.55, type: 'highpass', f0: 600 }); },
+      'in:proroll':  (x, t) => { noise(x, { t, dur: 0.7, peak: 0.3, type: 'bandpass', f0: 300, f1: 2400, q: 1.4 }); },
+      'in:callme':   (x, t) => { tone(x, { type: 'square', f0: 1180, t, dur: 0.09, peak: 0.15 });
+                                 tone(x, { type: 'square', f0: 1180, t: t + 0.14, dur: 0.09, peak: 0.15 });
+                                 tone(x, { f0: 420, f1: 660, t: t + 0.62, dur: 0.22, peak: 0.24 }); },
+      'in:breaking': (x, t) => { tone(x, { type: 'sawtooth', f0: 196, t, dur: 0.22, peak: 0.18 });
+                                 tone(x, { type: 'sawtooth', f0: 262, t: t + 0.2, dur: 0.22, peak: 0.18 });
+                                 noise(x, { t: t + 0.5, dur: 0.28, peak: 0.5, f0: 150 }); },
+      'in:wildin':   (x, t) => { for (let i = 0; i < 5; i++) noise(x, { t: t + i * 0.17, dur: 0.06, peak: 0.28, type: 'highpass', f0: 1200 });
+                                 tone(x, { type: 'square', f0: 880, f1: 220, t: t + 0.85, dur: 0.3, peak: 0.16 }); },
+      'out:default': (x, t) => { tone(x, { f0: 520, f1: 300, t, dur: 0.3, peak: 0.22 }); },
+      'out:crt':     (x, t) => { tone(x, { f0: 600, f1: 55, t, dur: 0.55, peak: 0.3 });
+                                 noise(x, { t: t + 0.42, dur: 0.14, peak: 0.4, type: 'highpass', f0: 2200 }); },
+      'out:crumble': (x, t) => { [0, 0.28, 0.6].forEach((at, i) => noise(x, { t: t + at, dur: 0.2, peak: 0.36 - i * 0.07, f0: 280 })); },
+      'out:zapped':  (x, t) => { tone(x, { type: 'sawtooth', f0: 1400, f1: 70, t, dur: 0.5, peak: 0.24 });
+                                 noise(x, { t, dur: 0.5, peak: 0.18, type: 'highpass', f0: 2600 }); },
+      'out:wildout': (x, t) => { noise(x, { t, dur: 0.35, peak: 0.4, type: 'highpass', f0: 1600 });
+                                 tone(x, { f0: 440, t: t + 0.42, dur: 0.35, peak: 0.18 }); },
+    };
+
+    function playStinger(kind, name) {
+      if (!sfxEnabled) return;
+      const key = SFX[`${kind}:${name}`] ? `${kind}:${name}` : `${kind}:default`;
       try {
         const ctx = getCtx();
         if (!ctx) return;
         if (ctx.state === 'suspended') { ctx.resume().catch(() => {}); }
-        const now = ctx.currentTime;
-        notes.forEach(([freq, at]) => {
-          const o = ctx.createOscillator();
-          const g = ctx.createGain();
-          o.type = 'sine';
-          o.frequency.value = freq;
-          g.gain.setValueAtTime(0.0001, now + at);
-          g.gain.exponentialRampToValueAtTime(0.25, now + at + 0.02);
-          g.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.18);
-          o.connect(g).connect(ctx.destination);
-          o.start(now + at);
-          o.stop(now + at + 0.2);
-        });
-      } catch { /* ignore — audio is purely best-effort */ }
+        SFX[key](ctx, ctx.currentTime + 0.01);
+        window.__sfxPlays.push(key);
+        console.log('[sfx]', key);
+      } catch { /* audio is purely best-effort */ }
     }
-    function playJoinSound() { blip([[660, 0], [990, 0.12]]); }  // rising "blip-blip"
-    function playLeaveSound() { blip([[520, 0], [300, 0.10]]); } // descending power-off
 
     ws.onerror = (err) => console.error('WebSocket error:', err);
     ws.onclose = () => {
