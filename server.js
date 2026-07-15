@@ -998,10 +998,10 @@ function checkFeatureGates(cfg, gates, address) {
   return { blocked: false };
 }
 
-// ─── LiveKit transport (flag-gated parallel to vdo; vdo stays default) ──────
+// ─── LiveKit transport (default once configured; vdo is the backup) ────────
 import { createLivekitService } from './livekit.js';
 const livekit = createLivekitService();
-if (livekit) console.log('[livekit] transport available at', livekit.url);
+if (livekit) console.log('[livekit] transport available at', livekit.url, '— now the default');
 
 // Token minting — publisher tokens require the seat the join flow granted.
 app.post('/api/livekit/token', async (req, res) => {

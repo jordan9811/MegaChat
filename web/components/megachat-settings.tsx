@@ -431,15 +431,15 @@ export function MegaChatSettings() {
               </Field>
             </div>
 
-            {/* Camera transport — vdo.ninja (default) or LiveKit (env-gated). */}
+            {/* Camera transport — LiveKit (default once configured) or vdo.ninja (backup). */}
             <div className="mt-6 border-t border-border/50 pt-5">
               <p className="mb-1 text-sm font-semibold text-foreground/90">
                 Camera transport
               </p>
               <p className="mb-4 text-xs text-muted-foreground">
-                How viewer cameras travel. vdo.ninja is the battle-tested
-                default; LiveKit adds smoother reconnection and per-viewer
-                connection quality. Existing rooms stay on vdo untouched.
+                {livekitConfigured
+                  ? 'How viewer cameras travel. LiveKit is the default — smoother reconnection and per-viewer connection quality. vdo.ninja stays available as a battle-tested backup.'
+                  : 'How viewer cameras travel. vdo.ninja is the default; LiveKit adds smoother reconnection and per-viewer connection quality once configured on the server.'}
               </p>
               <Field label="Transport" htmlFor="room-transport">
                 <SelectInput
@@ -449,10 +449,19 @@ export function MegaChatSettings() {
                     updateDraft({ transport: e.target.value as 'vdo' | 'livekit' })
                   }
                 >
-                  <option value="vdo">vdo.ninja (default)</option>
-                  <option value="livekit" disabled={!livekitConfigured}>
-                    {livekitConfigured ? 'LiveKit' : 'LiveKit — not configured'}
-                  </option>
+                  {livekitConfigured ? (
+                    <>
+                      <option value="livekit">LiveKit (default)</option>
+                      <option value="vdo">vdo.ninja (backup)</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="vdo">vdo.ninja (default)</option>
+                      <option value="livekit" disabled>
+                        LiveKit — not configured
+                      </option>
+                    </>
+                  )}
                 </SelectInput>
               </Field>
               <label className="mt-4 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">

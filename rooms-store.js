@@ -14,6 +14,19 @@ const STORE_PATH = path.join(DATA_DIR, 'rooms.json');
 
 export const DEFAULT_ROOM_ID = 'default';
 
+// LiveKit is now the default transport once its 3 env vars are present
+// (same condition livekit.js gates on); 'vdo' is the only sticky explicit
+// choice — a room that picked it stays on it even if LiveKit gets configured
+// later. Anything else (explicit 'livekit' or never set) resolves to LiveKit
+// when configured, degrading gracefully back to vdo if the keys vanish.
+const LIVEKIT_CONFIGURED = !!(
+  process.env.LIVEKIT_URL && process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET
+);
+function resolveTransport(explicit) {
+  if (explicit === 'vdo') return 'vdo';
+  return LIVEKIT_CONFIGURED ? 'livekit' : 'vdo';
+}
+
 /** Env-backed defaults when a room field is omitted. */
 export function getEnvDefaults() {
   return {
@@ -317,9 +330,9 @@ export function resolveRoomConfig(roomId) {
     // keep working untouched.
     handle,
     isDemo: cfg.isDemo === true,
-    // Camera transport: vdo.ninja iframes (default, untouched) or LiveKit
-    // (flag-gated on LIVEKIT_* env). Existing rooms resolve to 'vdo'.
-    transport: cfg.transport === 'livekit' ? 'livekit' : 'vdo',
+    // Camera transport: LiveKit is the default once LIVEKIT_* env is present;
+    // vdo.ninja is the sticky backup for rooms that explicitly chose it.
+    transport: resolveTransport(cfg.transport),
     // Overlay stinger SFX (synthesized in-browser, master toggle, default on).
     stingerSounds: cfg.stingerSounds !== false,
   };

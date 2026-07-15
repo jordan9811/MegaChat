@@ -266,6 +266,12 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       .then((cfg) => {
         if (cfg.usdcAddress) setUsdcAddress(cfg.usdcAddress)
         setLivekitConfigured(!!cfg.livekitConfigured)
+        // LiveKit is the default transport when configured; flip the still-
+        // pristine create-form draft to match (server applies the same rule
+        // for any room saved without an explicit transport choice).
+        if (cfg.livekitConfigured) {
+          setDraft((d) => (d.transport === 'vdo' ? { ...d, transport: 'livekit' } : d))
+        }
       })
       .catch(() => {})
     // Streamers signed in via Twitch/X get their reserved handle prefilled
