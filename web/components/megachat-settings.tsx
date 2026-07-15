@@ -505,6 +505,32 @@ export function MegaChatSettings() {
                       <option value="approve">Approve queue</option>
                     </SelectInput>
                   </Field>
+                  <Field
+                    label="AI review strictness"
+                    htmlFor="letters-ai-strictness"
+                    hint="Runs only when the server has a moderation key. Flagged clips wait for your approval."
+                  >
+                    <SelectInput
+                      id="letters-ai-strictness"
+                      value={draft.lettersAiStrictness}
+                      onChange={(e) =>
+                        updateDraft({ lettersAiStrictness: e.target.value as 'severe' | 'borderline' })
+                      }
+                    >
+                      <option value="severe">Block only severe</option>
+                      <option value="borderline">Flag borderline too</option>
+                    </SelectInput>
+                  </Field>
+                  <label className="flex items-center gap-2.5 self-end pb-2 text-sm font-medium text-foreground/90">
+                    <input
+                      type="checkbox"
+                      id="letters-auto-refund"
+                      className="size-4 accent-[var(--neon-magenta)]"
+                      checked={draft.lettersAutoRefund}
+                      onChange={(e) => updateDraft({ lettersAutoRefund: e.target.checked })}
+                    />
+                    Auto-refund on reject
+                  </label>
                 </div>
               ) : null}
               {/* MegaChat gates — who is allowed to send one */}

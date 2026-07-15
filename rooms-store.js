@@ -64,6 +64,11 @@ function resolveLetters(cfg) {
     // null → derived at read time: maxSeconds worth of the live per-second rate
     price,
     moderation: l.moderation === 'approve' ? 'approve' : 'auto',
+    // AI moderation (runs only when MODERATION_API_KEY is configured):
+    // 'severe' flags only high-confidence violations; 'borderline' flags
+    // anything the model marks at all.
+    aiStrictness: l.aiStrictness === 'borderline' ? 'borderline' : 'severe',
+    autoRefundOnReject: l.autoRefundOnReject !== false, // default ON
     gates: resolveGates(l.gates),
   };
 }

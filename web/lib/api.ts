@@ -18,6 +18,9 @@ export type LettersConfig = {
   /** null → derived: maxSeconds worth of the live per-second rate. */
   price: string | null
   moderation: 'auto' | 'approve' | string
+  /** AI review strictness (active only when the server has a moderation key). */
+  aiStrictness: 'severe' | 'borderline' | string
+  autoRefundOnReject: boolean
   gates: FeatureGates
 }
 
@@ -109,6 +112,8 @@ export type RoomConfigPatch = {
     maxSeconds: number
     price: string | null
     moderation: string
+    aiStrictness: string
+    autoRefundOnReject: boolean
     gates: FeatureGates
   }
   joinStream: JoinStreamConfig
@@ -246,8 +251,10 @@ export type LetterAdminItem = {
   username: string
   durationS: number
   price: string
-  status: 'pending_approval' | 'queued' | 'playing' | string
+  status: 'reviewing' | 'pending_approval' | 'queued' | 'playing' | string
   uploadedAt: number | null
+  /** Set when the AI review flagged it (category + confidence + transcript snippet). */
+  flaggedReason: string | null
   mediaUrl: string | null
 }
 

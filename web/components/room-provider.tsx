@@ -64,6 +64,8 @@ export type ConfigDraft = {
   lettersMaxSeconds: string
   lettersPrice: string
   lettersModeration: 'auto' | 'approve'
+  lettersAiStrictness: 'severe' | 'borderline'
+  lettersAutoRefund: boolean
   transport: 'vdo' | 'livekit'
   // per-feature gates: MegaChats own theirs; Join Stream inherits unless overridden
   mcMinWatch: string
@@ -101,6 +103,8 @@ const DEFAULT_DRAFT: ConfigDraft = {
   lettersMaxSeconds: '10',
   lettersPrice: '',
   lettersModeration: 'auto',
+  lettersAiStrictness: 'severe',
+  lettersAutoRefund: true,
   transport: 'vdo',
   mcMinWatch: '0',
   mcFollowersOnly: false,
@@ -167,6 +171,8 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
       maxSeconds: Number(draft.lettersMaxSeconds) || 10,
       price: draft.lettersPrice.trim() || null,
       moderation: draft.lettersModeration,
+      aiStrictness: draft.lettersAiStrictness,
+      autoRefundOnReject: draft.lettersAutoRefund,
       gates: {
         minWatchSeconds: Number(draft.mcMinWatch) || 0,
         followersOnly: draft.mcFollowersOnly,
@@ -222,6 +228,8 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     lettersMaxSeconds: String(room.letters?.maxSeconds ?? 10),
     lettersPrice: room.letters?.price || '',
     lettersModeration: room.letters?.moderation === 'approve' ? 'approve' : 'auto',
+    lettersAiStrictness: room.letters?.aiStrictness === 'borderline' ? 'borderline' : 'severe',
+    lettersAutoRefund: room.letters ? room.letters.autoRefundOnReject !== false : true,
     transport: room.transport === 'livekit' ? 'livekit' : 'vdo',
     mcMinWatch: String(room.letters?.gates?.minWatchSeconds ?? 0),
     mcFollowersOnly: !!room.letters?.gates?.followersOnly,

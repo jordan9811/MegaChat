@@ -1378,6 +1378,8 @@ let letterStream = null;
 let letterCountdown = null;
 let letterDurationS = 0;
 let myLetterId = null;
+let letterFrames = [];
+let letterFrameTimer = null;
 
 function lettersCfg() {
   return CONFIG && CONFIG.letters && CONFIG.letters.enabled ? CONFIG.letters : null;
@@ -1481,9 +1483,24 @@ function toggleLetterRecording() {
   letterRecorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) letterChunks.push(e.data);
   };
+  // Sample a few small frames while recording — the AI review (if the
+  // server has it configured) checks these alongside the transcript.
+  letterFrames = [];
+  clearInterval(letterFrameTimer);
+  letterFrameTimer = setInterval(() => {
+    try {
+      if (letterFrames.length >= 5 || !video.videoWidth) return;
+      const c = document.createElement('canvas');
+      c.width = 320;
+      c.height = Math.round(320 * (video.videoHeight / video.videoWidth)) || 180;
+      c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+      letterFrames.push(c.toDataURL('image/jpeg', 0.6));
+    } catch { /* sampling is best-effort */ }
+  }, 900);
   const startedAt = Date.now();
   letterRecorder.onstop = () => {
     clearInterval(letterCountdown);
+    clearInterval(letterFrameTimer);
     letterDurationS = Math.max(1, Math.ceil((Date.now() - startedAt) / 1000));
     letterBlob = new Blob(letterChunks, { type: mime.split(';')[0] });
     letterState = 'preview';
@@ -1563,6 +1580,14 @@ async function sendLetter() {
     }
     session.close().catch(() => { /* nothing unspent; channel just closes */ });
     myLetterId = data.letterId;
+    // Frames ride ahead of the clip so an AI review has them at hand.
+    if (letterFrames.length) {
+      await fetch(`/api/letter/frames/${data.letterId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frames: letterFrames }),
+      }).catch(() => { /* review falls back to transcript-only */ });
+    }
     setLetterStatus('Uploading your clip…');
     const up = await fetch(data.uploadUrl, {
       method: 'PUT',
@@ -1573,9 +1598,11 @@ async function sendLetter() {
     if (!up.ok) throw new Error(upData.error || 'Upload failed');
     closeLetterStage();
     showMessage(
-      upData.status === 'pending_approval'
-        ? '📮 MegaChat sent — the streamer approves MegaChats before they play. You were charged; rejects auto-refund.'
-        : '📮 MegaChat sent! It will pop up on stream shortly — watch the preview above (it runs ~15s behind).',
+      upData.status === 'reviewing'
+        ? '🔎 MegaChat sent — quick automated review (a few seconds), then it queues.'
+        : upData.status === 'pending_approval'
+          ? '📮 MegaChat sent — the streamer approves MegaChats before they play. You were charged; rejects auto-refund.'
+          : '📮 MegaChat sent! It will pop up on stream shortly — watch the preview above (it runs ~15s behind).',
       'success',
     );
   } catch (err) {
@@ -1845,6 +1872,19 @@ export function initJoinPage({ wsUrl }) {
       // no seat) — handle them before the seat guard.
       if (msg.type === 'letter_play' && msg.letter && msg.letter.id === myLetterId) {
         showMessage('▶ Your MegaChat is on stream RIGHT NOW — the preview above shows it in ~15s.', 'success');
+        return;
+      }
+      if (msg.type === 'letter_queued' && msg.letterId === myLetterId) {
+        if (msg.status === 'queued') {
+          showMessage('✅ Review passed — your MegaChat is queued and will pop up on stream shortly.', 'success');
+        } else if (msg.status === 'pending_approval') {
+          showMessage(
+            msg.flagged
+              ? '🕵️ The automated review flagged your MegaChat — the streamer will approve or reject it (rejects refund).'
+              : '📮 Your MegaChat awaits the streamer\'s approval.',
+            'success',
+          );
+        }
         return;
       }
       if (!mySeatId) return;

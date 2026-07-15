@@ -78,6 +78,11 @@ export function LettersQueueCard() {
                     {l.durationS}s · {l.price} · {l.status.replace('_', ' ')}
                   </span>
                 </p>
+                {l.flaggedReason ? (
+                  <p className="mt-1 inline-block rounded-md border border-[var(--neon-magenta)]/40 bg-[var(--neon-magenta)]/10 px-2 py-0.5 text-xs font-semibold text-[var(--neon-magenta)]">
+                    🕵️ AI flag: {l.flaggedReason}
+                  </p>
+                ) : null}
                 {l.mediaUrl ? (
                   <video
                     src={l.mediaUrl}

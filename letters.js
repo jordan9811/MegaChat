@@ -84,6 +84,88 @@ export function attachLetters(app, deps) {
     if (state.playing?.id === letter.id) state.playing = null;
   }
 
+  // ─── AI moderation (recorded clips ONLY — never the live path) ────────────
+  // Configured via MODERATION_API_KEY (+ MODERATION_API_BASE for tests/self-
+  // hosted gateways). Absent → everything queues exactly as before; a verdict
+  // is NEVER faked. Pipeline: whisper transcript + omni-moderation over the
+  // transcript and the client-sampled frames. Fail-open on any error/timeout
+  // (seconds of latency budget, not minutes).
+  const moderationConfigured = () => !!process.env.MODERATION_API_KEY;
+
+  async function moderateLetter(letter, cfg) {
+    const key = process.env.MODERATION_API_KEY;
+    const base = (process.env.MODERATION_API_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
+    let transcript = '';
+    try {
+      const fd = new FormData();
+      fd.append('file', new Blob([letter.media], { type: letter.mime }), 'megachat.webm');
+      fd.append('model', 'whisper-1');
+      const tr = await fetch(`${base}/audio/transcriptions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}` },
+        body: fd,
+        signal: AbortSignal.timeout(15000),
+      });
+      if (tr.ok) transcript = String((await tr.json()).text || '');
+      else log.warn(`[letters] transcription ${tr.status} — continuing frames-only`);
+    } catch (err) {
+      log.warn('[letters] transcription failed (fail-open):', err.message);
+    }
+
+    const input = [];
+    if (transcript) input.push({ type: 'text', text: transcript });
+    for (const f of letter.frames || []) {
+      input.push({ type: 'image_url', image_url: { url: f } });
+    }
+    if (input.length === 0) return { verdict: 'pass', reason: null };
+
+    try {
+      const mr = await fetch(`${base}/moderations`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'omni-moderation-latest', input }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!mr.ok) throw new Error(`moderation ${mr.status}`);
+      const data = await mr.json();
+      const r = data.results && data.results[0];
+      if (!r) return { verdict: 'pass', reason: null };
+      const scores = r.category_scores || {};
+      const top = Object.entries(scores).sort((a, b) => b[1] - a[1])[0] || null;
+      const flagged = cfg.letters.aiStrictness === 'borderline'
+        ? !!r.flagged
+        : !!(top && top[1] >= 0.7);
+      if (!flagged) return { verdict: 'pass', reason: null };
+      const pct = top ? Math.round(top[1] * 100) : 0;
+      return {
+        verdict: 'flag',
+        reason: `${top ? top[0] : 'flagged'} (${pct}%)`
+          + (transcript ? ` — “${transcript.slice(0, 90)}”` : ''),
+      };
+    } catch (err) {
+      log.warn('[letters] moderation failed (fail-open):', err.message);
+      return { verdict: 'pass', reason: null };
+    }
+  }
+
+  /** Route a fully-uploaded letter to its resting state (+ broadcast). */
+  function settleIntoQueue(letter, cfg, flaggedReason) {
+    if (flaggedReason) {
+      letter.status = 'pending_approval';
+      letter.flaggedReason = flaggedReason;
+    } else {
+      letter.status = cfg.letters.moderation === 'approve' ? 'pending_approval' : 'queued';
+    }
+    if (letter.status === 'queued') roomState(letter.roomId).queue.push(letter);
+    broadcastToRoom(letter.roomId, {
+      type: 'letter_queued',
+      letterId: letter.id,
+      status: letter.status,
+      username: letter.username,
+      flagged: !!flaggedReason,
+    });
+  }
+
   /** Refund the flat price to the payer from the PLATFORM wallet. */
   async function refundLetter(letter, reason) {
     letter.status = 'refunding';
@@ -212,18 +294,38 @@ export function attachLetters(app, deps) {
       globalBytes += body.length;
       letter.uploadedAt = Date.now();
       const cfg = resolveRoomConfig(letter.roomId);
-      letter.status = cfg.letters.moderation === 'approve' ? 'pending_approval' : 'queued';
-      if (letter.status === 'queued') roomState(letter.roomId).queue.push(letter);
-      log.log(`[letters] ${letter.id} uploaded ${(body.length / 1024).toFixed(0)}KB → ${letter.status}`);
-      broadcastToRoom(letter.roomId, {
-        type: 'letter_queued',
-        letterId: letter.id,
-        status: letter.status,
-        username: letter.username,
-      });
+      if (moderationConfigured()) {
+        // AI review before the queue — recorded clips only, never live.
+        letter.status = 'reviewing';
+        log.log(`[letters] ${letter.id} uploaded ${(body.length / 1024).toFixed(0)}KB → reviewing (AI)`);
+        res.json({ success: true, status: 'reviewing' });
+        const t0 = Date.now();
+        void moderateLetter(letter, cfg).then(({ verdict, reason }) => {
+          if (letter.status !== 'reviewing') return; // expired/removed meanwhile
+          log.log(`[letters] ${letter.id} verdict=${verdict} in ${Date.now() - t0}ms${reason ? ' — ' + reason : ''}`);
+          settleIntoQueue(letter, cfg, verdict === 'flag' ? reason : null);
+        });
+        return;
+      }
+      log.log(`[letters] ${letter.id} uploaded ${(body.length / 1024).toFixed(0)}KB (no moderation key)`);
+      settleIntoQueue(letter, cfg, null);
       res.json({ success: true, status: letter.status });
     }
   );
+
+  // Client-sampled frames for the AI review — arrive BEFORE the upload so the
+  // pipeline has them when it starts. Unpaid: bound to a paid letter id.
+  app.post('/api/letter/frames/:id', express.json({ limit: '3mb' }), (req, res) => {
+    const letter = byId.get(req.params.id);
+    if (!letter || letter.status !== 'awaiting_upload') {
+      return res.status(404).json({ error: 'Unknown MegaChat' });
+    }
+    const frames = Array.isArray(req.body?.frames) ? req.body.frames : [];
+    letter.frames = frames
+      .filter((f) => typeof f === 'string' && f.startsWith('data:image/') && f.length < 300_000)
+      .slice(0, 5);
+    res.json({ ok: true, frames: letter.frames.length });
+  });
 
   // ── 3. Media for the overlay (and the approve-queue preview) ─────────────
   app.get('/api/letter/media/:id', (req, res) => {
@@ -250,10 +352,11 @@ export function attachLetters(app, deps) {
     const roomId = await requirePassword(req, res);
     if (!roomId) return;
     const list = [...byId.values()]
-      .filter((l) => l.roomId === roomId && ['pending_approval', 'queued', 'playing'].includes(l.status))
+      .filter((l) => l.roomId === roomId && ['reviewing', 'pending_approval', 'queued', 'playing'].includes(l.status))
       .map((l) => ({
         id: l.id, username: l.username, durationS: l.durationS, price: l.price,
         status: l.status, uploadedAt: l.uploadedAt || null,
+        flaggedReason: l.flaggedReason || null,
         mediaUrl: l.media ? `/api/letter/media/${l.id}` : null,
       }));
     res.json({ letters: list });
@@ -279,9 +382,15 @@ export function attachLetters(app, deps) {
     if (!letter || letter.roomId !== roomId || !['pending_approval', 'queued'].includes(letter.status)) {
       return res.status(404).json({ error: 'MegaChat not found or not rejectable' });
     }
-    log.log(`[letters] ${letter.id} rejected — refunding`);
-    void refundLetter(letter, 'rejected');
-    res.json({ success: true, refunded: true });
+    const cfg = resolveRoomConfig(roomId);
+    if (cfg.letters.autoRefundOnReject) {
+      log.log(`[letters] ${letter.id} rejected — refunding`);
+      void refundLetter(letter, 'rejected');
+      return res.json({ success: true, refunded: true });
+    }
+    log.log(`[letters] ${letter.id} rejected — kept (room refund policy off)`);
+    removeLetter(letter);
+    res.json({ success: true, refunded: false });
   });
 
   // ── Scheduler: play when a tile slot is free; expire stale uploads ────────
