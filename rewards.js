@@ -154,9 +154,16 @@ export function attachRewards(wss, opts = {}) {
     }
   }
 
+  // Cumulative watch-time per (room, wallet) — feeds the per-feature
+  // reputation gates (min watch time). Counts in EVERY room, rewards on or
+  // off. In-memory: resets on server restart (documented).
+  const watchSeconds = new Map();
+
   const ticker = setInterval(() => {
     for (const [ws, state] of sessions.entries()) {
       if (!state.wallet || !state.visible || !state.roomId) continue;
+      const wk = `${state.roomId}:${state.wallet.toLowerCase()}`;
+      watchSeconds.set(wk, (watchSeconds.get(wk) || 0) + 1);
       const roomCfg = getRoomConfig(state.roomId);
       if (!roomCfg?.rewards?.enabled) continue;
       const intervalSec = roomCfg.rewards.earnInterval || 60;
@@ -234,6 +241,14 @@ export function attachRewards(wss, opts = {}) {
   });
 
   console.log('[rewards] optional per-room rewards attached' + (poolDryRun ? ' [local/dry-run credits]' : ''));
+
+  return {
+    /** Seconds this wallet has watched this room (visible tab + registered). */
+    getWatchSeconds(roomId, wallet) {
+      if (!roomId || !wallet) return 0;
+      return watchSeconds.get(`${roomId}:${String(wallet).toLowerCase()}`) || 0;
+    },
+  };
 }
 
 export { getCredit, consumeCredit, formatRewardAmount } from './reward-credits.js';

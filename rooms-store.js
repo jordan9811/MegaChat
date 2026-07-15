@@ -40,7 +40,19 @@ export function getEnvDefaults() {
   };
 }
 
-/** Letter mode — recorded clips paid at a flat price, played once on stream. */
+/** Per-feature reputation gates. minWatchSeconds is enforced today (via the
+ * watch-time ledger); followers/subs are stored config until platform
+ * verification ships — never silently enforced. */
+function resolveGates(raw) {
+  const g = raw || {};
+  return {
+    minWatchSeconds: Math.max(0, Math.min(86400, Number(g.minWatchSeconds ?? 0) || 0)),
+    followersOnly: g.followersOnly === true,
+    subsOnly: g.subsOnly === true,
+  };
+}
+
+/** MegaChats — recorded clips paid at a flat price, played once on stream. */
 function resolveLetters(cfg) {
   const l = cfg.letters || {};
   const maxSeconds = Math.min(30, Math.max(3, Number(l.maxSeconds ?? 10) || 10));
@@ -52,7 +64,24 @@ function resolveLetters(cfg) {
     // null → derived at read time: maxSeconds worth of the live per-second rate
     price,
     moderation: l.moderation === 'approve' ? 'approve' : 'auto',
+    gates: resolveGates(l.gates),
   };
+}
+
+/** Join Stream (live seats) — independently togglable, gates inherit from
+ * MegaChats by default (billing/shipping-address pattern). */
+function resolveJoinStream(cfg) {
+  const j = cfg.joinStream || {};
+  return {
+    enabled: j.enabled !== false, // default ON — existing rooms unchanged
+    gatesSameAsMegaChat: j.gatesSameAsMegaChat !== false,
+    gates: resolveGates(j.gates),
+  };
+}
+
+/** The gates that actually apply to Join Stream in this room. */
+export function joinStreamGatesFor(cfg) {
+  return cfg.joinStream.gatesSameAsMegaChat ? cfg.letters.gates : cfg.joinStream.gates;
 }
 
 /** Effective flat price for a letter in this room (token units, string). */
@@ -277,6 +306,7 @@ export function resolveRoomConfig(roomId) {
     // rooms.json is branch-shared, Arc branches simply ignore it.)
     twitchChannel: sanitizeTwitchChannel(cfg.twitchChannel),
     letters: resolveLetters(cfg),
+    joinStream: resolveJoinStream(cfg),
     rewards: resolveRewards(cfg, defaults),
     // Permanent identity: /r/<handle> resolves here forever; old id links
     // keep working untouched.

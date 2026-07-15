@@ -507,59 +507,118 @@ export function MegaChatSettings() {
                   </Field>
                 </div>
               ) : null}
+              {/* MegaChat gates — who is allowed to send one */}
+              <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-3">
+                <Field
+                  label="Min watch time"
+                  htmlFor="mc-min-watch"
+                  hint="0 = open to all. Enforced live via watch sessions."
+                >
+                  <InputAffix
+                    id="mc-min-watch"
+                    affix="sec"
+                    inputMode="numeric"
+                    value={draft.mcMinWatch}
+                    onChange={(e) => updateDraft({ mcMinWatch: e.target.value })}
+                  />
+                </Field>
+                <label className="flex items-center gap-2.5 text-sm font-medium text-foreground/90" title="Stored now; enforced when platform verification ships">
+                  <input
+                    type="checkbox"
+                    id="mc-followers-only"
+                    className="size-4 accent-[var(--neon-magenta)]"
+                    checked={draft.mcFollowersOnly}
+                    onChange={(e) => updateDraft({ mcFollowersOnly: e.target.checked })}
+                  />
+                  Followers only <span className="text-xs text-muted-foreground">(soon)</span>
+                </label>
+                <label className="flex items-center gap-2.5 text-sm font-medium text-foreground/90" title="Stored now; enforced when platform verification ships">
+                  <input
+                    type="checkbox"
+                    id="mc-subs-only"
+                    className="size-4 accent-[var(--neon-magenta)]"
+                    checked={draft.mcSubsOnly}
+                    onChange={(e) => updateDraft({ mcSubsOnly: e.target.checked })}
+                  />
+                  Subscribers only <span className="text-xs text-muted-foreground">(soon)</span>
+                </label>
+              </div>
             </div>
 
-            {/* Join gating — anti-spam / abuse controls. Stubs only: no
-                server enforcement yet (see ROADMAP.md → Join gating). */}
+            {/* Join Stream — the live path, independently togglable, gates
+                inherit from MegaChats unless overridden (billing/shipping). */}
             <div className="mt-6 border-t border-border/50 pt-5">
               <p className="mb-1 text-sm font-semibold text-foreground/90">
-                Join gating{' '}
+                Join Stream{' '}
                 <span className="font-normal text-muted-foreground">
-                  — anti-spam / abuse controls
+                  — live camera seats, billed per second
                 </span>
               </p>
               <p className="mb-4 text-xs text-muted-foreground">
-                Coming soon. Throttle low-signal or abusive join attempts
-                before they reach a camera seat.
+                Pricing uses the per-second rate configured above. Turn this
+                off for a MegaChats-only room.
               </p>
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                <span title="Coming soon" className="cursor-not-allowed">
-                  <Field label="Minimum watch time" htmlFor="gate-min-watch">
-                    <InputAffix
-                      id="gate-min-watch"
-                      affix="sec"
-                      placeholder="—"
-                      disabled
-                      className="opacity-50"
+              <label className="mb-3 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
+                <input
+                  type="checkbox"
+                  id="joinstream-enabled"
+                  className="size-4 accent-[var(--neon-magenta)]"
+                  checked={draft.joinStreamEnabled}
+                  onChange={(e) => updateDraft({ joinStreamEnabled: e.target.checked })}
+                />
+                Enable Join Stream
+              </label>
+              {draft.joinStreamEnabled ? (
+                <>
+                  <label className="mb-3 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
+                    <input
+                      type="checkbox"
+                      id="js-gates-same"
+                      className="size-4 accent-[var(--neon-magenta)]"
+                      checked={draft.jsGatesSame}
+                      onChange={(e) => updateDraft({ jsGatesSame: e.target.checked })}
                     />
-                  </Field>
-                </span>
-                <span title="Coming soon" className="cursor-not-allowed">
-                  <Field label="Reputation score gate" htmlFor="gate-reputation">
-                    <InputAffix
-                      id="gate-reputation"
-                      affix="min"
-                      placeholder="—"
-                      disabled
-                      className="opacity-50"
-                    />
-                  </Field>
-                </span>
-                <label
-                  title="Coming soon"
-                  className="flex cursor-not-allowed items-center gap-2.5 text-sm font-medium text-muted-foreground opacity-60"
-                >
-                  <input type="checkbox" id="gate-subscribers" disabled className="size-4" />
-                  Subscribers only
-                </label>
-                <label
-                  title="Coming soon"
-                  className="flex cursor-not-allowed items-center gap-2.5 text-sm font-medium text-muted-foreground opacity-60"
-                >
-                  <input type="checkbox" id="gate-followers" disabled className="size-4" />
-                  Followers only
-                </label>
-              </div>
+                    Same gates as MegaChats
+                  </label>
+                  {!draft.jsGatesSame ? (
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                      <Field
+                        label="Min watch time"
+                        htmlFor="js-min-watch"
+                        hint="0 = open to all."
+                      >
+                        <InputAffix
+                          id="js-min-watch"
+                          affix="sec"
+                          inputMode="numeric"
+                          value={draft.jsMinWatch}
+                          onChange={(e) => updateDraft({ jsMinWatch: e.target.value })}
+                        />
+                      </Field>
+                      <label className="flex items-center gap-2.5 text-sm font-medium text-foreground/90" title="Stored now; enforced when platform verification ships">
+                        <input
+                          type="checkbox"
+                          id="js-followers-only"
+                          className="size-4 accent-[var(--neon-magenta)]"
+                          checked={draft.jsFollowersOnly}
+                          onChange={(e) => updateDraft({ jsFollowersOnly: e.target.checked })}
+                        />
+                        Followers only <span className="text-xs text-muted-foreground">(soon)</span>
+                      </label>
+                      <label className="flex items-center gap-2.5 text-sm font-medium text-foreground/90" title="Stored now; enforced when platform verification ships">
+                        <input
+                          type="checkbox"
+                          id="js-subs-only"
+                          className="size-4 accent-[var(--neon-magenta)]"
+                          checked={draft.jsSubsOnly}
+                          onChange={(e) => updateDraft({ jsSubsOnly: e.target.checked })}
+                        />
+                        Subscribers only <span className="text-xs text-muted-foreground">(soon)</span>
+                      </label>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           </details>
 

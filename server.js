@@ -21,6 +21,7 @@ import {
   setRoomHandle,
   createRoomWithPassword,
   verifyRoomPassword,
+  joinStreamGatesFor,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
 import {
@@ -435,8 +436,13 @@ app.get('/api/config', (req, res) => {
           maxSeconds: cfg.letters.maxSeconds,
           price: letterPriceFor(cfg),
           moderation: cfg.letters.moderation,
+          minWatchSeconds: cfg.letters.gates.minWatchSeconds,
         }
       : { enabled: false },
+    joinStream: {
+      enabled: cfg.joinStream.enabled,
+      minWatchSeconds: joinStreamGatesFor(cfg).minWatchSeconds,
+    },
     handle: cfg.handle,
     isDemo: !!cfg.isDemo,
     transport: cfg.transport,
@@ -954,8 +960,9 @@ const wsHeartbeat = setInterval(() => {
 if (typeof wsHeartbeat.unref === 'function') wsHeartbeat.unref();
 
 // ─── Pass C: watch-to-earn (isolated; never breaks Pass A / B) ───────────────
+let rewardsSvc = null;
 try {
-  attachRewards(wss, {
+  rewardsSvc = attachRewards(wss, {
     getRoomConfig: resolveRoomConfig,
     poolPrivateKey: process.env.REWARD_POOL_PRIVATE_KEY || null,
     rpcUrl: RPC_URL,
@@ -963,6 +970,31 @@ try {
   });
 } catch (err) {
   console.warn('[rewards] failed to attach, continuing without watch-to-earn:', err.message);
+}
+
+// ─── Per-feature reputation gates ────────────────────────────────────────────
+// minWatchSeconds enforces off the live watch-time ledger (rewards module).
+// followersOnly/subsOnly are stored config until platform verification ships —
+// configuration is honest about that in the dashboard, and we never silently
+// enforce what we cannot verify.
+function checkFeatureGates(cfg, gates, address) {
+  if (gates.minWatchSeconds > 0) {
+    const watched = rewardsSvc ? rewardsSvc.getWatchSeconds(cfg.id, address) : 0;
+    if (watched < gates.minWatchSeconds) {
+      return {
+        blocked: true,
+        status: 403,
+        body: {
+          error: 'Not enough watch time yet',
+          reason: 'min_watch_time',
+          watchedSeconds: watched,
+          requiredSeconds: gates.minWatchSeconds,
+          hint: `This unlocks after ${gates.minWatchSeconds}s of watching — you're at ${watched}s. Keep this page open (and your wallet connected) to build it up.`,
+        },
+      };
+    }
+  }
+  return { blocked: false };
 }
 
 // ─── LiveKit transport (flag-gated parallel to vdo; vdo stays default) ──────
@@ -1045,6 +1077,8 @@ try {
     broadcastToRoom,
     activeSeats,
     sellerAddress: SELLER_WALLET_ADDRESS,
+    getWatchSeconds: (roomId, wallet) =>
+      (rewardsSvc ? rewardsSvc.getWatchSeconds(roomId, wallet) : 0),
   });
 } catch (err) {
   console.warn('[letters] failed to attach, continuing without letter mode:', err.message);
@@ -1140,6 +1174,18 @@ app.post('/api/join/passkey', async (req, res) => {
       return res.status(404).json({ error: 'Room not found', roomId: resolved.roomId });
     }
     const { roomId, cfg, atomics } = resolved;
+    if (!cfg.joinStream.enabled) {
+      return res.status(403).json({
+        error: 'Join Stream is disabled in this room',
+        reason: 'feature_disabled',
+        hint: cfg.letters.enabled ? 'This room takes MegaChats only — send one instead.' : undefined,
+      });
+    }
+    {
+      const gate = checkFeatureGates(cfg, joinStreamGatesFor(cfg), address);
+      if (gate.blocked) return res.status(gate.status).json(gate.body);
+    }
+
     const rw = cfg.rewards;
     const modularPaymentHeader = req.headers['x-modular-payment'];
     const useRewardCredit = req.body.useRewardCredit === true;
@@ -1456,6 +1502,18 @@ app.post('/api/join/mpp', async (req, res) => {
       return res.status(404).json({ error: 'Room not found', roomId: resolved.roomId });
     }
     const { roomId, cfg, atomics } = resolved;
+    if (!cfg.joinStream.enabled) {
+      return res.status(403).json({
+        error: 'Join Stream is disabled in this room',
+        reason: 'feature_disabled',
+        hint: cfg.letters.enabled ? 'This room takes MegaChats only — send one instead.' : undefined,
+      });
+    }
+    {
+      const gate = checkFeatureGates(cfg, joinStreamGatesFor(cfg), address);
+      if (gate.blocked) return res.status(gate.status).json(gate.body);
+    }
+
     if (!cfg.active) {
       return res.status(403).json({ error: 'Room is not accepting joins', reason: 'room_stopped', roomId });
     }

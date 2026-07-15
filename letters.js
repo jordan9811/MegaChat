@@ -46,6 +46,7 @@ export function attachLetters(app, deps) {
     broadcastToRoom,
     activeSeats,
     sellerAddress,
+    getWatchSeconds = () => 0,
     log = console,
   } = deps;
 
@@ -108,7 +109,7 @@ export function attachLetters(app, deps) {
       const roomId = normalizeRoomId((req.body && req.body.room) || req.query.room);
       const cfg = roomId ? resolveRoomConfig(roomId) : null;
       if (!cfg) return res.status(404).json({ error: 'Room not found' });
-      if (!cfg.letters.enabled) return res.status(403).json({ error: 'Letters are not enabled in this room' });
+      if (!cfg.letters.enabled) return res.status(403).json({ error: 'MegaChats are not enabled in this room' });
       if (!cfg.active) return res.status(403).json({ error: 'Room is not accepting joins right now' });
 
       const { username, address, durationS, mime, flyIn, flyOut } = req.body || {};
@@ -120,15 +121,30 @@ export function attachLetters(app, deps) {
       }
       const dur = Number(durationS);
       if (!Number.isFinite(dur) || dur <= 0 || dur > cfg.letters.maxSeconds + 1) {
-        return res.status(400).json({ error: `Letters are capped at ${cfg.letters.maxSeconds}s in this room` });
+        return res.status(400).json({ error: `MegaChats are capped at ${cfg.letters.maxSeconds}s in this room` });
       }
       if (!/^video\/(webm|mp4)/.test(String(mime || ''))) {
         return res.status(400).json({ error: 'Unsupported recording format' });
       }
+      // Per-feature reputation gate (MegaChats' own gates — Join Stream may
+      // inherit these, never the other way around).
+      if (cfg.letters.gates.minWatchSeconds > 0) {
+        const watched = getWatchSeconds(cfg.id, address);
+        if (watched < cfg.letters.gates.minWatchSeconds) {
+          return res.status(403).json({
+            error: 'Not enough watch time yet',
+            reason: 'min_watch_time',
+            watchedSeconds: watched,
+            requiredSeconds: cfg.letters.gates.minWatchSeconds,
+            hint: `MegaChats unlock after ${cfg.letters.gates.minWatchSeconds}s of watching — you're at ${watched}s.`,
+          });
+        }
+      }
+
       const state = roomState(cfg.id);
       const pending = state.queue.length + (state.playing ? 1 : 0);
       if (pending >= QUEUE_MAX_PER_ROOM) {
-        return res.status(429).json({ error: 'Letter queue is full — try again in a minute' });
+        return res.status(429).json({ error: 'MegaChat queue is full — try again in a minute' });
       }
 
       const price = letterPriceFor(cfg);
@@ -167,7 +183,7 @@ export function attachLetters(app, deps) {
       });
     } catch (err) {
       log.warn('[letters] submit error:', err.message);
-      return res.status(500).json({ error: 'Letter submit failed', message: err.message });
+      return res.status(500).json({ error: 'MegaChat submit failed', message: err.message });
     }
   });
 
@@ -178,7 +194,7 @@ export function attachLetters(app, deps) {
     (req, res) => {
       const letter = byId.get(req.params.id);
       if (!letter || letter.status !== 'awaiting_upload') {
-        return res.status(404).json({ error: 'Unknown or already-uploaded letter' });
+        return res.status(404).json({ error: 'Unknown or already-uploaded MegaChat' });
       }
       if (Date.now() - letter.paidAt > UPLOAD_GRACE_MS) {
         void refundLetter(letter, 'upload_expired');
@@ -190,7 +206,7 @@ export function attachLetters(app, deps) {
       }
       if (globalBytes + body.length > GLOBAL_MAX_BYTES) {
         void refundLetter(letter, 'server_full');
-        return res.status(507).json({ error: 'Letter storage full — payment refunded' });
+        return res.status(507).json({ error: 'MegaChat storage full — payment refunded' });
       }
       letter.media = body;
       globalBytes += body.length;
@@ -248,7 +264,7 @@ export function attachLetters(app, deps) {
     if (!roomId) return;
     const letter = byId.get(req.params.id);
     if (!letter || letter.roomId !== roomId || letter.status !== 'pending_approval') {
-      return res.status(404).json({ error: 'Letter not found or not pending' });
+      return res.status(404).json({ error: 'MegaChat not found or not pending' });
     }
     letter.status = 'queued';
     roomState(roomId).queue.push(letter);
@@ -261,7 +277,7 @@ export function attachLetters(app, deps) {
     if (!roomId) return;
     const letter = byId.get(req.params.id);
     if (!letter || letter.roomId !== roomId || !['pending_approval', 'queued'].includes(letter.status)) {
-      return res.status(404).json({ error: 'Letter not found or not rejectable' });
+      return res.status(404).json({ error: 'MegaChat not found or not rejectable' });
     }
     log.log(`[letters] ${letter.id} rejected — refunding`);
     void refundLetter(letter, 'rejected');

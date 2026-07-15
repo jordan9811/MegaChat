@@ -65,6 +65,15 @@ export type ConfigDraft = {
   lettersPrice: string
   lettersModeration: 'auto' | 'approve'
   transport: 'vdo' | 'livekit'
+  // per-feature gates: MegaChats own theirs; Join Stream inherits unless overridden
+  mcMinWatch: string
+  mcFollowersOnly: boolean
+  mcSubsOnly: boolean
+  joinStreamEnabled: boolean
+  jsGatesSame: boolean
+  jsMinWatch: string
+  jsFollowersOnly: boolean
+  jsSubsOnly: boolean
 }
 
 // Defaults mirror the legacy dashboard form (backed by env defaults server-side).
@@ -93,6 +102,14 @@ const DEFAULT_DRAFT: ConfigDraft = {
   lettersPrice: '',
   lettersModeration: 'auto',
   transport: 'vdo',
+  mcMinWatch: '0',
+  mcFollowersOnly: false,
+  mcSubsOnly: false,
+  joinStreamEnabled: true,
+  jsGatesSame: true,
+  jsMinWatch: '0',
+  jsFollowersOnly: false,
+  jsSubsOnly: false,
 }
 
 type RoomContextValue = {
@@ -150,6 +167,20 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
       maxSeconds: Number(draft.lettersMaxSeconds) || 10,
       price: draft.lettersPrice.trim() || null,
       moderation: draft.lettersModeration,
+      gates: {
+        minWatchSeconds: Number(draft.mcMinWatch) || 0,
+        followersOnly: draft.mcFollowersOnly,
+        subsOnly: draft.mcSubsOnly,
+      },
+    },
+    joinStream: {
+      enabled: draft.joinStreamEnabled,
+      gatesSameAsMegaChat: draft.jsGatesSame,
+      gates: {
+        minWatchSeconds: Number(draft.jsMinWatch) || 0,
+        followersOnly: draft.jsFollowersOnly,
+        subsOnly: draft.jsSubsOnly,
+      },
     },
     rewards: {
       enabled: draft.rewardsEnabled,
@@ -192,6 +223,14 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     lettersPrice: room.letters?.price || '',
     lettersModeration: room.letters?.moderation === 'approve' ? 'approve' : 'auto',
     transport: room.transport === 'livekit' ? 'livekit' : 'vdo',
+    mcMinWatch: String(room.letters?.gates?.minWatchSeconds ?? 0),
+    mcFollowersOnly: !!room.letters?.gates?.followersOnly,
+    mcSubsOnly: !!room.letters?.gates?.subsOnly,
+    joinStreamEnabled: room.joinStream ? room.joinStream.enabled !== false : true,
+    jsGatesSame: room.joinStream ? room.joinStream.gatesSameAsMegaChat !== false : true,
+    jsMinWatch: String(room.joinStream?.gates?.minWatchSeconds ?? 0),
+    jsFollowersOnly: !!room.joinStream?.gates?.followersOnly,
+    jsSubsOnly: !!room.joinStream?.gates?.subsOnly,
   }
 }
 

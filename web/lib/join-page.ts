@@ -69,19 +69,44 @@ function tokenSymbol() {
   return CONFIG.paymentTokenSymbol || 'USDC';
 }
 
+function joinStreamEnabled() {
+  // Older servers don't send the block — treat absent as enabled.
+  return !CONFIG || !CONFIG.joinStream || CONFIG.joinStream.enabled !== false;
+}
+
 function updatePriceDisplay() {
   if (!CONFIG) return;
   const sym = tokenSymbol();
   const amt = document.getElementById('priceAmount');
   const lbl = document.getElementById('priceLabel');
-  // One meter on Tempo — every wallet mode streams at the same per-second rate.
   const tickPrice = CONFIG.passkeyTickPrice || CONFIG.tickPrice;
   const tickSec = CONFIG.passkeyTickSeconds || 1;
-  if (amt) amt.textContent = `${tickPrice} ${sym}`;
-  if (lbl) {
-    lbl.textContent =
-      `${tickPrice} ${sym} / ${tickSec}s · cap ${CONFIG.maxSession} ${sym} · Tempo`;
+  const mc = CONFIG.letters && CONFIG.letters.enabled ? CONFIG.letters : null;
+  if (joinStreamEnabled()) {
+    // One meter on Tempo — every wallet mode streams at the same rate.
+    if (amt) amt.textContent = `${tickPrice} ${sym}`;
+    if (lbl) {
+      lbl.textContent =
+        `${tickPrice} ${sym} / ${tickSec}s · cap ${CONFIG.maxSession} ${sym} · Tempo`;
+    }
+  } else if (mc) {
+    // MegaChats-only room: the headline price is the flat MegaChat price.
+    if (amt) amt.textContent = `${mc.price} ${sym}`;
+    if (lbl) lbl.textContent = `per MegaChat · up to ${mc.maxSeconds}s · recorded, plays once`;
+  } else {
+    if (amt) amt.textContent = '—';
+    if (lbl) lbl.textContent = 'Nothing is enabled in this room right now.';
   }
+}
+
+// Hide the live-path controls entirely in MegaChats-only rooms.
+function applyFeatureVisibility() {
+  if (!CONFIG) return;
+  const on = joinStreamEnabled();
+  const joinBtn = document.getElementById('joinBtn');
+  const leaveBtn = document.getElementById('leaveBtn');
+  if (joinBtn) joinBtn.style.display = on ? '' : 'none';
+  if (leaveBtn && !on) leaveBtn.classList.remove('show');
 }
 
 function formatTimeLeft(seconds) {
@@ -1611,6 +1636,7 @@ async function init() {
     await loadConfig();
     mountStreamPreview();
     initLetterUi();
+    applyFeatureVisibility();
     void initAuthUi();
     const demo = document.getElementById('demoBanner');
     if (demo && CONFIG && CONFIG.isDemo) demo.style.display = '';

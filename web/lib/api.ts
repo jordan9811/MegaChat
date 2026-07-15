@@ -4,12 +4,28 @@
 
 import { backendHttpUrl } from './backend'
 
+/** Per-feature reputation gates. minWatchSeconds enforces today; the
+ * follower/sub flags are stored config until platform verification ships. */
+export type FeatureGates = {
+  minWatchSeconds: number
+  followersOnly: boolean
+  subsOnly: boolean
+}
+
 export type LettersConfig = {
   enabled: boolean
   maxSeconds: number
   /** null → derived: maxSeconds worth of the live per-second rate. */
   price: string | null
   moderation: 'auto' | 'approve' | string
+  gates: FeatureGates
+}
+
+export type JoinStreamConfig = {
+  enabled: boolean
+  /** Billing/shipping pattern: inherit MegaChat gates unless overridden. */
+  gatesSameAsMegaChat: boolean
+  gates: FeatureGates
 }
 
 export type RewardsConfig = {
@@ -42,6 +58,7 @@ export type Room = {
   /** Twitch login embedded on the join page as the delayed spectate surface. */
   twitchChannel: string | null
   letters: LettersConfig
+  joinStream: JoinStreamConfig
   rewards: RewardsConfig
   /** Permanent /r/<handle> identity (null until claimed). */
   handle: string | null
@@ -92,7 +109,9 @@ export type RoomConfigPatch = {
     maxSeconds: number
     price: string | null
     moderation: string
+    gates: FeatureGates
   }
+  joinStream: JoinStreamConfig
   rewards: {
     enabled: boolean
     earnInterval: number
