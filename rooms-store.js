@@ -72,7 +72,8 @@ function resolveLetters(cfg) {
   const price =
     typeof l.price === 'string' && parseFloat(l.price) > 0 ? String(l.price) : null;
   return {
-    enabled: l.enabled === true,
+    // MegaChats are the hero feature — ON unless the streamer turns them off.
+    enabled: l.enabled !== false,
     maxSeconds,
     // null → derived at read time: maxSeconds worth of the live per-second rate
     price,

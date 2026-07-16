@@ -247,29 +247,73 @@ export function MegaChatSettings() {
               />
             </Field>
 
-            <Field
-              label="Twitch channel"
-              htmlFor="twitch-channel"
-              hint="Embeds your live stream on the join page so viewers can watch while they decide. Leave empty to skip."
-              className="sm:col-span-2"
-            >
-              <TextInput
-                id="twitch-channel"
-                value={draft.twitchChannel}
-                onChange={(e) => updateDraft({ twitchChannel: e.target.value })}
-                placeholder="your_twitch_login"
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </Field>
+            {/* THE two features, up top where they belong. MegaChats is the
+                hero (default on); Join Stream is the live dopamine mode.
+                Everything below the fold is detail with good defaults. */}
+            <div className="grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2">
+              <label
+                className={cn(
+                  'flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors',
+                  draft.lettersEnabled
+                    ? 'border-[var(--neon-magenta)]/60 bg-[var(--neon-magenta)]/10'
+                    : 'border-border bg-input/20 opacity-75',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  id="letters-enabled"
+                  className="mt-0.5 size-4 accent-[var(--neon-magenta)]"
+                  checked={draft.lettersEnabled}
+                  onChange={(e) => updateDraft({ lettersEnabled: e.target.checked })}
+                />
+                <span className="flex flex-col gap-0.5">
+                  <span className="font-heading text-sm font-bold uppercase tracking-wide text-foreground">
+                    📼 MegaChats
+                  </span>
+                  <span className="text-xs leading-relaxed text-muted-foreground">
+                    Viewers record a clip, pay flat, it plays once on stream.
+                  </span>
+                </span>
+              </label>
+              <label
+                className={cn(
+                  'flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors',
+                  draft.joinStreamEnabled
+                    ? 'border-[var(--neon-lime)]/60 bg-[var(--neon-lime)]/10'
+                    : 'border-border bg-input/20 opacity-75',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  id="joinstream-enabled"
+                  className="mt-0.5 size-4 accent-[var(--neon-lime)]"
+                  checked={draft.joinStreamEnabled}
+                  onChange={(e) => updateDraft({ joinStreamEnabled: e.target.checked })}
+                />
+                <span className="flex flex-col gap-0.5">
+                  <span className="font-heading text-sm font-bold uppercase tracking-wide text-foreground">
+                    ⚡ Join Stream
+                  </span>
+                  <span className="text-xs leading-relaxed text-muted-foreground">
+                    Live camera seats on your broadcast, billed per second.
+                  </span>
+                </span>
+              </label>
+            </div>
 
             <Field
-              label={simple ? 'Price per credit' : 'Price per charge'}
+              label={
+                simple
+                  ? 'Price per credit'
+                  : draft.passkeyTickSeconds === '1'
+                    ? 'Price per second'
+                    : `Price per ${draft.passkeyTickSeconds}s charge`
+              }
               htmlFor="price"
               hint={
                 simple
                   ? 'What one credit (one second on camera) costs viewers.'
-                  : 'Pulled from the viewer wallet each interval while live.'
+                  : 'Drives Join Stream metering AND the auto MegaChat price.'
               }
             >
               <InputAffix
@@ -278,16 +322,6 @@ export function MegaChatSettings() {
                 inputMode="decimal"
                 value={draft.passkeyTickPrice}
                 onChange={(e) => updateDraft({ passkeyTickPrice: e.target.value })}
-              />
-            </Field>
-
-            <Field label="Charge interval" htmlFor="interval" className="adv-only">
-              <InputAffix
-                id="interval"
-                affix="sec"
-                inputMode="numeric"
-                value={draft.passkeyTickSeconds}
-                onChange={(e) => updateDraft({ passkeyTickSeconds: e.target.value })}
               />
             </Field>
 
@@ -304,54 +338,6 @@ export function MegaChatSettings() {
                 onChange={(e) => updateDraft({ maxSession: e.target.value })}
               />
             </Field>
-
-            <Field
-              label="Max seats"
-              htmlFor="max-seats"
-              hint="Cameras live on screen at once (up to 3)."
-            >
-              <InputAffix
-                id="max-seats"
-                affix="cams"
-                inputMode="numeric"
-                value={draft.maxSeats}
-                onChange={(e) => updateDraft({ maxSeats: e.target.value })}
-              />
-            </Field>
-
-            <Field
-              label="Payment token"
-              htmlFor="token"
-              className={(draft.tokenPreset === 'custom' ? '' : 'sm:col-span-2 ') + 'adv-only'}
-            >
-              <SelectInput
-                id="token"
-                value={draft.tokenPreset}
-                onChange={(e) =>
-                  updateDraft({ tokenPreset: e.target.value as 'usdc' | 'custom' })
-                }
-              >
-                <option value="usdc">USDC — USD Coin</option>
-                <option value="custom">Custom ERC-20…</option>
-              </SelectInput>
-            </Field>
-
-            {draft.tokenPreset === 'custom' ? (
-              <Field
-                label="Token address"
-                htmlFor="custom-token"
-                hint="TIP-20 contract on Tempo."
-                className="adv-only"
-              >
-                <TextInput
-                  id="custom-token"
-                  value={draft.customTokenAddress}
-                  onChange={(e) => updateDraft({ customTokenAddress: e.target.value })}
-                  placeholder="0x…"
-                  className="font-mono"
-                />
-              </Field>
-            ) : null}
 
             {!managing ? (
               <Field
@@ -372,143 +358,20 @@ export function MegaChatSettings() {
             ) : null}
           </div>
 
-          {/* Advanced: MetaMask / Gateway prepaid pricing */}
+          {/* Everything else lives here, prefilled with good defaults and
+              ordered by how often streamers actually touch it. */}
           <details className="group border-t border-border/70 px-5 py-4 sm:px-6">
             <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
               <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
-              <span className="adv-only">Advanced — MetaMask / Gateway pricing</span>
+              <span className="adv-only">Advanced — fine-tuning (good defaults preset)</span>
               <span className="simple-only">More settings</span>
             </summary>
-            <div className="adv-only grid grid-cols-1 gap-5 pt-5 sm:grid-cols-2">
-              <Field
-                label="Charge amount"
-                htmlFor="mm-price"
-                hint="Prepaid Gateway sessions always use USDC."
-              >
-                <InputAffix
-                  id="mm-price"
-                  affix="USDC"
-                  inputMode="decimal"
-                  value={draft.tickPrice}
-                  onChange={(e) => updateDraft({ tickPrice: e.target.value })}
-                />
-              </Field>
-              <Field label="Interval" htmlFor="mm-interval">
-                <InputAffix
-                  id="mm-interval"
-                  affix="sec"
-                  inputMode="numeric"
-                  value={draft.tickSeconds}
-                  onChange={(e) => updateDraft({ tickSeconds: e.target.value })}
-                />
-              </Field>
-            </div>
 
-            {/* Visibility — rooms are public/listed in browse by default. */}
-            <div className="mt-6 border-t border-border/50 pt-5">
-              <p className="mb-1 text-sm font-semibold text-foreground/90">
-                Visibility
+            {/* 1 · MegaChat details — the hero feature, most-touched knobs */}
+            <div className="pt-5">
+              <p className="mb-4 text-sm font-semibold text-foreground/90">
+                📼 MegaChat details
               </p>
-              <p className="mb-4 text-xs text-muted-foreground">
-                Public rooms appear on the browse page while accepting joins.
-                Unlisted rooms still work by direct link.
-              </p>
-              <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
-                <input
-                  type="checkbox"
-                  id="room-unlisted"
-                  className="size-4 accent-[var(--neon-magenta)]"
-                  checked={draft.unlisted}
-                  onChange={(e) => updateDraft({ unlisted: e.target.checked })}
-                />
-                Unlisted (opt out of browse)
-              </label>
-              <Field
-                label="Payout wallet"
-                hint="Viewer payments settle straight to this address on Tempo. Leave empty to use the platform wallet."
-                className="adv-only"
-              >
-                <TextInput
-                  id="room-payout"
-                  placeholder="0x… (optional)"
-                  value={draft.payoutAddress}
-                  onChange={(e) => updateDraft({ payoutAddress: e.target.value })}
-                  spellCheck={false}
-                />
-              </Field>
-            </div>
-
-            {/* Camera transport — LiveKit (default once configured) or vdo.ninja (backup). */}
-            <div className="mt-6 border-t border-border/50 pt-5">
-              <p className="mb-1 text-sm font-semibold text-foreground/90">
-                Camera transport
-              </p>
-              <p className="mb-4 text-xs text-muted-foreground">
-                {livekitConfigured
-                  ? 'How viewer cameras travel. LiveKit is the default — smoother reconnection and per-viewer connection quality. vdo.ninja stays available as a battle-tested backup.'
-                  : 'How viewer cameras travel. vdo.ninja is the default; LiveKit adds smoother reconnection and per-viewer connection quality once configured on the server.'}
-              </p>
-              <Field label="Transport" htmlFor="room-transport">
-                <SelectInput
-                  id="room-transport"
-                  value={draft.transport}
-                  onChange={(e) =>
-                    updateDraft({ transport: e.target.value as 'vdo' | 'livekit' })
-                  }
-                >
-                  {livekitConfigured ? (
-                    <>
-                      <option value="livekit">LiveKit (default)</option>
-                      <option value="vdo">vdo.ninja (backup)</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="vdo">vdo.ninja (default)</option>
-                      <option value="livekit" disabled>
-                        LiveKit — not configured
-                      </option>
-                    </>
-                  )}
-                </SelectInput>
-              </Field>
-              <label className="mt-4 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
-                <input
-                  type="checkbox"
-                  id="stinger-sounds"
-                  className="size-4 accent-[var(--neon-magenta)]"
-                  checked={draft.stingerSounds}
-                  onChange={(e) => updateDraft({ stingerSounds: e.target.checked })}
-                />
-                Stinger sounds on the overlay
-                <span className="text-xs font-normal text-muted-foreground">
-                  — paired SFX for every entrance/exit
-                </span>
-              </label>
-            </div>
-
-            {/* Letter mode — recorded clips, flat price, one-shot playback. */}
-            <div className="mt-6 border-t border-border/50 pt-5">
-              <p className="mb-1 text-sm font-semibold text-foreground/90">
-                MegaChats{' '}
-                <span className="font-normal text-muted-foreground">
-                  — recorded clips that play once on stream
-                </span>
-              </p>
-              <p className="mb-4 text-xs text-muted-foreground">
-                Viewers record a MegaChat up to the max length, pay a flat price,
-                and the clip pops onto your overlay with the same stinger
-                treatment. Recorded means the ~15s broadcast delay never matters.
-              </p>
-              <label className="mb-4 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
-                <input
-                  type="checkbox"
-                  id="letters-enabled"
-                  className="size-4 accent-[var(--neon-magenta)]"
-                  checked={draft.lettersEnabled}
-                  onChange={(e) => updateDraft({ lettersEnabled: e.target.checked })}
-                />
-                Enable MegaChats
-              </label>
               {draft.lettersEnabled ? (
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
                   <Field label="Max length" htmlFor="letters-max">
@@ -523,7 +386,7 @@ export function MegaChatSettings() {
                   <Field
                     label="Flat price"
                     htmlFor="letters-price"
-                    hint="Empty = max length × live per-second rate."
+                    hint="Empty = max length × per-second rate."
                   >
                     <InputAffix
                       id="letters-price"
@@ -549,7 +412,7 @@ export function MegaChatSettings() {
                   <Field
                     label="AI review strictness"
                     htmlFor="letters-ai-strictness"
-                    hint="Runs only when the server has a moderation key. Flagged clips wait for your approval."
+                    hint="Runs only when the server has a moderation key."
                   >
                     <SelectInput
                       id="letters-ai-strictness"
@@ -572,69 +435,53 @@ export function MegaChatSettings() {
                     />
                     Auto-refund on reject
                   </label>
+                  <Field
+                    label="Min watch time"
+                    htmlFor="mc-min-watch"
+                    hint="0 = open to all. Enforced live."
+                  >
+                    <InputAffix
+                      id="mc-min-watch"
+                      affix="sec"
+                      inputMode="numeric"
+                      value={draft.mcMinWatch}
+                      onChange={(e) => updateDraft({ mcMinWatch: e.target.value })}
+                    />
+                  </Field>
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-foreground/90" title="Stored now; enforced when platform verification ships">
+                    <input
+                      type="checkbox"
+                      id="mc-followers-only"
+                      className="size-4 accent-[var(--neon-magenta)]"
+                      checked={draft.mcFollowersOnly}
+                      onChange={(e) => updateDraft({ mcFollowersOnly: e.target.checked })}
+                    />
+                    Followers only <span className="text-xs text-muted-foreground">(soon)</span>
+                  </label>
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-foreground/90" title="Stored now; enforced when platform verification ships">
+                    <input
+                      type="checkbox"
+                      id="mc-subs-only"
+                      className="size-4 accent-[var(--neon-magenta)]"
+                      checked={draft.mcSubsOnly}
+                      onChange={(e) => updateDraft({ mcSubsOnly: e.target.checked })}
+                    />
+                    Subscribers only <span className="text-xs text-muted-foreground">(soon)</span>
+                  </label>
                 </div>
-              ) : null}
-              {/* MegaChat gates — who is allowed to send one */}
-              <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-3">
-                <Field
-                  label="Min watch time"
-                  htmlFor="mc-min-watch"
-                  hint="0 = open to all. Enforced live via watch sessions."
-                >
-                  <InputAffix
-                    id="mc-min-watch"
-                    affix="sec"
-                    inputMode="numeric"
-                    value={draft.mcMinWatch}
-                    onChange={(e) => updateDraft({ mcMinWatch: e.target.value })}
-                  />
-                </Field>
-                <label className="flex items-center gap-2.5 text-sm font-medium text-foreground/90" title="Stored now; enforced when platform verification ships">
-                  <input
-                    type="checkbox"
-                    id="mc-followers-only"
-                    className="size-4 accent-[var(--neon-magenta)]"
-                    checked={draft.mcFollowersOnly}
-                    onChange={(e) => updateDraft({ mcFollowersOnly: e.target.checked })}
-                  />
-                  Followers only <span className="text-xs text-muted-foreground">(soon)</span>
-                </label>
-                <label className="flex items-center gap-2.5 text-sm font-medium text-foreground/90" title="Stored now; enforced when platform verification ships">
-                  <input
-                    type="checkbox"
-                    id="mc-subs-only"
-                    className="size-4 accent-[var(--neon-magenta)]"
-                    checked={draft.mcSubsOnly}
-                    onChange={(e) => updateDraft({ mcSubsOnly: e.target.checked })}
-                  />
-                  Subscribers only <span className="text-xs text-muted-foreground">(soon)</span>
-                </label>
-              </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  MegaChats are off — flip the tile up top to configure them.
+                </p>
+              )}
             </div>
 
-            {/* Join Stream — the live path, independently togglable, gates
-                inherit from MegaChats unless overridden (billing/shipping). */}
+            {/* 2 · Join Stream details — gates inherit from MegaChats
+                (billing/shipping-address pattern) unless overridden */}
             <div className="mt-6 border-t border-border/50 pt-5">
-              <p className="mb-1 text-sm font-semibold text-foreground/90">
-                Join Stream{' '}
-                <span className="font-normal text-muted-foreground">
-                  — live camera seats, billed per second
-                </span>
+              <p className="mb-4 text-sm font-semibold text-foreground/90">
+                ⚡ Join Stream details
               </p>
-              <p className="mb-4 text-xs text-muted-foreground">
-                Pricing uses the per-second rate configured above. Turn this
-                off for a MegaChats-only room.
-              </p>
-              <label className="mb-3 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
-                <input
-                  type="checkbox"
-                  id="joinstream-enabled"
-                  className="size-4 accent-[var(--neon-magenta)]"
-                  checked={draft.joinStreamEnabled}
-                  onChange={(e) => updateDraft({ joinStreamEnabled: e.target.checked })}
-                />
-                Enable Join Stream
-              </label>
               {draft.joinStreamEnabled ? (
                 <>
                   <label className="mb-3 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
@@ -685,7 +532,203 @@ export function MegaChatSettings() {
                     </div>
                   ) : null}
                 </>
-              ) : null}
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Join Stream is off — this is a MegaChats-only room.
+                </p>
+              )}
+            </div>
+
+            {/* 3 · Stream & overlay */}
+            <div className="mt-6 border-t border-border/50 pt-5">
+              <p className="mb-4 text-sm font-semibold text-foreground/90">
+                Stream &amp; overlay
+              </p>
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <Field
+                  label="Twitch channel"
+                  htmlFor="twitch-channel"
+                  hint="Embeds your stream on the join page. Empty = skip."
+                >
+                  <TextInput
+                    id="twitch-channel"
+                    value={draft.twitchChannel}
+                    onChange={(e) => updateDraft({ twitchChannel: e.target.value })}
+                    placeholder="your_twitch_login"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </Field>
+                <Field
+                  label="Max seats"
+                  htmlFor="max-seats"
+                  hint="Cameras live at once (up to 3)."
+                >
+                  <InputAffix
+                    id="max-seats"
+                    affix="cams"
+                    inputMode="numeric"
+                    value={draft.maxSeats}
+                    onChange={(e) => updateDraft({ maxSeats: e.target.value })}
+                  />
+                </Field>
+              </div>
+              <label className="mt-4 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
+                <input
+                  type="checkbox"
+                  id="stinger-sounds"
+                  className="size-4 accent-[var(--neon-magenta)]"
+                  checked={draft.stingerSounds}
+                  onChange={(e) => updateDraft({ stingerSounds: e.target.checked })}
+                />
+                Stinger sounds on the overlay
+                <span className="text-xs font-normal text-muted-foreground">
+                  — paired SFX for every entrance/exit
+                </span>
+              </label>
+            </div>
+
+            {/* 4 · Pricing plumbing — 99% of rooms never touch any of this */}
+            <div className="mt-6 border-t border-border/50 pt-5">
+              <p className="mb-4 text-sm font-semibold text-foreground/90">
+                Pricing plumbing
+              </p>
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <Field
+                  label="Charge interval"
+                  htmlFor="interval"
+                  hint="Seconds per charge — almost every room leaves this at 1."
+                  className="adv-only"
+                >
+                  <InputAffix
+                    id="interval"
+                    affix="sec"
+                    inputMode="numeric"
+                    value={draft.passkeyTickSeconds}
+                    onChange={(e) => updateDraft({ passkeyTickSeconds: e.target.value })}
+                  />
+                </Field>
+                <Field
+                  label="Payment token"
+                  htmlFor="token"
+                  className="adv-only"
+                >
+                  <SelectInput
+                    id="token"
+                    value={draft.tokenPreset}
+                    onChange={(e) =>
+                      updateDraft({ tokenPreset: e.target.value as 'usdc' | 'custom' })
+                    }
+                  >
+                    <option value="usdc">USDC — USD Coin</option>
+                    <option value="custom">Custom ERC-20…</option>
+                  </SelectInput>
+                </Field>
+                {draft.tokenPreset === 'custom' ? (
+                  <Field
+                    label="Token address"
+                    htmlFor="custom-token"
+                    hint="TIP-20 contract on Tempo."
+                    className="adv-only"
+                  >
+                    <TextInput
+                      id="custom-token"
+                      value={draft.customTokenAddress}
+                      onChange={(e) => updateDraft({ customTokenAddress: e.target.value })}
+                      placeholder="0x…"
+                      className="font-mono"
+                    />
+                  </Field>
+                ) : null}
+                <Field
+                  label="Charge amount"
+                  htmlFor="mm-price"
+                  hint="MetaMask/Gateway prepaid sessions (always USDC)."
+                  className="adv-only"
+                >
+                  <InputAffix
+                    id="mm-price"
+                    affix="USDC"
+                    inputMode="decimal"
+                    value={draft.tickPrice}
+                    onChange={(e) => updateDraft({ tickPrice: e.target.value })}
+                  />
+                </Field>
+                <Field label="Interval" htmlFor="mm-interval" className="adv-only">
+                  <InputAffix
+                    id="mm-interval"
+                    affix="sec"
+                    inputMode="numeric"
+                    value={draft.tickSeconds}
+                    onChange={(e) => updateDraft({ tickSeconds: e.target.value })}
+                  />
+                </Field>
+              </div>
+            </div>
+
+            {/* 5 · Visibility & payout */}
+            <div className="mt-6 border-t border-border/50 pt-5">
+              <p className="mb-4 text-sm font-semibold text-foreground/90">
+                Visibility &amp; payout
+              </p>
+              <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
+                <input
+                  type="checkbox"
+                  id="room-unlisted"
+                  className="size-4 accent-[var(--neon-magenta)]"
+                  checked={draft.unlisted}
+                  onChange={(e) => updateDraft({ unlisted: e.target.checked })}
+                />
+                Unlisted (opt out of browse — direct link still works)
+              </label>
+              <Field
+                label="Payout wallet"
+                hint="Viewer payments settle straight to this address on Tempo. Empty = platform wallet."
+                className="adv-only"
+              >
+                <TextInput
+                  id="room-payout"
+                  placeholder="0x… (optional)"
+                  value={draft.payoutAddress}
+                  onChange={(e) => updateDraft({ payoutAddress: e.target.value })}
+                  spellCheck={false}
+                />
+              </Field>
+            </div>
+
+            {/* 6 · Camera transport — LiveKit (default once configured) or vdo.ninja (backup) */}
+            <div className="mt-6 border-t border-border/50 pt-5">
+              <p className="mb-1 text-sm font-semibold text-foreground/90">
+                Camera transport
+              </p>
+              <p className="mb-4 text-xs text-muted-foreground">
+                {livekitConfigured
+                  ? 'LiveKit is the default — smoother reconnection and per-viewer connection quality. vdo.ninja stays available as a battle-tested backup.'
+                  : 'vdo.ninja is the default; LiveKit unlocks once configured on the server.'}
+              </p>
+              <Field label="Transport" htmlFor="room-transport">
+                <SelectInput
+                  id="room-transport"
+                  value={draft.transport}
+                  onChange={(e) =>
+                    updateDraft({ transport: e.target.value as 'vdo' | 'livekit' })
+                  }
+                >
+                  {livekitConfigured ? (
+                    <>
+                      <option value="livekit">LiveKit (default)</option>
+                      <option value="vdo">vdo.ninja (backup)</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="vdo">vdo.ninja (default)</option>
+                      <option value="livekit" disabled>
+                        LiveKit — not configured
+                      </option>
+                    </>
+                  )}
+                </SelectInput>
+              </Field>
             </div>
           </details>
 

@@ -452,12 +452,14 @@ function renderWallet() {
   const join = document.getElementById('joinBtn');
   if (!info || !connectBtn || !passkeyBtn) return;
 
+  const privyChoice = document.getElementById('privyChoice');
+
   if (account && walletMode === 'privy') {
-    connectBtn.disabled = true;
-    passkeyBtn.disabled = true;
-    passkeyBtn.textContent = '🟢 Signed in';
-    if (passkeyCreateBtn) passkeyCreateBtn.style.display = 'none';
-    connectBtn.textContent = '🦊 Connect MetaMask';
+    // Connected — the paths not taken LEAVE the screen (no dulled clutter):
+    // sign up / sign in grid gone, MetaMask row gone, Fund takes the row.
+    if (privyChoice) privyChoice.style.display = 'none';
+    connectBtn.style.display = 'none';
+    if (dep) dep.style.gridColumn = '1 / -1';
     info.innerHTML =
       `<span class="adv-only">🟢 Connected · Wallet: ${addrChip(account)}<br>Network: Tempo</span>` +
       `<span class="simple-only">🟢 Signed in — your balance is ready.<br>` +
@@ -477,14 +479,17 @@ function renderWallet() {
   }
 
   if (fundNote) fundNote.style.display = 'none';
-  if (dep) dep.style.display = '';
+  if (dep) { dep.style.display = ''; dep.style.gridColumn = ''; }
   if (passkeyCreateBtn) passkeyCreateBtn.style.display = '';
+  if (privyChoice) privyChoice.style.display = '';
+  connectBtn.style.display = '';
 
   if (account && walletMode === 'metamask') {
+    // Same rule the other way: the Privy grid leaves; the MetaMask chip
+    // stays as the one connected-state indicator.
+    if (privyChoice) privyChoice.style.display = 'none';
     connectBtn.textContent = '🟢 🦊 Connected';
     connectBtn.disabled = true;
-    passkeyBtn.disabled = true;
-    if (passkeyCreateBtn) passkeyCreateBtn.disabled = true;
     info.innerHTML =
       `<span class="adv-only">🟢 Connected · Wallet: ${addrChip(account)}<br>Network: Tempo (MetaMask)</span>` +
       `<span class="simple-only">🟢 Signed in — your balance is ready.<br>` +
@@ -872,7 +877,10 @@ async function joinSeat() {
     // seat authorization. MetaMask users connect via the secondary button
     // first, which sets walletMode below.
     if (!account) {
-      setJoinState('busy', '🔐 Signing in…');
+      // "Connecting your balance", not "signing in" — a Twitch/X-signed-in
+      // viewer IS signed in; this step is about money, and saying "sign in"
+      // twice made the two look broken.
+      setJoinState('busy', '🔐 Connecting your balance…');
       const addr = await connectPrivyWallet('auto');
       if (!addr) {
         setJoinState('idle');

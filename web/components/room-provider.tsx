@@ -100,7 +100,7 @@ const DEFAULT_DRAFT: ConfigDraft = {
   rewardsEarnCap: '5',
   rewardsType: 'usdc',
   rewardsTokenAddress: '',
-  lettersEnabled: false,
+  lettersEnabled: true, // the hero feature — on by default
   lettersMaxSeconds: '10',
   lettersPrice: '',
   lettersModeration: 'auto',

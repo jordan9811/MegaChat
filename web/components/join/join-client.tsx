@@ -5,7 +5,6 @@
 // public/index.html). Element IDs must match what that script expects.
 
 import { useEffect } from 'react'
-import { Link2 } from 'lucide-react'
 import { GlassCard } from '@/components/glass-card'
 import { StingerPreview } from '@/components/join/stinger-preview'
 import { initJoinPage } from '@/lib/join-page'
@@ -13,6 +12,11 @@ import { backendWsUrl } from '@/lib/backend'
 
 const primaryBtn =
   'glow-magenta flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 font-heading text-base font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:scale-[1.01] disabled:opacity-60 disabled:hover:scale-100'
+
+// Join Stream = the XXL dopamine mode: louder than the hero, positioned after
+// it. The pulsing neon treatment lives in join.css (.dopamine-btn).
+const dopamineBtn =
+  'dopamine-btn flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 font-heading text-lg font-bold uppercase tracking-wider transition-transform hover:scale-[1.01] disabled:hover:scale-100'
 
 const ghostBtn =
   'flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-input/30 px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-input/50 disabled:opacity-50 disabled:hover:bg-input/30'
@@ -136,23 +140,17 @@ export function JoinClient() {
             </div>
           </div>
 
-          {/* Platform identity (Phase 5) — IDENTITY ONLY: reserves your
-              handle as display name + megachat.xyz/<handle> link. join-page.ts
-              enables the buttons per /api/auth/providers; without creds they
-              stay disabled ("not configured"), nothing is faked. */}
+          {/* Platform identity — IDENTITY ONLY (display name + your
+              megachat.xyz/<handle> link). join-page.ts renders ONE state:
+              signed out → these two buttons; signed in → the chip, buttons
+              gone. Money is the separate cluster below. */}
           <div className="flex flex-col gap-2">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2">
               <button id="authTwitchBtn" type="button" className={miniBtn} disabled title="Checking…">
                 Twitch
               </button>
               <button id="authXBtn" type="button" className={miniBtn} disabled title="Checking…">
                 𝕏
-              </button>
-              <button type="button" className={miniBtn} disabled title="Coming soon">
-                Kick — soon
-              </button>
-              <button type="button" className={miniBtn} disabled title="Coming soon">
-                TikTok — soon
               </button>
             </div>
             <div id="authIdentity" className="text-xs text-muted-foreground" style={{ display: 'none' }} />
@@ -166,11 +164,11 @@ export function JoinClient() {
             className="h-11 w-full rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground/70 focus-visible:border-primary/70 focus-visible:ring-2 focus-visible:ring-primary/30"
           />
 
-          {/* Wallet choice — Privy (email/social/passkey) is the PRIMARY path
-              (bigger, on top); MetaMask is the secondary row below. Clicking
-              Join while disconnected runs the Privy sign-in automatically. */}
+          {/* Balance — Privy (email/social/passkey) is the PRIMARY path;
+              MetaMask the secondary row. Once EITHER connects, join-page.ts
+              hides the paths you didn't take: one state on screen. */}
           <div className="flex flex-col gap-2">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div id="privyChoice" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button id="passkeyCreateBtn" type="button" className={passkeyBtnCls}>
                 ✨ Sign up — email or passkey
               </button>
@@ -193,6 +191,69 @@ export function JoinClient() {
               </button>
             </div>
           </div>
+
+          {/* THE HERO — MegaChat: record a clip, pay flat, it plays once on
+              stream. Recorded content sidesteps the broadcast delay entirely.
+              Hidden only if the room turns MegaChats off. */}
+          <button id="letterBtn" type="button" className={primaryBtn} style={{ display: 'none' }}>
+            📼 Send a MegaChat
+          </button>
+          <div id="letterStage" className="letter-stage" style={{ display: 'none' }}>
+            <div className="cam-frame letter-frame">
+              <video id="letterVideo" playsInline muted />
+            </div>
+            <div className="letter-controls">
+              <button id="letterRecordBtn" type="button" className={ghostBtn}>
+                ⏺ Record
+              </button>
+              <button id="letterRedoBtn" type="button" className={ghostBtn} style={{ display: 'none' }}>
+                ↺ Re-record
+              </button>
+              <button id="letterSendBtn" type="button" className={primaryBtn} style={{ display: 'none' }}>
+                📮 Send
+              </button>
+              <button id="letterCancelBtn" type="button" className={ghostBtn}>
+                Cancel
+              </button>
+            </div>
+            <p id="letterStatus" className="text-xs text-muted-foreground" aria-live="polite" />
+          </div>
+
+
+          {/* Camera stage — ABOVE the join button so the preview and the
+              (morphing) button stay in view together. Shown once a seat is
+              paid; the join button itself relabels to GO LIVE. */}
+          <div id="cameraStage" className="flex flex-col gap-3">
+            <div id="camStatus" className="cam-status">
+              <span className="dot" />
+              <span id="camStatusText">Requesting camera…</span>
+              {/* LiveKit connection quality (subtle; hidden on vdo rooms) */}
+              <span id="lkQualityDot" className="lk-quality" style={{ display: 'none' }} />
+            </div>
+            <div className="cam-frame">
+              <iframe
+                id="camPublisher"
+                title="Camera publisher"
+                allow="camera; microphone; autoplay; display-capture; fullscreen"
+              />
+            </div>
+            <iframe id="camDetector" title="Publish detector" className="cam-detector" allow="autoplay" />
+            <button id="camRetryBtn" type="button" className={ghostBtn}>
+              Retry camera
+            </button>
+            <div id="camHint" className="text-xs leading-relaxed text-muted-foreground" />
+          </div>
+
+          {/* THE DOPAMINE MODE — Join Stream: your actual camera ON the
+              broadcast, billed per second. One button morphs through
+              connecting → authorizing → Waiting for camera → Go Live →
+              You're LIVE (state machine in join-page.ts). */}
+          <button id="joinBtn" type="button" className={dopamineBtn}>
+            🎬 Join Stream
+          </button>
+          <button id="leaveBtn" type="button" className={ghostBtn}>
+            Leave stream
+          </button>
 
           {/* Advanced — overlay stinger picker. Opt-in: untouched selects send
               nothing and the overlay keeps its default animations. The mock
@@ -227,91 +288,10 @@ export function JoinClient() {
             </div>
           </details>
 
-          {/* Camera stage — ABOVE the join button so the preview and the
-              (morphing) button stay in view together. Shown once a seat is
-              paid; the join button itself relabels to GO LIVE. */}
-          <div id="cameraStage" className="flex flex-col gap-3">
-            <div id="camStatus" className="cam-status">
-              <span className="dot" />
-              <span id="camStatusText">Requesting camera…</span>
-              {/* LiveKit connection quality (subtle; hidden on vdo rooms) */}
-              <span id="lkQualityDot" className="lk-quality" style={{ display: 'none' }} />
-            </div>
-            <div className="cam-frame">
-              <iframe
-                id="camPublisher"
-                title="Camera publisher"
-                allow="camera; microphone; autoplay; display-capture; fullscreen"
-              />
-            </div>
-            <iframe id="camDetector" title="Publish detector" className="cam-detector" allow="autoplay" />
-            <button id="camRetryBtn" type="button" className={ghostBtn}>
-              Retry camera
-            </button>
-            <div id="camHint" className="text-xs leading-relaxed text-muted-foreground" />
-          </div>
-
-          {/* THE button: Join Stream → connecting → authorizing → Waiting for
-              camera → Go Live → You're LIVE (state machine in join-page.ts). */}
-          <button id="joinBtn" type="button" className={primaryBtn}>
-            🎬 Join Stream
-          </button>
-          <button id="leaveBtn" type="button" className={ghostBtn}>
-            Leave stream
-          </button>
-
-          {/* MEGACHATS — record a clip, pay flat, it plays once on stream.
-              Recorded content sidesteps the broadcast delay entirely.
-              Hidden unless the room enables letters (join-page.ts toggles). */}
-          <button id="letterBtn" type="button" className={ghostBtn} style={{ display: 'none' }}>
-            📼 Send a MegaChat
-          </button>
-          <div id="letterStage" className="letter-stage" style={{ display: 'none' }}>
-            <div className="cam-frame letter-frame">
-              <video id="letterVideo" playsInline muted />
-            </div>
-            <div className="letter-controls">
-              <button id="letterRecordBtn" type="button" className={ghostBtn}>
-                ⏺ Record
-              </button>
-              <button id="letterRedoBtn" type="button" className={ghostBtn} style={{ display: 'none' }}>
-                ↺ Re-record
-              </button>
-              <button id="letterSendBtn" type="button" className={primaryBtn} style={{ display: 'none' }}>
-                📮 Send
-              </button>
-              <button id="letterCancelBtn" type="button" className={ghostBtn}>
-                Cancel
-              </button>
-            </div>
-            <p id="letterStatus" className="text-xs text-muted-foreground" aria-live="polite" />
-          </div>
-
           {/* className is fully overwritten by the script — styled in join.css */}
           <div id="message" className="join-message" aria-live="polite" />
         </div>
       </GlassCard>
-      </div>
-
-      {/* Viewer-side platform link stub — no logic yet */}
-      <div className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-input/10 px-4 py-3">
-        <Link2 className="size-4 shrink-0 text-muted-foreground" />
-        <div className="flex-1">
-          <p className="text-sm font-semibold text-foreground/80">
-            Link Twitch / Kick account
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Link to earn drops from watching — coming soon.
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled
-          title="Coming soon"
-          className="cursor-not-allowed rounded-full border border-border bg-input/30 px-3 py-1 text-xs font-medium text-muted-foreground opacity-60"
-        >
-          Coming soon
-        </button>
       </div>
     </div>
   )
