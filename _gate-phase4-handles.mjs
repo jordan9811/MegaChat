@@ -1,5 +1,7 @@
 /**
- * GATE — MEGA Phase 4: persistent handles, /r/<handle> permanence, demo room.
+ * GATE — MEGA Phase 4: persistent handles, /<handle> permanence, demo room.
+ * Handles moved from /r/<handle> to bare /<handle>; the old prefix must keep
+ * 301ing so links already shared stay alive.
  */
 import WebSocket from 'ws';
 import puppeteer from 'puppeteer-core';
@@ -24,14 +26,22 @@ const res = await fetch(`${BASE}/api/dashboard/create`, {
 const { room } = await res.json();
 ok('create claims handle', res.status === 201 && room?.handle === H, `handle=${room?.handle}`);
 
-// /r/<handle> resolves; old id link keeps working
-const r1 = await fetch(`${BASE}/r/${H}`, { redirect: 'manual' });
-ok('/r/<handle> 302 → /join?room=<id>',
+// /<handle> resolves; old id link keeps working
+const r1 = await fetch(`${BASE}/${H}`, { redirect: 'manual' });
+ok('/<handle> 302 → /join?room=<id>',
   r1.status === 302 && r1.headers.get('location') === `/join?room=${room.id}`,
   r1.headers.get('location'));
-const r2 = await fetch(`${BASE}/r/${H}/overlay`, { redirect: 'manual' });
-ok('/r/<handle>/overlay 302 → overlay',
+const r2 = await fetch(`${BASE}/${H}/overlay`, { redirect: 'manual' });
+ok('/<handle>/overlay 302 → overlay',
   r2.status === 302 && r2.headers.get('location') === `/overlay?room=${room.id}`);
+// retired prefix: must 301 to the bare form so shared links survive
+const r1L = await fetch(`${BASE}/r/${H}`, { redirect: 'manual' });
+ok('legacy /r/<handle> 301 → /<handle>',
+  r1L.status === 301 && r1L.headers.get('location') === `/${H}`,
+  r1L.headers.get('location'));
+const r2L = await fetch(`${BASE}/r/${H}/overlay`, { redirect: 'manual' });
+ok('legacy /r/<handle>/overlay 301 → /<handle>/overlay',
+  r2L.status === 301 && r2L.headers.get('location') === `/${H}/overlay`);
 const old = await fetch(`${BASE}/join?room=${room.id}`);
 ok('old room-id link still works', old.status === 200);
 
@@ -64,12 +74,12 @@ const upd = await fetch(`${BASE}/api/dashboard/rooms/${room.id}`, {
 });
 const updData = await upd.json();
 ok('handle re-claim from dashboard works', upd.ok && updData.room.handle === H2, updData.room?.handle);
-const r3 = await fetch(`${BASE}/r/${H2}`, { redirect: 'manual' });
+const r3 = await fetch(`${BASE}/${H2}`, { redirect: 'manual' });
 ok('new handle resolves', r3.status === 302 && r3.headers.get('location') === `/join?room=${room.id}`);
 
 // ── demo room ────────────────────────────────────────────────────────────────
-const rd = await fetch(`${BASE}/r/demo`, { redirect: 'manual' });
-ok('/r/demo resolves', rd.status === 302 && /^\/join\?room=/.test(rd.headers.get('location') || ''));
+const rd = await fetch(`${BASE}/demo`, { redirect: 'manual' });
+ok('/demo resolves', rd.status === 302 && /^\/join\?room=/.test(rd.headers.get('location') || ''));
 const demoRoomId = (rd.headers.get('location') || '').split('room=')[1];
 const demoCfg = await (await fetch(`${BASE}/api/config?room=${demoRoomId}`)).json();
 ok('demo room runs dust pricing',
@@ -103,6 +113,9 @@ ok('demo room has letters + drops on',
     headless: 'new',
   });
   const page = await browser.newPage();
+  // Deliberately the RETIRED url: a real browser must survive the whole
+  // legacy chain (/r/demo 301 → /demo 302 → /join?room=<id>), which is what
+  // anyone clicking an old pasted link actually does.
   await page.goto(`${BASE}/r/demo`, { waitUntil: 'networkidle2' });
   await sleep(1500);
   const probe = await page.evaluate(() => ({
@@ -111,7 +124,8 @@ ok('demo room has letters + drops on',
     letterBtn: getComputedStyle(document.getElementById('letterBtn')).display !== 'none',
     joinIntact: ['username', 'joinBtn', 'priceAmount'].every((id) => !!document.getElementById(id)),
   }));
-  ok('browser lands on the demo join page via /r/demo', /room=/.test(probe.url), probe.url);
+  ok('browser survives the legacy /r/demo redirect chain to the join page',
+    /room=/.test(probe.url), probe.url);
   ok('demo banner visible', probe.banner);
   ok('letter button live in demo room', probe.letterBtn);
   ok('join controls intact', probe.joinIntact);
