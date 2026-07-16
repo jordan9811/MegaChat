@@ -28,6 +28,7 @@ export function MegaChatSettings() {
     toggleActive,
     switchRoom,
     livekitConfigured,
+    identityHandle,
   } = useRoom()
 
   const [tab, setTab] = useState<'create' | 'manage'>('create')
@@ -227,7 +228,13 @@ export function MegaChatSettings() {
             <Field
               label="Handle"
               htmlFor="room-handle"
-              hint="Claims your permanent link: /r/your_name (viewer) and /r/your_name/overlay (OBS). Letters, numbers, underscore."
+              hint={
+                identityHandle && draft.handle === identityHandle
+                  ? `@${identityHandle} is reserved for you — claiming it here makes megachat.xyz/${identityHandle} your permanent link (and /${identityHandle}/overlay for OBS).`
+                  : identityHandle
+                    ? `Your reserved handle is @${identityHandle}. Any free name works too — it becomes your permanent link, e.g. megachat.xyz/${draft.handle || 'your_name'}. Letters, numbers, underscore.`
+                    : 'Your permanent link: megachat.xyz/your_name (viewers) and /your_name/overlay (OBS). Leave it empty and the room gets a temporary link you can upgrade later. Letters, numbers, underscore.'
+              }
               className="sm:col-span-2"
             >
               <TextInput
@@ -730,30 +737,26 @@ export function MegaChatSettings() {
         >
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
             <Link2 className="size-4 text-[var(--neon-lime)]" />
-            Room <span className="font-mono text-[var(--neon-lime)]">{room.id}</span>{' '}
+            Room{' '}
+            <span className="font-mono text-[var(--neon-lime)]">
+              {room.handle ? `/${room.handle}` : room.id}
+            </span>{' '}
             {room.active ? 'is live' : 'is paused'}
           </div>
           <div className="flex flex-col gap-2">
+            {/* Both links prefer the handle when the room has one — /<handle>
+                and /<handle>/overlay redirect to the id form server-side, so
+                the id URLs keep working forever either way. */}
             <CopyRow
               label="Viewer"
               value={
                 typeof window !== 'undefined'
                   ? room.handle
-                    ? `${window.location.origin}/r/${room.handle}`
+                    ? `${window.location.origin}/${room.handle}`
                     : `${window.location.origin}/join?room=${room.id}`
                   : joinUrl
               }
             />
-            {room.handle ? (
-              <CopyRow
-                label="OBS ∞"
-                value={
-                  typeof window !== 'undefined'
-                    ? `${window.location.origin}/r/${room.handle}/overlay`
-                    : `/r/${room.handle}/overlay`
-                }
-              />
-            ) : null}
             <CopyRow
               label="OBS"
               value={
@@ -761,7 +764,9 @@ export function MegaChatSettings() {
                 // the browser origin so it works on any deploy; the backend
                 // overlayUrl uses BASE_URL which is unset on Railway (→ localhost).
                 typeof window !== 'undefined'
-                  ? `${window.location.origin}/overlay?room=${room.id}`
+                  ? room.handle
+                    ? `${window.location.origin}/${room.handle}/overlay`
+                    : `${window.location.origin}/overlay?room=${room.id}`
                   : overlayUrl
               }
             />
@@ -772,6 +777,17 @@ export function MegaChatSettings() {
               />
             ) : null}
           </div>
+          {!room.handle ? (
+            <p className="mt-3 rounded-lg border border-[var(--neon-lime)]/40 bg-[var(--neon-lime)]/10 px-3 py-2 text-xs text-foreground/90">
+              This room has a temporary link. Set a <strong>Handle</strong> above
+              to turn it into{' '}
+              <span className="font-mono">
+                megachat.xyz/{identityHandle || 'your_name'}
+              </span>
+              {identityHandle ? ` — @${identityHandle} is already reserved for you.` : '.'}{' '}
+              The link above keeps working either way.
+            </p>
+          ) : null}
           <p className="mt-3 text-xs text-muted-foreground">
             Drop the viewer link in chat. Add the OBS link as a Browser Source
             (~340×620 px, transparent background) to show cameras on your scene.

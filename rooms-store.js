@@ -208,10 +208,24 @@ function ensureDefaultRoom(store) {
   };
 }
 
-// ─── Persistent handles (/r/<handle> permanent room links) ──────────────────
+// ─── Persistent handles (/<handle> permanent room links) ────────────────────
+// Handles live at the ROOT (megachat.xyz/yourname), so this list is what keeps
+// one from shadowing a real page. Anything containing a dot or dash is already
+// unclaimable (sanitizeHandle allows only [a-z0-9_]), which covers
+// /how-it-works and every static asset. What's left to reserve: current
+// single-word routes, plus words a future page might plausibly want — a name
+// claimed today would otherwise win over a page added tomorrow.
 const RESERVED_HANDLES = new Set([
-  'api', 'join', 'dashboard', 'overlay', 'r', 'admin', 'www', 'assets',
-  'static', 'how-it-works', 'roadmap', 'index', 'login', 'auth',
+  // current routes
+  'api', 'join', 'dashboard', 'overlay', 'r', 'auth', 'roadmap', 'index',
+  'admin', 'www', 'assets', 'static', 'login', 'how-it-works', 'next',
+  '_next', 'public', 'favicon', 'icon', 'robots', 'sitemap',
+  // plausible future routes — cheap to reserve now, painful to reclaim later
+  'about', 'blog', 'browse', 'careers', 'channel', 'contact', 'docs',
+  'explore', 'faq', 'help', 'home', 'jobs', 'legal', 'live', 'logout',
+  'me', 'press', 'pricing', 'privacy', 'room', 'rooms', 'settings',
+  'signin', 'signup', 'status', 'support', 'terms', 'user', 'users',
+  'watch', 'embed', 'search', 'new', 'create', 'billing', 'account',
 ]);
 
 /** 3-20 chars, a-z 0-9 _ ; lowercased. Null if unset/invalid/reserved. */
@@ -326,7 +340,7 @@ export function resolveRoomConfig(roomId) {
     letters: resolveLetters(cfg),
     joinStream: resolveJoinStream(cfg),
     rewards: resolveRewards(cfg, defaults),
-    // Permanent identity: /r/<handle> resolves here forever; old id links
+    // Permanent identity: /<handle> resolves here forever; old id links
     // keep working untouched.
     handle,
     isDemo: cfg.isDemo === true,

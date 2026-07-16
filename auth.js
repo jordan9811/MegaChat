@@ -69,6 +69,43 @@ const unseal = (sealed) => {
   try { return JSON.parse(Buffer.from(payload, 'base64url').toString()); } catch { return null; }
 };
 
+/**
+ * The signed-in identity behind a request, or null. Exported because the
+ * dashboard needs to answer "is this handle reserved by THIS person?" — the
+ * cookie seal lives here, so the reader does too.
+ */
+export function readIdentityFromRequest(req) {
+  const sess = unseal(readCookies(req).mc_identity);
+  if (!sess) return null;
+  return getIdentity(sess.provider, sess.platformId);
+}
+
+/**
+ * Where to send someone after a successful sign-in. ONLY same-origin relative
+ * paths: anything else (absolute URL, protocol-relative //evil.com, a
+ * backslash Windows/browsers may normalise to /) is dropped on the floor.
+ * Without this an attacker could hand out /auth/x?returnTo=https://evil.com
+ * and borrow our OAuth flow as a phishing springboard.
+ */
+function safeReturnTo(raw) {
+  const s = String(raw || '');
+  if (!s.startsWith('/')) return null;   // must be relative to us
+  if (s.startsWith('//')) return null;   // protocol-relative → offsite
+  if (s.includes('\\')) return null;     // normalisation tricks
+  if (s.startsWith('/auth/')) return null; // don't bounce back into the flow
+  return s.slice(0, 512);
+}
+
+/**
+ * The join page shows a "handle is yours" toast off ?welcome=; nowhere else
+ * reads it, and the header chip flipping to @handle already says the same
+ * thing there — so don't litter every other URL with a dead param.
+ */
+function withWelcome(back, handle) {
+  if (!back.startsWith('/join')) return back;
+  return `${back}${back.includes('?') ? '&' : '?'}welcome=${encodeURIComponent(handle)}`;
+}
+
 export function attachAuth(app, { log = console } = {}) {
   const configured = (p) => !!(PROVIDERS[p].clientId() && PROVIDERS[p].clientSecret());
   const redirectUri = (req, p) => `${req.protocol}://${req.get('host')}/auth/${p}/callback`;
@@ -104,8 +141,15 @@ export function attachAuth(app, { log = console } = {}) {
     if (!configured(p)) {
       return res.status(503).json({ error: `${p} login is not configured on this server` });
     }
+    // Come back to whichever page the login button was clicked on. The
+    // explicit param wins; Referer is the fallback for a bare /auth/x hit.
+    let backTo = safeReturnTo(req.query.returnTo);
+    if (!backTo) {
+      try { backTo = safeReturnTo(new URL(req.get('referer') || '').pathname); } catch { /* no referer */ }
+    }
     const state = randomBytes(16).toString('base64url');
-    setCookie(res, `mc_oauth_${p}`, seal({ state, t: Date.now() }));
+    // Sealed alongside the state, so the destination is tamper-evident too.
+    setCookie(res, `mc_oauth_${p}`, seal({ state, t: Date.now(), back: backTo || '/' }));
     const params = new URLSearchParams({
       client_id: cfg.clientId(),
       redirect_uri: redirectUri(req, p),
@@ -185,14 +229,19 @@ export function attachAuth(app, { log = console } = {}) {
         platformId = me.data.id;
       }
 
+      // Land back where the login button was clicked, not on a random room's
+      // checkout page. The header chip flipping to @handle is the receipt.
+      const back = safeReturnTo(st.back) || '/';
       // Already claimed → straight back in. Otherwise show the picker with
       // the first free suggestion (spec: collision → suffix picker).
       const existing = getIdentity(p, platformId);
       if (existing) {
         setCookie(res, 'mc_identity', seal({ provider: p, platformId }), { maxAge: 30 * 86400 });
-        return res.redirect(302, '/join?welcome=' + encodeURIComponent(existing.handle));
+        return res.redirect(302, withWelcome(back, existing.handle));
       }
-      const pending = seal({ provider: p, platformId: String(platformId), username, t: Date.now() });
+      const pending = seal({
+        provider: p, platformId: String(platformId), username, back, t: Date.now(),
+      });
       setCookie(res, 'mc_pending_identity', pending);
       const suggested = suggestHandle(username);
       res.send(pickerHtml(p, username, suggested));
@@ -217,7 +266,12 @@ export function attachAuth(app, { log = console } = {}) {
       });
       setCookie(res, 'mc_pending_identity', '', { maxAge: 0 });
       setCookie(res, 'mc_identity', seal({ provider: identity.provider, platformId: identity.platformId }), { maxAge: 30 * 86400 });
-      res.json({ ok: true, identity: { provider: identity.provider, username: identity.username, handle: identity.handle } });
+      res.json({
+        ok: true,
+        identity: { provider: identity.provider, username: identity.username, handle: identity.handle },
+        // Carried from the sealed pending cookie: back to wherever they started.
+        next: withWelcome(safeReturnTo(pending.back) || '/', identity.handle),
+      });
     } catch (err) {
       res.status(err.code === 'handle_taken' ? 409 : 400).json({ error: err.message });
     }
@@ -242,7 +296,7 @@ button{width:100%;background:#e91e8c;color:#fff;border:0;border-radius:10px;padd
 .err{color:#ff6ab8;font-size:.85rem;min-height:1.2em}</style></head><body>
 <div class="card">
 <h1>Welcome, ${safe(username)} 👋</h1>
-<p>Your ${safe(provider)} account is verified. Claim your permanent MegaChat handle — it becomes your display name and your /r/&lt;handle&gt; room link.</p>
+<p>Your ${safe(provider)} account is verified. Claim your permanent MegaChat handle — it becomes your display name and your megachat link.</p>
 <input id="h" value="${safe(suggested)}" maxlength="20" autocomplete="off" spellcheck="false">
 <div class="err" id="err"></div>
 <button id="go">Claim handle</button>
@@ -252,7 +306,7 @@ document.getElementById('go').onclick = async () => {
   const r = await fetch('/api/auth/claim', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ handle: document.getElementById('h').value }) });
   const d = await r.json().catch(()=>({}));
-  if (r.ok) location.href = '/join?welcome=' + encodeURIComponent(d.identity.handle);
+  if (r.ok) location.href = d.next || '/';
   else document.getElementById('err').textContent = d.error || 'Claim failed';
 };
 </script></body></html>`;

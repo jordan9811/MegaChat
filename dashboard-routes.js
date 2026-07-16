@@ -15,6 +15,37 @@ import {
 } from './rooms-store.js';
 import { validatePaymentToken } from './token-utils.js';
 import { isHandleTakenByIdentity } from './identity-store.js';
+import { readIdentityFromRequest } from './auth.js';
+
+/**
+ * Can this request use `handle` as a room link?
+ *
+ * Two registries own handles: OAuth identities (signing in RESERVES your name)
+ * and rooms (a room actually USES it). The identity reservation exists so you
+ * can claim your own name later — so "reserved by the person asking" is the
+ * happy path, not a conflict. Previously this only asked *whether* an identity
+ * held the name, never *whose*, which rejected everyone's own handle and made
+ * signing in the one thing that broke your permanent link.
+ *
+ * `currentRoomId` lets an update re-save its own unchanged handle.
+ */
+function checkHandleAvailable(req, clean, currentRoomId = null) {
+  const roomHolder = getRoomByHandle(clean);
+  if (roomHolder && roomHolder.id !== currentRoomId) {
+    const mine = readIdentityFromRequest(req)?.handle === clean;
+    return {
+      ok: false,
+      status: 409,
+      error: mine
+        ? `@${clean} is already pointing at your other room (${roomHolder.id}). Free it there first, or pick another name.`
+        : 'That handle is already taken',
+    };
+  }
+  if (isHandleTakenByIdentity(clean) && readIdentityFromRequest(req)?.handle !== clean) {
+    return { ok: false, status: 409, error: 'That handle is reserved by another account' };
+  }
+  return { ok: true };
+}
 
 /** Management routes only — never read body.password (create sends password in body). */
 function getManagePassword(req) {
@@ -89,10 +120,8 @@ export function attachDashboardRoutes(app, deps) {
       if (!clean) {
         return res.status(400).json({ error: 'Invalid handle: 3-20 chars, letters/numbers/underscore' });
       }
-      // Both registries: rooms AND OAuth identities own handles.
-      if (getRoomByHandle(clean) || isHandleTakenByIdentity(clean)) {
-        return res.status(409).json({ error: 'Handle already taken' });
-      }
+      const avail = checkHandleAvailable(req, clean);
+      if (!avail.ok) return res.status(avail.status).json({ error: avail.error });
     }
     let mergedConfig = config || {};
     try {
@@ -206,8 +235,9 @@ export function attachDashboardRoutes(app, deps) {
     }
     if (body.handle !== undefined) {
       const clean = body.handle === '' || body.handle === null ? null : sanitizeHandle(body.handle);
-      if (clean && isHandleTakenByIdentity(clean) && resolveRoomConfig(req.roomId)?.handle !== clean) {
-        return res.status(409).json({ error: 'Handle already taken' });
+      if (clean) {
+        const avail = checkHandleAvailable(req, clean, req.roomId);
+        if (!avail.ok) return res.status(avail.status).json({ error: avail.error });
       }
       try {
         setRoomHandle(req.roomId, body.handle);

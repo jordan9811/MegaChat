@@ -127,6 +127,9 @@ type RoomContextValue = {
   draft: ConfigDraft
   usdcAddress: string
   livekitConfigured: boolean
+  /** Handle reserved by the signed-in OAuth identity — null when signed out.
+   *  The dashboard uses it to say "this name is already yours". */
+  identityHandle: string | null
   updateDraft: (patch: Partial<ConfigDraft>) => void
   create: (password: string) => Promise<void>
   unlock: (roomId: string, password: string) => Promise<void>
@@ -255,6 +258,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState<ConfigDraft>(DEFAULT_DRAFT)
   const [usdcAddress, setUsdcAddress] = useState(USDC_FALLBACK)
   const [livekitConfigured, setLivekitConfigured] = useState(false)
+  const [identityHandle, setIdentityHandle] = useState<string | null>(null)
 
   const passwordRef = useRef('')
   const roomIdRef = useRef<string | null>(null)
@@ -274,12 +278,13 @@ export function RoomProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(() => {})
-    // Streamers signed in via Twitch/X get their reserved handle prefilled
-    // for the /r/<handle> room claim (identity-only integration).
+    // Streamers signed in via Twitch/X get their reserved handle prefilled —
+    // signing in reserves the name so you can claim it here as /<handle>.
     fetch('/api/auth/me')
       .then((r) => r.json())
       .then((me) => {
         if (me?.identity?.handle) {
+          setIdentityHandle(me.identity.handle)
           setDraft((d) => (d.handle ? d : { ...d, handle: me.identity.handle }))
         }
       })
@@ -517,6 +522,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       draft,
       usdcAddress,
       livekitConfigured,
+      identityHandle,
       updateDraft,
       create,
       unlock,
@@ -527,7 +533,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       lettersAdmin,
       hostToken,
     }),
-    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
+    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

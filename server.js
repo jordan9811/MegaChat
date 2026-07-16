@@ -382,18 +382,14 @@ app.use(express.static('public', {
   setHeaders: staticJsHeaders,
 }));
 
-// ─── Permanent room links: /r/<handle> (+ /overlay) ─────────────────────────
-// Handles are forever; the underlying room id keeps working untouched.
-app.get('/r/:handle', (req, res) => {
-  const room = getRoomByHandle(req.params.handle);
-  if (!room) return res.redirect(302, '/?missing=' + encodeURIComponent(req.params.handle));
-  res.redirect(302, `/join?room=${room.id}`);
-});
-app.get('/r/:handle/overlay', (req, res) => {
-  const room = getRoomByHandle(req.params.handle);
-  if (!room) return res.status(404).send('No such room');
-  res.redirect(302, `/overlay?room=${room.id}`);
-});
+// ─── Legacy /r/<handle> links → bare /<handle> ──────────────────────────────
+// The /r/ prefix is retired (it read like a subreddit). Anything already
+// pasted in a chat or a bio keeps working via a permanent redirect; the live
+// handle routes are registered last, next to the Next.js mount.
+app.get('/r/:handle', (req, res) =>
+  res.redirect(301, `/${encodeURIComponent(req.params.handle)}`));
+app.get('/r/:handle/overlay', (req, res) =>
+  res.redirect(301, `/${encodeURIComponent(req.params.handle)}/overlay`));
 
 // Expose the Arc / Gateway config the frontend needs to build payments.
 app.get('/api/config', (req, res) => {
@@ -1787,7 +1783,7 @@ attachDashboardRoutes(app, {
 
 await migrateLegacyRoomPasswords();
 
-// ─── Always-on demo room at /r/demo ──────────────────────────────────────────
+// ─── Always-on demo room at /demo ────────────────────────────────────────────
 // A living showcase: dust live pricing, tiny point drops, letters on. Anyone
 // can watch the mechanics move for pennies.
 try {
@@ -1816,7 +1812,7 @@ try {
     );
     setRoomHandle(room.id, 'demo');
     console.log(
-      `[demo] seeded demo room ${room.id} at /r/demo`
+      `[demo] seeded demo room ${room.id} at /demo`
       + (process.env.DEMO_ROOM_PASSWORD ? '' : ` (password: ${demoPassword} — set DEMO_ROOM_PASSWORD to pin it)`)
     );
   }
@@ -1856,6 +1852,26 @@ const nextUpgrade = nextApp.getUpgradeHandler();
 // Browsers implicitly request /favicon.ico; the app icon lives at /icon.svg
 // (Next metadata). Redirect instead of 404ing every page load.
 app.get('/favicon.ico', (_req, res) => res.redirect(301, '/icon.svg'));
+
+// ─── Permanent room links: /<handle> and /<handle>/overlay ──────────────────
+// Registered HERE, dead last, on purpose: every real Express route (/overlay,
+// /api/*, /auth/*) is already claimed above, so a handle can never shadow one.
+// An unclaimed name calls next() and falls through to Next — its own pages
+// (/join, /dashboard, /roadmap) and its 404 both still render normally.
+// RESERVED_HANDLES (rooms-store.js) is the second net: those names can't be
+// claimed in the first place. Handles are [a-z0-9_]{3,20}, so anything with a
+// dot or dash (/how-it-works, /icon.svg) can't collide by construction.
+const handleRoom = (req) => getRoomByHandle(req.params.handle);
+app.get('/:handle', (req, res, next) => {
+  const room = handleRoom(req);
+  if (!room) return next();
+  res.redirect(302, `/join?room=${room.id}`);
+});
+app.get('/:handle/overlay', (req, res, next) => {
+  const room = handleRoom(req);
+  if (!room) return next();
+  res.redirect(302, `/overlay?room=${room.id}`);
+});
 
 // Everything not matched above (Next pages + /_next assets) goes to Next.
 app.use((req, res) => nextHandle(req, res));

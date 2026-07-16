@@ -137,9 +137,9 @@ export function JoinClient() {
           </div>
 
           {/* Platform identity (Phase 5) — IDENTITY ONLY: reserves your
-              handle as display name + /r/ link. join-page.ts enables the
-              buttons per /api/auth/providers; without creds they stay
-              disabled ("not configured"), nothing is faked. */}
+              handle as display name + megachat.xyz/<handle> link. join-page.ts
+              enables the buttons per /api/auth/providers; without creds they
+              stay disabled ("not configured"), nothing is faked. */}
           <div className="flex flex-col gap-2">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <button id="authTwitchBtn" type="button" className={miniBtn} disabled title="Checking…">

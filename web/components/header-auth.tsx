@@ -21,7 +21,15 @@ export function HeaderAuth() {
   const [identity, setIdentity] = useState<Identity>(null)
   const [loaded, setLoaded] = useState(false)
   const [open, setOpen] = useState(false)
+  const [returnTo, setReturnTo] = useState('/')
   const rootRef = useRef<HTMLDivElement>(null)
+
+  // Sign-in should drop you back on the page you started from, not on some
+  // room's checkout page. Read at click-time-ish (after mount, so no SSR skew).
+  useEffect(() => {
+    setReturnTo(window.location.pathname + window.location.search)
+  }, [])
+  const authHref = (p: string) => `/auth/${p}?returnTo=${encodeURIComponent(returnTo)}`
 
   useEffect(() => {
     Promise.all([
@@ -98,8 +106,9 @@ export function HeaderAuth() {
           {identity ? (
             <>
               <p className="px-3 pb-1.5 pt-2 text-xs text-muted-foreground">
-                Signed in via {identity.provider === 'x' ? 'X' : 'Twitch'} — your handle is
-                yours forever: <span className="font-mono text-foreground">/r/{identity.handle}</span>
+                Signed in via {identity.provider === 'x' ? 'X' : 'Twitch'} — @{identity.handle} is
+                yours forever, and it&apos;s your room link:{' '}
+                <span className="font-mono text-foreground">/{identity.handle}</span>
               </p>
               <a href="/dashboard" role="menuitem" className={itemCls}>
                 <LayoutDashboard className="size-4 text-[var(--neon-lime)]" />
@@ -113,11 +122,11 @@ export function HeaderAuth() {
           ) : (
             <>
               <p className="px-3 pb-1.5 pt-2 text-xs text-muted-foreground">
-                Reserves your handle as your display name and permanent /r/ link.
-                Optional — everything works without it.
+                Reserves your handle as your display name and your permanent
+                room link. Optional — everything works without it.
               </p>
               {providers.twitch ? (
-                <a href="/auth/twitch" role="menuitem" className={itemCls}>
+                <a href={authHref('twitch')} role="menuitem" className={itemCls}>
                   <span
                     aria-hidden="true"
                     className="inline-flex size-4 items-center justify-center rounded-sm bg-[#9146FF] text-[10px] font-black text-white"
@@ -133,7 +142,7 @@ export function HeaderAuth() {
                 </span>
               )}
               {providers.x ? (
-                <a href="/auth/x" role="menuitem" className={itemCls}>
+                <a href={authHref('x')} role="menuitem" className={itemCls}>
                   <span aria-hidden="true" className="inline-flex size-4 items-center justify-center text-sm font-black">𝕏</span>
                   Continue with X
                 </a>

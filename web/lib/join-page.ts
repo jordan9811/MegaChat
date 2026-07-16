@@ -1697,7 +1697,7 @@ async function initAuthUi() {
     }
     const welcome = new URLSearchParams(location.search).get('welcome');
     if (welcome) {
-      showMessage(`✅ Handle <strong>@${welcome}</strong> is yours — it's your display name and your /r/${welcome} link.`, 'success');
+      showMessage(`✅ Handle <strong>@${welcome}</strong> is yours — it's your display name and your megachat.xyz/${welcome} link.`, 'success');
     }
   } catch { /* ignore */ }
 }

@@ -24,7 +24,7 @@ grace).
    "Go on air" publishes your cam straight from the dashboard (this replaces
    the vdo Host-cam link for those rooms). **OBS instructions are identical
    regardless of transport**: the browser source is still
-   `/overlay?room=<id>` (or `/r/<handle>/overlay`) — the overlay speaks
+   `/overlay?room=<id>` (or `/<handle>/overlay`) — the overlay speaks
    whichever transport the room uses under the hood.
 
 Local testing without Cloud: `tools/livekit-server.exe --dev` (gitignored;

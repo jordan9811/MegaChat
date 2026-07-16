@@ -158,8 +158,8 @@ const JOURNEY: JourneyItem[] = [
   {
     icon: AtSign,
     date: 'July 2026',
-    title: 'OAuth identity + /r/ handles',
-    body: 'Twitch and X sign-in reserves your handle as a display name and a permanent /r/ room link.',
+    title: 'OAuth identity + handles',
+    body: 'Twitch and X sign-in reserves your handle as a display name and a permanent megachat.xyz/yourname room link.',
   },
 ]
 

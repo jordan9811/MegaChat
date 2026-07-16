@@ -63,7 +63,7 @@ export type Room = {
   letters: LettersConfig
   joinStream: JoinStreamConfig
   rewards: RewardsConfig
-  /** Permanent /r/<handle> identity (null until claimed). */
+  /** Permanent /<handle> room link (null until claimed). */
   handle: string | null
   isDemo?: boolean
   /** Camera transport: vdo.ninja iframes (default) or LiveKit (env-gated). */
