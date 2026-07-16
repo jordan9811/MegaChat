@@ -165,6 +165,8 @@ async function request<T>(
 export type PublicRoomCard = {
   id: string
   name: string
+  /** Claimed room link (/<handle>) — null for hex-only rooms. */
+  handle: string | null
   live: number
   waiting: number
   maxSeats: number

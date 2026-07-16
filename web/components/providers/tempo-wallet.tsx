@@ -46,16 +46,24 @@ function emitChange() {
 
 /** Inner component with Privy hooks; keeps window.MegaWallet in sync. */
 function WalletBridge({ children }: { children: React.ReactNode }) {
-  const { ready, authenticated, login, logout } = usePrivy()
+  const { ready, authenticated, login, logout, createWallet } = usePrivy()
   const { wallets, ready: walletsReady } = useWallets()
 
   const embedded: ConnectedWallet | undefined = wallets.find(
     (w) => w.walletClientType === 'privy',
   )
 
+  // connect() spans user-time (typing an email code), so it must never act on
+  // the state it captured at click time. This mirror always holds the latest.
+  const stateRef = useRef({
+    sdkReady: false,
+    authenticated: false,
+    embedded: undefined as ConnectedWallet | undefined,
+  })
+  stateRef.current = { sdkReady: ready && walletsReady, authenticated, embedded }
+
   // connect() resolvers waiting for the embedded wallet to become available.
   const waitersRef = useRef<Array<(w: ConnectedWallet) => void>>([])
-
   useEffect(() => {
     if (embedded && waitersRef.current.length) {
       const ws = waitersRef.current.splice(0)
@@ -63,11 +71,31 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
     }
   }, [embedded])
 
+  // resolvers waiting for the SDK itself to finish initializing.
+  const readyWaitersRef = useRef<Array<() => void>>([])
   useEffect(() => {
-    const waitForEmbedded = () =>
+    if (ready && walletsReady && readyWaitersRef.current.length) {
+      readyWaitersRef.current.splice(0).forEach((resolve) => resolve())
+    }
+  }, [ready, walletsReady])
+
+  useEffect(() => {
+    const waitForSdk = () =>
+      new Promise<void>((resolve, reject) => {
+        if (stateRef.current.sdkReady) return resolve()
+        readyWaitersRef.current.push(resolve)
+        setTimeout(() => {
+          const i = readyWaitersRef.current.indexOf(resolve)
+          if (i >= 0) {
+            readyWaitersRef.current.splice(i, 1)
+            reject(new Error('Sign-in service took too long to load — refresh and try again.'))
+          }
+        }, 20_000)
+      })
+    const waitForEmbedded = (timeoutMs = 180_000) =>
       new Promise<ConnectedWallet>((resolve, reject) => {
         // Already there (returning user with a live session).
-        if (embedded) return resolve(embedded)
+        if (stateRef.current.embedded) return resolve(stateRef.current.embedded)
         waitersRef.current.push(resolve)
         // Modal abandoned / login failed — don't hang the join button forever.
         setTimeout(() => {
@@ -76,7 +104,7 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
             waitersRef.current.splice(i, 1)
             reject(new Error('Sign-in was not completed.'))
           }
-        }, 180_000)
+        }, timeoutMs)
       })
 
     window.MegaWallet = {
@@ -85,8 +113,26 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
       authenticated,
       address: embedded?.address ?? null,
       async connect() {
-        if (!authenticated) login()
-        const wallet = await waitForEmbedded()
+        // login() before the SDK is initialized is a silent no-op — the old
+        // freeze: button says "waiting for sign-in", no modal ever opens.
+        await waitForSdk()
+        let wallet: ConnectedWallet
+        if (!stateRef.current.authenticated) {
+          login()
+          wallet = await waitForEmbedded() // modal → auth → wallet creation
+        } else if (!stateRef.current.embedded) {
+          // Authenticated from a previous session but the embedded wallet is
+          // missing (creation interrupted). login() would no-op here — the
+          // other half of the freeze. Create the wallet directly.
+          try {
+            await createWallet()
+          } catch {
+            /* already exists / creating — the waiter below settles it */
+          }
+          wallet = await waitForEmbedded(20_000)
+        } else {
+          wallet = stateRef.current.embedded
+        }
         try {
           await wallet.switchChain(tempo.id)
         } catch {
@@ -101,7 +147,7 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
         emitChange()
       },
       async getProvider() {
-        const wallet = embedded ?? (await waitForEmbedded())
+        const wallet = stateRef.current.embedded ?? (await waitForEmbedded())
         return wallet.getEthereumProvider()
       },
     }

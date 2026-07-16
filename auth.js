@@ -145,7 +145,12 @@ export function attachAuth(app, { log = console } = {}) {
     // explicit param wins; Referer is the fallback for a bare /auth/x hit.
     let backTo = safeReturnTo(req.query.returnTo);
     if (!backTo) {
-      try { backTo = safeReturnTo(new URL(req.get('referer') || '').pathname); } catch { /* no referer */ }
+      // Keep the query too — /join?room=<id> without its ?room lands on the
+      // DEFAULT room, which is a different page entirely.
+      try {
+        const u = new URL(req.get('referer') || '');
+        backTo = safeReturnTo(u.pathname + u.search);
+      } catch { /* no referer */ }
     }
     const state = randomBytes(16).toString('base64url');
     // Sealed alongside the state, so the destination is tamper-evident too.

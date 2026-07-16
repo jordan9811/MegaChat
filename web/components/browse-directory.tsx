@@ -17,7 +17,7 @@ function RoomCard({ room }: { room: PublicRoomCard }) {
   const isLive = room.live > 0
   return (
     <a
-      href={`/join?room=${encodeURIComponent(room.id)}`}
+      href={room.handle ? `/${room.handle}` : `/join?room=${encodeURIComponent(room.id)}`}
       className="group flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-[var(--neon-magenta)]/60 hover:shadow-[0_0_24px_oklch(0.68_0.27_340/0.25)]"
     >
       <div className="flex items-start justify-between gap-3">
@@ -25,7 +25,10 @@ function RoomCard({ room }: { room: PublicRoomCard }) {
           <h3 className="truncate font-heading text-lg font-bold text-foreground">
             {room.name}
           </h3>
-          <span className="font-mono text-xs text-muted-foreground">{room.id}</span>
+          {/* the claimed link IS the room's identity — hex only as fallback */}
+          <span className="font-mono text-xs text-muted-foreground">
+            {room.handle ? `/${room.handle}` : room.id}
+          </span>
         </div>
         <span
           className={cn(

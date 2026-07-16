@@ -1752,6 +1752,9 @@ app.get('/api/rooms/public', (req, res) => {
     rooms.push({
       id: r.id,
       name: cfg.name,
+      // The pretty link. Cards must send viewers to /<handle> when one
+      // exists — a claimed room advertising its hex id defeats the feature.
+      handle: cfg.handle || null,
       live,
       waiting,
       maxSeats: cfg.maxSeats,
