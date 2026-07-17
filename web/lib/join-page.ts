@@ -26,7 +26,11 @@ let abort = null; // AbortController for window/document listeners
 function parseStreamRoomFromUrl() {
   try {
     const q = new URLSearchParams(location.search).get('room');
-    if (q && /^[a-z0-9-]{1,32}$/i.test(q)) return q.toLowerCase();
+    if (q && /^[a-z0-9_-]{1,32}$/i.test(q)) return q.toLowerCase();
+    // Pretty URLs: megachat.fun/<handle> serves this page in place (no
+    // redirect), so the room lives in the PATH. /api/config resolves handles.
+    const seg = location.pathname.replace(/^\/+|\/+$/g, '');
+    if (seg && seg !== 'join' && /^[a-z0-9_]{3,20}$/i.test(seg)) return seg.toLowerCase();
   } catch { /* ignore */ }
   return 'default';
 }
@@ -47,6 +51,15 @@ async function loadConfig() {
     throw new Error(err.error || 'Failed to load room config');
   }
   CONFIG = await res.json();
+  // The URL may have carried a HANDLE — adopt the server-resolved room id for
+  // every follow-up call (join, balance, letters, WS), and fix the socket's
+  // subscription if it already opened with the handle string.
+  if (CONFIG.roomId && CONFIG.roomId !== streamRoomId) {
+    streamRoomId = CONFIG.roomId;
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'subscribe_room', room: streamRoomId }));
+    }
+  }
   window.__streamRoomId = streamRoomId;
   window.dispatchEvent(new CustomEvent('stream:room'));
   const earnedRow = document.getElementById('earnedRow');
@@ -55,6 +68,10 @@ async function loadConfig() {
   }
   if (CONFIG.roomName) {
     document.title = CONFIG.roomName + ' — Join';
+    // Next's static metadata re-applies its own <title> when hydration
+    // finishes — usually AFTER this runs, silently clobbering the room name.
+    // Re-assert once the dust settles.
+    setTimeout(() => { document.title = CONFIG.roomName + ' — Join'; }, 1500);
   }
   if (CONFIG.roomActive === false) {
     showMessage('This room is not accepting new joins right now.', 'error');

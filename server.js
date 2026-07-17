@@ -131,8 +131,15 @@ function roomAtomics(roomCfg) {
 function resolveRoomFromRequest(body, query) {
   const raw = (body && body.room != null) ? body.room : (query && query.room);
   const roomId = normalizeRoomId(raw);
+  let cfg = roomId ? resolveRoomConfig(roomId) : null;
+  if (!cfg) {
+    // Not a room id → try it as a HANDLE, so ?room=jordandotfun works
+    // everywhere a hex id does. (Handles allow underscores, which the id
+    // charset doesn't — the two lookups are genuinely different.)
+    const byHandle = getRoomByHandle(raw);
+    if (byHandle) return { roomId: byHandle.id, cfg: byHandle, atomics: roomAtomics(byHandle) };
+  }
   if (!roomId) return { error: 'invalid_room_id' };
-  const cfg = resolveRoomConfig(roomId);
   if (!cfg) return { error: 'room_not_found', roomId };
   return { roomId, cfg, atomics: roomAtomics(cfg) };
 }
@@ -192,7 +199,11 @@ const MPP_STALE_MS = Math.max(10_000, Number(process.env.MPP_STALE_MS || 20_000)
 // open unpayable (deposit + padded max fee > balance → wallet refuses → the
 // viewer was auto-kicked seconds after going live). Wallets richer than
 // cap + headroom never hit this, which is why the raw-key gates passed.
-const MPP_FEE_HEADROOM = process.env.MPP_FEE_HEADROOM || '0.10';
+// Reserved from the viewer's balance for the channel open/close network fees
+// (Tempo charges gas in the payment token). MEASURED on mainnet 2026-07-17:
+// a real channel open cost 0.00018 USDC.e — 0.01 is a ~50x safety margin.
+// The old 0.10 default locked out anyone holding less than a dime.
+const MPP_FEE_HEADROOM = process.env.MPP_FEE_HEADROOM || '0.01';
 
 // Refund the unused prepaid balance (settled - consumed = remainingAtomic) back
 // to the viewer. Stream/MPP seats skip this — unspent funds never left the
@@ -1548,13 +1559,17 @@ app.post('/api/join/mpp', async (req, res) => {
     const spendable = rawBal > feeHeadroom ? rawBal - feeHeadroom : 0n;
     const sessionAtomic = spendable < atomics.maxSessionAtomic ? spendable : atomics.maxSessionAtomic;
     if (sessionAtomic < atomics.passkeyTickPriceAtomic) {
+      // Be EXACT: total needed = one tick + the fee reserve; tell them the
+      // precise top-up instead of a stale hardcoded number.
+      const neededAtomic = atomics.passkeyTickPriceAtomic + feeHeadroom;
+      const topUpAtomic = neededAtomic > rawBal ? neededAtomic - rawBal : 0n;
       return res.status(402).json({
         error: `Insufficient ${cfg.paymentTokenSymbol} balance`,
         reason: 'insufficient_balance',
         available: fromAtomic(rawBal, cfg.paymentTokenDecimals),
-        needAtLeast: cfg.passkeyTickPrice,
+        needAtLeast: fromAtomic(neededAtomic, cfg.paymentTokenDecimals),
         tokenSymbol: cfg.paymentTokenSymbol,
-        hint: 'Fund your wallet with USDC on Tempo (keep ~0.02 for network fees).',
+        hint: `Top up at least ${fromAtomic(topUpAtomic, cfg.paymentTokenDecimals)} ${cfg.paymentTokenSymbol} — ${MPP_FEE_HEADROOM} is reserved for network fees.`,
         path: 'mpp',
         roomId
       });
@@ -1905,7 +1920,12 @@ const handleRoom = (req) => getRoomByHandle(req.params.handle);
 app.get('/:handle', (req, res, next) => {
   const room = handleRoom(req);
   if (!room) return next();
-  res.redirect(302, `/join?room=${room.id}`);
+  // Serve the join page IN PLACE — no redirect, so the address bar keeps
+  // megachat.fun/<handle> instead of decaying to /join?room=<hex>. The
+  // client resolves the room from the pathname (and /api/config accepts
+  // handles), so the pretty URL is the real URL.
+  req.url = '/join';
+  nextHandle(req, res);
 });
 app.get('/:handle/overlay', (req, res, next) => {
   const room = handleRoom(req);
