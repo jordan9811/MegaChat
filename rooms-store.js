@@ -481,6 +481,38 @@ export function setRoomActive(roomId, active) {
   return updateRoom(roomId, { active: !!active });
 }
 
+export function deleteRoom(roomId) {
+  const id = normalizeRoomId(roomId);
+  if (!id || id === DEFAULT_ROOM_ID) return false; // never delete the default
+  const store = loadStore();
+  if (!store.rooms[id]) return false;
+  delete store.rooms[id];
+  saveStore(store);
+  return true;
+}
+
+/**
+ * Remove orphan rooms: everything that is NOT the default, NOT a protected
+ * handle (the demo), and has NO ownerKey. Restores the useful part of the old
+ * ephemeral behavior (junk test rooms don't pile up) now that the volume makes
+ * data durable — while OWNED rooms and the seeded demo always survive. Returns
+ * the ids removed.
+ */
+export function pruneOrphanRooms({ protectHandles = [] } = {}) {
+  const store = loadStore();
+  const protect = new Set(protectHandles);
+  const removed = [];
+  for (const rec of Object.values(store.rooms)) {
+    if (rec.id === DEFAULT_ROOM_ID) continue;
+    if (rec.handle && protect.has(rec.handle)) continue;
+    if (rec.ownerKey) continue; // someone owns it — keep
+    removed.push(rec.id);
+    delete store.rooms[rec.id];
+  }
+  if (removed.length) saveStore(store);
+  return removed;
+}
+
 /** Test helper — reset in-memory cache. */
 export function _resetCacheForTests() {
   cache = null;

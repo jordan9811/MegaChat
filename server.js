@@ -23,6 +23,8 @@ import {
   createRoomWithPassword,
   verifyRoomPassword,
   joinStreamGatesFor,
+  pruneOrphanRooms,
+  updateRoom,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
 import { verifyRoomAccess } from './auth.js';
@@ -1802,32 +1804,51 @@ attachDashboardRoutes(app, {
 
 await migrateLegacyRoomPasswords();
 
+// ─── Boot cleanup: dump orphan rooms ────────────────────────────────────────
+// Now that the volume persists data, junk test rooms would otherwise pile up
+// forever. Prune everything that isn't the default, isn't the seeded demo, and
+// isn't OWNED by a signed-in identity — so a fresh deploy stays tidy while
+// owned rooms and the demo always survive. Opt out with KEEP_ORPHAN_ROOMS=true.
+if (process.env.KEEP_ORPHAN_ROOMS !== 'true') {
+  try {
+    const removed = pruneOrphanRooms({ protectHandles: ['demo'] });
+    if (removed.length) console.log(`[rooms] pruned ${removed.length} orphan room(s): ${removed.join(', ')}`);
+  } catch (err) {
+    console.warn('[rooms] orphan prune failed:', err.message);
+  }
+}
+
 // ─── Always-on demo room at /demo ────────────────────────────────────────────
-// A living showcase: dust live pricing, tiny point drops, letters on. Anyone
-// can watch the mechanics move for pennies.
+// A living showcase: dust live pricing, tiny point drops, letters on. RE-SPUN
+// every boot — the canonical config is re-applied so a deploy always leaves a
+// clean, current demo (LiveKit transport by default, MegaChats + drops on).
+const DEMO_CONFIG = {
+  isDemo: true,
+  passkeyTickPrice: '0.001',
+  passkeyTickSeconds: 1,
+  maxSession: '0.03',
+  maxSeats: 3,
+  letters: { enabled: true, maxSeconds: 10, price: null, moderation: 'auto' },
+  rewards: {
+    enabled: true,
+    earnInterval: 30,
+    earnAmount: '1',
+    earnCap: '50',
+    rewardType: 'points',
+    rewardTokenAddress: null,
+  },
+};
 try {
-  if (!getRoomByHandle('demo')) {
+  const existing = getRoomByHandle('demo');
+  if (existing) {
+    // Reset the demo back to its canonical config on every deploy.
+    updateRoom(existing.id, { name: 'MegaChat Demo — try everything for pennies', config: DEMO_CONFIG });
+    console.log(`[demo] refreshed demo room ${existing.id} at /demo`);
+  } else {
     const demoPassword = process.env.DEMO_ROOM_PASSWORD
       || Buffer.from(crypto.getRandomValues(new Uint8Array(12))).toString('base64url');
     const room = await createRoomWithPassword(
-      'MegaChat Demo — try everything for pennies',
-      {
-        isDemo: true,
-        passkeyTickPrice: '0.001',
-        passkeyTickSeconds: 1,
-        maxSession: '0.03',
-        maxSeats: 3,
-        letters: { enabled: true, maxSeconds: 10, price: null, moderation: 'auto' },
-        rewards: {
-          enabled: true,
-          earnInterval: 30,
-          earnAmount: '1',
-          earnCap: '50',
-          rewardType: 'points',
-          rewardTokenAddress: null,
-        },
-      },
-      demoPassword,
+      'MegaChat Demo — try everything for pennies', DEMO_CONFIG, demoPassword,
     );
     setRoomHandle(room.id, 'demo');
     console.log(
