@@ -1664,61 +1664,25 @@ async function sendLetter() {
   }
 }
 
-// ─── OAuth identity (Twitch / X) — identity only ────────────────────────────
+// ─── Identity (minted by Privy sign-in, server-verified) ────────────────────
+// No chooser here anymore: the header pill opens Privy's modal, which covers
+// Twitch / X / Google / email / passkey in ONE step, and the server mints the
+// handle from that verified session. This just reflects the result.
 async function initAuthUi() {
-  const twitchBtn = document.getElementById('authTwitchBtn');
-  const xBtn = document.getElementById('authXBtn');
   const who = document.getElementById('authIdentity');
-  if (!twitchBtn || !xBtn) return;
-  // The whole chooser row (Twitch / X / Kick / TikTok). Once one identity is
-  // picked, alternatives don't get dulled — they leave. One state on screen.
-  const chooser = twitchBtn.parentElement;
-
-  // Identity FIRST: if the visitor is already signed in, never render the
-  // chooser at all — showing four sign-in buttons under a "signed in as"
-  // line was reading as four more things to do.
-  let identity = null;
+  if (!who) return;
   try {
-    identity = (await (await fetch('/api/auth/me')).json()).identity || null;
-  } catch { /* auth optional */ }
-
-  if (identity && who) {
-    if (chooser) chooser.style.display = 'none';
-    who.style.display = '';
-    who.innerHTML =
-      `🟢 <strong>@${identity.handle}</strong> · signed in via ${identity.provider === 'x' ? 'X' : 'Twitch'} ` +
-      '· <a href="#" id="authLogout" class="addr">sign out</a>';
-    const input = document.getElementById('username');
-    if (input && !input.value) input.value = identity.handle;
-    document.getElementById('authLogout')?.addEventListener('click', async (e) => {
-      e.preventDefault();
-      await fetch('/api/auth/logout', { method: 'POST' });
-      location.reload();
-    });
-  } else {
-    try {
-      const providers = await (await fetch('/api/auth/providers')).json();
-      // returnTo keeps ?room= — signing in must bring you back to THIS room,
-      // not the default one.
-      const returnTo = encodeURIComponent(location.pathname + location.search);
-      const wire = (btn, name, on, label) => {
-        if (on) {
-          btn.disabled = false;
-          btn.title = `Continue with ${label}`;
-          btn.textContent = `Continue with ${label}`;
-          btn.addEventListener('click', () => {
-            location.href = `/auth/${name}?returnTo=${returnTo}`;
-          });
-        } else {
-          btn.disabled = true;
-          btn.title = `${label} login not configured on this server`;
-          btn.textContent = `${label} — not configured`;
-        }
-      };
-      wire(twitchBtn, 'twitch', !!providers.twitch, 'Twitch');
-      wire(xBtn, 'x', !!providers.x, 'X');
-    } catch { /* auth optional — buttons stay disabled */ }
-  }
+    const me = await (await fetch('/api/auth/me')).json();
+    const identity = me.identity || null;
+    if (identity) {
+      who.style.display = '';
+      who.innerHTML = `🟢 Signed in as <strong>@${identity.handle}</strong>`;
+      const input = document.getElementById('username');
+      if (input && !input.value) input.value = identity.handle;
+    } else {
+      who.style.display = 'none';
+    }
+  } catch { /* identity optional */ }
 
   const welcome = new URLSearchParams(location.search).get('welcome');
   if (welcome) {
@@ -2041,6 +2005,9 @@ export function initJoinPage({ wsUrl }) {
   };
   window.addEventListener('megawallet:changed', adoptExistingSession, { signal: abort.signal });
   adoptExistingSession();
+
+  // Privy sign-in mints the handle server-side — reflect it without a reload.
+  window.addEventListener('megachat:identity', () => { void initAuthUi(); }, { signal: abort.signal });
 
   // Letter mode controls (button hidden unless the room enables letters).
   on('letterBtn', () => void openLetterStage());

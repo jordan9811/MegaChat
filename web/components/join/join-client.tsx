@@ -140,21 +140,10 @@ export function JoinClient() {
             </div>
           </div>
 
-          {/* Platform identity — IDENTITY ONLY (display name + your
-              megachat.xyz/<handle> link). join-page.ts renders ONE state:
-              signed out → these two buttons; signed in → the chip, buttons
-              gone. Money is the separate cluster below. */}
-          <div className="flex flex-col gap-2">
-            <div className="grid grid-cols-2 gap-2">
-              <button id="authTwitchBtn" type="button" className={miniBtn} disabled title="Checking…">
-                Twitch
-              </button>
-              <button id="authXBtn" type="button" className={miniBtn} disabled title="Checking…">
-                𝕏
-              </button>
-            </div>
-            <div id="authIdentity" className="text-xs text-muted-foreground" style={{ display: 'none' }} />
-          </div>
+          {/* Identity lives in the header pill now (one Privy modal covers
+              Twitch / X / Google / email / passkey). This line just reflects
+              who you are, once you are someone. */}
+          <div id="authIdentity" className="text-xs text-muted-foreground" style={{ display: 'none' }} />
 
           <input
             type="text"

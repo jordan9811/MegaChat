@@ -11,6 +11,7 @@
  */
 import { createHmac, randomBytes, createHash } from 'crypto';
 import { claimIdentity, getIdentity, suggestHandle } from './identity-store.js';
+import { createPrivyIdentity } from './privy-identity.js';
 
 const PROVIDERS = {
   twitch: {
@@ -109,14 +110,47 @@ function withWelcome(back, handle) {
 export function attachAuth(app, { log = console } = {}) {
   const configured = (p) => !!(PROVIDERS[p].clientId() && PROVIDERS[p].clientSecret());
   const redirectUri = (req, p) => `${req.protocol}://${req.get('host')}/auth/${p}/callback`;
+  const privyIdentity = createPrivyIdentity({ log });
 
   app.get('/api/auth/providers', (req, res) => {
     res.json({
+      // Privy is the front door now — Twitch/X/Google/email/passkey all live
+      // in its one modal. These legacy flags stay so an old client still
+      // renders honestly, but the UI no longer offers a second sign-in.
+      privy: !!privyIdentity,
       twitch: configured('twitch'),
       x: configured('x'),
       kick: false, // coming soon
       tiktok: false, // coming soon
     });
+  });
+
+  /**
+   * Turn a verified Privy session into a MegaChat handle + identity cookie.
+   * The token is verified against Privy's keys server-side — the client is
+   * never trusted for WHO it is, or anyone could claim any name.
+   */
+  app.post('/api/auth/privy', async (req, res) => {
+    if (!privyIdentity) {
+      return res.status(503).json({ error: 'Privy identity is not configured on this server' });
+    }
+    const token = (req.body && req.body.token) || '';
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'Missing token' });
+    }
+    try {
+      const identity = await privyIdentity.identityFromToken(token);
+      setCookie(res, 'mc_identity', seal({ provider: identity.provider, platformId: identity.platformId }), { maxAge: 30 * 86400 });
+      res.json({
+        ok: true,
+        identity: {
+          provider: identity.provider, username: identity.username, handle: identity.handle,
+        },
+      });
+    } catch (err) {
+      log.warn('[auth] privy identity failed:', err.message);
+      res.status(401).json({ error: 'Could not verify that sign-in' });
+    }
   });
 
   app.get('/api/auth/me', (req, res) => {

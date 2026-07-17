@@ -18,7 +18,13 @@
 // instead of being baked into the Next build.
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { PrivyProvider, usePrivy, useWallets, type ConnectedWallet } from '@privy-io/react-auth'
+import {
+  PrivyProvider,
+  usePrivy,
+  useWallets,
+  getAccessToken,
+  type ConnectedWallet,
+} from '@privy-io/react-auth'
 import { tempo } from 'viem/chains'
 
 type MegaWalletBridge = {
@@ -85,6 +91,31 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
     if (authenticated && authWaitersRef.current.length) {
       authWaitersRef.current.splice(0).forEach((resolve) => resolve())
     }
+  }, [authenticated])
+
+  // ── Identity registration ──
+  // Signing in with Privy IS signing in to MegaChat: hand the verified token
+  // to our server, which mints/returns the @handle. Runs on every auth (incl.
+  // a session restored on page load), so a returning user is simply known —
+  // no second sign-in, no claim screen. Idempotent server-side.
+  const registeredRef = useRef(false)
+  useEffect(() => {
+    if (!authenticated || registeredRef.current) return
+    registeredRef.current = true
+    ;(async () => {
+      try {
+        const token = await getAccessToken()
+        if (!token) return
+        const r = await fetch('/api/auth/privy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        })
+        if (r.ok) window.dispatchEvent(new CustomEvent('megachat:identity'))
+      } catch {
+        /* identity is a nicety; the wallet still works without a handle */
+      }
+    })()
   }, [authenticated])
 
   useEffect(() => {
@@ -231,11 +262,13 @@ export function TempoWalletProvider({ children }: { children: React.ReactNode })
 
   const providerConfig = useMemo(
     () => ({
-      // ONE home per provider across the whole app: Twitch and X live in
-      // MegaChat's own OAuth (they reserve your @handle); Privy owns
-      // Google/email/passkey (the balance). Twitter deliberately NOT here —
-      // X showing up in two different sign-in surfaces read as broken.
-      loginMethods: ['google', 'email', 'passkey'] as (
+      // THE front door — every provider lives in this one modal. Privy speaks
+      // Twitch natively, which is what killed the old double sign-in (our own
+      // Twitch OAuth for a handle + Privy for a wallet = two logins for one
+      // human). Order is the on-screen order: the streamer platforms first.
+      loginMethods: ['twitch', 'twitter', 'google', 'email', 'passkey'] as (
+        | 'twitch'
+        | 'twitter'
         | 'google'
         | 'email'
         | 'passkey'
