@@ -22,6 +22,7 @@ import {
   PrivyProvider,
   usePrivy,
   useWallets,
+  useModalStatus,
   getAccessToken,
   type ConnectedWallet,
 } from '@privy-io/react-auth'
@@ -36,6 +37,12 @@ type MegaWalletBridge = {
    *  The UI's fallback so it can NEVER be reduced to showing an address —
    *  works even if the server-side handle mint is failing. */
   displayName: string | null
+  /** Is the Privy sign-in modal open right now? Header ties its "opening"
+   *  state to this so dismissing the modal always resets the button. */
+  modalOpen: boolean
+  /** Fire-and-forget: open the sign-in modal, don't await. Reactive state
+   *  handles the result, so a dismissed modal can never hang the caller. */
+  openLogin: () => void
   connect: () => Promise<string>
   logout: () => Promise<void>
   getProvider: () => Promise<unknown>
@@ -61,6 +68,25 @@ function emitChange() {
 function WalletBridge() {
   const { ready, authenticated, login, logout, createWallet, user } = usePrivy()
   const { wallets, ready: walletsReady } = useWallets()
+  const { isOpen: modalOpen } = useModalStatus()
+
+  // When the Privy modal CLOSES without the user authenticating, any promise
+  // waiting on that sign-in must reject NOW — otherwise the caller (a header
+  // button, the join button) sits "Opening…" until a 3-minute timeout. This is
+  // the "dismissed and it kept churning, had to refresh" bug.
+  const authWaitersRef = useRef<Array<() => void>>([])
+  const authRejectersRef = useRef<Array<(e: Error) => void>>([])
+  const prevModalOpen = useRef(false)
+  useEffect(() => {
+    const wasOpen = prevModalOpen.current
+    prevModalOpen.current = modalOpen
+    if (wasOpen && !modalOpen && !authenticated) {
+      authWaitersRef.current.length = 0
+      const rejecters = authRejectersRef.current.splice(0)
+      rejecters.forEach((reject) => reject(new Error('Sign-in was cancelled.')))
+    }
+    emitChange() // header derives its "opening" state from modalOpen
+  }, [modalOpen, authenticated])
 
   // Same priority ladder the server uses (privy-identity.js) — kept in sync so
   // the optimistic client name matches the handle that gets minted.
@@ -107,10 +133,10 @@ function WalletBridge() {
     }
   }, [ready, walletsReady])
 
-  // resolvers waiting for authentication (modal completed).
-  const authWaitersRef = useRef<Array<() => void>>([])
+  // authWaitersRef / authRejectersRef declared above (modal-close handler).
   useEffect(() => {
     if (authenticated && authWaitersRef.current.length) {
+      authRejectersRef.current.length = 0
       authWaitersRef.current.splice(0).forEach((resolve) => resolve())
     }
   }, [authenticated])
@@ -174,6 +200,13 @@ function WalletBridge() {
       authenticated,
       address: embedded?.address ?? null,
       displayName,
+      modalOpen,
+      openLogin() {
+        // Fire-and-forget. If already signed in, opening the login modal is a
+        // no-op in Privy; callers that want a wallet use connect() instead.
+        if (stateRef.current.authenticated) return
+        try { login() } catch { /* SDK not ready — user can retry */ }
+      },
       async connect() {
         // login() before the SDK is initialized is a silent no-op — the old
         // freeze: button says "waiting for sign-in", no modal ever opens.
@@ -185,12 +218,15 @@ function WalletBridge() {
           await new Promise<void>((resolve, reject) => {
             if (stateRef.current.authenticated) return resolve()
             authWaitersRef.current.push(resolve)
+            // Rejected the instant the modal is dismissed (see the modal-close
+            // effect) — no more 3-minute "Opening…" hang.
+            authRejectersRef.current.push(reject)
             setTimeout(() => {
               const i = authWaitersRef.current.indexOf(resolve)
-              if (i >= 0) {
-                authWaitersRef.current.splice(i, 1)
-                reject(new Error('Sign-in was not completed.'))
-              }
+              if (i >= 0) authWaitersRef.current.splice(i, 1)
+              const j = authRejectersRef.current.indexOf(reject)
+              if (j >= 0) authRejectersRef.current.splice(j, 1)
+              reject(new Error('Sign-in was not completed.'))
             }, 180_000)
           })
         }
@@ -232,7 +268,7 @@ function WalletBridge() {
     }
     emitChange()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, walletsReady, authenticated, embedded?.address, displayName])
+  }, [ready, walletsReady, authenticated, embedded?.address, displayName, modalOpen])
 
   return null
 }
@@ -246,6 +282,8 @@ function UnconfiguredBridge() {
       authenticated: false,
       address: null,
       displayName: null,
+      modalOpen: false,
+      openLogin: () => {},
       connect: async () => {
         throw new Error(
           'Privy is not configured — set NEXT_PUBLIC_PRIVY_APP_ID in .env and restart.',

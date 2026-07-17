@@ -236,14 +236,14 @@ export function MegaChatSettings() {
             </Field>
 
             <Field
-              label="Handle"
+              label="Display name"
               htmlFor="room-handle"
               hint={
                 identityHandle && draft.handle === identityHandle
-                  ? `@${identityHandle} is reserved for you — claiming it here makes megachat.xyz/${identityHandle} your permanent link (and /${identityHandle}/overlay for OBS).`
+                  ? `Prefilled from your sign-in. It's also your permanent link: megachat.xyz/${identityHandle} (and /${identityHandle}/overlay for OBS). Change it any time — letters, numbers, underscore.`
                   : identityHandle
-                    ? `Your reserved handle is @${identityHandle}. Any free name works too — it becomes your permanent link, e.g. megachat.xyz/${draft.handle || 'your_name'}. Letters, numbers, underscore.`
-                    : 'Your permanent link: megachat.xyz/your_name (viewers) and /your_name/overlay (OBS). Leave it empty and the room gets a temporary link you can upgrade later. Letters, numbers, underscore.'
+                    ? `Prefilled from your sign-in (@${identityHandle}). This is your display name and your permanent link, e.g. megachat.xyz/${draft.handle || 'your_name'}. Letters, numbers, underscore.`
+                    : 'Your display name, and your permanent link: megachat.xyz/your_name (viewers) and /your_name/overlay (OBS). Leave it empty for a temporary link you can set later. Letters, numbers, underscore.'
               }
               className="sm:col-span-2"
             >

@@ -27,6 +27,7 @@ type WalletState = {
   authenticated: boolean
   address: string | null
   displayName: string | null
+  modalOpen: boolean
 }
 
 const itemCls =
@@ -43,6 +44,7 @@ function readWallet(): WalletState {
     authenticated: !!MW?.authenticated,
     address: MW?.address ?? null,
     displayName: MW?.displayName ?? null,
+    modalOpen: !!MW?.modalOpen,
   }
 }
 
@@ -51,10 +53,9 @@ export function HeaderAuth() {
   const [loaded, setLoaded] = useState(false)
   const [open, setOpen] = useState(false)
   const [wallet, setWallet] = useState<WalletState>({
-    configured: false, authenticated: false, address: null, displayName: null,
+    configured: false, authenticated: false, address: null, displayName: null, modalOpen: false,
   })
   const [balance, setBalance] = useState<string | null>(null)
-  const [emailBusy, setEmailBusy] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const simple = useUiMode() === 'simple'
 
@@ -125,16 +126,31 @@ export function HeaderAuth() {
     }
   }, [open])
 
-  async function emailSignIn() {
-    if (!window.MegaWallet?.configured || emailBusy) return
-    setEmailBusy(true)
+  // Fire-and-forget: open Privy's modal and return. Reactive state (the
+  // window bridge + megachat:identity event) updates the chip on success, and
+  // dismissing the modal simply flips modalOpen back to false — nothing can
+  // hang the button waiting on a promise that never settles.
+  function openSignIn() {
+    if (!window.MegaWallet?.configured) return
+    setOpen(false)
+    window.MegaWallet.openLogin()
+  }
+
+  // "Connect balance": the person is already signed in (has an identity) but
+  // their embedded wallet is missing. openLogin() no-ops when authenticated,
+  // so this path uses connect(), which creates the wallet directly — no modal,
+  // so no dismissal-hang risk.
+  const [connectingBalance, setConnectingBalance] = useState(false)
+  async function connectBalance() {
+    if (!window.MegaWallet?.configured || connectingBalance) return
+    setConnectingBalance(true)
     try {
       await window.MegaWallet.connect()
       setOpen(false)
     } catch {
-      /* modal abandoned — state unchanged */
+      /* cancelled/failed — state unchanged */
     } finally {
-      setEmailBusy(false)
+      setConnectingBalance(false)
     }
   }
 
@@ -187,17 +203,19 @@ export function HeaderAuth() {
       ) : (
         <button
           type="button"
-          onClick={() => void emailSignIn()}
-          disabled={emailBusy}
+          onClick={openSignIn}
+          disabled={wallet.modalOpen}
           title={wallet.configured ? 'Twitch, X, Google, email or passkey' : 'Sign-in is not configured on this server'}
           className="glow-magenta flex items-center gap-2 rounded-full bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.03] disabled:opacity-70 sm:px-4"
         >
           <UserRound className="size-4" />
-          {/* Straight to Privy's modal — no in-house chooser in between. */}
+          {/* Straight to Privy's modal — no in-house chooser in between.
+              "Opening…" is tied to the modal being open, so dismissing it
+              always resets the button (no stuck-churning refresh needed). */}
           <span className="hidden sm:inline">
-            {emailBusy ? 'Opening…' : 'Log in / Sign up'}
+            {wallet.modalOpen ? 'Opening…' : 'Log in / Sign up'}
           </span>
-          <span className="sm:hidden">{emailBusy ? '…' : 'Log in'}</span>
+          <span className="sm:hidden">{wallet.modalOpen ? '…' : 'Log in'}</span>
         </button>
       )}
 
@@ -230,13 +248,13 @@ export function HeaderAuth() {
             <button
               type="button"
               role="menuitem"
-              onClick={() => void emailSignIn()}
-              disabled={!wallet.configured || emailBusy}
+              onClick={() => void connectBalance()}
+              disabled={!wallet.configured || connectingBalance}
               className={wallet.configured ? itemCls : itemDisabledCls}
               title={wallet.configured ? 'Connect the wallet that pays for seats' : 'Wallet service not configured on this server'}
             >
               <Wallet className="size-4 text-[var(--neon-cyan)]" />
-              {emailBusy ? 'Opening…' : 'Connect balance'}
+              {connectingBalance ? 'Connecting…' : 'Connect balance'}
             </button>
           )}
 
