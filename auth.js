@@ -118,6 +118,12 @@ export function attachAuth(app, { log = console } = {}) {
       // in its one modal. These legacy flags stay so an old client still
       // renders honestly, but the UI no longer offers a second sign-in.
       privy: !!privyIdentity,
+      // Whether handles can actually be MINTED. `privy` above only means the
+      // env vars exist; a stale secret still constructs a client and then
+      // 401s on every mint. Surfaced so this is diagnosable from outside
+      // instead of appearing as a mysteriously nameless UI.
+      //   true = working · false = bad secret · null = still probing
+      privyReady: privyIdentity ? privyIdentity.credentialsValid() : false,
       twitch: configured('twitch'),
       x: configured('x'),
       kick: false, // coming soon

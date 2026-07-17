@@ -14,6 +14,7 @@ import {
   resolveRoomConfig,
   normalizeRoomId,
   DEFAULT_ROOM_ID,
+  dataDirInfo,
   migrateLegacyRoomPasswords,
   listRooms,
   letterPriceFor,
@@ -392,6 +393,20 @@ app.get('/r/:handle/overlay', (req, res) =>
   res.redirect(301, `/${encodeURIComponent(req.params.handle)}/overlay`));
 
 // Expose the Arc / Gateway config the frontend needs to build payments.
+// Boot/infra truth in one place: is data durable across deploys, and did the
+// seeded rooms come back? Cheap to curl, saves guessing from the outside.
+app.get('/api/health', (req, res) => {
+  const data = dataDirInfo();
+  res.json({
+    ok: true,
+    // false here means the NEXT deploy wipes every room, handle and identity.
+    persistentData: data.persistent,
+    dataDir: data.dir,
+    livekitConfigured: !!livekit,
+    rooms: listRooms().length,
+  });
+});
+
 app.get('/api/config', (req, res) => {
   const resolved = resolveRoomFromRequest(null, req.query);
   if (resolved.error === 'invalid_room_id') {

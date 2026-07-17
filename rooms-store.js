@@ -17,6 +17,13 @@ const STORE_PATH = path.join(DATA_DIR, 'rooms.json');
 
 export const DEFAULT_ROOM_ID = 'default';
 
+/** Where rooms/identities actually live, and whether that survives a deploy.
+ *  Exposed on /api/health because "did the volume attach?" is otherwise
+ *  invisible until data silently vanishes on the next push. */
+export function dataDirInfo() {
+  return { dir: DATA_DIR, persistent: !!process.env.DATA_DIR };
+}
+
 // LiveKit is now the default transport once its 3 env vars are present
 // (same condition livekit.js gates on); 'vdo' is the only sticky explicit
 // choice — a room that picked it stays on it even if LiveKit gets configured
