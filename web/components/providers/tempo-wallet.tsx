@@ -54,8 +54,11 @@ function emitChange() {
   window.dispatchEvent(new CustomEvent('megawallet:changed'))
 }
 
-/** Inner component with Privy hooks; keeps window.MegaWallet in sync. */
-function WalletBridge({ children }: { children: React.ReactNode }) {
+/**
+ * Installs window.MegaWallet and keeps it in sync. Renders NOTHING and does
+ * NOT wrap the app — see TempoWalletProvider for why that matters.
+ */
+function WalletBridge() {
   const { ready, authenticated, login, logout, createWallet, user } = usePrivy()
   const { wallets, ready: walletsReady } = useWallets()
 
@@ -231,11 +234,11 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, walletsReady, authenticated, embedded?.address, displayName])
 
-  return <>{children}</>
+  return null
 }
 
 /** Marks the bridge as unconfigured so the UI can say exactly what's missing. */
-function UnconfiguredBridge({ children }: { children: React.ReactNode }) {
+function UnconfiguredBridge() {
   useEffect(() => {
     window.MegaWallet = {
       configured: false,
@@ -255,13 +258,20 @@ function UnconfiguredBridge({ children }: { children: React.ReactNode }) {
     }
     emitChange()
   }, [])
-  return <>{children}</>
+  return null
 }
 
 /**
- * Fetches the Privy app id from the backend config, then mounts the Privy
- * provider on the Tempo chain. Children always render — the join page works
- * in a degraded (MetaMask-only) mode when Privy isn't configured yet.
+ * Mounts the wallet bridge app-wide.
+ *
+ * CRITICAL — the bridge is a SIBLING of `children`, never an ancestor. The app
+ * id arrives async, so an ancestor would change the tree shape mid-flight
+ * (`<>{children}</>` → `<PrivyProvider><WalletBridge>{children}</…>`), and
+ * React would unmount and remount the ENTIRE app. That regression re-ran the
+ * join page's init and orphaned its WebSocket mid-handshake ("closed before
+ * the connection is established"). Nothing outside this file uses Privy hooks
+ * — children talk to window.MegaWallet — so keeping them at a fixed position
+ * costs nothing and makes remounts impossible.
  */
 export function TempoWalletProvider({ children }: { children: React.ReactNode }) {
   const [appId, setAppId] = useState<string | null | undefined>(undefined)
@@ -310,20 +320,16 @@ export function TempoWalletProvider({ children }: { children: React.ReactNode })
     [],
   )
 
-  if (appId === undefined) {
-    // Config still loading — render children so the page paints instantly.
-    return <>{children}</>
-  }
-
-  if (!appId) {
-    return <UnconfiguredBridge>{children}</UnconfiguredBridge>
-  }
-
   return (
     <TempoChainContext.Provider value={tempo.id}>
-      <PrivyProvider appId={appId} config={providerConfig}>
-        <WalletBridge>{children}</WalletBridge>
-      </PrivyProvider>
+      {appId === undefined ? null : appId ? (
+        <PrivyProvider appId={appId} config={providerConfig}>
+          <WalletBridge />
+        </PrivyProvider>
+      ) : (
+        <UnconfiguredBridge />
+      )}
+      {children}
     </TempoChainContext.Provider>
   )
 }
