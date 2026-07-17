@@ -106,7 +106,17 @@ export function MegaChatSettings() {
                     room.active ? 'bg-[var(--neon-lime)]' : 'bg-muted-foreground',
                   )}
                 />
-                {room.id}
+                {room.handle ? `/${room.handle}` : room.id}
+              </span>
+              {/* the toggle needs words — an unlabeled pink switch reads as
+                  "wtf is this", not "room is accepting joins" */}
+              <span
+                className={cn(
+                  'text-xs font-semibold uppercase tracking-wide',
+                  room.active ? 'text-[var(--neon-lime)]' : 'text-muted-foreground',
+                )}
+              >
+                {room.active ? 'Accepting joins' : 'Paused'}
               </span>
               <Toggle
                 checked={room.active}
@@ -821,15 +831,26 @@ export function MegaChatSettings() {
             ) : null}
           </div>
           {!room.handle ? (
-            <p className="mt-3 rounded-lg border border-[var(--neon-lime)]/40 bg-[var(--neon-lime)]/10 px-3 py-2 text-xs text-foreground/90">
-              This room has a temporary link. Set a <strong>Handle</strong> above
-              to turn it into{' '}
-              <span className="font-mono">
-                megachat.xyz/{identityHandle || 'your_name'}
+            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--neon-lime)]/40 bg-[var(--neon-lime)]/10 px-3 py-2 text-xs text-foreground/90">
+              <span className="min-w-0 flex-1">
+                This room has a temporary link. {identityHandle
+                  ? `@${identityHandle} is reserved for you — claim it and this room becomes `
+                  : 'Set a Handle above to turn it into '}
+                <span className="font-mono">
+                  megachat.xyz/{identityHandle || 'your_name'}
+                </span>
+                . The link above keeps working either way.
               </span>
-              {identityHandle ? ` — @${identityHandle} is already reserved for you.` : '.'}{' '}
-              The link above keeps working either way.
-            </p>
+              {identityHandle ? (
+                <button
+                  type="button"
+                  onClick={() => updateDraft({ handle: identityHandle })}
+                  className="shrink-0 rounded-full border border-[var(--neon-lime)]/70 bg-[var(--neon-lime)]/15 px-3 py-1.5 font-heading text-xs font-bold uppercase tracking-wide text-[var(--neon-lime)] transition-transform hover:scale-[1.03]"
+                >
+                  Claim /{identityHandle}
+                </button>
+              ) : null}
+            </div>
           ) : null}
           <p className="mt-3 text-xs text-muted-foreground">
             Drop the viewer link in chat. Add the OBS link as a Browser Source

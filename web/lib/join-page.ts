@@ -2024,6 +2024,24 @@ export function initJoinPage({ wsUrl }) {
     if (lastMeter) showMeter(lastMeter.remaining, lastMeter.spent, lastMeter.secondsLeft);
   }, { signal: abort.signal });
 
+  // Returning Privy session → adopt it SILENTLY. Asking an already-signed-in
+  // person to sign in again was the single most-reported bug in this app.
+  // No modal, no signing — pure state adoption; the wallet only signs later,
+  // when a paid action actually needs it.
+  const adoptExistingSession = () => {
+    const MW = getMegaWallet();
+    if (account || walletMode || !MW || !MW.configured) return;
+    if (MW.authenticated && MW.address) {
+      walletMode = 'privy';
+      account = MW.address;
+      renderWallet();
+      window.dispatchEvent(new CustomEvent('wallet:connected', { detail: { account } }));
+      refreshBalance();
+    }
+  };
+  window.addEventListener('megawallet:changed', adoptExistingSession, { signal: abort.signal });
+  adoptExistingSession();
+
   // Letter mode controls (button hidden unless the room enables letters).
   on('letterBtn', () => void openLetterStage());
   on('letterRecordBtn', toggleLetterRecording);

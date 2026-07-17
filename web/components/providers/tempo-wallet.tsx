@@ -79,6 +79,14 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
     }
   }, [ready, walletsReady])
 
+  // resolvers waiting for authentication (modal completed).
+  const authWaitersRef = useRef<Array<() => void>>([])
+  useEffect(() => {
+    if (authenticated && authWaitersRef.current.length) {
+      authWaitersRef.current.splice(0).forEach((resolve) => resolve())
+    }
+  }, [authenticated])
+
   useEffect(() => {
     const waitForSdk = () =>
       new Promise<void>((resolve, reject) => {
@@ -116,22 +124,39 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
         // login() before the SDK is initialized is a silent no-op — the old
         // freeze: button says "waiting for sign-in", no modal ever opens.
         await waitForSdk()
-        let wallet: ConnectedWallet
+        // Step 1 — authenticated. Fresh users get the modal; returning
+        // sessions skip it entirely.
         if (!stateRef.current.authenticated) {
           login()
-          wallet = await waitForEmbedded() // modal → auth → wallet creation
-        } else if (!stateRef.current.embedded) {
-          // Authenticated from a previous session but the embedded wallet is
-          // missing (creation interrupted). login() would no-op here — the
-          // other half of the freeze. Create the wallet directly.
-          try {
-            await createWallet()
-          } catch {
-            /* already exists / creating — the waiter below settles it */
-          }
-          wallet = await waitForEmbedded(20_000)
-        } else {
+          await new Promise<void>((resolve, reject) => {
+            if (stateRef.current.authenticated) return resolve()
+            authWaitersRef.current.push(resolve)
+            setTimeout(() => {
+              const i = authWaitersRef.current.indexOf(resolve)
+              if (i >= 0) {
+                authWaitersRef.current.splice(i, 1)
+                reject(new Error('Sign-in was not completed.'))
+              }
+            }, 180_000)
+          })
+        }
+        // Step 2 — embedded wallet, REGARDLESS of which path got us here.
+        // Accounts whose wallet creation was interrupted (login succeeds,
+        // wallets stay empty — the "double sign-in still doesn't work" bug)
+        // get the wallet created explicitly instead of waiting on a
+        // createOnLogin that already mis-fired in the past.
+        let wallet: ConnectedWallet
+        if (stateRef.current.embedded) {
           wallet = stateRef.current.embedded
+        } else {
+          wallet = await waitForEmbedded(6_000).catch(async () => {
+            try {
+              await createWallet()
+            } catch {
+              /* already exists / creating — the waiter below settles it */
+            }
+            return waitForEmbedded(30_000)
+          })
         }
         try {
           await wallet.switchChain(tempo.id)

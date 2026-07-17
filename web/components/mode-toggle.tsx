@@ -19,11 +19,13 @@ export function ModeToggle() {
       aria-label="Toggle simple / advanced mode"
       className="inline-flex items-center gap-1 rounded-full border border-border bg-input/30 p-1 text-[11px] font-bold uppercase tracking-wide"
     >
+      {/* On phones only the ACTIVE segment shows (the header shares 375px
+          with the wordmark and the login chip); sm+ shows both segments. */}
       <span
         className={
           mode === 'simple'
             ? 'rounded-full bg-[var(--neon-lime)]/20 px-2 py-0.5 text-[var(--neon-lime)]'
-            : 'px-2 py-0.5 text-muted-foreground'
+            : 'hidden px-2 py-0.5 text-muted-foreground sm:inline-block'
         }
       >
         Simple
@@ -32,7 +34,7 @@ export function ModeToggle() {
         className={
           mode === 'advanced'
             ? 'rounded-full bg-primary/20 px-2 py-0.5 text-[var(--neon-magenta)]'
-            : 'px-2 py-0.5 text-muted-foreground'
+            : 'hidden px-2 py-0.5 text-muted-foreground sm:inline-block'
         }
       >
         Adv

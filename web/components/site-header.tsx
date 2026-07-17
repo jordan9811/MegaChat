@@ -11,11 +11,13 @@ export function SiteHeader() {
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-[var(--neon-magenta)]/60 to-transparent"
       />
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-        <a href="/" aria-label="MegaChat home" className="transition-opacity hover:opacity-90">
+      {/* px-3 below sm: wordmark + mode pill + theme + login chip all share
+          a 375px row once someone is signed in */}
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-3 sm:px-6">
+        <a href="/" aria-label="MegaChat home" className="shrink-0 transition-opacity hover:opacity-90">
           <Wordmark size="sm" />
         </a>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <ModeToggle />
           <ThemeToggle />
           {/* Go live moved into the hero funnels (Start a room); the header

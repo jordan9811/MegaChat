@@ -3,6 +3,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter, Space_Grotesk, Geist_Mono, Pacifico } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
+import { TempoWalletProvider } from '@/components/providers/tempo-wallet'
 import './globals.css'
 
 const inter = Inter({ variable: '--font-inter', subsets: ['latin'] })
@@ -104,7 +105,9 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
-          {children}
+          {/* App-wide so every header can offer login + balance, and a
+              returning Privy session is adopted on ANY page — not just /join. */}
+          <TempoWalletProvider>{children}</TempoWalletProvider>
         </ThemeProvider>
       </body>
     </html>
