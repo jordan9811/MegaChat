@@ -12,12 +12,53 @@
  * linking X to a Twitch account must not mint a second name (see the handle
  * precedent in PASS_CHECKLIST). Linked socials only decide what we CALL you.
  *
+ * ACCOUNTS COME FROM THE RAW REST API, NOT THE SDK. @privy-io/server-auth
+ * 1.32.5's LinkedAccountType union omits 'twitch_oauth' (and X/tiktok/etc are
+ * newer than its schema), so its getUser() SILENTLY DROPS those accounts while
+ * parsing — a Twitch login arrived looking like a nameless wallet, and the
+ * handle fell to "user_<did>". Verified empirically: the raw endpoint returns
+ * twitch_oauth+username, the SDK returns only the wallet. So we verify the
+ * TOKEN with the SDK (that works) and read ACCOUNTS over REST (nothing gets
+ * dropped). No SDK upgrade needed; REST is version-independent.
+ *
  * Requires PRIVY_APP_SECRET (+ the app id). Absent → returns null and the
  * app runs exactly as it does today; nothing is faked.
  */
 import { PrivyClient } from '@privy-io/server-auth';
-import { claimIdentity, getIdentity, suggestHandle } from './identity-store.js';
+import { claimIdentity, getIdentity, suggestHandle, isHandleFree } from './identity-store.js';
 import { sanitizeHandle } from './rooms-store.js';
+
+const PRIVY_API_BASE = process.env.PRIVY_API_BASE || 'https://auth.privy.io';
+
+/** The synthetic name given to a truly anonymous (wallet/passkey-only) user. */
+export function syntheticName(did) {
+  return 'user_' + String(did).replace(/[^a-z0-9]/gi, '').slice(-6);
+}
+
+/**
+ * Pick a display name from RAW Privy linked_accounts (REST shape, snake_case).
+ * Priority is what a streamer would put on screen: platform name first, the
+ * generic floor last. Exported so the ladder is unit-testable without a live
+ * Privy call. Returns null when there's no human name at all.
+ */
+export function displayNameFromRaw(accounts) {
+  const list = Array.isArray(accounts) ? accounts : [];
+  const f = (type) => list.find((a) => a && a.type === type);
+  const twitch = f('twitch_oauth');
+  if (twitch?.username) return { username: twitch.username, provider: 'twitch' };
+  const x = f('twitter_oauth');
+  if (x?.username) return { username: x.username, provider: 'x' };
+  const tiktok = f('tiktok_oauth');
+  if (tiktok?.username) return { username: tiktok.username, provider: 'tiktok' };
+  const discord = f('discord_oauth');
+  if (discord?.username) return { username: discord.username, provider: 'discord' };
+  const google = f('google_oauth');
+  if (google?.email) return { username: String(google.email).split('@')[0], provider: 'google' };
+  const email = f('email');
+  const emailAddr = email?.address || email?.email;
+  if (emailAddr) return { username: String(emailAddr).split('@')[0], provider: 'email' };
+  return null;
+}
 
 export function createPrivyIdentity({ log = console } = {}) {
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID || process.env.PRIVY_APP_ID || '';
@@ -27,6 +68,7 @@ export function createPrivyIdentity({ log = console } = {}) {
     return null;
   }
   const client = new PrivyClient(appId, appSecret);
+  const authHeader = 'Basic ' + Buffer.from(`${appId}:${appSecret}`).toString('base64');
 
   // Credentials are validated at BOOT, loudly. `appSecret` being non-empty
   // proves nothing — a stale/mismatched secret still constructs a client, and
@@ -36,7 +78,7 @@ export function createPrivyIdentity({ log = console } = {}) {
   (async () => {
     try {
       await client.getUser('did:privy:credentialprobe000000');
-      credsValid = true; // wouldn't normally resolve, but creds clearly work
+      credsValid = true;
     } catch (err) {
       const m = String(err?.message || err);
       if (/invalid app id or app secret|unauthor|401|403/i.test(m)) {
@@ -47,54 +89,75 @@ export function createPrivyIdentity({ log = console } = {}) {
           + 'room links stay hex). Fix: Privy dashboard → Settings → Basics → App secret.'
         );
       } else {
-        // "user not found" et al = credentials accepted.
         credsValid = true;
         log.log('[privy-identity] ✓ credentials verified — handles enabled');
       }
     }
   })();
 
-  /**
-   * What to call this person. Priority mirrors what a streamer would put on
-   * screen: their platform name first, the generic account only as a floor.
-   */
-  function displayNameFrom(user) {
-    const accounts = user.linkedAccounts || [];
-    const find = (type) => accounts.find((a) => a.type === type);
-    const twitch = find('twitch_oauth');
-    if (twitch?.username) return { username: twitch.username, provider: 'twitch' };
-    const x = find('twitter_oauth');
-    if (x?.username) return { username: x.username, provider: 'x' };
-    const google = find('google_oauth');
-    if (google?.email) return { username: String(google.email).split('@')[0], provider: 'google' };
-    const email = find('email');
-    if (email?.address) return { username: String(email.address).split('@')[0], provider: 'email' };
-    // Passkey/wallet-only accounts have no human name at all — give them a
-    // stable one rather than showing hex anywhere.
-    return { username: 'user_' + String(user.id).replace(/[^a-z0-9]/gi, '').slice(-6), provider: 'passkey' };
+  /** Raw linked_accounts over REST — includes account types the SDK drops. */
+  async function rawAccounts(did) {
+    const r = await fetch(`${PRIVY_API_BASE}/api/v1/users/${encodeURIComponent(did)}`, {
+      headers: { Authorization: authHeader, 'privy-app-id': appId },
+    });
+    if (!r.ok) throw new Error(`privy user fetch ${r.status}`);
+    const body = await r.json();
+    return body.linked_accounts || [];
+  }
+
+  /** Name for a DID, resilient: REST first, SDK second, synthetic floor last. */
+  async function nameFor(did) {
+    try {
+      const picked = displayNameFromRaw(await rawAccounts(did));
+      if (picked) return picked;
+    } catch (err) {
+      log.warn('[privy-identity] raw account fetch failed, trying SDK:', err.message);
+      try {
+        const u = await client.getUser(did);
+        const picked = displayNameFromRaw(u.linkedAccounts || []);
+        if (picked) return picked;
+      } catch { /* fall through to synthetic */ }
+    }
+    return { username: syntheticName(did), provider: 'wallet' };
   }
 
   return {
     configured: true,
     /** null = probing, true/false = known. Surfaced on /api/auth/providers. */
     credentialsValid: () => credsValid,
+    displayNameFromRaw,
     /**
-     * Verify an access token and return the MegaChat identity for it,
-     * claiming a handle on first sight. Throws on an invalid token — a
-     * forged token must never mint a handle.
+     * Verify an access token and return the MegaChat identity for it, claiming
+     * a handle on first sight. Throws on an invalid token — a forged token must
+     * never mint a handle.
      */
     async identityFromToken(token) {
       const claims = await client.verifyAuthToken(token); // throws if forged/expired
       const did = claims.userId;
-      // Already known → return as-is. Handles are permanent; re-linking a
-      // social later never renames you.
       const existing = getIdentity('privy', did);
-      if (existing) return existing;
 
-      const user = await client.getUser(did);
-      const { username, provider } = displayNameFrom(user);
-      // First choice is the platform name itself; only if that's taken do we
-      // fall back to a free variation (no picker, no extra click).
+      // REPAIR: an account that signed in before the REST fix (or before the
+      // social finished linking) got the synthetic "user_<did>" placeholder.
+      // That was never a name they chose — if a real platform name is now
+      // available and free, upgrade to it. A genuinely-chosen handle is never
+      // touched.
+      if (existing) {
+        if (existing.handle === syntheticName(did)) {
+          const picked = await nameFor(did);
+          const real = sanitizeHandle(picked.username);
+          if (real && real !== existing.handle && isHandleFree(real)) {
+            const upgraded = claimIdentity({
+              provider: 'privy', platformId: did, username: picked.username, handle: real,
+            });
+            log.log(`[privy-identity] upgraded placeholder → @${upgraded.handle} for ${did}`);
+            return upgraded;
+          }
+        }
+        return existing;
+      }
+
+      const { username, provider } = await nameFor(did);
+      // The platform name itself first; a free variation only if it's taken.
       const wanted = sanitizeHandle(username) ? username : suggestHandle(username);
       let identity;
       try {
