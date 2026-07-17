@@ -32,6 +32,10 @@ type MegaWalletBridge = {
   ready: boolean
   authenticated: boolean
   address: string | null
+  /** Human name from the Privy session (twitch > x > google > email).
+   *  The UI's fallback so it can NEVER be reduced to showing an address —
+   *  works even if the server-side handle mint is failing. */
+  displayName: string | null
   connect: () => Promise<string>
   logout: () => Promise<void>
   getProvider: () => Promise<unknown>
@@ -52,8 +56,23 @@ function emitChange() {
 
 /** Inner component with Privy hooks; keeps window.MegaWallet in sync. */
 function WalletBridge({ children }: { children: React.ReactNode }) {
-  const { ready, authenticated, login, logout, createWallet } = usePrivy()
+  const { ready, authenticated, login, logout, createWallet, user } = usePrivy()
   const { wallets, ready: walletsReady } = useWallets()
+
+  // Same priority ladder the server uses (privy-identity.js) — kept in sync so
+  // the optimistic client name matches the handle that gets minted.
+  const displayName: string | null = (() => {
+    type Acct = { type: string; username?: string; email?: string; address?: string }
+    const accts = (user?.linkedAccounts || []) as unknown as Acct[]
+    const f = (t: string) => accts.find((a) => a.type === t)
+    return (
+      f('twitch_oauth')?.username ||
+      f('twitter_oauth')?.username ||
+      f('google_oauth')?.email?.split('@')[0] ||
+      f('email')?.address?.split('@')[0] ||
+      null
+    )
+  })()
 
   const embedded: ConnectedWallet | undefined = wallets.find(
     (w) => w.walletClientType === 'privy',
@@ -151,6 +170,7 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
       ready: ready && walletsReady,
       authenticated,
       address: embedded?.address ?? null,
+      displayName,
       async connect() {
         // login() before the SDK is initialized is a silent no-op — the old
         // freeze: button says "waiting for sign-in", no modal ever opens.
@@ -209,7 +229,7 @@ function WalletBridge({ children }: { children: React.ReactNode }) {
     }
     emitChange()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, walletsReady, authenticated, embedded?.address])
+  }, [ready, walletsReady, authenticated, embedded?.address, displayName])
 
   return <>{children}</>
 }
@@ -222,6 +242,7 @@ function UnconfiguredBridge({ children }: { children: React.ReactNode }) {
       ready: true,
       authenticated: false,
       address: null,
+      displayName: null,
       connect: async () => {
         throw new Error(
           'Privy is not configured — set NEXT_PUBLIC_PRIVY_APP_ID in .env and restart.',

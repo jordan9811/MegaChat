@@ -259,6 +259,9 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const [usdcAddress, setUsdcAddress] = useState(USDC_FALLBACK)
   const [livekitConfigured, setLivekitConfigured] = useState(false)
   const [identityHandle, setIdentityHandle] = useState<string | null>(null)
+  // read inside listeners without re-subscribing them on every change
+  const identityHandleRef = useRef<string | null>(null)
+  identityHandleRef.current = identityHandle
 
   const passwordRef = useRef('')
   const roomIdRef = useRef<string | null>(null)
@@ -278,17 +281,34 @@ export function RoomProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(() => {})
-    // Streamers signed in via Twitch/X get their reserved handle prefilled —
-    // signing in reserves the name so you can claim it here as /<handle>.
+    // Signing in reserves your name — prefill it so the room gets a real link
+    // instead of hex. Falls back to the Privy session's own name if the
+    // server-side mint isn't available, so the field is never blank for a
+    // signed-in streamer.
+    const applyName = (name?: string | null) => {
+      if (!name) return
+      setIdentityHandle(name)
+      setDraft((d) => (d.handle ? d : { ...d, handle: name }))
+    }
     fetch('/api/auth/me')
       .then((r) => r.json())
       .then((me) => {
-        if (me?.identity?.handle) {
-          setIdentityHandle(me.identity.handle)
-          setDraft((d) => (d.handle ? d : { ...d, handle: me.identity.handle }))
-        }
+        if (me?.identity?.handle) applyName(me.identity.handle)
+        else applyName(window.MegaWallet?.displayName)
       })
-      .catch(() => {})
+      .catch(() => applyName(window.MegaWallet?.displayName))
+
+    const onWallet = () => {
+      if (!identityHandleRef.current) applyName(window.MegaWallet?.displayName)
+    }
+    window.addEventListener('megawallet:changed', onWallet)
+    window.addEventListener('megachat:identity', () => {
+      fetch('/api/auth/me')
+        .then((r) => r.json())
+        .then((me) => applyName(me?.identity?.handle))
+        .catch(() => {})
+    })
+    return () => window.removeEventListener('megawallet:changed', onWallet)
   }, [])
 
   const switchRoom = useCallback(() => {

@@ -28,6 +28,32 @@ export function createPrivyIdentity({ log = console } = {}) {
   }
   const client = new PrivyClient(appId, appSecret);
 
+  // Credentials are validated at BOOT, loudly. `appSecret` being non-empty
+  // proves nothing — a stale/mismatched secret still constructs a client, and
+  // then every handle mint 401s at runtime while the UI just quietly shows no
+  // username. That exact silence cost a full debugging round; never again.
+  let credsValid = null; // null = still checking
+  (async () => {
+    try {
+      await client.getUser('did:privy:credentialprobe000000');
+      credsValid = true; // wouldn't normally resolve, but creds clearly work
+    } catch (err) {
+      const m = String(err?.message || err);
+      if (/invalid app id or app secret|unauthor|401|403/i.test(m)) {
+        credsValid = false;
+        log.error(
+          '[privy-identity] ✗ PRIVY_APP_SECRET is INVALID for this app id — '
+          + 'sign-in will work but NO handles can be minted (users show as "Account", '
+          + 'room links stay hex). Fix: Privy dashboard → Settings → Basics → App secret.'
+        );
+      } else {
+        // "user not found" et al = credentials accepted.
+        credsValid = true;
+        log.log('[privy-identity] ✓ credentials verified — handles enabled');
+      }
+    }
+  })();
+
   /**
    * What to call this person. Priority mirrors what a streamer would put on
    * screen: their platform name first, the generic account only as a floor.
@@ -50,6 +76,8 @@ export function createPrivyIdentity({ log = console } = {}) {
 
   return {
     configured: true,
+    /** null = probing, true/false = known. Surfaced on /api/auth/providers. */
+    credentialsValid: () => credsValid,
     /**
      * Verify an access token and return the MegaChat identity for it,
      * claiming a handle on first sight. Throws on an invalid token — a

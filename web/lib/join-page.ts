@@ -1671,17 +1671,31 @@ async function sendLetter() {
 async function initAuthUi() {
   const who = document.getElementById('authIdentity');
   if (!who) return;
+  const prefill = (name) => {
+    const input = document.getElementById('username');
+    // Never clobber something the viewer typed themselves.
+    if (input && !input.value && name) input.value = name;
+  };
   try {
     const me = await (await fetch('/api/auth/me')).json();
     const identity = me.identity || null;
     if (identity) {
       who.style.display = '';
       who.innerHTML = `🟢 Signed in as <strong>@${identity.handle}</strong>`;
-      const input = document.getElementById('username');
-      if (input && !input.value) input.value = identity.handle;
-    } else {
-      who.style.display = 'none';
+      prefill(identity.handle);
+      return;
     }
+    // No server handle (e.g. the mint is failing) but a Privy session exists —
+    // still greet them by name and prefill it. Being signed in must never
+    // look like being anonymous.
+    const MW = getMegaWallet();
+    if (MW && MW.authenticated && MW.displayName) {
+      who.style.display = '';
+      who.innerHTML = `🟢 Signed in as <strong>@${MW.displayName}</strong>`;
+      prefill(MW.displayName);
+      return;
+    }
+    who.style.display = 'none';
   } catch { /* identity optional */ }
 
   const welcome = new URLSearchParams(location.search).get('welcome');
@@ -2008,6 +2022,9 @@ export function initJoinPage({ wsUrl }) {
 
   // Privy sign-in mints the handle server-side — reflect it without a reload.
   window.addEventListener('megachat:identity', () => { void initAuthUi(); }, { signal: abort.signal });
+  // Privy session can land after first paint — re-render the identity line so
+  // a returning viewer sees their name without a refresh.
+  window.addEventListener('megawallet:changed', () => { void initAuthUi(); }, { signal: abort.signal });
 
   // Letter mode controls (button hidden unless the room enables letters).
   on('letterBtn', () => void openLetterStage());

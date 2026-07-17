@@ -22,7 +22,12 @@ import {
 import { useUiMode } from '@/lib/ui-mode'
 
 type Identity = { provider: string; username: string; handle: string } | null
-type WalletState = { configured: boolean; authenticated: boolean; address: string | null }
+type WalletState = {
+  configured: boolean
+  authenticated: boolean
+  address: string | null
+  displayName: string | null
+}
 
 const itemCls =
   'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-input/50'
@@ -37,6 +42,7 @@ function readWallet(): WalletState {
     configured: !!MW?.configured,
     authenticated: !!MW?.authenticated,
     address: MW?.address ?? null,
+    displayName: MW?.displayName ?? null,
   }
 }
 
@@ -44,7 +50,9 @@ export function HeaderAuth() {
   const [identity, setIdentity] = useState<Identity>(null)
   const [loaded, setLoaded] = useState(false)
   const [open, setOpen] = useState(false)
-  const [wallet, setWallet] = useState<WalletState>({ configured: false, authenticated: false, address: null })
+  const [wallet, setWallet] = useState<WalletState>({
+    configured: false, authenticated: false, address: null, displayName: null,
+  })
   const [balance, setBalance] = useState<string | null>(null)
   const [emailBusy, setEmailBusy] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -148,7 +156,13 @@ export function HeaderAuth() {
   // NEVER a wallet address here. This is a consumer app: you are your name,
   // and hex on a button is the opposite of that. The address lives inside the
   // dropdown for the people who actually want it.
-  const chipLabel = identity ? `@${identity.handle}` : 'Account'
+  // handle (server-minted) → Privy's own name (client-side, survives a failed
+  // mint) → generic. An address is never a name.
+  const chipLabel = identity
+    ? `@${identity.handle}`
+    : wallet.displayName
+      ? `@${wallet.displayName}`
+      : 'Account'
 
   return (
     <div ref={rootRef} className="relative">
