@@ -237,12 +237,23 @@ export function attachAuth(app, { log = console } = {}) {
       // Land back where the login button was clicked, not on a random room's
       // checkout page. The header chip flipping to @handle is the receipt.
       const back = safeReturnTo(st.back) || '/';
-      // Already claimed → straight back in. Otherwise show the picker with
-      // the first free suggestion (spec: collision → suffix picker).
+      // Already claimed → straight back in, no ceremony.
       const existing = getIdentity(p, platformId);
       if (existing) {
         setCookie(res, 'mc_identity', seal({ provider: p, platformId }), { maxAge: 30 * 86400 });
         return res.redirect(302, withWelcome(back, existing.handle));
+      }
+      // First sign-in: claim the platform username DIRECTLY — you're signing
+      // in with that name, asking you to click "claim" on it is a dead step.
+      // The picker only appears when the name is genuinely contested/unusable.
+      try {
+        const identity = claimIdentity({
+          provider: p, platformId: String(platformId), username, handle: username,
+        });
+        setCookie(res, 'mc_identity', seal({ provider: p, platformId: identity.platformId }), { maxAge: 30 * 86400 });
+        return res.redirect(302, withWelcome(back, identity.handle));
+      } catch {
+        /* handle taken or invalid → fall through to the picker */
       }
       const pending = seal({
         provider: p, platformId: String(platformId), username, back, t: Date.now(),
@@ -301,7 +312,7 @@ button{width:100%;background:#e91e8c;color:#fff;border:0;border-radius:10px;padd
 .err{color:#ff6ab8;font-size:.85rem;min-height:1.2em}</style></head><body>
 <div class="card">
 <h1>Welcome, ${safe(username)} 👋</h1>
-<p>Your ${safe(provider)} account is verified. Claim your permanent MegaChat handle — it becomes your display name and your megachat link.</p>
+<p>Your ${safe(provider)} account is verified, but <strong>@${safe(username)}</strong> is already taken on MegaChat. Pick a variation — it becomes your display name and your megachat link.</p>
 <input id="h" value="${safe(suggested)}" maxlength="20" autocomplete="off" spellcheck="false">
 <div class="err" id="err"></div>
 <button id="go">Claim handle</button>

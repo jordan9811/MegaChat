@@ -232,8 +232,8 @@ export function HeaderAuth() {
           ) : (
             <>
               <p className="px-3 pb-1.5 pt-2 text-xs text-muted-foreground">
-                Twitch / X reserves your handle as your display name and your
-                permanent room link. Email sets up your balance in one step.
+                Twitch / X claims your @handle + room link. Google / email
+                sets up your balance.
               </p>
               {providers.twitch ? (
                 <a href={authHref('twitch')} role="menuitem" className={itemCls}>
@@ -268,10 +268,14 @@ export function HeaderAuth() {
                 onClick={() => void emailSignIn()}
                 disabled={!wallet.configured || emailBusy}
                 className={wallet.configured ? itemCls : itemDisabledCls}
-                title={wallet.configured ? 'Sign up or in with email or passkey' : 'Wallet service not configured on this server'}
+                title={wallet.configured ? 'Opens the sign-in window' : 'Wallet service not configured on this server'}
               >
                 <Mail className="size-4 text-[var(--neon-cyan)]" />
-                {emailBusy ? 'Waiting for sign-in…' : wallet.configured ? 'Continue with email' : 'Email — not configured'}
+                {emailBusy
+                  ? 'Waiting for sign-in…'
+                  : wallet.configured
+                    ? 'Google, email or passkey'
+                    : 'Google / email — not configured'}
               </button>
             </>
           )}

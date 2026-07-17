@@ -9,7 +9,9 @@ import { fileURLToPath } from 'url';
 import { sanitizeHandle, getRoomByHandle } from './rooms-store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, 'data');
+// Same persistent-volume override as rooms-store — identities being wiped on
+// every deploy is what made OAuth re-show the claim screen "every time".
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const STORE_PATH = path.join(DATA_DIR, 'identities.json');
 
 let cache = null;

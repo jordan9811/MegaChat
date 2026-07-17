@@ -231,12 +231,14 @@ export function TempoWalletProvider({ children }: { children: React.ReactNode })
 
   const providerConfig = useMemo(
     () => ({
-      // Email first — crypto stays invisible. Passkey + socials behind it.
-      loginMethods: ['email', 'passkey', 'google', 'twitter'] as (
+      // ONE home per provider across the whole app: Twitch and X live in
+      // MegaChat's own OAuth (they reserve your @handle); Privy owns
+      // Google/email/passkey (the balance). Twitter deliberately NOT here —
+      // X showing up in two different sign-in surfaces read as broken.
+      loginMethods: ['google', 'email', 'passkey'] as (
+        | 'google'
         | 'email'
         | 'passkey'
-        | 'google'
-        | 'twitter'
       )[],
       appearance: {
         theme: 'dark' as const,

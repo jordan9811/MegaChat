@@ -240,7 +240,7 @@ async function connectMetaMask() {
 }
 
 const PRIVY_SIGNIN_LABEL = '🔐 Sign in';
-const PRIVY_CREATE_LABEL = '✨ Sign up — email or passkey';
+const PRIVY_CREATE_LABEL = '✨ Google, email or passkey';
 
 /** The window bridge installed by components/providers/tempo-wallet.tsx. */
 function getMegaWallet() {

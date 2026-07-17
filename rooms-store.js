@@ -9,7 +9,10 @@ import { fileURLToPath } from 'url';
 import { hashPassword, verifyPassword } from './room-auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, 'data');
+// DATA_DIR env points this at a persistent volume in production (Railway's
+// container disk is EPHEMERAL — without it every deploy erases all rooms,
+// handles and identities, which is why claims kept "coming back").
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const STORE_PATH = path.join(DATA_DIR, 'rooms.json');
 
 export const DEFAULT_ROOM_ID = 'default';

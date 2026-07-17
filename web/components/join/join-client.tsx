@@ -170,7 +170,7 @@ export function JoinClient() {
           <div className="flex flex-col gap-2">
             <div id="privyChoice" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button id="passkeyCreateBtn" type="button" className={passkeyBtnCls}>
-                ✨ Sign up — email or passkey
+                ✨ Google, email or passkey
               </button>
               <button id="passkeyBtn" type="button" className={passkeyBtnCls}>
                 🔐 Sign in
