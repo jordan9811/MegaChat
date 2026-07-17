@@ -12,10 +12,12 @@ import {
   sanitizeHandle,
   getRoomByHandle,
   setRoomHandle,
+  setRoomOwner,
+  roomsOwnedBy,
 } from './rooms-store.js';
 import { validatePaymentToken } from './token-utils.js';
 import { isHandleTakenByIdentity } from './identity-store.js';
-import { readIdentityFromRequest } from './auth.js';
+import { readIdentityFromRequest, roomOwnerKey, verifyRoomAccess } from './auth.js';
 
 /**
  * Can this request use `handle` as a room link?
@@ -61,16 +63,16 @@ export function attachDashboardRoutes(app, deps) {
     atomicToUsdc,
   } = deps;
 
-  async function requireRoomPassword(req, res, next) {
+  // Owner-by-identity (signed-in cookie) OR the room password (shared mods).
+  async function requireRoomAccess(req, res, next) {
     const id = normalizeRoomId(req.params.roomId);
     if (!id) return res.status(400).json({ error: 'Invalid room id' });
-    const password = getManagePassword(req);
-    if (!password) {
-      return res.status(401).json({ error: 'Unauthorized', hint: 'Room password required' });
-    }
-    const ok = await verifyRoomPassword(id, password);
-    if (!ok) {
-      return res.status(401).json({ error: 'Unauthorized' });
+    const access = await verifyRoomAccess(req, id);
+    if (!access.ok) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        hint: 'Sign in as the room owner, or provide the room password.',
+      });
     }
     req.roomId = id;
     next();
@@ -106,12 +108,21 @@ export function attachDashboardRoutes(app, deps) {
     }
   }
 
-  /** Public — no room-password middleware. Sets hash on new room from body.password. */
+  /** Public create. Signed-in → the room is OWNED (no password needed);
+   *  password is optional and only sets the mod-share key. Signed out → a
+   *  password is required so the room still has an admin path. */
   async function handleCreateRoom(req, res) {
     const { name, config, password, handle } = req.body || {};
     console.log('[dashboard:create] create room request received');
-    if (!password || typeof password !== 'string' || password.length < 4) {
-      return res.status(400).json({ error: 'Room password required (min 4 characters)' });
+    const identity = readIdentityFromRequest(req);
+    const hasPassword = typeof password === 'string' && password.length > 0;
+    if (hasPassword && password.length < 4) {
+      return res.status(400).json({ error: 'Room password must be at least 4 characters' });
+    }
+    if (!identity && !hasPassword) {
+      return res.status(400).json({
+        error: 'Sign in to own this room, or set a room password to manage it.',
+      });
     }
     // Handle claim is validated BEFORE the room exists so a conflict never
     // leaves a half-created room behind.
@@ -134,7 +145,8 @@ export function attachDashboardRoutes(app, deps) {
     }
     let room;
     try {
-      room = await createRoomWithPassword(name, mergedConfig, password);
+      room = await createRoomWithPassword(name, mergedConfig, hasPassword ? password : null);
+      if (identity) setRoomOwner(room.id, roomOwnerKey(identity));
       if (handle != null && handle !== '') {
         setRoomHandle(room.id, handle);
         room = resolveRoomConfig(room.id);
@@ -142,9 +154,11 @@ export function attachDashboardRoutes(app, deps) {
     } catch (err) {
       return res.status(400).json({ error: err.message });
     }
-    console.log(`[dashboard:create] room ${room.id} (${room.name}) created — password hashed`);
+    console.log(`[dashboard:create] room ${room.id} (${room.name}) created — ${identity ? 'owned by ' + roomOwnerKey(identity) : 'password-only'}`);
     res.status(201).json({
       room,
+      owned: !!identity,
+      hasPassword,
       joinUrl: `${deps.baseUrl}/?room=${room.id}`,
       overlayUrl: `${deps.baseUrl}/overlay?room=${room.id}`,
     });
@@ -176,7 +190,25 @@ export function attachDashboardRoutes(app, deps) {
   app.post('/api/dashboard/create', handleCreateRoom);
   app.post('/api/dashboard/rooms', handleCreateRoom);
 
-  app.get('/api/dashboard/rooms/:roomId', requireRoomPassword, (req, res) => {
+  // "Your rooms" — everything the signed-in identity owns, with live counts.
+  // Signed out → empty (no password/identity, nothing to show). This is what
+  // lets a streamer get back to a room without re-creating it.
+  app.get('/api/dashboard/my-rooms', (req, res) => {
+    const key = roomOwnerKey(readIdentityFromRequest(req));
+    if (!key) return res.json({ rooms: [] });
+    const rooms = roomsOwnedBy(key).map((r) => {
+      let live = 0;
+      let waiting = 0;
+      for (const s of activeSeats.values()) {
+        if (s.streamRoomId !== r.id) continue;
+        if (s.live) live++; else waiting++;
+      }
+      return { ...r, live, waiting };
+    });
+    res.json({ rooms });
+  });
+
+  app.get('/api/dashboard/rooms/:roomId', requireRoomAccess, (req, res) => {
     const room = resolveRoomConfig(req.roomId);
     if (!room) return res.status(404).json({ error: 'Room not found' });
 
@@ -218,7 +250,7 @@ export function attachDashboardRoutes(app, deps) {
     });
   });
 
-  app.put('/api/dashboard/rooms/:roomId', requireRoomPassword, async (req, res) => {
+  app.put('/api/dashboard/rooms/:roomId', requireRoomAccess, async (req, res) => {
     const body = req.body || {};
     if (body.config) {
       try {
@@ -251,21 +283,21 @@ export function attachDashboardRoutes(app, deps) {
     res.json({ room });
   });
 
-  app.post('/api/dashboard/rooms/:roomId/start', requireRoomPassword, (req, res) => {
+  app.post('/api/dashboard/rooms/:roomId/start', requireRoomAccess, (req, res) => {
     const room = setRoomActive(req.roomId, true);
     if (!room) return res.status(404).json({ error: 'Room not found' });
     console.log(`[dashboard] room ${room.id} started (accepting joins)`);
     res.json({ room });
   });
 
-  app.post('/api/dashboard/rooms/:roomId/stop', requireRoomPassword, (req, res) => {
+  app.post('/api/dashboard/rooms/:roomId/stop', requireRoomAccess, (req, res) => {
     const room = setRoomActive(req.roomId, false);
     if (!room) return res.status(404).json({ error: 'Room not found' });
     console.log(`[dashboard] room ${room.id} stopped (no new joins)`);
     res.json({ room });
   });
 
-  app.post('/api/dashboard/rooms/:roomId/kick/:seatId', requireRoomPassword, (req, res) => {
+  app.post('/api/dashboard/rooms/:roomId/kick/:seatId', requireRoomAccess, (req, res) => {
     const room = resolveRoomConfig(req.roomId);
     if (!room) return res.status(404).json({ error: 'Room not found' });
     const seat = activeSeats.get(req.params.seatId);
@@ -279,7 +311,7 @@ export function attachDashboardRoutes(app, deps) {
 
   // Pin/unpin a live seat as free co-host (meter paused while pinned).
   // Same password gate as kick.
-  app.post('/api/dashboard/rooms/:roomId/pin/:seatId', requireRoomPassword, (req, res) => {
+  app.post('/api/dashboard/rooms/:roomId/pin/:seatId', requireRoomAccess, (req, res) => {
     const room = resolveRoomConfig(req.roomId);
     if (!room) return res.status(404).json({ error: 'Room not found' });
     const seat = activeSeats.get(req.params.seatId);

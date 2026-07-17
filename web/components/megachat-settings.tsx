@@ -29,7 +29,14 @@ export function MegaChatSettings() {
     switchRoom,
     livekitConfigured,
     identityHandle,
+    hasIdentity,
+    myRooms,
+    openOwnedRoom,
   } = useRoom()
+
+  // Server-verified sign-in → you OWN rooms you create (no password needed).
+  // Uses the real identity cookie, not the Privy display-name fallback.
+  const signedIn = hasIdentity
 
   const [tab, setTab] = useState<'create' | 'manage'>('create')
   const [password, setPassword] = useState('')
@@ -51,13 +58,19 @@ export function MegaChatSettings() {
   async function handleCreate() {
     setError(null)
     setSuccess(null)
-    if (!password || password.length < 4) {
-      setError('Room password required (min 4 characters).')
+    // Password is optional when signed in (you own the room); required only
+    // for anonymous rooms, which need SOME admin path.
+    if (!signedIn && (!password || password.length < 4)) {
+      setError('Sign in to own this room, or set a room password (min 4 characters).')
+      return
+    }
+    if (password && password.length < 4) {
+      setError('Room password must be at least 4 characters.')
       return
     }
     setBusy(true)
     try {
-      await create(password)
+      await create(password || undefined)
       setSuccess('Room created — copy your links below.')
       requestAnimationFrame(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -80,6 +93,18 @@ export function MegaChatSettings() {
       await unlock(manageRoomId, managePassword)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Invalid room ID or password')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleOpenOwned(roomId: string) {
+    setError(null)
+    setBusy(true)
+    try {
+      await openOwnedRoom(roomId)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not open that room')
     } finally {
       setBusy(false)
     }
@@ -132,6 +157,40 @@ export function MegaChatSettings() {
           )
         }
       />
+
+      {/* YOUR ROOMS — one click back into any room you own, no password.
+          Only shown when signed in with rooms and not currently managing one. */}
+      {!managing && myRooms.length > 0 ? (
+        <div className="border-b border-border/70 px-5 pt-5 pb-4 sm:px-6">
+          <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]">
+            Your rooms
+          </p>
+          <div className="flex flex-col gap-2">
+            {myRooms.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => void handleOpenOwned(r.id)}
+                disabled={busy}
+                className="group flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-input/20 px-4 py-3 text-left transition-colors hover:border-[var(--neon-lime)]/50 hover:bg-input/40 disabled:opacity-60"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-foreground">
+                    {r.name}
+                  </span>
+                  <span className="block truncate font-mono text-xs text-muted-foreground">
+                    {r.handle ? `/${r.handle}` : r.id}
+                    {r.live > 0 ? ` · ${r.live} live` : r.active ? ' · open' : ' · paused'}
+                  </span>
+                </span>
+                <span className="shrink-0 text-xs font-bold uppercase tracking-wide text-[var(--neon-lime)] opacity-80 group-hover:opacity-100">
+                  Manage →
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* Create / Manage entry tabs (hidden once a room is unlocked) */}
       {!managing ? (
@@ -351,9 +410,13 @@ export function MegaChatSettings() {
 
             {!managing ? (
               <Field
-                label="Room password"
+                label={signedIn ? 'Mod password (optional)' : 'Room password'}
                 htmlFor="room-password"
-                hint="Min 4 characters. Needed to manage, pause, and kick."
+                hint={
+                  signedIn
+                    ? "You own this room via your sign-in — no password needed to manage it. Set one only to share management with mods."
+                    : 'Min 4 characters. Needed to manage, pause, and kick. (Or sign in to skip it.)'
+                }
                 className="sm:col-span-2"
               >
                 <TextInput
@@ -361,7 +424,7 @@ export function MegaChatSettings() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Min 4 characters"
+                  placeholder={signedIn ? 'Optional — for sharing with mods' : 'Min 4 characters'}
                   autoComplete="new-password"
                 />
               </Field>

@@ -170,6 +170,8 @@ export async function migrateLegacyRoomPasswords() {
   const defaultPwd = process.env.ROOM_DEFAULT_PASSWORD || 'changeme';
   let count = 0;
   for (const rec of Object.values(store.rooms)) {
+    // Owner-only rooms legitimately have no password — never force one on them.
+    if (rec.ownerKey) continue;
     if (!rec.passwordHash) {
       rec.passwordHash = await hashPassword(defaultPwd);
       count++;
@@ -413,8 +415,47 @@ export function createRoom(name, config = {}, passwordHash = null) {
 }
 
 export async function createRoomWithPassword(name, config, password) {
-  const passwordHash = await hashPassword(password);
+  // Password is now OPTIONAL: a signed-in owner needs none (ownership is the
+  // auth); a password, when set, is the mod-share key. No password → null hash,
+  // which verifyPassword never matches, so the room is owner-only.
+  const passwordHash = password ? await hashPassword(password) : null;
   return createRoom(name, config, passwordHash);
+}
+
+// ─── Room ownership (by signed-in identity) ─────────────────────────────────
+// ownerKey is `${provider}:${platformId}` — stable per Privy account. Lets the
+// owner manage without a password, and powers the dashboard "your rooms" list.
+export function setRoomOwner(roomId, ownerKey) {
+  const id = normalizeRoomId(roomId);
+  const store = loadStore();
+  const rec = id ? store.rooms[id] : null;
+  if (!rec || !ownerKey) return null;
+  rec.ownerKey = String(ownerKey);
+  saveStore(store);
+  return rec.ownerKey;
+}
+
+export function isRoomOwnedBy(roomId, ownerKey) {
+  if (!ownerKey) return false;
+  const rec = getRoomRecord(roomId);
+  return !!rec && rec.ownerKey === String(ownerKey);
+}
+
+/** Lean cards for the dashboard "your rooms" list, newest first. */
+export function roomsOwnedBy(ownerKey) {
+  if (!ownerKey) return [];
+  const store = loadStore();
+  return Object.values(store.rooms)
+    .filter((r) => r.ownerKey === String(ownerKey))
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .map((r) => ({
+      id: r.id,
+      name: r.name || r.id,
+      handle: r.handle || null,
+      active: r.active !== false,
+      createdAt: r.createdAt || null,
+      hasPassword: !!r.passwordHash,
+    }));
 }
 
 export function updateRoom(roomId, patch) {

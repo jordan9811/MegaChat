@@ -12,6 +12,7 @@
 import { createHmac, randomBytes, createHash } from 'crypto';
 import { claimIdentity, getIdentity, suggestHandle } from './identity-store.js';
 import { createPrivyIdentity } from './privy-identity.js';
+import { verifyRoomPassword, isRoomOwnedBy } from './rooms-store.js';
 
 const PROVIDERS = {
   twitch: {
@@ -79,6 +80,26 @@ export function readIdentityFromRequest(req) {
   const sess = unseal(readCookies(req).mc_identity);
   if (!sess) return null;
   return getIdentity(sess.provider, sess.platformId);
+}
+
+/** Stable per-account owner key for a room. */
+export function roomOwnerKey(identity) {
+  return identity ? `${identity.provider}:${identity.platformId}` : null;
+}
+
+/**
+ * Can this request manage `roomId`? Owner-by-identity (cookie) OR the room
+ * password (x-room-password header, for shared mods). Ownership is checked
+ * against the tamper-evident identity cookie — never client-asserted.
+ */
+export async function verifyRoomAccess(req, roomId) {
+  const key = roomOwnerKey(readIdentityFromRequest(req));
+  if (key && isRoomOwnedBy(roomId, key)) return { ok: true, via: 'owner' };
+  const password = req.get('x-room-password');
+  if (password && (await verifyRoomPassword(roomId, password))) {
+    return { ok: true, via: 'password' };
+  }
+  return { ok: false };
 }
 
 /**

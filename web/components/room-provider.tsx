@@ -26,10 +26,12 @@ import {
   kickSeat as apiKickSeat,
   pinSeat as apiPinSeat,
   getPublicConfig,
+  listMyRooms,
   listLetters as apiListLetters,
   approveLetter as apiApproveLetter,
   rejectLetter as apiRejectLetter,
   type LetterAdminItem,
+  type MyRoomCard,
   type Room,
   type Seat,
   type RoomConfigPatch,
@@ -130,8 +132,16 @@ type RoomContextValue = {
   /** Handle reserved by the signed-in OAuth identity — null when signed out.
    *  The dashboard uses it to say "this name is already yours". */
   identityHandle: string | null
+  /** True only when the SERVER has a minted identity cookie (the thing that
+   *  authorizes owner actions) — distinct from the Privy display-name fallback. */
+  hasIdentity: boolean
+  /** Rooms owned by the signed-in identity, for the "your rooms" list. */
+  myRooms: MyRoomCard[]
+  refreshMyRooms: () => Promise<void>
+  /** Open a room you OWN with no password (identity cookie authorizes it). */
+  openOwnedRoom: (roomId: string) => Promise<void>
   updateDraft: (patch: Partial<ConfigDraft>) => void
-  create: (password: string) => Promise<void>
+  create: (password?: string) => Promise<void>
   unlock: (roomId: string, password: string) => Promise<void>
   toggleActive: () => Promise<void>
   kick: (seatId: string) => Promise<void>
@@ -259,6 +269,8 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const [usdcAddress, setUsdcAddress] = useState(USDC_FALLBACK)
   const [livekitConfigured, setLivekitConfigured] = useState(false)
   const [identityHandle, setIdentityHandle] = useState<string | null>(null)
+  const [hasIdentity, setHasIdentity] = useState(false)
+  const [myRooms, setMyRooms] = useState<MyRoomCard[]>([])
   // read inside listeners without re-subscribing them on every change
   const identityHandleRef = useRef<string | null>(null)
   identityHandleRef.current = identityHandle
@@ -293,22 +305,38 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     fetch('/api/auth/me')
       .then((r) => r.json())
       .then((me) => {
-        if (me?.identity?.handle) applyName(me.identity.handle)
-        else applyName(window.MegaWallet?.displayName)
+        if (me?.identity?.handle) {
+          setHasIdentity(true)
+          applyName(me.identity.handle)
+        } else applyName(window.MegaWallet?.displayName)
       })
       .catch(() => applyName(window.MegaWallet?.displayName))
+
+    // Load "your rooms" now and whenever identity changes (sign-in mints it).
+    const loadMine = () => listMyRooms().then((d) => setMyRooms(d.rooms)).catch(() => {})
+    void loadMine()
 
     const onWallet = () => {
       if (!identityHandleRef.current) applyName(window.MegaWallet?.displayName)
     }
-    window.addEventListener('megawallet:changed', onWallet)
-    window.addEventListener('megachat:identity', () => {
+    const onIdentity = () => {
       fetch('/api/auth/me')
         .then((r) => r.json())
-        .then((me) => applyName(me?.identity?.handle))
+        .then((me) => {
+          if (me?.identity?.handle) {
+            setHasIdentity(true)
+            applyName(me.identity.handle)
+          }
+        })
         .catch(() => {})
-    })
-    return () => window.removeEventListener('megawallet:changed', onWallet)
+      void loadMine()
+    }
+    window.addEventListener('megawallet:changed', onWallet)
+    window.addEventListener('megachat:identity', onIdentity)
+    return () => {
+      window.removeEventListener('megawallet:changed', onWallet)
+      window.removeEventListener('megachat:identity', onIdentity)
+    }
   }, [])
 
   const switchRoom = useCallback(() => {
@@ -351,24 +379,45 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     [usdcAddress, refresh],
   )
 
+  const refreshMyRooms = useCallback(async () => {
+    try {
+      const d = await listMyRooms()
+      setMyRooms(d.rooms)
+    } catch {
+      /* signed out or offline — leave the list as-is */
+    }
+  }, [])
+
   const create = useCallback(
-    async (password: string) => {
+    async (password?: string) => {
       const name = draft.name.trim() || 'My Stream'
       const data = await apiCreateRoom(
         name,
         draftToConfig(draft, usdcAddress),
-        password,
+        password || null,
         draft.handle.trim() || null,
       )
-      enterManaged(data.room, password, data.joinUrl, data.overlayUrl)
+      // Owner rooms need no stored password for management (cookie authorizes).
+      enterManaged(data.room, data.owned ? '' : password || '', data.joinUrl, data.overlayUrl)
+      void refreshMyRooms()
     },
-    [draft, usdcAddress, enterManaged],
+    [draft, usdcAddress, enterManaged, refreshMyRooms],
   )
 
   const unlock = useCallback(
     async (roomId: string, password: string) => {
       const data = await apiUnlockRoom(roomId.trim(), password)
       enterManaged(data.room, password, data.joinUrl, data.overlayUrl)
+    },
+    [enterManaged],
+  )
+
+  // Open a room you OWN — no password, the identity cookie authorizes the
+  // session request. This is what "your rooms → Manage" uses.
+  const openOwnedRoom = useCallback(
+    async (roomId: string) => {
+      const data = await getRoomSession(roomId)
+      enterManaged(data.room, '', data.joinUrl, data.overlayUrl)
     },
     [enterManaged],
   )
@@ -543,6 +592,10 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       usdcAddress,
       livekitConfigured,
       identityHandle,
+      hasIdentity,
+      myRooms,
+      refreshMyRooms,
+      openOwnedRoom,
       updateDraft,
       create,
       unlock,
@@ -553,7 +606,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       lettersAdmin,
       hostToken,
     }),
-    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
+    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, refreshMyRooms, openOwnedRoom, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

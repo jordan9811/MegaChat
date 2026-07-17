@@ -25,6 +25,7 @@ import {
   joinStreamGatesFor,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
+import { verifyRoomAccess } from './auth.js';
 import {
   toAtomic,
   fromAtomic,
@@ -1043,10 +1044,10 @@ app.post('/api/livekit/token', async (req, res) => {
       return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity });
     }
     if (role === 'host') {
-      // The streamer's own camera — dashboard-grade auth (room password).
-      const password = req.get('x-room-password');
-      const okPwd = password && (await verifyRoomPassword(roomId, password));
-      if (!okPwd) return res.status(401).json({ error: 'Room password required' });
+      // The streamer's own camera — dashboard-grade auth: owner identity OR
+      // the room password (same rule as every management route).
+      const access = await verifyRoomAccess(req, roomId);
+      if (!access.ok) return res.status(401).json({ error: 'Sign in as the room owner, or provide the room password.' });
       const token = await livekit.hostToken(roomId);
       return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity: `host:${roomId}` });
     }

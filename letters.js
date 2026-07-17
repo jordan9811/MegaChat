@@ -24,9 +24,9 @@ import { erc20Abi } from 'viem';
 import {
   resolveRoomConfig,
   normalizeRoomId,
-  verifyRoomPassword,
   letterPriceFor,
 } from './rooms-store.js';
+import { verifyRoomAccess } from './auth.js';
 import { toWebRequest } from './meter-mpp.js';
 import { toAtomic, fromAtomic } from './token-utils.js';
 
@@ -336,12 +336,12 @@ export function attachLetters(app, deps) {
     res.send(letter.media);
   });
 
-  // ── Moderation (password-gated, same header scheme as the dashboard) ─────
+  // ── Moderation auth: owner identity OR room password (dashboard scheme) ──
   async function requirePassword(req, res) {
     const roomId = normalizeRoomId(req.params.roomId);
     if (!roomId) { res.status(400).json({ error: 'Invalid room id' }); return null; }
-    const password = req.get('x-room-password');
-    if (!password || !(await verifyRoomPassword(roomId, password))) {
+    const access = await verifyRoomAccess(req, roomId);
+    if (!access.ok) {
       res.status(401).json({ error: 'Unauthorized' });
       return null;
     }

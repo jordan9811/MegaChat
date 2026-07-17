@@ -194,13 +194,30 @@ export function getPublicConfig(room = 'default') {
 export function createRoom(
   name: string,
   config: RoomConfigPatch,
-  password: string,
+  password: string | null,
   handle?: string | null,
 ) {
-  return request<{ room: Room; joinUrl: string; overlayUrl: string }>(
+  return request<{ room: Room; owned: boolean; hasPassword: boolean; joinUrl: string; overlayUrl: string }>(
     '/api/dashboard/create',
-    { method: 'POST', body: { name, config, password, handle: handle || null } },
+    { method: 'POST', body: { name, config, password: password || undefined, handle: handle || null } },
   )
+}
+
+/** One card in the signed-in owner's "your rooms" list (/api/dashboard/my-rooms). */
+export type MyRoomCard = {
+  id: string
+  name: string
+  handle: string | null
+  active: boolean
+  createdAt: string | null
+  hasPassword: boolean
+  live: number
+  waiting: number
+}
+
+/** Rooms owned by the current identity (empty when signed out). */
+export function listMyRooms() {
+  return request<{ rooms: MyRoomCard[] }>('/api/dashboard/my-rooms')
 }
 
 export function unlockRoom(roomId: string, password: string) {
@@ -210,7 +227,8 @@ export function unlockRoom(roomId: string, password: string) {
   )
 }
 
-export function getRoomSession(roomId: string, password: string) {
+export function getRoomSession(roomId: string, password?: string) {
+  // Owner opens with no password — the identity cookie authorizes it.
   return request<RoomSession>(
     `/api/dashboard/rooms/${encodeURIComponent(roomId)}`,
     { password },
