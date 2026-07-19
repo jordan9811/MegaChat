@@ -37,6 +37,9 @@ export function MegaChatSettings() {
   // Server-verified sign-in → you OWN rooms you create (no password needed).
   // Uses the real identity cookie, not the Privy display-name fallback.
   const signedIn = hasIdentity
+  // FREE room = per-second price 0. One switch drives the whole free path
+  // (seats + auto-priced MegaChats); flip it off to restore the dust default.
+  const freeRoom = !(parseFloat(draft.passkeyTickPrice || '0') > 0)
 
   const [tab, setTab] = useState<'create' | 'manage'>('create')
   const [password, setPassword] = useState('')
@@ -370,6 +373,36 @@ export function MegaChatSettings() {
               </label>
             </div>
 
+            {/* FREE switch — up top, one flip, no other setup needed. */}
+            <label
+              className={cn(
+                'flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-colors sm:col-span-2',
+                freeRoom
+                  ? 'border-[var(--neon-cyan)]/60 bg-[var(--neon-cyan)]/10'
+                  : 'border-border bg-input/20',
+              )}
+            >
+              <input
+                type="checkbox"
+                id="free-room"
+                className="size-4 accent-[var(--neon-cyan)]"
+                checked={freeRoom}
+                onChange={(e) =>
+                  updateDraft({ passkeyTickPrice: e.target.checked ? '0' : '0.001' })
+                }
+              />
+              <span className="flex flex-col gap-0.5">
+                <span className="font-heading text-sm font-bold uppercase tracking-wide text-foreground">
+                  💸 Free room
+                </span>
+                <span className="text-xs leading-relaxed text-muted-foreground">
+                  No charges — viewers hop on camera (and send MegaChats) without
+                  a wallet. Flip off to set a price.
+                </span>
+              </span>
+            </label>
+
+            {!freeRoom ? (
             <Field
               label={
                 simple
@@ -393,22 +426,9 @@ export function MegaChatSettings() {
                 onChange={(e) => updateDraft({ passkeyTickPrice: e.target.value })}
               />
             </Field>
+            ) : null}
 
-            <Field
-              label="Max spend / viewer"
-              htmlFor="max-spend"
-              hint="Auto-kicks the camera when reached."
-            >
-              <InputAffix
-                id="max-spend"
-                affix={amountAffix}
-                inputMode="decimal"
-                value={draft.maxSession}
-                onChange={(e) => updateDraft({ maxSession: e.target.value })}
-              />
-            </Field>
-
-            {!managing ? (
+            {!managing && !signedIn ? (
               <Field
                 label={signedIn ? 'Mod password (optional)' : 'Room password'}
                 htmlFor="room-password"
@@ -668,6 +688,19 @@ export function MegaChatSettings() {
               </p>
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <Field
+                  label="Max spend / viewer"
+                  htmlFor="max-spend"
+                  hint="Auto-kicks the camera when reached. Default 2."
+                >
+                  <InputAffix
+                    id="max-spend"
+                    affix={amountAffix}
+                    inputMode="decimal"
+                    value={draft.maxSession}
+                    onChange={(e) => updateDraft({ maxSession: e.target.value })}
+                  />
+                </Field>
+                <Field
                   label="Charge interval"
                   htmlFor="interval"
                   hint="Seconds per charge — almost every room leaves this at 1."
@@ -744,7 +777,23 @@ export function MegaChatSettings() {
               <p className="mb-4 text-sm font-semibold text-foreground/90">
                 Visibility &amp; payout
               </p>
-              <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
+              {!managing && signedIn ? (
+                <Field
+                  label="Mod password (optional)"
+                  htmlFor="room-password"
+                  hint="You own this room via your sign-in. Set a password only to share management with mods."
+                >
+                  <TextInput
+                    id="room-password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Optional — for sharing with mods"
+                    autoComplete="new-password"
+                  />
+                </Field>
+              ) : null}
+              <label className="mt-4 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/90">
                 <input
                   type="checkbox"
                   id="room-unlisted"

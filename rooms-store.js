@@ -119,6 +119,9 @@ export function letterPriceFor(cfg) {
   const perSecond = parseFloat(cfg.passkeyTickPrice || '0.001') /
     Math.max(1, Number(cfg.passkeyTickSeconds || 1));
   const p = perSecond * (cfg.letters?.maxSeconds ?? 10);
+  // FREE rooms (per-second rate 0, no explicit letter price): MegaChats are
+  // free too — the old dust floor here would force a pointless payment.
+  if (p <= 0) return '0';
   return String(Math.max(0.000001, Math.round(p * 1e6) / 1e6));
 }
 

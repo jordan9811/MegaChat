@@ -168,6 +168,11 @@ export function attachLetters(app, deps) {
 
   /** Refund the flat price to the payer from the PLATFORM wallet. */
   async function refundLetter(letter, reason) {
+    // Free letters: nothing was paid, nothing to send (payer may even be null).
+    if (!(parseFloat(letter.price) > 0) || !letter.payer) {
+      removeLetter(letter);
+      return;
+    }
     letter.status = 'refunding';
     try {
       const cfg = resolveRoomConfig(letter.roomId);
@@ -198,7 +203,10 @@ export function attachLetters(app, deps) {
       if (!username || typeof username !== 'string') {
         return res.status(400).json({ error: 'Username required' });
       }
-      if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) {
+      // Free letters (price 0) need no wallet — there is nothing to charge or
+      // refund. Paid ones still require the payer address.
+      const hasAddress = /^0x[0-9a-fA-F]{40}$/.test(address || '');
+      if (!hasAddress && parseFloat(letterPriceFor(cfg)) > 0) {
         return res.status(400).json({ error: 'Wallet address required' });
       }
       const dur = Number(durationS);
@@ -230,21 +238,26 @@ export function attachLetters(app, deps) {
       }
 
       const price = letterPriceFor(cfg);
-      const result = await mppMeter.handleTick(toWebRequest(req), {
-        amount: price,
-        currency: cfg.paymentTokenAddress,
-        decimals: cfg.paymentTokenDecimals,
-        unitType: 'letter',
-        recipient: cfg.payoutAddress || sellerAddress,
-        suggestedDeposit: price,
-      });
-      if (result.status === 402) return result.respond(res);
+      // Free rooms: price 0 → skip the payment handshake entirely. There is
+      // nothing to charge and nothing to refund on reject/expiry.
+      let result = null;
+      if (parseFloat(price) > 0) {
+        result = await mppMeter.handleTick(toWebRequest(req), {
+          amount: price,
+          currency: cfg.paymentTokenAddress,
+          decimals: cfg.paymentTokenDecimals,
+          unitType: 'letter',
+          recipient: cfg.payoutAddress || sellerAddress,
+          suggestedDeposit: price,
+        });
+        if (result.status === 402) return result.respond(res);
+      }
 
       const letter = {
         id: randomUUID(),
         roomId: cfg.id,
         username: String(username).slice(0, 20),
-        payer: address,
+        payer: hasAddress ? address : null,
         price,
         durationS: Math.ceil(dur),
         mime: String(mime),
@@ -255,14 +268,15 @@ export function attachLetters(app, deps) {
         paidAt: Date.now(),
       };
       byId.set(letter.id, letter);
-      log.log(`[letters] ${letter.id} paid ${price} by ${address} in room ${cfg.id}`);
-      return result.respond(res, {
+      log.log(`[letters] ${letter.id} ${parseFloat(price) > 0 ? `paid ${price} by ${address}` : 'free'} in room ${cfg.id}`);
+      const body = {
         success: true,
         letterId: letter.id,
         uploadUrl: `/api/letter/upload/${letter.id}`,
         price,
         moderation: cfg.letters.moderation,
-      });
+      };
+      return result ? result.respond(res, body) : res.json(body);
     } catch (err) {
       log.warn('[letters] submit error:', err.message);
       return res.status(500).json({ error: 'MegaChat submit failed', message: err.message });

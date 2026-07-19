@@ -210,6 +210,10 @@ const MPP_FEE_HEADROOM = process.env.MPP_FEE_HEADROOM || '0.01';
 // wallet (allowance) or return straight from channel escrow (MPP settle).
 async function refundSeat(seat) {
   if (!seat || seat.refunded) return;
+  if (seat.paymentMode === 'free_stream') {
+    seat.refunded = true; // nothing was ever charged
+    return;
+  }
   if (seat.paymentMode === 'mpp_session') {
     seat.refunded = true;
     if (seat.channelId && mppMeter) {
@@ -856,6 +860,9 @@ function tickAllMeters() {
   for (const seat of activeSeats.values()) {
     if (!seat.live) continue;
     if (seat.pinned) continue; // co-host seat: meter fully paused, zero charges
+    // Free-room seats: no billing, and no payment-staleness kick — their
+    // liveness is the WS/LiveKit connection (grace timers), not vouchers.
+    if (seat.paymentMode === 'free_stream') continue;
     if (seat.paymentMode === 'mpp_session') {
       // MPP seats are billed by CLIENT-driven signed vouchers hitting
       // /api/meter/tick — the server side only enforces liveness: a live
@@ -1517,9 +1524,7 @@ app.post('/api/join/mpp', async (req, res) => {
     }
     const { username, address } = req.body;
     if (!username) return res.status(400).json({ error: 'Username required' });
-    if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) {
-      return res.status(400).json({ error: 'Wallet address required' });
-    }
+    const hasAddress = /^0x[0-9a-fA-F]{40}$/.test(address || '');
     const resolved = resolveRoomFromRequest(req.body, req.query);
     if (resolved.error === 'invalid_room_id') {
       return res.status(400).json({ error: 'Invalid room id' });
@@ -1542,6 +1547,57 @@ app.post('/api/join/mpp', async (req, res) => {
 
     if (!cfg.active) {
       return res.status(403).json({ error: 'Room is not accepting joins', reason: 'room_stopped', roomId });
+    }
+
+    // FREE rooms (tick price 0): no wallet, no balance, no channel — the seat
+    // is simply granted. Liveness comes from the control WS / LiveKit
+    // connection, not payment vouchers (tickAllMeters skips free seats).
+    if (atomics.passkeyTickPriceAtomic === 0n) {
+      const freeResult = addParticipant(username, {
+        remainingAtomic: 0n,
+        payer: hasAddress ? address : null,
+        viewerAddress: hasAddress ? address : null,
+        paymentMode: 'free_stream',
+        sessionCapAtomic: 0n,
+        streamRoomId: roomId,
+        flyIn: req.body.flyIn,
+        flyOut: req.body.flyOut,
+      });
+      if (!freeResult.success) {
+        const status = freeResult.reason === 'room_stopped' ? 403 : 409;
+        return res.status(status).json({
+          error: freeResult.reason === 'room_stopped' ? 'Room is not accepting joins' : 'No seats available',
+          reason: freeResult.reason,
+          roomId
+        });
+      }
+      schedulePendingCameraTimeout(freeResult.seat.id);
+      const freeSeat = freeResult.seat;
+      console.log(`[join:free] room ${roomId} seat ${freeSeat.id} for ${username} (free room)`);
+      return res.json({
+        success: true,
+        free: true,
+        message: 'Seat assigned! Allow camera access to go live:',
+        pushUrl: freeSeat.pushUrl,
+        seatId: freeSeat.id,
+        remaining: '0',
+        sessionCap: '0',
+        tickPrice: '0',
+        tickSeconds: cfg.passkeyTickSeconds,
+        maxSession: '0',
+        secondsLeft: 0,
+        paymentMode: 'free_stream',
+        paymentTokenSymbol: cfg.paymentTokenSymbol,
+        paymentTokenAddress: cfg.paymentTokenAddress,
+        paymentTokenDecimals: cfg.paymentTokenDecimals,
+        payment: { payer: hasAddress ? address : null, mode: 'free_stream', network: NETWORK },
+      });
+    }
+
+    // Paid rooms DO need a wallet — the check moved below the free branch so
+    // free rooms never demand one.
+    if (!hasAddress) {
+      return res.status(400).json({ error: 'Wallet address required' });
     }
 
     let rawBal;

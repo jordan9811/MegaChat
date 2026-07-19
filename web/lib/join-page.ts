@@ -90,6 +90,9 @@ function tokenSymbol() {
 // PRESENTATION ONLY: 1 credit = 1 second of Join Stream at the room's rate.
 // Same balances, same transactions underneath — nothing in the payment
 // path reads this.
+function roomIsFree() {
+  return !!CONFIG && !(parseFloat(CONFIG.passkeyTickPrice || '1') > 0);
+}
 function uiSimple() {
   return typeof document !== 'undefined'
     && document.documentElement.dataset.ui === 'simple';
@@ -125,7 +128,10 @@ function updatePriceDisplay() {
   const tickPrice = CONFIG.passkeyTickPrice || CONFIG.tickPrice;
   const tickSec = CONFIG.passkeyTickSeconds || 1;
   const mc = CONFIG.letters && CONFIG.letters.enabled ? CONFIG.letters : null;
-  if (joinStreamEnabled()) {
+  if (joinStreamEnabled() && roomIsFree()) {
+    if (amt) amt.textContent = 'FREE';
+    if (lbl) lbl.textContent = 'this room is free — hop on camera, no wallet needed';
+  } else if (joinStreamEnabled()) {
     if (uiSimple()) {
       if (amt) amt.textContent = '1 credit';
       if (lbl) lbl.textContent = `per second on camera · session cap ${credits(CONFIG.maxSession)} credits`;
@@ -709,6 +715,8 @@ async function ensureMppSession(sessionCap) {
 }
 
 function startMppTicks(data) {
+  // Free seats have no tickUrl — nothing to bill, nothing to strike out on.
+  if (!data || !data.tickUrl) return;
   stopMppTicks(false);
   const interval = (data.tickSeconds || 1) * 1000;
   // Transient blips must not nuke the seat: keep retrying for ~12s of
@@ -893,6 +901,11 @@ async function joinSeat() {
     // right here, shows the connected state, then continues straight into the
     // seat authorization. MetaMask users connect via the secondary button
     // first, which sets walletMode below.
+    if (roomIsFree()) {
+      // Free room: no wallet, no chain, no session — straight to the seat.
+      await joinSeatMpp(username);
+      return;
+    }
     if (!account) {
       // "Connecting your balance", not "signing in" — a Twitch/X-signed-in
       // viewer IS signed in; this step is about money, and saying "sign in"
@@ -942,7 +955,13 @@ function onJoinSuccess(data) {
   if (ws.readyState === 1) {
     ws.send(JSON.stringify({ type: 'register_seat', seatId: mySeatId }));
   }
-  showMeter(data.remaining, '0', data.secondsLeft);
+  if (!data.free) showMeter(data.remaining, '0', data.secondsLeft);
+  if (data.free) {
+    showMessage("✅ You're in — this room is FREE. Allow camera access above, then hit GO LIVE.", 'success');
+    startCameraStage(data);
+    setJoinState('awaiting-camera');
+    return;
+  }
   const txLink = data.payment && data.payment.transaction
     ? ` · <a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">authorization tx</a>`
     : '';
@@ -1463,7 +1482,9 @@ function initLetterUi() {
     return;
   }
   btn.style.display = '';
-  btn.textContent = `📼 Send a MegaChat — ${fmtAmount(cfg.price)} · up to ${cfg.maxSeconds}s`;
+  btn.textContent = parseFloat(cfg.price) > 0
+      ? `📼 Send a MegaChat — ${fmtAmount(cfg.price)} · up to ${cfg.maxSeconds}s`
+      : `📼 Send a MegaChat — FREE · up to ${cfg.maxSeconds}s`;
 }
 
 function setLetterStatus(text) {
@@ -1617,17 +1638,21 @@ async function sendLetter() {
     showMessage('Pick a username first — it labels your MegaChat on stream.', 'error');
     return;
   }
-  if (!account) {
+  const letterIsFree = !(parseFloat(cfg.price) > 0);
+  if (!account && !letterIsFree) {
     const MW = getMegaWallet();
     if (MW && MW.configured) await connectPrivyWallet('login');
     else await connectMetaMask();
+    if (!account) return;
   }
-  if (!account) return;
   letterState = 'sending';
-  setLetterStatus(`Paying ${cfg.price} ${tokenSymbol()}…`);
+  setLetterStatus(letterIsFree ? 'Sending…' : `Paying ${cfg.price} ${tokenSymbol()}…`);
   try {
-    // One-voucher session at the flat letter price (same rails as ticks).
-    const session = await buildMppManager(cfg.price);
+    // Free letters skip the payment session entirely — plain fetch, no wallet.
+    // Paid ones ride a one-voucher session at the flat price (same rails as ticks).
+    const session = letterIsFree
+      ? { fetch: (u, i) => fetch(u, i) }
+      : await buildMppManager(cfg.price);
     const resp = await session.fetch(
       `/api/letter/submit?room=${encodeURIComponent(streamRoomId)}`,
       {
