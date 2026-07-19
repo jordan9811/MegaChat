@@ -12,14 +12,11 @@ export function IntegrationsCard() {
         accent="cyan"
       />
       <div className="px-5 py-5 sm:px-6">
-        <button
-          type="button"
-          disabled
-          title="Coming soon"
-          className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-input/20 px-4 py-3 text-sm font-semibold text-muted-foreground opacity-70"
-        >
-          Connect Twitch / Kick account — coming soon
-        </button>
+        {/* Audit P1-3: a non-action must not dress as a button. Plain
+            status row until the OAuth linkage actually ships. */}
+        <p className="rounded-xl border border-dashed border-border/60 bg-input/10 px-4 py-3 text-center text-sm text-muted-foreground">
+          Twitch / Kick channel linking — coming soon
+        </p>
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
           Link your channel to credit viewers for watch time on Twitch or Kick
           and unlock subscriber/follower join gates.

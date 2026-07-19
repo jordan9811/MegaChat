@@ -301,11 +301,13 @@ export function MegaChatSettings() {
               label="Display name"
               htmlFor="room-handle"
               hint={
-                identityHandle && draft.handle === identityHandle
-                  ? `Prefilled from your sign-in. It's also your permanent link: megachat.xyz/${identityHandle} (and /${identityHandle}/overlay for OBS). Change it any time — letters, numbers, underscore.`
-                  : identityHandle
-                    ? `Prefilled from your sign-in (@${identityHandle}). This is your display name and your permanent link, e.g. megachat.xyz/${draft.handle || 'your_name'}. Letters, numbers, underscore.`
-                    : 'Your display name, and your permanent link: megachat.xyz/your_name (viewers) and /your_name/overlay (OBS). Leave it empty for a temporary link you can set later. Letters, numbers, underscore.'
+                managing && !draft.handle
+                  ? 'This room has a temporary link — type a name here (or use the Claim button in the links panel below) to make it permanent.'
+                  : identityHandle && draft.handle === identityHandle
+                    ? `Prefilled from your sign-in. It's also your permanent link: megachat.xyz/${identityHandle} (and /${identityHandle}/overlay for OBS). Change it any time — letters, numbers, underscore.`
+                    : identityHandle
+                      ? `Your reserved name is @${identityHandle}. This is your display name and your permanent link, e.g. megachat.xyz/${draft.handle || 'your_name'}. Letters, numbers, underscore.`
+                      : 'Your display name, and your permanent link: megachat.xyz/your_name (viewers) and /your_name/overlay (OBS). Leave it empty for a temporary link you can set later. Letters, numbers, underscore.'
               }
               className="sm:col-span-2"
             >
@@ -906,7 +908,7 @@ export function MegaChatSettings() {
             <span className="font-mono text-[var(--neon-lime)]">
               {room.handle ? `/${room.handle}` : room.id}
             </span>{' '}
-            {room.active ? 'is live' : 'is paused'}
+            {room.active ? 'is accepting joins' : 'is paused'}
           </div>
           <div className="flex flex-col gap-2">
             {/* Both links prefer the handle when the room has one — /<handle>

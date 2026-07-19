@@ -45,17 +45,19 @@ export default function DashboardPage() {
             <div className="reveal" style={{ ['--reveal-delay' as string]: '0.16s' }}>
               <OnCameraTable />
             </div>
+            {/* Audit P1-3: the streamer's own camera outranks a coming-soon
+                stub — Host cam up beside the live tables, Integrations last. */}
             <div className="reveal" style={{ ['--reveal-delay' as string]: '0.24s' }}>
-              <RewardsCard />
+              <HostCamCard />
             </div>
             <div className="reveal" style={{ ['--reveal-delay' as string]: '0.32s' }}>
-              <IntegrationsCard />
+              <RewardsCard />
             </div>
             <div className="reveal" style={{ ['--reveal-delay' as string]: '0.4s' }}>
               <LettersQueueCard />
             </div>
             <div className="reveal" style={{ ['--reveal-delay' as string]: '0.48s' }}>
-              <HostCamCard />
+              <IntegrationsCard />
             </div>
           </div>
         </RoomProvider>
