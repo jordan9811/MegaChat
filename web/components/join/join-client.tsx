@@ -21,16 +21,7 @@ const dopamineBtn =
 const ghostBtn =
   'flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-input/30 px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-input/50 disabled:opacity-50 disabled:hover:bg-input/30'
 
-          {/* Balance — ONE sign-in button (audit P0-4: the old sign-up/sign-in
-              pair both opened the same Privy modal at primary weight). It sits
-              at secondary weight so MegaChat + Join Stream stay the only loud
-              things. MetaMask stays the compact row below. */}
-          <div className="flex flex-col gap-2">
-            <div id="privyChoice" className="grid grid-cols-1 gap-2">
-              <button id="passkeyBtn" type="button" className={ghostBtn}>
-                🔐 Sign in — Google, email or passkey
-              </button>
-            </div>// MetaMask/Gateway = secondary path: compact row under the passkey buttons.
+// MetaMask/Gateway = secondary path: compact row under the passkey buttons.
 const miniBtn =
   'flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-input/20 px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-input/40 hover:text-foreground disabled:opacity-50 disabled:hover:bg-input/20'
 
