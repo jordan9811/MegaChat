@@ -21,11 +21,16 @@ const dopamineBtn =
 const ghostBtn =
   'flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-input/30 px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-input/50 disabled:opacity-50 disabled:hover:bg-input/30'
 
-// Passkey = primary wallet path: bigger, brighter, above the fold.
-const passkeyBtnCls =
-  'flex w-full items-center justify-center gap-2 rounded-xl border border-primary/50 bg-primary/15 px-4 py-3.5 text-sm font-bold text-foreground transition-colors hover:bg-primary/25 disabled:opacity-50 disabled:hover:bg-primary/15'
-
-// MetaMask/Gateway = secondary path: compact row under the passkey buttons.
+          {/* Balance — ONE sign-in button (audit P0-4: the old sign-up/sign-in
+              pair both opened the same Privy modal at primary weight). It sits
+              at secondary weight so MegaChat + Join Stream stay the only loud
+              things. MetaMask stays the compact row below. */}
+          <div className="flex flex-col gap-2">
+            <div id="privyChoice" className="grid grid-cols-1 gap-2">
+              <button id="passkeyBtn" type="button" className={ghostBtn}>
+                🔐 Sign in — Google, email or passkey
+              </button>
+            </div>// MetaMask/Gateway = secondary path: compact row under the passkey buttons.
 const miniBtn =
   'flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-input/20 px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-input/40 hover:text-foreground disabled:opacity-50 disabled:hover:bg-input/20'
 
@@ -153,16 +158,14 @@ export function JoinClient() {
             className="h-11 w-full rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground/70 focus-visible:border-primary/70 focus-visible:ring-2 focus-visible:ring-primary/30"
           />
 
-          {/* Balance — Privy (email/social/passkey) is the PRIMARY path;
-              MetaMask the secondary row. Once EITHER connects, join-page.ts
-              hides the paths you didn't take: one state on screen. */}
+          {/* Balance — ONE sign-in button (audit P0-4: the old sign-up/sign-in
+              pair both opened the same Privy modal at primary weight). It sits
+              at secondary weight so MegaChat + Join Stream stay the only loud
+              things. MetaMask stays the compact row below. */}
           <div className="flex flex-col gap-2">
-            <div id="privyChoice" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <button id="passkeyCreateBtn" type="button" className={passkeyBtnCls}>
-                ✨ Google, email or passkey
-              </button>
-              <button id="passkeyBtn" type="button" className={passkeyBtnCls}>
-                🔐 Sign in
+            <div id="privyChoice" className="grid grid-cols-1 gap-2">
+              <button id="passkeyBtn" type="button" className={ghostBtn}>
+                🔐 Sign in — Google, email or passkey
               </button>
             </div>
             <div id="walletInfo" className="text-xs leading-relaxed text-muted-foreground" />
