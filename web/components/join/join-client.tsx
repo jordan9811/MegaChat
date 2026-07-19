@@ -237,11 +237,10 @@ export function JoinClient() {
               broadcast, billed per second. One button morphs through
               connecting → authorizing → Waiting for camera → Go Live →
               You're LIVE (state machine in join-page.ts). */}
+          {/* ONE control for the whole session (audit P0-1): it morphs
+              join → cancel → go-live → leave. No sibling Leave button. */}
           <button id="joinBtn" type="button" className={dopamineBtn}>
             🎬 Join Stream
-          </button>
-          <button id="leaveBtn" type="button" className={ghostBtn}>
-            Leave stream
           </button>
 
           {/* Advanced — overlay stinger picker. Opt-in: untouched selects send

@@ -93,6 +93,19 @@ function tokenSymbol() {
 function roomIsFree() {
   return !!CONFIG && !(parseFloat(CONFIG.passkeyTickPrice || '1') > 0);
 }
+// Session mode (audit P1-1/P1-2): once a seat is held, the setup controls
+// leave the screen — sign-in cluster, fund row, wallet info — and the
+// username locks (editing it mid-session does nothing). All restored on leave.
+function setSessionUi(inSession) {
+  for (const id of ['privyChoice', 'connectBtn', 'depositBtn', 'walletInfo', 'passkeyFundNote']) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = inSession ? 'none' : '';
+  }
+  const u = document.getElementById('username');
+  if (u) { u.readOnly = inSession; u.style.opacity = inSession ? '0.6' : ''; }
+  if (!inSession) renderWallet(); // re-apply the normal visibility rules
+}
+
 function uiSimple() {
   return typeof document !== 'undefined'
     && document.documentElement.dataset.ui === 'simple';
@@ -233,12 +246,15 @@ function stingerSelections() {
 // setJoinState so no code path can leave the label out of sync again.
 let joinBtnState = 'idle';
 
+// ONE state-morphing control (audit P0-1): no disabled dead-ends. The
+// camera wait can be cancelled, and while live the same button IS the
+// leave action — there is no sibling Leave button anymore.
 const JOIN_BTN_STATES = {
   idle: { label: '🎬 Join Stream', disabled: false },
   busy: { label: '⏳ Processing…', disabled: true },
-  'awaiting-camera': { label: '⏳ Waiting for camera…', disabled: true },
+  'awaiting-camera': { label: '⏳ Waiting for camera — tap to cancel', disabled: false },
   'go-live': { label: '🎥 Go Live', disabled: false },
-  live: { label: "🔴 You're LIVE", disabled: true },
+  live: { label: "🔴 You're LIVE — tap to leave", disabled: false },
 };
 
 function setJoinState(state, labelOverride) {
@@ -254,7 +270,12 @@ function setJoinState(state, labelOverride) {
 function onJoinButtonClick() {
   if (joinBtnState === 'go-live') return goLive();
   if (joinBtnState === 'idle') return joinSeat();
-  // busy / awaiting-camera / live: disabled anyway — ignore stray clicks.
+  // The same control exits the flow: cancel a hung camera wait, or leave
+  // the stream while live (audit P0-1 — no dead-ends, no button pairs).
+  if (joinBtnState === 'awaiting-camera' || joinBtnState === 'live') {
+    return leaveStream();
+  }
+  // busy: disabled — ignore stray clicks.
 }
 
 async function connectMetaMask() {
@@ -955,6 +976,7 @@ function onJoinSuccess(data) {
   if (ws.readyState === 1) {
     ws.send(JSON.stringify({ type: 'register_seat', seatId: mySeatId }));
   }
+  setSessionUi(true);
   if (!data.free) showMeter(data.remaining, '0', data.secondsLeft);
   if (data.free) {
     showMessage("✅ You're in — this room is FREE. Allow camera access above, then hit GO LIVE.", 'success');
@@ -1080,11 +1102,15 @@ function fireCameraReady(source) {
   setCamStatus('live', "You're LIVE on stream");
   // Swap the delayed broadcast for the sub-second host feed for the slot.
   mountHostFeed();
-  document.getElementById('camHint').textContent =
-    'Leaving (button or closing the tab) stops the meter. Unspent balance stays in your wallet.';
+  document.getElementById('camHint').textContent = roomIsFree()
+    ? 'Leave with the button above — or just close the tab.'
+    : 'Leaving (button or closing the tab) stops the meter. Unspent balance stays in your wallet.';
   document.getElementById('camRetryBtn').classList.remove('show');
-  // Now live — offer an explicit Leave button (same effect as a tab close).
-  document.getElementById('leaveBtn').classList.add('show');
+  // The pre-live instructions are OVER — a stale "hit GO LIVE" next to a
+  // live badge read as a contradiction (audit P0-2). One status (cam pill),
+  // one control (the morphing button).
+  const staleMsg = document.getElementById('message');
+  if (staleMsg) staleMsg.className = 'join-message';
   // Detector self-view has done its job; tear it down to save bandwidth.
   const det = document.getElementById('camDetector');
   det.src = 'about:blank';
@@ -1095,8 +1121,7 @@ function fireCameraReady(source) {
 async function leaveStream(quiet) {
   const seatId = mySeatId;
   if (!seatId) return;
-  const leaveBtn = document.getElementById('leaveBtn');
-  leaveBtn.disabled = true;
+  setJoinState('busy', '⏳ Leaving…');
   // Stop reacting to this seat locally right away so the meter stops instantly.
   mySeatId = null;
   stopMppTicks(true); // close the channel → unspent deposit refunds from escrow
@@ -1106,11 +1131,13 @@ async function leaveStream(quiet) {
   } catch (e) {
     console.warn('leave request failed (server still drops seat on disconnect)', e);
   }
-  leaveBtn.disabled = false;
   setJoinState('idle');
+  setSessionUi(false);
   if (!quiet) {
     showMessage(
-      '👋 You left the stream. Unspent balance remains in your wallet.',
+      roomIsFree()
+        ? '👋 You left the stream.'
+        : '👋 You left the stream. Unspent balance remains in your wallet.',
       'success'
     );
   }
