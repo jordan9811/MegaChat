@@ -106,6 +106,17 @@ function setSessionUi(inSession) {
   if (!inSession) renderWallet(); // re-apply the normal visibility rules
 }
 
+// FREE rooms say "no wallet needed" — so no wallet UI exists at all (audit
+// P0-3): no sign-in cluster, no fund button, no balance line. Identity lives
+// in the header pill. Paid rooms are untouched.
+function applyFreeRoomUi() {
+  if (!roomIsFree()) return;
+  for (const id of ['privyChoice', 'connectBtn', 'depositBtn', 'walletInfo', 'passkeyFundNote']) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  }
+}
+
 function uiSimple() {
   return typeof document !== 'undefined'
     && document.documentElement.dataset.ui === 'simple';
@@ -497,6 +508,8 @@ function renderWallet() {
   if (!info || !connectBtn || !passkeyBtn) return;
 
   const privyChoice = document.getElementById('privyChoice');
+
+  if (roomIsFree()) { applyFreeRoomUi(); return; }
 
   if (account && walletMode === 'privy') {
     // Connected — the paths not taken LEAVE the screen (no dulled clutter):
@@ -1780,6 +1793,7 @@ async function init() {
     initLetterUi();
     applyFeatureVisibility();
     applyModeText();
+    applyFreeRoomUi();
     void initAuthUi();
     const demo = document.getElementById('demoBanner');
     if (demo && CONFIG && CONFIG.isDemo) demo.style.display = '';
