@@ -492,102 +492,122 @@ export function MegaChatSettings() {
                 📼 MegaChat details
               </p>
               {draft.lettersEnabled ? (
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-                  <Field label="Max length" htmlFor="letters-max">
-                    <InputAffix
-                      id="letters-max"
-                      affix="sec"
-                      inputMode="numeric"
-                      value={draft.lettersMaxSeconds}
-                      onChange={(e) => updateDraft({ lettersMaxSeconds: e.target.value })}
-                    />
-                  </Field>
-                  <Field
-                    label="Flat price"
-                    htmlFor="letters-price"
-                    hint="Empty = max length × per-second rate."
-                  >
-                    <InputAffix
-                      id="letters-price"
-                      affix={amountAffix}
-                      inputMode="decimal"
-                      placeholder="auto"
-                      value={draft.lettersPrice}
-                      onChange={(e) => updateDraft({ lettersPrice: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="Moderation" htmlFor="letters-moderation">
-                    <SelectInput
-                      id="letters-moderation"
-                      value={draft.lettersModeration}
-                      onChange={(e) =>
-                        updateDraft({ lettersModeration: e.target.value as 'auto' | 'approve' })
-                      }
+                <>
+                  {/* Real, working knobs only — pure Field grid, consistent
+                      height, no checkbox squeezed into a cell sized for a
+                      labeled input. */}
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                    <Field label="Max length" htmlFor="letters-max">
+                      <InputAffix
+                        id="letters-max"
+                        affix="sec"
+                        inputMode="numeric"
+                        value={draft.lettersMaxSeconds}
+                        onChange={(e) => updateDraft({ lettersMaxSeconds: e.target.value })}
+                      />
+                    </Field>
+                    <Field
+                      label="Flat price"
+                      htmlFor="letters-price"
+                      hint="Empty = max length × per-second rate."
                     >
-                      <option value="auto">Auto-play (default)</option>
-                      <option value="approve">Approve queue</option>
-                    </SelectInput>
-                  </Field>
-                  <Field
-                    label="AI review strictness"
-                    htmlFor="letters-ai-strictness"
-                    hint="Runs only when the server has a moderation key."
-                  >
-                    <SelectInput
-                      id="letters-ai-strictness"
-                      value={draft.lettersAiStrictness}
-                      onChange={(e) =>
-                        updateDraft({ lettersAiStrictness: e.target.value as 'severe' | 'borderline' })
-                      }
+                      <InputAffix
+                        id="letters-price"
+                        affix={amountAffix}
+                        inputMode="decimal"
+                        placeholder="auto"
+                        value={draft.lettersPrice}
+                        onChange={(e) => updateDraft({ lettersPrice: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="Moderation" htmlFor="letters-moderation">
+                      <SelectInput
+                        id="letters-moderation"
+                        value={draft.lettersModeration}
+                        onChange={(e) =>
+                          updateDraft({ lettersModeration: e.target.value as 'auto' | 'approve' })
+                        }
+                      >
+                        <option value="auto">Auto-play (default)</option>
+                        <option value="approve">Approve queue</option>
+                      </SelectInput>
+                    </Field>
+                    <Field
+                      label="AI review strictness"
+                      htmlFor="letters-ai-strictness"
+                      hint="Runs only when the server has a moderation key."
                     >
-                      <option value="severe">Block only severe</option>
-                      <option value="borderline">Flag borderline too</option>
-                    </SelectInput>
-                  </Field>
-                  <label className="flex items-center gap-2.5 self-end pb-2 text-sm font-medium text-foreground/90">
-                    <input
-                      type="checkbox"
-                      id="letters-auto-refund"
-                      className="size-4 accent-[var(--neon-magenta)]"
-                      checked={draft.lettersAutoRefund}
-                      onChange={(e) => updateDraft({ lettersAutoRefund: e.target.checked })}
-                    />
-                    Auto-refund on reject
-                  </label>
-                  <Field
-                    label="Min watch time"
-                    htmlFor="mc-min-watch"
-                    hint="0 = open to all. Enforced live."
-                  >
-                    <InputAffix
-                      id="mc-min-watch"
-                      affix="sec"
-                      inputMode="numeric"
-                      value={draft.mcMinWatch}
-                      onChange={(e) => updateDraft({ mcMinWatch: e.target.value })}
-                    />
-                  </Field>
-                  <label className="flex items-center gap-2.5 text-sm font-medium text-foreground/90" title="Stored now; enforced when platform verification ships">
-                    <input
-                      type="checkbox"
-                      id="mc-followers-only"
-                      className="size-4 accent-[var(--neon-magenta)]"
-                      checked={draft.mcFollowersOnly}
-                      onChange={(e) => updateDraft({ mcFollowersOnly: e.target.checked })}
-                    />
-                    Followers only <span className="text-xs text-muted-foreground">(soon)</span>
-                  </label>
-                  <label className="flex items-center gap-2.5 text-sm font-medium text-foreground/90" title="Stored now; enforced when platform verification ships">
-                    <input
-                      type="checkbox"
-                      id="mc-subs-only"
-                      className="size-4 accent-[var(--neon-magenta)]"
-                      checked={draft.mcSubsOnly}
-                      onChange={(e) => updateDraft({ mcSubsOnly: e.target.checked })}
-                    />
-                    Subscribers only <span className="text-xs text-muted-foreground">(soon)</span>
-                  </label>
-                </div>
+                      <SelectInput
+                        id="letters-ai-strictness"
+                        value={draft.lettersAiStrictness}
+                        onChange={(e) =>
+                          updateDraft({ lettersAiStrictness: e.target.value as 'severe' | 'borderline' })
+                        }
+                      >
+                        <option value="severe">Block only severe</option>
+                        <option value="borderline">Flag borderline too</option>
+                      </SelectInput>
+                    </Field>
+                    <Field
+                      label="Min watch time"
+                      htmlFor="mc-min-watch"
+                      hint="0 = open to all. Enforced live."
+                    >
+                      <InputAffix
+                        id="mc-min-watch"
+                        affix="sec"
+                        inputMode="numeric"
+                        value={draft.mcMinWatch}
+                        onChange={(e) => updateDraft({ mcMinWatch: e.target.value })}
+                      />
+                    </Field>
+                  </div>
+
+                  {/* Toggles: ONE compact row, not a grid cell each and not
+                      a separate boxed section — `shrink-0 whitespace-nowrap`
+                      keeps every label glued to its own checkbox instead of
+                      wrapping the text away from the input. Muted color +
+                      inline "(soon)" mark the two that don't do anything yet
+                      without spending a whole labeled block on that fact. */}
+                  <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
+                    <label className="flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap text-sm font-medium text-foreground/90">
+                      <input
+                        type="checkbox"
+                        id="letters-auto-refund"
+                        className="size-4 accent-[var(--neon-magenta)]"
+                        checked={draft.lettersAutoRefund}
+                        onChange={(e) => updateDraft({ lettersAutoRefund: e.target.checked })}
+                      />
+                      Auto-refund on reject
+                    </label>
+                    <label
+                      className="flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-muted-foreground"
+                      title="Stored now; enforced when platform verification ships"
+                    >
+                      <input
+                        type="checkbox"
+                        id="mc-followers-only"
+                        className="size-4 accent-[var(--neon-magenta)]"
+                        checked={draft.mcFollowersOnly}
+                        onChange={(e) => updateDraft({ mcFollowersOnly: e.target.checked })}
+                      />
+                      Followers only <span className="text-xs">(soon)</span>
+                    </label>
+                    <label
+                      className="flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-muted-foreground"
+                      title="Stored now; enforced when platform verification ships"
+                    >
+                      <input
+                        type="checkbox"
+                        id="mc-subs-only"
+                        className="size-4 accent-[var(--neon-magenta)]"
+                        checked={draft.mcSubsOnly}
+                        onChange={(e) => updateDraft({ mcSubsOnly: e.target.checked })}
+                      />
+                      Subscribers only <span className="text-xs">(soon)</span>
+                    </label>
+                  </div>
+                </>
               ) : (
                 <p className="text-xs text-muted-foreground">
                   MegaChats are off — flip the tile up top to configure them.
@@ -614,11 +634,12 @@ export function MegaChatSettings() {
                     Same gates as MegaChats
                   </label>
                   {!draft.jsGatesSame ? (
-                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                    <div className="flex flex-col gap-5">
                       <Field
                         label="Min watch time"
                         htmlFor="js-min-watch"
                         hint="0 = open to all."
+                        className="max-w-xs"
                       >
                         <InputAffix
                           id="js-min-watch"
@@ -628,26 +649,34 @@ export function MegaChatSettings() {
                           onChange={(e) => updateDraft({ jsMinWatch: e.target.value })}
                         />
                       </Field>
-                      <label className="flex items-center gap-2.5 text-sm font-medium text-foreground/90" title="Stored now; enforced when platform verification ships">
-                        <input
-                          type="checkbox"
-                          id="js-followers-only"
-                          className="size-4 accent-[var(--neon-magenta)]"
-                          checked={draft.jsFollowersOnly}
-                          onChange={(e) => updateDraft({ jsFollowersOnly: e.target.checked })}
-                        />
-                        Followers only <span className="text-xs text-muted-foreground">(soon)</span>
-                      </label>
-                      <label className="flex items-center gap-2.5 text-sm font-medium text-foreground/90" title="Stored now; enforced when platform verification ships">
-                        <input
-                          type="checkbox"
-                          id="js-subs-only"
-                          className="size-4 accent-[var(--neon-magenta)]"
-                          checked={draft.jsSubsOnly}
-                          onChange={(e) => updateDraft({ jsSubsOnly: e.target.checked })}
-                        />
-                        Subscribers only <span className="text-xs text-muted-foreground">(soon)</span>
-                      </label>
+                      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                        <label
+                          className="flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-muted-foreground"
+                          title="Stored now; enforced when platform verification ships"
+                        >
+                          <input
+                            type="checkbox"
+                            id="js-followers-only"
+                            className="size-4 accent-[var(--neon-magenta)]"
+                            checked={draft.jsFollowersOnly}
+                            onChange={(e) => updateDraft({ jsFollowersOnly: e.target.checked })}
+                          />
+                          Followers only <span className="text-xs">(soon)</span>
+                        </label>
+                        <label
+                          className="flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-muted-foreground"
+                          title="Stored now; enforced when platform verification ships"
+                        >
+                          <input
+                            type="checkbox"
+                            id="js-subs-only"
+                            className="size-4 accent-[var(--neon-magenta)]"
+                            checked={draft.jsSubsOnly}
+                            onChange={(e) => updateDraft({ jsSubsOnly: e.target.checked })}
+                          />
+                          Subscribers only <span className="text-xs">(soon)</span>
+                        </label>
+                      </div>
                     </div>
                   ) : null}
                 </>
