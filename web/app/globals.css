@@ -320,6 +320,12 @@
       0 0 24px oklch(0.88 0.22 128 / 0.4),
       0 0 60px oklch(0.88 0.22 128 / 0.2);
   }
+  .glow-cyan {
+    box-shadow:
+      0 0 0 1px oklch(0.8 0.14 200 / 0.6),
+      0 0 24px oklch(0.8 0.14 200 / 0.4),
+      0 0 60px oklch(0.8 0.14 200 / 0.2);
+  }
 
   /* Glitch backdrop — deep purple in dark, soft lavender wash in light.
      Colors come from theme variables so scoped .dark wrappers stay noir. */

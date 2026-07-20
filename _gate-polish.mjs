@@ -152,23 +152,32 @@ try {
     return {
       heroLinks: links,
       navHasBrowse: nav.some((t) => /browse rooms/i.test(t)),
+      // scoped to the hero <section> only — the browse directory below the
+      // fold legitimately prints "USDC" per room card and must not count
+      heroText: section?.innerText || '',
       bodyText: document.body.innerText,
     };
   });
   ok('4. hero: "How it works" is a hero action', hero.heroLinks.some((t) => /how it works/i.test(t)));
   ok('4. hero: "Browse rooms" removed from the hero slot', !hero.heroLinks.some((t) => /browse rooms/i.test(t)));
+  ok('4. hero: "Create room" is a hero action (matches the dashboard\'s own button label)',
+    hero.heroLinks.some((t) => /create room/i.test(t)));
   ok('4. browse still reachable from the nav', hero.navHasBrowse);
-  ok('7a. advanced sentence: "camera in your live broadcast"',
-    /pay per-second in USDC to put their camera in your live/i.test(hero.bodyText));
+  // ONE sentence, no mode split, no USDC — same text in Simple and Advanced.
+  ok('7a. exact sentence: "pay per second … camera ON your live broadcast", no USDC',
+    /pay per second to put their camera on your live broadcast/i.test(hero.heroText)
+    && !/USDC/.test(hero.heroText));
   const simpleText = await land.evaluate(() => {
     document.documentElement.dataset.ui = 'simple';
     const t = document.body.innerText;
     document.documentElement.dataset.ui = 'advanced';
     return t;
   });
-  ok('7a. simple mode carries the exact new sentence',
-    /pay per second to put their camera in your live/i.test(simpleText));
-  ok('7a. old credits sentence gone', !/spend credits by the second/i.test(hero.bodyText + simpleText));
+  ok('7a. identical in simple mode (no mode split on this line)',
+    /pay per second to put their camera on your live broadcast/i.test(simpleText));
+  ok('7a. old credits/in-your sentences gone',
+    !/spend credits by the second/i.test(hero.bodyText + simpleText)
+    && !/camera in your live/i.test(hero.bodyText + simpleText));
   ok('7b. equation brand line present',
     /Call-in show\s*\+\s*FaceTime\s*\+\s*Superchat\s*=\s*MegaChat/i.test(hero.bodyText.replace(/\n/g, ' ')));
   ok('6. landing text has no 15-second claim', !/15\s*s(econds)?\b/i.test(hero.bodyText));
@@ -327,6 +336,40 @@ try {
   const dashDark = await themed(dash, 'dark');
   const dashLight = await themed(dash, 'light');
   ok('themes: dashboard renders distinct light/dark backgrounds', dashDark.bg !== dashLight.bg);
+
+  // ── Create-room CTA: readable against its OWN background in both themes ───
+  // (the earlier tinted-border/10%-fill lime button was reported hard to
+  // read in light mode — this checks the fix holds, not just that it exists)
+  const ctaContrast = await land.evaluate((theme) => {
+    document.documentElement.classList.remove('light', 'dark');
+    document.documentElement.classList.add(theme);
+    const a = [...document.querySelectorAll('a')].find((x) => /create room/i.test(x.textContent));
+    if (!a) return null;
+    const cs = getComputedStyle(a);
+    // getComputedStyle can serialize wide-gamut CSS colors as lab()/oklch()
+    // (Chrome does, for our oklch() tokens) — a naive rgb()-regex parse
+    // silently mis-reads those. Painting onto a canvas always normalizes to
+    // 8-bit sRGB regardless of the input's serialization.
+    const probe = document.createElement('canvas');
+    probe.width = 1; probe.height = 1;
+    const pctx = probe.getContext('2d');
+    const parse = (c) => {
+      pctx.clearRect(0, 0, 1, 1);
+      pctx.fillStyle = c;
+      pctx.fillRect(0, 0, 1, 1);
+      return [...pctx.getImageData(0, 0, 1, 1).data];
+    };
+    const lum = ([r, g, b]) => {
+      const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    const bgL = lum(parse(cs.backgroundColor));
+    const fgL = lum(parse(cs.color));
+    const ratio = (Math.max(bgL, fgL) + 0.05) / (Math.min(bgL, fgL) + 0.05);
+    return { ratio, bg: cs.backgroundColor, fg: cs.color };
+  }, 'light');
+  ok('CTA: "Create room" button text passes WCAG AA against its own fill in LIGHT mode',
+    ctaContrast && ctaContrast.ratio >= 4.5, ctaContrast ? `${ctaContrast.ratio.toFixed(2)}:1 (${ctaContrast.fg} on ${ctaContrast.bg})` : 'button not found');
 
   await browser.close();
 } finally {

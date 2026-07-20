@@ -43,7 +43,7 @@ const html = `<!doctype html><html><head>
     margin-top: 44px; font-size: 25px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.08em; color: rgba(244,242,250,0.72);
   }
-  .eq .op { color: oklch(0.68 0.27 340); }
+  .eq .op { color: oklch(0.8 0.14 200); }
   .eq .mc { color: oklch(0.88 0.22 128); text-shadow: 0 0 14px oklch(0.88 0.22 128 / 0.5); }
   .art { flex: 1 1 44%; height: 100%; display: flex; align-items: center; justify-content: center; }
   /* the mic canvas carries transparent right-padding — same +4.5% mass

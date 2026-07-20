@@ -40,14 +40,8 @@ export function Hero({ contactHref }: { contactHref: string }) {
             className="reveal mt-7 max-w-md text-pretty text-base leading-relaxed text-foreground/80"
             style={{ ['--reveal-delay' as string]: '0.28s' }}
           >
-            <span className="adv-only">
-              Viewers pay per-second in USDC to put their camera in your live
-              broadcast.
-            </span>
-            <span className="simple-only">
-              Viewers pay per second to put their camera in your live
-              broadcast.
-            </span>
+            Viewers pay per second to put their camera on your live
+            broadcast.
           </p>
 
           <div
@@ -60,21 +54,25 @@ export function Hero({ contactHref }: { contactHref: string }) {
             >
               How it works
             </a>
+            {/* Cyan — the same blue as the mic's glitch streaks (sampled
+                rgb(16,240,240) ≈ --neon-cyan) — dark ink text holds contrast
+                in both themes since cyan stays light-toned in each. */}
             <a
               href="/dashboard"
-              className="rounded-full border border-[var(--neon-lime)]/60 bg-[var(--neon-lime)]/10 px-6 py-3 text-sm font-bold uppercase tracking-wide text-[var(--neon-lime)] transition-transform hover:scale-[1.03]"
+              className="glow-cyan rounded-full bg-[var(--neon-cyan)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[oklch(0.16_0.03_305)] transition-transform hover:scale-[1.03]"
             >
-              Start a room
+              Create room
             </a>
           </div>
 
-          {/* the equation — one punchy brand line, not body copy */}
+          {/* the equation — one punchy brand line, not body copy. + and =
+              share the mic's cyan; MegaChat keeps its lime pop. */}
           <p
             className="reveal font-heading mt-8 text-sm font-bold uppercase tracking-wider text-foreground/70"
             style={{ ['--reveal-delay' as string]: '0.44s' }}
           >
-            Call-in show <span className="text-[var(--neon-magenta)]">+</span>{' '}
-            FaceTime <span className="text-[var(--neon-magenta)]">+</span>{' '}
+            Call-in show <span className="text-[var(--neon-cyan)]">+</span>{' '}
+            FaceTime <span className="text-[var(--neon-cyan)]">+</span>{' '}
             Superchat <span className="text-[var(--neon-cyan)]">=</span>{' '}
             <span className="text-[var(--neon-lime)] drop-shadow-[0_0_12px_oklch(0.88_0.22_128/0.45)]">
               MegaChat
