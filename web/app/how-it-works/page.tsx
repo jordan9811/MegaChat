@@ -381,7 +381,7 @@ export default function HowItWorksPage() {
                 <div className="reveal rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm">
                   <h3 className="font-heading text-base font-bold text-foreground">👀 Spectating is delayed</h3>
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    The broadcast you watch runs ~15 seconds behind reality —
+                    The broadcast you watch runs a touch behind reality —
                     every big platform buffers like that, for every viewer.
                     That&apos;s normal and nothing here changes it.
                   </p>
@@ -417,7 +417,7 @@ export default function HowItWorksPage() {
                 <svg
                   viewBox="0 0 720 150"
                   role="img"
-                  aria-label="Diagram: your camera reaches the streamer in under a second over MegaChat's pipe; the public broadcast reaches all spectators about fifteen seconds later"
+                  aria-label="Diagram: your camera reaches the streamer in under a second over MegaChat's pipe; the public broadcast reaches all spectators after a slight delay"
                   className="mx-auto block min-w-[560px] max-w-3xl"
                 >
                   <defs>
@@ -439,7 +439,7 @@ export default function HowItWorksPage() {
                     <g color="var(--muted-foreground)">
                       <line x1="434" y1="82" x2="582" y2="82" stroke="currentColor" strokeWidth="2" strokeDasharray="6 5" markerEnd="url(#arr)" />
                     </g>
-                    <text x="508" y="112" textAnchor="middle" fill="var(--muted-foreground)">broadcast · ~15s</text>
+                    <text x="508" y="112" textAnchor="middle" fill="var(--muted-foreground)">broadcast · slight delay</text>
                   </g>
                 </svg>
               </div>

@@ -671,3 +671,51 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
       0 0 72px oklch(0.78 0.15 210 / 0.4);
   }
 }
+
+/* ── Human-readable tx errors (polish item 1) ─────────────────────────────
+   One clean sentence up top; the raw revert lives in a quiet collapsible.
+   Colors ride the theme tokens so both light and dark stay legible. */
+.tx-details {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  text-align: left;
+}
+.tx-details summary {
+  cursor: pointer;
+  color: var(--muted-foreground);
+  text-decoration: underline dotted;
+  user-select: none;
+}
+.tx-details[open] summary {
+  margin-bottom: 6px;
+}
+.tx-details pre {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--background) 82%, transparent);
+  color: var(--muted-foreground);
+  font-family: var(--font-geist-mono, monospace);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+.tx-addfunds {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--neon-lime) 55%, transparent);
+  background: color-mix(in oklab, var(--neon-lime) 12%, transparent);
+  color: var(--neon-lime);
+  font-weight: 700;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+.tx-addfunds:hover {
+  transform: scale(1.04);
+}

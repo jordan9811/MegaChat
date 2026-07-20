@@ -133,6 +133,111 @@ function credits(usdc) {
 function fmtAmount(usdc) {
   return uiSimple() ? `${credits(usdc)} credits` : `${usdc} ${tokenSymbol()}`;
 }
+
+// ─── Human-readable transaction errors (display only) ───────────────────────
+// A failed join/MegaChat used to dump the full viem revert wall (error name,
+// chain args, hex calldata). Known reverts render as ONE clean sentence in
+// the viewer's own mode (credits vs USDC) with the fix attached; anything
+// unknown gets a short generic line plus a collapsible "Technical details"
+// expander carrying the raw error. Presentation only — the transaction logic
+// underneath is untouched.
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+function txDetailsBlock(raw) {
+  return (
+    '<details class="tx-details"><summary>Technical details</summary>' +
+    `<pre>${escapeHtml(raw)}</pre></details>`
+  );
+}
+
+function trimAmt(n) {
+  return String(parseFloat(Number(n).toFixed(6)));
+}
+
+// Best-effort parse of the amounts inside a TIP20 InsufficientBalance revert.
+// viem prints custom errors as `InsufficientBalance(…decimal args…)`; the
+// balance/needed pair are the trailing two integers, in the token's atomic
+// units. Order is defensive — a revert means have < need, so swap if flipped.
+function parseInsufficientAmounts(raw) {
+  const s = String(raw);
+  const at = s.search(/InsufficientBalance/i);
+  if (at < 0) return null;
+  // viem prints the SIGNATURE first — `InsufficientBalance(address sender,
+  // uint256 balance, …)` — and the values in a later paren group. Only a
+  // group made of bare values counts (no type keywords; "uint256" would
+  // otherwise donate a bogus 256).
+  const groups = [...s.slice(at).matchAll(/\(([^)]*)\)/g)].map((g) => g[1]);
+  const valueGroup = groups.find(
+    (g) => g.trim() && /^[\s,0-9xa-fA-F.]+$/.test(g.trim()) && /\d/.test(g),
+  );
+  if (!valueGroup) return null;
+  // hex tokens are addresses — amounts arrive as plain decimals
+  const nums = valueGroup.replace(/0x[0-9a-fA-F]+/g, ' ').match(/\d{1,30}/g) || [];
+  if (nums.length < 2) return null;
+  const dec = (CONFIG && CONFIG.paymentTokenDecimals) || 6;
+  let have = Number(nums[nums.length - 2]) / 10 ** dec;
+  let need = Number(nums[nums.length - 1]) / 10 ** dec;
+  if (!isFinite(have) || !isFinite(need) || need <= 0) return null;
+  if (have > need) { const t = have; have = need; need = t; }
+  return { have, need };
+}
+
+// One short line for places that embed the reason inside another message
+// (e.g. the tick-failure "leaving the stream" banner).
+function shortTxReason(raw) {
+  const s = String(raw || 'unknown error');
+  if (/InsufficientBalance|insufficient balance|exceeds balance/i.test(s)) return 'Your balance ran out.';
+  if (/user rejected|user denied|rejected the request/i.test(s)) return 'The wallet stopped approving payments.';
+  const line = s.split('\n')[0];
+  return line.length > 140 ? line.slice(0, 140) + '…' : line;
+}
+
+async function humanTxErrorHtml(err, ctx) {
+  const raw = String((err && err.message) || err || 'Unknown error');
+  const rawFull = String((err && (err.stack || err.message)) || err || 'Unknown error');
+  // Short app-level errors (server rejections, our own throws) pass through
+  // untouched — they were already written for humans.
+  const looksRaw =
+    /reverted|revert|0x[0-9a-f]{10,}|ContractFunction|InsufficientBalance|RpcRequestError/i.test(raw) ||
+    raw.length > 220 || raw.includes('\n');
+  if (!looksRaw) return escapeHtml(raw);
+
+  if (/InsufficientBalance|insufficient balance|exceeds balance|transfer amount exceeds/i.test(rawFull)) {
+    let amt = parseInsufficientAmounts(rawFull);
+    if (!amt) {
+      // Fall back to what the page already knows: live balance + this cost.
+      let have = null;
+      try {
+        if (account) {
+          const r = await fetch(`/api/balance/${account}?room=${encodeURIComponent(streamRoomId)}`);
+          const d = await r.json();
+          if (r.ok) have = parseFloat(d.available || d.spendable || '0');
+        }
+      } catch { /* balance display is best-effort */ }
+      amt = { have, need: ctx && ctx.need != null ? parseFloat(ctx.need) : null };
+    }
+    const haveTxt = amt.have != null && isFinite(amt.have) ? fmtAmount(trimAmt(amt.have)) : null;
+    const needTxt = amt.need != null && isFinite(amt.need) ? fmtAmount(trimAmt(amt.need)) : null;
+    const line =
+      haveTxt != null && needTxt != null
+        ? `Not enough balance — you have ${haveTxt}, this costs ${needTxt}.`
+        : 'Not enough balance for this.';
+    return `${line} <button type="button" class="tx-addfunds" onclick="fundWallet()">➕ Add funds</button>`;
+  }
+  if (/user rejected|user denied|rejected the request/i.test(rawFull)) {
+    return 'You cancelled the request in your wallet.';
+  }
+  return "The payment didn't go through. " + txDetailsBlock(rawFull);
+}
+
+async function showTxError(prefix, err, ctx) {
+  const html = await humanTxErrorHtml(err, ctx);
+  showMessage('❌ ' + (prefix ? prefix + ': ' : '') + html, 'error');
+}
 let lastMeter = null;
 function applyModeText() {
   const dep = document.getElementById('depositBtn');
@@ -780,10 +885,12 @@ function startMppTicks(data) {
       console.warn(`[mpp] tick failed (${mppFailures}/${maxStrikes})`, err);
       if (mppFailures >= maxStrikes) {
         // quiet leave: THIS message is the notification — leaveStream must
-        // not paper over it with the friendly "you left" line.
+        // not paper over it with the friendly "you left" line. Reason is
+        // humanized; the raw error stays available in the expander.
         showMessage(
           '❌ Payment stream failed — leaving the stream.<br>' +
-          `<span style="font-size:0.85em;opacity:0.85">${err?.message || 'unknown error'}</span>`,
+          `<span style="font-size:0.85em;opacity:0.85">${escapeHtml(shortTxReason(err?.message))}</span>` +
+          txDetailsBlock(String(err?.stack || err?.message || 'unknown error')),
           'error'
         );
         leaveStream(true);
@@ -964,7 +1071,9 @@ async function joinSeat() {
     }
   } catch (error) {
     console.error('Error:', error);
-    showMessage('❌ ' + (error.message || 'Connection error. Try again.'), 'error');
+    // Joining reserves the session cap — that's the "cost" a viewer must
+    // cover when the revert says their balance can't.
+    await showTxError('', error, { need: CONFIG && CONFIG.maxSession });
   } finally {
     // Success hands the button to the camera states (awaiting-camera →
     // go-live → live); only reset to idle when no seat was granted.
@@ -1736,13 +1845,13 @@ async function sendLetter() {
         ? '🔎 MegaChat sent — quick automated review (a few seconds), then it queues.'
         : upData.status === 'pending_approval'
           ? '📮 MegaChat sent — the streamer approves MegaChats before they play. You were charged; rejects auto-refund.'
-          : '📮 MegaChat sent! It will pop up on stream shortly — watch the preview above (it runs ~15s behind).',
+          : '📮 MegaChat sent! It will pop up on stream shortly — watch the preview above (it runs on a slight delay).',
       'success',
     );
   } catch (err) {
     letterState = 'preview';
     setLetterStatus('');
-    showMessage('❌ MegaChat failed: ' + (err?.message || 'unknown error'), 'error');
+    await showTxError('MegaChat failed', err, { need: cfg && cfg.price });
   }
 }
 
@@ -2001,7 +2110,7 @@ export function initJoinPage({ wsUrl }) {
       // Letter lifecycle toasts are seat-independent (senders usually have
       // no seat) — handle them before the seat guard.
       if (msg.type === 'letter_play' && msg.letter && msg.letter.id === myLetterId) {
-        showMessage('▶ Your MegaChat is on stream RIGHT NOW — the preview above shows it in ~15s.', 'success');
+        showMessage('▶ Your MegaChat is on stream RIGHT NOW — the preview above shows it after a slight delay.', 'success');
         return;
       }
       if (msg.type === 'letter_queued' && msg.letterId === myLetterId) {
@@ -2144,6 +2253,9 @@ export function initJoinPage({ wsUrl }) {
   Object.assign(window, {
     connectMetaMask, connectPrivyWallet, fundWallet, joinSeat,
     goLive, retryCamera, leaveStream, onJoinSuccess, refreshBalance,
+    // display-only tx-error helpers — exposed so gates can exercise the
+    // humanizer through the REAL message pipeline without burning funds
+    showTxError, humanTxErrorHtml,
   });
 
   init();

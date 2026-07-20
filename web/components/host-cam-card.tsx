@@ -256,7 +256,7 @@ export function HostCamCard() {
       <CardHeader
         icon={<Radio className="size-5" />}
         title="Co-host booth"
-        description="Arm once. Your camera goes on air to live guests automatically and hangs up when they leave — they see you sub-second (the public broadcast runs ~15s behind)."
+        description="Arm once. Your camera goes on air to live guests automatically and hangs up when they leave — they see you sub-second (the public broadcast runs on a slight delay)."
         accent="lime"
       />
       <div className="flex flex-col gap-3 px-5 py-5 sm:px-6">

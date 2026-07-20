@@ -66,7 +66,7 @@ export function JoinClient() {
         <div className="stream-preview-caption">
           <span className="host-live-label">
             <span className="host-live-dot" aria-hidden="true" />
-            Real-time with the host — the public stream shows this in ~15s
+            Real-time with the host — the public stream shows this after a slight delay
           </span>
           <span className="stream-preview-label">Headphones recommended</span>
         </div>
@@ -81,7 +81,7 @@ export function JoinClient() {
           <div id="streamPreviewMount" className="stream-preview-mount" />
         </div>
         <div className="stream-preview-caption">
-          <span className="stream-preview-label">Stream preview · ~15s behind live</span>
+          <span className="stream-preview-label">Stream preview · slight delay</span>
           <span id="streamPreviewDrops" className="stream-preview-drops" style={{ display: 'none' }}>
             💧 Watching earns drops in this room
           </span>
