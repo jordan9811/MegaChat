@@ -3,8 +3,9 @@
  * real mainnet dust for the letter payment.
  *
  *  A. host token auth: password-gated (401 wrong password).
- *  B. host goes ON AIR from the real dashboard UI (unlock → Go on air with a
- *     synthetic camera) → SFU lists host:<room> with published tracks.
+ *  B. host arms the co-host booth from the real dashboard UI (unlock → arm
+ *     with a synthetic camera); the booth AUTO-publishes when a guest seat
+ *     goes live → SFU lists host:<room> with published tracks (checked in C).
  *  C. joiner in a live slot receives the host feed sub-second: hostLiveFeed
  *     <video> gets real frames; the delayed Twitch embed is REMOVED during
  *     the slot (echo safety) and restored after leave.
@@ -85,7 +86,9 @@ try {
     twitchChannel: 'megachattv',
     letters: { enabled: true, maxSeconds: 5, price: '0.01', moderation: 'auto' },
   });
-  const roomVdo = await mk('VDO Return', { twitchChannel: 'megachattv' });
+  // Explicit transport: 'vdo' — LiveKit became the DEFAULT for rooms created
+  // without a choice, so the vdo control room must opt out or E tests nothing.
+  const roomVdo = await mk('VDO Return', { transport: 'vdo', twitchChannel: 'megachattv' });
   console.log('  [setup] rooms', roomLk.id, roomVdo.id);
 
   // ── A. host token auth ─────────────────────────────────────────────────────
@@ -118,18 +121,18 @@ try {
     [...document.querySelectorAll('button')].find((b) => /unlock room/i.test(b.textContent))?.click();
   });
   await sleep(2500);
-  const onAirClicked = await host.evaluate(() => {
-    const btn = [...document.querySelectorAll('button')].find((b) => /go on air/i.test(b.textContent));
-    if (!btn) return false;
-    btn.click();
+  const boothFound = await host.evaluate(() => {
+    const t = document.getElementById('cohost-booth');
+    if (!t) return false;
+    t.click(); // arm — permission preflight runs on this gesture
     return true;
   });
-  ok('dashboard shows Go on air for the livekit room', onAirClicked);
-  await sleep(5000);
-  let participants = await svc.listParticipants(`mc-${roomLk.id}`).catch(() => []);
-  const hostP = participants.find((p) => p.identity === `host:${roomLk.id}`);
-  ok('SFU lists the host with published tracks', !!hostP && (hostP.tracks || []).length >= 1,
-    hostP ? `tracks=${hostP.tracks.length}` : 'not found');
+  ok('dashboard shows the co-host booth for the livekit room', boothFound);
+  await sleep(2000);
+  const armedNow = await host.evaluate(() => document.getElementById('cohost-booth')?.checked === true);
+  ok('booth armed (camera+mic preflight cleared)', armedNow);
+  // NOTE: no SFU check here — the booth intentionally publishes only once a
+  // guest seat is live; the host-on-SFU assert moved into section C.
 
   // ── C. joiner live slot: host feed + echo safety ───────────────────────────
   const joinRes = await fetch(`${APP}/api/join/mpp`, {
@@ -170,6 +173,16 @@ try {
     { timeout: 25000 },
   );
   await joiner.click('#joinBtn');
+
+  // Guest seat is live → the armed booth must publish BY ITSELF.
+  let hostP = null;
+  for (let i = 0; i < 12 && !hostP; i++) {
+    await sleep(1500);
+    const participants = await svc.listParticipants(`mc-${roomLk.id}`).catch(() => []);
+    hostP = participants.find((p) => p.identity === `host:${roomLk.id}`) || null;
+  }
+  ok('SFU lists the host with published tracks (booth auto-published)',
+    !!hostP && (hostP.tracks || []).length >= 1, hostP ? `tracks=${hostP.tracks.length}` : 'not found');
 
   await joiner.bringToFront();
   let feed = { w: 0 };
