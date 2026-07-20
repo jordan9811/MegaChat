@@ -2,8 +2,9 @@ import Image from 'next/image'
 import { Wordmark } from '@/components/wordmark'
 import { FooterNav } from '@/components/site-footer'
 
-// The hero funnels: what this is (copy above), where viewers go (Browse
-// rooms + the mic's GRAB button), where streamers go (Start a room).
+// The hero funnels three ways: what this is (How it works), where streamers
+// go (Start a room), and where viewers go (the mic's GRAB button). Browse
+// stays reachable from the footer nav — just not a hero slot.
 
 export function Hero({ contactHref }: { contactHref: string }) {
   return (
@@ -40,12 +41,12 @@ export function Hero({ contactHref }: { contactHref: string }) {
             style={{ ['--reveal-delay' as string]: '0.28s' }}
           >
             <span className="adv-only">
-              Viewers pay per-second in USDC to put their camera on your live
+              Viewers pay per-second in USDC to put their camera in your live
               broadcast.
             </span>
             <span className="simple-only">
-              Viewers spend credits by the second to put their camera on your
-              live broadcast.
+              Viewers pay per second to put their camera in your live
+              broadcast.
             </span>
           </p>
 
@@ -54,10 +55,10 @@ export function Hero({ contactHref }: { contactHref: string }) {
             style={{ ['--reveal-delay' as string]: '0.36s' }}
           >
             <a
-              href="#browse"
+              href="/how-it-works"
               className="glow-magenta rounded-full bg-primary px-6 py-3 text-sm font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:scale-[1.03]"
             >
-              Browse rooms
+              How it works
             </a>
             <a
               href="/dashboard"
@@ -66,12 +67,31 @@ export function Hero({ contactHref }: { contactHref: string }) {
               Start a room
             </a>
           </div>
+
+          {/* the equation — one punchy brand line, not body copy */}
+          <p
+            className="reveal font-heading mt-8 text-sm font-bold uppercase tracking-wider text-foreground/70"
+            style={{ ['--reveal-delay' as string]: '0.44s' }}
+          >
+            Call-in show <span className="text-[var(--neon-magenta)]">+</span>{' '}
+            FaceTime <span className="text-[var(--neon-magenta)]">+</span>{' '}
+            Superchat <span className="text-[var(--neon-cyan)]">=</span>{' '}
+            <span className="text-[var(--neon-lime)] drop-shadow-[0_0_12px_oklch(0.88_0.22_128/0.45)]">
+              MegaChat
+            </span>
+          </p>
         </div>
 
-        {/* right visual — crowned glitch mic + GRAB 10 SEC as one unit, sitting on the bg */}
+        {/* right visual — crowned glitch mic + GRAB 10 SEC as one unit, sitting on the bg.
+            The art's canvas carries extra transparent RIGHT padding (glitch
+            confetti), so its visual mass sits ~4.4% left of the canvas center
+            — centered CSS still LOOKED off, worst on mobile. The standalone
+            `translate` property re-centers the mass and composes with the
+            reveal/float transform animations (a transform here would be
+            overridden by their fill states). Measured via _diag-mic-bbox.mjs. */}
         <div
           className="reveal relative mx-auto flex w-full max-w-md items-center justify-center"
-          style={{ ['--reveal-delay' as string]: '0.22s' }}
+          style={{ ['--reveal-delay' as string]: '0.22s', translate: '4.5% 0' }}
         >
           <div className="absolute left-1/2 top-1/2 h-3/4 w-3/4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--neon-magenta)] opacity-25 blur-[110px]" />
           {/* The hero art is sliced at the banner's top edge (y=719 of 1008)

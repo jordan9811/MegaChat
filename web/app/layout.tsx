@@ -53,10 +53,12 @@ export const metadata: Metadata = {
     description: SITE_DESC,
     images: [
       {
-        url: '/megachat-hero.png',
-        width: 697,
-        height: 985,
-        alt: 'MegaChat — crowned glitch microphone',
+        // Purpose-built 1200x630 card (scripts/generate-og.mjs) — the old
+        // portrait hero PNG cropped badly in every link preview.
+        url: '/og.png',
+        width: 1200,
+        height: 630,
+        alt: 'MegaChat — crowned glitch microphone and wordmark',
       },
     ],
   },
@@ -64,7 +66,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: SITE_TITLE,
     description: SITE_DESC,
-    images: ['/megachat-hero.png'],
+    images: ['/og.png'],
   },
   icons: {
     icon: '/icon.svg',
