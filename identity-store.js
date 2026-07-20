@@ -92,9 +92,27 @@ export function claimIdentity({ provider, platformId, username, handle }) {
     username: String(username).slice(0, 40),
     handle: wanted,
     createdAt: existing?.createdAt || new Date().toISOString(),
+    // saved room defaults ride the identity — re-claiming a handle must not
+    // wipe them
+    ...(existing?.roomDefaults ? { roomDefaults: existing.roomDefaults } : {}),
   };
   store.identities[k] = identity;
   store.handles[wanted] = k;
+  save();
+  return identity;
+}
+
+/**
+ * Per-identity room defaults — the create form starts from these instead of
+ * blank. Display/prefill data only; every room still validates its own
+ * config on create. `null` clears.
+ */
+export function setIdentityDefaults(provider, platformId, defaults) {
+  const store = load();
+  const identity = store.identities[key(provider, platformId)];
+  if (!identity) return null;
+  if (defaults === null) delete identity.roomDefaults;
+  else identity.roomDefaults = defaults;
   save();
   return identity;
 }

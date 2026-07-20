@@ -10,7 +10,7 @@
  * local mock IdP through the REAL code path.
  */
 import { createHmac, randomBytes, createHash } from 'crypto';
-import { claimIdentity, getIdentity, suggestHandle } from './identity-store.js';
+import { claimIdentity, getIdentity, suggestHandle, setIdentityDefaults } from './identity-store.js';
 import { createPrivyIdentity } from './privy-identity.js';
 import { verifyRoomPassword, isRoomOwnedBy } from './rooms-store.js';
 
@@ -192,6 +192,49 @@ export function attachAuth(app, { log = console } = {}) {
   app.post('/api/auth/logout', (req, res) => {
     setCookie(res, 'mc_identity', '', { maxAge: 0 });
     res.json({ ok: true });
+  });
+
+  // ── Account layer (dashboard Account/Defaults sections) ────────────────────
+  // Display + prefill data only: no payment, meter, or transport logic.
+
+  /** Saved room defaults for the signed-in identity. */
+  app.get('/api/account/defaults', (req, res) => {
+    const identity = readIdentityFromRequest(req);
+    if (!identity) return res.status(401).json({ error: 'Sign in first' });
+    res.json({ defaults: identity.roomDefaults || null });
+  });
+
+  /** Save (object) or clear (null) room defaults. Prefill data, size-capped. */
+  app.put('/api/account/defaults', (req, res) => {
+    const identity = readIdentityFromRequest(req);
+    if (!identity) return res.status(401).json({ error: 'Sign in first' });
+    const body = req.body && req.body.defaults;
+    if (body !== null && (typeof body !== 'object' || Array.isArray(body))) {
+      return res.status(400).json({ error: 'defaults must be an object or null' });
+    }
+    if (body && JSON.stringify(body).length > 8192) {
+      return res.status(400).json({ error: 'defaults too large' });
+    }
+    const updated = setIdentityDefaults(identity.provider, identity.platformId, body);
+    res.json({ ok: true, defaults: updated?.roomDefaults || null });
+  });
+
+  /** Linked accounts (raw Privy REST — the SDK drops twitch/x). */
+  app.get('/api/account/linked', async (req, res) => {
+    const identity = readIdentityFromRequest(req);
+    if (!identity) return res.status(401).json({ error: 'Sign in first' });
+    let accounts = [];
+    if (identity.provider === 'privy' && privyIdentity) {
+      try {
+        accounts = await privyIdentity.accountsFor(identity.platformId);
+      } catch (err) {
+        log.warn('[auth] linked accounts fetch failed:', err.message);
+      }
+    } else if (identity.provider && identity.provider !== 'privy') {
+      // legacy single-provider identity (pre-Privy Twitch/X flow)
+      accounts = [{ type: identity.provider, name: identity.username }];
+    }
+    res.json({ accounts });
   });
 
   // ── Start ──────────────────────────────────────────────────────────────────

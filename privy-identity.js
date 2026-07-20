@@ -127,6 +127,26 @@ export function createPrivyIdentity({ log = console } = {}) {
     credentialsValid: () => credsValid,
     displayNameFromRaw,
     /**
+     * Display-safe linked-accounts list for the account panel — raw REST
+     * (the SDK silently drops twitch/x), reduced to {type, name} pairs and
+     * nothing else (no tokens, no ids).
+     */
+    async accountsFor(did) {
+      const list = await rawAccounts(did);
+      return list
+        .map((a) => {
+          if (!a || !a.type) return null;
+          const type = String(a.type).replace(/_oauth$/, '');
+          if (a.type === 'wallet') {
+            const addr = String(a.address || '');
+            return addr ? { type: 'wallet', name: `${addr.slice(0, 6)}…${addr.slice(-4)}` } : null;
+          }
+          const name = a.username || a.email || a.address || a.phoneNumber || null;
+          return name ? { type, name: String(name) } : { type, name: null };
+        })
+        .filter(Boolean);
+    },
+    /**
      * Verify an access token and return the MegaChat identity for it, claiming
      * a handle on first sight. Throws on an invalid token — a forged token must
      * never mint a handle.

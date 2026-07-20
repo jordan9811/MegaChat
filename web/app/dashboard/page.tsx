@@ -7,6 +7,7 @@ import { LettersQueueCard } from '@/components/letters-queue-card'
 import { HostCamCard } from '@/components/host-cam-card'
 import { RoomProvider } from '@/components/room-provider'
 import { IntegrationsCard } from '@/components/integrations-card'
+import { DashboardSections } from '@/components/dashboard-sections'
 
 export const metadata = {
   title: 'MegaChat — Streamer dashboard',
@@ -38,28 +39,32 @@ export default function DashboardPage() {
         </div>
 
         <RoomProvider>
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="reveal lg:row-span-2" style={{ ['--reveal-delay' as string]: '0.08s' }}>
-              <MegaChatSettings />
-            </div>
-            <div className="reveal" style={{ ['--reveal-delay' as string]: '0.16s' }}>
-              <OnCameraTable />
-            </div>
-            {/* Audit P1-3: the streamer's own camera outranks a coming-soon
-                stub — Host cam up beside the live tables, Integrations last. */}
-            <div className="reveal" style={{ ['--reveal-delay' as string]: '0.24s' }}>
-              <HostCamCard />
-            </div>
-            <div className="reveal" style={{ ['--reveal-delay' as string]: '0.32s' }}>
-              <RewardsCard />
-            </div>
-            <div className="reveal" style={{ ['--reveal-delay' as string]: '0.4s' }}>
-              <LettersQueueCard />
-            </div>
-            <div className="reveal" style={{ ['--reveal-delay' as string]: '0.48s' }}>
-              <IntegrationsCard />
-            </div>
-          </div>
+          <DashboardSections
+            rooms={
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+                <div className="reveal lg:row-span-2" style={{ ['--reveal-delay' as string]: '0.08s' }}>
+                  <MegaChatSettings />
+                </div>
+                <div className="reveal" style={{ ['--reveal-delay' as string]: '0.16s' }}>
+                  <OnCameraTable />
+                </div>
+                {/* Audit P1-3: the streamer's own camera outranks a coming-soon
+                    stub — Host cam up beside the live tables, Integrations last. */}
+                <div className="reveal" style={{ ['--reveal-delay' as string]: '0.24s' }}>
+                  <HostCamCard />
+                </div>
+                <div className="reveal" style={{ ['--reveal-delay' as string]: '0.32s' }}>
+                  <RewardsCard />
+                </div>
+                <div className="reveal" style={{ ['--reveal-delay' as string]: '0.4s' }}>
+                  <LettersQueueCard />
+                </div>
+                <div className="reveal" style={{ ['--reveal-delay' as string]: '0.48s' }}>
+                  <IntegrationsCard />
+                </div>
+              </div>
+            }
+          />
         </RoomProvider>
       </main>
 

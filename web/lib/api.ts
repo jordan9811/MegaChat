@@ -302,3 +302,25 @@ export function rejectLetter(roomId: string, password: string, letterId: string)
     { method: 'POST', password },
   )
 }
+
+// ── Account layer (dashboard Account/Defaults sections) ─────────────────────
+
+export type LinkedAccount = { type: string; name: string | null }
+
+/** Linked sign-in accounts for the current identity (cookie-authed). */
+export function listLinkedAccounts() {
+  return request<{ accounts: LinkedAccount[] }>('/api/account/linked')
+}
+
+/** Saved room defaults for the current identity — null when none saved. */
+export function getAccountDefaults() {
+  return request<{ defaults: Record<string, unknown> | null }>('/api/account/defaults')
+}
+
+/** Save (object) or clear (null) the identity's room defaults. */
+export function saveAccountDefaults(defaults: Record<string, unknown> | null) {
+  return request<{ ok: boolean; defaults: Record<string, unknown> | null }>(
+    '/api/account/defaults',
+    { method: 'PUT', body: { defaults } },
+  )
+}

@@ -225,10 +225,14 @@ export function HeaderAuth() {
           className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-border bg-card/95 p-1.5 shadow-[0_12px_40px_oklch(0.1_0.03_300/0.5)] backdrop-blur-md"
         >
           {identity ? (
-            <p className="px-3 pb-1.5 pt-2 text-xs text-muted-foreground">
+            <a
+              href="/dashboard?section=account"
+              role="menuitem"
+              className="block rounded-lg px-3 pb-1.5 pt-2 text-xs text-muted-foreground transition-colors hover:bg-input/50"
+            >
               @{identity.handle} is yours forever, and it&apos;s your room link:{' '}
               <span className="font-mono text-foreground">/{identity.handle}</span>
-            </p>
+            </a>
           ) : null}
 
           {wallet.address ? (
@@ -258,6 +262,10 @@ export function HeaderAuth() {
             </button>
           )}
 
+          <a href="/dashboard?section=account" role="menuitem" className={itemCls}>
+            <UserRound className="size-4 text-[var(--neon-cyan)]" />
+            Account
+          </a>
           <a href="/dashboard" role="menuitem" className={itemCls}>
             <LayoutDashboard className="size-4 text-[var(--neon-lime)]" />
             Dashboard

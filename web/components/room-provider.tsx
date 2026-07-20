@@ -27,6 +27,8 @@ import {
   pinSeat as apiPinSeat,
   getPublicConfig,
   listMyRooms,
+  getAccountDefaults,
+  saveAccountDefaults,
   listLetters as apiListLetters,
   approveLetter as apiApproveLetter,
   rejectLetter as apiRejectLetter,
@@ -138,6 +140,11 @@ type RoomContextValue = {
   /** Rooms owned by the signed-in identity, for the "your rooms" list. */
   myRooms: MyRoomCard[]
   refreshMyRooms: () => Promise<void>
+  /** Saved per-identity room defaults (Account → Defaults section). */
+  accountDefaults: Record<string, unknown> | null
+  /** Snapshot the current create-form as this identity's defaults. */
+  saveDefaultsFromDraft: () => Promise<void>
+  clearDefaults: () => Promise<void>
   /** Open a room you OWN with no password (identity cookie authorizes it). */
   openOwnedRoom: (roomId: string) => Promise<void>
   updateDraft: (patch: Partial<ConfigDraft>) => void
@@ -271,9 +278,12 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const [identityHandle, setIdentityHandle] = useState<string | null>(null)
   const [hasIdentity, setHasIdentity] = useState(false)
   const [myRooms, setMyRooms] = useState<MyRoomCard[]>([])
+  const [accountDefaults, setAccountDefaults] = useState<Record<string, unknown> | null>(null)
   // read inside listeners without re-subscribing them on every change
   const identityHandleRef = useRef<string | null>(null)
   identityHandleRef.current = identityHandle
+  // Defaults prefill must NEVER clobber a form the user already touched.
+  const draftTouchedRef = useRef(false)
 
   const passwordRef = useRef('')
   const roomIdRef = useRef<string | null>(null)
@@ -316,6 +326,29 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     const loadMine = () => listMyRooms().then((d) => setMyRooms(d.rooms)).catch(() => {})
     void loadMine()
 
+    // Saved room defaults: creating a room starts from these instead of
+    // blank. Prefill only a pristine create form — a touched draft (or an
+    // open room) is the user's, not ours.
+    const loadDefaults = () =>
+      getAccountDefaults()
+        .then(({ defaults }) => {
+          setAccountDefaults(defaults)
+          if (defaults && !draftTouchedRef.current && !roomIdRef.current) {
+            setDraft((d) => {
+              const out = { ...d }
+              for (const [k, v] of Object.entries(defaults)) {
+                if (k === 'name' || k === 'handle') continue
+                if (k in out && typeof v === typeof out[k as keyof ConfigDraft]) {
+                  ;(out as Record<string, unknown>)[k] = v
+                }
+              }
+              return out
+            })
+          }
+        })
+        .catch(() => {}) // signed out — no defaults to load
+    void loadDefaults()
+
     const onWallet = () => {
       if (!identityHandleRef.current) applyName(window.MegaWallet?.displayName)
     }
@@ -330,6 +363,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
         })
         .catch(() => {})
       void loadMine()
+      void loadDefaults()
     }
     window.addEventListener('megawallet:changed', onWallet)
     window.addEventListener('megachat:identity', onIdentity)
@@ -423,7 +457,21 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   )
 
   const updateDraft = useCallback((patch: Partial<ConfigDraft>) => {
+    draftTouchedRef.current = true
     setDraft((d) => ({ ...d, ...patch }))
+  }, [])
+
+  // ── Account → Defaults: snapshot / clear the create-form prefill ──────────
+  const saveDefaultsFromDraft = useCallback(async () => {
+    // name + handle stay per-room; everything else is a reusable preference
+    const { name: _n, handle: _h, ...rest } = draft
+    const data = await saveAccountDefaults(rest as unknown as Record<string, unknown>)
+    setAccountDefaults(data.defaults)
+  }, [draft])
+
+  const clearDefaults = useCallback(async () => {
+    await saveAccountDefaults(null)
+    setAccountDefaults(null)
   }, [])
 
   // Autosave while managing (debounced, same cadence as the legacy dashboard).
@@ -433,6 +481,11 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       skipNextAutosaveRef.current = false
       return
     }
+    // Mid-edit guard: a backspaced-to-empty (or garbled) price is INVALID,
+    // not "free" — never autosave it over a live room's real price. '0' is
+    // legit (the Free room switch writes it explicitly).
+    const p = draft.passkeyTickPrice.trim()
+    if (p === '' || !isFinite(parseFloat(p)) || parseFloat(p) < 0) return
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
       const roomId = roomIdRef.current
@@ -595,6 +648,9 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       hasIdentity,
       myRooms,
       refreshMyRooms,
+      accountDefaults,
+      saveDefaultsFromDraft,
+      clearDefaults,
       openOwnedRoom,
       updateDraft,
       create,
@@ -606,7 +662,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       lettersAdmin,
       hostToken,
     }),
-    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, refreshMyRooms, openOwnedRoom, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
+    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>
