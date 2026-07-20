@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Radio, Rocket, Link2, RefreshCw, KeyRound, ChevronDown } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import {
@@ -39,7 +39,25 @@ export function MegaChatSettings() {
   const signedIn = hasIdentity
   // FREE room = per-second price 0. One switch drives the whole free path
   // (seats + auto-priced MegaChats); flip it off to restore the dust default.
-  const freeRoom = !(parseFloat(draft.passkeyTickPrice || '0') > 0)
+  // EXPLICIT state, not derived from the price string: backspacing the price
+  // to empty must NOT auto-check free (empty ≠ free), and typing the "0" of
+  // "0.005" must not unmount the field mid-keystroke. Only the user's click
+  // (or opening a room that IS free) sets it.
+  const [freeRoom, setFreeRoom] = useState(false)
+  // An empty/garbled price is INVALID, not free — create pauses on it.
+  const priceInvalid =
+    !freeRoom &&
+    (draft.passkeyTickPrice.trim() === '' ||
+      !isFinite(parseFloat(draft.passkeyTickPrice)) ||
+      parseFloat(draft.passkeyTickPrice) < 0)
+
+  // Opening/switching a room re-derives the switch from the ROOM's saved
+  // price. Keyed on the room, not the price string — typing must never flip
+  // the checkbox.
+  useEffect(() => {
+    setFreeRoom(draft.passkeyTickPrice === '0')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, room?.id])
 
   const [tab, setTab] = useState<'create' | 'manage'>('create')
   const [password, setPassword] = useState('')
@@ -389,9 +407,10 @@ export function MegaChatSettings() {
                 id="free-room"
                 className="size-4 accent-[var(--neon-cyan)]"
                 checked={freeRoom}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setFreeRoom(e.target.checked)
                   updateDraft({ passkeyTickPrice: e.target.checked ? '0' : '0.001' })
-                }
+                }}
               />
               <span className="flex flex-col gap-0.5">
                 <span className="font-heading text-sm font-bold uppercase tracking-wide text-foreground">
@@ -427,6 +446,11 @@ export function MegaChatSettings() {
                 value={draft.passkeyTickPrice}
                 onChange={(e) => updateDraft({ passkeyTickPrice: e.target.value })}
               />
+              {priceInvalid ? (
+                <p id="price-invalid" className="mt-1.5 text-xs text-[var(--neon-cyan)]">
+                  Enter a price — or flip 💸 Free room above.
+                </p>
+              ) : null}
             </Field>
             ) : null}
 
@@ -862,7 +886,7 @@ export function MegaChatSettings() {
               <button
                 type="button"
                 onClick={handleCreate}
-                disabled={busy}
+                disabled={busy || priceInvalid}
                 className="glow-magenta flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 font-heading text-base font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:scale-[1.01] disabled:opacity-70"
               >
                 {busy ? (
@@ -973,7 +997,7 @@ export function MegaChatSettings() {
             browser source so the SFX reach your stream mix.
             Keep the Host cam link open while you stream — viewers who go live
             see and hear you through it in real time (the public broadcast runs
-            ~15s behind; this pipe doesn&apos;t).
+            on a slight delay; this pipe doesn&apos;t).
           </p>
         </div>
       ) : null}
