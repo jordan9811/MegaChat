@@ -29,6 +29,7 @@ import {
   listMyRooms,
   getAccountDefaults,
   saveAccountDefaults,
+  listLinkedAccounts,
   listLetters as apiListLetters,
   approveLetter as apiApproveLetter,
   rejectLetter as apiRejectLetter,
@@ -349,6 +350,21 @@ export function RoomProvider({ children }: { children: ReactNode }) {
         .catch(() => {}) // signed out — no defaults to load
     void loadDefaults()
 
+    // Twitch channel: if a Twitch account is actually linked, that's the
+    // real answer — prefill it, overriding a stale saved-default guess.
+    // Pristine create form only (same guard as defaults); never touches an
+    // open/managing room's already-loaded config.
+    const loadTwitchPrefill = () =>
+      listLinkedAccounts()
+        .then(({ accounts }) => {
+          const twitch = accounts.find((a) => a.type === 'twitch' && a.name)
+          if (twitch && !draftTouchedRef.current && !roomIdRef.current) {
+            setDraft((d) => (d.twitchChannel === twitch.name ? d : { ...d, twitchChannel: twitch.name! }))
+          }
+        })
+        .catch(() => {}) // signed out, or nothing linked — leave the field alone
+    void loadTwitchPrefill()
+
     const onWallet = () => {
       if (!identityHandleRef.current) applyName(window.MegaWallet?.displayName)
     }
@@ -364,6 +380,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
         .catch(() => {})
       void loadMine()
       void loadDefaults()
+      void loadTwitchPrefill()
     }
     window.addEventListener('megawallet:changed', onWallet)
     window.addEventListener('megachat:identity', onIdentity)
