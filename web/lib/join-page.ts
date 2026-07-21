@@ -1798,9 +1798,12 @@ async function sendLetter() {
   setLetterStatus(letterIsFree ? 'Sending…' : `Paying ${cfg.price} ${tokenSymbol()}…`);
   try {
     // Free letters skip the payment session entirely — plain fetch, no wallet.
+    // The stub must still quack like a session: close() gets called after
+    // submit, and a missing method threw right there, killing the upload
+    // ("Sending…" then silence).
     // Paid ones ride a one-voucher session at the flat price (same rails as ticks).
     const session = letterIsFree
-      ? { fetch: (u, i) => fetch(u, i) }
+      ? { fetch: (u, i) => fetch(u, i), close: async () => {} }
       : await buildMppManager(cfg.price);
     const resp = await session.fetch(
       `/api/letter/submit?room=${encodeURIComponent(streamRoomId)}`,
@@ -1850,7 +1853,10 @@ async function sendLetter() {
     );
   } catch (err) {
     letterState = 'preview';
-    setLetterStatus('');
+    // The person is looking at the RECORDING STAGE, not the page banner —
+    // a blank status line here read as "nothing happened". Show the reason
+    // right where their eyes are; the banner still carries the full story.
+    setLetterStatus('❌ ' + shortTxReason(err?.message) + ' — your take is still here, try Send again.');
     await showTxError('MegaChat failed', err, { need: cfg && cfg.price });
   }
 }

@@ -112,28 +112,55 @@ export function attachLetters(app, deps) {
       log.warn('[letters] transcription failed (fail-open):', err.message);
     }
 
-    const input = [];
-    if (transcript) input.push({ type: 'text', text: transcript });
-    for (const f of letter.frames || []) {
-      input.push({ type: 'image_url', image_url: { url: f } });
+    // omni-moderation accepts AT MOST ONE image per request (400
+    // too_many_images above that) — the mock API in the P2 gate accepted
+    // many, which hid this: with ≥2 sampled frames every real review
+    // 400'd and failed open, i.e. moderation never actually ran. Split:
+    // transcript + first frame ride together, every further frame gets its
+    // own request (the endpoint is free), and the verdict is the WORST
+    // result across all of them.
+    const frames = letter.frames || [];
+    const requests = [];
+    const first = [];
+    if (transcript) first.push({ type: 'text', text: transcript });
+    if (frames[0]) first.push({ type: 'image_url', image_url: { url: frames[0] } });
+    if (first.length) requests.push(first);
+    for (const f of frames.slice(1)) {
+      requests.push([{ type: 'image_url', image_url: { url: f } }]);
     }
-    if (input.length === 0) return { verdict: 'pass', reason: null };
+    if (requests.length === 0) return { verdict: 'pass', reason: null };
 
     try {
-      const mr = await fetch(`${base}/moderations`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'omni-moderation-latest', input }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!mr.ok) throw new Error(`moderation ${mr.status}`);
-      const data = await mr.json();
-      const r = data.results && data.results[0];
-      if (!r) return { verdict: 'pass', reason: null };
-      const scores = r.category_scores || {};
+      const results = await Promise.all(requests.map(async (input) => {
+        const mr = await fetch(`${base}/moderations`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: 'omni-moderation-latest', input }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!mr.ok) {
+          // surface the API's own reason — a bare status code made real
+          // misconfigurations (bad payload, wrong key scope)
+          // indistinguishable from transient blips
+          const body = await mr.text().catch(() => '');
+          throw new Error(`moderation ${mr.status}: ${body.replace(/\s+/g, ' ').slice(0, 300)}`);
+        }
+        const data = await mr.json();
+        return (data.results && data.results[0]) || null;
+      }));
+
+      let anyFlagged = false;
+      const scores = {};
+      for (const r of results) {
+        if (!r) continue;
+        if (r.flagged) anyFlagged = true;
+        for (const [k, v] of Object.entries(r.category_scores || {})) {
+          if (!(k in scores) || v > scores[k]) scores[k] = v;
+        }
+      }
       const top = Object.entries(scores).sort((a, b) => b[1] - a[1])[0] || null;
       const flagged = cfg.letters.aiStrictness === 'borderline'
-        ? !!r.flagged
+        ? anyFlagged
         : !!(top && top[1] >= 0.7);
       if (!flagged) return { verdict: 'pass', reason: null };
       const pct = top ? Math.round(top[1] * 100) : 0;
