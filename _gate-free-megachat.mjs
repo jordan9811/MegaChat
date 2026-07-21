@@ -128,10 +128,45 @@ try {
   for (let i = 0; i < 12 && finalSt === 'reviewing'; i++) {
     await sleep(2500);
     ls = await listLetters();
-    finalSt = ls[0]?.status || 'played';
+    finalSt = ls[0]?.status || 'gone';
   }
-  ok('free send: letter settles (queued/playing/played — never stuck reviewing or awaiting_upload)',
-    ['queued', 'playing', 'played'].includes(finalSt), `final=${finalSt}`);
+  ok('free send: review settles to queued (never stuck reviewing/awaiting_upload)',
+    finalSt === 'queued', `final=${finalSt}`);
+
+  // ── NO overlay connected: the clip must HOLD, not burn into the void ──────
+  // (the scheduler sweeps every 2s — 3 sweeps of margin)
+  await sleep(7000);
+  ls = await listLetters();
+  ok('no overlay: clip HELD in queue (not consumed invisibly)',
+    ls.length === 1 && ls[0].status === 'queued', `status=${ls[0]?.status ?? 'GONE'}`);
+  ok('no overlay: sender was warned it is queued, not lied to about airing',
+    await page.evaluate(() => /overlay isn't online yet/i.test(document.getElementById('message')?.innerText || '')),
+    await page.evaluate(() => (document.getElementById('message')?.innerText || '').slice(0, 120)));
+
+  // ── overlay connects → the clip plays FOR REAL, sender notified ───────────
+  const overlay = await browser.newPage();
+  await overlay.goto(`${APP}/overlay?room=${room.id}`, { waitUntil: 'networkidle2', timeout: 60000 });
+  let tile = null;
+  for (let i = 0; i < 8 && !tile; i++) {
+    await sleep(1500);
+    tile = await overlay.evaluate(() => {
+      const box = [...document.querySelectorAll('.tile')].find((b) => (b.dataset.seatId || '').startsWith('letter:'));
+      if (!box) return null;
+      const v = box.querySelector('video');
+      return { hasVideo: !!v, label: box.querySelector('.username-label')?.textContent || '' };
+    });
+  }
+  ok('overlay online: letter tile renders with its video', !!tile && tile.hasVideo && /diag-sender/.test(tile.label), JSON.stringify(tile));
+  const senderNotified = await page.evaluate(() => /RIGHT NOW/i.test(document.getElementById('message')?.innerText || ''));
+  ok('sender sees "on stream RIGHT NOW" only when it actually IS', senderNotified);
+
+  // ── one-shot completes: tile leaves, letter leaves the dashboard ──────────
+  await sleep(8000); // 3s clip + stinger buffer + sweep margin
+  const tileGone = await overlay.evaluate(() =>
+    ![...document.querySelectorAll('.tile')].some((b) => (b.dataset.seatId || '').startsWith('letter:')));
+  ls = await listLetters();
+  ok('one-shot: tile removed and letter cleared after playing', tileGone && ls.length === 0,
+    `tileGone=${tileGone} listed=${ls.length}`);
 
   await browser.close();
 } finally {

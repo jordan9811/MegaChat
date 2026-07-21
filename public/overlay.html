@@ -549,7 +549,9 @@
     ws.onopen = () => {
       console.log('Overlay connected to server');
       if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'subscribe_room', room: streamRoomId }));
+        // role:'overlay' — MegaChats only play while an overlay is rendering
+        // the room (otherwise clips would burn into the void).
+        ws.send(JSON.stringify({ type: 'subscribe_room', room: streamRoomId, role: 'overlay' }));
       }
     };
 

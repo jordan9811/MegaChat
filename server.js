@@ -552,6 +552,17 @@ function generateVDORoom(username) {
   };
 }
 
+/** Is at least one overlay (OBS browser source) rendering this room? */
+function hasOverlay(streamRoomId) {
+  const target = streamRoomId || DEFAULT_ROOM_ID;
+  for (const client of wss.clients) {
+    if (client.readyState !== 1) continue;
+    if (client.__role !== 'overlay') continue;
+    if ((client.__streamRoomId || DEFAULT_ROOM_ID) === target) return true;
+  }
+  return false;
+}
+
 function broadcastToRoom(streamRoomId, message) {
   const target = streamRoomId || DEFAULT_ROOM_ID;
   wss.clients.forEach((client) => {
@@ -929,6 +940,10 @@ wss.on('connection', (ws) => {
       const roomId = normalizeRoomId(msg.room);
       if (roomId && resolveRoomConfig(roomId)) {
         ws.__streamRoomId = roomId;
+        // The overlay (OBS browser source) identifies itself — MegaChats only
+        // PLAY while one is connected, so paid clips can't burn into a room
+        // where nothing renders them.
+        if (msg.role === 'overlay') ws.__role = 'overlay';
         sendInitialState(ws);
       }
       return;
@@ -1108,6 +1123,7 @@ try {
   attachLetters(app, {
     mppMeter,
     broadcastToRoom,
+    hasOverlay,
     activeSeats,
     sellerAddress: SELLER_WALLET_ADDRESS,
     getWatchSeconds: (roomId, wallet) =>

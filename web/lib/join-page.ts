@@ -1843,12 +1843,18 @@ async function sendLetter() {
     const upData = await up.json().catch(() => ({}));
     if (!up.ok) throw new Error(upData.error || 'Upload failed');
     closeLetterStage();
+    // overlayLive: false = the streamer's OBS overlay isn't connected, so the
+    // clip HOLDS in the queue — saying "on stream shortly" there was a lie
+    // that cost a solo tester their clip.
+    const held = upData.overlayLive === false
+      ? '<br><span style="font-size:0.85em;opacity:0.85">Heads up: the stream overlay isn\'t online yet — your MegaChat is safely queued and plays the moment it connects.</span>'
+      : '';
     showMessage(
-      upData.status === 'reviewing'
+      (upData.status === 'reviewing'
         ? '🔎 MegaChat sent — quick automated review (a few seconds), then it queues.'
         : upData.status === 'pending_approval'
           ? '📮 MegaChat sent — the streamer approves MegaChats before they play. You were charged; rejects auto-refund.'
-          : '📮 MegaChat sent! It will pop up on stream shortly — watch the preview above (it runs on a slight delay).',
+          : '📮 MegaChat sent! It will pop up on stream shortly — watch the preview above (it runs on a slight delay).') + held,
       'success',
     );
   } catch (err) {
@@ -2121,7 +2127,12 @@ export function initJoinPage({ wsUrl }) {
       }
       if (msg.type === 'letter_queued' && msg.letterId === myLetterId) {
         if (msg.status === 'queued') {
-          showMessage('✅ Review passed — your MegaChat is queued and will pop up on stream shortly.', 'success');
+          showMessage(
+            msg.overlayLive === false
+              ? "✅ Review passed — your MegaChat is queued. The stream overlay isn't online yet; it plays the moment it connects."
+              : '✅ Review passed — your MegaChat is queued and will pop up on stream shortly.',
+            'success',
+          );
         } else if (msg.status === 'pending_approval') {
           showMessage(
             msg.flagged

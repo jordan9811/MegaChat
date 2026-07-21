@@ -44,6 +44,10 @@ export function attachLetters(app, deps) {
   const {
     mppMeter,
     broadcastToRoom,
+    // No overlay connected = nothing renders letter_play — hold the queue
+    // instead of burning clips into the void. Default true keeps standalone/
+    // test wiring (and any host without the hook) on the old behavior.
+    hasOverlay = () => true,
     activeSeats,
     sellerAddress,
     getWatchSeconds = () => 0,
@@ -190,6 +194,8 @@ export function attachLetters(app, deps) {
       status: letter.status,
       username: letter.username,
       flagged: !!flaggedReason,
+      // lets the sender's toast stay honest when nothing can render it yet
+      overlayLive: hasOverlay(letter.roomId),
     });
   }
 
@@ -339,7 +345,7 @@ export function attachLetters(app, deps) {
         // AI review before the queue — recorded clips only, never live.
         letter.status = 'reviewing';
         log.log(`[letters] ${letter.id} uploaded ${(body.length / 1024).toFixed(0)}KB → reviewing (AI)`);
-        res.json({ success: true, status: 'reviewing' });
+        res.json({ success: true, status: 'reviewing', overlayLive: hasOverlay(letter.roomId) });
         const t0 = Date.now();
         void moderateLetter(letter, cfg).then(({ verdict, reason }) => {
           if (letter.status !== 'reviewing') return; // expired/removed meanwhile
@@ -350,7 +356,7 @@ export function attachLetters(app, deps) {
       }
       log.log(`[letters] ${letter.id} uploaded ${(body.length / 1024).toFixed(0)}KB (no moderation key)`);
       settleIntoQueue(letter, cfg, null);
-      res.json({ success: true, status: letter.status });
+      res.json({ success: true, status: letter.status, overlayLive: hasOverlay(letter.roomId) });
     }
   );
 
@@ -447,6 +453,10 @@ export function attachLetters(app, deps) {
       const cfg = resolveRoomConfig(roomId);
       if (!cfg) continue;
       if (liveSeatCount(roomId) >= cfg.maxSeats) continue; // queued while seats busy
+      // A MegaChat is one-shot: play it only while an overlay is actually
+      // rendering the room. Otherwise it "plays" to nobody, the sender is
+      // told it aired, and the media is deleted — a paid clip burnt.
+      if (!hasOverlay(roomId)) continue;
       const letter = state.queue.shift();
       if (!letter || !letter.media) continue;
       state.playing = letter;
