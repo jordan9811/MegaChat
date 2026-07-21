@@ -11,17 +11,13 @@ export function IntegrationsCard() {
         description="Credit viewers for external watch time."
         accent="cyan"
       />
-      <div className="px-5 py-5 sm:px-6">
-        {/* Audit P1-3: a non-action must not dress as a button. Plain
-            status row until the OAuth linkage actually ships. */}
-        <p className="rounded-xl border border-dashed border-border/60 bg-input/10 px-4 py-3 text-center text-sm text-muted-foreground">
-          Twitch / Kick channel linking — coming soon
-        </p>
-        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          Link your channel to credit viewers for watch time on Twitch or Kick
-          and unlock subscriber/follower join gates.
-        </p>
-      </div>
+      {/* One line. A coming-soon feature doesn't get a dashed stage AND an
+          explainer paragraph — that's a card spending 120px to say "nothing
+          here yet". */}
+      <p className="text-pretty px-5 py-4 text-sm text-muted-foreground sm:px-6">
+        Twitch / Kick channel linking — coming soon. Unlocks watch-time credit
+        and follower/sub gates.
+      </p>
     </GlassCard>
   )
 }

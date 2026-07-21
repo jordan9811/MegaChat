@@ -4,12 +4,15 @@ import type { ReactNode } from 'react'
 export function GlassCard({
   children,
   className,
+  id,
 }: {
   children: ReactNode
   className?: string
+  id?: string
 }) {
   return (
     <div
+      id={id}
       className={cn(
         'rounded-2xl border border-border bg-card/70 shadow-xl backdrop-blur-md',
         className,

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Radio, Rocket, Link2, RefreshCw, KeyRound, ChevronDown } from 'lucide-react'
+import { Radio, Rocket, RefreshCw, KeyRound, ChevronDown } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import {
   Field,
@@ -10,7 +10,6 @@ import {
   SelectInput,
   Toggle,
 } from '@/components/form-primitives'
-import { CopyRow } from '@/components/copy-row'
 import { useRoom } from '@/components/room-provider'
 import { useUiMode } from '@/lib/ui-mode'
 import { cn } from '@/lib/utils'
@@ -21,8 +20,6 @@ export function MegaChatSettings() {
     room,
     draft,
     updateDraft,
-    joinUrl,
-    overlayUrl,
     create,
     unlock,
     toggleActive,
@@ -66,7 +63,6 @@ export function MegaChatSettings() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const resultRef = useRef<HTMLDivElement>(null)
 
   const managing = mode === 'managing'
   const simple = useUiMode() === 'simple'
@@ -92,9 +88,9 @@ export function MegaChatSettings() {
     setBusy(true)
     try {
       await create(password || undefined)
-      setSuccess('Room created — copy your links below.')
+      setSuccess('Room created — grab your links from the Share links card.')
       requestAnimationFrame(() => {
-        resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        document.getElementById('share-links')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Create failed')
@@ -950,86 +946,9 @@ export function MegaChatSettings() {
         </p>
       ) : null}
 
-      {managing && joinUrl && overlayUrl && room ? (
-        <div
-          ref={resultRef}
-          className="border-t border-border/70 bg-input/20 px-5 py-5 sm:px-6"
-        >
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-            <Link2 className="size-4 text-[var(--neon-lime)]" />
-            Room{' '}
-            <span className="font-mono text-[var(--neon-lime)]">
-              {room.handle ? `/${room.handle}` : room.id}
-            </span>{' '}
-            {room.active ? 'is accepting joins' : 'is paused'}
-          </div>
-          <div className="flex flex-col gap-2">
-            {/* Both links prefer the handle when the room has one — /<handle>
-                and /<handle>/overlay redirect to the id form server-side, so
-                the id URLs keep working forever either way. */}
-            <CopyRow
-              label="Viewer"
-              value={
-                typeof window !== 'undefined'
-                  ? room.handle
-                    ? `${window.location.origin}/${room.handle}`
-                    : `${window.location.origin}/join?room=${room.id}`
-                  : joinUrl
-              }
-            />
-            <CopyRow
-              label="OBS"
-              value={
-                // Overlay is served same-origin (Express /overlay). Build from
-                // the browser origin so it works on any deploy; the backend
-                // overlayUrl uses BASE_URL which is unset on Railway (→ localhost).
-                typeof window !== 'undefined'
-                  ? room.handle
-                    ? `${window.location.origin}/${room.handle}/overlay`
-                    : `${window.location.origin}/overlay?room=${room.id}`
-                  : overlayUrl
-              }
-            />
-            {room.transport !== 'livekit' ? (
-              <CopyRow
-                label="Host cam"
-                value={`https://vdo.ninja/?push=mc-host-${room.id}&webcam&quality=1080&stereo&autostart`}
-              />
-            ) : null}
-          </div>
-          {!room.handle ? (
-            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--neon-lime)]/40 bg-[var(--neon-lime)]/10 px-3 py-2 text-xs text-foreground/90">
-              <span className="min-w-0 flex-1">
-                This room has a temporary link. {identityHandle
-                  ? `@${identityHandle} is reserved for you — claim it and this room becomes `
-                  : 'Set a Handle above to turn it into '}
-                <span className="font-mono">
-                  megachat.xyz/{identityHandle || 'your_name'}
-                </span>
-                . The link above keeps working either way.
-              </span>
-              {identityHandle ? (
-                <button
-                  type="button"
-                  onClick={() => updateDraft({ handle: identityHandle })}
-                  className="shrink-0 rounded-full border border-[var(--neon-lime)]/70 bg-[var(--neon-lime)]/15 px-3 py-1.5 font-heading text-xs font-bold uppercase tracking-wide text-[var(--neon-lime)] transition-transform hover:scale-[1.03]"
-                >
-                  Claim /{identityHandle}
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          <p className="mt-3 text-xs text-muted-foreground">
-            Drop the viewer link in chat. Add the OBS link as a Browser Source
-            (~340×620 px, transparent background) to show cameras on your scene.
-            For stinger sounds, enable &quot;Control audio via OBS&quot; on the
-            browser source so the SFX reach your stream mix.
-            Keep the Host cam link open while you stream — viewers who go live
-            see and hear you through it in real time (the public broadcast runs
-            on a slight delay; this pipe doesn&apos;t).
-          </p>
-        </div>
-      ) : null}
+      {/* Share links moved OUT to their own top-of-column card
+          (share-links-card.tsx) — they were buried down here under Advanced,
+          which is the last place a streamer's two most important URLs belong. */}
     </GlassCard>
   )
 }

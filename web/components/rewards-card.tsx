@@ -40,6 +40,12 @@ export function RewardsCard() {
           />
         }
       />
+      {/* Off = one quiet line, not a card full of greyed-out dead inputs. */}
+      {!enabled ? (
+        <p className="px-5 py-4 text-sm text-muted-foreground sm:px-6">
+          Off — flip the switch to pay viewers for watch time.
+        </p>
+      ) : (
       <div
         className={cn(
           'grid grid-cols-1 gap-5 px-5 py-6 transition-opacity sm:grid-cols-2 sm:px-6',
@@ -118,6 +124,7 @@ export function RewardsCard() {
           </Field>
         ) : null}
       </div>
+      )}
     </GlassCard>
   )
 }

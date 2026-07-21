@@ -31,14 +31,17 @@ export function Field({
       </label>
       {children}
       {hint ? (
-        <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>
+        // text-pretty: hints were breaking mid-thought at narrow measures
+        <p className="text-pretty text-xs leading-relaxed text-muted-foreground">{hint}</p>
       ) : null}
     </div>
   )
 }
 
+// Placeholders must read as EMPTY, not as sloppy prefilled values — italic +
+// heavy fade keeps "your_twitch_login" from masquerading as a real handle.
 const baseInput =
-  'h-10 w-full rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground/70 focus-visible:border-primary/70 focus-visible:ring-2 focus-visible:ring-primary/30'
+  'h-10 w-full rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:italic placeholder:text-muted-foreground/45 focus-visible:border-primary/70 focus-visible:ring-2 focus-visible:ring-primary/30'
 
 export function TextInput({
   className,

@@ -1338,6 +1338,19 @@ function initWallet() {
 // ~15s-delayed broadcast every spectator sees. Mounted when the room has a
 // twitchChannel configured. Removing the iframe (not just hiding) guarantees
 // silence — the live-slot flow relies on that for echo safety.
+// The media column's designed idle state (join-client #previewIdle) shows
+// exactly when NOTHING real is mounted — otherwise a no-preview room reads
+// as a dead black rectangle / empty column.
+function syncPreviewIdle() {
+  const idle = document.getElementById('previewIdle');
+  if (!idle) return;
+  const showing = ['hostLiveFeed', 'streamPreview'].some((id) => {
+    const el = document.getElementById(id);
+    return el && el.style.display !== 'none';
+  });
+  idle.style.display = showing ? 'none' : '';
+}
+
 function mountStreamPreview() {
   const wrap = document.getElementById('streamPreview');
   const mount = document.getElementById('streamPreviewMount');
@@ -1345,6 +1358,7 @@ function mountStreamPreview() {
   const channel = CONFIG && CONFIG.twitchChannel;
   if (!channel) {
     wrap.style.display = 'none';
+    syncPreviewIdle();
     return;
   }
   if (!mount.querySelector('iframe')) {
@@ -1363,6 +1377,7 @@ function mountStreamPreview() {
   const drops = document.getElementById('streamPreviewDrops');
   if (drops && CONFIG && CONFIG.rewardsEnabled) drops.style.display = '';
   wrap.style.display = '';
+  syncPreviewIdle();
 }
 
 function hideStreamPreview() {
@@ -1370,6 +1385,7 @@ function hideStreamPreview() {
   const mount = document.getElementById('streamPreviewMount');
   if (mount) mount.innerHTML = ''; // iframe removed → guaranteed silent
   if (wrap) wrap.style.display = 'none';
+  syncPreviewIdle();
 }
 
 // ─── True-live return feed (host cam over the app's own WebRTC pipe) ────────
@@ -1407,6 +1423,7 @@ function mountHostFeed() {
     mount.appendChild(iframe);
   }
   wrap.style.display = '';
+  syncPreviewIdle();
 }
 
 function unmountHostFeed() {
@@ -1418,6 +1435,7 @@ function unmountHostFeed() {
   }
   if (mount) mount.innerHTML = '';
   if (wrap) wrap.style.display = 'none';
+  syncPreviewIdle();
 }
 
 // LiveKit return feed: the joiner is ALREADY connected (publisher tokens
@@ -1470,6 +1488,7 @@ async function mountLivekitHostFeed(wrap, mount) {
     audioEls.forEach((a) => a.remove());
   };
   wrap.style.display = '';
+  syncPreviewIdle();
 }
 
 // ─── LiveKit transport (flag-gated; vdo stays the default, untouched) ───────
@@ -1631,9 +1650,11 @@ function initLetterUi() {
     return;
   }
   btn.style.display = '';
+  // Short label — "· up to 10s" pushed the button onto two wrapped lines on
+  // mobile, and the recorder stage states the cap the moment it opens.
   btn.textContent = parseFloat(cfg.price) > 0
-      ? `📼 Send a MegaChat — ${fmtAmount(cfg.price)} · up to ${cfg.maxSeconds}s`
-      : `📼 Send a MegaChat — FREE · up to ${cfg.maxSeconds}s`;
+      ? `📼 Send a MegaChat — ${fmtAmount(cfg.price)}`
+      : '📼 Send a MegaChat — FREE';
 }
 
 function setLetterStatus(text) {

@@ -31,7 +31,10 @@ export function JoinClient() {
   }, [])
 
   return (
-    <div className="join-shell mx-auto flex w-full max-w-xl flex-col gap-6 px-6 py-10 md:py-14">
+    // Mobile: one column (unchanged). Desktop was the SAME single ~36rem
+    // strip floating in wallpaper — now media (preview/host feed) sits
+    // beside the join card in a real two-column layout.
+    <div className="join-shell mx-auto flex w-full max-w-xl flex-col gap-6 px-6 py-10 md:py-14 lg:max-w-6xl">
       <header className="reveal flex flex-col gap-1">
         <span className="text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]">
           Viewer
@@ -44,6 +47,8 @@ export function JoinClient() {
         </p>
       </header>
 
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
+      <div className="flex flex-col gap-6 lg:sticky lg:top-24">
       {/* Demo-room banner (join-page.ts shows it when config.isDemo) */}
       <div
         id="demoBanner"
@@ -88,18 +93,36 @@ export function JoinClient() {
         </div>
       </div>
 
+      {/* Designed idle state for the media column — WITHOUT it, no-preview
+          rooms showed a giant dead black rectangle (mobile) or an empty
+          desktop column. join-page.ts toggles it off whenever a real
+          preview/host feed mounts. Desktop-only: on mobile absence is fine. */}
+      <div
+        id="previewIdle"
+        className="hidden flex-col items-center justify-center gap-2 rounded-2xl border border-border/60 bg-card/40 py-16 text-center lg:flex"
+      >
+        <span className="text-4xl" aria-hidden="true">🎙️</span>
+        <p className="text-sm font-semibold text-foreground/80">No broadcast preview in this room</p>
+        <p className="max-w-xs text-pretty text-xs text-muted-foreground">
+          Your camera still lands on the stream — the streamer sees you in
+          real time either way.
+        </p>
+      </div>
+      </div>
+
       <div className="reveal" style={{ ['--reveal-delay' as string]: '0.1s' }}>
       <GlassCard>
         <div className="flex flex-col gap-5 px-5 py-6 sm:px-6">
-          {/* Price block */}
-          <div className="flex flex-col items-start gap-1 rounded-xl border border-border bg-input/20 px-4 py-3">
+          {/* Price row — slim. The old block spent ~90px of 3xl type to say
+              one word (FREE), then repeated it in the sentence below. */}
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 rounded-xl border border-border bg-input/20 px-4 py-2.5">
             <span
               id="priceAmount"
-              className="text-glow-lime font-heading text-3xl font-bold text-[var(--neon-lime)]"
+              className="text-glow-lime font-heading text-xl font-bold text-[var(--neon-lime)]"
             >
               — USDC
             </span>
-            <span id="priceLabel" className="text-xs text-muted-foreground">
+            <span id="priceLabel" className="text-pretty text-right text-xs text-muted-foreground">
               loading room…
             </span>
           </div>
@@ -141,13 +164,18 @@ export function JoinClient() {
               who you are, once you are someone. */}
           <div id="authIdentity" className="text-xs text-muted-foreground" style={{ display: 'none' }} />
 
-          <input
-            type="text"
-            id="username"
-            placeholder="Username"
-            maxLength={20}
-            className="h-11 w-full rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground/70 focus-visible:border-primary/70 focus-visible:ring-2 focus-visible:ring-primary/30"
-          />
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="username" className="text-sm font-medium text-foreground/90">
+              Your name on stream
+            </label>
+            <input
+              type="text"
+              id="username"
+              placeholder="e.g. couch_goblin"
+              maxLength={20}
+              className="h-11 w-full rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:italic placeholder:text-muted-foreground/45 focus-visible:border-primary/70 focus-visible:ring-2 focus-visible:ring-primary/30"
+            />
+          </div>
 
           {/* Balance — ONE sign-in button (audit P0-4: the old sign-up/sign-in
               pair both opened the same Privy modal at primary weight). It sits
@@ -274,6 +302,7 @@ export function JoinClient() {
           <div id="message" className="join-message" aria-live="polite" />
         </div>
       </GlassCard>
+      </div>
       </div>
     </div>
   )
