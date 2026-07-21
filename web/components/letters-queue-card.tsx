@@ -5,7 +5,7 @@
 // Rejecting refunds the payer from the platform wallet.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Mail, Check, X, RefreshCw } from 'lucide-react'
+import { Mail, Check, X, RefreshCw, Play, MonitorOff } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import { useRoom } from '@/components/room-provider'
 import type { LetterAdminItem } from '@/lib/api'
@@ -13,6 +13,7 @@ import type { LetterAdminItem } from '@/lib/api'
 export function LettersQueueCard() {
   const { mode, room, lettersAdmin } = useRoom()
   const [letters, setLetters] = useState<LetterAdminItem[]>([])
+  const [overlayLive, setOverlayLive] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -21,7 +22,9 @@ export function LettersQueueCard() {
   const refresh = useCallback(async () => {
     if (!active) return
     try {
-      setLetters(await lettersAdmin.list())
+      const data = await lettersAdmin.list()
+      setLetters(data.letters)
+      setOverlayLive(data.overlayLive)
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load MegaChats')
@@ -37,10 +40,11 @@ export function LettersQueueCard() {
 
   if (!active) return null
 
-  const act = async (letterId: string, action: 'approve' | 'reject') => {
+  const act = async (letterId: string, action: 'approve' | 'reject' | 'play') => {
     setBusyId(letterId)
     try {
       if (action === 'approve') await lettersAdmin.approve(letterId)
+      else if (action === 'play') await lettersAdmin.playNow(letterId)
       else await lettersAdmin.reject(letterId)
       await refresh()
     } catch (e) {
@@ -63,6 +67,19 @@ export function LettersQueueCard() {
         accent="cyan"
       />
       <div className="flex flex-col gap-2 px-5 py-5 sm:px-6">
+        {!overlayLive && letters.some((l) => l.status === 'queued') ? (
+          <p
+            id="overlay-offline-note"
+            className="flex items-start gap-2 rounded-lg border border-[var(--neon-amber)]/50 bg-[var(--neon-amber)]/10 px-3 py-2 text-xs font-semibold text-[var(--neon-amber)]"
+          >
+            <MonitorOff className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              Your OBS overlay isn&apos;t connected — queued clips hold until it is
+              (open the OBS link from Share links, or refresh the browser source in OBS).
+              Or hit ▶ Play now to run one anyway.
+            </span>
+          </p>
+        ) : null}
         {letters.length === 0 ? (
           <p className="text-sm text-muted-foreground">No MegaChats waiting.</p>
         ) : (
@@ -113,6 +130,18 @@ export function LettersQueueCard() {
                     Reject
                   </button>
                 </div>
+              ) : null}
+              {l.status === 'queued' ? (
+                <button
+                  type="button"
+                  disabled={busyId === l.id}
+                  onClick={() => void act(l.id, 'play')}
+                  title="Play on the overlay right now, even if overlay-detection disagrees"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--neon-cyan)]/50 bg-[var(--neon-cyan)]/10 px-3 py-1.5 text-xs font-bold text-[var(--neon-cyan)] transition-colors hover:bg-[var(--neon-cyan)]/20 disabled:opacity-50"
+                >
+                  {busyId === l.id ? <RefreshCw className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+                  Play now
+                </button>
               ) : null}
             </div>
           ))

@@ -406,7 +406,30 @@ export function attachLetters(app, deps) {
         flaggedReason: l.flaggedReason || null,
         mediaUrl: l.media ? `/api/letter/media/${l.id}` : null,
       }));
-    res.json({ letters: list });
+    // overlayLive tells the dashboard WHY queued clips are holding — the
+    // #1 confusion was a clip "just sitting there" with no explanation.
+    res.json({ letters: list, overlayLive: hasOverlay(roomId) });
+  });
+
+  // Streamer override: play a queued clip NOW, overlay-detection be damned
+  // (they can see their own OBS; detection can't). Slot rules still apply —
+  // playing into a full tile stack would burn the one-shot invisibly.
+  app.post('/api/dashboard/rooms/:roomId/letters/:id/play', async (req, res) => {
+    const roomId = await requirePassword(req, res);
+    if (!roomId) return;
+    const letter = byId.get(req.params.id);
+    if (!letter || letter.roomId !== roomId || letter.status !== 'queued' || !letter.media) {
+      return res.status(404).json({ error: 'MegaChat not found or not queued' });
+    }
+    const state = roomState(roomId);
+    if (state.playing) return res.status(409).json({ error: 'Another MegaChat is already playing' });
+    const cfg = resolveRoomConfig(roomId);
+    if (liveSeatCount(roomId) >= cfg.maxSeats) {
+      return res.status(409).json({ error: 'All camera tiles are busy — try when a slot frees up' });
+    }
+    state.queue = state.queue.filter((l) => l.id !== letter.id);
+    playLetter(roomId, state, letter, 'forced by streamer');
+    res.json({ success: true });
   });
 
   app.post('/api/dashboard/rooms/:roomId/letters/:id/approve', async (req, res) => {
@@ -459,29 +482,34 @@ export function attachLetters(app, deps) {
       if (!hasOverlay(roomId)) continue;
       const letter = state.queue.shift();
       if (!letter || !letter.media) continue;
-      state.playing = letter;
-      letter.status = 'playing';
-      log.log(`[letters] ${letter.id} playing in room ${roomId} (${letter.durationS}s)`);
-      broadcastToRoom(roomId, {
-        type: 'letter_play',
-        letter: {
-          id: letter.id,
-          username: letter.username,
-          mediaUrl: `/api/letter/media/${letter.id}`,
-          durationS: letter.durationS,
-          flyIn: letter.flyIn,
-          flyOut: letter.flyOut,
-        },
-      });
-      setTimeout(() => {
-        letter.status = 'done';
-        state.playing = null;
-        broadcastToRoom(roomId, { type: 'letter_end', letterId: letter.id });
-        setTimeout(() => removeLetter(letter), MEDIA_TTL_MS);
-      }, letter.durationS * 1000 + STINGER_BUFFER_MS);
+      playLetter(roomId, state, letter);
     }
   }, 2000);
   if (typeof tick.unref === 'function') tick.unref();
+
+  /** One-shot play: broadcast the tile, schedule the end + cleanup. */
+  function playLetter(roomId, state, letter, why = '') {
+    state.playing = letter;
+    letter.status = 'playing';
+    log.log(`[letters] ${letter.id} playing in room ${roomId} (${letter.durationS}s)${why ? ' — ' + why : ''}`);
+    broadcastToRoom(roomId, {
+      type: 'letter_play',
+      letter: {
+        id: letter.id,
+        username: letter.username,
+        mediaUrl: `/api/letter/media/${letter.id}`,
+        durationS: letter.durationS,
+        flyIn: letter.flyIn,
+        flyOut: letter.flyOut,
+      },
+    });
+    setTimeout(() => {
+      letter.status = 'done';
+      state.playing = null;
+      broadcastToRoom(roomId, { type: 'letter_end', letterId: letter.id });
+      setTimeout(() => removeLetter(letter), MEDIA_TTL_MS);
+    }, letter.durationS * 1000 + STINGER_BUFFER_MS);
+  }
 
   log.log('[letters] letter mode attached (one-shot, in-memory)');
   return { _byId: byId }; // exposed for tests

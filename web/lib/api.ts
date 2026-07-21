@@ -282,9 +282,20 @@ export type LetterAdminItem = {
 }
 
 export function listLetters(roomId: string, password: string) {
-  return request<{ letters: LetterAdminItem[] }>(
+  // overlayLive: is an OBS overlay actually rendering this room right now?
+  // Queued clips HOLD while it's false — the card explains instead of
+  // looking frozen.
+  return request<{ letters: LetterAdminItem[]; overlayLive?: boolean }>(
     `/api/dashboard/rooms/${encodeURIComponent(roomId)}/letters`,
     { password },
+  )
+}
+
+/** Streamer override: play a queued MegaChat immediately. */
+export function forcePlayLetter(roomId: string, password: string, letterId: string) {
+  return request<{ success: boolean }>(
+    `/api/dashboard/rooms/${encodeURIComponent(roomId)}/letters/${encodeURIComponent(letterId)}/play`,
+    { method: 'POST', password },
   )
 }
 

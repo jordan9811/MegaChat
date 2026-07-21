@@ -144,6 +144,13 @@ try {
     await page.evaluate(() => (document.getElementById('message')?.innerText || '').slice(0, 120)));
 
   // ── overlay connects → the clip plays FOR REAL, sender notified ───────────
+  // (A Referer-based rescue for stale role-less pages was tested here and
+  // DISPROVEN — Chromium sends no Referer on WS handshakes. Staleness is
+  // solved upstream: /overlay ships Cache-Control: no-cache, asserted below.)
+  const overlayHead = await fetch(`${APP}/overlay`);
+  ok('/overlay ships no-cache (stale OBS pages heal on their next reload)',
+    /no-cache/.test(overlayHead.headers.get('cache-control') || ''),
+    `cache-control=${overlayHead.headers.get('cache-control')}`);
   const overlay = await browser.newPage();
   await overlay.goto(`${APP}/overlay?room=${room.id}`, { waitUntil: 'networkidle2', timeout: 60000 });
   let tile = null;
@@ -156,7 +163,8 @@ try {
       return { hasVideo: !!v, label: box.querySelector('.username-label')?.textContent || '' };
     });
   }
-  ok('overlay online: letter tile renders with its video', !!tile && tile.hasVideo && /diag-sender/.test(tile.label), JSON.stringify(tile));
+  ok('overlay online: letter tile renders with its video',
+    !!tile && tile.hasVideo && /diag-sender/.test(tile.label), JSON.stringify(tile));
   const senderNotified = await page.evaluate(() => /RIGHT NOW/i.test(document.getElementById('message')?.innerText || ''));
   ok('sender sees "on stream RIGHT NOW" only when it actually IS', senderNotified);
 
@@ -167,6 +175,30 @@ try {
   ls = await listLetters();
   ok('one-shot: tile removed and letter cleared after playing', tileGone && ls.length === 0,
     `tileGone=${tileGone} listed=${ls.length}`);
+
+  // ── streamer override: Play now beats overlay-detection ───────────────────
+  await overlay.close(); // nothing counts as an overlay again
+  await sleep(1000);
+  await page.evaluate(() => document.getElementById('letterBtn').click());
+  await sleep(1200);
+  await page.evaluate(() => document.getElementById('letterRecordBtn').click());
+  await sleep(2500);
+  await page.evaluate(() => document.getElementById('letterRecordBtn').click());
+  await sleep(1500);
+  await page.evaluate(() => document.getElementById('letterSendBtn').click());
+  let held = null;
+  for (let i = 0; i < 14 && held?.status !== 'queued'; i++) {
+    await sleep(2500);
+    held = (await listLetters())[0] || null;
+  }
+  ok('second clip held again with overlay closed', held?.status === 'queued', `status=${held?.status}`);
+  const force = await fetch(`${APP}/api/dashboard/rooms/${room.id}/letters/${held.id}/play`, {
+    method: 'POST', headers: { 'X-Room-Password': 'diag-mc' },
+  });
+  await sleep(1000);
+  ls = await listLetters();
+  ok('streamer "Play now" overrides the hold (endpoint 200 → playing)',
+    force.ok && (ls[0]?.status === 'playing' || ls.length === 0), `http=${force.status} status=${ls[0]?.status ?? 'played'}`);
 
   await browser.close();
 } finally {

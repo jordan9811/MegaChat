@@ -926,10 +926,13 @@ const SEAT_RECONNECT_GRACE_MS = Math.max(
 );
 
 // WebSocket connection
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   console.log('Client connected');
   ws.__streamRoomId = DEFAULT_ROOM_ID;
   ws.isAlive = true;
+  // (Overlay detection is role-based only: a Referer-sniff fallback for
+  // stale pages was tried and DISPROVEN — Chromium sends no Referer on WS
+  // handshakes. Stale pages heal via no-cache + reload-on-disconnect.)
   ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', (data) => {
@@ -1145,8 +1148,13 @@ app.get('/', (req, res, next) => {
   next();
 });
 
-// OBS overlay page (just video boxes)
+// OBS overlay page (just video boxes). no-cache: without it browsers
+// heuristically cache this HTML and OBS browser sources keep running
+// PRE-DEPLOY code indefinitely — the page reloads itself whenever its WS
+// drops (every deploy), and this makes that reload actually fetch the
+// current build instead of the cached one.
 app.get('/overlay', (req, res) => {
+  res.set('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
 });
 

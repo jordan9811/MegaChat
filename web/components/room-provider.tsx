@@ -33,6 +33,7 @@ import {
   listLetters as apiListLetters,
   approveLetter as apiApproveLetter,
   rejectLetter as apiRejectLetter,
+  forcePlayLetter as apiForcePlayLetter,
   type LetterAdminItem,
   type MyRoomCard,
   type Room,
@@ -156,9 +157,10 @@ type RoomContextValue = {
   pin: (seatId: string, pinned: boolean) => Promise<void>
   switchRoom: () => void
   lettersAdmin: {
-    list: () => Promise<LetterAdminItem[]>
+    list: () => Promise<{ letters: LetterAdminItem[]; overlayLive: boolean }>
     approve: (letterId: string) => Promise<void>
     reject: (letterId: string) => Promise<void>
+    playNow: (letterId: string) => Promise<void>
   }
   /** LiveKit host publish grant (password-gated server-side). */
   hostToken: () => Promise<{ token: string; url: string }>
@@ -635,9 +637,9 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     () => ({
       list: async () => {
         const roomId = roomIdRef.current
-        if (!roomId) return []
+        if (!roomId) return { letters: [], overlayLive: true }
         const data = await apiListLetters(roomId, passwordRef.current)
-        return data.letters
+        return { letters: data.letters, overlayLive: data.overlayLive !== false }
       },
       approve: async (letterId: string) => {
         const roomId = roomIdRef.current
@@ -646,6 +648,10 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       reject: async (letterId: string) => {
         const roomId = roomIdRef.current
         if (roomId) await apiRejectLetter(roomId, passwordRef.current, letterId)
+      },
+      playNow: async (letterId: string) => {
+        const roomId = roomIdRef.current
+        if (roomId) await apiForcePlayLetter(roomId, passwordRef.current, letterId)
       },
     }),
     [],
