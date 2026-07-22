@@ -56,8 +56,12 @@ export function MegaChatSettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, room?.id])
 
-  const [tab, setTab] = useState<'create' | 'manage'>('create')
+  // Create form is the landing state ONLY when you have no rooms; owners
+  // reveal it deliberately via "New room".
+  const [showCreate, setShowCreate] = useState(false)
   const [password, setPassword] = useState('')
+  // "picking" = signed-in owner choosing a room, not configuring one.
+  const picking = mode !== 'managing' && myRooms.length > 0 && !showCreate
   const [manageRoomId, setManageRoomId] = useState('')
   const [managePassword, setManagePassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -131,42 +135,20 @@ export function MegaChatSettings() {
     <GlassCard>
       <CardHeader
         icon={<Radio className="size-5" />}
-        title="MegaChat Settings"
+        title={managing ? 'MegaChat Settings' : picking ? 'Your rooms' : 'New room'}
         description={
           managing
             ? 'Changes save automatically while you stream.'
-            : 'Configure how viewers buy their moment on stream.'
+            : picking
+              ? 'Open one to manage it, or start another.'
+              : 'Configure how viewers buy their moment on stream.'
         }
         accent="magenta"
         action={
-          managing && room ? (
-            <span className="hidden items-center gap-2 sm:inline-flex">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-input/30 px-3 py-1 font-mono text-xs font-medium text-muted-foreground">
-                <span
-                  className={cn(
-                    'size-1.5 rounded-full',
-                    room.active ? 'bg-[var(--neon-lime)]' : 'bg-muted-foreground',
-                  )}
-                />
-                {room.handle ? `/${room.handle}` : room.id}
-              </span>
-              {/* the toggle needs words — an unlabeled pink switch reads as
-                  "wtf is this", not "room is accepting joins" */}
-              <span
-                className={cn(
-                  'whitespace-nowrap text-xs font-semibold',
-                  room.active ? 'text-[var(--neon-lime)]' : 'text-muted-foreground',
-                )}
-              >
-                {room.active ? 'Accepting joins' : 'Paused'}
-              </span>
-              <Toggle
-                checked={room.active}
-                onChange={() => void toggleActive()}
-                label={room.active ? 'Accepting joins' : 'Paused'}
-              />
-            </span>
-          ) : (
+          // Managing status lives in the bar BELOW — crammed in beside the
+          // title it squeezed the header onto three lines in the narrow
+          // column, and the room chip just repeated the Share links URL.
+          managing ? null : picking ? null : (
             <span className="hidden items-center gap-1.5 rounded-full border border-border bg-input/30 px-3 py-1 text-xs font-medium text-muted-foreground sm:inline-flex">
               <span className="size-1.5 rounded-full bg-[var(--neon-lime)]" />
               Draft
@@ -176,12 +158,13 @@ export function MegaChatSettings() {
       />
 
       {/* YOUR ROOMS — one click back into any room you own, no password.
-          Only shown when signed in with rooms and not currently managing one. */}
+          When you HAVE rooms this is the page: the old layout led with a
+          create form, then offered your rooms, THEN offered a create/manage
+          tab pair — three affordances for two jobs, with the two "manage"
+          paths competing (one click here vs typing an id + password there). */}
       {!managing && myRooms.length > 0 ? (
         <div className="border-b border-border/70 px-5 pt-5 pb-4 sm:px-6">
-          <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]">
-            Your rooms
-          </p>
+          {/* no "YOUR ROOMS" kicker — the card header already says it */}
           <div className="flex flex-col gap-2">
             {myRooms.map((r) => (
               <button
@@ -200,101 +183,145 @@ export function MegaChatSettings() {
                     {r.live > 0 ? ` · ${r.live} live` : r.active ? ' · open' : ' · paused'}
                   </span>
                 </span>
-                <span className="shrink-0 text-xs font-bold uppercase tracking-wide text-[var(--neon-lime)] opacity-80 group-hover:opacity-100">
+                <span className="shrink-0 text-xs font-bold text-[var(--neon-lime)] opacity-80 group-hover:opacity-100">
                   Manage →
                 </span>
               </button>
             ))}
           </div>
+          {/* Create is a deliberate secondary action once you own rooms —
+              not the page you land on. (Extra rooms ARE allowed; only the
+              handle is one-per-account, so a second room gets a hex link.) */}
+          {!showCreate ? (
+            <button
+              type="button"
+              id="new-room"
+              onClick={() => {
+                setShowCreate(true)
+                setError(null)
+              }}
+              className="mt-3 flex items-center gap-2 rounded-full border border-border bg-input/30 px-4 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Rocket className="size-3.5" />
+              Start new room
+            </button>
+          ) : null}
         </div>
       ) : null}
 
-      {/* Create / Manage entry tabs (hidden once a room is unlocked) */}
-      {!managing ? (
-        <div className="flex items-center gap-2 border-b border-border/70 px-5 pt-4 pb-3 sm:px-6">
-          {(['create', 'manage'] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => {
-                setTab(t)
-                setError(null)
-              }}
-              className={cn(
-                'rounded-full border px-3 py-1 text-xs font-semibold transition-colors',
-                tab === t
-                  ? 'border-primary/70 bg-primary/15 text-foreground'
-                  : 'border-border bg-input/30 text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {t === 'create' ? 'Create room' : 'Manage existing'}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="flex items-center justify-between gap-2 border-b border-border/70 px-5 pt-4 pb-3 sm:px-6">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      {/* Managing header (unchanged); the create/manage TAB PAIR is gone —
+          owners use the list above, and the id+password path is a
+          disclosure at the bottom for mods / other devices. */}
+      {!managing ? null : (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/70 px-5 pt-4 pb-3 sm:px-6">
+          <span className="text-xs font-semibold text-muted-foreground">
             Managing{' '}
             <span className="text-[var(--neon-lime)]">{room?.name}</span>
           </span>
-          <button
-            type="button"
-            onClick={switchRoom}
-            className="rounded-full border border-border bg-input/30 px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Switch room
-          </button>
+          <span className="flex items-center gap-2">
+            {/* the toggle needs words — an unlabeled pink switch reads as
+                "wtf is this", not "room is accepting joins" */}
+            {room ? (
+              <>
+                <span
+                  className={cn(
+                    'whitespace-nowrap text-xs font-semibold',
+                    room.active ? 'text-[var(--neon-lime)]' : 'text-muted-foreground',
+                  )}
+                >
+                  {room.active ? 'Accepting joins' : 'Paused'}
+                </span>
+                <Toggle
+                  checked={room.active}
+                  onChange={() => void toggleActive()}
+                  label={room.active ? 'Accepting joins' : 'Paused'}
+                />
+              </>
+            ) : null}
+            {/* one click to start another room from inside a live one */}
+            <button
+              type="button"
+              id="new-room-managing"
+              onClick={() => {
+                switchRoom()
+                setShowCreate(true)
+                setError(null)
+              }}
+              className="rounded-full border border-border bg-input/30 px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Start new room
+            </button>
+            {myRooms.length > 1 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  switchRoom()
+                  setShowCreate(false)
+                }}
+                className="rounded-full border border-border bg-input/30 px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Switch room
+              </button>
+            ) : null}
+          </span>
         </div>
       )}
 
-      {/* Manage (unlock) form */}
-      {!managing && tab === 'manage' ? (
-        <div className="grid grid-cols-1 gap-5 px-5 py-6 sm:grid-cols-2 sm:px-6">
-          <Field label="Room ID" htmlFor="manage-room-id">
-            <TextInput
-              id="manage-room-id"
-              value={manageRoomId}
-              onChange={(e) => setManageRoomId(e.target.value)}
-              placeholder="a1b2c3d4"
-              autoComplete="off"
-            />
-          </Field>
-          <Field label="Room password" htmlFor="manage-password">
-            <TextInput
-              id="manage-password"
-              type="password"
-              value={managePassword}
-              onChange={(e) => setManagePassword(e.target.value)}
-              autoComplete="current-password"
-            />
-          </Field>
-          <div className="sm:col-span-2">
-            <button
-              type="button"
-              onClick={handleUnlock}
-              disabled={busy}
-              className="glow-magenta flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 font-heading text-base font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:scale-[1.01] disabled:opacity-70"
-            >
-              {busy ? (
-                <>
-                  <RefreshCw className="size-5 animate-spin" />
-                  Unlocking…
-                </>
-              ) : (
-                <>
-                  <KeyRound className="size-5" />
-                  Unlock room
-                </>
-              )}
-            </button>
-            {error ? (
-              <p className="mt-3 text-sm text-[var(--neon-magenta)]" aria-live="polite">
-                {error}
-              </p>
-            ) : null}
+      {/* Unlock-by-password — a DISCLOSURE, not a peer of your rooms list.
+          It exists for mods and for signing in from a device that isn't
+          carrying your identity cookie; owners never need it. */}
+      {!managing ? (
+        <details className="group border-b border-border/70 px-5 py-3 sm:px-6">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <KeyRound className="size-3.5" />
+            Have a room ID + password? Unlock it
+            <ChevronDown className="ml-auto size-3.5 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="grid grid-cols-1 gap-4 pt-4 sm:grid-cols-2">
+            <Field label="Room ID" htmlFor="manage-room-id">
+              <TextInput
+                id="manage-room-id"
+                value={manageRoomId}
+                onChange={(e) => setManageRoomId(e.target.value)}
+                placeholder="a1b2c3d4"
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="Room password" htmlFor="manage-password">
+              <TextInput
+                id="manage-password"
+                type="password"
+                value={managePassword}
+                onChange={(e) => setManagePassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </Field>
+            <div className="sm:col-span-2">
+              <button
+                type="button"
+                onClick={handleUnlock}
+                disabled={busy}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-input/30 px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-input/50 disabled:opacity-70"
+              >
+                {busy ? (
+                  <>
+                    <RefreshCw className="size-4 animate-spin" />
+                    Unlocking…
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="size-4" />
+                    Unlock room
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-        </div>
-      ) : (
+        </details>
+      ) : null}
+
+      {/* Create form — the default ONLY when there's nothing to manage. */}
+      {!managing && myRooms.length > 0 && !showCreate ? null : (
         <>
           <div className="grid grid-cols-1 gap-5 px-5 py-6 sm:grid-cols-2 sm:px-6">
             {/* no hint — "shown to viewers" explains what a name is */}

@@ -287,6 +287,8 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   identityHandleRef.current = identityHandle
   // Defaults prefill must NEVER clobber a form the user already touched.
   const draftTouchedRef = useRef(false)
+  // Auto-open your room once per page load (see loadMine).
+  const autoOpenedRef = useRef(false)
 
   const passwordRef = useRef('')
   const roomIdRef = useRef<string | null>(null)
@@ -326,7 +328,19 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       .catch(() => applyName(window.MegaWallet?.displayName))
 
     // Load "your rooms" now and whenever identity changes (sign-in mints it).
-    const loadMine = () => listMyRooms().then((d) => setMyRooms(d.rooms)).catch(() => {})
+    // If you own rooms, LAND IN ONE — showing a picker (or worse, a create
+    // form) when there's an obvious room to manage was a click for nothing.
+    // Fires at most once per page load, so "Switch room" isn't instantly undone.
+    const loadMine = () =>
+      listMyRooms()
+        .then((d) => {
+          setMyRooms(d.rooms)
+          if (!autoOpenedRef.current && d.rooms.length > 0 && !roomIdRef.current) {
+            autoOpenedRef.current = true
+            void openOwnedRoom(d.rooms[0].id).catch(() => {})
+          }
+        })
+        .catch(() => {})
     void loadMine()
 
     // Saved room defaults: creating a room starts from these instead of
