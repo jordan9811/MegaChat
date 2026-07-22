@@ -297,12 +297,8 @@ export function MegaChatSettings() {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-5 px-5 py-6 sm:grid-cols-2 sm:px-6">
-            <Field
-              label="Room name"
-              htmlFor="room-name"
-              hint="Shown to viewers in their join link."
-              className="sm:col-span-2"
-            >
+            {/* no hint — "shown to viewers" explains what a name is */}
+            <Field label="Room name" htmlFor="room-name" className="sm:col-span-2">
               <TextInput
                 id="room-name"
                 value={draft.name}
@@ -392,7 +388,9 @@ export function MegaChatSettings() {
             {/* FREE switch — up top, one flip, no other setup needed. */}
             <label
               className={cn(
-                'flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-colors sm:col-span-2',
+                // same geometry as the feature tiles above (DESIGN.md: ONE
+                // selectable-card archetype)
+                'flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors sm:col-span-2',
                 freeRoom
                   ? 'border-[var(--neon-cyan)]/60 bg-[var(--neon-cyan)]/10'
                   : 'border-border bg-input/20',
@@ -401,7 +399,7 @@ export function MegaChatSettings() {
               <input
                 type="checkbox"
                 id="free-room"
-                className="size-4 accent-[var(--neon-cyan)]"
+                className="mt-0.5 size-4 accent-[var(--neon-cyan)]"
                 checked={freeRoom}
                 onChange={(e) => {
                   setFreeRoom(e.target.checked)

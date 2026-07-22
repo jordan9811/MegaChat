@@ -118,7 +118,7 @@ export function JoinClient() {
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 rounded-xl border border-border bg-input/20 px-4 py-2.5">
             <span
               id="priceAmount"
-              className="text-glow-lime font-heading text-xl font-bold text-[var(--neon-lime)]"
+              className="font-heading text-xl font-bold text-[var(--neon-lime)]"
             >
               — USDC
             </span>
@@ -159,14 +159,12 @@ export function JoinClient() {
             </div>
           </div>
 
-          {/* Identity lives in the header pill now (one Privy modal covers
-              Twitch / X / Google / email / passkey). This line just reflects
-              who you are, once you are someone. */}
-          <div id="authIdentity" className="text-xs text-muted-foreground" style={{ display: 'none' }} />
+          {/* (No "Signed in as @x" line here — the header chip 60px up
+              already says exactly that. Redundancy is noise.) */}
 
           <div className="flex flex-col gap-1.5">
             <label htmlFor="username" className="text-sm font-medium text-foreground/90">
-              Your name on stream
+              Display name
             </label>
             <input
               type="text"

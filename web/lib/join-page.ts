@@ -111,10 +111,14 @@ function setSessionUi(inSession) {
 // in the header pill. Paid rooms are untouched.
 function applyFreeRoomUi() {
   if (!roomIsFree()) return;
-  for (const id of ['privyChoice', 'connectBtn', 'depositBtn', 'walletInfo', 'passkeyFundNote']) {
+  // meter included: a FREE room showing "Remaining 0.07 USDC.e" is a wallet
+  // surface contradicting the room's one promise
+  for (const id of ['privyChoice', 'connectBtn', 'depositBtn', 'walletInfo', 'passkeyFundNote', 'earnedRow']) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   }
+  const meter = document.getElementById('meter');
+  if (meter) meter.classList.remove('show');
 }
 
 function uiSimple() {
@@ -300,6 +304,7 @@ function formatTimeLeft(seconds) {
 }
 
 function showMeter(remaining, spent, secondsLeft) {
+  if (roomIsFree()) return; // free rooms have no balance to meter — ever
   lastMeter = { remaining, spent, secondsLeft };
   const box = document.getElementById('meter');
   box.classList.add('show');

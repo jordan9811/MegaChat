@@ -1,18 +1,12 @@
+// Noise pass: 14 glowing squares at 0.85 opacity read as STUCK PIXELS, not
+// texture. Six, dimmer, edge-hugging, no glow shadow — felt not noticed.
 const CONFETTI = [
-  { top: '8%', left: '6%', color: 'var(--neon-magenta)', size: 10, rot: 24 },
-  { top: '14%', left: '22%', color: 'var(--neon-cyan)', size: 8, rot: -12 },
-  { top: '6%', left: '48%', color: 'var(--neon-lime)', size: 12, rot: 40 },
-  { top: '10%', left: '70%', color: 'var(--neon-violet)', size: 9, rot: 8 },
-  { top: '20%', left: '88%', color: 'var(--neon-magenta)', size: 11, rot: -30 },
-  { top: '34%', left: '4%', color: 'var(--neon-lime)', size: 8, rot: 18 },
-  { top: '46%', left: '15%', color: 'var(--neon-cyan)', size: 10, rot: -20 },
-  { top: '62%', left: '8%', color: 'var(--neon-magenta)', size: 9, rot: 34 },
-  { top: '78%', left: '20%', color: 'var(--neon-violet)', size: 12, rot: -8 },
-  { top: '30%', left: '94%', color: 'var(--neon-lime)', size: 9, rot: 14 },
-  { top: '52%', left: '90%', color: 'var(--neon-cyan)', size: 11, rot: -26 },
-  { top: '72%', left: '82%', color: 'var(--neon-magenta)', size: 8, rot: 20 },
-  { top: '86%', left: '58%', color: 'var(--neon-lime)', size: 10, rot: -16 },
-  { top: '24%', left: '36%', color: 'var(--neon-violet)', size: 7, rot: 30 },
+  { top: '8%', left: '6%', color: 'var(--neon-magenta)', size: 9, rot: 24 },
+  { top: '20%', left: '88%', color: 'var(--neon-cyan)', size: 8, rot: -30 },
+  { top: '46%', left: '4%', color: 'var(--neon-lime)', size: 8, rot: 18 },
+  { top: '72%', left: '92%', color: 'var(--neon-violet)', size: 9, rot: 20 },
+  { top: '86%', left: '12%', color: 'var(--neon-cyan)', size: 7, rot: -16 },
+  { top: '32%', left: '95%', color: 'var(--neon-lime)', size: 7, rot: 14 },
 ]
 
 export function GlitchBackground() {
@@ -35,9 +29,8 @@ export function GlitchBackground() {
             height: c.size * 0.7,
             backgroundColor: c.color,
             transform: `rotate(${c.rot}deg)`,
-            boxShadow: `0 0 10px ${c.color}`,
             animationDelay: `${(i % 5) * 0.6}s`,
-            opacity: 0.85,
+            opacity: 0.3,
           }}
         />
       ))}
