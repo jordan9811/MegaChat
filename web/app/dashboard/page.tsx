@@ -51,23 +51,27 @@ export default function DashboardPage() {
                 <div className="reveal" style={{ ['--reveal-delay' as string]: '0.08s' }}>
                   <MegaChatSettings />
                 </div>
+                {/* empty:hidden — cards that render null (booth on vdo rooms,
+                    links/queue in create mode) must not leave ghost wrappers
+                    eating flex-gap slots: that was a visible dead band
+                    between the surviving cards. */}
                 <div className="flex flex-col gap-6">
-                  <div className="reveal" style={{ ['--reveal-delay' as string]: '0.12s' }}>
+                  <div className="reveal empty:hidden" style={{ ['--reveal-delay' as string]: '0.12s' }}>
                     <ShareLinksCard />
                   </div>
-                  <div className="reveal" style={{ ['--reveal-delay' as string]: '0.16s' }}>
+                  <div className="reveal empty:hidden" style={{ ['--reveal-delay' as string]: '0.16s' }}>
                     <OnCameraTable />
                   </div>
-                  <div className="reveal" style={{ ['--reveal-delay' as string]: '0.24s' }}>
+                  <div className="reveal empty:hidden" style={{ ['--reveal-delay' as string]: '0.24s' }}>
                     <HostCamCard />
                   </div>
-                  <div className="reveal" style={{ ['--reveal-delay' as string]: '0.32s' }}>
+                  <div className="reveal empty:hidden" style={{ ['--reveal-delay' as string]: '0.32s' }}>
                     <LettersQueueCard />
                   </div>
-                  <div className="reveal" style={{ ['--reveal-delay' as string]: '0.4s' }}>
+                  <div className="reveal empty:hidden" style={{ ['--reveal-delay' as string]: '0.4s' }}>
                     <RewardsCard />
                   </div>
-                  <div className="reveal" style={{ ['--reveal-delay' as string]: '0.48s' }}>
+                  <div className="reveal empty:hidden" style={{ ['--reveal-delay' as string]: '0.48s' }}>
                     <IntegrationsCard />
                   </div>
                 </div>

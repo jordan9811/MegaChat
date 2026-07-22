@@ -49,8 +49,6 @@ a.addr {
 .stream-preview-label {
   font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--muted-foreground);
 }
 .stream-preview-drops {
@@ -237,8 +235,6 @@ a.addr {
   padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--muted-foreground);
 }
 .cam-status .dot {

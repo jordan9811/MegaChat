@@ -269,11 +269,11 @@ export function JoinClient() {
               nothing and the overlay keeps its default animations. The mock
               camera square previews the picked animation (never the real cam). */}
           <details className="rounded-xl border border-border bg-input/10 px-4 py-2">
-            <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <summary className="cursor-pointer select-none text-xs font-semibold text-muted-foreground">
               Advanced — on-stream entrance &amp; exit
             </summary>
             <div className="grid grid-cols-1 gap-3 pb-3 pt-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">
                 Fly-in stinger
                 <select id="flyInSelect" defaultValue="" className="stinger-select">
                   <option value="">Default — pulse blip</option>
@@ -284,7 +284,7 @@ export function JoinClient() {
                   <option value="wildin">👾 Wild Card — glitch materialize</option>
                 </select>
               </label>
-              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">
                 Fly-out stinger
                 <select id="flyOutSelect" defaultValue="" className="stinger-select">
                   <option value="">Default — CRT off</option>

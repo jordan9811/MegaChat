@@ -154,7 +154,7 @@ export function MegaChatSettings() {
                   "wtf is this", not "room is accepting joins" */}
               <span
                 className={cn(
-                  'text-xs font-semibold uppercase tracking-wide',
+                  'whitespace-nowrap text-xs font-semibold',
                   room.active ? 'text-[var(--neon-lime)]' : 'text-muted-foreground',
                 )}
               >
@@ -221,7 +221,7 @@ export function MegaChatSettings() {
                 setError(null)
               }}
               className={cn(
-                'rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide transition-colors',
+                'rounded-full border px-3 py-1 text-xs font-semibold transition-colors',
                 tab === t
                   ? 'border-primary/70 bg-primary/15 text-foreground'
                   : 'border-border bg-input/30 text-muted-foreground hover:text-foreground',
@@ -355,7 +355,7 @@ export function MegaChatSettings() {
                   onChange={(e) => updateDraft({ lettersEnabled: e.target.checked })}
                 />
                 <span className="flex flex-col gap-0.5">
-                  <span className="font-heading text-sm font-bold uppercase tracking-wide text-foreground">
+                  <span className="font-heading text-sm font-bold text-foreground">
                     📼 MegaChats
                   </span>
                   <span className="text-xs leading-relaxed text-muted-foreground">
@@ -379,7 +379,7 @@ export function MegaChatSettings() {
                   onChange={(e) => updateDraft({ joinStreamEnabled: e.target.checked })}
                 />
                 <span className="flex flex-col gap-0.5">
-                  <span className="font-heading text-sm font-bold uppercase tracking-wide text-foreground">
+                  <span className="font-heading text-sm font-bold text-foreground">
                     ⚡ Join Stream
                   </span>
                   <span className="text-xs leading-relaxed text-muted-foreground">
@@ -409,7 +409,7 @@ export function MegaChatSettings() {
                 }}
               />
               <span className="flex flex-col gap-0.5">
-                <span className="font-heading text-sm font-bold uppercase tracking-wide text-foreground">
+                <span className="font-heading text-sm font-bold text-foreground">
                   💸 Free room
                 </span>
                 <span className="text-xs leading-relaxed text-muted-foreground">

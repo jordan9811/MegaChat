@@ -32,7 +32,7 @@ export function CopyRow({
         className,
       )}
     >
-      <span className="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <span className="w-16 shrink-0 text-xs font-semibold text-muted-foreground">
         {label}
       </span>
       <code className="flex-1 truncate font-mono text-xs text-foreground/90">

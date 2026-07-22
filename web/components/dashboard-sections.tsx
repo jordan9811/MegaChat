@@ -51,7 +51,7 @@ export function DashboardSections({ rooms }: { rooms: ReactNode }) {
             aria-current={section === t.id ? 'page' : undefined}
             onClick={() => go(t.id)}
             className={cn(
-              'flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold uppercase tracking-wide transition-colors',
+              'flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition-colors',
               section === t.id
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground',

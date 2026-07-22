@@ -18,7 +18,9 @@ export default function JoinPage() {
       <div className="relative z-10">
         {/* Tight paddings/gaps on purpose: wordmark + mode pill + login must
             all fit a 375px viewport without wrapping. */}
-        <header className="mx-auto flex w-full max-w-xl items-center justify-between gap-2 px-3 py-4 sm:px-6">
+        {/* width matches JoinClient's shell (xl → 6xl at lg) or the wordmark
+            floats indented over the widened desktop layout */}
+        <header className="mx-auto flex w-full max-w-xl items-center justify-between gap-2 px-3 py-4 sm:px-6 lg:max-w-6xl">
           <a href="/" aria-label="MegaChat home" className="shrink-0 transition-opacity hover:opacity-90">
             <Wordmark size="sm" />
           </a>
