@@ -263,9 +263,6 @@ function Scoreboard() {
           <p className="font-heading text-xl font-bold uppercase tracking-widest text-[var(--neon-magenta)]">
             Viewers
           </p>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            grab a seat
-          </p>
         </div>
         <div aria-hidden className="self-center text-center text-xl">
           🎯
@@ -273,9 +270,6 @@ function Scoreboard() {
         <div className="rounded-2xl border border-[var(--neon-cyan)]/50 bg-[var(--neon-cyan)]/10 px-5 py-3 text-center">
           <p className="font-heading text-xl font-bold uppercase tracking-widest text-[var(--neon-cyan)]">
             Streamers
-          </p>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            run the room
           </p>
         </div>
       </div>
@@ -346,15 +340,11 @@ export default function HowItWorksPage() {
           </section>
 
           {/* The scoreboard — the good part. Pulled UP to sit right under the
-              intro (the stat strip used to push it below the fold, so the
-              side-by-side flow — the thing that actually explains the
-              product — arrived late). */}
+              intro. No section heading: the VIEWERS/STREAMERS rail directly
+              below already says "side by side" visually, and repeated it in
+              words on top ("Side by side" kicker + a title) — the columns
+              speak for themselves without a caption. */}
           <section className="mx-auto max-w-6xl px-6 pb-12 md:pb-16">
-            <SectionHeading
-              kicker="Side by side"
-              title="Six steps to showtime"
-              accent="lime"
-            />
             <Scoreboard />
           </section>
 
