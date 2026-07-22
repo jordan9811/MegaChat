@@ -31,6 +31,13 @@ export function OnCameraTable() {
   const liveCount = seats.filter((s) => s.live).length
   const tokenSymbol = room?.paymentTokenSymbol || 'USDC'
 
+  // A live-seat table can't mean anything before the room exists. While
+  // you're CREATING, it was the first card in the side column, pushing the
+  // things you're actually configuring (rewards, integrations) down behind
+  // "Create or unlock a room to see who's on camera." Runtime cards render
+  // only in the runtime state.
+  if (mode !== 'managing') return null
+
   return (
     <GlassCard>
       <CardHeader
@@ -51,11 +58,7 @@ export function OnCameraTable() {
           </span>
         }
       />
-      {mode !== 'managing' ? (
-        <p className="px-5 py-8 text-center text-sm text-muted-foreground sm:px-6">
-          Create or unlock a room to see who&apos;s on camera.
-        </p>
-      ) : seats.length === 0 ? (
+      {seats.length === 0 ? (
         <p className="px-5 py-8 text-center text-sm text-muted-foreground sm:px-6">
           No one on camera yet. Share your viewer link to fill the seats.
         </p>
