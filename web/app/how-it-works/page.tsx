@@ -340,33 +340,18 @@ export default function HowItWorksPage() {
               className="reveal mt-5 max-w-2xl text-pretty text-lg leading-relaxed text-foreground/85"
               style={{ ['--reveal-delay' as string]: '0.2s' }}
             >
-              Viewers pay per-second in USDC to put their camera on your live
-              broadcast. You keep the mic, they get the moment — a face on
-              stream beats a wall of chat every time.
+              Viewers pay per-second to put their camera on your live broadcast.
+              A face on stream beats a wall of chat every time.
             </p>
-            {/* trust strip — relocated from the landing hero */}
-            <dl
-              className="reveal mt-9 grid grid-cols-2 gap-y-4 divide-border/40 rounded-2xl border border-border/60 bg-card/40 px-6 py-5 backdrop-blur-sm sm:grid-cols-4 sm:divide-x"
-              style={{ ['--reveal-delay' as string]: '0.28s' }}
-            >
-              {STATS.map((s) => (
-                <div key={s.label} className="flex flex-col gap-0.5 px-2 first:pl-0 sm:px-4">
-                  <dt className="tabular font-heading text-xl font-bold text-foreground">
-                    {s.value}
-                  </dt>
-                  <dd className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <span className="adv-only">{s.label}</span>
-                    <span className="simple-only">{s.simpleLabel}</span>
-                  </dd>
-                </div>
-              ))}
-            </dl>
           </section>
 
-          {/* The scoreboard — viewers vs streamers, parallel steps down the page */}
-          <section className="mx-auto max-w-6xl px-6 py-12 md:py-16">
+          {/* The scoreboard — the good part. Pulled UP to sit right under the
+              intro (the stat strip used to push it below the fold, so the
+              side-by-side flow — the thing that actually explains the
+              product — arrived late). */}
+          <section className="mx-auto max-w-6xl px-6 pb-12 md:pb-16">
             <SectionHeading
-              kicker="The playbook, side by side"
+              kicker="Side by side"
               title="Six steps to showtime"
               accent="lime"
             />
@@ -469,6 +454,22 @@ export default function HowItWorksPage() {
                 </div>
               ))}
             </div>
+            {/* Spec strip — moved down here from the intro, where it delayed
+                the side-by-side. It's reference data, so it lives with the
+                rails rather than gating the explanation. */}
+            <dl className="reveal mt-5 grid grid-cols-2 gap-y-4 divide-border/40 rounded-2xl border border-border/60 bg-card/40 px-6 py-5 backdrop-blur-sm sm:grid-cols-4 sm:divide-x">
+              {STATS.map((s) => (
+                <div key={s.label} className="flex flex-col gap-0.5 px-2 first:pl-0 sm:px-4">
+                  <dt className="tabular font-heading text-xl font-bold text-foreground">
+                    {s.value}
+                  </dt>
+                  <dd className="text-xs font-medium text-muted-foreground">
+                    <span className="adv-only">{s.label}</span>
+                    <span className="simple-only">{s.simpleLabel}</span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
           </section>
 
           {/* FAQ — merged here on purpose; the nav's FAQ link anchors to it */}
