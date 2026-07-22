@@ -382,12 +382,23 @@
     }
     to {
       opacity: 1;
-      transform: translateY(0);
+      /* `none`, not translateY(0): the settled element must carry NO
+         transform (see below). */
+      transform: none;
     }
   }
+  /* fill-mode BACKWARDS, not forwards — and no base opacity.
+     Why it matters: an element holding an animated opacity/transform is a
+     BACKDROP ROOT, so any descendant with backdrop-filter samples an empty
+     backdrop and paints as a flat blank rectangle until something forces a
+     repaint (scrolling). That was the "boxes render blank, then appear when
+     you scroll" glitch — it hit the dashboard's side column and
+     how-it-works, i.e. exactly the stacks of `.reveal` wrappers around
+     `backdrop-blur` cards. `backwards` gives the same entrance (the `from`
+     state applies through the stagger delay) but applies NOTHING once the
+     animation ends, so the settled card samples the real page backdrop. */
   .reveal {
-    opacity: 0;
-    animation: reveal-up 0.7s cubic-bezier(0.22, 0.85, 0.3, 1) forwards;
+    animation: reveal-up 0.7s cubic-bezier(0.22, 0.85, 0.3, 1) backwards;
     animation-delay: var(--reveal-delay, 0s);
   }
 
@@ -474,7 +485,11 @@
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+  /* no animation at all — with fill-mode backwards there is no lingering
+     opacity to override, so simply cancelling it leaves the element in its
+     natural (visible, untransformed) state */
   .reveal {
+    animation: none !important;
     opacity: 1 !important;
   }
 }

@@ -1,13 +1,7 @@
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter, contactUrl } from '@/components/site-footer'
-import { MegaChatSettings } from '@/components/megachat-settings'
-import { OnCameraTable } from '@/components/on-camera-table'
-import { RewardsCard } from '@/components/rewards-card'
-import { LettersQueueCard } from '@/components/letters-queue-card'
-import { HostCamCard } from '@/components/host-cam-card'
 import { RoomProvider } from '@/components/room-provider'
-import { IntegrationsCard } from '@/components/integrations-card'
-import { ShareLinksCard } from '@/components/share-links-card'
+import { DashboardRooms } from '@/components/dashboard-rooms'
 import { DashboardSections } from '@/components/dashboard-sections'
 
 export const metadata = {
@@ -40,44 +34,9 @@ export default function DashboardPage() {
         </div>
 
         <RoomProvider>
-          <DashboardSections
-            rooms={
-              /* TWO INDEPENDENT COLUMNS (items-start + per-column flow), not
-                 a shared grid: the mile-long settings card was stretching
-                 grid rows and leaving the side column ~70% empty void. Side
-                 column ranks by streamer need: links → live seats → own
-                 camera → clip queue → rewards → integrations. */
-              <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-                <div className="reveal" style={{ ['--reveal-delay' as string]: '0.08s' }}>
-                  <MegaChatSettings />
-                </div>
-                {/* empty:hidden — cards that render null (booth on vdo rooms,
-                    links/queue in create mode) must not leave ghost wrappers
-                    eating flex-gap slots: that was a visible dead band
-                    between the surviving cards. */}
-                <div className="flex flex-col gap-6">
-                  <div className="reveal empty:hidden" style={{ ['--reveal-delay' as string]: '0.12s' }}>
-                    <ShareLinksCard />
-                  </div>
-                  <div className="reveal empty:hidden" style={{ ['--reveal-delay' as string]: '0.16s' }}>
-                    <OnCameraTable />
-                  </div>
-                  <div className="reveal empty:hidden" style={{ ['--reveal-delay' as string]: '0.24s' }}>
-                    <HostCamCard />
-                  </div>
-                  <div className="reveal empty:hidden" style={{ ['--reveal-delay' as string]: '0.32s' }}>
-                    <LettersQueueCard />
-                  </div>
-                  <div className="reveal empty:hidden" style={{ ['--reveal-delay' as string]: '0.4s' }}>
-                    <RewardsCard />
-                  </div>
-                  <div className="reveal empty:hidden" style={{ ['--reveal-delay' as string]: '0.48s' }}>
-                    <IntegrationsCard />
-                  </div>
-                </div>
-              </div>
-            }
-          />
+          {/* layout lives in DashboardRooms — it needs the room lifecycle
+              (config vs runtime columns), which is client state */}
+          <DashboardSections rooms={<DashboardRooms />} />
         </RoomProvider>
       </main>
 

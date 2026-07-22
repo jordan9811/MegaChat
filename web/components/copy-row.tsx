@@ -35,7 +35,12 @@ export function CopyRow({
       <span className="w-16 shrink-0 text-xs font-semibold text-muted-foreground">
         {label}
       </span>
-      <code className="flex-1 truncate font-mono text-xs text-foreground/90">
+      {/* min-w-0 is load-bearing: a flex item's default min-width:auto
+          refuses to shrink below min-content, so `truncate` never engaged
+          and long values (the Host cam vdo.ninja URL) forced their whole
+          COLUMN wide — that's why the dashboard's right pane outgrew the
+          left after Share links moved there. */}
+      <code className="min-w-0 flex-1 truncate font-mono text-xs text-foreground/90">
         {value}
       </code>
       <button
