@@ -36,6 +36,19 @@ export function HostCamCard() {
   const [micOnly, setMicOnly] = useState(false)
   const [camBusyHint, setCamBusyHint] = useState(false) // preflight found the camera held elsewhere
   const [error, setError] = useState<string | null>(null)
+  // Camera choice. The default cam is usually the one OBS already owns —
+  // a picker turns "camera busy" from a dead end into a choice, and
+  // selecting "OBS Virtual Camera" pipes the WHOLE OBS scene to guests.
+  const [cams, setCams] = useState<{ id: string; label: string }[]>([])
+  const [camId, setCamId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('mc-booth-cam') || ''
+    } catch {
+      return ''
+    }
+  })
+  const camIdRef = useRef(camId)
+  camIdRef.current = camId
 
   const lkRef = useRef<LiveKitRoom | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -88,20 +101,34 @@ export function HostCamCard() {
     try {
       const grant = await hostToken()
       const lk = await import('livekit-client')
-      const lkRoom = new lk.Room({ publishDefaults: { simulcast: true } })
+      const lkRoom = new lk.Room({
+        dynacast: true,
+        publishDefaults: { simulcast: true },
+      })
       await lkRoom.connect(grant.url, grant.token)
       if (!armedRef.current) {
         // disarmed mid-connect — hang up before publishing anything
         void lkRoom.disconnect()
         return
       }
+      // MIC FIRST, on its own — the old enableCameraAndMicrophone() asked
+      // for both in ONE getUserMedia, so an OBS-held webcam failed the
+      // whole call and the "mic-only" fallback was doing all the work
+      // (guests heard the streamer but never saw them).
+      await lkRoom.localParticipant.setMicrophoneEnabled(true)
       let camOk = true
       try {
-        await lkRoom.localParticipant.enableCameraAndMicrophone()
+        await lkRoom.localParticipant.setCameraEnabled(
+          true,
+          camIdRef.current ? { deviceId: camIdRef.current } : undefined,
+        )
       } catch {
-        // camera unreadable (e.g. OBS holds it) → degrade to mic-only
-        camOk = false
-        await lkRoom.localParticipant.setMicrophoneEnabled(true)
+        // chosen device gone/busy → try the default before giving up
+        try {
+          await lkRoom.localParticipant.setCameraEnabled(true)
+        } catch {
+          camOk = false // truly no camera available (OBS holds the only one)
+        }
       }
       if (camOk) {
         const pub = [...lkRoom.localParticipant.videoTrackPublications.values()][0]
@@ -156,8 +183,10 @@ export function HostCamCard() {
       .query({ name: 'camera' as PermissionName })
       .then((st) => {
         if (stale) return
-        if (st.state === 'granted') setArmed(true)
-        else localStorage.removeItem(storageKey)
+        if (st.state === 'granted') {
+          setArmed(true)
+          void refreshCams()
+        } else localStorage.removeItem(storageKey)
       })
       .catch(() => {
         /* can't verify — stay disarmed until the next toggle click */
@@ -233,8 +262,50 @@ export function HostCamCard() {
       setCamBusyHint(!camOk)
       setArmed(true)
       if (storageKey) localStorage.setItem(storageKey, '1')
+      void refreshCams() // labels are readable now that a grant exists
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Camera inventory for the picker. Runs after arm (and on re-arm) — device
+  // labels only populate once a media permission is granted.
+  async function refreshCams() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      setCams(
+        devices
+          .filter((d) => d.kind === 'videoinput')
+          .map((d, i) => ({ id: d.deviceId, label: d.label || `Camera ${i + 1}` })),
+      )
+    } catch {
+      /* picker just stays hidden */
+    }
+  }
+
+  async function onPickCam(id: string) {
+    setCamId(id)
+    try {
+      localStorage.setItem('mc-booth-cam', id)
+    } catch {
+      /* preference just won't persist */
+    }
+    // already on air → switch live, and if we were mic-only give the camera
+    // another shot with the newly chosen device
+    const r = lkRef.current
+    if (!r) return
+    setError(null)
+    try {
+      if (micOnly) {
+        await r.localParticipant.setCameraEnabled(true, id ? { deviceId: id } : undefined)
+        const pub = [...r.localParticipant.videoTrackPublications.values()][0]
+        if (pub?.track && videoRef.current) pub.track.attach(videoRef.current)
+        setMicOnly(false)
+      } else if (id) {
+        await r.switchActiveDevice('videoinput', id)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not switch camera')
     }
   }
 
@@ -245,10 +316,10 @@ export function HostCamCard() {
       ? 'Guest is live — going on air…'
       : onAir
         ? micOnly
-          ? `🔴 ON AIR to ${guestNoun} (mic only — your camera is busy in another app)`
+          ? `🔴 ON AIR to ${guestNoun} — MIC ONLY. Your camera is held by another app (OBS?). Pick a different camera below; OBS Virtual Camera works great.`
           : `🔴 ON AIR to ${guestNoun} — they see you in real time`
         : camBusyHint
-          ? 'Armed, mic-only (camera busy in another app) — goes on air when a guest joins'
+          ? 'Armed, mic-only — your camera is held by another app (OBS?). Pick a different one below; OBS Virtual Camera works great.'
           : 'Armed — camera goes on air the moment a guest joins'
 
   return (
@@ -282,6 +353,28 @@ export function HostCamCard() {
           </span>
           {busy ? <RefreshCw className="size-4 animate-spin text-muted-foreground" /> : null}
         </label>
+
+        {/* Camera picker — the default cam is usually the one OBS already
+            owns. Choosing "OBS Virtual Camera" here sends the FULL OBS scene
+            to guests. Switches live mid-broadcast. */}
+        {armed && cams.length > 0 ? (
+          <label className="flex items-center gap-2.5 text-sm" htmlFor="booth-cam">
+            <span className="shrink-0 font-medium text-foreground/90">Camera</span>
+            <select
+              id="booth-cam"
+              value={camId}
+              onChange={(e) => void onPickCam(e.target.value)}
+              className="h-9 w-full min-w-0 flex-1 appearance-none rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground outline-none focus-visible:border-primary/70 [&>option]:bg-popover [&>option]:text-popover-foreground"
+            >
+              <option value="">System default</option>
+              {cams.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
 
         <p id="boothStatus" aria-live="polite" className="text-xs text-muted-foreground">
           {status}

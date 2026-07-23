@@ -525,7 +525,12 @@
         const tok = await tokRes.json();
         if (!tokRes.ok || !tok.token) throw new Error(tok.error || 'no token');
         const LK = window.LivekitClient;
-        lkOverlayRoom = new LK.Room({ adaptiveStream: false });
+        // adaptiveStream ON: tiles are 320x180 — without it the overlay
+        // subscribed every guest's TOP simulcast layer (720p) and decoded it
+        // in OBS's embedded Chromium while OBS encodes on the same CPU.
+        // That was the "extremely laggy" guest video. Adaptive sizes the
+        // subscription to the element, so tiles ride the low layer.
+        lkOverlayRoom = new LK.Room({ adaptiveStream: true });
         lkOverlayRoom.on(LK.RoomEvent.TrackSubscribed, (track, pub, participant) => {
           const id = participant.identity;
           const entry = lkTracks.get(id) || {};

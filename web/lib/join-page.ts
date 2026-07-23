@@ -1534,6 +1534,10 @@ async function startLivekitCameraStage(data) {
     const lk = await import('livekit-client');
     lkRoom = new lk.Room({
       adaptiveStream: true,
+      // dynacast: layers nobody subscribes to PAUSE at the publisher — the
+      // viewer's uplink (usually the real bottleneck) stops paying for
+      // resolutions no one is watching.
+      dynacast: true,
       // simulcast for smooth degradation (phase 3 requirement, on by default)
       publishDefaults: { simulcast: true },
     });

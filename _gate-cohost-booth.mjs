@@ -98,13 +98,15 @@ const unlockDashboard = async (page, roomId, password) => {
   // domcontentloaded, NOT networkidle2 — a managing dashboard keeps a WS +
   // 5s poll alive, and an ON-AIR booth adds the SFU socket: never "idle".
   await page.goto(`${APP}/dashboard`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  // The unlock form lives behind the "Have a room ID + password?" disclosure
+  // now (the create/manage tab pair is gone).
   await page.waitForFunction(
-    () => [...document.querySelectorAll('button')].some((b) => /manage existing/i.test(b.textContent)),
+    () => [...document.querySelectorAll('summary')].some((s) => /room id \+ password/i.test(s.textContent)),
     { timeout: 30000 },
   );
   await page.evaluate(() => {
-    const tab = [...document.querySelectorAll('button')].find((b) => /manage existing/i.test(b.textContent));
-    tab?.click();
+    const s = [...document.querySelectorAll('summary')].find((x) => /room id \+ password/i.test(x.textContent));
+    s?.closest('details')?.setAttribute('open', '');
   });
   await sleep(400);
   await page.type('#manage-room-id', roomId);

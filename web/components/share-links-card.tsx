@@ -85,15 +85,28 @@ export function ShareLinksCard() {
               background.
             </p>
             <p className="text-pretty">
-              <strong className="text-foreground/90">2 · Stinger sounds:</strong>{' '}
-              enable &quot;Control audio via OBS&quot; on that source so the SFX
-              reach your stream mix.
+              <strong className="text-foreground/90">2 · Guest audio into your stream:</strong>{' '}
+              enable &quot;Control audio via OBS&quot; on that source so guest
+              voices and stinger SFX reach your stream mix.
             </p>
             <p className="text-pretty">
-              <strong className="text-foreground/90">3 · Hear your guests:</strong>{' '}
-              keep this dashboard open while you stream — guests reach you in
-              real time (the public broadcast runs on a slight delay; this pipe
-              doesn&apos;t).
+              <strong className="text-foreground/90">3 · HEAR guests yourself:</strong>{' '}
+              step 2 routes their audio into the OBS mixer — which your own
+              ears aren&apos;t in. On the source&apos;s mixer entry (⋮ →
+              Advanced Audio Properties), set Audio Monitoring to{' '}
+              <strong className="text-foreground/90">Monitor and Output</strong>,
+              or they&apos;ll be on your stream but silent to you.
+            </p>
+            <p className="text-pretty">
+              <strong className="text-foreground/90">4 · Smooth video:</strong>{' '}
+              in OBS Settings → Advanced, keep &quot;Browser Source Hardware
+              Acceleration&quot; ON — without it guest video decodes on the CPU
+              your encoder is already using, and tiles get laggy.
+            </p>
+            <p className="text-pretty">
+              <strong className="text-foreground/90">5 · Talk back:</strong>{' '}
+              keep this dashboard open while you stream — the Co-host booth is
+              the pipe that carries your camera and mic to guests in real time.
             </p>
           </div>
         </details>
