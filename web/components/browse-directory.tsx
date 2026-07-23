@@ -9,42 +9,65 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, Radio, Users, Gift, ArrowRight } from 'lucide-react'
 import { listPublicRooms, type PublicRoomCard } from '@/lib/api'
-import { cn } from '@/lib/utils'
 
 const POLL_MS = 5000
 
+// Live preview — Twitch's free auto-updating thumbnail for the streamer's
+// channel (exactly what Twitch's own directory renders). It 404s when the
+// channel is offline or when there's no Twitch at all, so a branded panel
+// always sits underneath and shows through. The image remounts on a ~2-min
+// bust bucket so it refreshes (matching Twitch's cadence) without reloading
+// on every 5s poll.
+function RoomThumb({ room }: { room: PublicRoomCard }) {
+  const channel = room.twitchChannel?.trim().replace(/^@/, '').toLowerCase()
+  // Only render the Twitch image when the SERVER confirmed the channel is
+  // actually live — otherwise Twitch serves a gray "unavailable" placeholder
+  // that would look worse than our branded fallback.
+  const showPreview = !!channel && room.twitchLive
+  const bust = Math.floor(Date.now() / 120000)
+  return (
+    <div className="relative aspect-video overflow-hidden rounded-xl border border-border/60 bg-gradient-to-br from-[var(--neon-magenta)]/15 via-card to-[var(--neon-violet)]/15">
+      {/* branded fallback (always underneath) */}
+      <div className="absolute inset-0 grid place-items-center">
+        <span className="text-3xl opacity-40" aria-hidden="true">🎙️</span>
+      </div>
+      {showPreview ? (
+        <img
+          key={bust}
+          src={`https://static-cdn.jtvnw.net/previews-ttv/live_user_${channel}-440x248.jpg?b=${bust}`}
+          alt=""
+          loading="lazy"
+          className="absolute inset-0 size-full object-cover"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none'
+          }}
+        />
+      ) : null}
+      {room.live > 0 ? (
+        <span className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--neon-lime)] backdrop-blur-sm">
+          <span className="size-1.5 animate-pulse rounded-full bg-[var(--neon-lime)]" />
+          Live
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
 function RoomCard({ room }: { room: PublicRoomCard }) {
-  const isLive = room.live > 0
   return (
     <a
       href={room.handle ? `/${room.handle}` : `/join?room=${encodeURIComponent(room.id)}`}
       className="group flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-[var(--neon-magenta)]/60 hover:shadow-[0_0_24px_oklch(0.68_0.27_340/0.25)]"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate font-heading text-lg font-bold text-foreground">
-            {room.name}
-          </h3>
-          {/* the claimed link IS the room's identity — hex only as fallback */}
-          <span className="font-mono text-xs text-muted-foreground">
-            {room.handle ? `/${room.handle}` : room.id}
-          </span>
-        </div>
-        <span
-          className={cn(
-            'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold uppercase tracking-wide',
-            isLive
-              ? 'border-[var(--neon-lime)]/60 text-[var(--neon-lime)]'
-              : 'border-border text-muted-foreground',
-          )}
-        >
-          <span
-            className={cn(
-              'size-1.5 rounded-full',
-              isLive ? 'animate-pulse bg-[var(--neon-lime)]' : 'bg-muted-foreground',
-            )}
-          />
-          {isLive ? 'Live' : 'Open'}
+      <RoomThumb room={room} />
+      {/* status lives on the thumbnail now (Twitch layout) — no repeat pill */}
+      <div className="min-w-0">
+        <h3 className="truncate font-heading text-lg font-bold text-foreground">
+          {room.name}
+        </h3>
+        {/* the claimed link IS the room's identity — hex only as fallback */}
+        <span className="font-mono text-xs text-muted-foreground">
+          {room.handle ? `/${room.handle}` : room.id}
         </span>
       </div>
 

@@ -1847,6 +1847,44 @@ app.get('/api/seats', (req, res) => {
   });
 });
 
+// ─── Twitch preview liveness ────────────────────────────────────────────────
+// The browse-card thumbnail uses Twitch's free preview image, but Twitch
+// serves it via a 302: a LIVE channel redirects to a real frame, while an
+// offline/nonexistent one redirects to a generic gray ttv-static/404_preview
+// placeholder (HTTP 200 — so a client onError never fires). Only the redirect
+// TARGET distinguishes them, and reading it needs a server-side request.
+// Cached per channel with stale-while-revalidate so client polling can't
+// hammer Twitch: at most one probe per channel per TTL, never blocking the
+// browse response.
+const twitchLiveCache = new Map(); // login -> { live, at }
+const TWITCH_LIVE_TTL_MS = 90_000;
+const twitchRefreshing = new Set();
+
+async function refreshTwitchLive(login) {
+  if (twitchRefreshing.has(login)) return;
+  twitchRefreshing.add(login);
+  let live = false;
+  try {
+    const url = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(login)}-440x248.jpg`;
+    const r = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(4000) });
+    const loc = r.headers.get('location') || '';
+    if (loc) live = !/404_preview|ttv-static/i.test(loc); // offline placeholder → not live
+    else if (r.status === 200) live = true; // served directly (rare)
+  } catch { /* network/timeout → treat as offline */ }
+  twitchLiveCache.set(login, { live, at: Date.now() });
+  twitchRefreshing.delete(login);
+}
+
+function twitchLiveCached(channel) {
+  const login = String(channel || '').trim().replace(/^@/, '').toLowerCase();
+  if (!login) return false;
+  const hit = twitchLiveCache.get(login);
+  if (!hit || Date.now() - hit.at > TWITCH_LIVE_TTL_MS) {
+    void refreshTwitchLive(login); // fire-and-forget; first browse shows fallback, next poll upgrades
+  }
+  return hit ? hit.live : false;
+}
+
 // Public browse directory — active rooms that haven't opted out (unlisted).
 // Reuses rooms-store + the live seat map; no duplicated state. Sorted hottest
 // first: live on-camera count, then queued viewers (paid, camera pending).
@@ -1875,6 +1913,12 @@ app.get('/api/rooms/public', (req, res) => {
       passkeyTickSeconds: cfg.passkeyTickSeconds,
       paymentTokenSymbol: cfg.paymentTokenSymbol,
       rewardsEnabled: !!cfg.rewards?.enabled,
+      // Browse-card preview: Twitch publishes a free auto-updating thumbnail
+      // for any live channel — no infra, and it's the streamer's already-
+      // public broadcast, so no viewer-privacy concern. twitchLive gates the
+      // client from rendering Twitch's gray offline placeholder.
+      twitchChannel: cfg.twitchChannel || null,
+      twitchLive: cfg.twitchChannel ? twitchLiveCached(cfg.twitchChannel) : false,
       createdAt: r.createdAt,
     });
   }

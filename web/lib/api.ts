@@ -174,6 +174,11 @@ export type PublicRoomCard = {
   passkeyTickSeconds: number
   paymentTokenSymbol: string
   rewardsEnabled: boolean
+  /** Streamer's Twitch login (no @) — drives the browse-card live preview. */
+  twitchChannel: string | null
+  /** True only when that channel is actually live (server-verified) — Twitch
+   *  serves a gray placeholder for offline channels, so gate on this. */
+  twitchLive: boolean
   createdAt: string
 }
 
