@@ -49,6 +49,8 @@ export function HostCamCard() {
   })
   const camIdRef = useRef(camId)
   camIdRef.current = camId
+  const micOnlyRef = useRef(false)
+  micOnlyRef.current = micOnly
 
   const lkRef = useRef<LiveKitRoom | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -196,6 +198,16 @@ export function HostCamCard() {
     }
   }, [active, storageKey])
 
+  // OBS Virtual Camera (or any camera) appearing/disappearing AFTER arm —
+  // e.g. arm once, then each session start OBS and click "Start Virtual
+  // Camera" — must show up in the picker without re-arming.
+  useEffect(() => {
+    if (!active || !armed) return
+    navigator.mediaDevices.addEventListener('devicechange', refreshCams)
+    return () => navigator.mediaDevices.removeEventListener('devicechange', refreshCams)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, armed])
+
   // Switching rooms (or leaving managing mode) always hangs up and disarms;
   // the re-arm effect above decides the next room's state from its own flag.
   useEffect(() => {
@@ -268,16 +280,37 @@ export function HostCamCard() {
     }
   }
 
+  // Try (or retry) publishing camera `id` while already on air. Shared by
+  // the manual picker AND the auto-upgrade below — same recovery either way.
+  async function tryEnableCamera(id: string) {
+    const r = lkRef.current
+    if (!r) return false
+    try {
+      await r.localParticipant.setCameraEnabled(true, id ? { deviceId: id } : undefined)
+      const pub = [...r.localParticipant.videoTrackPublications.values()][0]
+      if (pub?.track && videoRef.current) pub.track.attach(videoRef.current)
+      setMicOnly(false)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   // Camera inventory for the picker. Runs after arm (and on re-arm) — device
-  // labels only populate once a media permission is granted.
+  // labels only populate once a media permission is granted. Also drives the
+  // auto-upgrade: if you're stuck mic-only and your CHOSEN camera (e.g. OBS
+  // Virtual Camera, started mid-broadcast) just showed up, retry it without
+  // waiting for a manual reselect.
   async function refreshCams() {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices()
-      setCams(
-        devices
-          .filter((d) => d.kind === 'videoinput')
-          .map((d, i) => ({ id: d.deviceId, label: d.label || `Camera ${i + 1}` })),
-      )
+      const list = devices
+        .filter((d) => d.kind === 'videoinput')
+        .map((d, i) => ({ id: d.deviceId, label: d.label || `Camera ${i + 1}` }))
+      setCams(list)
+      if (micOnlyRef.current && camIdRef.current && list.some((c) => c.id === camIdRef.current)) {
+        void tryEnableCamera(camIdRef.current)
+      }
     } catch {
       /* picker just stays hidden */
     }
@@ -297,10 +330,7 @@ export function HostCamCard() {
     setError(null)
     try {
       if (micOnly) {
-        await r.localParticipant.setCameraEnabled(true, id ? { deviceId: id } : undefined)
-        const pub = [...r.localParticipant.videoTrackPublications.values()][0]
-        if (pub?.track && videoRef.current) pub.track.attach(videoRef.current)
-        setMicOnly(false)
+        await tryEnableCamera(id)
       } else if (id) {
         await r.switchActiveDevice('videoinput', id)
       }
