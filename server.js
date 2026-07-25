@@ -28,6 +28,8 @@ import {
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
 import { createActivityManager } from './livekit-activity.js';
+import { createWebhookTracker, verifyWebhookJwt, reconcile } from './livekit-webhooks.js';
+import { createBreaker, breakerConfig } from './livekit-breaker.js';
 import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
 import { verifyRoomAccess } from './auth.js';
 import {
@@ -585,6 +587,23 @@ function broadcastToRoom(streamRoomId, message) {
  */
 const lkActivity = createActivityManager({ broadcastToRoom, hasOverlay });
 
+/**
+ * Webhook-derived session truth + the burn breaker that reads it.
+ * Deliberately NOT fed by lkActivity's self-reported ledger: a breaker fed by
+ * the same self-report that hid the last leak would fail in exactly the case
+ * it exists for.
+ */
+const lkWebhooks = createWebhookTracker({
+  onSession: (rec) => {
+    console.log(`[lk-webhook] session ${rec.kind} ${rec.identity} in ${rec.room} — ${(rec.durationMs / 60_000).toFixed(2)}min${rec.outOfOrder ? ' (out-of-order delivery, reconciled)' : ''}`);
+  },
+});
+const lkBreaker = createBreaker({ getUsage: () => lkWebhooks.stats() });
+{
+  const t = setInterval(() => lkBreaker.evaluate(), 60_000);
+  if (t.unref) t.unref();
+}
+
 function broadcastMeterUpdate(seat, payload) {
   const msg = { type: 'meter_update', ...payload };
   if (seat.ownerWs && seat.ownerWs.readyState === 1) {
@@ -1081,6 +1100,60 @@ const livekit = createLivekitService();
 if (livekit) console.log('[livekit] transport available at', livekit.url, '— now the default');
 
 // Token minting — publisher tokens require the seat the join flow granted.
+// ─── LiveKit webhooks: the authoritative session source ─────────────────────
+// Raw body required — the signature commits to the exact bytes.
+app.post('/api/livekit/webhook', express.raw({ type: '*/*', limit: '256kb' }), (req, res) => {
+  if (!livekit) return res.status(503).json({ error: 'LiveKit not configured' });
+  const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body || ''));
+  try {
+    verifyWebhookJwt(req.headers.authorization, raw, {
+      apiKey: process.env.LIVEKIT_API_KEY,
+      apiSecret: process.env.LIVEKIT_API_SECRET,
+    });
+  } catch (e) {
+    // Unsigned or tampered deliveries are rejected outright — an
+    // unauthenticated writer to the authoritative session ledger would be
+    // worse than having no ledger at all.
+    console.warn(`[lk-webhook] REJECTED delivery: ${e.message}`);
+    return res.status(401).json({ error: 'invalid webhook signature', detail: e.message });
+  }
+  let event;
+  try { event = JSON.parse(raw.toString('utf8')); }
+  catch { return res.status(400).json({ error: 'unparseable webhook body' }); }
+
+  const out = lkWebhooks.handle(event);
+  lkBreaker.evaluate();
+  res.json({ ok: true, ...out });
+});
+
+/** Webhook-derived usage + breaker state (operator surface). */
+app.get('/api/livekit/burn', (_req, res) => {
+  res.json({
+    breaker: lkBreaker.snapshot(),
+    webhook: lkWebhooks.stats(),
+    reconciliation: reconcile({
+      webhookStats: lkWebhooks.stats(),
+      ledgerStats: lkActivity.ledgerStats(),
+    }),
+  });
+});
+
+/** Operator override — requires who and why, both logged. */
+app.post('/api/livekit/burn/override', (req, res) => {
+  try {
+    const { by, reason, ttlMs } = req.body || {};
+    const o = lkBreaker.setOverride({ by, reason, ttlMs });
+    res.json({ ok: true, override: { by: o.by, reason: o.reason, expiresAt: o.until } });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.delete('/api/livekit/burn/override', (req, res) => {
+  lkBreaker.clearOverride(req.body?.by || 'operator');
+  res.json({ ok: true });
+});
+
 // ─── Lazy connect: activity signal surface ──────────────────────────────────
 // The overlay does not hold a LiveKit connection while idle; it obeys these.
 
@@ -1152,6 +1225,20 @@ app.post('/api/livekit/token', async (req, res) => {
     }
     if (!livekit) {
       return res.status(503).json({ error: 'LiveKit is not configured on this server' });
+    }
+    // Burn breaker. A token IS a new connection, so this is the chokepoint.
+    // Existing sessions already hold their tokens and are untouched — we never
+    // cut a live guest off air to save minutes.
+    {
+      const gate = lkBreaker.checkAllowed();
+      if (!gate.allowed) {
+        console.error(`[lk-breaker] refused a ${role} token for room ${roomId} — budget reached`);
+        return res.status(503).json({
+          error: gate.reason,
+          code: 'burn_budget_reached',
+          state: gate.state,
+        });
+      }
     }
     if (role === 'publisher') {
       const seat = activeSeats.get(String(seatId || ''));
