@@ -403,7 +403,22 @@ function prewarmOverlay() {
     body: JSON.stringify({ room: streamRoomId }),
   })
     .then((r) => (r.ok ? r.json() : null))
-    .then((d) => { if (d && d.prewarm) prewarmToken = d.prewarm; })
+    .then((d) => {
+      if (!d) return;
+      if (d.prewarm) prewarmToken = d.prewarm;
+      // Reliability guard: lazy connect's new failure mode is "guest pays,
+      // overlay never woke, nobody appears on stream" — a refund event on a
+      // live broadcast. Warn BEFORE the money moves rather than blocking,
+      // since a false negative here would kill a legitimate join.
+      const h = d.health;
+      if (h && !h.present) {
+        showMessage(
+          "<strong>Heads up:</strong> this streamer's overlay isn't open right now, so your camera may not appear on their broadcast. " +
+          "You can still join — you're only charged for the seconds you're actually on.",
+          'warning',
+        );
+      }
+    })
     .catch(() => { /* overlay wake is best-effort; the seat grant wakes it too */ });
 }
 export function releasePrewarm() {

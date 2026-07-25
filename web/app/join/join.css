@@ -197,6 +197,13 @@ a.addr {
   border-color: color-mix(in oklab, var(--neon-magenta) 55%, transparent);
   color: var(--neon-magenta);
 }
+/* Advisory, not a failure — e.g. the streamer's overlay isn't open, so a paid
+   camera might not land on their broadcast. Amber so it reads as "check this"
+   rather than "something broke". */
+.join-message.warning {
+  border-color: color-mix(in oklab, var(--neon-amber) 55%, transparent);
+  box-shadow: 0 0 18px color-mix(in oklab, var(--neon-amber) 10%, transparent);
+}
 
 /* Balance / live meter — hidden until the script reveals it */
 #meter {

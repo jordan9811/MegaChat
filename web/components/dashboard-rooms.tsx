@@ -21,6 +21,7 @@ import { LettersQueueCard } from '@/components/letters-queue-card'
 import { HostCamCard } from '@/components/host-cam-card'
 import { IntegrationsCard } from '@/components/integrations-card'
 import { ShareLinksCard } from '@/components/share-links-card'
+import { OverlayHealthCard } from '@/components/overlay-health-card'
 import { cn } from '@/lib/utils'
 
 function Card({ delay, children }: { delay: string; children: React.ReactNode }) {
@@ -64,6 +65,11 @@ export function DashboardRooms() {
         <div className="flex min-w-0 flex-col gap-6">
           <Card delay="0.12s">
             <ShareLinksCard />
+          </Card>
+          {/* Overlay health sits directly under the OBS link it reports on —
+              lazy connect means a dead overlay is now a real failure mode. */}
+          <Card delay="0.16s">
+            <OverlayHealthCard />
           </Card>
           <Card delay="0.2s">
             <OnCameraTable />

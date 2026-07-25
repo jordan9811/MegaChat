@@ -365,6 +365,15 @@ export function resolveRoomConfig(roomId) {
     transport: resolveTransport(cfg.transport),
     // Overlay stinger SFX (synthesized in-browser, master toggle, default on).
     stingerSounds: cfg.stingerSounds !== false,
+    // Lazy connect scope (see LIVEKIT-AUDIT.md + livekit-lazy.config.js):
+    //   'seat'      — DEFAULT. Overlay connects only while a seat is being
+    //                 bought or held. Cheapest by far; idle costs nothing.
+    //   'broadcast' — Overlay stays connected for the whole broadcast. ~6x
+    //                 better than the old always-on bug but a 4h/day streamer
+    //                 still burns ~7,200 min/month, so it does NOT get under
+    //                 the free tier on its own. For a streamer who wants zero
+    //                 chance of pop-in and will pay for it.
+    lazyConnectScope: cfg.lazyConnectScope === 'broadcast' ? 'broadcast' : 'seat',
   };
 }
 
