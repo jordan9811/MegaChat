@@ -156,6 +156,14 @@ export function refundExpired({ handleKey, actor = 'system', settlement }) {
   const rec = store.getReservedHandleByKey(handleKey);
   if (!rec) throw new Error(`No reserved handle ${handleKey}`);
 
+  // Already fully refunded — a retry (cron re-run, admin double-click) is a
+  // no-op that returns what was refunded, NOT an error. The money was already
+  // safe via per-contribution idempotency keys; this makes the API honest
+  // about "already done" instead of throwing REFUNDED → EXPIRED at the caller.
+  if (rec.claimStatus === 'REFUNDED') {
+    return store.listLedger({ handleKey }).filter((r) => r.type === 'REFUND');
+  }
+
   if (rec.claimStatus !== 'EXPIRED') {
     transition({ handleKey, to: 'EXPIRED', actor, reason: 'reservation ttl elapsed' });
   }
