@@ -31,6 +31,7 @@ import { createActivityManager } from './livekit-activity.js';
 import { createWebhookTracker, verifyWebhookJwt, reconcile } from './livekit-webhooks.js';
 import { createBreaker, breakerConfig } from './livekit-breaker.js';
 import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
+import { attachBountyRoutes } from './bounty-routes.js';
 import { verifyRoomAccess } from './auth.js';
 import {
   toAtomic,
@@ -2113,6 +2114,11 @@ app.get('/api/rooms/public', (req, res) => {
 
 const PORT = Number(process.env.PORT || 3000);
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+
+// Creator bounty (Run A). Mounts NOTHING when BOUNTY_CLAIM is off, so an
+// unflagged deploy is byte-identical to before. Escrow is a ledger only —
+// settlement is a record-intent stub, no funds move. See HANDOFF-BOUNTY.md.
+attachBountyRoutes(app);
 
 attachDashboardRoutes(app, {
   baseUrl: BASE_URL,

@@ -202,6 +202,60 @@
       animation: lk-hold-breath .8s ease-in-out infinite alternate; }
     #lk-status[data-state="error"] { background: var(--neon-magenta); opacity: .85;
       animation: lk-hold-breath .6s ease-in-out infinite alternate; }
+    /* ── Creator bounty: proof-of-broadcast watermark ────────────────────────
+       Deliberately its OWN persistent element rather than a decoration inside
+       a MegaChat tile. A letter tile exists for ~10s at a time; a code that
+       rotates every 60s would almost never be on screen when the verifier
+       samples a frame, so tying the watermark to tile lifetime would fail
+       honest streamers. This sits outside #stage entirely and never touches
+       the tile/stinger machinery.
+
+       Legibility rules, because this gets read back off a downscaled and
+       re-compressed stream frame: high contrast, solid backing plate (never
+       over live video), generous letter-spacing, tabular glyphs, and NO
+       animation on the code itself — a mid-transition frame must still read. */
+    #bounty-badge {
+      position: fixed;
+      left: 16px;
+      bottom: 16px;
+      z-index: 40;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border-left: 3px solid var(--neon-lime);
+      background: #08060f;            /* opaque on purpose — no video behind */
+      color: #ffffff;
+      font-family: 'Space Grotesk', Arial, sans-serif;
+      font-weight: 700;
+      line-height: 1;
+      box-shadow: 0 2px 10px rgba(0,0,0,.6);
+    }
+    #bounty-badge.show { display: inline-flex; }
+    #bounty-badge .bb-mark {
+      font-size: 11px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--neon-lime);
+    }
+    #bounty-badge .bb-code {
+      font-family: 'Courier New', monospace;
+      font-size: 22px;
+      letter-spacing: .18em;
+      font-variant-numeric: tabular-nums;
+      color: #ffffff;
+      text-shadow: none;              /* nothing that could smear under encode */
+    }
+    /* Streamer-facing warning. Shown only in the OBS preview sense — it is
+       intentionally legible, because a silent failure here costs them money. */
+    #bounty-badge.too-small {
+      border-left-color: var(--neon-magenta);
+    }
+    #bounty-badge.too-small .bb-code {
+      font-size: 13px;
+      color: var(--neon-magenta);
+    }
 
     /* IN 1 — STORM: cloud bank rolls over, double lightning strike reveals. */
     .tile.in-storm { animation: stormReveal 1400ms ease-out both; }
@@ -403,6 +457,12 @@
        cyan while waking, faint lime when live, and only loud (magenta) on
        error, which is the one state worth interrupting for. -->
   <div id="lk-status" data-state="idle" aria-hidden="true"></div>
+  <!-- Creator bounty watermark. Hidden entirely unless the overlay URL carries
+       ?bounty=<airSessionId>, so a normal room renders exactly as before. -->
+  <div id="bounty-badge" aria-hidden="true">
+    <span class="bb-mark">MEGACHAT</span>
+    <span class="bb-code" id="bounty-code"></span>
+  </div>
 
   <script>
     // ─── Layout config ───────────────────────────────────────────────────────
@@ -769,6 +829,110 @@
     window.addEventListener('beforeunload', hangUp);
 
     initLivekitOverlay();
+
+    // ─── Creator bounty: proof-of-broadcast watermark ─────────────────────
+    // Entirely inert unless the overlay URL carries ?bounty=<airSessionId>.
+    // Rotation is SERVER-authoritative: we poll for the code rather than
+    // running a local timer, so a client whose clock is wrong (or edited)
+    // cannot mint or extend its own codes.
+    (function bountyWatermark() {
+      const airSessionId = new URLSearchParams(location.search).get('bounty');
+      if (!airSessionId) return; // normal room — renders exactly as before
+
+      const badge = document.getElementById('bounty-badge');
+      const codeEl = document.getElementById('bounty-code');
+      let reportedTooSmall = null; // null = nothing reported yet
+      let rotateMs = 60000;
+
+      /**
+       * Legibility check.
+       *
+       * HONEST LIMITATION: this measures the badge against the BROWSER SOURCE
+       * canvas. OBS renders the page at its configured resolution and then
+       * scales that texture into the scene, and a page cannot observe its own
+       * scene transform. So this catches a streamer who sets a tiny browser-
+       * source resolution, but NOT one who scales the source down in the
+       * scene composition.
+       *
+       * That gap is fine, and this is the important part: the real
+       * enforcement is the VERIFIER. A badge scaled to a smear in the final
+       * broadcast is a badge the code checker cannot read, so verification
+       * fails and nothing pays out. This client check is an early-warning
+       * affordance so an honest streamer sees the problem in OBS instead of
+       * discovering it in an unpaid bounty — it is not the security boundary.
+       */
+      function checkSize() {
+        const r = badge.getBoundingClientRect();
+        const h = r.height;
+        const canvasH = window.innerHeight || 1;
+        const minPx = (window.__bountyCfg && window.__bountyCfg.badgeMinHeightPx) || 18;
+        const minRatio = (window.__bountyCfg && window.__bountyCfg.badgeMinHeightRatio) || 0.03;
+        const tooSmall = h < minPx || (h / canvasH) < minRatio;
+        return { tooSmall, height: +h.toFixed(1), canvasH, ratio: +(h / canvasH).toFixed(4) };
+      }
+
+      async function report(tooSmall, detail) {
+        if (reportedTooSmall === tooSmall) return; // only on change
+        reportedTooSmall = tooSmall;
+        try {
+          await fetch(`/api/bounty/air-session/${encodeURIComponent(airSessionId)}/badge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tooSmall, detail }),
+          });
+        } catch { /* next poll retries */ }
+      }
+
+      async function poll() {
+        try {
+          const res = await fetch(`/api/bounty/air-session/${encodeURIComponent(airSessionId)}/code`);
+          if (!res.ok) { badge.classList.remove('show'); return; }
+          const data = await res.json();
+          if (data.rotateMs) rotateMs = data.rotateMs;
+
+          if (!data.code) {
+            // Server withheld a code (session closed, or badge in violation).
+            codeEl.textContent = data.badgeTooSmall ? 'BADGE TOO SMALL — NOT EARNING' : '';
+            badge.classList.toggle('too-small', !!data.badgeTooSmall);
+            badge.classList.toggle('show', !!data.badgeTooSmall);
+            return;
+          }
+
+          badge.classList.remove('too-small');
+          badge.classList.add('show');
+          codeEl.textContent = data.code;
+
+          // Measure AFTER paint so the rect reflects the rendered code.
+          requestAnimationFrame(() => {
+            const size = checkSize();
+            if (size.tooSmall) {
+              codeEl.textContent = 'BADGE TOO SMALL — NOT EARNING';
+              badge.classList.add('too-small');
+            }
+            void report(size.tooSmall, size);
+          });
+        } catch {
+          /* server unreachable — keep the last code on screen rather than
+             blanking the broadcast; the next poll recovers. */
+        }
+      }
+
+      fetch('/api/bounty/config')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((cfg) => { if (cfg) window.__bountyCfg = cfg; })
+        .catch(() => {})
+        .finally(() => {
+          poll();
+          // Poll faster than rotation so a new code appears promptly.
+          setInterval(poll, Math.max(5000, rotateMs / 4));
+          window.addEventListener('resize', () => {
+            requestAnimationFrame(() => {
+              const s = checkSize();
+              void report(s.tooSmall, s);
+            });
+          });
+        });
+    })();
 
     ws.onopen = () => {
       console.log('Overlay connected to server');

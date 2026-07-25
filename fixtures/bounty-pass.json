@@ -1,0 +1,5 @@
+{
+  "_comment": "Forces a clean PASS: every sampled frame available, code found with high confidence.",
+  "defaultAvailable": true,
+  "defaultCheck": { "found": true, "confidence": 0.94 }
+}

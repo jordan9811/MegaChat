@@ -1,0 +1,17 @@
+{
+  "_comment": "Forces PARTIAL: first 3 samples found, rest missed. Verified minutes should be ~30% of elapsed.",
+  "defaultAvailable": true,
+  "checks": [
+    { "found": true,  "confidence": 0.92 },
+    { "found": true,  "confidence": 0.90 },
+    { "found": true,  "confidence": 0.91 },
+    { "found": false, "confidence": 0.80 },
+    { "found": false, "confidence": 0.80 },
+    { "found": false, "confidence": 0.80 },
+    { "found": false, "confidence": 0.80 },
+    { "found": false, "confidence": 0.80 },
+    { "found": false, "confidence": 0.80 },
+    { "found": false, "confidence": 0.80 }
+  ],
+  "defaultCheck": { "found": false, "confidence": 0.8 }
+}

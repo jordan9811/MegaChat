@@ -1,0 +1,5 @@
+{
+  "_comment": "Forces FAIL: frames available, code never present.",
+  "defaultAvailable": true,
+  "defaultCheck": { "found": false, "confidence": 0.15 }
+}
