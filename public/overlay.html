@@ -163,6 +163,46 @@
        original tileJoin / crtOff (out-default, declared above). */
     .stinger-fx { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
 
+    /* ── Lazy connect: reveal gating (see LIVEKIT-AUDIT.md) ──────────────────
+       The seat FRAME is always rendered — only the video texture swaps in.
+       A tile holds until its track arrives AND its stinger passes the reveal
+       frame, so an empty video hole is never on screen. */
+    .tile.lk-holding > video { opacity: 0; }
+    /* ENTRY reveal is INSTANT and deliberately un-animated: the stinger is the
+       only transition on this path. A fade here would stack two transitions
+       and read as a stutter at the wipe edge. */
+    .tile > video.lk-revealed { opacity: 1; }
+    /* Hold state: a faint branded breath on the frame so a late track reads as
+       intentional rather than broken. Only ever visible if the stinger
+       finished before the track landed. */
+    .tile.lk-holding::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(120% 120% at 50% 40%,
+        color-mix(in oklab, var(--neon-violet) 22%, transparent), transparent 70%);
+      animation: lk-hold-breath 1.6s ease-in-out infinite alternate;
+      pointer-events: none; z-index: 1;
+    }
+    @keyframes lk-hold-breath { from { opacity: .35; } to { opacity: .7; } }
+    /* NON-ENTRY only (reconnect / track restart / camera toggle). Never
+       attached to a first entry — that path belongs to the stinger. */
+    @keyframes lk-refade { from { opacity: 0; } to { opacity: 1; } }
+    .tile > video.lk-refade { animation: lk-refade 200ms ease-out; }
+
+    /* Overlay status pin — for the STREAMER's eye only, never a broadcast
+       element. Tiny, corner-parked, and invisible while everything is fine. */
+    #lk-status {
+      position: fixed; right: 6px; bottom: 6px;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #666; opacity: .35; z-index: 999; pointer-events: none;
+      transition: background .3s ease, opacity .3s ease;
+    }
+    #lk-status[data-state="live"]  { background: var(--neon-lime); opacity: .28; }
+    #lk-status[data-state="waking"]{ background: var(--neon-cyan); opacity: .5;
+      animation: lk-hold-breath .8s ease-in-out infinite alternate; }
+    #lk-status[data-state="error"] { background: var(--neon-magenta); opacity: .85;
+      animation: lk-hold-breath .6s ease-in-out infinite alternate; }
+
     /* IN 1 — STORM: cloud bank rolls over, double lightning strike reveals. */
     .tile.in-storm { animation: stormReveal 1400ms ease-out both; }
     @keyframes stormReveal {
@@ -358,6 +398,11 @@
 </head>
 <body>
   <div id="stage"></div>
+  <!-- Overlay health pin: an 8px dot for the STREAMER to glance at in the OBS
+       source preview. Never a broadcast element — dim grey when idle, brief
+       cyan while waking, faint lime when live, and only loud (magenta) on
+       error, which is the one state worth interrupting for. -->
+  <div id="lk-status" data-state="idle" aria-hidden="true"></div>
 
   <script>
     // ─── Layout config ───────────────────────────────────────────────────────
@@ -488,16 +533,66 @@
     }
     setTimeout(transportResolved, 4000);
 
+    // ── Reveal gating: ONE transition owner per seat ────────────────────────
+    // A seat reveals only when BOTH are true: its track is subscribed AND its
+    // entry stinger has passed its reveal frame — whichever lands later. If
+    // the stinger finishes first we HOLD (the designed seat frame stays up);
+    // an empty video frame is never shown. The stinger is the only transition
+    // on the entry path — no crossfade underneath it, ever.
+    //
+    // Non-entry paths (mid-session reconnect, track restart, guest toggling
+    // their camera) must NEVER replay the entry stinger; they take the short
+    // fallback fade instead. `revealed` on the record is what distinguishes
+    // them: once a seat has revealed, every later track swap is non-entry.
+    const lkReveal = new Map(); // identity → { stingerDone, trackReady, revealed, el }
+
+    function revealRecord(identity) {
+      if (!lkReveal.has(identity)) {
+        lkReveal.set(identity, { stingerDone: false, trackReady: false, revealed: false, el: null });
+      }
+      return lkReveal.get(identity);
+    }
+
+    function maybeReveal(identity) {
+      const r = lkReveal.get(identity);
+      if (!r || r.revealed || !r.el) return;
+      if (!(r.stingerDone && r.trackReady)) return; // hold — later of the two wins
+      r.revealed = true;
+      const box = r.el.closest('.tile');
+      if (box) box.classList.remove('lk-holding');
+      r.el.classList.add('lk-revealed');
+    }
+
+    /** Entry stinger passed its reveal frame for this seat. */
+    function markStingerRevealPoint(identity) {
+      const r = revealRecord(identity);
+      r.stingerDone = true;
+      maybeReveal(identity);
+    }
+
     function lkAttach(identity) {
       const el = lkTileEls.get(identity);
       const tr = lkTracks.get(identity);
       if (!el || !tr) return;
+      const r = revealRecord(identity);
+      r.el = el;
       if (tr.video) tr.video.attach(el);
       if (tr.audio) {
         const a = tr.audio.attach();
         a.style.display = 'none';
         el.parentElement && el.parentElement.appendChild(a);
       }
+      if (!tr.video) return;
+      if (r.revealed) {
+        // NON-ENTRY path: reconnect / track restart / camera toggle. The entry
+        // stinger already played and must not replay — short crossfade only.
+        el.classList.remove('lk-refade');
+        void el.offsetWidth; // restart the animation
+        el.classList.add('lk-refade');
+        return;
+      }
+      r.trackReady = true;
+      maybeReveal(identity);
     }
 
     async function initLivekitOverlay() {
@@ -510,6 +605,7 @@
         }
         lkMode = true;
         transportResolved(); // livekit confirmed — buffered seats become <video> tiles
+        lkLazy = cfg.lazyConnect || { enabled: false };
         await new Promise((resolve, reject) => {
           const s = document.createElement('script');
           s.src = '/vendor/livekit-client.umd.js';
@@ -517,13 +613,59 @@
           s.onerror = () => reject(new Error('livekit-client failed to load'));
           document.head.appendChild(s);
         });
+        if (!lkLazy.enabled) {
+          // LAZY_CONNECT=0 — today's exact behavior: connect on mount, stay up.
+          console.log('[overlay] lazy connect DISABLED — legacy always-on mode');
+          return lkConnect('flag-off');
+        }
+        // Lazy: no connection until the server says a seat is being bought.
+        console.log('[overlay] lazy connect ON — idle until a guest arrives');
+        setLkStatus('idle');
+        startHeartbeat();
+        startSignalFallback();
+      } catch (err) {
+        console.error('[overlay] LiveKit init failed:', err.message);
+        setLkStatus('error');
+      }
+    }
+
+    // ─── Lazy connect: the overlay holds a LiveKit connection ONLY while a
+    // seat is being bought or occupied. Idle costs nothing. See
+    // LIVEKIT-AUDIT.md — connect-on-mount with no teardown is what drained
+    // 5,000 free minutes with nobody on camera.
+    let lkLazy = { enabled: false };
+    let lkState = 'idle';          // idle | waking | live | error
+    let lkConnecting = false;
+    let lkRetryMs = 0;
+    let lkRetryTimer = null;
+    let lkBeatTimer = null;
+    let lkPollTimer = null;
+    let lkIdentity = null;
+
+    function setLkStatus(state) {
+      lkState = state;
+      const pin = document.getElementById('lk-status');
+      if (pin) pin.dataset.state = state;
+    }
+
+    async function lkConnect(reason) {
+      if (!lkMode || lkConnecting || lkOverlayRoom) return;
+      lkConnecting = true;
+      if (lkState !== 'live') setLkStatus('waking');
+      try {
+        // Token minted at WAKE time, every time. A token minted at OBS start
+        // would be hours expired by the time someone actually joined.
         const tokRes = await fetch('/api/livekit/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ room: streamRoomId, role: 'subscriber' }),
+          // role:'overlay' → STABLE identity overlay:<roomId>, so a reconnect
+          // evicts its own predecessor instead of stacking a second billed
+          // participant (the old random viewer:<rand> could not dedupe).
+          body: JSON.stringify({ room: streamRoomId, role: 'overlay' }),
         });
         const tok = await tokRes.json();
         if (!tokRes.ok || !tok.token) throw new Error(tok.error || 'no token');
+        lkIdentity = tok.identity || ('overlay:' + streamRoomId);
         const LK = window.LivekitClient;
         // adaptiveStream ON: tiles are 320x180 — without it the overlay
         // subscribed every guest's TOP simulcast layer (720p) and decoded it
@@ -544,11 +686,88 @@
           // tile removal stays WS-driven (seat_removed → stinger out)
         });
         await lkOverlayRoom.connect(tok.url, tok.token);
-        console.log('[overlay] LiveKit subscriber connected');
+        lkRetryMs = 0;
+        setLkStatus('live');
+        beat(); // tell the server a billed session just opened
+        console.log(`[overlay] LiveKit connected (${reason}) as ${lkIdentity}`);
       } catch (err) {
-        console.error('[overlay] LiveKit init failed:', err.message);
+        console.error('[overlay] connect failed:', err.message);
+        try { lkOverlayRoom && lkOverlayRoom.disconnect(); } catch { /* noop */ }
+        lkOverlayRoom = null;
+        setLkStatus('error');
+        // Backoff retry — but only while something still wants us connected.
+        lkRetryMs = Math.min(
+          lkRetryMs ? lkRetryMs * 2 : (lkLazy.connectRetryBaseMs || 500),
+          lkLazy.connectRetryMaxMs || 15000,
+        );
+        clearTimeout(lkRetryTimer);
+        lkRetryTimer = setTimeout(() => {
+          if (lkWanted) lkConnect('retry');
+        }, lkRetryMs);
+      } finally {
+        lkConnecting = false;
       }
     }
+
+    function lkDisconnect(reason) {
+      clearTimeout(lkRetryTimer);
+      lkRetryMs = 0;
+      if (!lkOverlayRoom) { setLkStatus('idle'); return; }
+      console.log(`[overlay] LiveKit disconnecting (${reason}) — minutes stop here`);
+      try { lkOverlayRoom.disconnect(); } catch { /* already down */ }
+      lkOverlayRoom = null;
+      lkTracks.clear();
+      setLkStatus('idle');
+      beat();
+    }
+
+    /** Server-authoritative desire. Set by WS signal or the polling fallback. */
+    let lkWanted = false;
+    function applyDesired(desired, reason) {
+      const want = desired === 'wake';
+      if (want === lkWanted && (want ? !!lkOverlayRoom || lkConnecting : !lkOverlayRoom)) return;
+      lkWanted = want;
+      if (want) lkConnect(reason || 'signal');
+      else lkDisconnect(reason || 'signal');
+    }
+
+    /** Heartbeat: proves the browser source is alive AND doubles as the
+     *  polling fallback — the response carries the state we should be in, so
+     *  a dead WS signal cannot strand the overlay disconnected. */
+    async function beat() {
+      if (!lkMode || !lkLazy.enabled) return;
+      try {
+        const res = await fetch('/api/livekit/overlay/beat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ room: streamRoomId, lkState, identity: lkIdentity }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.desired) applyDesired(data.desired, 'heartbeat');
+      } catch { /* offline — the next beat retries */ }
+    }
+    function startHeartbeat() {
+      clearInterval(lkBeatTimer);
+      lkBeatTimer = setInterval(beat, lkLazy.heartbeatIntervalMs || 15000);
+      beat();
+    }
+    /** Slow safety poll in case BOTH the WS signal and a beat response are lost. */
+    function startSignalFallback() {
+      clearInterval(lkPollTimer);
+      lkPollTimer = setInterval(() => {
+        if (ws && ws.readyState === 1) return; // WS healthy — no need
+        beat();
+      }, lkLazy.signalPollMs || 4000);
+    }
+
+    // Teardown is UNCONDITIONAL — outside the flag. A LiveKit connection that
+    // outlives its page is never correct in either mode, and this single line
+    // is what the old overlay was missing.
+    const hangUp = () => { try { lkOverlayRoom && lkOverlayRoom.disconnect(); } catch { /* noop */ } };
+    window.addEventListener('pagehide', hangUp);
+    window.addEventListener('beforeunload', hangUp);
+
     initLivekitOverlay();
 
     ws.onopen = () => {
@@ -564,6 +783,10 @@
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
       switch (msg.type) {
+        // Lazy connect: the server decides when we hold a LiveKit connection.
+        case 'lk_activity':
+          applyDesired(msg.state === 'wake' ? 'wake' : 'sleep', msg.reason || 'ws');
+          break;
         case 'initial_state':
           // Server only sends seats that are already live (camera approved).
           msg.seats.forEach(seat => addVideoBox(seat));
@@ -670,6 +893,22 @@
       videoBoxes.set(seat.id, box);
       relayout();
       playStinger('in', seat.flyIn || 'default');
+
+      // Lazy connect: hold this tile's video until its track lands. The seat
+      // FRAME is already on screen (it is DOM and costs nothing); only the
+      // texture waits. Reveal fires at the stinger's reveal frame or at track
+      // arrival, whichever is LATER — so a slow connect hides inside an
+      // animation that was playing anyway, and an empty video frame is never
+      // shown. Entry keeps a single transition owner: the stinger.
+      if (lkMode) {
+        const identity = 'seat:' + seat.id;
+        const rec = revealRecord(identity);
+        rec.el = box.querySelector('video');
+        box.classList.add('lk-holding');
+        const revealAt = fin ? fin.ms : JOIN_MS;
+        setTimeout(() => markStingerRevealPoint(identity), revealAt);
+        if (lkTracks.get(identity)) lkAttach(identity); // track beat us here
+      }
 
       // Drop the entrance class once it finishes (so it won't replay).
       const inCls = fin ? fin.cls : 'joining';

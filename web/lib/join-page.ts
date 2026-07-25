@@ -388,9 +388,36 @@ function setJoinState(state, labelOverride) {
     || (joinBtnState === 'idle' && CONFIG && CONFIG.roomActive === false);
 }
 
+// Lazy connect: the overlay sits disconnected while idle, so it needs the
+// EARLIEST credible signal that a guest is coming — this click, not payment
+// confirm. The handshake then runs in parallel with the payment flow (which
+// is far slower), so the overlay is connected and waiting before the guest's
+// tracks exist and the audience sees no difference. Fire-and-forget: a failed
+// prewarm must never block a join, and an abandoned attempt expires on its own
+// TTL server-side.
+let prewarmToken: string | null = null;
+function prewarmOverlay() {
+  fetch('/api/livekit/prewarm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ room: streamRoomId }),
+  })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => { if (d && d.prewarm) prewarmToken = d.prewarm; })
+    .catch(() => { /* overlay wake is best-effort; the seat grant wakes it too */ });
+}
+export function releasePrewarm() {
+  if (!prewarmToken) return;
+  const body = JSON.stringify({ room: streamRoomId, prewarm: prewarmToken });
+  prewarmToken = null;
+  fetch('/api/livekit/prewarm/cancel', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+  }).catch(() => { /* TTL cleans it up anyway */ });
+}
+
 function onJoinButtonClick() {
   if (joinBtnState === 'go-live') return goLive();
-  if (joinBtnState === 'idle') return joinSeat();
+  if (joinBtnState === 'idle') { prewarmOverlay(); return joinSeat(); }
   // The same control exits the flow: cancel a hung camera wait, or leave
   // the stream while live (audit P0-1 — no dead-ends, no button pairs).
   if (joinBtnState === 'awaiting-camera' || joinBtnState === 'live') {
@@ -1247,6 +1274,7 @@ function fireCameraReady(source) {
 // goodbye message so failure paths can keep their own error on screen.
 async function leaveStream(quiet) {
   const seatId = mySeatId;
+  releasePrewarm(); // the seat's own vacate starts the overlay grace timer
   if (!seatId) return;
   setJoinState('busy', '⏳ Leaving…');
   // Stop reacting to this seat locally right away so the meter stops instantly.

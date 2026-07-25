@@ -1145,6 +1145,17 @@ app.post('/api/livekit/token', async (req, res) => {
       const token = await livekit.publisherToken(roomId, seat);
       return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity: `seat:${seat.id}` });
     }
+    if (role === 'overlay') {
+      // STABLE identity, deliberately. The old random `viewer:<rand>` meant
+      // LiveKit could not dedupe: every OBS reload connected as a brand-new
+      // participant while the stale one lingered until the reaper took it, so
+      // reload churn STACKED billed participants (26 in one session — see
+      // LIVEKIT-AUDIT.md). A fixed identity makes a rejoin evict its own
+      // predecessor instantly, so reconnects are idempotent and self-healing.
+      const identity = `overlay:${roomId}`;
+      const token = await livekit.subscriberToken(roomId, identity);
+      return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity });
+    }
     if (role === 'subscriber') {
       const identity = `viewer:${Math.random().toString(36).slice(2, 10)}`;
       const token = await livekit.subscriberToken(roomId, identity);
