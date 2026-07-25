@@ -1094,8 +1094,24 @@ app.post('/api/livekit/prewarm', (req, res) => {
   res.json({ ok: true, prewarm: token, health: lkActivity.overlayHealth(resolved.roomId) });
 });
 
+/**
+ * Guest is still moving through the join flow — restarts the abandon clock.
+ * Without this, a slow-but-real join (someone reading a wallet dialog) would
+ * be clipped at the abandon cap mid-payment, which is worse than the burn the
+ * cap prevents. sendBeacon-friendly: accepts text/plain bodies too.
+ */
+app.post('/api/livekit/prewarm/progress', express.text({ type: '*/*' }), (req, res) => {
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
+  const resolved = resolveRoomFromRequest(body, req.query);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  const ok = lkActivity.prewarmProgress(resolved.roomId, body?.prewarm, body?.stage);
+  res.json({ ok, stage: body?.stage || null });
+});
+
 /** Guest closed the sheet without buying — release the hold (grace still applies). */
-app.post('/api/livekit/prewarm/cancel', (req, res) => {
+app.post('/api/livekit/prewarm/cancel', express.text({ type: '*/*' }), (req, res) => {
+  if (typeof req.body === 'string') { try { req.body = JSON.parse(req.body); } catch { req.body = {}; } }
   const resolved = resolveRoomFromRequest(req.body, req.query);
   if (resolved.error) return res.status(404).json({ error: resolved.error });
   lkActivity.cancelPrewarm(resolved.roomId, req.body?.prewarm);

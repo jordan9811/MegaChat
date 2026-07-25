@@ -124,6 +124,20 @@ export function createActivityManager({ log = console, broadcastToRoom, hasOverl
   const sweeper = setInterval(checkLongSessions, 60_000);
   if (sweeper.unref) sweeper.unref();
 
+  /**
+   * Abandon sweeper. Without this an abandoned hold only gets noticed when
+   * something else happens to ask — which, for a room whose only visitor just
+   * closed their tab, is nobody. The whole point of the cap is that it fires
+   * with no further input from the person who left.
+   */
+  const abandonSweeper = setInterval(() => {
+    for (const [roomId, r] of rooms) {
+      const reaped = reapPrewarms(r, roomId);
+      if (reaped.length) settle(roomId, 'abandon-cap');
+    }
+  }, Math.max(5_000, Math.floor(lazyConfig.abandonMs / 6)));
+  if (abandonSweeper.unref) abandonSweeper.unref();
+
   function ledgerStats() {
     const now = Date.now();
     const dayAgo = now - 86_400_000;
@@ -153,18 +167,41 @@ export function createActivityManager({ log = console, broadcastToRoom, hasOverl
     broadcastToRoom(roomId, { type: 'lk_activity', state, reason, ts: Date.now() });
   }
 
-  function wants(r) {
+  /**
+   * Drop holds that have either been abandoned (no progress for abandonMs) or
+   * hit the absolute TTL backstop. Returns what it reaped, for logging.
+   */
+  function reapPrewarms(r, roomId) {
+    const now = Date.now();
+    const reaped = [];
+    for (const [tok, hold] of r.prewarms) {
+      if (tok === '__broadcast__') continue; // not a guest hold
+      // Legacy numeric holds (pre-abandon-cap) — treat as TTL-only.
+      const h = typeof hold === 'number' ? { ttlAt: hold, abandonAt: Infinity } : hold;
+      if (h.abandonAt <= now) {
+        r.prewarms.delete(tok);
+        reaped.push({ tok, why: 'abandoned', stage: h.stage });
+        log.log(`[lk-activity] ${roomId}: prewarm ${tok} ABANDONED at stage "${h.stage}" — released at the ${lazyConfig.abandonMs}ms cap, not the ${lazyConfig.prewarmTtlMs}ms TTL`);
+      } else if (h.ttlAt <= now) {
+        r.prewarms.delete(tok);
+        reaped.push({ tok, why: 'ttl' });
+        log.warn(`[lk-activity] ${roomId}: prewarm ${tok} hit the TTL backstop — the abandon cap should normally have caught this first`);
+      }
+    }
+    return reaped;
+  }
+
+  function wants(r, roomId) {
     // Anything that justifies holding a connection.
     if (r.seats.size > 0) return true;
-    const now = Date.now();
-    for (const [tok, exp] of r.prewarms) if (exp < now) r.prewarms.delete(tok);
+    reapPrewarms(r, roomId);
     return r.prewarms.size > 0;
   }
 
   function settle(roomId, reason) {
     const r = room(roomId);
     if (!lazyConfig.enabled) return; // flag off: overlay stays always-connected
-    if (wants(r)) {
+    if (wants(r, roomId)) {
       if (r.graceTimer) { clearTimeout(r.graceTimer); r.graceTimer = null; }
       if (r.state !== 'live') {
         r.state = 'live';
@@ -177,7 +214,7 @@ export function createActivityManager({ log = console, broadcastToRoom, hasOverl
     if (r.state === 'idle' || r.graceTimer) return;
     r.graceTimer = setTimeout(() => {
       r.graceTimer = null;
-      if (wants(r)) return; // someone arrived during grace
+      if (wants(r, roomId)) return; // someone arrived during grace
       r.state = 'idle';
       push(roomId, 'sleep', 'grace-expired');
       log.log(`[lk-activity] ${roomId}: → SLEEP (grace expired)`);
@@ -191,9 +228,31 @@ export function createActivityManager({ log = console, broadcastToRoom, hasOverl
     prewarm(roomId) {
       const r = room(roomId);
       const token = Math.random().toString(36).slice(2, 10);
-      r.prewarms.set(token, Date.now() + lazyConfig.prewarmTtlMs);
+      // Two clocks per hold: the ABANDON cap (short, reset by progress) and
+      // the TTL backstop (long, absolute). Whichever fires first wins.
+      r.prewarms.set(token, {
+        ttlAt: Date.now() + lazyConfig.prewarmTtlMs,
+        abandonAt: Date.now() + lazyConfig.abandonMs,
+        stage: 'sheet-open',
+        lastProgressAt: Date.now(),
+      });
       settle(roomId, 'prewarm');
       return token;
+    },
+    /**
+     * Client reports forward motion in the join flow — restarts the abandon
+     * clock. A slow human in a wallet dialog keeps their hold; a closed tab
+     * stops reporting and loses it at the cap.
+     */
+    prewarmProgress(roomId, token, stage) {
+      const r = room(roomId);
+      const hold = r.prewarms.get(token);
+      if (!hold) return false;
+      if (stage && !lazyConfig.progressStages.includes(stage)) return false;
+      hold.abandonAt = Date.now() + lazyConfig.abandonMs;
+      hold.lastProgressAt = Date.now();
+      if (stage) hold.stage = stage;
+      return true;
     },
     /** Guest abandoned the sheet without buying. */
     cancelPrewarm(roomId, token) {
@@ -273,7 +332,7 @@ export function createActivityManager({ log = console, broadcastToRoom, hasOverl
     desired(roomId) {
       const r = room(roomId);
       if (!lazyConfig.enabled) return 'wake';
-      return wants(r) || r.graceTimer ? 'wake' : 'sleep';
+      return wants(r, roomId) || r.graceTimer ? 'wake' : 'sleep';
     },
 
     sessionStart,

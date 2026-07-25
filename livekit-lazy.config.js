@@ -44,8 +44,50 @@ export const lazyConfig = {
    */
   prewarmTrigger: process.env.LAZY_PREWARM_TRIGGER || 'join-click',
 
-  /** A prewarm that never converts to a seat expires after this. */
+  /**
+   * Backstop for a prewarm that never converts. This is NOT the abandon path
+   * anymore — see abandonMs below. It only catches a hold whose client
+   * vanished so completely that even the heartbeat stopped.
+   */
   prewarmTtlMs: num(process.env.LAZY_PREWARM_TTL_MS, 5 * 60_000),
+
+  /**
+   * ABANDON CAP — the fix for the pinned finding.
+   *
+   * The old release path was leaveStream(), which a guest who bails
+   * mid-wallet-connect never reaches, so an abandoned prewarm rode the full
+   * 5-minute prewarmTtlMs. That is the same failure shape as the original
+   * leak: a teardown that depends on an action the abandoning user by
+   * definition never takes.
+   *
+   * A prewarm that stops making progress is released after this instead.
+   * Deliberately separate from graceMs: grace protects a REAL guest's
+   * back-to-back handoff, abandon protects against someone who was never
+   * going to pay.
+   */
+  abandonMs: num(process.env.LAZY_ABANDON_MS, 90_000),
+
+  /**
+   * "Actively progressing" — what RESETS the abandon timer. Stated here
+   * because the definition is the whole safety property: too narrow and a
+   * slow-but-real join gets clipped mid-payment, which is worse than the
+   * burn it prevents.
+   *
+   * A prewarm is progressing when the client reports ANY of these stages,
+   * in any order, each of which is a real forward step in the join flow:
+   *   'sheet-open'      — the join click that created the prewarm
+   *   'wallet-connect'  — wallet UI opened / account connected
+   *   'wallet-approve'  — user approved in the wallet (slowest human step)
+   *   'tx-pending'      — payment submitted, waiting on chain
+   *   'seat-granted'    — server granted the seat (progress becomes moot)
+   *   'camera-stage'    — camera preview up
+   * Each report restarts the clock. Silence for abandonMs across ALL of them
+   * is what counts as abandonment.
+   */
+  progressStages: [
+    'sheet-open', 'wallet-connect', 'wallet-approve',
+    'tx-pending', 'seat-granted', 'camera-stage',
+  ],
 
   /** Overlay → server liveness ping cadence. */
   heartbeatIntervalMs: num(process.env.LAZY_HEARTBEAT_MS, 15_000),
