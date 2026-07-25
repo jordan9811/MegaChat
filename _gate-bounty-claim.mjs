@@ -17,6 +17,7 @@
  */
 import { spawn } from 'child_process';
 import { readFileSync, readdirSync } from 'fs';
+import fsSync from 'fs';
 import puppeteer from 'puppeteer-core';
 
 let pass = 0, fail = 0;
@@ -80,11 +81,11 @@ const quietSettlement = new StubSettlement({ log: { log() {} } });
     escrow.transition({ handleKey: key, to, actor: 'gate' });
   }
   const r1 = escrow.release({
-    handleKey: key, claimId: 'c', airSessionId: 'a', verifiedMinutes: 2,
+    handleKey: key, claimId: 'c', airSessionId: 'a', verifiedClips: 2, verifiedClipSeconds: 20,
     confidence: 0.9, idempotencyKey: 'dup-key', settlement: quietSettlement,
   });
   const r2 = escrow.release({
-    handleKey: key, claimId: 'c', airSessionId: 'a', verifiedMinutes: 2,
+    handleKey: key, claimId: 'c', airSessionId: 'a', verifiedClips: 2, verifiedClipSeconds: 20,
     confidence: 0.9, idempotencyKey: 'dup-key', settlement: quietSettlement,
   });
   const pool = store.getPool(key);
@@ -97,87 +98,182 @@ const quietSettlement = new StubSettlement({ log: { log() {} } });
     `match=${pool.releasedPlatformMatch}`);
 }
 
-// ── C. watermark rotation / expiry / no cross-session collision ────────────
+// ── C. PLAYBACK-BOUND codes: rotation, clamping, no cross-clip overlap ─────
 {
   store.reserveHandle({ platform: 'twitch', handle: 'wm', ttlMs: 1e9 });
   const claim = store.createClaim({ handleKey: 'twitch:wm', claimant: 'u', ttlMs: 1e9 });
-  const s1 = store.createAirSession({ claimId: claim.id, platform: 'twitch' });
-  const s2 = store.createAirSession({ claimId: claim.id, platform: 'twitch' });
+  const s1 = store.createAirSession({ claimId: claim.id, roomId: 'rwm', platform: 'twitch' });
   const t0 = Date.now();
-  const c1 = [], c2 = [];
-  for (let i = 0; i < 8; i++) {
-    c1.push(watermark.issueCode(s1.id, { now: t0 + i * bountyConfig.codeRotateMs }).code);
-    c2.push(watermark.issueCode(s2.id, { now: t0 + i * bountyConfig.codeRotateMs }).code);
-  }
-  ok('C. codes rotate (all distinct within a session)', new Set(c1).size === c1.length);
-  ok('C. NO collision across two concurrent air sessions',
-    c1.filter((c) => c2.includes(c)).length === 0);
-  ok('C. sessions carry distinct namespaces',
-    c1[0].split('-')[0] !== c2[0].split('-')[0], `${c1[0]} vs ${c2[0]}`);
-  const active = watermark.activeCode(s1.id, { now: t0 + 7 * bountyConfig.codeRotateMs + 1000 });
-  ok('C. the current code is active inside its validity window', !!active);
-  const expired = watermark.activeCode(s1.id, { now: t0 + 8 * bountyConfig.codeRotateMs + bountyConfig.codeValidityMs + 5000 });
-  ok('C. codes expire once past their validity window', expired === null);
 
-  // ── D. badge below threshold halts codes + records the violation ─────────
-  watermark.reportBadgeTooSmall(s1.id, { ratio: 0.005, height: 6 });
-  const issued = watermark.issueCode(s1.id, { now: t0 + 9 * bountyConfig.codeRotateMs });
-  const after = store.getAirSession(s1.id);
-  ok('D. badge too small STOPS code issuance (detection is the payout trigger)', issued === null);
-  ok('D. violation recorded as BADGE_TOO_SMALL',
-    after.violations.some((v) => v.type === 'BADGE_TOO_SMALL'));
-  ok('D. activeCode also withheld while in violation', watermark.activeCode(s1.id) === null);
-  watermark.clearBadgeViolation(s1.id);
-  ok('D. clearing the violation resumes issuance',
-    watermark.issueCode(s1.id, { now: t0 + 10 * bountyConfig.codeRotateMs }) !== null);
+  // C0 — a parked overlay (nothing playing) can produce nothing verifiable.
+  ok('C. parked overlay with NO clip playing issues no code',
+    watermark.currentOrRotate(s1.id, { now: t0 }) === null);
+  ok('C. parked overlay has zero codes in the session',
+    watermark.allSessionCodes(s1.id).length === 0);
+
+  // C1 — a 10s clip must yield at least one samplable code.
+  const a = watermark.startClipPlayback(s1.id, { clipId: 'A', durationS: 10, now: t0 });
+  for (let k = bountyConfig.codeRotateMs; k < 10_000; k += bountyConfig.codeRotateMs) {
+    watermark.currentOrRotate(s1.id, { now: t0 + k });
+  }
+  const aCodes = watermark.allSessionCodes(s1.id).filter((c) => c.clipId === 'A');
+  ok('C. a 10s clip yields at least one verifiable code', aCodes.length >= 1, `${aCodes.length} codes`);
+  ok('C. codes rotate inside a long clip (>1 for 10s at 4s cadence)', aCodes.length > 1);
+  ok('C. every code is bound to its clip id', aCodes.every((c) => c.clipId === 'A'));
+  ok('C. code validity is CLAMPED to the clip end',
+    aCodes.every((c) => c.expiresAt <= t0 + 10_000));
+  watermark.endClipPlayback(s1.id, { clipId: 'A', now: t0 + 10_000 });
+
+  // C2 — back-to-back clip: no instant may satisfy both.
+  watermark.startClipPlayback(s1.id, { clipId: 'B', durationS: 10, now: t0 + 10_000 });
+  for (let k = bountyConfig.codeRotateMs; k < 10_000; k += bountyConfig.codeRotateMs) {
+    watermark.currentOrRotate(s1.id, { now: t0 + 10_000 + k });
+  }
+  let overlaps = 0;
+  for (let t = t0; t < t0 + 20_000; t += 200) {
+    const valid = watermark.codesValidAt(s1.id, t);
+    if (new Set(valid.map((c) => c.clipId)).size > 1) overlaps++;
+  }
+  ok('C. ONE sampled frame can never satisfy two clips (zero overlapping instants)',
+    overlaps === 0, `${overlaps} overlapping instants`);
+  watermark.endClipPlayback(s1.id, { clipId: 'B', now: t0 + 20_000 });
+
+  // C3 — clip below the sampling floor is refused, loudly, not silently paid.
+  const shortClip = watermark.startClipPlayback(s1.id, { clipId: 'TINY', durationS: 1, now: t0 + 30_000 });
+  ok('C. a clip below the sampling floor issues NO code', shortClip.code === null);
+  ok('C. and records BELOW_SAMPLING_FLOOR rather than paying silently',
+    store.getAirSession(s1.id).violations.some((v) => v.type === 'BELOW_SAMPLING_FLOOR'),
+    shortClip.reason);
+
+  // ── D. overlay self-report halts issuance (early warning, NOT enforcement) ─
+  const s2 = store.createAirSession({ claimId: claim.id, roomId: 'rwm2', platform: 'twitch' });
+  watermark.startClipPlayback(s2.id, { clipId: 'Z', durationS: 10, now: t0 });
+  watermark.reportBadgeTooSmall(s2.id, { ratio: 0.005, height: 6 });
+  ok('D. self-reported too-small badge stops code issuance',
+    watermark.issueCodeForWindow(s2.id, 'Z', { now: t0 + 1000 }) === null);
+  ok('D. violation recorded as a SELF REPORT (not proof of shrinking)',
+    store.getAirSession(s2.id).violations.some((v) => v.type === 'BADGE_TOO_SMALL_SELF_REPORT'));
+  watermark.clearBadgeViolation(s2.id);
+  ok('D. clearing it resumes issuance',
+    watermark.issueCodeForWindow(s2.id, 'Z', { now: t0 + 2000 }) !== null);
 }
 
-// ── E. verifier fixtures: pass / fail / partial / ambiguous ────────────────
+// ── E. verifier: pass / fail / partial / ambiguous / too-small / no-playback ─
+let ambiguousSessionId = null;
 {
-  const mkSession = (minutes) => {
+  let n = 0;
+  const mkSession = (clipDurations) => {
     store.reserveHandle({ platform: 'twitch', handle: 'vf', ttlMs: 1e9 });
     const c = store.createClaim({ handleKey: 'twitch:vf', claimant: 'u', ttlMs: 1e9 });
-    const s = store.createAirSession({ claimId: c.id, platform: 'twitch' });
-    const t0 = Date.now() - minutes * 60_000;
-    store.updateAirSession(s.id, { startedAt: t0, endedAt: t0 + minutes * 60_000 });
-    for (let i = 0; i < 10; i++) watermark.issueCode(s.id, { now: t0 + i * 60_000 });
+    const s = store.createAirSession({ claimId: c.id, roomId: `rvf${n++}`, platform: 'twitch' });
+    let t = Date.now() - 600_000;
+    for (const d of clipDurations) {
+      const cid = `clip-${t}`;
+      watermark.startClipPlayback(s.id, { clipId: cid, durationS: d, now: t });
+      for (let k = bountyConfig.codeRotateMs; k < d * 1000; k += bountyConfig.codeRotateMs) {
+        watermark.currentOrRotate(s.id, { now: t + k });
+      }
+      watermark.endClipPlayback(s.id, { clipId: cid, now: t + d * 1000 });
+      t += d * 1000 + 2000;
+    }
     return s.id;
   };
-  const run = async (fixtureFile) => {
+  const run = async (fixtureFile, clips = [10, 10, 10]) => {
     const fx = JSON.parse(readFileSync(`fixtures/${fixtureFile}`, 'utf8'));
-    const id = mkSession(10);
-    return verifier.verifyAirSession(id, {
+    const id = mkSession(clips);
+    const r = await verifier.verifyAirSession(id, {
       frameSource: new verifier.MockFrameSource(fx),
       codeChecker: new verifier.MockCodeChecker(fx),
     });
+    return { id, ...r };
   };
+
   const p = await run('bounty-pass.json');
-  ok('E. PASS fixture verifies the full session', p.result === 'PASS' && p.verifiedMinutes === 10,
-    `${p.result} ${p.verifiedMinutes}m conf=${p.confidence}`);
+  ok('E. PASS fixture verifies every clip playback',
+    p.result === 'PASS' && p.verifiedClips === 3 && p.verifiedClipSeconds === 30,
+    `${p.result} clips=${p.verifiedClips} secs=${p.verifiedClipSeconds}`);
+
+  const single = await run('bounty-pass.json', [10]);
+  ok('E. a single 10s clip verifies and pays proportionally (1 clip, 10s)',
+    single.verifiedClips === 1 && single.verifiedClipSeconds === 10,
+    `clips=${single.verifiedClips} secs=${single.verifiedClipSeconds}`);
+
   const f = await run('bounty-fail.json');
-  ok('E. FAIL fixture verifies zero minutes', f.result === 'FAIL' && f.verifiedMinutes === 0,
-    `${f.result} ${f.verifiedMinutes}m`);
-  const pa = await run('bounty-partial.json');
-  ok('E. PARTIAL fixture is PROPORTIONAL (3/10 samples → ~3 of 10 min)',
-    pa.result === 'PARTIAL' && pa.verifiedMinutes > 2.5 && pa.verifiedMinutes < 3.5,
-    `${pa.result} ${pa.verifiedMinutes}m`);
+  ok('E. FAIL fixture verifies zero clips', f.result === 'FAIL' && f.verifiedClips === 0);
+
+  const ts = await run('bounty-toosmall.json', [10, 10]);
+  ok('E. FOUND BUT TOO SMALL fails the sample (legibility enforced at verify time)',
+    ts.result === 'FAIL_TOO_SMALL' && ts.verifiedClips === 0,
+    `${ts.result} clips=${ts.verifiedClips}`);
+  ok('E. and records CODE_TOO_SMALL_IN_FRAME',
+    store.getAirSession(ts.id).violations.some((v) => v.type === 'CODE_TOO_SMALL_IN_FRAME'));
+
   const am = await run('bounty-ambiguous.json');
-  ok('E. AMBIGUOUS fixture is distinct from FAIL and under the confidence floor',
+  ambiguousSessionId = am.id;
+  ok('E. AMBIGUOUS is distinct from FAIL and under the confidence floor',
     am.result === 'AMBIGUOUS' && am.confidence < bountyConfig.minConfidence,
     `${am.result} conf=${am.confidence}`);
-  // and an ambiguous result must not pay
-  store.reserveHandle({ platform: 'twitch', handle: 'ambpay', ttlMs: 1e9 });
-  const k = store.handleKey('twitch', 'ambpay');
-  escrow.contribute({ platform: 'twitch', handle: 'ambpay', contributor: '0x', amount: '50' });
+
+  // E-parked: overlay up, zero clips played ⇒ zero payable units, no release.
+  store.reserveHandle({ platform: 'twitch', handle: 'parked', ttlMs: 1e9 });
+  const pk = store.handleKey('twitch', 'parked');
+  escrow.contribute({ platform: 'twitch', handle: 'parked', contributor: '0x', amount: '100' });
+  const pc = store.createClaim({ handleKey: pk, claimant: 'u', ttlMs: 1e9 });
+  const ps = store.createAirSession({ claimId: pc.id, roomId: 'rparked', platform: 'twitch' });
+  const parked = await verifier.verifyAirSession(ps.id, {
+    frameSource: new verifier.MockFrameSource({ defaultAvailable: true }),
+    codeChecker: new verifier.MockCodeChecker({ defaultCheck: { found: true, confidence: 0.99, pixelHeight: 40 } }),
+  });
+  ok('E. PARKED overlay (zero clips played) accrues ZERO payable units',
+    parked.result === 'NO_PLAYBACK' && parked.verifiedClips === 0 && parked.verifiedClipSeconds === 0,
+    parked.result);
+  for (const to of ['RESERVED', 'CLAIM_PENDING', 'CLAIM_VERIFIED', 'AWAITING_AIRTIME', 'VERIFYING']) {
+    escrow.transition({ handleKey: pk, to, actor: 'gate' });
+  }
+  const parkedRelease = escrow.release({
+    handleKey: pk, claimId: pc.id, airSessionId: ps.id,
+    verifiedClips: parked.verifiedClips, verifiedClipSeconds: parked.verifiedClipSeconds,
+    confidence: 0.99, idempotencyKey: 'parked-1', settlement: quietSettlement,
+  });
+  ok('E. PARKED overlay releases NOTHING',
+    parkedRelease.released === 0 && store.getPool(pk).releasedContributor === 0,
+    parkedRelease.skipped || '');
+}
+
+// ── I. ambiguous → review queue blocks release until a human resolves ──────
+{
+  store.reserveHandle({ platform: 'twitch', handle: 'revq', ttlMs: 1e9 });
+  const k = store.handleKey('twitch', 'revq');
+  escrow.contribute({ platform: 'twitch', handle: 'revq', contributor: '0x', amount: '100' });
+  const claim = store.createClaim({ handleKey: k, claimant: 'u', ttlMs: 1e9 });
+  const s = store.getAirSession(ambiguousSessionId);
   for (const to of ['RESERVED', 'CLAIM_PENDING', 'CLAIM_VERIFIED', 'AWAITING_AIRTIME', 'VERIFYING']) {
     escrow.transition({ handleKey: k, to, actor: 'gate' });
   }
-  const skipped = escrow.release({
-    handleKey: k, claimId: 'c', airSessionId: 'a', verifiedMinutes: am.verifiedMinutes,
-    confidence: am.confidence, idempotencyKey: 'amb-1', settlement: quietSettlement,
+  const review = store.createReview({
+    airSessionId: s.id, claimId: claim.id, handleKey: k,
+    verificationId: 'v1', confidence: 0.35, reason: 'ambiguous',
   });
-  ok('E. an AMBIGUOUS verification does NOT release funds',
-    skipped.released === 0 && skipped.skipped === 'low_confidence');
+  ok('I. an ambiguous result opens a review in OPEN state', review.state === 'OPEN');
+  ok('I. the session reports an open review', store.hasOpenReview(s.id) === true);
+
+  const blocked = escrow.release({
+    handleKey: k, claimId: claim.id, airSessionId: s.id,
+    verifiedClips: 3, verifiedClipSeconds: 30, confidence: 0.99,
+    idempotencyKey: 'rev-block-1', settlement: quietSettlement,
+  });
+  ok('I. release is BLOCKED while a review is open (no silent zero-payout)',
+    blocked.released === 0 && blocked.skipped === 'pending_review', blocked.skipped);
+
+  store.updateReview(review.id, { state: 'RESOLVED_APPROVE', resolvedAt: Date.now(), resolvedBy: 'gate', resolutionReason: 'looked at the VOD' });
+  const afterResolve = escrow.release({
+    handleKey: k, claimId: claim.id, airSessionId: s.id,
+    verifiedClips: 3, verifiedClipSeconds: 30, confidence: 1,
+    idempotencyKey: 'rev-block-2', settlement: quietSettlement,
+  });
+  ok('I. once resolved, release proceeds', afterResolve.released > 0, `${afterResolve.released}`);
+  ok('I. SLA breach is computable from review age',
+    Date.now() - review.openedAt < bountyConfig.reviewSlaMs);
 }
 
 // ── F. refund an unclaimed handle past expiry ──────────────────────────────
@@ -210,6 +306,55 @@ const quietSettlement = new StubSettlement({ log: { log() {} } });
   const settlementSrc = readFileSync('bounty-settlement.js', 'utf8');
   ok('H. settlement module is stub-only and says so',
     /NO FUNDS MOVE/i.test(settlementSrc) && /TODO\(run-b\)/.test(settlementSrc));
+}
+
+// ── J. ledger integrity: torn final recovers, interior corruption refuses ──
+{
+  const { createLedger, LedgerCorrupt } = await import('./bounty-ledger.js');
+  const dir = `${SCRATCH}-ledger`;
+  fsSync.mkdirSync(dir, { recursive: true });
+  const p = `${dir}/l.jsonl`;
+
+  const L = createLedger({ filePath: p, log: { warn() {}, error() {}, log() {} } });
+  L.append({ type: 'A', amount: '1' });
+  L.append({ type: 'B', amount: '2' });
+  L.append({ type: 'C', amount: '3' });
+  ok('J. records carry a sequence number and checksum',
+    L.all().every((r) => r.seq > 0 && typeof r.sum === 'string' && r.sum.length > 0));
+  ok('J. sequence numbers are strictly consecutive',
+    L.all().map((r) => r.seq).join(',') === '1,2,3');
+
+  // torn FINAL record (crash mid-append) — recoverable
+  fsSync.appendFileSync(p, '{"type":"D","seq":4,"partial');
+  const L2 = createLedger({ filePath: p, log: { warn() {}, error() {}, log() {} } });
+  const res = L2.load();
+  ok('J. a torn FINAL record recovers by truncating to the last valid seq',
+    res.recovered === 1 && L2.all().length === 3, `recovered=${res.recovered} rows=${L2.all().length}`);
+
+  // INTERIOR corruption — must refuse, never fold a corrupt ledger into balances
+  const lines = fsSync.readFileSync(p, 'utf8').trim().split('\n');
+  const tampered = JSON.parse(lines[0]);
+  tampered.amount = '999999';                    // edit without fixing the checksum
+  fsSync.writeFileSync(p, [JSON.stringify(tampered), ...lines.slice(1)].join('\n') + '\n');
+  let refused = false;
+  try {
+    createLedger({ filePath: p, log: { warn() {}, error() {}, log() {} } }).load();
+  } catch (e) {
+    refused = e instanceof LedgerCorrupt || e.code === 'ledger_corrupt';
+  }
+  ok('J. a tampered INTERIOR record refuses to load (no wrong pool totals)', refused);
+
+  // a mid-chain GAP must also refuse
+  const p2 = `${dir}/gap.jsonl`;
+  const L3 = createLedger({ filePath: p2, log: { warn() {}, error() {}, log() {} } });
+  L3.append({ type: 'A' }); L3.append({ type: 'B' }); L3.append({ type: 'C' });
+  const g = fsSync.readFileSync(p2, 'utf8').trim().split('\n');
+  fsSync.writeFileSync(p2, [g[0], g[2]].join('\n') + '\n'); // drop seq 2
+  let gapRefused = false;
+  try {
+    createLedger({ filePath: p2, log: { warn() {}, error() {}, log() {} } }).load();
+  } catch (e) { gapRefused = e.code === 'ledger_corrupt'; }
+  ok('J. a GAP in the middle of the chain refuses to load', gapRefused);
 }
 
 console.log(`\n  [server-side subtotal] ${pass} pass, ${fail} fail`);

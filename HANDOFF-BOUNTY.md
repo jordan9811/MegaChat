@@ -1,7 +1,9 @@
 # CREATOR BOUNTY — Run A handoff
 
 Branch: `feat/bounty-claim-runA`, off `v0-ui-migration` (current prod).
-Gate: **33/0**. Build clean. Browse-deck gate re-run 19/0, no regression.
+Gate: **49/0** (33 in Run A, extended by the patch). Build clean.
+Patch applied: playback-bound watermark, append-only ledger, verifier-side
+legibility enforcement, ambiguous review queue.
 
 > **No funds move in this run.** Escrow is a state machine over an append-only
 > ledger; settlement is a stub that records intent. Gate H scans every bounty
@@ -22,10 +24,14 @@ three.
 | Escrow state machine + transition table | **Real** — 113 illegal combinations verified to throw and write nothing |
 | Append-only ledger + idempotency | **Real** |
 | Refund path | **Real** ledger-side; settlement stubbed |
-| Watermark issuance, rotation, expiry, namespacing | **Real** |
-| Overlay badge rendering + size check | **Real** (limitation below) |
+| Watermark issuance — **playback-bound**, clip-scoped, clamped | **Real** |
+| Overlay badge rendering | **Real** |
+| Overlay size check | **Real, but EARLY WARNING ONLY** — see critique #2 |
+| Legibility enforcement (measured height in frame) | **Real** in the pipeline; needs a real OCR impl |
+| Ambiguous review queue + SLA + release blocking | **Real** |
+| Append-only ledger w/ checksum chain validation | **Real** |
 | Verifier pipeline | **Real**; frame source + code checker are **mocked** |
-| Payout math, platform match, dispute window | **Real** |
+| Payout math (per verified CLIP), match, dispute window | **Real** |
 | Bounty board / claim flow / admin | **Real** UI on real data |
 | Identity verification | **STUBBED** — auto-approves, logs `STUBBED_APPROVAL` |
 | Frame grabbing, live status, OAuth, settlement | **STUBBED / absent** — see OPEN-ISSUES.md B1–B5 |
@@ -33,7 +39,8 @@ three.
 ## Interfaces Run B implements
 ```
 FrameSource.getFrames(platform, handle, timestamps[]) -> FrameRef[]
-CodeChecker.findCode(frameRef, expectedCodes[])       -> { found, confidence }
+CodeChecker.findCode(frameRef, expectedCodes[])
+     -> { found, confidence, pixelHeight }   // pixelHeight REQUIRED, see #2
 IdentityVerifier.verify(platform, handle, claimant)   -> { approved, method }
 SettlementInterface.release({ to, amount, bucket, ref })
 SettlementInterface.refund({ to, amount, ref })
@@ -47,10 +54,14 @@ Empty subclasses already exist: `TwitchFrameSource`, `KickFrameSource`,
 | Master flag | `BOUNTY_CLAIM` | **off** (`1` enables) |
 | Reservation TTL | `BOUNTY_RESERVATION_TTL_MS` | 90d |
 | Claim TTL | `BOUNTY_CLAIM_TTL_MS` | 14d |
-| Code rotation | `BOUNTY_CODE_ROTATE_MS` | 60s |
-| Code validity | `BOUNTY_CODE_VALIDITY_MS` | 75s |
-| Badge min ratio / px | `BOUNTY_BADGE_MIN_RATIO` / `_PX` | 0.03 / 18 |
-| Release rate per verified minute | `BOUNTY_RELEASE_RATE_PER_MIN` | 0.05 |
+| Code rotation (inside a clip) | `BOUNTY_CODE_ROTATE_MS` | 4s |
+| Code validity (clamped to clip end) | `BOUNTY_CODE_VALIDITY_MS` | 5s |
+| Min clip length to be payable | `BOUNTY_MIN_CLIP_SECONDS` | 3s |
+| Badge min ratio / px (client early warning) | `BOUNTY_BADGE_MIN_RATIO` / `_PX` | 0.03 / 18 |
+| **Min code height in captured frame (enforcement)** | `BOUNTY_MIN_CODE_PX` | 12 |
+| Release rate per verified clip | `BOUNTY_RELEASE_RATE_PER_CLIP` | 0.04 |
+| Release rate per verified clip-second | `BOUNTY_RELEASE_RATE_PER_CLIP_SECOND` | 0.001 |
+| Review SLA | `BOUNTY_REVIEW_SLA_MS` | 24h |
 | Per-session cap | `BOUNTY_PER_SESSION_CAP` | 0.25 |
 | Platform match | `BOUNTY_PLATFORM_MATCH` | 0.25 |
 | Min confidence | `BOUNTY_MIN_CONFIDENCE` | 0.6 |
@@ -65,7 +76,12 @@ nothing pays. Fail-closed is deliberate for a payout path.
 BOUNTY_CLAIM=1 BOUNTY_FIXTURE_PATH=fixtures/bounty-pass.json node server.js --prod
 ```
 Then `/bounty` (board + claim) and `/bounty/admin` (sessions, confidence,
-violations, override). `node _gate-bounty-claim.mjs` runs the full gate.
+violations, review queue, override). `node _gate-bounty-claim.mjs` runs the
+full gate.
+
+**Codes only appear while a MegaChat is playing.** A parked overlay showing
+nothing is correct behaviour, not a bug — that is the whole point of the
+patch.
 
 ---
 
@@ -73,74 +89,68 @@ violations, override). `node _gate-bounty-claim.mjs` runs the full gate.
 
 You asked for this explicitly. Four things, roughly in order of how much they matter.
 
-## 1. The watermark proves the overlay was on screen — not that MegaChats played
+## 1. ~~The watermark proves the overlay was on screen~~ — RESOLVED (patch)
 
-This is the big one, and it is a **product** gap, not an implementation bug.
+**Status: fixed.** Codes are now issued only while a clip is playing and are
+bound to that clip's id, so a frame carrying code X proves clip Y aired at that
+timestamp. Proof-of-playback and proof-of-air are the same artifact.
 
-The stated mechanic is "they earn the bounty when they play the recorded
-MegaChats on their broadcast." What the watermark actually measures is "a
-browser source carrying our badge was visible for N minutes." A streamer can
-load the overlay URL, never play a single MegaChat, sit there for three hours,
-and accrue verified on-air minutes that release the pool.
+Note the fix taken was NOT my original recommendation. I proposed gating
+airtime accrual on the server's playback events; the correct objection is that
+this leaves two artifacts (a visible code, an event claiming a clip played)
+which can disagree — and the money would ride on the unverifiable one. That is
+the same trust shape as a client-reported session ledger. Collapsing them into
+a single clip-bound code removes the disagreement entirely.
 
-Payout is specified as proportional to *verified on-air minutes*, which
-reinforces the wrong thing — it pays for airtime, not for playing the fans'
-clips. The fans contributed to have their MegaChats *played*.
+Consequences now live in the code: a parked overlay issues nothing and verifies
+`NO_PLAYBACK`; rotation moved to 4s because tiles live ~10s; validity is clamped
+to the clip end so no frame can satisfy two clips; clips under
+`BOUNTY_MIN_CLIP_SECONDS` are recorded `BELOW_SAMPLING_FLOOR` and pay nothing.
+Payout unit is verified clip playbacks (+ a duration component), not on-air
+minutes.
 
-I built it as specified rather than silently redesigning it, but it needs a
-decision. Three options, cheapest first:
+## 2. ~~"Detection IS the payout trigger"~~ — CORRECTED (patch)
 
-- **Gate airtime accrual on playback.** The server already knows when letters
-  play (`letters.js` drives the overlay). Only count minutes inside a window
-  following a playback event. Small change, keeps the watermark scheme intact.
-- **Per-letter proof.** Issue a code *per MegaChat played* and verify each one
-  individually. Strongest link to what fans paid for; more verification work.
-- **Two-factor release.** Airtime unlocks a portion, "all N clips played"
-  unlocks the rest. Most complex, probably not worth it yet.
+**Status: fixed, and the mental model is corrected here deliberately.**
 
-My recommendation is the first. It reuses everything here and closes the gap in
-roughly a day.
+Enforcement is NOT the overlay noticing it has been shrunk — it cannot. A page
+cannot observe its own OBS scene transform, so the client check sees only a
+small browser-source resolution. That check remains, relabelled in code and
+copy as an early warning for an honest streamer.
 
-## 2. "Detection IS the payout trigger" isn't quite true for the badge size check
+Real enforcement is at verification time: `CodeChecker.findCode` now returns
+the code's measured pixel height in the captured frame, and any sample below
+`BOUNTY_MIN_CODE_PX` fails **even when the code was found**
+(`FAIL_TOO_SMALL` + a `CODE_TOO_SMALL_IN_FRAME` violation). Measurement is
+documented as REQUIRED in the Run B `CodeChecker` contract — an OCR
+implementation that returns only found/confidence is incomplete.
 
-The spec's anti-malicious-compliance framing assumes the overlay can detect
-being shrunk. It can detect a small *browser-source resolution*, but OBS
-renders the page at its configured size and then scales that texture into the
-scene — **a page cannot observe its own scene transform.** Scale the source
-down in the scene and the page sees nothing unusual.
+## 3. There is no "MegaChat badge" to reuse — unchanged, and now load-bearing
 
-That's fine, but the reasoning has to shift: the real enforcement is that an
-unreadable badge fails the *verifier*, so shrinking still zeroes their payout —
-just at verification time, not detection time. The client-side check is an
-early-warning affordance so an honest streamer catches a misconfiguration in
-OBS instead of discovering it in an unpaid bounty. I implemented and documented
-it that way. Worth correcting the mental model, because "we detect it" invites
-trusting a signal that can be trivially bypassed.
+The spec said to render the code "inside the MegaChat badge it already
+displays". No such component exists (letter tiles use `.username-label` with a
+📼 prefix). The badge stays its own persistent element outside `#stage`.
 
-## 3. There is no "MegaChat badge" to reuse
+This turned out to matter more after the patch, not less: the badge must remain
+mounted across clip boundaries so a code can appear the instant a clip starts.
+Hosting it inside a tile that is itself being created and animated would race
+the stinger.
 
-The spec says render the code "inside the MegaChat badge it already displays"
-and "reuse the current badge component, do not fork it." No such component
-exists — MegaChat letter tiles use the same `.username-label` class as guest
-seats, with a `📼` prefix.
+## 4. Escrow state on the handle, claims hanging off it — still open (G4)
 
-More importantly, putting the code there would be actively wrong: a letter tile
-lives about 10 seconds while codes rotate every 60, so the code would almost
-never be on screen when the verifier samples. Honest streamers would fail. I
-made the badge its own persistent element outside `#stage`, borrowing the
-existing label's visual language, and it never touches the tile or stinger
-machinery.
-
-## 4. Escrow state on the handle, claims hanging off it
-
-`ReservedHandle.claimStatus` is the escrow state, but claims and air sessions
-are separate records pointing at it. That works for one claimant and gets
-ambiguous with two — the first approved claim effectively owns the pool. Real
-OAuth (Run B) makes this mostly moot, so I did not restructure. Flagged as G4.
+`ReservedHandle.claimStatus` is the escrow state while claims and air sessions
+point at it. Fine for one claimant, ambiguous with two — first approved claim
+effectively owns the pool. Real OAuth (Run B) makes this mostly moot. Left
+pinned rather than restructured.
 
 ## Smaller notes
-- Ledger is append-only by construction but the JSON file is rewritten whole on
-  save, so durability is weaker than the contract implies (G7).
+- **Ledger durability — RESOLVED (patch).** Was G7. Now genuinely append-only:
+  JSONL, append+fsync, per-record seq + checksum, chain validated on load. A
+  torn final record recovers; an interior gap or bad checksum refuses to start
+  rather than folding a corrupt ledger into balances.
 - MegaChat handles are 3–20 chars, Twitch logins 3–25 — a long-named streamer
-  can have a pool but not a matching room handle (G5).
-- `AMBIGUOUS` results surface in admin but nothing routes them to a human (G6).
+  can have a pool but not a matching room handle (G5, still open).
+- **`AMBIGUOUS` routing — RESOLVED (patch).** Was G6. Ambiguous results open a
+  review with state/age/assignee, **block release** until a human resolves it,
+  surface past-SLA breaches in admin, show "under review" to the streamer, and
+  write the reviewer's reason to the ledger.

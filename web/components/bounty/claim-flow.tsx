@@ -60,10 +60,11 @@ export function ClaimFlow({
     }
   }
 
-  const verifiedMin = status?.verifiedMinutes ?? 0
+  const verifiedClips = status?.verifiedClips ?? 0
   const released = status?.pool.releasedContributor ?? 0
   const match = status?.pool.releasedPlatformMatch ?? 0
   const disputeEnds = status?.disputeWindowEndsAt ?? null
+  const underReview = status?.underReview ?? false
 
   return (
     <div className="rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm">
@@ -149,23 +150,43 @@ export function ClaimFlow({
               <CircleAlert className="size-4" /> Keep the badge visible and readable
             </p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              The overlay shows a short code that changes every{' '}
-              {Math.round(config.codeRotateMs / 1000)}s. We check your public stream for that code
-              to confirm the MegaChats actually aired. <strong className="text-foreground">
-              If the badge is cropped, covered, or scaled down until it can&apos;t be read, the
-              bounty does not pay</strong> — there is nothing to verify. It only needs a small
+              While a MegaChat is playing, the overlay shows a short code tied to that
+              specific clip, changing every {Math.round(config.codeRotateMs / 1000)}s. We
+              check your public stream for those codes — that is how we confirm the clips
+              actually aired. <strong className="text-foreground">If the badge is cropped,
+              covered, or scaled down until it can&apos;t be read in your stream, the bounty
+              does not pay</strong> — there is nothing to verify. It only needs a small
               corner of your layout.
+            </p>
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+              Clips shorter than {config.minClipSeconds}s can&apos;t be reliably checked and
+              don&apos;t count toward the bounty.
             </p>
           </div>
 
           <div>
             <p className="text-sm font-semibold text-foreground">2. Go live and play the MegaChats</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              You earn per verified on-air minute, released as the checks come back — not in one
-              lump at the end. Each release then has a{' '}
-              {Math.round(config.disputeWindowMs / 3_600_000)}h dispute window before it&apos;s final.
+              You earn per <strong className="text-foreground">verified MegaChat played</strong>,
+              released as the checks come back — not in one lump at the end. Simply having the
+              overlay open earns nothing; the clips have to actually air. Each release then has
+              a {Math.round(config.disputeWindowMs / 3_600_000)}h dispute window before
+              it&apos;s final.
             </p>
           </div>
+
+          {/* An ambiguous check must never look like silence or a denial —
+              the streamer needs to know a person is on it. */}
+          {underReview ? (
+            <div className="rounded-xl border border-[var(--neon-violet)]/50 bg-[var(--neon-violet)]/5 p-3">
+              <p className="text-sm font-bold text-[var(--neon-violet)]">Under review</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Our automatic check couldn&apos;t say for sure whether your clips aired, so a
+                person is looking at it. Nothing is denied — payout is paused until they
+                finish.
+              </p>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-background/40 p-3 text-center">
             <div>
@@ -173,7 +194,10 @@ export function ClaimFlow({
                 <Radio className="size-3" /> Verified
               </p>
               <p className="mt-0.5 font-heading text-lg font-bold text-foreground tabular">
-                {verifiedMin.toFixed(1)}m
+                {verifiedClips}
+              </p>
+              <p className="text-[10px] text-muted-foreground">
+                clip{verifiedClips === 1 ? '' : 's'} aired
               </p>
             </div>
             <div>

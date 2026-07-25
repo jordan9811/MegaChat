@@ -8,8 +8,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CircleAlert, ShieldAlert } from 'lucide-react'
 import {
-  listAdminSessions, adminOverride, getBountyConfig,
-  type AirSession, type BountyClaim, type BountyClientConfig,
+  listAdminSessions, adminOverride, getBountyConfig, listReviews, resolveReview,
+  type AirSession, type BountyClaim, type BountyClientConfig, type BountyReview,
 } from '@/lib/bounty-api'
 
 type Row = AirSession & {
@@ -30,6 +30,8 @@ export function BountyAdmin() {
   const [config, setConfig] = useState<BountyClientConfig | null | 'loading'>('loading')
   const [rows, setRows] = useState<Row[]>([])
   const [intents, setIntents] = useState<{ kind: string; amount: string; bucket: string }[]>([])
+  const [reviews, setReviews] = useState<BountyReview[]>([])
+  const [breachedCount, setBreachedCount] = useState(0)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -37,7 +39,24 @@ export function BountyAdmin() {
     listAdminSessions()
       .then((d) => { setRows(d.sessions as Row[]); setIntents(d.settlementIntents) })
       .catch((e) => setErr(e instanceof Error ? e.message : 'Load failed'))
+    listReviews()
+      .then((d) => { setReviews(d.reviews); setBreachedCount(d.breachedCount) })
+      .catch(() => { /* review queue is additive; don't blank the page */ })
   }, [])
+
+  async function resolve(id: string, approve: boolean) {
+    const reason = window.prompt(
+      `Reason for ${approve ? 'APPROVING' : 'REJECTING'} (required — written to the ledger):`,
+    )
+    if (!reason || !reason.trim()) { setErr('A resolution without a reason is not allowed.'); return }
+    setErr(null)
+    try {
+      await resolveReview(id, approve, reason.trim())
+      load()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Resolve failed')
+    }
+  }
 
   useEffect(() => { void getBountyConfig().then(setConfig) }, [])
   useEffect(() => {
@@ -51,6 +70,8 @@ export function BountyAdmin() {
   if (!config || !config.enabled) {
     return <p className="text-sm text-muted-foreground">Creator bounty is not enabled.</p>
   }
+
+  const openReviews = reviews.filter((r) => r.state === 'OPEN')
 
   async function override(row: Row) {
     const key = row.claim?.handleKey || ''
@@ -88,6 +109,57 @@ export function BountyAdmin() {
       </div>
 
       {err ? <p className="text-sm text-[var(--neon-magenta)]">{err}</p> : null}
+
+      {/* Review queue — an ambiguous verification that reaches nobody is a
+          streamer who did the work, wasn't paid, and never saw a human. */}
+      {reviews.length > 0 ? (
+        <div className="rounded-2xl border border-[var(--neon-violet)]/50 bg-[var(--neon-violet)]/5 p-4">
+          <p className="flex items-center gap-2 text-sm font-bold text-[var(--neon-violet)]">
+            <ShieldAlert className="size-4" />
+            Review queue — {openReviews.length} open
+            {breachedCount > 0 ? (
+              <span className="ml-1 rounded-full bg-[var(--neon-magenta)] px-2 py-0.5 text-[10px] font-bold text-black">
+                {breachedCount} past SLA
+              </span>
+            ) : null}
+          </p>
+          <ul className="mt-2 space-y-2">
+            {openReviews.map((r) => (
+              <li
+                key={r.id}
+                className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 ${
+                  r.breachedSla ? 'border-[var(--neon-magenta)]/60' : 'border-border/70'
+                }`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block font-mono text-xs text-foreground">{r.handleKey}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    confidence {r.confidence.toFixed(2)} · open{' '}
+                    {Math.round(r.ageMs / 3_600_000)}h
+                    {r.breachedSla ? (
+                      <strong className="ml-1 text-[var(--neon-magenta)]">PAST SLA</strong>
+                    ) : null}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void resolve(r.id, true)}
+                  className="rounded-full bg-[var(--neon-lime)] px-3 py-1 text-xs font-bold text-black"
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void resolve(r.id, false)}
+                  className="rounded-full border border-border px-3 py-1 text-xs font-bold text-foreground"
+                >
+                  Reject
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">No air sessions yet.</p>

@@ -38,6 +38,8 @@ export type AirSession = {
   startedAt: number
   endedAt: number | null
   verifiedMinutes: number
+  verifiedClips?: number
+  verifiedClipSeconds?: number
   badgeTooSmall?: boolean
 }
 
@@ -48,7 +50,8 @@ export type BountyClientConfig = {
   badgeMinHeightRatio: number
   badgeMinHeightPx: number
   disputeWindowMs: number
-  releaseRatePerMinute: number
+  releaseRatePerClip: number
+  minClipSeconds: number
 }
 
 async function req<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
@@ -87,7 +90,11 @@ export function getClaim(id: string) {
     claim: BountyClaim
     pool: BountyPool
     airSessions: AirSession[]
+    verifiedClips: number
+    verifiedClipSeconds: number
     verifiedMinutes: number
+    underReview: boolean
+    reviewOpenedAt: number | null
     disputeWindowEndsAt: number | null
     ledger: { id: string; type: string; amount: string; bucket: string; at: number; reason: string | null }[]
   }>(`/api/bounty/claim/${encodeURIComponent(id)}`)
@@ -105,6 +112,35 @@ export function listAdminSessions() {
     sessions: (AirSession & { verifications: unknown[]; claim: BountyClaim | null })[]
     settlementIntents: { kind: string; to: string | null; amount: string; bucket: string; ref: string }[]
   }>('/api/bounty/admin/sessions')
+}
+
+export type BountyReview = {
+  id: string
+  airSessionId: string
+  handleKey: string
+  confidence: number
+  reason: string | null
+  state: 'OPEN' | 'RESOLVED_APPROVE' | 'RESOLVED_REJECT' | string
+  assignee: string | null
+  openedAt: number
+  resolvedAt: number | null
+  resolvedBy: string | null
+  resolutionReason: string | null
+  ageMs: number
+  breachedSla: boolean
+}
+
+export function listReviews() {
+  return req<{ reviews: BountyReview[]; slaMs: number; openCount: number; breachedCount: number }>(
+    '/api/bounty/admin/reviews',
+  )
+}
+
+export function resolveReview(id: string, approve: boolean, reason: string) {
+  return req<{ ok: boolean; review: BountyReview; release: unknown }>(
+    `/api/bounty/admin/reviews/${encodeURIComponent(id)}/resolve`,
+    { method: 'POST', body: { approve, reason, actor: 'admin' } },
+  )
 }
 
 export function adminOverride(platform: string, handle: string, to: string, reason: string) {
