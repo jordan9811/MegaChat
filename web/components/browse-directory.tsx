@@ -108,7 +108,15 @@ function RoomCard({ room }: { room: PublicRoomCard }) {
   )
 }
 
-export function BrowseDirectory({ initialRooms = [] }: { initialRooms?: PublicRoomCard[] }) {
+export function BrowseDirectory({
+  initialRooms = [],
+  // embedded: mounted inside the browse deck, which owns the #browse anchor —
+  // drop the duplicate id, change nothing else.
+  embedded = false,
+}: {
+  initialRooms?: PublicRoomCard[]
+  embedded?: boolean
+}) {
   const [rooms, setRooms] = useState<PublicRoomCard[] | null>(initialRooms)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -169,7 +177,10 @@ export function BrowseDirectory({ initialRooms = [] }: { initialRooms?: PublicRo
   const seatsLive = rooms?.reduce((n, r) => n + r.live, 0) ?? 0
 
   return (
-    <section id="browse" className="mx-auto max-w-6xl scroll-mt-20 px-6 py-14 md:py-20">
+    <section
+      id={embedded ? undefined : 'browse'}
+      className="mx-auto max-w-6xl scroll-mt-20 px-6 py-14 md:py-20"
+    >
       <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col gap-1">
           <span className="text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]">

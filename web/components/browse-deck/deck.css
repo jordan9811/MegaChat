@@ -1,0 +1,48 @@
+/* ── Browse deck styles — self-contained; deleting this folder reverts all ── */
+
+/* Slow diagonal sheen drift across animated thumbs. */
+@keyframes deck-drift {
+  from { transform: translate3d(-12%, -8%, 0) rotate(0.001deg); }
+  to   { transform: translate3d(12%, 8%, 0) rotate(0.001deg); }
+}
+.deck-drift {
+  animation: deck-drift 9s ease-in-out infinite alternate;
+}
+
+/* Faint CRT scanlines over the simulated player. */
+.deck-scanlines {
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 3px,
+    color-mix(in oklab, var(--foreground) 4%, transparent) 3px,
+    color-mix(in oklab, var(--foreground) 4%, transparent) 4px
+  );
+  opacity: 0.5;
+}
+
+/* Crossfade when the featured carousel switches entries. */
+@keyframes deck-fade {
+  from { opacity: 0; transform: scale(1.015); }
+  to   { opacity: 1; transform: none; }
+}
+.deck-fade {
+  animation: deck-fade 0.45s ease-out backwards;
+}
+
+/* New chat lines slide in at the bottom of the lobby panel. */
+@keyframes deck-line-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.deck-line-in {
+  animation: deck-line-in 0.25s ease-out backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deck-drift,
+  .deck-fade,
+  .deck-line-in {
+    animation: none !important;
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "targets": [
+    {
+      "id": "riot-molly",
+      "name": "RIOT MOLLY",
+      "platform": "twitch",
+      "followers": "1.2M",
+      "status": "live",
+      "bounty": "$2,500"
+    },
+    {
+      "id": "dochavoc",
+      "name": "DocHavoc",
+      "platform": "youtube",
+      "followers": "840K",
+      "status": "claimable",
+      "bounty": "$1,500"
+    },
+    {
+      "id": "gutterball",
+      "name": "gutterball",
+      "platform": "twitch",
+      "followers": "610K",
+      "status": "claimable",
+      "bounty": "$1,250"
+    },
+    {
+      "id": "candyfreak",
+      "name": "candyfreak",
+      "platform": "twitch",
+      "followers": "2.1M",
+      "status": "claimed",
+      "bounty": "$1,000"
+    },
+    {
+      "id": "byte-baron",
+      "name": "Byte Baron",
+      "platform": "x",
+      "followers": "480K",
+      "status": "sent",
+      "bounty": "$750"
+    },
+    {
+      "id": "maxcap",
+      "name": "MAXCAP",
+      "platform": "youtube",
+      "followers": "390K",
+      "status": "sent",
+      "bounty": "$750"
+    },
+    {
+      "id": "junebug",
+      "name": "junebug_irl",
+      "platform": "twitch",
+      "followers": "220K",
+      "status": "recorded",
+      "bounty": "$500"
+    },
+    {
+      "id": "wren-wav",
+      "name": "wren.wav",
+      "platform": "x",
+      "followers": "175K",
+      "status": "recorded",
+      "bounty": "$500"
+    }
+  ]
+}

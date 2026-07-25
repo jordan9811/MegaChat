@@ -1,0 +1,69 @@
+{
+  "entries": [
+    {
+      "id": "slugmoney",
+      "demo": true,
+      "roomId": null,
+      "name": "SlugMoney",
+      "handle": "slugmoney",
+      "title": "Boardwalk IRL — fan cams take the second seat",
+      "category": "IRL",
+      "tags": ["irl", "fan cams", "english"],
+      "viewers": 4216,
+      "blurb": "Legacy IRL streamer running his first MegaChat room. Grab the seat next to him mid-walk.",
+      "accent": "magenta"
+    },
+    {
+      "id": "ninaverse",
+      "demo": true,
+      "roomId": null,
+      "name": "ninaverse",
+      "handle": "ninaverse",
+      "title": "Reading your MegaChats live — worst take wins",
+      "category": "Just Chatting",
+      "tags": ["just chatting", "reacts"],
+      "viewers": 1873,
+      "blurb": "Variety react queen. Every MegaChat gets played full-screen, no skips.",
+      "accent": "cyan"
+    },
+    {
+      "id": "turbograg",
+      "demo": true,
+      "roomId": null,
+      "name": "TURBO GRAG",
+      "handle": "turbograg",
+      "title": "Chat picks the game, the camera picks the co-host",
+      "category": "Gaming",
+      "tags": ["variety", "co-op", "chaos"],
+      "viewers": 982,
+      "blurb": "Duo queue with whoever pays for the seat. Skill optional, mic required.",
+      "accent": "lime"
+    },
+    {
+      "id": "profpixel",
+      "demo": true,
+      "roomId": null,
+      "name": "prof.pixel",
+      "handle": "profpixel",
+      "title": "Live beat battles — winner keeps the cam",
+      "category": "Music",
+      "tags": ["music", "production", "battles"],
+      "viewers": 2431,
+      "blurb": "Producer showdowns judged by the room. Losers get politely faded out.",
+      "accent": "violet"
+    },
+    {
+      "id": "ghostmall",
+      "demo": true,
+      "roomId": null,
+      "name": "GhostMall",
+      "handle": "ghostmall",
+      "title": "Confession booth hours — after midnight only",
+      "category": "Late Night",
+      "tags": ["late night", "call-in"],
+      "viewers": 733,
+      "blurb": "The quiet-hours room. One seat, one story, per-second honesty.",
+      "accent": "amber"
+    }
+  ]
+}
