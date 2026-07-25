@@ -120,7 +120,18 @@ take Ship). Nothing in this branch changes that.
 
 ## Verification
 `node _gate-lazy-connect.mjs` — needs `tools/livekit-server.exe --dev` running.
-**20/0.** Proves: zero minutes accrue while idle (measured as a delta against
+**49/0.**
+
+### WHICH SFU THE GATE RUNS AGAINST — correcting an ambiguity
+The gate targets **`ws://localhost:7880`, the LOCAL dev SFU**
+(`tools/livekit-server.exe --dev`). Earlier I wrote "20/0 against the real
+SFU", meaning *a real SFU process rather than a mock* — that phrasing reads as
+LiveKit Cloud and it should not have. There was never a contradiction in the
+code: the gate has always pointed at localhost, which is also why webhooks
+could not be proven against it.
+
+**The core claim has therefore never been proven against LiveKit Cloud.**
+See the runbook below. Proves: zero minutes accrue while idle (measured as a delta against
 the real ledger, isolated DATA_DIR), prewarm connects before any seat exists
 under the stable identity, grace holds then releases, signal-drop recovery,
 page-close closes the record, both reveal orderings, no stinger replay, no flap,
@@ -196,3 +207,93 @@ commits sat on top of `feat/browse-deck`. It is kept only as a safety copy —
 **use `fix/livekit-lazy-connect`**, which is the same five commits replayed on
 `v0-ui-migration` so the cost fix can ship without deciding on the browse deck.
 Delete the stacked branch once you are happy.
+
+---
+
+# CLOUD VALIDATION — BLOCKED, and why (2026-07-25)
+
+The instruction for this run was "LiveKit Cloud quota is restored." **It is not,
+and I could not run the Cloud measurement.** Two independent blockers:
+
+### Blocker 1 — the quota is still partially exhausted
+`/rtc/validate` against the project, 12 fresh tokens, distinct rooms:
+
+```
+429,429,200,429,429,200,429,200,200,200,429,200
+→ 6 × 200 success, 6 × 429 "connection minutes limit exceeded"
+```
+
+**~50% of RTC connection attempts are still rejected.** Running the 10–15 minute
+idle measurement in this state would produce a meaningless result: "zero minutes
+accrued while idle" would pass for the wrong reason (half the connections never
+established), and the guest-join reconciliation would carry an unquantifiable
+confound. A green result here would be worse than no result, because it would
+retire the open question on bad evidence.
+
+### Blocker 2 — no programmatic access to Cloud's own usage numbers
+The requirement was explicitly *"measured by LiveKit Cloud's own reporting, not
+by our derived ledger."* The server API key/secret authenticates the RoomService
+management API (verified working — `listRooms` returns 200), but **not** any
+usage/analytics endpoint:
+
+```
+cloud-api.livekit.io/api/project/usage → 404
+cloud-api.livekit.io/api/usage         → 404
+cloud.livekit.io/api/usage             → 200 (the dashboard HTML login page, not data)
+```
+
+Cloud usage lives behind the dashboard UI, which is Jordan's login. **This blocks
+the Cloud measurement even if the quota fully clears** — someone with dashboard
+access has to read the number, or a Cloud API token (distinct from the server
+key) has to be issued.
+
+### LiveKit minutes consumed by this run: ~0
+No RTC connection was established against Cloud. `/rtc/validate` and
+`listRooms` are control-plane calls and do not consume connection minutes.
+Everything built this run was verified in-process or against the local dev SFU.
+
+## RUNBOOK — run this when the quota is actually clear
+Prerequisite: `/rtc/validate` returns 200 on ~10 consecutive fresh tokens.
+1. Record the "before" number from the LiveKit Cloud dashboard (Usage →
+   connection minutes, this month). **This step needs a human with dashboard
+   access** — nothing in the repo can read it.
+2. Idle window: point a room at Cloud (`LIVEKIT_URL=wss://…`), open the overlay
+   with `?room=<id>`, no guests, leave it 15 minutes. Watch `/api/livekit/burn`.
+3. Read the dashboard again. **Expected delta: 0 minutes.** Any non-zero delta
+   is a finding — it means something still connects while idle.
+4. Guest window: same room, one guest joins, stays ~5 min, leaves. Wait out the
+   grace, then read the dashboard again.
+5. Reconcile: `GET /api/livekit/burn` returns `reconciliation` with
+   `webhookMinutesToday`, `ledgerMinutesToday`, `deltaMinutes` and a
+   `direction`. Compare all three against the dashboard delta.
+   `direction: 'unreported_burn'` means Cloud saw minutes our overlay never
+   reported — that is the leak direction and is never a rounding error.
+
+## Webhook setup (needs the Cloud dashboard — Jordan)
+Receiver is built and gate-verified; the Cloud side is one dashboard step:
+- Project Settings → Webhooks → add `https://megachat.fun/api/livekit/webhook`
+- Events: `participant_joined`, `participant_left`
+- It signs with the existing project API secret; no new secret required.
+Until this is configured, webhook-derived usage reads zero and the breaker has
+nothing to meter, so **the breaker is inert until webhooks are on.** That is
+stated in the code and is the single most important follow-up.
+
+## Revised capacity — what changed, and what still can't be claimed
+The old modelled figure (161–294 successful sessions/month at 50–80%
+abandonment) assumed an abandoned prewarm burned the full 5-minute
+`prewarmTtlMs`. **The abandon cap makes that obsolete**: an abandoned hold now
+releases at ~90s, and the common bail paths (tab close, wallet rejection, join
+failure) release immediately via `sendBeacon` rather than waiting for any timer.
+
+Re-modelled on the same assumptions, with abandonment costing ~90s worst case
+and typically ~0 (beacon fires):
+
+| Abandonment | Old (5-min TTL) | With abandon cap (90s worst case) |
+|---|---|---|
+| 50% | 313 | ~400 |
+| 80% | 161 | ~294 |
+
+**These are still models, not measurements.** They use the same 11
+participant-minutes-per-5-minute-session estimate, which has never been checked
+against Cloud. The honest status: the abandon cap removes the dominant modelled
+waste, and the real number stays unknown until step 5 of the runbook runs.
