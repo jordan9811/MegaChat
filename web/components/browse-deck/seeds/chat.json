@@ -1,0 +1,37 @@
+{
+  "pinned": {
+    "id": "pin-1",
+    "user": "MegaBot",
+    "kind": "bot",
+    "badges": ["bot"],
+    "text": "Welcome to the lobby. Grab a seat in any live room — you pay per second and unused balance refunds automatically."
+  },
+  "pool": [
+    { "id": "m01", "user": "moth_mode", "kind": "chat", "badges": ["og"], "text": "who has the boardwalk stream up rn" },
+    { "id": "m02", "user": "el_jefe420", "kind": "chat", "badges": [], "text": "slug is live, seat two just opened" },
+    { "id": "m03", "user": "0xLILA", "kind": "chat", "badges": ["seat"], "text": "just did 90 seconds on cam for like 9 cents lmao" },
+    { "id": "m04", "user": "brickfone", "kind": "chat", "badges": [], "replyTo": "0xLILA", "text": "told you the math was silly" },
+    { "id": "m05", "user": "yung_dial", "kind": "join", "badges": [], "text": "0x9c…4f2a joined at $0.001/s" },
+    { "id": "m06", "user": "saturnia", "kind": "chat", "badges": ["drops"], "text": "SLIME ROOM IS COOKING 🔥" },
+    { "id": "m07", "user": "KWAB", "kind": "chat", "badges": [], "text": "how do i get the drops badge" },
+    { "id": "m08", "user": "peachpit", "kind": "chat", "badges": ["drops"], "replyTo": "KWAB", "text": "hold a seat while rewards are on, it just shows up" },
+    { "id": "m09", "user": "gr8_scott", "kind": "chat", "badges": [], "text": "mic check mic check" },
+    { "id": "m10", "user": "no_cam_nancy", "kind": "chat", "badges": ["og"], "text": "the refund thing is real btw — backed out early and my balance came right back" },
+    { "id": "m11", "user": "voidwaltz", "kind": "join", "badges": [], "text": "0x31…88de joined at $0.002/s" },
+    { "id": "m12", "user": "tapwater", "kind": "chat", "badges": [], "text": "confession booth room goes HARD after midnight" },
+    { "id": "m13", "user": "el_jefe420", "kind": "chat", "badges": [], "replyTo": "tapwater", "text": "ghostmall is undefeated" },
+    { "id": "m14", "user": "lampghost", "kind": "chat", "badges": ["seat"], "text": "beat battle finals starting in profpixel's room, get in" },
+    { "id": "m15", "user": "moth_mode", "kind": "chat", "badges": ["og"], "text": "grag just queued with a viewer who has never played the game 💀" },
+    { "id": "m16", "user": "hexadecimal_h", "kind": "join", "badges": [], "text": "0xa4…c917 joined at $0.001/s" },
+    { "id": "m17", "user": "saturnia", "kind": "chat", "badges": ["drops"], "text": "nina played my megachat full screen i can die happy" },
+    { "id": "m18", "user": "brickfone", "kind": "chat", "badges": [], "text": "does the meter pause if the streamer pins you" },
+    { "id": "m19", "user": "0xLILA", "kind": "chat", "badges": ["seat"], "replyTo": "brickfone", "text": "yeah pinned seats ride free, it says so on the join page" },
+    { "id": "m20", "user": "gr8_scott", "kind": "chat", "badges": [], "text": "ok the per-second thing makes way more sense than subs ngl" },
+    { "id": "m21", "user": "peachpit", "kind": "chat", "badges": ["drops"], "text": "who else farming watch rewards in the demo room" },
+    { "id": "m22", "user": "dot_matrix", "kind": "join", "badges": [], "text": "0x77…03bb joined at $0.001/s" },
+    { "id": "m23", "user": "tapwater", "kind": "chat", "badges": [], "text": "someone tell slug his chat overlay is one pixel off center. it is driving me insane" },
+    { "id": "m24", "user": "voidwaltz", "kind": "chat", "badges": [], "text": "new here — do i need a wallet or does the passkey thing handle it" },
+    { "id": "m25", "user": "no_cam_nancy", "kind": "chat", "badges": ["og"], "replyTo": "voidwaltz", "text": "passkey handles it, you tap once and you're in" },
+    { "id": "m26", "user": "KWAB", "kind": "chat", "badges": [], "text": "LOBBY W" }
+  ]
+}

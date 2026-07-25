@@ -2,6 +2,7 @@ import { SiteHeader } from '@/components/site-header'
 import { GlitchBackground } from '@/components/glitch-background'
 import { Hero } from '@/components/hero'
 import { BrowseDirectory } from '@/components/browse-directory'
+import { BrowseDeck } from '@/components/browse-deck/browse-deck'
 import { SiteFooter, contactUrl } from '@/components/site-footer'
 import type { PublicRoomCard } from '@/lib/api'
 
@@ -35,9 +36,14 @@ export default async function Page() {
         <Hero contactHref={contactHref} />
       </div>
 
-      {/* Public browse directory — active rooms, hottest first */}
+      {/* Browse deck (feat/browse-deck) — set BROWSE_DECK=0 in the env to
+          restore the classic directory exactly. This line is the whole swap. */}
       <main>
-        <BrowseDirectory initialRooms={initialRooms} />
+        {process.env.BROWSE_DECK === '0' ? (
+          <BrowseDirectory initialRooms={initialRooms} />
+        ) : (
+          <BrowseDeck initialRooms={initialRooms} />
+        )}
       </main>
 
       <SiteFooter contactHref={contactHref} />
