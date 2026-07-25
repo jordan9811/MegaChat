@@ -57,6 +57,11 @@ await page.evaluate(() => {
 });
 await sleep(500);
 
+// ── tablet dark (featured full width, panels behind toggles) ────────────────
+await page.setViewport({ width: 768, height: 1024 });
+await gotoBrowse();
+await shot('deck-tablet-dark');
+
 // ── mobile dark ─────────────────────────────────────────────────────────────
 await page.setViewport({ width: 375, height: 812 });
 await gotoBrowse();
