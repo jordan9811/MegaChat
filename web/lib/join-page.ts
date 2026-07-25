@@ -389,12 +389,17 @@ function setJoinState(state, labelOverride) {
 }
 
 // Lazy connect: the overlay sits disconnected while idle, so it needs the
-// EARLIEST credible signal that a guest is coming — this click, not payment
-// confirm. The handshake then runs in parallel with the payment flow (which
-// is far slower), so the overlay is connected and waiting before the guest's
-// tracks exist and the audience sees no difference. Fire-and-forget: a failed
-// prewarm must never block a join, and an abandoned attempt expires on its own
-// TTL server-side.
+// EARLIEST credible signal that a guest is coming — this is the FIRST "Join
+// Stream" click, before wallet-connect and before payment (there is no
+// separate join-sheet/modal step in this UI to hook instead). The handshake
+// then runs in parallel with the payment flow (which is far slower), so the
+// overlay is connected and waiting before the guest's tracks exist and the
+// audience sees no difference. Fire-and-forget: a failed prewarm must never
+// block a join, and an abandoned attempt expires on its own TTL server-side
+// — see the abandonment-cost note in HANDOFF-LAZY-CONNECT.md (pinned,
+// unresolved): today that TTL is prewarmTtlMs (5 min), not the 60s grace,
+// so a high wallet-flow drop-off rate is more expensive than the happy-path
+// math implies.
 let prewarmToken: string | null = null;
 function prewarmOverlay() {
   fetch('/api/livekit/prewarm', {

@@ -52,7 +52,7 @@ and that missing line is the whole bug.
 |---|---|---|
 | Master flag | `LAZY_CONNECT` | on (`0` disables) |
 | Grace window | `LAZY_GRACE_MS` | 60000 |
-| Prewarm trigger | `LAZY_PREWARM_TRIGGER` | `join-sheet-open` |
+| Prewarm trigger | `LAZY_PREWARM_TRIGGER` | `join-click` (descriptive only — see call site below) |
 | Prewarm TTL | `LAZY_PREWARM_TTL_MS` | 300000 |
 | Heartbeat | `LAZY_HEARTBEAT_MS` | 15000 |
 | Heartbeat staleness | `LAZY_HEARTBEAT_STALE_MS` | 45000 |
@@ -127,6 +127,56 @@ page-close closes the record, both reveal orderings, no stinger replay, no flap,
 and `LAZY_CONNECT=0` restoring old behavior.
 
 `node _gate-cohost-booth.mjs` re-run: 17/0, no regression.
+
+## Outstanding — pinned for recirculation when LiveKit testing resumes
+
+Not solved yet, deliberately. Recorded here so they surface again instead of
+getting lost between now and the tier reset.
+
+**1. Abandoned prewarms cost more than the happy-path math assumed — this
+   changes the capacity number materially.**
+   The 450-sessions/month estimate above assumes every prewarm converts to a
+   guest. It won't — this is wallet-based onboarding on testnet, and 50–80%
+   drop-off between "clicked Join" and "actually paid" is plausible. The real
+   problem: **an abandoned prewarm today rides the full `prewarmTtlMs` (5 min)**,
+   not the 60s post-session grace, because nothing calls `/prewarm/cancel`
+   unless `leaveStream()` runs — and a guest who bails mid-wallet-flow never
+   reaches that code path. Recomputing successful-session capacity (not raw
+   attempts, since that's the number that matters) across abandonment rates,
+   at the current 5-min abandon cost vs. a proposed dedicated ~90s abandon
+   timeout (separate from the 60s post-session grace):
+
+   | Abandonment | Sessions/mo — current (5 min abandon cost) | Sessions/mo — with a 90s abandon cap |
+   |---|---|---|
+   | 0% | 455 | 455 |
+   | 50% | 313 | 400 |
+   | 80% | 161 | 294 |
+
+   At realistic testnet drop-off, a short abandon-specific timeout roughly
+   **doubles** real testing throughput inside the free tier. Not implemented —
+   would need a client-side "give up" signal (visibility change / timeout on
+   the join page itself) plus a shorter server-side TTL, tuned separately from
+   `graceMs` since the two protect against different things (thrash between
+   real guests vs. burn from people who were never going to pay).
+
+**2. The derived session ledger is not authoritative — it self-reports.**
+   Every number in `/api/livekit/sessions` comes from the overlay telling the
+   server what it's doing (`beat(lkState)`). That is the same trust problem as
+   client-reported bounty verification: correct today by construction, but
+   nothing catches a client that silently stops reporting while still
+   connected, or a bug that reports 'live' without actually holding a
+   connection. **Reclassifying from "still stubbed" to next-up**: LiveKit
+   webhooks (`participant_joined` / `participant_left`) would make the ledger
+   authoritative instead of derived, closing exactly the gap this whole
+   feature exists to prevent. Needs LiveKit Cloud project webhook config: does
+   not work against the local dev SFU this gate uses, so it needs to be
+   proven against Cloud once testing resumes.
+
+**3. Ship $50/mo decision needs the actual reset date, which isn't visible
+   from here.** The logic holds either way: paying to resume *before* this
+   fix would have been re-funding the same leak; paying *after* is buying
+   back testing time against a burn profile that's now bounded by real usage.
+   Check the LiveKit Cloud dashboard for the reset date before deciding.
 
 ## Still stubbed / not done
 - LiveKit **webhooks** (`participant_joined/left`) would make the ledger

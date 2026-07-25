@@ -33,13 +33,16 @@ export const lazyConfig = {
   graceMs: num(process.env.LAZY_GRACE_MS, 60_000),
 
   /**
-   * Earliest credible signal of intent. 'join-sheet-open' buys the whole
-   * payment flow as connect-handshake headroom, so the overlay is connected
-   * and waiting long before the guest's tracks exist. 20 people opening the
-   * sheet and bailing costs ~10 min against 43,200 saved.
+   * Earliest credible signal of intent. Descriptive only — nothing reads this
+   * value; it documents the actual call site (join-page.ts, onJoinButtonClick
+   * idle branch: fires before wallet-connect, before payment, on the FIRST
+   * "Join Stream" click). There is no separate "join sheet" step in this UI —
+   * the join form is already inline on the page — so 'join-click' is the
+   * accurate name, not 'join-sheet-open' (a holdover from the spec's phrasing
+   * that this codebase never had).
    * Alternatives: 'payment-confirm' (tighter, riskier), 'camera-live' (too late).
    */
-  prewarmTrigger: process.env.LAZY_PREWARM_TRIGGER || 'join-sheet-open',
+  prewarmTrigger: process.env.LAZY_PREWARM_TRIGGER || 'join-click',
 
   /** A prewarm that never converts to a seat expires after this. */
   prewarmTtlMs: num(process.env.LAZY_PREWARM_TTL_MS, 5 * 60_000),
