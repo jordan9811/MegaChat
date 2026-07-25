@@ -67,6 +67,152 @@ const launch = (port, extra = {}) =>
     stdio: 'ignore', cwd: process.cwd(),
   });
 
+// ── H. ABANDON CAP — release at the cap, never at prewarmTtlMs ─────────────
+// Pure in-process: the thing under test is our timer logic, not Cloud
+// behaviour, so this costs zero LiveKit minutes.
+{
+  process.env.LAZY_ABANDON_MS = '1000';
+  process.env.LAZY_PREWARM_TTL_MS = '300000'; // 5 min — must NOT be what fires
+  const { createActivityManager } = await import('./livekit-activity.js?abandon=1');
+  const mgr = createActivityManager({
+    log: { log() {}, warn() {} }, broadcastToRoom: () => {}, hasOverlay: () => true,
+  });
+
+  // Abandonment at each stage of the flow.
+  for (const stage of ['sheet-open', 'wallet-connect', 'wallet-approve', 'tx-pending']) {
+    const roomId = `ab-${stage}`;
+    const tok = mgr.prewarm(roomId);
+    if (stage !== 'sheet-open') mgr.prewarmProgress(roomId, tok, stage);
+    ok(`H. abandon at "${stage}": holding before the cap`, mgr.desired(roomId) === 'wake');
+    await sleep(1400);
+    ok(`H. abandon at "${stage}": RELEASED at the cap (not the 5-min TTL)`,
+      mgr.desired(roomId) === 'sleep');
+  }
+
+  // A slow but real join must NOT be clipped.
+  const slowRoom = 'ab-slow';
+  const slowTok = mgr.prewarm(slowRoom);
+  let stillWake = true;
+  for (let i = 0; i < 5; i++) {
+    await sleep(500);
+    mgr.prewarmProgress(slowRoom, slowTok, 'wallet-approve');
+    if (mgr.desired(slowRoom) !== 'wake') stillWake = false;
+  }
+  ok('H. a SLOW legit join reporting progress is never clipped (2.5s > 1s cap)', stillWake);
+  await sleep(1400);
+  ok('H. …and releases once it finally goes silent', mgr.desired(slowRoom) === 'sleep');
+
+  ok('H. an unknown progress stage does not reset the clock',
+    mgr.prewarmProgress('ab-slow', slowTok, 'not-a-real-stage') === false);
+  delete process.env.LAZY_ABANDON_MS;
+  delete process.env.LAZY_PREWARM_TTL_MS;
+}
+
+// ── I. WEBHOOKS — signed, idempotent, authoritative ────────────────────────
+{
+  const { createHmac, createHash } = await import('crypto');
+  const { verifyWebhookJwt, createWebhookTracker, reconcile } = await import('./livekit-webhooks.js');
+  const KEY = 'APIgate', SECRET = 'gatesecret';
+  const sign = (body) => {
+    const h = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+    const now = Math.floor(Date.now() / 1000);
+    const p = Buffer.from(JSON.stringify({
+      iss: KEY, iat: now, exp: now + 300,
+      sha256: createHash('sha256').update(body).digest('base64'),
+    })).toString('base64url');
+    return `${h}.${p}.${createHmac('sha256', SECRET).update(`${h}.${p}`).digest('base64url')}`;
+  };
+  const mkEvent = (event, identity, room, tsSec) => JSON.stringify({
+    id: `${event}:${identity}:${tsSec}`, event,
+    room: { name: room }, participant: { identity, sid: `sid-${identity}` }, createdAt: tsSec,
+  });
+
+  const body = mkEvent('participant_joined', 'overlay:r1', 'r1', 1700000000);
+  let accepted = false;
+  try { verifyWebhookJwt(`Bearer ${sign(body)}`, body, { apiKey: KEY, apiSecret: SECRET }); accepted = true; } catch { /* */ }
+  ok('I. a correctly signed delivery is accepted', accepted);
+
+  const rejects = [];
+  try { verifyWebhookJwt(null, body, { apiKey: KEY, apiSecret: SECRET }); } catch (e) { rejects.push('unsigned'); }
+  try {
+    const other = mkEvent('participant_joined', 'ATTACKER', 'r1', 1700000000);
+    verifyWebhookJwt(`Bearer ${sign(body)}`, other, { apiKey: KEY, apiSecret: SECRET });
+  } catch (e) { rejects.push('tampered'); }
+  try {
+    const badSig = sign(body).replace(/.$/, 'X');
+    verifyWebhookJwt(`Bearer ${badSig}`, body, { apiKey: KEY, apiSecret: SECRET });
+  } catch (e) { rejects.push('badsig'); }
+  ok('I. unsigned / tampered-body / bad-signature all REJECTED',
+    rejects.length === 3, rejects.join(','));
+
+  const tracker = createWebhookTracker({ log: { log() {}, warn() {}, error() {} } });
+  const joinEv = JSON.parse(mkEvent('participant_joined', 'overlay:r1', 'r1', 1700000000));
+  tracker.handle(joinEv);
+  const dup = tracker.handle(joinEv);
+  ok('I. duplicate delivery is deduped by event id', dup.deduped === true);
+  tracker.handle(JSON.parse(mkEvent('participant_left', 'overlay:r1', 'r1', 1700000600)));
+  ok('I. join+left produce one authoritative 10-min session',
+    tracker.sessions.length === 1 && Math.round(tracker.sessions[0].durationMs / 60000) === 10);
+  ok('I. identity is classified into our participant kinds',
+    tracker.sessions[0].kind === 'overlay');
+
+  const t2 = createWebhookTracker({ log: { log() {}, warn() {}, error() {} } });
+  t2.handle(JSON.parse(mkEvent('participant_left', 'seat:x', 'r2', 1700000600)));
+  t2.handle(JSON.parse(mkEvent('participant_joined', 'seat:x', 'r2', 1700000000)));
+  ok('I. OUT-OF-ORDER (left before joined) reconciles to the right duration',
+    t2.sessions.length === 1 && Math.round(t2.sessions[0].durationMs / 60000) === 10);
+
+  const rec = reconcile({
+    webhookStats: { minutesToday: 42 }, ledgerStats: { minutesToday: 12 },
+  });
+  ok('I. reconciliation flags divergence and names the LEAK direction',
+    rec.diverged && rec.deltaMinutes === 30 && rec.direction === 'unreported_burn',
+    `${rec.deltaMinutes}min ${rec.direction}`);
+}
+
+// ── J. BURN BREAKER — warn, block, override, long-session alarm ─────────────
+{
+  const { createBreaker } = await import('./livekit-breaker.js');
+  const logs = [];
+  const log = { log: (m) => logs.push(m), warn: (m) => logs.push(m), error: (m) => logs.push(m) };
+  let usage = { minutesToday: 0, minutesThisMonth: 0, openSessions: [] };
+  const cfg = {
+    enabled: true, dailyBudgetMin: 100, monthlyBudgetMin: 1000,
+    warnAt: 0.75, blockAt: 0.95, longSessionMin: 60, overrideTtlMs: 60_000,
+  };
+  const b = createBreaker({ log, getUsage: () => usage, config: cfg });
+
+  ok('J. under budget: connections allowed', b.checkAllowed().allowed === true);
+  usage.minutesToday = 80; b.evaluate();
+  ok('J. at 80% budget: WARNS but still allows', b.state() === 'warn' && b.checkAllowed().allowed);
+  usage.minutesToday = 96; b.evaluate();
+  const blocked = b.checkAllowed();
+  ok('J. at 96% budget: BLOCKS new connections', blocked.allowed === false && b.state() === 'blocked');
+  ok('J. block reason is operator-facing, not a code',
+    /budget reached/i.test(blocked.reason) && /Live sessions are unaffected/i.test(blocked.reason));
+
+  let refused = false;
+  try { b.setOverride({ by: '', reason: '' }); } catch { refused = true; }
+  ok('J. an override without operator + reason is refused', refused);
+  b.setOverride({ by: 'gate', reason: 'verification run' });
+  ok('J. override permits connections again', b.checkAllowed().allowed === true);
+  ok('J. override is logged with who and why',
+    logs.some((l) => /OVERRIDE ENGAGED by "gate"/.test(l) && /verification run/.test(l)));
+  b.clearOverride('gate');
+  ok('J. clearing the override restores the block', b.checkAllowed().allowed === false);
+
+  usage.openSessions = [{
+    room: 'mc-513c020a', identity: 'viewer:abc', kind: 'viewer',
+    startedAt: Date.now() - 1800 * 60_000, minutes: 1800,
+  }];
+  const ev = b.evaluate();
+  ok('J. LONG-SESSION alarm fires on a 30-hour session (the original leak)',
+    ev.alarms.length === 1 && ev.alarms[0].type === 'LONG_SESSION' && ev.alarms[0].minutes === 1800);
+  ok('J. alarm names room, identity and start time',
+    ev.alarms[0].room === 'mc-513c020a' && ev.alarms[0].identity === 'viewer:abc' && !!ev.alarms[0].startedAt);
+  ok('J. the same session does not re-alarm every tick', b.evaluate().alarms.length === 0);
+}
+
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', protocolTimeout: 60000 });
 
 // ── D + E: reveal gating (pure client logic, no server needed) ──────────────
