@@ -27,6 +27,8 @@ import {
   updateRoom,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
+import { createActivityManager } from './livekit-activity.js';
+import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
 import { verifyRoomAccess } from './auth.js';
 import {
   toAtomic,
@@ -438,6 +440,9 @@ app.get('/api/config', (req, res) => {
     roomId,
     roomName: cfg.name,
     roomActive: cfg.active,
+    // Lazy connect: tells the overlay whether to hold a LiveKit connection
+    // while idle (it should not) and how to run its signal channel.
+    lazyConnect: lazyClientConfig(cfg.lazyConnectScope),
     chainId: CHAIN_ID,
     chainIdHex: '0x' + CHAIN_ID.toString(16),
     chainName: 'Tempo',
@@ -573,6 +578,13 @@ function broadcastToRoom(streamRoomId, message) {
   });
 }
 
+/**
+ * Lazy connect — owns "should the overlay be holding a LiveKit connection".
+ * See LIVEKIT-AUDIT.md: the overlay used to connect on page load and never
+ * hang up, which is what drained the free tier with no guests on camera.
+ */
+const lkActivity = createActivityManager({ broadcastToRoom, hasOverlay });
+
 function broadcastMeterUpdate(seat, payload) {
   const msg = { type: 'meter_update', ...payload };
   if (seat.ownerWs && seat.ownerWs.readyState === 1) {
@@ -682,6 +694,11 @@ function addParticipant(username, meta = {}) {
 
   activeSeats.set(seatId, seat);
 
+  // Lazy connect: a granted seat is a hard commitment — make sure the overlay
+  // is (or is becoming) connected. Usually a no-op because the join sheet
+  // already prewarmed us well before payment cleared.
+  lkActivity.seatOccupied(seat.streamRoomId, seatId);
+
   // NOTE: we do NOT broadcast seat_added here. The overlay tile must only appear
   // after the camera is actually live (camera_ready), not on payment/join.
 
@@ -758,6 +775,9 @@ function removeParticipant(seatId, reason = 'left') {
 
   activeSeats.delete(seatId);
   if (seat._graceTimer) { clearTimeout(seat._graceTimer); seat._graceTimer = null; }
+  // Lazy connect: last seat out starts the grace timer (not an instant hangup —
+  // back-to-back joiners must never see a connect/disconnect flap).
+  lkActivity.seatVacated(seat.streamRoomId, seatId);
   // LiveKit rooms: the SFU drops the participant NOW (kick/leave enforcement
   // server-side, not just client goodwill). vdo rooms: no-op.
   {
@@ -975,6 +995,13 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     console.log('Client disconnected');
+    // Overlay browser source went away (OBS closed, scene removed, reload).
+    // Close its ledger record so "connected minutes" never over-counts, and
+    // only when no OTHER overlay is still rendering this room.
+    if (ws.__role === 'overlay') {
+      const rid = ws.__streamRoomId || DEFAULT_ROOM_ID;
+      setImmediate(() => { if (!hasOverlay(rid)) lkActivity.overlayGone(rid); });
+    }
     const seatId = ws.__seatId;
     if (!seatId) return;
     const seat = activeSeats.get(seatId);
@@ -1054,6 +1081,48 @@ const livekit = createLivekitService();
 if (livekit) console.log('[livekit] transport available at', livekit.url, '— now the default');
 
 // Token minting — publisher tokens require the seat the join flow granted.
+// ─── Lazy connect: activity signal surface ──────────────────────────────────
+// The overlay does not hold a LiveKit connection while idle; it obeys these.
+
+/** Join sheet opened — earliest credible intent. Wakes the overlay so the
+ *  handshake completes INSIDE the payment flow (which is slower), making
+ *  lazy connect invisible to the audience. */
+app.post('/api/livekit/prewarm', (req, res) => {
+  const resolved = resolveRoomFromRequest(req.body, req.query);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  const token = lkActivity.prewarm(resolved.roomId);
+  res.json({ ok: true, prewarm: token, health: lkActivity.overlayHealth(resolved.roomId) });
+});
+
+/** Guest closed the sheet without buying — release the hold (grace still applies). */
+app.post('/api/livekit/prewarm/cancel', (req, res) => {
+  const resolved = resolveRoomFromRequest(req.body, req.query);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  lkActivity.cancelPrewarm(resolved.roomId, req.body?.prewarm);
+  res.json({ ok: true });
+});
+
+/** Overlay heartbeat + polling fallback in one call: proves the browser source
+ *  is alive AND returns the state it should be in if its WS signal died. */
+app.post('/api/livekit/overlay/beat', (req, res) => {
+  const resolved = resolveRoomFromRequest(req.body, req.query);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  lkActivity.beat(resolved.roomId, req.body?.lkState, req.body?.identity);
+  res.json({ ok: true, desired: lkActivity.desired(resolved.roomId) });
+});
+
+/** Overlay health for the booth dashboard + the paid-join guard. */
+app.get('/api/livekit/overlay/health', (req, res) => {
+  const resolved = resolveRoomFromRequest(req.query, req.query);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  res.json(lkActivity.overlayHealth(resolved.roomId));
+});
+
+/** Session ledger — how the next leak gets caught on day one. */
+app.get('/api/livekit/sessions', (req, res) => {
+  res.json({ ...lkActivity.ledgerStats(), lazyConnect: lazyConfig.enabled });
+});
+
 app.post('/api/livekit/token', async (req, res) => {
   try {
     const { role, seatId } = req.body || {};
