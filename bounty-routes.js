@@ -35,12 +35,52 @@ export class StubIdentityVerifier extends IdentityVerifier {
   }
 }
 
+/**
+ * Playback hooks handed to letters.js. These are the ONLY thing that opens a
+ * watermark window: a code cannot exist unless the server itself started a
+ * clip. Exported separately so they can be wired even in tests.
+ */
+export function makeClipHooks({ log = console } = {}) {
+  const findOpenSession = (roomId) =>
+    store.listAirSessions().find((s) => s.status === 'OPEN' && s.roomId === roomId) || null;
+
+  return {
+    onClipPlay(roomId, { clipId, durationS }) {
+      if (!bountyConfig.enabled) return;
+      const s = findOpenSession(roomId);
+      if (!s) return; // room isn't running a bounty air session — nothing to do
+      const r = watermark.startClipPlayback(s.id, { clipId, durationS });
+      if (r && !r.code) {
+        log.warn(`[bounty] clip ${clipId} is ${durationS}s — below the ${bountyConfig.minClipSeconds}s sampling floor, it will not be payable`);
+      }
+    },
+    onClipEnd(roomId, { clipId }) {
+      if (!bountyConfig.enabled) return;
+      const s = findOpenSession(roomId);
+      if (!s) return;
+      watermark.endClipPlayback(s.id, { clipId });
+    },
+  };
+}
+
 export function attachBountyRoutes(app, { log = console, identityVerifier } = {}) {
   if (!bountyConfig.enabled) {
     log.log('[bounty] BOUNTY_CLAIM off — no routes mounted, no surfaces rendered');
     return { mounted: false };
   }
   const identity = identityVerifier || new StubIdentityVerifier();
+
+  // Validate the escrow ledger chain BEFORE serving anything. Pools are
+  // derived by folding this ledger, so starting on a corrupt one would serve
+  // confidently-wrong balances. A torn final record self-heals (logged); an
+  // interior gap or bad checksum throws and takes the boot with it.
+  try {
+    const { recovered } = store.verifyLedgerIntegrity();
+    if (recovered) log.warn(`[bounty] ledger recovered ${recovered} torn record(s) at startup`);
+  } catch (e) {
+    log.error(`[bounty] REFUSING TO START: ${e.message}`);
+    throw e;
+  }
 
   log.warn('[bounty] BOUNTY_CLAIM ON — escrow is a LEDGER ONLY. Settlement is stubbed; no funds move.');
 
@@ -129,11 +169,21 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     const ledger = store.listLedger({ claimId: claim.id });
     const releases = ledger.filter((r) => r.type === 'RELEASE');
     const latest = releases[releases.length - 1];
+    // Surface review state to the STREAMER. An ambiguous result that shows
+    // nothing reads as a silent denial; "a person is looking at this" is the
+    // difference between a support ticket and a trust incident.
+    const reviews = sessions.flatMap((s) => store.listReviews({ airSessionId: s.id }));
+    const openReview = reviews.find((r) => r.state === 'OPEN') || null;
     res.json({
       claim,
       pool: store.getPool(claim.handleKey),
       airSessions: sessions,
+      verifiedClips: sessions.reduce((a, s) => a + (s.verifiedClips || 0), 0),
+      verifiedClipSeconds: sessions.reduce((a, s) => a + (s.verifiedClipSeconds || 0), 0),
       verifiedMinutes: sessions.reduce((a, s) => a + (s.verifiedMinutes || 0), 0),
+      underReview: !!openReview,
+      reviewOpenedAt: openReview?.openedAt || null,
+      reviews: reviews.map((r) => ({ id: r.id, state: r.state, openedAt: r.openedAt, resolvedAt: r.resolvedAt })),
       disputeWindowEndsAt: latest?.meta?.disputeWindowEndsAt || null,
       ledger,
     });
@@ -203,14 +253,35 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
 
       const v = await verifier.verifyAirSession(s.id);
 
+      // AMBIGUOUS evidence goes to a human instead of silently paying zero.
+      // On mainnet, a streamer who did the work and got neither money nor a
+      // person looking at their case is a support incident and a trust
+      // incident at once.
+      let review = null;
+      if (v.result === 'AMBIGUOUS' && !store.hasOpenReview(s.id)) {
+        review = store.createReview({
+          airSessionId: s.id, claimId: claim.id, handleKey: key,
+          verificationId: v.attempt.id, confidence: v.confidence,
+          reason: `ambiguous: ${v.verifiedClips} clip(s) matched at confidence ${v.confidence}`,
+        });
+        store.appendLedger({
+          handleKey: key, claimId: claim.id, airSessionId: s.id,
+          type: 'REVIEW_OPENED', actor: 'verifier',
+          reason: 'ambiguous verification routed to human review',
+          meta: { reviewId: review.id, confidence: v.confidence },
+        });
+      }
+
       // Idempotency keyed on the session — re-verifying the same session can
-      // never pay twice, however many times this route is hit.
+      // never pay twice, however many times this route is hit. Blocks while a
+      // review is open.
       const out = escrow.release({
         handleKey: key, claimId: claim.id, airSessionId: s.id,
-        verifiedMinutes: v.verifiedMinutes, confidence: v.confidence,
+        verifiedClips: v.verifiedClips, verifiedClipSeconds: v.verifiedClipSeconds,
+        confidence: v.confidence,
         actor: 'verifier', idempotencyKey: `release:${s.id}`, settlement,
       });
-      res.json({ ok: true, verification: v, release: out, pool: store.getPool(key) });
+      res.json({ ok: true, verification: v, release: out, review, pool: store.getPool(key) });
     } catch (e) { fail(res, e); }
   });
 
@@ -244,6 +315,70 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       }
       const r = escrow.adminOverride({ handleKey: key, to, actor: actor || 'admin', reason });
       res.json({ ok: true, ...r, pool: store.getPool(key) });
+    } catch (e) { fail(res, e); }
+  });
+
+  // ── Review queue (ambiguous verifications) ───────────────────────────────
+  app.get('/api/bounty/admin/reviews', (_req, res) => {
+    const now = Date.now();
+    const reviews = store.listReviews().map((r) => ({
+      ...r,
+      ageMs: now - r.openedAt,
+      // Past SLA and still open — surfaced loudly so it cannot rot silently.
+      breachedSla: r.state === 'OPEN' && (now - r.openedAt) > bountyConfig.reviewSlaMs,
+    }));
+    res.json({
+      reviews,
+      slaMs: bountyConfig.reviewSlaMs,
+      openCount: reviews.filter((r) => r.state === 'OPEN').length,
+      breachedCount: reviews.filter((r) => r.breachedSla).length,
+    });
+  });
+
+  app.post('/api/bounty/admin/reviews/:id/assign', (req, res) => {
+    try {
+      const r = store.updateReview(req.params.id, { assignee: req.body?.assignee || null });
+      res.json({ ok: true, review: r });
+    } catch (e) { fail(res, e); }
+  });
+
+  /** Resolve a review. A reason is REQUIRED and is written to the ledger. */
+  app.post('/api/bounty/admin/reviews/:id/resolve', async (req, res) => {
+    try {
+      const { approve, reason, actor } = req.body || {};
+      if (!reason || !String(reason).trim()) {
+        return res.status(400).json({ error: 'A reason is required and is written to the ledger' });
+      }
+      const review = store.getReview(req.params.id);
+      if (!review) return res.status(404).json({ error: 'No such review' });
+      if (review.state !== 'OPEN') return res.status(409).json({ error: 'Review already resolved' });
+
+      store.updateReview(review.id, {
+        state: approve ? 'RESOLVED_APPROVE' : 'RESOLVED_REJECT',
+        resolvedAt: Date.now(),
+        resolvedBy: actor || 'admin',
+        resolutionReason: String(reason).trim(),
+      });
+      store.appendLedger({
+        handleKey: review.handleKey, claimId: review.claimId, airSessionId: review.airSessionId,
+        type: 'REVIEW_RESOLVED', actor: actor || 'admin',
+        reason: `${approve ? 'APPROVED' : 'REJECTED'}: ${String(reason).trim()}`,
+        meta: { reviewId: review.id, approve: !!approve },
+      });
+
+      // Approving releases on the reviewer's judgement rather than the
+      // confidence floor that could not decide.
+      let out = null;
+      if (approve) {
+        const s = store.getAirSession(review.airSessionId);
+        out = escrow.release({
+          handleKey: review.handleKey, claimId: review.claimId, airSessionId: review.airSessionId,
+          verifiedClips: s?.verifiedClips || 0, verifiedClipSeconds: s?.verifiedClipSeconds || 0,
+          confidence: 1, // human-adjudicated
+          actor: actor || 'admin', idempotencyKey: `release:${review.airSessionId}`, settlement,
+        });
+      }
+      res.json({ ok: true, review: store.getReview(review.id), release: out });
     } catch (e) { fail(res, e); }
   });
 

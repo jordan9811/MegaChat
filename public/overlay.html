@@ -845,21 +845,20 @@
       let rotateMs = 60000;
 
       /**
-       * Legibility check.
+       * EARLY WARNING ONLY — this is not enforcement, and must not be
+       * described as detecting a shrunken badge.
        *
-       * HONEST LIMITATION: this measures the badge against the BROWSER SOURCE
-       * canvas. OBS renders the page at its configured resolution and then
-       * scales that texture into the scene, and a page cannot observe its own
-       * scene transform. So this catches a streamer who sets a tiny browser-
-       * source resolution, but NOT one who scales the source down in the
-       * scene composition.
+       * It measures the badge against the BROWSER SOURCE canvas. OBS renders
+       * the page at its configured resolution and then scales that texture
+       * into the scene; a page cannot observe its own scene transform. So
+       * this catches a tiny browser-source resolution and nothing else — a
+       * source scaled down in the scene looks completely normal from here.
        *
-       * That gap is fine, and this is the important part: the real
-       * enforcement is the VERIFIER. A badge scaled to a smear in the final
-       * broadcast is a badge the code checker cannot read, so verification
-       * fails and nothing pays out. This client check is an early-warning
-       * affordance so an honest streamer sees the problem in OBS instead of
-       * discovering it in an unpaid bounty — it is not the security boundary.
+       * Enforcement lives in the verifier, which measures the code's rendered
+       * height in the ACTUAL captured broadcast frame and fails any sample
+       * below the floor even when the code was found. That is where the money
+       * is decided. This check exists so an honest streamer catches a
+       * misconfiguration in OBS instead of discovering it in an unpaid bounty.
        */
       function checkSize() {
         const r = badge.getBoundingClientRect();
@@ -891,7 +890,10 @@
           if (data.rotateMs) rotateMs = data.rotateMs;
 
           if (!data.code) {
-            // Server withheld a code (session closed, or badge in violation).
+            // No code exists right now. Either the badge is flagged, or —
+            // the normal case — NO CLIP IS PLAYING. Codes only exist during
+            // clip playback, so a parked overlay legitimately shows nothing
+            // and earns nothing.
             codeEl.textContent = data.badgeTooSmall ? 'BADGE TOO SMALL — NOT EARNING' : '';
             badge.classList.toggle('too-small', !!data.badgeTooSmall);
             badge.classList.toggle('show', !!data.badgeTooSmall);

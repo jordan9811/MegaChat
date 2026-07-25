@@ -197,14 +197,20 @@ export function refundExpired({ handleKey, actor = 'system', settlement }) {
  * money never blend.
  */
 export function release({
-  handleKey, claimId, airSessionId, verifiedMinutes, confidence,
-  actor = 'verifier', idempotencyKey, settlement,
+  handleKey, claimId, airSessionId, verifiedClips = 0, verifiedClipSeconds = 0,
+  confidence, actor = 'verifier', idempotencyKey, settlement,
 }) {
   assertEnabled();
   if (!idempotencyKey) throw new Error('release requires an idempotencyKey');
 
   const existing = store.findByIdempotencyKey(idempotencyKey);
   if (existing) return { rows: [existing], deduped: true, released: 0, match: 0 };
+
+  // A session awaiting human review does not pay until a reviewer resolves it.
+  // Ambiguous evidence must never silently become a payout OR a silent denial.
+  if (airSessionId && store.hasOpenReview(airSessionId)) {
+    return { rows: [], deduped: false, released: 0, match: 0, skipped: 'pending_review' };
+  }
 
   if (confidence < bountyConfig.minConfidence) {
     return { rows: [], deduped: false, released: 0, match: 0, skipped: 'low_confidence' };
@@ -213,7 +219,12 @@ export function release({
   const pool = store.getPool(handleKey);
   const rec = store.getReservedHandleByKey(handleKey);
 
-  const rawShare = pool.totalContributed * bountyConfig.releaseRatePerMinute * verifiedMinutes;
+  // Payout unit is VERIFIED CLIP PLAYBACKS (+ a small duration component),
+  // not on-air minutes — airtime alone never proved a fan's clip aired.
+  const rawShare = pool.totalContributed * (
+    bountyConfig.releaseRatePerClip * verifiedClips
+    + bountyConfig.releaseRatePerClipSecond * verifiedClipSeconds
+  );
   const sessionCap = pool.totalContributed * bountyConfig.perSessionCapFraction;
   const capped = Math.min(rawShare, sessionCap, pool.remaining);
   const amount = +Math.max(0, capped).toFixed(6);
@@ -225,9 +236,9 @@ export function release({
   const { row: contribRow } = store.appendLedger({
     handleKey, claimId, airSessionId,
     type: 'RELEASE', amount, bucket: 'contributor', actor,
-    reason: `verified ${verifiedMinutes} on-air min (confidence ${confidence})`,
+    reason: `verified ${verifiedClips} clip playback(s), ${verifiedClipSeconds}s (confidence ${confidence})`,
     idempotencyKey,
-    meta: { verifiedMinutes, confidence, disputeWindowEndsAt: finalAt, final: false },
+    meta: { verifiedClips, verifiedClipSeconds, confidence, disputeWindowEndsAt: finalAt, final: false },
   });
   // Separate row, separate bucket — never blended into the contributor pool.
   const { row: matchRow } = store.appendLedger({
@@ -235,7 +246,7 @@ export function release({
     type: 'RELEASE', amount: matchAmount, bucket: 'platform_match', actor,
     reason: `platform match @ ${bountyConfig.platformMatchFraction}`,
     idempotencyKey: `${idempotencyKey}:match`,
-    meta: { verifiedMinutes, confidence, disputeWindowEndsAt: finalAt, final: false },
+    meta: { verifiedClips, verifiedClipSeconds, confidence, disputeWindowEndsAt: finalAt, final: false },
   });
 
   // TODO(run-b): real on-chain settlement goes here. The stub only records

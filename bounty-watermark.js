@@ -1,25 +1,32 @@
 /**
- * CREATOR BOUNTY — watermark issuance.
+ * CREATOR BOUNTY — playback-bound watermark issuance.
  *
- * Proof-of-broadcast without hosting video: the server issues a short code
- * per air session on a rotating interval, the overlay renders it, and the
- * verifier later checks public stream frames at those exact timestamps.
+ * ── The model (revised) ───────────────────────────────────────────────────
+ * Codes exist ONLY while a clip is playing, and every code is bound to the
+ * specific clip that was on screen when it was issued. A frame containing
+ * code X therefore proves clip Y aired at that timestamp, because X only ever
+ * existed inside Y's playback window.
  *
- * Two properties the whole scheme rests on:
+ * This collapses two artifacts into one. The rejected alternative — counting
+ * airtime and separately trusting a "a clip played" event — would have put
+ * the money on the unverifiable half of a pair that can disagree. Same trust
+ * shape as a client-reported session ledger, which this codebase has already
+ * paid to learn about.
  *
- *  1. NO CROSS-SESSION COLLISION. Every code carries a per-session namespace
- *     prefix, and the random body is additionally checked against every code
- *     currently live anywhere. If two concurrent sessions could emit the same
- *     code, streamer A's frame would verify streamer B's airtime.
- *  2. CODES ARE NOT GUESSABLE AHEAD OF TIME. They're random per rotation, so
- *     a streamer cannot pre-render a fake badge for a future window.
- *
- * The alphabet deliberately drops visually ambiguous glyphs — these get read
- * back off a downscaled, re-compressed stream frame, where O/0 and I/1/L are
- * exactly where a checker loses accuracy.
+ * Consequences that fall out of it, all deliberate:
+ *  - A parked overlay with nothing playing issues NO codes, so it renders
+ *    nothing verifiable and accrues nothing.
+ *  - Rotation is per-clip and fast (~4s), because MegaChat tiles live ~10s.
+ *    The old 60s wall-clock rotation would have left most clips carrying no
+ *    code at all and failed honest streamers.
+ *  - Validity is CLAMPED to the clip's own end, so windows for different
+ *    clips can never overlap and one sampled frame can never satisfy two.
+ *  - A clip too short to host a samplable code is recorded as
+ *    BELOW_SAMPLING_FLOOR and pays nothing, rather than being paid for on
+ *    evidence we cannot actually check.
  */
 
-import { randomInt } from 'crypto';
+import { randomInt, createHash } from 'crypto';
 import { bountyConfig } from './bounty-claim.config.js';
 import * as store from './bounty-store.js';
 
@@ -33,15 +40,14 @@ function randomBody(len) {
 }
 
 /**
- * Per-session namespace. Derived from the session id so it is stable for the
- * session's lifetime and distinct between concurrent sessions — the prefix
- * alone makes cross-session collision impossible even before the global
- * uniqueness check.
+ * Clip-scoped namespace, derived server-side from (airSessionId, clipId).
+ * Deterministic so it can be re-derived during verification, and distinct
+ * per clip so the prefix alone already separates two clips' codes.
  */
-export function namespaceFor(airSessionId) {
-  const hex = String(airSessionId).replace(/[^a-f0-9]/gi, '').toUpperCase();
+export function namespaceFor(airSessionId, clipId) {
+  const h = createHash('sha256').update(`${airSessionId}:${clipId}`).digest('hex').toUpperCase();
   let ns = '';
-  for (const ch of hex) {
+  for (const ch of h) {
     if (ALPHABET.includes(ch)) ns += ch;
     if (ns.length === 2) break;
   }
@@ -49,25 +55,84 @@ export function namespaceFor(airSessionId) {
   return ns;
 }
 
+/** The clip window currently open on this session, or null. */
+export function activeWindow(airSessionId, { now = Date.now() } = {}) {
+  const s = store.getAirSession(airSessionId);
+  if (!s) return null;
+  const w = (s.playbackWindows || []).find((x) => x.startedAt <= now && now < x.endsAt);
+  return w || null;
+}
+
 /**
- * Issue the next code for an air session. Returns the code record, or null if
- * the session is closed or currently in violation (a too-small badge stops
- * issuance — see below).
+ * A clip started playing. Opens its playback window and issues the first
+ * code immediately (issue on clip-start, never on a wall-clock tick).
+ *
+ * Returns { window, code } — or { window, code: null } when the clip is below
+ * the sampling floor, which is recorded rather than silently paid.
  */
-export function issueCode(airSessionId, { now = Date.now() } = {}) {
-  const session = store.getAirSession(airSessionId);
-  if (!session) throw new Error(`No air session ${airSessionId}`);
-  if (session.status !== 'OPEN') return null;
+export function startClipPlayback(airSessionId, { clipId, durationS, now = Date.now() }) {
+  const s = store.getAirSession(airSessionId);
+  if (!s) throw new Error(`No air session ${airSessionId}`);
+  if (s.status !== 'OPEN') return null;
 
-  // Anti-malicious-compliance: while the badge is too small to be read, we
-  // stop issuing. The streamer's own payout is what stops, which is the point
-  // — shrinking the source zeroes their money instead of fooling the check.
-  if (session.badgeTooSmall) return null;
+  const durMs = Math.max(0, Number(durationS) || 0) * 1000;
+  const belowFloor = (durMs / 1000) < bountyConfig.minClipSeconds;
 
-  const ns = namespaceFor(airSessionId);
+  const win = {
+    clipId,
+    startedAt: now,
+    endsAt: now + durMs,
+    durationS: durMs / 1000,
+    belowSamplingFloor: belowFloor,
+    codes: [],
+  };
+  store.pushPlaybackWindow(airSessionId, win);
+
+  if (belowFloor) {
+    store.pushAirSessionViolation(airSessionId, {
+      type: 'BELOW_SAMPLING_FLOOR',
+      at: now,
+      detail: { clipId, durationS: durMs / 1000, floorS: bountyConfig.minClipSeconds },
+    });
+    return { window: win, code: null, reason: 'BELOW_SAMPLING_FLOOR' };
+  }
+
+  const code = issueCodeForWindow(airSessionId, clipId, { now });
+  return { window: win, code };
+}
+
+/** The clip finished (or was cut short). Closes the window at `now`. */
+export function endClipPlayback(airSessionId, { clipId, now = Date.now() } = {}) {
+  const s = store.getAirSession(airSessionId);
+  if (!s) return null;
+  const win = (s.playbackWindows || []).find((w) => w.clipId === clipId && w.endsAt > now);
+  if (!win) return null;
+  // Truncate the window AND any code validity that ran past the real end —
+  // a code must never be checkable after its clip left the screen.
+  store.updatePlaybackWindow(airSessionId, clipId, {
+    endsAt: now,
+    codes: win.codes.map((c) => ({ ...c, expiresAt: Math.min(c.expiresAt, now) })),
+  });
+  return store.getAirSession(airSessionId);
+}
+
+/**
+ * Issue a code inside an OPEN clip window. Validity is clamped to the clip's
+ * end so windows cannot overlap across clips.
+ */
+export function issueCodeForWindow(airSessionId, clipId, { now = Date.now() } = {}) {
+  const s = store.getAirSession(airSessionId);
+  if (!s || s.status !== 'OPEN') return null;
+  if (s.badgeTooSmall) return null; // early-warning halt; see reportBadgeTooSmall
+
+  const win = (s.playbackWindows || []).find((w) => w.clipId === clipId);
+  if (!win || win.belowSamplingFloor) return null;
+  if (now < win.startedAt || now >= win.endsAt) return null;
+
+  const ns = namespaceFor(airSessionId, clipId);
   const live = new Set(store.allIssuedCodes());
   let code = null;
-  for (let attempt = 0; attempt < 50; attempt++) {
+  for (let i = 0; i < 50; i++) {
     const candidate = `${ns}-${randomBody(bountyConfig.codeLength)}`;
     if (!live.has(candidate)) { code = candidate; break; }
   }
@@ -75,58 +140,66 @@ export function issueCode(airSessionId, { now = Date.now() } = {}) {
 
   const rec = {
     code,
+    clipId,
     issuedAt: now,
-    expiresAt: now + bountyConfig.codeValidityMs,
+    // Clamped: never valid past the clip it belongs to.
+    expiresAt: Math.min(now + bountyConfig.codeValidityMs, win.endsAt),
   };
-  store.pushAirSessionCode(airSessionId, rec);
+  store.pushWindowCode(airSessionId, clipId, rec);
   return rec;
 }
 
-/** The code that should be on screen right now, or null. */
-export function activeCode(airSessionId, { now = Date.now() } = {}) {
-  const session = store.getAirSession(airSessionId);
-  if (!session || session.status !== 'OPEN' || session.badgeTooSmall) return null;
-  const live = session.codes.filter((c) => c.issuedAt <= now && c.expiresAt > now);
-  return live.length ? live[live.length - 1] : null;
-}
-
 /**
- * Issue on demand if the current code has aged past the rotation interval.
- * Called by the overlay's poll — keeps rotation server-authoritative instead
- * of trusting a client timer.
+ * What the overlay should render right now. Returns null when no clip is
+ * playing — which is the whole point: a parked overlay shows nothing.
  */
 export function currentOrRotate(airSessionId, { now = Date.now() } = {}) {
-  const session = store.getAirSession(airSessionId);
-  if (!session || session.status !== 'OPEN' || session.badgeTooSmall) return null;
-  const last = session.codes[session.codes.length - 1];
+  const s = store.getAirSession(airSessionId);
+  if (!s || s.status !== 'OPEN' || s.badgeTooSmall) return null;
+  const win = activeWindow(airSessionId, { now });
+  if (!win || win.belowSamplingFloor) return null;
+
+  const last = win.codes[win.codes.length - 1];
   if (!last || now - last.issuedAt >= bountyConfig.codeRotateMs) {
-    return issueCode(airSessionId, { now });
+    return issueCodeForWindow(airSessionId, win.clipId, { now });
   }
   return last;
 }
 
-/** Codes valid at a given instant — what the verifier checks a frame against. */
+/** Codes valid at an instant. Used by the verifier to check a sampled frame. */
 export function codesValidAt(airSessionId, ts) {
-  const session = store.getAirSession(airSessionId);
-  if (!session) return [];
-  return session.codes.filter((c) => c.issuedAt <= ts && c.expiresAt > ts);
+  const s = store.getAirSession(airSessionId);
+  if (!s) return [];
+  const out = [];
+  for (const w of s.playbackWindows || []) {
+    for (const c of w.codes) {
+      if (c.issuedAt <= ts && c.expiresAt > ts) out.push(c);
+    }
+  }
+  return out;
+}
+
+/** Every code issued in this session, flattened. */
+export function allSessionCodes(airSessionId) {
+  const s = store.getAirSession(airSessionId);
+  if (!s) return [];
+  return (s.playbackWindows || []).flatMap((w) => w.codes);
 }
 
 /**
- * Record a badge-size violation reported by the overlay.
+ * Overlay self-report that its badge is too small to read.
  *
- * Trust note (honest): this is a CLIENT self-report, exactly the weakness the
- * watermark scheme exists to avoid elsewhere. It is safe here only because
- * the incentive points the right way — a client that lies by NOT reporting
- * still fails verification, since a badge too small to read is also too small
- * for the checker to find. Reporting simply makes the failure legible to the
- * streamer instead of silent. See OPEN-ISSUES.md.
+ * This is an EARLY WARNING for an honest streamer, not enforcement. A page
+ * cannot observe its own OBS scene transform, so this catches a small
+ * browser-source resolution and nothing else. Real enforcement is the
+ * verifier's measured-height check (bountyConfig.minCodePixelHeight), which
+ * runs on the actual broadcast frame where the money is decided.
  */
 export function reportBadgeTooSmall(airSessionId, detail) {
-  const session = store.getAirSession(airSessionId);
-  if (!session) throw new Error(`No air session ${airSessionId}`);
+  const s = store.getAirSession(airSessionId);
+  if (!s) throw new Error(`No air session ${airSessionId}`);
   store.pushAirSessionViolation(airSessionId, {
-    type: 'BADGE_TOO_SMALL',
+    type: 'BADGE_TOO_SMALL_SELF_REPORT',
     at: Date.now(),
     detail: detail || null,
   });
@@ -134,10 +207,9 @@ export function reportBadgeTooSmall(airSessionId, detail) {
   return store.getAirSession(airSessionId);
 }
 
-/** Badge is legible again — resume issuing. */
 export function clearBadgeViolation(airSessionId) {
-  const session = store.getAirSession(airSessionId);
-  if (!session) throw new Error(`No air session ${airSessionId}`);
+  const s = store.getAirSession(airSessionId);
+  if (!s) throw new Error(`No air session ${airSessionId}`);
   store.updateAirSession(airSessionId, { badgeTooSmall: false });
   return store.getAirSession(airSessionId);
 }

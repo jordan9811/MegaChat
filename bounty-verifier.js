@@ -1,16 +1,14 @@
 /**
- * CREATOR BOUNTY — verifier pipeline.
+ * CREATOR BOUNTY — verifier pipeline (playback-bound).
  *
- * Samples an air session's issued codes, asks a FrameSource for public stream
- * frames at those timestamps, asks a CodeChecker whether the expected code is
- * visible, and folds the results into verified-minutes + a confidence score.
+ * Samples frames INSIDE clip playback windows (not evenly across a session),
+ * checks each for the code that was bound to that clip, and produces a count
+ * of VERIFIED CLIP PLAYBACKS plus their verified duration. That is the payout
+ * unit now — airtime alone is not evidence that a fan's clip aired.
  *
- * Both external edges are interfaces. Run A ships ONLY the mock
- * implementations, driven by a fixture so pass / fail / partial / ambiguous
- * are deterministic. The real implementations are deliberately empty: I have
- * not seen Twitch's or Kick's clip/VOD APIs in this codebase and guessing at
- * their shape would mean building three things on top of an invented
- * contract. See OPEN-ISSUES.md.
+ * Both external edges stay interfaces. Run A/patch ships only the mocks,
+ * fixture-driven so pass / fail / partial / ambiguous / too-small are
+ * deterministic.
  */
 
 import fs from 'fs';
@@ -19,169 +17,209 @@ import * as store from './bounty-store.js';
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
 
-/**
- * @typedef {{ ref:string, ts:number, platform:string, handle:string }} FrameRef
- */
+/** @typedef {{ ref:string, ts:number, clipId:string, platform:string, handle:string }} FrameRef */
 
 export class FrameSource {
-  /**
-   * @param {string} _platform @param {string} _handle @param {number[]} _timestamps
-   * @returns {Promise<FrameRef[]>}
-   */
+  /** @returns {Promise<FrameRef[]>} */
   async getFrames(_platform, _handle, _timestamps) { throw new Error('not implemented'); }
 }
 
+/**
+ * CONTRACT FOR RUN B — measurement is REQUIRED, not optional.
+ *
+ * findCode must return, alongside `found` and `confidence`:
+ *   pixelHeight — the measured rendered height of the code glyphs in the
+ *                 CAPTURED FRAME (not the source page), or a bounding box
+ *                 from which height can be derived.
+ *
+ * This is the real legibility enforcement. A page cannot observe its own OBS
+ * scene transform, so the overlay's own size check catches only a small
+ * browser-source resolution; a source scaled down in the scene looks normal
+ * to the page and arrives here as an unreadably small code. A sample whose
+ * pixelHeight is below bountyConfig.minCodePixelHeight FAILS even when the
+ * checker technically found the code.
+ *
+ * @returns {Promise<{found:boolean, confidence:number, pixelHeight?:number, bbox?:{w:number,h:number}}>}
+ */
 export class CodeChecker {
-  /**
-   * @param {FrameRef} _frameRef @param {string[]} _expectedCodes
-   * @returns {Promise<{found:boolean, confidence:number}>}
-   */
   async findCode(_frameRef, _expectedCodes) { throw new Error('not implemented'); }
 }
 
-// ── Real implementations: NOT in Run A ──────────────────────────────────────
+// ── Real implementations: NOT in this run ───────────────────────────────────
 
 /**
- * TODO(run-b): implement against the real platform APIs.
- * Needs: a registered app + credentials per platform, the actual VOD/clip
- * endpoint shapes, and a decision on whether frames come from VOD segments
- * (delayed, reliable) or live HLS (immediate, lossy). Do NOT guess — a wrong
- * assumption here invalidates every verification built on top of it.
+ * TODO(run-b): real platform frame retrieval. Needs registered apps +
+ * credentials and the actual VOD/clip endpoint shapes, plus a decision on VOD
+ * segments (delayed, reliable) vs live HLS (immediate, lossy). Do NOT guess.
  */
 export class TwitchFrameSource extends FrameSource {}
 /** TODO(run-b): same, for Kick. No public API contract confirmed. */
 export class KickFrameSource extends FrameSource {}
 /**
- * TODO(run-b): real OCR / template match against the badge region.
- * Open question logged in OPEN-ISSUES.md: whether to OCR the whole frame or
- * crop to the badge's expected position (faster, but breaks if the streamer
- * repositions the browser source, which they are allowed to do).
+ * TODO(run-b): real OCR. MUST return pixelHeight — see the CodeChecker
+ * contract above. Open question in OPEN-ISSUES: OCR the whole frame (robust,
+ * slow) or crop to the badge's expected region (fast, breaks if the streamer
+ * repositions the source, which they're allowed to do).
  */
 export class OcrCodeChecker extends CodeChecker {}
 
-// ── Mocks (Run A) ───────────────────────────────────────────────────────────
+// ── Mocks ───────────────────────────────────────────────────────────────────
 
-/**
- * Fixture shape:
- * {
- *   "frames": { "<ts>": { "available": true } },      // optional per-timestamp
- *   "defaultAvailable": true,
- *   "checks": [ { "found": true, "confidence": 0.95 }, ... ]  // consumed in order
- *   "defaultCheck": { "found": false, "confidence": 0.2 }
- * }
- */
 export function loadFixture(pathOrObject) {
   if (!pathOrObject) return null;
   if (typeof pathOrObject === 'object') return pathOrObject;
-  try {
-    return JSON.parse(fs.readFileSync(pathOrObject, 'utf8'));
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(fs.readFileSync(pathOrObject, 'utf8')); } catch { return null; }
 }
 
 export class MockFrameSource extends FrameSource {
   constructor(fixture = null) { super(); this.fixture = fixture || {}; }
   async getFrames(platform, handle, timestamps) {
     const out = [];
-    for (const ts of timestamps) {
-      const perTs = this.fixture.frames?.[String(ts)];
-      const available = perTs ? perTs.available !== false : this.fixture.defaultAvailable !== false;
-      if (!available) continue; // frame genuinely unavailable (stream gap, VOD trimmed)
-      out.push({ ref: `mock://${platform}/${handle}/${ts}`, ts, platform, handle });
+    for (const t of timestamps) {
+      const ts = typeof t === 'object' ? t.ts : t;
+      const clipId = typeof t === 'object' ? t.clipId : null;
+      const per = this.fixture.frames?.[String(ts)];
+      const available = per ? per.available !== false : this.fixture.defaultAvailable !== false;
+      if (!available) continue;
+      out.push({ ref: `mock://${platform}/${handle}/${ts}`, ts, clipId, platform, handle });
     }
     return out;
   }
 }
 
 export class MockCodeChecker extends CodeChecker {
-  constructor(fixture = null) {
-    super();
-    this.fixture = fixture || {};
-    this.cursor = 0;
-  }
+  constructor(fixture = null) { super(); this.fixture = fixture || {}; this.cursor = 0; }
   async findCode(_frameRef, _expectedCodes) {
-    const scripted = this.fixture.checks?.[this.cursor];
+    const s = this.fixture.checks?.[this.cursor];
     this.cursor += 1;
-    if (scripted) return { found: !!scripted.found, confidence: Number(scripted.confidence ?? 0) };
-    const d = this.fixture.defaultCheck || { found: false, confidence: 0.2 };
-    return { found: !!d.found, confidence: Number(d.confidence ?? 0) };
+    const d = s || this.fixture.defaultCheck || { found: false, confidence: 0.2 };
+    return {
+      found: !!d.found,
+      confidence: Number(d.confidence ?? 0),
+      // Default comfortably above the floor so existing fixtures behave; a
+      // fixture opts into the too-small path by setting pixelHeight.
+      pixelHeight: Number(d.pixelHeight ?? 40),
+    };
   }
 }
 
 // ── Pipeline ────────────────────────────────────────────────────────────────
 
 /**
- * Evenly sample up to `sampleSize` codes across the session so verification
- * reflects the whole broadcast rather than clustering at the start (a
- * streamer showing the badge for 60s then hiding it must not verify as a
- * full session).
+ * Pick sample instants INSIDE a clip's window. Mid-code rather than at the
+ * issue boundary, so a frame lands where the code is definitely on screen.
  */
-function sampleCodes(codes, sampleSize) {
-  if (codes.length <= sampleSize) return [...codes];
-  const step = codes.length / sampleSize;
-  const out = [];
-  for (let i = 0; i < sampleSize; i++) out.push(codes[Math.floor(i * step)]);
-  return out;
+function sampleInstantsForWindow(win, perClip) {
+  const usable = win.codes.filter((c) => c.expiresAt > c.issuedAt);
+  if (usable.length === 0) return [];
+  const picks = [];
+  const step = Math.max(1, Math.floor(usable.length / perClip));
+  for (let i = 0; i < usable.length && picks.length < perClip; i += step) {
+    const c = usable[i];
+    picks.push({ ts: Math.floor((c.issuedAt + Math.min(c.expiresAt, c.issuedAt + bountyConfig.codeValidityMs)) / 2), clipId: win.clipId });
+  }
+  return picks;
 }
 
 /**
  * Verify one air session.
  *
- * verifiedMinutes is derived from the PROPORTION of sampled codes actually
- * found on screen, applied to the session's wall-clock duration — not from a
- * raw count of hits. A session where 3 of 10 samples pass earns 30% of its
- * elapsed minutes, which is the honest reading of "how much of this broadcast
- * actually carried the badge".
+ * Result shape carries the NEW payout units:
+ *   verifiedClips        — clips proven to have aired
+ *   verifiedClipSeconds  — their combined duration
+ * `verifiedMinutes` is retained only as a derived convenience for display.
  */
-export async function verifyAirSession(airSessionId, { frameSource, codeChecker, now = Date.now() } = {}) {
+export async function verifyAirSession(airSessionId, { frameSource, codeChecker } = {}) {
   const session = store.getAirSession(airSessionId);
   if (!session) throw new Error(`No air session ${airSessionId}`);
 
-  const fs_ = frameSource || new MockFrameSource(loadFixture(bountyConfig.fixturePath));
-  const cc = codeChecker || new MockCodeChecker(loadFixture(bountyConfig.fixturePath));
+  const fx = loadFixture(bountyConfig.fixturePath);
+  const fs_ = frameSource || new MockFrameSource(fx);
+  const cc = codeChecker || new MockCodeChecker(fx);
   const checkerName = cc.constructor.name;
 
-  const sampled = sampleCodes(session.codes, bountyConfig.sampleSize);
-  if (sampled.length === 0) {
+  const windows = (session.playbackWindows || []).filter((w) => !w.belowSamplingFloor && w.codes.length > 0);
+  const skippedShort = (session.playbackWindows || []).filter((w) => w.belowSamplingFloor);
+
+  // No clip ever played (or none long enough) ⇒ nothing verifiable, and
+  // critically nothing payable. A parked overlay lands here.
+  if (windows.length === 0) {
     const rec = store.recordVerification({
       airSessionId, checker: checkerName, evidenceRef: null,
-      result: 'NO_CODES', confidence: 0, verifiedMinutes: 0,
+      result: 'NO_PLAYBACK', confidence: 0, verifiedMinutes: 0,
+      verifiedClips: 0, verifiedClipSeconds: 0,
     });
-    return { result: 'NO_CODES', confidence: 0, verifiedMinutes: 0, attempt: rec, checks: [] };
+    store.updateAirSession(airSessionId, { verifiedClips: 0, verifiedClipSeconds: 0, verifiedMinutes: 0 });
+    return {
+      result: 'NO_PLAYBACK', confidence: 0, verifiedClips: 0, verifiedClipSeconds: 0,
+      verifiedMinutes: 0, hitRate: 0, attempt: rec, checks: [],
+      skippedBelowFloor: skippedShort.length,
+    };
   }
 
-  // Sample mid-window: a code issued at T is on screen from T onward, so the
-  // safest instant to look is shortly after issue, not exactly at it.
-  const timestamps = sampled.map((c) => c.issuedAt + Math.min(5_000, bountyConfig.codeRotateMs / 2));
-  const frames = await fs_.getFrames(session.platform, session.handle || '', timestamps);
-
+  const perClip = Math.max(1, Math.floor(bountyConfig.sampleSize / windows.length));
   const checks = [];
-  for (const frame of frames) {
-    const expected = store.getAirSession(airSessionId).codes
-      .filter((c) => c.issuedAt <= frame.ts && c.expiresAt > frame.ts)
-      .map((c) => c.code);
-    if (expected.length === 0) continue;
-    const res = await cc.findCode(frame, expected);
-    checks.push({ ts: frame.ts, ref: frame.ref, ...res });
+  const clipVerdicts = [];
+
+  for (const win of windows) {
+    const instants = sampleInstantsForWindow(win, perClip);
+    const frames = await fs_.getFrames(session.platform, session.handle || '', instants);
+    let clipHits = 0, clipChecks = 0, clipConf = 0, tooSmall = 0;
+
+    for (const frame of frames) {
+      // Only codes bound to THIS clip and valid at this instant are accepted.
+      const expected = win.codes
+        .filter((c) => c.issuedAt <= frame.ts && c.expiresAt > frame.ts)
+        .map((c) => c.code);
+      if (expected.length === 0) continue;
+
+      const res = await cc.findCode(frame, expected);
+      const px = Number(res.pixelHeight ?? res.bbox?.h ?? 0);
+      // Legibility enforcement: found but unreadably small is NOT a pass.
+      const legible = px >= bountyConfig.minCodePixelHeight;
+      const counted = !!res.found && legible;
+      if (!legible && res.found) tooSmall += 1;
+
+      clipChecks += 1;
+      clipConf += Number(res.confidence || 0);
+      if (counted) clipHits += 1;
+      checks.push({
+        ts: frame.ts, ref: frame.ref, clipId: win.clipId,
+        found: !!res.found, confidence: res.confidence, pixelHeight: px,
+        legible, counted,
+      });
+    }
+
+    const conf = clipChecks ? clipConf / clipChecks : 0;
+    // A clip counts as verified when at least one legible sample found its code.
+    const verified = clipHits > 0;
+    clipVerdicts.push({
+      clipId: win.clipId, verified, samples: clipChecks, hits: clipHits,
+      confidence: +conf.toFixed(3), tooSmall, durationS: win.durationS,
+    });
+    if (tooSmall > 0) {
+      store.pushAirSessionViolation(airSessionId, {
+        type: 'CODE_TOO_SMALL_IN_FRAME',
+        at: Date.now(),
+        detail: { clipId: win.clipId, samples: tooSmall, floorPx: bountyConfig.minCodePixelHeight },
+      });
+    }
   }
 
-  const attempted = sampled.length;
-  const hits = checks.filter((c) => c.found);
-  const hitRate = attempted ? hits.length / attempted : 0;
+  const verifiedClips = clipVerdicts.filter((c) => c.verified).length;
+  const verifiedClipSeconds = +clipVerdicts
+    .filter((c) => c.verified)
+    .reduce((a, c) => a + (c.durationS || 0), 0)
+    .toFixed(3);
   const avgConfidence = checks.length
-    ? checks.reduce((a, c) => a + c.confidence, 0) / checks.length
+    ? checks.reduce((a, c) => a + (c.confidence || 0), 0) / checks.length
     : 0;
+  const hitRate = clipVerdicts.length ? verifiedClips / clipVerdicts.length : 0;
 
-  const endedAt = session.endedAt || now;
-  const elapsedMin = Math.max(0, (endedAt - session.startedAt) / 60_000);
-  const verifiedMinutes = +(elapsedMin * hitRate).toFixed(3);
-
-  // Ambiguous: the checker found things but isn't sure. Distinct from a clean
-  // fail, because it should route to review rather than silently pay zero.
   let result;
   if (checks.length === 0) result = 'NO_FRAMES';
-  else if (hitRate === 0) result = 'FAIL';
+  else if (verifiedClips === 0 && checks.some((c) => c.found && !c.legible)) result = 'FAIL_TOO_SMALL';
+  else if (verifiedClips === 0) result = 'FAIL';
   else if (avgConfidence < bountyConfig.minConfidence) result = 'AMBIGUOUS';
   else if (hitRate >= 0.999) result = 'PASS';
   else result = 'PARTIAL';
@@ -189,9 +227,20 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
   const attempt = store.recordVerification({
     airSessionId, checker: checkerName,
     evidenceRef: checks.map((c) => c.ref).join(',') || null,
-    result, confidence: +avgConfidence.toFixed(3), verifiedMinutes,
+    result, confidence: +avgConfidence.toFixed(3),
+    verifiedMinutes: +(verifiedClipSeconds / 60).toFixed(3),
+    verifiedClips, verifiedClipSeconds,
   });
-  store.updateAirSession(airSessionId, { verifiedMinutes });
+  store.updateAirSession(airSessionId, {
+    verifiedClips, verifiedClipSeconds,
+    verifiedMinutes: +(verifiedClipSeconds / 60).toFixed(3),
+  });
 
-  return { result, confidence: +avgConfidence.toFixed(3), verifiedMinutes, hitRate, attempt, checks };
+  return {
+    result, confidence: +avgConfidence.toFixed(3),
+    verifiedClips, verifiedClipSeconds,
+    verifiedMinutes: +(verifiedClipSeconds / 60).toFixed(3),
+    hitRate, attempt, checks, clipVerdicts,
+    skippedBelowFloor: skippedShort.length,
+  };
 }

@@ -31,7 +31,7 @@ import { createActivityManager } from './livekit-activity.js';
 import { createWebhookTracker, verifyWebhookJwt, reconcile } from './livekit-webhooks.js';
 import { createBreaker, breakerConfig } from './livekit-breaker.js';
 import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
-import { attachBountyRoutes } from './bounty-routes.js';
+import { attachBountyRoutes, makeClipHooks } from './bounty-routes.js';
 import { verifyRoomAccess } from './auth.js';
 import {
   toAtomic,
@@ -1315,6 +1315,11 @@ try {
     sellerAddress: SELLER_WALLET_ADDRESS,
     getWatchSeconds: (roomId, wallet) =>
       (rewardsSvc ? rewardsSvc.getWatchSeconds(roomId, wallet) : 0),
+    // Creator bounty: the watermark that proves a clip aired is minted from
+    // THIS server-side playback event, so proof-of-playback and proof-of-air
+    // are one artifact instead of two that can disagree. No-ops when the
+    // BOUNTY_CLAIM flag is off.
+    ...makeClipHooks(),
   });
 } catch (err) {
   console.warn('[letters] failed to attach, continuing without letter mode:', err.message);

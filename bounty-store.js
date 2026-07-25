@@ -16,10 +16,25 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
+import { createLedger } from './bounty-ledger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const STORE_PATH = path.join(DATA_DIR, 'bounty.json');
+const LEDGER_PATH = path.join(DATA_DIR, 'bounty-ledger.jsonl');
+
+/**
+ * The EscrowLedger now lives in its own append-only JSONL file, NOT in
+ * bounty.json. The mutable records below are still a rewritten document
+ * (they are current-state, safe to rewrite); the ledger is the money history
+ * and gets real append semantics + a validated checksum chain. See
+ * bounty-ledger.js for why that distinction matters.
+ */
+let ledger = null;
+function getLedger() {
+  if (!ledger) ledger = createLedger({ filePath: LEDGER_PATH });
+  return ledger;
+}
 
 const EMPTY = () => ({
   reservedHandles: {},   // key → ReservedHandle
@@ -27,7 +42,7 @@ const EMPTY = () => ({
   claims: {},            // id  → Claim
   airSessions: {},       // id  → AirSession
   verifications: {},     // id  → VerificationAttempt
-  ledger: [],            // append-only EscrowLedger rows
+  reviews: {},           // id  → ReviewItem (ambiguous verifications)
 });
 
 let cache = null;
@@ -47,11 +62,16 @@ function load() {
   try {
     const raw = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
     cache = { ...EMPTY(), ...raw };
-    if (!Array.isArray(cache.ledger)) cache.ledger = [];
+    delete cache.ledger; // legacy field — the ledger is its own file now
   } catch {
     cache = EMPTY();
   }
   return cache;
+}
+
+/** Validate the ledger chain. Throws LedgerCorrupt on interior damage. */
+export function verifyLedgerIntegrity() {
+  return getLedger().load();
 }
 
 function save() {
@@ -62,6 +82,8 @@ function save() {
 /** Test seam — drops the in-memory cache so a gate can start from disk. */
 export function _resetCache() {
   cache = null;
+  if (ledger) ledger._reset();
+  ledger = null;
 }
 
 // ── Handle keys ─────────────────────────────────────────────────────────────
@@ -204,7 +226,10 @@ export function createAirSession({ claimId, roomId, platform }) {
     claimId,
     roomId: roomId || null,
     platform: platform || null,
-    codes: [],            // { code, issuedAt, expiresAt }
+    // Codes now live INSIDE playback windows — a code with no clip is not a
+    // thing that can exist. { clipId, startedAt, endsAt, durationS,
+    // belowSamplingFloor, codes: [{ code, clipId, issuedAt, expiresAt }] }
+    playbackWindows: [],
     status: 'OPEN',
     violations: [],       // e.g. { type:'BADGE_TOO_SMALL', at, detail }
     startedAt: Date.now(),
@@ -234,11 +259,34 @@ export function updateAirSession(id, patch) {
   return rec;
 }
 
-export function pushAirSessionCode(id, codeRec) {
+export function pushPlaybackWindow(id, win) {
   const store = load();
   const rec = store.airSessions[id];
   if (!rec) throw new Error(`No air session ${id}`);
-  rec.codes.push(codeRec);
+  if (!Array.isArray(rec.playbackWindows)) rec.playbackWindows = [];
+  rec.playbackWindows.push(win);
+  save();
+  return rec;
+}
+
+export function updatePlaybackWindow(id, clipId, patch) {
+  const store = load();
+  const rec = store.airSessions[id];
+  if (!rec) throw new Error(`No air session ${id}`);
+  const win = (rec.playbackWindows || []).find((w) => w.clipId === clipId);
+  if (!win) return rec;
+  Object.assign(win, patch);
+  save();
+  return rec;
+}
+
+export function pushWindowCode(id, clipId, codeRec) {
+  const store = load();
+  const rec = store.airSessions[id];
+  if (!rec) throw new Error(`No air session ${id}`);
+  const win = (rec.playbackWindows || []).find((w) => w.clipId === clipId);
+  if (!win) throw new Error(`No playback window for clip ${clipId}`);
+  win.codes.push(codeRec);
   save();
   return rec;
 }
@@ -252,9 +300,53 @@ export function pushAirSessionViolation(id, violation) {
   return rec;
 }
 
-/** Every code currently issued across ALL open sessions — collision guard. */
+/** Every code issued across ALL sessions and windows — collision guard. */
 export function allIssuedCodes() {
-  return Object.values(load().airSessions).flatMap((s) => s.codes.map((c) => c.code));
+  return Object.values(load().airSessions)
+    .flatMap((s) => (s.playbackWindows || []).flatMap((w) => w.codes.map((c) => c.code)));
+}
+
+// ── Review queue (ambiguous verifications) ──────────────────────────────────
+
+export function createReview({ airSessionId, claimId, handleKey: key, verificationId, confidence, reason }) {
+  const store = load();
+  const rec = {
+    id: randomUUID(),
+    airSessionId, claimId, handleKey: key, verificationId,
+    confidence, reason: reason || null,
+    state: 'OPEN',            // OPEN | RESOLVED_APPROVE | RESOLVED_REJECT
+    assignee: null,
+    openedAt: Date.now(),
+    resolvedAt: null,
+    resolvedBy: null,
+    resolutionReason: null,
+  };
+  store.reviews[rec.id] = rec;
+  save();
+  return rec;
+}
+
+export function getReview(id) { return load().reviews[id] || null; }
+
+export function listReviews(filter = {}) {
+  let rows = Object.values(load().reviews);
+  if (filter.state) rows = rows.filter((r) => r.state === filter.state);
+  if (filter.airSessionId) rows = rows.filter((r) => r.airSessionId === filter.airSessionId);
+  return rows;
+}
+
+export function updateReview(id, patch) {
+  const store = load();
+  const rec = store.reviews[id];
+  if (!rec) throw new Error(`No review ${id}`);
+  Object.assign(rec, patch);
+  save();
+  return rec;
+}
+
+/** Is this session blocked pending human review? */
+export function hasOpenReview(airSessionId) {
+  return listReviews({ airSessionId, state: 'OPEN' }).length > 0;
 }
 
 // ── VerificationAttempt ─────────────────────────────────────────────────────
@@ -295,14 +387,14 @@ export function appendLedger({
   amount = '0', bucket = 'contributor', actor, reason = null,
   idempotencyKey = null, meta = null,
 }) {
-  const store = load();
+  const L = getLedger();
   if (idempotencyKey) {
-    const dup = store.ledger.find((r) => r.idempotencyKey === idempotencyKey);
+    const dup = L.find((r) => r.idempotencyKey === idempotencyKey);
     if (dup) return { row: dup, deduped: true };
   }
-  const row = {
+  // seq + sum are assigned by the ledger itself so they cannot be forged here.
+  const row = L.append({
     id: randomUUID(),
-    seq: store.ledger.length + 1,
     handleKey: key,
     claimId,
     airSessionId,
@@ -316,14 +408,12 @@ export function appendLedger({
     idempotencyKey,
     meta,
     at: Date.now(),
-  };
-  store.ledger.push(row);
-  save();
+  });
   return { row, deduped: false };
 }
 
 export function listLedger(filter = {}) {
-  let rows = load().ledger;
+  let rows = getLedger().all();
   if (filter.handleKey) rows = rows.filter((r) => r.handleKey === filter.handleKey);
   if (filter.claimId) rows = rows.filter((r) => r.claimId === filter.claimId);
   if (filter.type) rows = rows.filter((r) => r.type === filter.type);
@@ -332,7 +422,7 @@ export function listLedger(filter = {}) {
 
 export function findByIdempotencyKey(k) {
   if (!k) return null;
-  return load().ledger.find((r) => r.idempotencyKey === k) || null;
+  return getLedger().find((r) => r.idempotencyKey === k);
 }
 
 /**
