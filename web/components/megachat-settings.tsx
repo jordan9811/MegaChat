@@ -29,6 +29,7 @@ export function MegaChatSettings() {
     hasIdentity,
     myRooms,
     openOwnedRoom,
+    linkedTwitch,
   } = useRoom()
 
   // Server-verified sign-in → you OWN rooms you create (no password needed).
@@ -475,6 +476,59 @@ export function MegaChatSettings() {
             </Field>
             ) : null}
 
+            {/* Connected Twitch — VISIBLE, not buried in Advanced.
+                Connecting Twitch is itself the opt-in; making someone re-enter
+                their own handle in a collapsed panel was the bug. Shows what it
+                actually powers, and offers a real way out. */}
+            {linkedTwitch ? (
+              <label
+                htmlFor="twitch-auto"
+                className={cn(
+                  'flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors sm:col-span-2',
+                  draft.twitchAuto
+                    ? 'border-[var(--neon-violet)]/60 bg-[var(--neon-violet)]/10'
+                    : 'border-border bg-input/20',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  id="twitch-auto"
+                  className="mt-0.5 size-4 accent-[var(--neon-violet)]"
+                  checked={draft.twitchAuto}
+                  onChange={(e) => {
+                    const on = e.target.checked
+                    // Opting out clears the channel too — leaving the handle
+                    // behind while the toggle says "off" is the kind of
+                    // half-state that makes people distrust a settings page.
+                    updateDraft(
+                      on
+                        ? { twitchAuto: true, twitchChannel: linkedTwitch }
+                        : { twitchAuto: false, twitchChannel: '' },
+                    )
+                  }}
+                />
+                <span className="flex flex-col gap-0.5">
+                  <span className="font-heading text-sm font-bold text-foreground">
+                    📺 Use your Twitch{' '}
+                    <span className="font-mono text-xs font-normal text-[var(--neon-violet)]">
+                      @{linkedTwitch}
+                    </span>
+                  </span>
+                  <span className="text-xs leading-relaxed text-muted-foreground">
+                    {draft.twitchAuto
+                      ? 'Your stream shows on your join page, and your live thumbnail shows in Browse. Already on — nothing to set up.'
+                      : "Off — your room won't show a stream preview or a live thumbnail."}
+                  </span>
+                  {draft.twitchAuto && draft.twitchChannel && draft.twitchChannel !== linkedTwitch ? (
+                    <span className="mt-1 text-xs text-[var(--neon-amber)]">
+                      Using <span className="font-mono">@{draft.twitchChannel}</span> instead —
+                      set under Advanced.
+                    </span>
+                  ) : null}
+                </span>
+              </label>
+            ) : null}
+
             {!managing && !signedIn ? (
               <Field
                 label={signedIn ? 'Mod password (optional)' : 'Room password'}
@@ -717,7 +771,11 @@ export function MegaChatSettings() {
                 <Field
                   label="Twitch channel"
                   htmlFor="twitch-channel"
-                  hint="Embeds your stream on the join page. Empty = skip."
+                  hint={
+                    linkedTwitch
+                      ? `Override — defaults to your connected @${linkedTwitch}. Set a different channel here, or clear it to fall back.`
+                      : 'Embeds your stream on the join page and shows a live thumbnail in Browse. Empty = skip.'
+                  }
                 >
                   <TextInput
                     id="twitch-channel"
