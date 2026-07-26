@@ -693,6 +693,23 @@
     // seat is being bought or occupied. Idle costs nothing. See
     // LIVEKIT-AUDIT.md — connect-on-mount with no teardown is what drained
     // 5,000 free minutes with nobody on camera.
+    /** Per-browser-source id: stable across reloads, unique per source/tab. */
+    function overlayInstanceId() {
+      try {
+        let id = sessionStorage.getItem('mc-overlay-instance');
+        if (!id) {
+          id = Math.random().toString(36).slice(2, 10);
+          sessionStorage.setItem('mc-overlay-instance', id);
+        }
+        return id;
+      } catch {
+        // Storage blocked (rare in OBS CEF). Fall back to a per-load id —
+        // slightly worse dedupe, still never evicts another source.
+        if (!window.__mcOverlayInstance) window.__mcOverlayInstance = Math.random().toString(36).slice(2, 10);
+        return window.__mcOverlayInstance;
+      }
+    }
+
     let lkLazy = { enabled: false };
     let lkState = 'idle';          // idle | waking | live | error
     let lkConnecting = false;
@@ -718,10 +735,19 @@
         const tokRes = await fetch('/api/livekit/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          // role:'overlay' → STABLE identity overlay:<roomId>, so a reconnect
-          // evicts its own predecessor instead of stacking a second billed
-          // participant (the old random viewer:<rand> could not dedupe).
-          body: JSON.stringify({ room: streamRoomId, role: 'overlay' }),
+          // role:'overlay' → identity overlay:<roomId>:<instance>.
+          //
+          // The instance id lives in sessionStorage, which is exactly the
+          // right scope: a RELOAD of this browser source keeps it (so the
+          // reconnect still evicts its own stale predecessor — that is the
+          // reload-churn fix), while a DIFFERENT source or tab gets its own
+          // (so two overlays coexist instead of evicting each other).
+          //
+          // Purely stable per-room was wrong and shipped a real regression:
+          // opening the overlay anywhere else — a second OBS source, a tab to
+          // check it, a duplicated scene — silently kicked OBS off LiveKit and
+          // the broadcast went black while tiles still rendered.
+          body: JSON.stringify({ room: streamRoomId, role: 'overlay', instance: overlayInstanceId() }),
         });
         const tok = await tokRes.json();
         if (!tokRes.ok || !tok.token) throw new Error(tok.error || 'no token');
@@ -744,6 +770,24 @@
         lkOverlayRoom.on(LK.RoomEvent.ParticipantDisconnected, (p) => {
           lkTracks.delete(p.identity);
           // tile removal stays WS-driven (seat_removed → stinger out)
+        });
+        // EXTERNAL disconnect — evicted, network drop, or server close. Before
+        // this handler existed, `lkOverlayRoom` stayed set to a dead Room and
+        // lkConnect()'s `if (lkOverlayRoom) return` guard blocked every future
+        // attempt: the source sat black forever while tiles kept rendering off
+        // the WS. Clear the reference and reconnect if a guest still needs us.
+        lkOverlayRoom.on(LK.RoomEvent.Disconnected, (reason) => {
+          const why = String(reason ?? 'unknown');
+          console.warn(`[overlay] LiveKit disconnected externally (${why})`);
+          lkOverlayRoom = null;
+          lkTracks.clear();
+          setLkStatus('error');
+          if (lkWanted) {
+            console.log('[overlay] a guest still needs us — reconnecting');
+            setTimeout(() => { if (lkWanted && !lkOverlayRoom) lkConnect('external-disconnect'); }, 1200);
+          } else {
+            setLkStatus('idle');
+          }
         });
         await lkOverlayRoom.connect(tok.url, tok.token);
         lkRetryMs = 0;

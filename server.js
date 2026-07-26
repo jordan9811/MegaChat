@@ -1266,13 +1266,18 @@ app.post('/api/livekit/token', async (req, res) => {
       return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity: `seat:${seat.id}` });
     }
     if (role === 'overlay') {
+      // Per-source instance id keeps a reload evicting only ITSELF, while two
+      // genuinely different overlays (second OBS source, a tab opened to check
+      // it) coexist instead of kicking each other off — which showed up as a
+      // black broadcast with tiles still rendering.
+      const inst = String(req.body?.instance || '').replace(/[^a-z0-9]/gi, '').slice(0, 12);
       // STABLE identity, deliberately. The old random `viewer:<rand>` meant
       // LiveKit could not dedupe: every OBS reload connected as a brand-new
       // participant while the stale one lingered until the reaper took it, so
       // reload churn STACKED billed participants (26 in one session — see
       // LIVEKIT-AUDIT.md). A fixed identity makes a rejoin evict its own
       // predecessor instantly, so reconnects are idempotent and self-healing.
-      const identity = `overlay:${roomId}`;
+      const identity = inst ? `overlay:${roomId}:${inst}` : `overlay:${roomId}`;
       const token = await livekit.subscriberToken(roomId, identity);
       return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity });
     }

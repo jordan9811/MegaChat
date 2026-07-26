@@ -379,6 +379,11 @@ export function resolveRoomConfig(roomId) {
     transport: resolveTransport(cfg.transport),
     // Overlay stinger SFX (synthesized in-browser, master toggle, default on).
     stingerSounds: cfg.stingerSounds !== false,
+    // Use the owner's LINKED Twitch account automatically (embed on the join
+    // page + browse thumbnail). Default ON — if you've connected Twitch, the
+    // obvious intent is to use it, so it should not be something you go
+    // hunting for in Advanced. Set false to opt out and keep the field blank.
+    twitchAuto: cfg.twitchAuto !== false,
     // Lazy connect scope (see LIVEKIT-AUDIT.md + livekit-lazy.config.js):
     //   'seat'      — DEFAULT. Overlay connects only while a seat is being
     //                 bought or held. Cheapest by far; idle costs nothing.
