@@ -1,0 +1,5 @@
+{
+  "_comment": "Code IS found with high confidence, but rendered too small in the captured frame to count. Proves legibility is enforced at verification time, where the money is — not by the overlay's own size check, which cannot see an OBS scene transform.",
+  "defaultAvailable": true,
+  "defaultCheck": { "found": true, "confidence": 0.93, "pixelHeight": 5 }
+}

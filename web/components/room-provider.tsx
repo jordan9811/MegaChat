@@ -52,6 +52,7 @@ export type ConfigDraft = {
   unlisted: boolean
   payoutAddress: string
   twitchChannel: string
+  twitchAuto: boolean
   passkeyTickPrice: string
   passkeyTickSeconds: string
   maxSession: string
@@ -92,6 +93,7 @@ const DEFAULT_DRAFT: ConfigDraft = {
   unlisted: false,
   payoutAddress: '',
   twitchChannel: '',
+  twitchAuto: true,
   passkeyTickPrice: '0.001',
   passkeyTickSeconds: '1',
   maxSession: '2',
@@ -141,6 +143,8 @@ type RoomContextValue = {
   hasIdentity: boolean
   /** Rooms owned by the signed-in identity, for the "your rooms" list. */
   myRooms: MyRoomCard[]
+  /** Owner's linked Twitch login, or null. Drives the auto-adopt UI. */
+  linkedTwitch: string | null
   refreshMyRooms: () => Promise<void>
   /** Saved per-identity room defaults (Account → Defaults section). */
   accountDefaults: Record<string, unknown> | null
@@ -183,6 +187,7 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
     unlisted: draft.unlisted,
     payoutAddress: draft.payoutAddress.trim() || null,
     twitchChannel: draft.twitchChannel.trim().replace(/^@/, '') || null,
+    twitchAuto: draft.twitchAuto,
     passkeyTickPrice: draft.passkeyTickPrice,
     passkeyTickSeconds: Number(draft.passkeyTickSeconds) || 1,
     maxSession: draft.maxSession,
@@ -236,6 +241,7 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     unlisted: !!room.unlisted,
     payoutAddress: room.payoutAddress || '',
     twitchChannel: room.twitchChannel || '',
+    twitchAuto: room.twitchAuto !== false,
     passkeyTickPrice: String(room.passkeyTickPrice),
     passkeyTickSeconds: String(room.passkeyTickSeconds),
     maxSession: String(room.maxSession),
@@ -281,6 +287,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const [identityHandle, setIdentityHandle] = useState<string | null>(null)
   const [hasIdentity, setHasIdentity] = useState(false)
   const [myRooms, setMyRooms] = useState<MyRoomCard[]>([])
+  const [linkedTwitch, setLinkedTwitch] = useState<string | null>(null)
   const [accountDefaults, setAccountDefaults] = useState<Record<string, unknown> | null>(null)
   // read inside listeners without re-subscribing them on every change
   const identityHandleRef = useRef<string | null>(null)
@@ -374,8 +381,18 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       listLinkedAccounts()
         .then(({ accounts }) => {
           const twitch = accounts.find((a) => a.type === 'twitch' && a.name)
-          if (twitch && !draftTouchedRef.current && !roomIdRef.current) {
-            setDraft((d) => (d.twitchChannel === twitch.name ? d : { ...d, twitchChannel: twitch.name! }))
+          setLinkedTwitch(twitch?.name ?? null)
+          // Adopt the linked account by default — for a NEW room draft AND for
+          // an existing room that simply has no channel set yet. Connecting
+          // Twitch is itself the opt-in; making someone re-enter their own
+          // handle in an Advanced panel is the bug being fixed here.
+          // `twitchAuto === false` is the explicit opt-out and is respected.
+          if (twitch && !draftTouchedRef.current) {
+            setDraft((d) => (
+              d.twitchAuto === false || d.twitchChannel === twitch.name
+                ? d
+                : { ...d, twitchChannel: twitch.name! }
+            ))
           }
         })
         .catch(() => {}) // signed out, or nothing linked — leave the field alone
@@ -684,6 +701,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       identityHandle,
       hasIdentity,
       myRooms,
+      linkedTwitch,
       refreshMyRooms,
       accountDefaults,
       saveDefaultsFromDraft,
@@ -699,7 +717,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       lettersAdmin,
       hostToken,
     }),
-    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
+    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

@@ -263,6 +263,16 @@ export function getRoomByHandle(handle) {
   return null;
 }
 
+/**
+ * Optional external veto on handle claims, registered at boot. Exists so the
+ * creator-bounty feature can protect a handle it has reserved for a specific
+ * streamer without this module importing the bounty store (which would be a
+ * cycle: bounty-store → rooms-store → bounty-store). Null unless something
+ * registers, so the default path is byte-identical to before.
+ */
+let handleGuard = null;
+export function setHandleGuard(fn) { handleGuard = typeof fn === 'function' ? fn : null; }
+
 /** Claim (or change) a room's handle. Returns the handle, or throws on conflict. */
 export function setRoomHandle(roomId, rawHandle) {
   const id = normalizeRoomId(roomId);
@@ -283,6 +293,10 @@ export function setRoomHandle(roomId, rawHandle) {
       throw err;
     }
   }
+  // Bounty reservations get a veto: without this, a pool accumulated against
+  // a streamer's name could be orphaned by anyone grabbing that handle first.
+  // Throws (never silently rejects) so the caller surfaces a real reason.
+  if (handleGuard) handleGuard(h, rec.id);
   rec.handle = h;
   saveStore(store);
   return h;
@@ -365,6 +379,11 @@ export function resolveRoomConfig(roomId) {
     transport: resolveTransport(cfg.transport),
     // Overlay stinger SFX (synthesized in-browser, master toggle, default on).
     stingerSounds: cfg.stingerSounds !== false,
+    // Use the owner's LINKED Twitch account automatically (embed on the join
+    // page + browse thumbnail). Default ON — if you've connected Twitch, the
+    // obvious intent is to use it, so it should not be something you go
+    // hunting for in Advanced. Set false to opt out and keep the field blank.
+    twitchAuto: cfg.twitchAuto !== false,
     // Lazy connect scope (see LIVEKIT-AUDIT.md + livekit-lazy.config.js):
     //   'seat'      — DEFAULT. Overlay connects only while a seat is being
     //                 bought or held. Cheapest by far; idle costs nothing.

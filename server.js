@@ -31,6 +31,7 @@ import { createActivityManager } from './livekit-activity.js';
 import { createWebhookTracker, verifyWebhookJwt, reconcile } from './livekit-webhooks.js';
 import { createBreaker, breakerConfig } from './livekit-breaker.js';
 import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
+import { attachBountyRoutes, makeClipHooks } from './bounty-routes.js';
 import { verifyRoomAccess } from './auth.js';
 import {
   toAtomic,
@@ -1151,6 +1152,22 @@ app.get('/api/livekit/burn', (_req, res) => {
   });
 });
 
+/**
+ * Purge sessions that were never ours — LiveKit dashboard test fires, or any
+ * foreign participant in the project. A dashboard test left a 150-minute
+ * phantom that consumed 37.5% of the daily burn budget before anyone looked;
+ * an operator needs a way to clear that without restarting the service.
+ */
+app.post('/api/livekit/burn/purge-foreign', (req, res) => {
+  const removed = lkWebhooks.purgeForeign();
+  if (removed.length) {
+    console.warn(`[lk-webhook] purged ${removed.length} non-MegaChat session(s): ` +
+      removed.map((r) => `${r.identity}@${r.room} (${r.openMinutes}min, ${r.reason})`).join('; '));
+  }
+  lkBreaker.evaluate();
+  res.json({ ok: true, purged: removed.length, removed, burn: lkBreaker.snapshot() });
+});
+
 /** Operator override — requires who and why, both logged. */
 app.post('/api/livekit/burn/override', (req, res) => {
   try {
@@ -1262,13 +1279,18 @@ app.post('/api/livekit/token', async (req, res) => {
       return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity: `seat:${seat.id}` });
     }
     if (role === 'overlay') {
+      // Per-source instance id keeps a reload evicting only ITSELF, while two
+      // genuinely different overlays (second OBS source, a tab opened to check
+      // it) coexist instead of kicking each other off — which showed up as a
+      // black broadcast with tiles still rendering.
+      const inst = String(req.body?.instance || '').replace(/[^a-z0-9]/gi, '').slice(0, 12);
       // STABLE identity, deliberately. The old random `viewer:<rand>` meant
       // LiveKit could not dedupe: every OBS reload connected as a brand-new
       // participant while the stale one lingered until the reaper took it, so
       // reload churn STACKED billed participants (26 in one session — see
       // LIVEKIT-AUDIT.md). A fixed identity makes a rejoin evict its own
       // predecessor instantly, so reconnects are idempotent and self-healing.
-      const identity = `overlay:${roomId}`;
+      const identity = inst ? `overlay:${roomId}:${inst}` : `overlay:${roomId}`;
       const token = await livekit.subscriberToken(roomId, identity);
       return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity });
     }
@@ -1327,6 +1349,11 @@ try {
     sellerAddress: SELLER_WALLET_ADDRESS,
     getWatchSeconds: (roomId, wallet) =>
       (rewardsSvc ? rewardsSvc.getWatchSeconds(roomId, wallet) : 0),
+    // Creator bounty: the watermark that proves a clip aired is minted from
+    // THIS server-side playback event, so proof-of-playback and proof-of-air
+    // are one artifact instead of two that can disagree. No-ops when the
+    // BOUNTY_CLAIM flag is off.
+    ...makeClipHooks(),
   });
 } catch (err) {
   console.warn('[letters] failed to attach, continuing without letter mode:', err.message);
@@ -2126,6 +2153,11 @@ app.get('/api/rooms/public', (req, res) => {
 
 const PORT = Number(process.env.PORT || 3000);
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+
+// Creator bounty (Run A). Mounts NOTHING when BOUNTY_CLAIM is off, so an
+// unflagged deploy is byte-identical to before. Escrow is a ledger only —
+// settlement is a record-intent stub, no funds move. See HANDOFF-BOUNTY.md.
+attachBountyRoutes(app);
 
 attachDashboardRoutes(app, {
   baseUrl: BASE_URL,

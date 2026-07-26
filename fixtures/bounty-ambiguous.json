@@ -1,0 +1,5 @@
+{
+  "_comment": "Forces AMBIGUOUS: code appears found but under the confidence floor, so it must NOT pay.",
+  "defaultAvailable": true,
+  "defaultCheck": { "found": true, "confidence": 0.35 }
+}

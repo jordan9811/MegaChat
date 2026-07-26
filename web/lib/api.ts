@@ -60,6 +60,8 @@ export type Room = {
   payoutAddress: string | null
   /** Twitch login embedded on the join page as the delayed spectate surface. */
   twitchChannel: string | null
+  /** Auto-adopt the owner's linked Twitch account. Default true. */
+  twitchAuto: boolean
   letters: LettersConfig
   joinStream: JoinStreamConfig
   rewards: RewardsConfig
@@ -108,6 +110,7 @@ export type RoomConfigPatch = {
   paymentTokenAddress: string
   payoutAddress: string | null
   twitchChannel: string | null
+  twitchAuto: boolean
   transport: string
   stingerSounds: boolean
   letters: {

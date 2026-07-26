@@ -41,6 +41,16 @@ export function createBreaker({ log = console, getUsage, config = breakerConfig 
   /** @type {{until:number, by:string, reason:string}|null} */
   let override = null;
   const alarmed = new Set(); // sessions already alarmed, so we warn once each
+  /**
+   * Alarm HISTORY, kept in memory and exposed on the burn endpoint.
+   *
+   * Learned the hard way: a 150-minute phantom session sat in production and
+   * the alarm fired correctly — into stdout, on a host whose logs need a
+   * dashboard login. An alarm nobody can query is barely an alarm, so it is
+   * now retrievable over HTTP as well as logged.
+   */
+  const alarmHistory = [];
+  const MAX_ALARMS = 200;
   let lastState = 'ok';
 
   function usage() {
@@ -124,6 +134,8 @@ export function createBreaker({ log = console, getUsage, config = breakerConfig 
           minutes: sess.minutes,
         };
         alarms.push(a);
+        alarmHistory.push({ ...a, firedAt: Date.now() });
+        if (alarmHistory.length > MAX_ALARMS) alarmHistory.shift();
         log.error(
           `[lk-breaker] ⛔ LONG SESSION ALARM — ${sess.kind} "${sess.identity}" in room "${sess.room}" ` +
           `has been connected ${sess.minutes.toFixed(0)} min (threshold ${config.longSessionMin}), ` +
@@ -164,8 +176,15 @@ export function createBreaker({ log = console, getUsage, config = breakerConfig 
       override: overrideActive(now)
         ? { by: override.by, reason: override.reason, expiresAt: override.until }
         : null,
+      // Queryable alarm history — see the note on alarmHistory above.
+      alarms: alarmHistory.slice(-25),
+      alarmCount: alarmHistory.length,
     };
   }
 
-  return { checkAllowed, evaluate, setOverride, clearOverride, snapshot, state, _ratios: ratios };
+  return {
+    checkAllowed, evaluate, setOverride, clearOverride, snapshot, state,
+    alarms: () => [...alarmHistory],
+    _ratios: ratios,
+  };
 }

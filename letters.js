@@ -51,6 +51,14 @@ export function attachLetters(app, deps) {
     activeSeats,
     sellerAddress,
     getWatchSeconds = () => 0,
+    /**
+     * Creator-bounty playback hooks. The watermark code that proves a clip
+     * aired is bound to THIS event, server-side — there is no separate
+     * client-reported "a clip played" signal that could disagree with it.
+     * Default no-ops keep standalone/test wiring unchanged.
+     */
+    onClipPlay = () => {},
+    onClipEnd = () => {},
     log = console,
   } = deps;
 
@@ -503,10 +511,16 @@ export function attachLetters(app, deps) {
         flyOut: letter.flyOut,
       },
     });
+    // Bounty: open the clip's watermark window at the true playback start.
+    try { onClipPlay(roomId, { clipId: letter.id, durationS: letter.durationS }); }
+    catch (e) { log.warn(`[letters] bounty onClipPlay failed: ${e.message}`); }
+
     setTimeout(() => {
       letter.status = 'done';
       state.playing = null;
       broadcastToRoom(roomId, { type: 'letter_end', letterId: letter.id });
+      try { onClipEnd(roomId, { clipId: letter.id }); }
+      catch (e) { log.warn(`[letters] bounty onClipEnd failed: ${e.message}`); }
       setTimeout(() => removeLetter(letter), MEDIA_TTL_MS);
     }, letter.durationS * 1000 + STINGER_BUFFER_MS);
   }
