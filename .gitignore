@@ -7,3 +7,6 @@ data/rooms.json
 data/identities.json
 tools/
 .next/
+
+# lazy-connect runtime ledger (observability artifact, not source)
+data/livekit-sessions.json

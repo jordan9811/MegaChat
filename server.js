@@ -27,6 +27,10 @@ import {
   updateRoom,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
+import { createActivityManager } from './livekit-activity.js';
+import { createWebhookTracker, verifyWebhookJwt, reconcile } from './livekit-webhooks.js';
+import { createBreaker, breakerConfig } from './livekit-breaker.js';
+import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
 import { verifyRoomAccess } from './auth.js';
 import {
   toAtomic,
@@ -438,6 +442,9 @@ app.get('/api/config', (req, res) => {
     roomId,
     roomName: cfg.name,
     roomActive: cfg.active,
+    // Lazy connect: tells the overlay whether to hold a LiveKit connection
+    // while idle (it should not) and how to run its signal channel.
+    lazyConnect: lazyClientConfig(cfg.lazyConnectScope),
     chainId: CHAIN_ID,
     chainIdHex: '0x' + CHAIN_ID.toString(16),
     chainName: 'Tempo',
@@ -573,6 +580,30 @@ function broadcastToRoom(streamRoomId, message) {
   });
 }
 
+/**
+ * Lazy connect — owns "should the overlay be holding a LiveKit connection".
+ * See LIVEKIT-AUDIT.md: the overlay used to connect on page load and never
+ * hang up, which is what drained the free tier with no guests on camera.
+ */
+const lkActivity = createActivityManager({ broadcastToRoom, hasOverlay });
+
+/**
+ * Webhook-derived session truth + the burn breaker that reads it.
+ * Deliberately NOT fed by lkActivity's self-reported ledger: a breaker fed by
+ * the same self-report that hid the last leak would fail in exactly the case
+ * it exists for.
+ */
+const lkWebhooks = createWebhookTracker({
+  onSession: (rec) => {
+    console.log(`[lk-webhook] session ${rec.kind} ${rec.identity} in ${rec.room} — ${(rec.durationMs / 60_000).toFixed(2)}min${rec.outOfOrder ? ' (out-of-order delivery, reconciled)' : ''}`);
+  },
+});
+const lkBreaker = createBreaker({ getUsage: () => lkWebhooks.stats() });
+{
+  const t = setInterval(() => lkBreaker.evaluate(), 60_000);
+  if (t.unref) t.unref();
+}
+
 function broadcastMeterUpdate(seat, payload) {
   const msg = { type: 'meter_update', ...payload };
   if (seat.ownerWs && seat.ownerWs.readyState === 1) {
@@ -682,6 +713,11 @@ function addParticipant(username, meta = {}) {
 
   activeSeats.set(seatId, seat);
 
+  // Lazy connect: a granted seat is a hard commitment — make sure the overlay
+  // is (or is becoming) connected. Usually a no-op because the join sheet
+  // already prewarmed us well before payment cleared.
+  lkActivity.seatOccupied(seat.streamRoomId, seatId);
+
   // NOTE: we do NOT broadcast seat_added here. The overlay tile must only appear
   // after the camera is actually live (camera_ready), not on payment/join.
 
@@ -758,6 +794,9 @@ function removeParticipant(seatId, reason = 'left') {
 
   activeSeats.delete(seatId);
   if (seat._graceTimer) { clearTimeout(seat._graceTimer); seat._graceTimer = null; }
+  // Lazy connect: last seat out starts the grace timer (not an instant hangup —
+  // back-to-back joiners must never see a connect/disconnect flap).
+  lkActivity.seatVacated(seat.streamRoomId, seatId);
   // LiveKit rooms: the SFU drops the participant NOW (kick/leave enforcement
   // server-side, not just client goodwill). vdo rooms: no-op.
   {
@@ -975,6 +1014,13 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     console.log('Client disconnected');
+    // Overlay browser source went away (OBS closed, scene removed, reload).
+    // Close its ledger record so "connected minutes" never over-counts, and
+    // only when no OTHER overlay is still rendering this room.
+    if (ws.__role === 'overlay') {
+      const rid = ws.__streamRoomId || DEFAULT_ROOM_ID;
+      setImmediate(() => { if (!hasOverlay(rid)) lkActivity.overlayGone(rid); });
+    }
     const seatId = ws.__seatId;
     if (!seatId) return;
     const seat = activeSeats.get(seatId);
@@ -1054,6 +1100,118 @@ const livekit = createLivekitService();
 if (livekit) console.log('[livekit] transport available at', livekit.url, '— now the default');
 
 // Token minting — publisher tokens require the seat the join flow granted.
+// ─── LiveKit webhooks: the authoritative session source ─────────────────────
+// Raw body required — the signature commits to the exact bytes.
+app.post('/api/livekit/webhook', express.raw({ type: '*/*', limit: '256kb' }), (req, res) => {
+  if (!livekit) return res.status(503).json({ error: 'LiveKit not configured' });
+  const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body || ''));
+  try {
+    verifyWebhookJwt(req.headers.authorization, raw, {
+      apiKey: process.env.LIVEKIT_API_KEY,
+      apiSecret: process.env.LIVEKIT_API_SECRET,
+    });
+  } catch (e) {
+    // Unsigned or tampered deliveries are rejected outright — an
+    // unauthenticated writer to the authoritative session ledger would be
+    // worse than having no ledger at all.
+    console.warn(`[lk-webhook] REJECTED delivery: ${e.message}`);
+    return res.status(401).json({ error: 'invalid webhook signature', detail: e.message });
+  }
+  let event;
+  try { event = JSON.parse(raw.toString('utf8')); }
+  catch { return res.status(400).json({ error: 'unparseable webhook body' }); }
+
+  const out = lkWebhooks.handle(event);
+  lkBreaker.evaluate();
+  res.json({ ok: true, ...out });
+});
+
+/** Webhook-derived usage + breaker state (operator surface). */
+app.get('/api/livekit/burn', (_req, res) => {
+  res.json({
+    breaker: lkBreaker.snapshot(),
+    webhook: lkWebhooks.stats(),
+    reconciliation: reconcile({
+      webhookStats: lkWebhooks.stats(),
+      ledgerStats: lkActivity.ledgerStats(),
+    }),
+  });
+});
+
+/** Operator override — requires who and why, both logged. */
+app.post('/api/livekit/burn/override', (req, res) => {
+  try {
+    const { by, reason, ttlMs } = req.body || {};
+    const o = lkBreaker.setOverride({ by, reason, ttlMs });
+    res.json({ ok: true, override: { by: o.by, reason: o.reason, expiresAt: o.until } });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.delete('/api/livekit/burn/override', (req, res) => {
+  lkBreaker.clearOverride(req.body?.by || 'operator');
+  res.json({ ok: true });
+});
+
+// ─── Lazy connect: activity signal surface ──────────────────────────────────
+// The overlay does not hold a LiveKit connection while idle; it obeys these.
+
+/** Join sheet opened — earliest credible intent. Wakes the overlay so the
+ *  handshake completes INSIDE the payment flow (which is slower), making
+ *  lazy connect invisible to the audience. */
+app.post('/api/livekit/prewarm', (req, res) => {
+  const resolved = resolveRoomFromRequest(req.body, req.query);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  const token = lkActivity.prewarm(resolved.roomId);
+  res.json({ ok: true, prewarm: token, health: lkActivity.overlayHealth(resolved.roomId) });
+});
+
+/**
+ * Guest is still moving through the join flow — restarts the abandon clock.
+ * Without this, a slow-but-real join (someone reading a wallet dialog) would
+ * be clipped at the abandon cap mid-payment, which is worse than the burn the
+ * cap prevents. sendBeacon-friendly: accepts text/plain bodies too.
+ */
+app.post('/api/livekit/prewarm/progress', express.text({ type: '*/*' }), (req, res) => {
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
+  const resolved = resolveRoomFromRequest(body, req.query);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  const ok = lkActivity.prewarmProgress(resolved.roomId, body?.prewarm, body?.stage);
+  res.json({ ok, stage: body?.stage || null });
+});
+
+/** Guest closed the sheet without buying — release the hold (grace still applies). */
+app.post('/api/livekit/prewarm/cancel', express.text({ type: '*/*' }), (req, res) => {
+  if (typeof req.body === 'string') { try { req.body = JSON.parse(req.body); } catch { req.body = {}; } }
+  const resolved = resolveRoomFromRequest(req.body, req.query);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  lkActivity.cancelPrewarm(resolved.roomId, req.body?.prewarm);
+  res.json({ ok: true });
+});
+
+/** Overlay heartbeat + polling fallback in one call: proves the browser source
+ *  is alive AND returns the state it should be in if its WS signal died. */
+app.post('/api/livekit/overlay/beat', (req, res) => {
+  const resolved = resolveRoomFromRequest(req.body, req.query);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  lkActivity.beat(resolved.roomId, req.body?.lkState, req.body?.identity);
+  res.json({ ok: true, desired: lkActivity.desired(resolved.roomId) });
+});
+
+/** Overlay health for the booth dashboard + the paid-join guard. */
+app.get('/api/livekit/overlay/health', (req, res) => {
+  const resolved = resolveRoomFromRequest(req.query, req.query);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  res.json(lkActivity.overlayHealth(resolved.roomId));
+});
+
+/** Session ledger — how the next leak gets caught on day one. */
+app.get('/api/livekit/sessions', (req, res) => {
+  res.json({ ...lkActivity.ledgerStats(), lazyConnect: lazyConfig.enabled });
+});
+
 app.post('/api/livekit/token', async (req, res) => {
   try {
     const { role, seatId } = req.body || {};
@@ -1068,6 +1226,20 @@ app.post('/api/livekit/token', async (req, res) => {
     if (!livekit) {
       return res.status(503).json({ error: 'LiveKit is not configured on this server' });
     }
+    // Burn breaker. A token IS a new connection, so this is the chokepoint.
+    // Existing sessions already hold their tokens and are untouched — we never
+    // cut a live guest off air to save minutes.
+    {
+      const gate = lkBreaker.checkAllowed();
+      if (!gate.allowed) {
+        console.error(`[lk-breaker] refused a ${role} token for room ${roomId} — budget reached`);
+        return res.status(503).json({
+          error: gate.reason,
+          code: 'burn_budget_reached',
+          state: gate.state,
+        });
+      }
+    }
     if (role === 'publisher') {
       const seat = activeSeats.get(String(seatId || ''));
       if (!seat || seat.streamRoomId !== roomId) {
@@ -1075,6 +1247,17 @@ app.post('/api/livekit/token', async (req, res) => {
       }
       const token = await livekit.publisherToken(roomId, seat);
       return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity: `seat:${seat.id}` });
+    }
+    if (role === 'overlay') {
+      // STABLE identity, deliberately. The old random `viewer:<rand>` meant
+      // LiveKit could not dedupe: every OBS reload connected as a brand-new
+      // participant while the stale one lingered until the reaper took it, so
+      // reload churn STACKED billed participants (26 in one session — see
+      // LIVEKIT-AUDIT.md). A fixed identity makes a rejoin evict its own
+      // predecessor instantly, so reconnects are idempotent and self-healing.
+      const identity = `overlay:${roomId}`;
+      const token = await livekit.subscriberToken(roomId, identity);
+      return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity });
     }
     if (role === 'subscriber') {
       const identity = `viewer:${Math.random().toString(36).slice(2, 10)}`;

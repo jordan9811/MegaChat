@@ -388,9 +388,88 @@ function setJoinState(state, labelOverride) {
     || (joinBtnState === 'idle' && CONFIG && CONFIG.roomActive === false);
 }
 
+// Lazy connect: the overlay sits disconnected while idle, so it needs the
+// EARLIEST credible signal that a guest is coming — this is the FIRST "Join
+// Stream" click, before wallet-connect and before payment (there is no
+// separate join-sheet/modal step in this UI to hook instead). The handshake
+// then runs in parallel with the payment flow (which is far slower), so the
+// overlay is connected and waiting before the guest's tracks exist and the
+// audience sees no difference. Fire-and-forget: a failed prewarm must never
+// block a join, and an abandoned attempt expires on its own TTL server-side
+// — see the abandonment-cost note in HANDOFF-LAZY-CONNECT.md (pinned,
+// unresolved): today that TTL is prewarmTtlMs (5 min), not the 60s grace,
+// so a high wallet-flow drop-off rate is more expensive than the happy-path
+// math implies.
+let prewarmToken: string | null = null;
+function prewarmOverlay() {
+  fetch('/api/livekit/prewarm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ room: streamRoomId }),
+  })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      if (!d) return;
+      if (d.prewarm) prewarmToken = d.prewarm;
+      // Reliability guard: lazy connect's new failure mode is "guest pays,
+      // overlay never woke, nobody appears on stream" — a refund event on a
+      // live broadcast. Warn BEFORE the money moves rather than blocking,
+      // since a false negative here would kill a legitimate join.
+      const h = d.health;
+      if (h && !h.present) {
+        showMessage(
+          "<strong>Heads up:</strong> this streamer's overlay isn't open right now, so your camera may not appear on their broadcast. " +
+          "You can still join — you're only charged for the seconds you're actually on.",
+          'warning',
+        );
+      }
+    })
+    .catch(() => { /* overlay wake is best-effort; the seat grant wakes it too */ });
+}
+export function releasePrewarm() {
+  if (!prewarmToken) return;
+  const body = JSON.stringify({ room: streamRoomId, prewarm: prewarmToken });
+  prewarmToken = null;
+  // sendBeacon survives page teardown; fetch does not. This is the tab-close
+  // path, and it is exactly the path the old code never had — which is why an
+  // abandoned prewarm used to ride the full 5-minute TTL.
+  if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+    try { navigator.sendBeacon('/api/livekit/prewarm/cancel', body); return; } catch { /* fall through */ }
+  }
+  fetch('/api/livekit/prewarm/cancel', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true,
+  }).catch(() => { /* the abandon cap cleans it up anyway */ });
+}
+
+/**
+ * Tell the server the guest is still moving forward, which restarts the
+ * abandon clock. Called at each real step of the join flow so a slow human in
+ * a wallet dialog is never mistaken for someone who walked away.
+ */
+export function prewarmProgress(stage) {
+  if (!prewarmToken) return;
+  fetch('/api/livekit/prewarm/progress', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ room: streamRoomId, prewarm: prewarmToken, stage }),
+    keepalive: true,
+  }).catch(() => { /* best effort; the cap is the backstop */ });
+}
+
+// Bail paths a leaving user actually takes. leaveStream() covers the polite
+// exit; these cover the rest.
+if (typeof window !== 'undefined') {
+  const bail = () => releasePrewarm();
+  window.addEventListener('pagehide', bail);
+  window.addEventListener('beforeunload', bail);
+  // Backgrounding a tab is NOT abandonment (people tab away mid-wallet), so
+  // visibilitychange deliberately does not release — the abandon cap handles
+  // someone who backgrounds and never returns.
+}
+
 function onJoinButtonClick() {
   if (joinBtnState === 'go-live') return goLive();
-  if (joinBtnState === 'idle') return joinSeat();
+  if (joinBtnState === 'idle') { prewarmOverlay(); return joinSeat(); }
   // The same control exits the flow: cancel a hung camera wait, or leave
   // the stream while live (audit P0-1 — no dead-ends, no button pairs).
   if (joinBtnState === 'awaiting-camera' || joinBtnState === 'live') {
@@ -1010,6 +1089,7 @@ async function joinSeatMetered(username) {
   };
 
   setJoinState('busy', '⏳ Confirming seat…');
+  prewarmProgress('tx-pending');
   const paid = await fetch('/api/join/passkey', {
     method: 'POST',
     headers: {
@@ -1057,11 +1137,16 @@ async function joinSeat() {
       // viewer IS signed in; this step is about money, and saying "sign in"
       // twice made the two look broken.
       setJoinState('busy', '🔐 Connecting your balance…');
+      prewarmProgress('wallet-connect'); // slow wallet UI must not read as abandonment
       const addr = await connectPrivyWallet('auto');
       if (!addr) {
+        // Wallet dismissed/rejected — a real bail path. Release now rather
+        // than making the overlay wait out the abandon cap.
+        releasePrewarm();
         setJoinState('idle');
         return;
       }
+      prewarmProgress('wallet-approve');
     }
 
     await ensureTempoChain();
@@ -1076,6 +1161,9 @@ async function joinSeat() {
     }
   } catch (error) {
     console.error('Error:', error);
+    // A failed/rejected join is a bail path: the guest is not arriving, so
+    // stop holding the overlay connection open for them.
+    releasePrewarm();
     // Joining reserves the session cap — that's the "cost" a viewer must
     // cover when the revert says their balance can't.
     await showTxError('', error, { need: CONFIG && CONFIG.maxSession });
@@ -1105,6 +1193,7 @@ function onJoinSuccess(data) {
   }
   setSessionUi(true);
   if (!data.free) showMeter(data.remaining, '0', data.secondsLeft);
+  prewarmProgress('seat-granted');
   if (data.free) {
     showMessage("✅ You're in — this room is FREE. Allow camera access above, then hit GO LIVE.", 'success');
     startCameraStage(data);
@@ -1127,6 +1216,7 @@ function onJoinSuccess(data) {
 }
 
 function startCameraStage(data) {
+  prewarmProgress('camera-stage');
   // LiveKit rooms publish via the SDK — the vdo iframe path never runs.
   if (isLivekitRoom()) return void startLivekitCameraStage(data);
   cameraLiveFired = false;
@@ -1247,6 +1337,7 @@ function fireCameraReady(source) {
 // goodbye message so failure paths can keep their own error on screen.
 async function leaveStream(quiet) {
   const seatId = mySeatId;
+  releasePrewarm(); // the seat's own vacate starts the overlay grace timer
   if (!seatId) return;
   setJoinState('busy', '⏳ Leaving…');
   // Stop reacting to this seat locally right away so the meter stops instantly.
