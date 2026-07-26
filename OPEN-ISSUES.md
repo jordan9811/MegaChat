@@ -50,7 +50,8 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   at 50% / 80% abandonment, vs the old 313 / 161), but the underlying
   ~11-participant-minutes-per-session estimate has never been checked against
   Cloud.
-- **L5 — MERGE NOT PERFORMED; bounty rebase CONFLICTS.** The merge was gated on
+- **L5 — RESOLVED (2026-07-25).** Merge landed and the rebase is done. `fix/livekit-lazy-connect` merged into `v0-ui-migration` with **0 code conflicts**; the bounty branch rebased on top, resolving 3 adjacent-addition hunks take-both-sides plus one import-line collision resolved deterministically (see DECISIONS). Deployed; webhook route live in production. Original finding retained below for history:
+- **L5 (historical) — MERGE NOT PERFORMED; bounty rebase CONFLICTS.** The merge was gated on
   items 1–4 passing and item 1 cannot pass (L1/L2). Separately, the rebase does
   NOT apply cleanly, contrary to the earlier G8 prediction:
   - `fix/livekit-lazy-connect` → `v0-ui-migration`: **0 conflicts**, clean.
@@ -65,6 +66,39 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   - G8's "expect a small merge, not a conflict" was **wrong**. The isolation
     held (the regions really are independent) but git still needs a human to
     say so at three anchor points.
+
+### Newly filed this run
+- **L6 — Diagnose the ~50% RTC rejections properly.** Report the ACTUAL error
+  bodies from the rejected `/rtc/validate` calls rather than only the status
+  code. A quota 429 and a rate-limit 429 from firing validate calls in rapid
+  succession are different diagnoses with different fixes, and the earlier
+  sample fired 12 requests in a tight loop — which could itself have induced
+  rate limiting. Re-probe with spacing (e.g. 1 request every 5s) and capture
+  full bodies + headers (`Retry-After`, any rate-limit headers) before
+  concluding the quota is the cause. **Still open — not done in this run.**
+- **L7 — Railway sleep setting is dashboard-only.** Measured: no cold start
+  across a 75s idle (TTFB stayed 0.18–0.22s) and `railway.json` contains no
+  sleep directive, but Railway's app-sleep toggle lives in the service
+  dashboard, which I cannot read. The architecture (persistent WebSocket
+  server + interval sweepers) is incompatible with sleeping, so the risk is
+  low — but confirm the toggle is OFF, because a slept container drops
+  `participant_left` deliveries and leaves sessions permanently open in the
+  ledger the breaker meters.
+
+### Bounty follow-ups — PINNED, not done this run
+- **G9 — evidence-store durability** (already filed above): the mutable
+  `bounty.json` is still rewritten whole.
+- **P1 — per-playback-instance nonce.** Codes are bound to a clip id, so the
+  same clip replayed later reuses the same namespace. A per-playback-instance
+  nonce would make each airing independently attestable.
+- **P2 — sub-3s clip residual.** Clips under `BOUNTY_MIN_CLIP_SECONDS` are
+  recorded `BELOW_SAMPLING_FLOOR` and pay nothing, but the contributor's money
+  is still in the pool. Decide whether it refunds, rolls over, or is disclosed
+  up front.
+- **P3 — Run B frame-sampling cost.** Nobody has priced the frame retrieval +
+  OCR per verification pass. At `sampleSize` frames per clip across many
+  clips, this could exceed the bounty it protects.
+  *(These three were NOT previously in this file — filed now.)*
 
 ### Pre-existing, carried forward
 ## Creator bounty — Run A (2026-07-25, `feat/bounty-claim-runA`)
