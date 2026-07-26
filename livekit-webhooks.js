@@ -97,19 +97,58 @@ export function createWebhookTracker({ log = console, onSession = () => {} } = {
     if (id.startsWith('host:')) return 'booth';
     if (id.startsWith('seat:')) return 'guest';
     if (id.startsWith('viewer:')) return 'viewer';
-    return 'unknown';
+    return 'foreign';
+  }
+
+  /** Not billable: our own probes, and anything not minted by this server. */
+  function isBillable(identity) {
+    return !isProbe(identity) && !isForeign(identity);
   }
 
   /**
    * Synthetic identities used to verify the webhook path end-to-end.
-   * They are RECORDED (so a probe is visible and auditable) but EXCLUDED from
-   * budget metering — otherwise our own deployment checks would eat a real
-   * streamer's burn budget and could, in the limit, trip the breaker and block
-   * live traffic. Pattern is deliberately explicit rather than clever: an
-   * identity has to be deliberately named a probe to be discounted.
+   * RECORDED (so a probe is visible and auditable) but EXCLUDED from budget
+   * metering — otherwise our own deployment checks would eat a real streamer's
+   * burn budget and could, in the limit, trip the breaker and block live
+   * traffic. Deliberately explicit: an identity has to be named a probe.
    */
   function isProbe(identity) {
     return /__probe__|__ackprobe|^probe:|^test:/i.test(String(identity || ''));
+  }
+
+  /**
+   * Is this participant one of OURS at all?
+   *
+   * Every token this server mints carries a known prefix — `overlay:`,
+   * `host:`, `seat:`, `viewer:` (see server.js /api/livekit/token). So an
+   * identity with no known prefix cannot be a MegaChat participant. That is an
+   * invariant of our own system, not a guess about anyone else's test data,
+   * which is why it is the primary rule here.
+   *
+   * It catches LiveKit dashboard test fires (observed live: room "Demo Room",
+   * identity "John Doe" — a 150-minute phantom that ate 37.5% of the daily
+   * burn budget before being noticed) and would equally catch any other
+   * foreign participant in the project.
+   *
+   * NOTE, stated rather than hidden: LiveKit's webhook payload carries no
+   * field that explicitly marks a dashboard test delivery. I checked the
+   * received data and there is no `test`/`source` flag to key on. So this is a
+   * heuristic — but a heuristic about OUR namespace, which is far stronger
+   * than pattern-matching their placeholder strings. The literal
+   * "Demo Room"/"John Doe" values are matched only as a secondary label for
+   * reporting, never as the exclusion rule.
+   */
+  function isForeign(identity) {
+    const id = String(identity || '');
+    return !/^(overlay|host|seat|viewer):/.test(id);
+  }
+
+  /** Cosmetic label so reports can say WHY something was discounted. */
+  function foreignLabel(room, identity) {
+    if (/^demo room$/i.test(String(room || '')) || /^john doe$/i.test(String(identity || ''))) {
+      return 'livekit_dashboard_test';
+    }
+    return 'foreign_participant';
   }
 
   function handle(event) {
@@ -172,35 +211,63 @@ export function createWebhookTracker({ log = console, onSession = () => {} } = {
     const monthStart = new Date(new Date(now).getFullYear(), new Date(now).getMonth(), 1).getTime();
     // Budget metering EXCLUDES probes; the raw counts still include them so a
     // probe is never invisible, just never billed against the budget.
-    const billable = sessions.filter((s) => s.kind !== 'probe');
+    const billable = sessions.filter((s) => isBillable(s.identity));
     const closedMinutes = (since) => billable.reduce((a, s) => {
       const st = Math.max(s.start, since);
       return s.end > st ? a + (s.end - st) / 60_000 : a;
     }, 0);
     const openMinutes = (since) => [...open.entries()]
-      .filter(([k]) => !isProbe(k.split('|')[1]))
+      .filter(([k]) => isBillable(k.split('|').slice(1).join('|')))
       .reduce((a, [, o]) => {
         const st = Math.max(o.startedAt, since);
         return now > st ? a + (now - st) / 60_000 : a;
       }, 0);
-    const probeClosed = sessions.length - billable.length;
+    const excludedClosed = sessions.length - billable.length;
     return {
       openCount: open.size,
       closedCount: sessions.length,
-      probeSessionsExcluded: probeClosed,
+      excludedSessions: excludedClosed,
+      probeSessionsExcluded: excludedClosed, // retained name for compatibility
       minutesToday: +(closedMinutes(dayAgo) + openMinutes(dayAgo)).toFixed(2),
       minutesThisMonth: +(closedMinutes(monthStart) + openMinutes(monthStart)).toFixed(2),
       openSessions: [...open.entries()].map(([k, o]) => {
         const [room, identity] = k.split('|');
+        const billable = isBillable(identity);
         return {
           room, identity, kind: kindOf(identity),
           startedAt: o.startedAt, minutes: +((now - o.startedAt) / 60_000).toFixed(2),
+          billable,
+          ...(billable ? {} : { excludedAs: isProbe(identity) ? 'probe' : foreignLabel(room, identity) }),
         };
       }),
     };
   }
 
-  return { handle, stats, sessions, open, verifyWebhookJwt, _seen: seen };
+  /**
+   * Purge sessions that are not ours (dashboard tests, foreign participants).
+   * Returns what it removed so the action is reportable rather than silent.
+   */
+  function purgeForeign() {
+    const removed = [];
+    for (const [k, o] of [...open.entries()]) {
+      const identity = k.split('|').slice(1).join('|');
+      const room = k.split('|')[0];
+      if (!isBillable(identity)) {
+        open.delete(k);
+        removed.push({
+          room, identity, kind: kindOf(identity),
+          openMinutes: +((Date.now() - o.startedAt) / 60_000).toFixed(2),
+          reason: isProbe(identity) ? 'probe' : foreignLabel(room, identity),
+        });
+      }
+    }
+    return removed;
+  }
+
+  return {
+    handle, stats, sessions, open, verifyWebhookJwt,
+    purgeForeign, isBillable, isForeign, kindOf, _seen: seen,
+  };
 }
 
 /**

@@ -1139,6 +1139,22 @@ app.get('/api/livekit/burn', (_req, res) => {
   });
 });
 
+/**
+ * Purge sessions that were never ours — LiveKit dashboard test fires, or any
+ * foreign participant in the project. A dashboard test left a 150-minute
+ * phantom that consumed 37.5% of the daily burn budget before anyone looked;
+ * an operator needs a way to clear that without restarting the service.
+ */
+app.post('/api/livekit/burn/purge-foreign', (req, res) => {
+  const removed = lkWebhooks.purgeForeign();
+  if (removed.length) {
+    console.warn(`[lk-webhook] purged ${removed.length} non-MegaChat session(s): ` +
+      removed.map((r) => `${r.identity}@${r.room} (${r.openMinutes}min, ${r.reason})`).join('; '));
+  }
+  lkBreaker.evaluate();
+  res.json({ ok: true, purged: removed.length, removed, burn: lkBreaker.snapshot() });
+});
+
 /** Operator override — requires who and why, both logged. */
 app.post('/api/livekit/burn/override', (req, res) => {
   try {
