@@ -40,6 +40,13 @@ const { StubSettlement } = await import('./bounty-settlement.js');
 const { bountyConfig } = await import('./bounty-claim.config.js');
 const quietSettlement = new StubSettlement({ log: { log() {} } });
 
+// Validate the evidence chain up front, exactly as attachBountyRoutes does at
+// boot. Without this every release fail-closes with `evidence_unverified` —
+// which is the correct production behaviour (never pay against unvouched
+// proof), but it means an in-process harness has to opt in the same way a
+// booting server does.
+store.verifyEvidenceIntegrity();
+
 // ── A. every illegal transition throws and writes nothing ──────────────────
 {
   escrow.reserve({ platform: 'twitch', handle: 'illegaltest' });
@@ -147,15 +154,17 @@ const quietSettlement = new StubSettlement({ log: { log() {} } });
 
   // ── D. overlay self-report halts issuance (early warning, NOT enforcement) ─
   const s2 = store.createAirSession({ claimId: claim.id, roomId: 'rwm2', platform: 'twitch' });
-  watermark.startClipPlayback(s2.id, { clipId: 'Z', durationS: 10, now: t0 });
+  // NOTE: issueCodeForWindow takes a PLAYBACK id now, not a clip id — two
+  // airings of one clip are two separate windows.
+  const zPlay = watermark.startClipPlayback(s2.id, { clipId: 'Z', durationS: 10, now: t0 });
   watermark.reportBadgeTooSmall(s2.id, { ratio: 0.005, height: 6 });
   ok('D. self-reported too-small badge stops code issuance',
-    watermark.issueCodeForWindow(s2.id, 'Z', { now: t0 + 1000 }) === null);
+    watermark.issueCodeForWindow(s2.id, zPlay.playbackId, { now: t0 + 1000 }) === null);
   ok('D. violation recorded as a SELF REPORT (not proof of shrinking)',
     store.getAirSession(s2.id).violations.some((v) => v.type === 'BADGE_TOO_SMALL_SELF_REPORT'));
   watermark.clearBadgeViolation(s2.id);
   ok('D. clearing it resumes issuance',
-    watermark.issueCodeForWindow(s2.id, 'Z', { now: t0 + 2000 }) !== null);
+    watermark.issueCodeForWindow(s2.id, zPlay.playbackId, { now: t0 + 2000 }) !== null);
 }
 
 // ── E. verifier: pass / fail / partial / ambiguous / too-small / no-playback ─
@@ -294,6 +303,115 @@ let ambiguousSessionId = null;
   const again = escrow.refundExpired({ handleKey: key, actor: 'gate', settlement: quietSettlement });
   ok('F. refunding again is idempotent (no double refund)',
     store.getPool(key).refunded === 40, `still ${store.getPool(key).refunded}`);
+}
+
+// ── K. PER-PLAYBACK NONCE: same clip twice must be two separate evidences ──
+{
+  store.reserveHandle({ platform: 'twitch', handle: 'twice', ttlMs: 1e9 });
+  const claim = store.createClaim({ handleKey: 'twitch:twice', claimant: 'u', ttlMs: 1e9 });
+  const s = store.createAirSession({ claimId: claim.id, roomId: 'rtwice', platform: 'twitch' });
+  const t0 = Date.now();
+
+  const r1 = watermark.startClipPlayback(s.id, { clipId: 'SAME', durationS: 10, now: t0 });
+  for (let k = bountyConfig.codeRotateMs; k < 10_000; k += bountyConfig.codeRotateMs) {
+    watermark.currentOrRotate(s.id, { now: t0 + k });
+  }
+  watermark.endClipPlayback(s.id, { clipId: 'SAME', now: t0 + 10_000 });
+  const p1 = watermark.allSessionCodes(s.id).filter((c) => c.playbackId === r1.playbackId);
+
+  const r2 = watermark.startClipPlayback(s.id, { clipId: 'SAME', durationS: 10, now: t0 + 60_000 });
+  for (let k = bountyConfig.codeRotateMs; k < 10_000; k += bountyConfig.codeRotateMs) {
+    watermark.currentOrRotate(s.id, { now: t0 + 60_000 + k });
+  }
+  watermark.endClipPlayback(s.id, { clipId: 'SAME', now: t0 + 70_000 });
+  const p2 = watermark.allSessionCodes(s.id).filter((c) => c.playbackId === r2.playbackId);
+
+  ok('K. replaying the SAME clip issues codes for the second airing too',
+    p1.length > 0 && p2.length > 0, `p1=${p1.length} p2=${p2.length}`);
+  ok('K. the two airings have DISTINCT playback ids',
+    r1.playbackId !== r2.playbackId);
+  ok('K. and distinct code namespaces',
+    p1[0].code.split('-')[0] !== p2[0].code.split('-')[0],
+    `${p1[0].code} vs ${p2[0].code}`);
+  const validMid2 = watermark.codesValidAt(s.id, t0 + 65_000).map((c) => c.code);
+  ok('K. NO playback-1 code validates inside playback-2 window (no double-pay)',
+    !validMid2.some((c) => p1.map((x) => x.code).includes(c)));
+  ok('K. two separate windows exist for one clip id',
+    store.getAirSession(s.id).playbackWindows.filter((w) => w.clipId === 'SAME').length === 2);
+
+  // Both airings evidenced ⇒ the verifier counts TWO playbacks.
+  const fx = JSON.parse(readFileSync('fixtures/bounty-pass.json', 'utf8'));
+  const v = await verifier.verifyAirSession(s.id, {
+    frameSource: new verifier.MockFrameSource(fx),
+    codeChecker: new verifier.MockCodeChecker(fx),
+  });
+  ok('K. a clip aired twice pays for TWO verified playbacks',
+    v.verifiedClips === 2, `verifiedClips=${v.verifiedClips}`);
+}
+
+// ── L. EVIDENCE LOG: append-only, validated, and gating payouts ────────────
+{
+  const evd = await import('./bounty-evidence.js');
+  store.reserveHandle({ platform: 'twitch', handle: 'eviD', ttlMs: 1e9 });
+  const claim = store.createClaim({ handleKey: store.handleKey('twitch', 'eviD'), claimant: 'u', ttlMs: 1e9 });
+  const s = store.createAirSession({ claimId: claim.id, roomId: 'revid', platform: 'twitch' });
+  const t0 = Date.now();
+  watermark.startClipPlayback(s.id, { clipId: 'EV', durationS: 10, now: t0 });
+  for (let k = bountyConfig.codeRotateMs; k < 10_000; k += bountyConfig.codeRotateMs) {
+    watermark.currentOrRotate(s.id, { now: t0 + k });
+  }
+
+  const rows = evd.allEvidence();
+  ok('L. evidence records carry seq + checksum',
+    rows.length > 0 && rows.every((r) => r.seq > 0 && typeof r.sum === 'string'));
+  ok('L. evidence captures the code issuance a payout rests on',
+    rows.some((r) => r.type === 'CODE_ISSUED'));
+  const rebuilt = evd.rebuildWindows(s.id);
+  ok('L. windows rebuild from evidence alone (independent of the cache)',
+    rebuilt.length === 1 && rebuilt[0].codes.length > 0,
+    `windows=${rebuilt.length} codes=${rebuilt[0]?.codes.length}`);
+  const recon = store.reconcileSessionEvidence(s.id);
+  ok('L. cache matches evidence when nothing is damaged', recon.diverged === false);
+
+  // Divergence must BLOCK a release rather than pay on a damaged cache.
+  const key = store.handleKey('twitch', 'eviD');
+  escrow.contribute({ platform: 'twitch', handle: 'eviD', contributor: '0x', amount: '100' });
+  for (const to of ['RESERVED', 'CLAIM_PENDING', 'CLAIM_VERIFIED', 'AWAITING_AIRTIME', 'VERIFYING']) {
+    escrow.transition({ handleKey: key, to, actor: 'gate' });
+  }
+  const sess = store.getAirSession(s.id);
+  const realCodes = sess.playbackWindows[0].codes;
+  sess.playbackWindows[0].codes = realCodes.slice(0, 1); // simulate cache damage
+  const blocked = escrow.release({
+    handleKey: key, claimId: claim.id, airSessionId: s.id,
+    verifiedClips: 1, verifiedClipSeconds: 10, confidence: 0.95,
+    idempotencyKey: 'evid-1', settlement: quietSettlement,
+  });
+  ok('L. a payout is REFUSED when cache diverges from evidence',
+    blocked.released === 0 && blocked.skipped === 'evidence_diverged', blocked.skipped);
+  sess.playbackWindows[0].codes = realCodes; // restore
+
+  // Same file-integrity guarantees as the ledger.
+  const evPath = `${SCRATCH}/bounty-evidence.jsonl`;
+  const before = fsSync.readFileSync(evPath, 'utf8');
+  fsSync.appendFileSync(evPath, '{"type":"CODE_ISSUED","seq":999,"tor');
+  store._resetCache();
+  const rec = store.verifyEvidenceIntegrity();
+  ok('L. a torn FINAL evidence record recovers', rec.recovered === 1);
+
+  const lines = fsSync.readFileSync(evPath, 'utf8').trim().split('\n');
+  const tampered = JSON.parse(lines[1]); tampered.code = 'FAKE-CODE';
+  fsSync.writeFileSync(evPath, [lines[0], JSON.stringify(tampered), ...lines.slice(2)].join('\n') + '\n');
+  store._resetCache();
+  let refused = false;
+  try { store.verifyEvidenceIntegrity(); } catch (e) { refused = e.code === 'ledger_corrupt'; }
+  ok('L. a TAMPERED interior evidence record refuses to load', refused);
+  ok('L. and evidence is then marked untrustworthy, blocking payouts',
+    store.evidenceIsTrustworthy().ok === false);
+
+  fsSync.writeFileSync(evPath, before); // leave the scratch chain valid
+  store._resetCache();
+  store.verifyEvidenceIntegrity();
 }
 
 // ── H. source audit: no real settlement/transfer anywhere ──────────────────
