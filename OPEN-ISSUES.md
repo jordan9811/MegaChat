@@ -2,6 +2,10 @@
 
 Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
 
+> **Owner-facing daily summaries live in [`docs/briefs/`](docs/briefs/)** —
+> plain English, one file per working day. Any agent can be asked to write
+> one; see [`docs/briefs/README.md`](docs/briefs/README.md) for the format.
+
 > Note: this file also exists on `feat/bounty-claim-runA` with the bounty
 > section (B1–B5, G1–G9). This branch predates that one, so the two copies
 > will need merging when the branches come together.
