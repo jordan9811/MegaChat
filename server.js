@@ -1121,9 +1121,22 @@ app.post('/api/livekit/webhook', express.raw({ type: '*/*', limit: '256kb' }), (
   try { event = JSON.parse(raw.toString('utf8')); }
   catch { return res.status(400).json({ error: 'unparseable webhook body' }); }
 
-  const out = lkWebhooks.handle(event);
-  lkBreaker.evaluate();
-  res.json({ ok: true, ...out });
+  // ACKNOWLEDGE FIRST, process after. LiveKit retries on a slow or failed
+  // delivery, and a retried participant_left that we then dedupe is harmless —
+  // but a delivery we never ack can be dropped, which would leave a session
+  // looking permanently open in the exact ledger the breaker meters. That
+  // turns the leak detector into a false-alarm generator, so the ack must
+  // never wait on our processing.
+  res.json({ ok: true, accepted: true });
+  setImmediate(() => {
+    try {
+      const out = lkWebhooks.handle(event);
+      lkBreaker.evaluate();
+      if (out.deduped) console.log(`[lk-webhook] duplicate ${event.event} ignored (idempotent)`);
+    } catch (e) {
+      console.error(`[lk-webhook] post-ack processing failed for ${event?.event}: ${e.message}`);
+    }
+  });
 });
 
 /** Webhook-derived usage + breaker state (operator surface). */
