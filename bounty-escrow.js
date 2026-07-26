@@ -147,12 +147,66 @@ export function contribute({ platform, handle, contributor, amount, letterRef, a
 }
 
 /**
- * Refund every held contribution on an expired, never-claimed handle.
- * Settlement is stubbed; this writes the ledger truth so Run B has an exact
- * list of what to actually pay back.
+ * Every reason money can go back to a contributor. Refunds are enumerated
+ * rather than free-text because "why was this refunded" is a question the
+ * ledger has to answer years later, and a typo'd string is not an answer.
+ *
+ * `full` means the reason refunds the handle's entire remaining hold and
+ * retires the reservation; the rest are per-contribution.
  */
-export function refundExpired({ handleKey, actor = 'system', settlement }) {
+export const REFUND_REASONS = {
+  HANDLE_EXPIRED: {
+    full: true,
+    text: 'handle never claimed before expiry',
+  },
+  UNVERIFIABLE_CLIP: {
+    full: false,
+    text: 'clip could not be verified as aired',
+  },
+  DISPUTE_RESOLVED: {
+    full: false,
+    text: 'refunded by dispute resolution',
+  },
+  ADMIN_ACTION: {
+    full: false,
+    text: 'manual refund by operator',
+  },
+};
+
+/**
+ * The one way money goes back. Every reason routes through here so there is a
+ * single place where a refund is written, a single idempotency rule, and a
+ * single settlement call site.
+ *
+ * IDEMPOTENCY IS PER CONTRIBUTION, NOT PER (CONTRIBUTION, REASON). A given
+ * contribution can be refunded exactly once no matter how many reasons arrive
+ * for it — a dispute landing on a clip that already refunded as unverifiable
+ * must not pay the contributor twice. The second call returns the original
+ * row and reports `deduped`.
+ *
+ * ⚠ NO REAL FUNDS MOVE. `settlement.refund` is a stub that records intent.
+ *
+ * @param {object}   a
+ * @param {string}   a.handleKey
+ * @param {keyof typeof REFUND_REASONS} a.reason
+ * @param {string}   a.actor       who initiated (operator id, or 'system')
+ * @param {string[]} [a.contributionIds] specific contributions; omit for all HELD
+ * @param {string}   [a.reference] external ref — dispute id, air session id, ticket
+ * @param {string}   [a.note]      free text ALONGSIDE the enum, never instead of it
+ */
+export function refund({
+  handleKey, reason, actor = 'system', contributionIds, reference = null,
+  note = null, settlement,
+}) {
   assertEnabled();
+  const spec = REFUND_REASONS[reason];
+  if (!spec) {
+    throw new Error(
+      `Unknown refund reason "${reason}". Must be one of: ${Object.keys(REFUND_REASONS).join(', ')}`,
+    );
+  }
+  if (!actor) throw new Error('Refunds require an actor — who did this is part of the record');
+
   const rec = store.getReservedHandleByKey(handleKey);
   if (!rec) throw new Error(`No reserved handle ${handleKey}`);
 
@@ -160,22 +214,50 @@ export function refundExpired({ handleKey, actor = 'system', settlement }) {
   // no-op that returns what was refunded, NOT an error. The money was already
   // safe via per-contribution idempotency keys; this makes the API honest
   // about "already done" instead of throwing REFUNDED → EXPIRED at the caller.
-  if (rec.claimStatus === 'REFUNDED') {
+  if (spec.full && rec.claimStatus === 'REFUNDED') {
     return store.listLedger({ handleKey }).filter((r) => r.type === 'REFUND');
   }
 
-  if (rec.claimStatus !== 'EXPIRED') {
+  if (spec.full && rec.claimStatus !== 'EXPIRED') {
     transition({ handleKey, to: 'EXPIRED', actor, reason: 'reservation ttl elapsed' });
   }
 
-  const held = store.listContributions(handleKey).filter((c) => c.status === 'HELD');
+  const all = store.listContributions(handleKey);
+  const wanted = contributionIds?.length
+    ? all.filter((c) => contributionIds.includes(c.id))
+    : all;
+  if (contributionIds?.length) {
+    const missing = contributionIds.filter((id) => !all.some((c) => c.id === id));
+    if (missing.length) throw new Error(`Contributions not on ${handleKey}: ${missing.join(', ')}`);
+  }
+  // Only HELD money can come back. RELEASED money is already the claimant's
+  // and is out of this path's reach — see the clawback note in HANDOFF.
+  const targets = wanted.filter((c) => c.status === 'HELD');
+
+  // A contribution that is ALREADY refunded is reported back with its original
+  // row rather than silently omitted. Returning an empty array there would
+  // read as "nothing to do" to a caller who asked a direct question about a
+  // specific contribution, which is how a second refund attempt gets retried
+  // forever. The money is safe either way; the answer has to be honest too.
   const refunds = [];
-  for (const c of held) {
-    const idem = `refund:${c.id}`;
+  if (contributionIds?.length) {
+    const priorRows = store.listLedger({ handleKey }).filter((r) => r.type === 'REFUND');
+    for (const c of wanted) {
+      if (c.status !== 'REFUNDED') continue;
+      const prior = priorRows.find((r) => r.meta?.contributionId === c.id);
+      if (prior) refunds.push(prior);
+    }
+  }
+
+  for (const c of targets) {
     const { row, deduped } = store.appendLedger({
       handleKey, type: 'REFUND', amount: c.amount, bucket: 'contributor',
-      actor, reason: 'handle never claimed before expiry',
-      idempotencyKey: idem, meta: { contributionId: c.id, contributor: c.contributor },
+      actor, reason: note ? `${spec.text} — ${note}` : spec.text,
+      idempotencyKey: `refund:${c.id}`,
+      meta: {
+        contributionId: c.id, contributor: c.contributor,
+        refundReason: reason, reference,
+      },
     });
     if (!deduped) {
       store.updateContribution(c.id, { status: 'REFUNDED' });
@@ -184,8 +266,23 @@ export function refundExpired({ handleKey, actor = 'system', settlement }) {
     }
     refunds.push(row);
   }
-  transition({ handleKey, to: 'REFUNDED', actor, reason: `refunded ${refunds.length} contribution(s)` });
+
+  // Retire the reservation only once nothing is left held against it — a
+  // partial refund must not mark a live pool as fully refunded.
+  const stillHeld = store.listContributions(handleKey).some((c) => c.status === 'HELD');
+  if (spec.full || (!stillHeld && rec.claimStatus === 'EXPIRED')) {
+    transition({ handleKey, to: 'REFUNDED', actor, reason: `refunded ${refunds.length} contribution(s)` });
+  }
   return refunds;
+}
+
+/**
+ * Refund every held contribution on an expired, never-claimed handle.
+ * Thin wrapper over refund() — kept because the expiry sweeper and its gate
+ * cases call it by name.
+ */
+export function refundExpired({ handleKey, actor = 'system', settlement }) {
+  return refund({ handleKey, reason: 'HANDLE_EXPIRED', actor, settlement });
 }
 
 /**

@@ -175,3 +175,90 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
 ### Pre-existing, unrelated (carried forward)
 - LiveKit Cloud free-tier minutes exhausted; lazy-connect fix is on `fix/livekit-lazy-connect`, unmerged. Abandoned-prewarm cost and webhook-backed session ledger are pinned in `HANDOFF-LAZY-CONNECT.md` on that branch.
 - `MODERATION_API_KEY` and `CONTACT_URL` still need setting in Railway.
+
+## Webhook cleanup + min-duration + refunds (2026-07-26, `v0-ui-migration`)
+
+### Resolved this run (with evidence)
+- **Real webhook delivery — VERIFIED END TO END.** A genuine participant
+  (`seat:webhookverify`) connected to the production LiveKit Cloud project for
+  ~15.6s. Cloud delivered `participant_joined` and `participant_left`; the
+  session opened, closed, and left nothing open. Recorded duration 0.230min vs
+  0.261min wall clock (the gap is the webhook clock vs our own start/stop
+  timestamps, well inside tolerance). The breaker now meters **non-zero from
+  webhook data** — 0.23 min, 0.1% of the daily budget — which was the entire
+  point of activating it. Evidence: `_verify-webhook-delivery.mjs`, 6/0.
+  **LiveKit minutes consumed: 0.23** (budget was 10).
+- **L8 — RECONCILIATION WAS A PERMANENT FALSE ALARM. FIXED.** The delta this
+  run demanded I explain turned out to be a real bug in the comparison itself,
+  not in either data source. `lkActivity`'s ledger is **persisted** (`/data`,
+  `loadLedger()` at boot) and reports a rolling 24h; the webhook tracker is
+  **in-memory** and starts empty at every boot. Straight subtraction therefore
+  reports `overreported` divergence after every single deploy, for up to 24h,
+  with nothing wrong — prod showed ledger 2.8min vs webhook 0.23min. The
+  comparison is now clamped to the window both sides cover
+  (`webhookStats.observingSince` → `ledgerStats(sinceFloor)`), refuses to call
+  an unclamped comparison a divergence at all, and stays quiet until it has
+  ≥5min of observation. Evidence: gate I, 4 cases.
+- **Minimum clip duration — SHIPPED.** `letters.minSeconds` is **derived** from
+  `bountyConfig.minClipSeconds` (the verifier's sampling floor) rather than
+  hardcoded a second time; raising the floor raises the recording minimum
+  automatically, and a `maxSeconds` below the floor is lifted rather than left
+  inverted. Rejected client-side at the end of recording (no wallet prompt for
+  a clip we won't accept) and enforced server-side **above the payment
+  handshake**, so a sub-threshold clip is never charged for. `minSeconds` is
+  deliberately absent from `RoomConfigPatch` — a dashboard PUT must not be able
+  to configure a room below the level at which a clip can be proven to have
+  aired. Evidence: gate M (4 cases) + `_verify-min-duration.mjs` 10/0.
+  **Existing sub-threshold clips: ZERO, structurally.** `letters.js` holds
+  clips in an in-memory `Map` with no `fs` usage anywhere in the file, and
+  `removeLetter()` deletes them after playback. There is no persisted clip
+  corpus to migrate, so no backfill decision is needed.
+- **Refund architecture — GENERALIZED.** One `escrow.refund()` with an
+  enumerated `REFUND_REASONS` (`HANDLE_EXPIRED`, `UNVERIFIABLE_CLIP`,
+  `DISPUTE_RESOLVED`, `ADMIN_ACTION`); free-text reasons and anonymous actors
+  are refused. Idempotency is **per contribution, not per (contribution,
+  reason)** — a dispute landing on a clip that already refunded as unverifiable
+  returns the original row instead of paying twice. Every refund writes reason,
+  actor and external reference to the ledger. `refundExpired()` is now a thin
+  wrapper. Settlement remains the stub; gate H still finds zero transfer calls.
+  Evidence: gate N, 15 cases.
+
+### What the hold-release path does NOT cover (read before Run B)
+- **No clawback.** Refunds only touch `HELD` contributions. Once money is
+  `RELEASED` to a claimant it is out of reach of every path in this file —
+  a dispute resolved against a streamer *after* a release has no mechanism.
+  `RELEASED → DISPUTED` is a legal transition, so the state machine can express
+  it, but nothing implements the reversal. This is the largest remaining hole
+  in the money model and it needs its own design, not an extra reason code.
+- **No partial refund of a single contribution.** A contribution refunds whole.
+  Splitting one across reasons has no representation.
+- **Platform match is never refunded.** It is tracked in its own bucket and the
+  refund path ignores it entirely. Correct today (it was never contributor
+  money), but Run B has to decide what happens to a match whose underlying
+  contributor money went back.
+
+### New for Run B
+- **B6 — Capture concurrent viewer count at each clip playback.** At every
+  playback, alongside the watermark evidence, record the channel's concurrent
+  viewer count from the platform API into the evidence log. The intent is that
+  payout scales **proportionally to viewers**, not that a viewer threshold gates
+  payment — a clip played to 40 people should pay less than the same clip
+  played to 40,000, and neither should be worth zero. This must be built with
+  B3/B4 rather than after: **viewer counts cannot be backfilled.** Once a
+  broadcast is over, the concurrent count at a given timestamp is gone, so any
+  playback recorded before this lands is permanently unpriceable under a
+  viewer-weighted model. It belongs in `bounty-evidence.js` as part of
+  `PLAYBACK_STARTED`, because it is data a payout is computed FROM.
+
+### Small, filed while working
+- **`/api/health` overstates what it knows about persistence.**
+  `dataDirInfo()` returns `persistent: !!process.env.DATA_DIR` — it checks that
+  the variable is *set*, not that a volume is actually mounted there. The
+  comment above it says "false here means the NEXT deploy wipes every room",
+  which invites reading `true` as a guarantee it doesn't. Production currently
+  reports `persistentData: true, dataDir: /data`; that confirms configuration,
+  **not** an attached Railway volume. I relied on this while diagnosing L8 and
+  it could have sent me the wrong way. (The L8 fix is correct either way: the
+  window clamp is right whether the ledger survives a deploy or only an
+  in-place restart.) A real check would write and re-read a marker file across
+  boots, or read the mount table.

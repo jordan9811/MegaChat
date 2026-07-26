@@ -1757,9 +1757,13 @@ function initLetterUi() {
       : '📼 Send a MegaChat — FREE';
 }
 
-function setLetterStatus(text) {
+function setLetterStatus(text, tone) {
   const el = document.getElementById('letterStatus');
-  if (el) el.textContent = text || '';
+  if (!el) return;
+  el.textContent = text || '';
+  // A refusal must not read like ordinary progress copy.
+  el.classList.toggle('text-[var(--neon-magenta)]', tone === 'error');
+  el.classList.toggle('text-muted-foreground', tone !== 'error');
 }
 
 function letterButtons({ record, redo, send }) {
@@ -1791,7 +1795,7 @@ async function openLetterStage() {
   letterState = 'idle';
   letterBlob = null;
   letterButtons({ record: true, redo: false, send: false });
-  setLetterStatus(`Up to ${cfg.maxSeconds}s. Flat price ${cfg.price} ${tokenSymbol()} — your MegaChat plays once on stream.`);
+  setLetterStatus(`${cfg.minSeconds ?? 3}–${cfg.maxSeconds}s. Flat price ${cfg.price} ${tokenSymbol()} — your MegaChat plays once on stream.`);
 }
 
 function closeLetterStage() {
@@ -1870,6 +1874,19 @@ function toggleLetterRecording() {
     video.muted = false;
     video.controls = true;
     recordBtn.textContent = '⏺ Record';
+    // Too short to be verifiable on stream → never offer to charge for it.
+    // The server rejects this too; refusing here means the person finds out
+    // before a wallet prompt rather than after one.
+    const minS = cfg.minSeconds ?? 3;
+    if (letterDurationS < minS) {
+      letterButtons({ record: false, redo: true, send: false });
+      setLetterStatus(
+        `That take was ${letterDurationS}s — MegaChats need at least ${minS}s. ` +
+        'Shorter clips can\'t be reliably shown on stream, so we won\'t charge for one. Give it another go.',
+        'error',
+      );
+      return;
+    }
     letterButtons({ record: false, redo: true, send: true });
     setLetterStatus(`${letterDurationS}s take — happy with it? Send for ${cfg.price} ${tokenSymbol()}.`);
   };

@@ -81,6 +81,13 @@ export function createWebhookTracker({ log = console, onSession = () => {} } = {
   const sessions = [];               // closed, authoritative
   const pendingLeft = new Map();     // left-before-joined stash
   const DEDUPE_TTL_MS = 10 * 60_000;
+  /**
+   * When this tracker started observing. It is memory-only by design — we
+   * cannot replay webhooks we were not running to receive — so anything that
+   * compares us against a PERSISTED ledger has to clamp to this floor or it
+   * is comparing two different spans of time and calling the difference a bug.
+   */
+  const observingSince = Date.now();
 
   function gcSeen() {
     const cutoff = Date.now() - DEDUPE_TTL_MS;
@@ -226,6 +233,8 @@ export function createWebhookTracker({ log = console, onSession = () => {} } = {
     return {
       openCount: open.size,
       closedCount: sessions.length,
+      observingSince,
+      observedMinutes: +((now - observingSince) / 60_000).toFixed(2),
       excludedSessions: excludedClosed,
       probeSessionsExcluded: excludedClosed, // retained name for compatibility
       minutesToday: +(closedMinutes(dayAgo) + openMinutes(dayAgo)).toFixed(2),
@@ -273,19 +282,41 @@ export function createWebhookTracker({ log = console, onSession = () => {} } = {
 /**
  * Reconcile webhook-derived sessions (truth) against overlay self-reports.
  * Divergence means either a bug or a leak, and both need to be loud.
+ *
+ * The two sides do NOT have the same memory, and pretending they do produces
+ * a permanent false alarm: the activity ledger is persisted to disk and spans
+ * a rolling 24h, while this tracker is in-memory and starts empty at every
+ * boot. Straight subtraction therefore reports "overreported" after every
+ * single deploy, for up to 24h, with nothing actually wrong. So the comparison
+ * is clamped to the window both sides cover, and while that window is still
+ * too short to mean anything we say so instead of guessing.
+ *
+ * `ledgerStats` must be computed over the same floor — pass
+ * `webhookStats.observingSince` into the activity manager's ledgerStats().
  */
-export function reconcile({ webhookStats, ledgerStats, toleranceMin = 1 }) {
+export function reconcile({ webhookStats, ledgerStats, toleranceMin = 1, minWindowMin = 5 }) {
   const wh = webhookStats.minutesToday;
   const led = ledgerStats.minutesToday;
   const delta = +(wh - led).toFixed(2);
-  const diverged = Math.abs(delta) > toleranceMin;
+  const observed = webhookStats.observedMinutes ?? null;
+  const comparable = ledgerStats.windowStart != null
+    && ledgerStats.windowStart === webhookStats.observingSince;
+  const tooEarly = observed != null && observed < minWindowMin;
   return {
     webhookMinutesToday: wh,
     ledgerMinutesToday: led,
     deltaMinutes: delta,
-    diverged,
+    // Only a comparison over a shared window can be called a divergence.
+    comparableWindow: comparable,
+    windowMinutes: observed,
+    diverged: comparable && !tooEarly && Math.abs(delta) > toleranceMin,
     // Sign matters: webhook > ledger means we were BURNING minutes the
     // overlay never told us about, which is the leak direction.
     direction: delta > 0 ? 'unreported_burn' : delta < 0 ? 'overreported' : 'match',
+    note: !comparable
+      ? 'ledger window not clamped to the webhook observation start — delta is not meaningful'
+      : tooEarly
+        ? `only ${observed}min observed since boot (need ${minWindowMin}min) — delta not yet meaningful`
+        : null,
   };
 }

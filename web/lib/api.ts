@@ -14,6 +14,8 @@ export type FeatureGates = {
 
 export type LettersConfig = {
   enabled: boolean
+  /** Floor derived from the bounty verifier's sampling floor (server-owned). */
+  minSeconds: number
   maxSeconds: number
   /** null → derived: maxSeconds worth of the live per-second rate. */
   price: string | null
@@ -113,6 +115,10 @@ export type RoomConfigPatch = {
   twitchAuto: boolean
   transport: string
   stingerSounds: boolean
+  // NOTE: no `minSeconds` here on purpose. The floor is derived server-side
+  // from the bounty verifier's sampling floor; letting a dashboard PUT set it
+  // would let a room configure itself below the level at which a clip can be
+  // proven to have aired.
   letters: {
     enabled: boolean
     maxSeconds: number

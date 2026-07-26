@@ -470,6 +470,9 @@ app.get('/api/config', (req, res) => {
     letters: cfg.letters?.enabled
       ? {
           enabled: true,
+          // The recorder needs the floor to refuse a short take BEFORE a
+          // wallet prompt, not after the server rejects it.
+          minSeconds: cfg.letters.minSeconds,
           maxSeconds: cfg.letters.maxSeconds,
           price: letterPriceFor(cfg),
           moderation: cfg.letters.moderation,
@@ -1142,12 +1145,17 @@ app.post('/api/livekit/webhook', express.raw({ type: '*/*', limit: '256kb' }), (
 
 /** Webhook-derived usage + breaker state (operator surface). */
 app.get('/api/livekit/burn', (_req, res) => {
+  const webhookStats = lkWebhooks.stats();
   res.json({
     breaker: lkBreaker.snapshot(),
-    webhook: lkWebhooks.stats(),
+    webhook: webhookStats,
+    // Clamp the ledger to the webhook's observation window. The ledger is
+    // persisted on /data and the webhook tracker is not, so without this the
+    // reconciliation reports a divergence after every deploy that is purely
+    // an artifact of the two having different memories.
     reconciliation: reconcile({
-      webhookStats: lkWebhooks.stats(),
-      ledgerStats: lkActivity.ledgerStats(),
+      webhookStats,
+      ledgerStats: lkActivity.ledgerStats(webhookStats.observingSince),
     }),
   });
 });

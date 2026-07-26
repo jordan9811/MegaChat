@@ -162,12 +162,43 @@ const launch = (port, extra = {}) =>
   ok('I. OUT-OF-ORDER (left before joined) reconciles to the right duration',
     t2.sessions.length === 1 && Math.round(t2.sessions[0].durationMs / 60000) === 10);
 
+  const since = Date.now() - 60 * 60_000; // an hour of observation
   const rec = reconcile({
-    webhookStats: { minutesToday: 42 }, ledgerStats: { minutesToday: 12 },
+    webhookStats: { minutesToday: 42, observingSince: since, observedMinutes: 60 },
+    ledgerStats: { minutesToday: 12, windowStart: since },
   });
   ok('I. reconciliation flags divergence and names the LEAK direction',
     rec.diverged && rec.deltaMinutes === 30 && rec.direction === 'unreported_burn',
     `${rec.deltaMinutes}min ${rec.direction}`);
+
+  // The ledger is persisted and the webhook tracker is not. Comparing a
+  // rolling-24h persisted ledger against a since-boot counter reported a
+  // divergence after EVERY deploy — a permanent false alarm, found in prod
+  // (ledger 2.8min vs webhook 0.23min with nothing actually wrong).
+  const unclamped = reconcile({
+    webhookStats: { minutesToday: 0.23, observingSince: since, observedMinutes: 60 },
+    ledgerStats: { minutesToday: 2.8, windowStart: null },
+  });
+  ok('I. an UNCLAMPED ledger window is refused, not reported as divergence',
+    unclamped.diverged === false && unclamped.comparableWindow === false
+      && /not meaningful/.test(unclamped.note || ''),
+    `diverged=${unclamped.diverged} note=${unclamped.note}`);
+
+  const fresh = reconcile({
+    webhookStats: { minutesToday: 0, observingSince: Date.now() - 30_000, observedMinutes: 0.5 },
+    ledgerStats: { minutesToday: 9, windowStart: Date.now() - 30_000 },
+  });
+  ok('I. a just-booted tracker does not cry divergence before it has data',
+    fresh.diverged === false && /not yet meaningful/.test(fresh.note || ''),
+    `diverged=${fresh.diverged} note=${fresh.note}`);
+
+  const agreed = reconcile({
+    webhookStats: { minutesToday: 5.1, observingSince: since, observedMinutes: 60 },
+    ledgerStats: { minutesToday: 5.0, windowStart: since },
+  });
+  ok('I. a shared window within tolerance reports MATCH, not noise',
+    agreed.diverged === false && agreed.comparableWindow === true && agreed.note === null,
+    `delta=${agreed.deltaMinutes}`);
 }
 
 // ── J. BURN BREAKER — warn, block, override, long-session alarm ─────────────
@@ -347,8 +378,14 @@ try {
   let s = await stats();
   ok('B. PREWARM (join-sheet-open) connects the overlay BEFORE any seat exists',
     s.open.length === 1 && s.open[0].kind === 'overlay', JSON.stringify(s.open));
-  ok('B. connected under the STABLE identity overlay:<roomId> (dedupe-safe)',
-    s.open[0]?.identity === `overlay:${room.id}`, s.open[0]?.identity);
+  // Identity is PER BROWSER SOURCE, not per room. A bare `overlay:<roomId>`
+  // deduped reload churn but made two overlays on the same room evict each
+  // other — which is exactly how OBS ended up showing a black tile while the
+  // viewer side worked. The instance suffix is stable across reloads of one
+  // source (sessionStorage) and unique between sources.
+  ok('B. connected under a PER-INSTANCE identity overlay:<roomId>:<instance>',
+    new RegExp(`^overlay:${room.id}:[a-z0-9]+$`).test(s.open[0]?.identity || ''),
+    s.open[0]?.identity);
 
   const health1 = await fetch(`${APP}/api/livekit/overlay/health?room=${room.id}`).then((r) => r.json());
   ok('B. health endpoint reports a live, healthy overlay for the booth dashboard',

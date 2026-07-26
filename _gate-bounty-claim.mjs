@@ -305,6 +305,123 @@ let ambiguousSessionId = null;
     store.getPool(key).refunded === 40, `still ${store.getPool(key).refunded}`);
 }
 
+// ── N. GENERALIZED REFUNDS: enumerated reasons, idempotent across reasons ──
+{
+  const mk = (h) => {
+    escrow.reserve({ platform: 'twitch', handle: h });
+    return store.handleKey('twitch', h);
+  };
+
+  // Reason enum is closed — free text cannot smuggle in an unaccountable refund.
+  const kBad = mk('refbad');
+  escrow.contribute({ platform: 'twitch', handle: 'refbad', contributor: '0xa', amount: '10' });
+  let threw = null;
+  try {
+    escrow.refund({ handleKey: kBad, reason: 'because i said so', actor: 'gate', settlement: quietSettlement });
+  } catch (e) { threw = e.message; }
+  ok('N. an unenumerated refund reason is REFUSED', !!threw && /Unknown refund reason/.test(threw), threw);
+  ok('N. the refusal lists the legal reasons', /HANDLE_EXPIRED/.test(threw || ''));
+  ok('N. nothing was written on the refused call', store.getPool(kBad).refunded === 0);
+
+  // An anonymous refund is not a record.
+  let noActor = null;
+  try {
+    escrow.refund({ handleKey: kBad, reason: 'ADMIN_ACTION', actor: '', settlement: quietSettlement });
+  } catch (e) { noActor = e.message; }
+  ok('N. a refund with no actor is REFUSED', !!noActor && /actor/i.test(noActor), noActor);
+
+  // Partial: one contribution back, the pool stays alive.
+  const kPart = mk('refpart');
+  const c1 = escrow.contribute({ platform: 'twitch', handle: 'refpart', contributor: '0xp1', amount: '30' });
+  escrow.contribute({ platform: 'twitch', handle: 'refpart', contributor: '0xp2', amount: '20' });
+  const partial = escrow.refund({
+    handleKey: kPart, reason: 'UNVERIFIABLE_CLIP', actor: 'verifier',
+    contributionIds: [c1.id], reference: 'air-session-77', settlement: quietSettlement,
+  });
+  ok('N. a per-contribution refund returns only that contribution', partial.length === 1);
+  ok('N. partial refund does NOT retire a live reservation',
+    store.getReservedHandleByKey(kPart).claimStatus !== 'REFUNDED',
+    store.getReservedHandleByKey(kPart).claimStatus);
+  ok('N. the rest of the pool is still claimable', store.getPool(kPart).remaining === 20,
+    `remaining ${store.getPool(kPart).remaining}`);
+  const pRow = store.listLedger({ handleKey: kPart }).find((r) => r.type === 'REFUND');
+  ok('N. the row records reason, actor AND external reference',
+    pRow.meta.refundReason === 'UNVERIFIABLE_CLIP' && pRow.actor === 'verifier'
+      && pRow.meta.reference === 'air-session-77',
+    JSON.stringify({ r: pRow.meta.refundReason, a: pRow.actor, ref: pRow.meta.reference }));
+
+  // The money-critical case: a second reason landing on an already-refunded
+  // contribution must NOT pay it out again.
+  const dup = escrow.refund({
+    handleKey: kPart, reason: 'DISPUTE_RESOLVED', actor: 'admin',
+    contributionIds: [c1.id], reference: 'dispute-9', settlement: quietSettlement,
+  });
+  ok('N. a DIFFERENT reason on an already-refunded contribution does not double-pay',
+    store.getPool(kPart).refunded === 30, `refunded ${store.getPool(kPart).refunded}`);
+  ok('N. the duplicate returns the ORIGINAL row, not a new one',
+    dup[0].id === pRow.id && dup[0].meta.refundReason === 'UNVERIFIABLE_CLIP');
+
+  // Released money is out of reach — refunds only touch HELD.
+  const kRel = mk('refrel');
+  escrow.contribute({ platform: 'twitch', handle: 'refrel', contributor: '0xr1', amount: '100' });
+  for (const to of ['RESERVED', 'CLAIM_PENDING', 'CLAIM_VERIFIED', 'AWAITING_AIRTIME', 'VERIFYING']) {
+    escrow.transition({ handleKey: kRel, to, actor: 'gate' });
+  }
+  escrow.release({
+    handleKey: kRel, claimId: 'cr', airSessionId: 'ar', verifiedClips: 2, verifiedClipSeconds: 20,
+    confidence: 0.9, idempotencyKey: 'rel-key', settlement: quietSettlement,
+  });
+  const released = store.getPool(kRel).releasedContributor;
+  ok('N. the release actually paid (precondition for the clawback case)', released > 0, `${released}`);
+  escrow.refund({ handleKey: kRel, reason: 'ADMIN_ACTION', actor: 'admin', settlement: quietSettlement });
+  ok('N. refunds never claw back RELEASED money (that needs its own path)',
+    store.getPool(kRel).releasedContributor === released,
+    `released ${store.getPool(kRel).releasedContributor}`);
+
+  // Unknown contribution ids are an error, not a silent no-op.
+  let badId = null;
+  try {
+    escrow.refund({
+      handleKey: kPart, reason: 'ADMIN_ACTION', actor: 'admin',
+      contributionIds: ['nope'], settlement: quietSettlement,
+    });
+  } catch (e) { badId = e.message; }
+  ok('N. refunding an unknown contribution id THROWS rather than no-opping',
+    !!badId && /not on/i.test(badId), badId);
+
+  // The legacy entry point still behaves.
+  const kExp = mk('reflegacy');
+  escrow.contribute({ platform: 'twitch', handle: 'reflegacy', contributor: '0xe1', amount: '12' });
+  escrow.refundExpired({ handleKey: kExp, actor: 'system', settlement: quietSettlement });
+  ok('N. refundExpired still refunds in full and retires the handle',
+    store.getPool(kExp).refunded === 12
+      && store.getReservedHandleByKey(kExp).claimStatus === 'REFUNDED');
+  const legacyRow = store.listLedger({ handleKey: kExp }).find((r) => r.type === 'REFUND');
+  ok('N. the legacy path now carries the enumerated reason too',
+    legacyRow.meta.refundReason === 'HANDLE_EXPIRED');
+}
+
+// ── M. MINIMUM CLIP DURATION derived from the verifier sampling floor ──────
+{
+  const { resolveLetters } = await import('./rooms-store.js');
+  const mkRoom = (letters) => resolveLetters({ letters });
+
+  ok('M. the recording minimum DEFAULTS to the verifier sampling floor',
+    mkRoom({}).minSeconds === bountyConfig.minClipSeconds,
+    `min=${mkRoom({}).minSeconds} floor=${bountyConfig.minClipSeconds}`);
+
+  // Derived, not duplicated: move the floor, the minimum follows.
+  const realFloor = bountyConfig.minClipSeconds;
+  bountyConfig.minClipSeconds = 7;
+  ok('M. raising the sampling floor RAISES the recording minimum automatically',
+    mkRoom({}).minSeconds === 7, `min=${mkRoom({}).minSeconds}`);
+  ok('M. a max below the new floor is lifted, never left inverted',
+    mkRoom({ maxSeconds: 4 }).maxSeconds >= 7, `max=${mkRoom({ maxSeconds: 4 }).maxSeconds}`);
+  bountyConfig.minClipSeconds = realFloor;
+
+  ok('M. a room may override the minimum explicitly', mkRoom({ minSeconds: 5 }).minSeconds === 5);
+}
+
 // ── K. PER-PLAYBACK NONCE: same clip twice must be two separate evidences ──
 {
   store.reserveHandle({ platform: 'twitch', handle: 'twice', ttlMs: 1e9 });

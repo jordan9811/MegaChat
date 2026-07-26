@@ -7,6 +7,10 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { hashPassword, verifyPassword } from './room-auth.js';
+// Config-only import: reading the sampling floor so the recording minimum is
+// derived from it. Pulls in no bounty behaviour and is inert when the flag
+// is off.
+import { bountyConfig } from './bounty-claim.config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // DATA_DIR env points this at a persistent volume in production (Railway's
@@ -75,15 +79,34 @@ function resolveGates(raw) {
   };
 }
 
-/** MegaChats — recorded clips paid at a flat price, played once on stream. */
-function resolveLetters(cfg) {
+/** MegaChats — recorded clips paid at a flat price, played once on stream.
+ *  Exported as a pure function so the duration bounds can be gated directly
+ *  without standing up a room. */
+export function resolveLetters(cfg) {
   const l = cfg.letters || {};
-  const maxSeconds = Math.min(30, Math.max(3, Number(l.maxSeconds ?? 10) || 10));
+  /**
+   * Floor DERIVED from the bounty verifier's sampling floor, not a second
+   * hardcoded constant. A clip shorter than the floor cannot host a watermark
+   * code long enough to be sampled out of a re-encoded broadcast, so it can
+   * never be proven to have aired — and a clip that can never be proven is a
+   * clip a fan paid for and nobody can be paid out. Raising the sampling floor
+   * must therefore raise the recording minimum automatically; two independent
+   * numbers would drift and silently reopen the hole.
+   */
+  const minSeconds = Math.max(
+    1,
+    Math.min(
+      Number(l.minSeconds ?? bountyConfig.minClipSeconds) || bountyConfig.minClipSeconds,
+      30,
+    ),
+  );
+  const maxSeconds = Math.min(30, Math.max(minSeconds, Number(l.maxSeconds ?? 10) || 10));
   const price =
     typeof l.price === 'string' && parseFloat(l.price) > 0 ? String(l.price) : null;
   return {
     // MegaChats are the hero feature — ON unless the streamer turns them off.
     enabled: l.enabled !== false,
+    minSeconds,
     maxSeconds,
     // null → derived at read time: maxSeconds worth of the live per-second rate
     price,

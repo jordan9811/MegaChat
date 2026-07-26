@@ -138,9 +138,16 @@ export function createActivityManager({ log = console, broadcastToRoom, hasOverl
   }, Math.max(5_000, Math.floor(lazyConfig.abandonMs / 6)));
   if (abandonSweeper.unref) abandonSweeper.unref();
 
-  function ledgerStats() {
+  /**
+   * @param {number} [sinceFloor] clamp the "today" window to at least this
+   *   timestamp. Callers reconciling against the webhook tracker must pass its
+   *   `observingSince`: this ledger is persisted and survives restarts, the
+   *   webhook tracker does not, so an unclamped comparison is between two
+   *   different spans of time.
+   */
+  function ledgerStats(sinceFloor = 0) {
     const now = Date.now();
-    const dayAgo = now - 86_400_000;
+    const dayAgo = Math.max(now - 86_400_000, sinceFloor || 0);
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
     const minutesSince = (since) =>
       sessions.reduce((acc, s) => {
@@ -157,6 +164,7 @@ export function createActivityManager({ log = console, broadcastToRoom, hasOverl
       minutesToday: +minutesSince(dayAgo).toFixed(1),
       minutesThisMonth: +minutesSince(monthStart).toFixed(1),
       longSessionThresholdMin: lazyConfig.longSessionWarnMs / 60_000,
+      windowStart: sinceFloor || null,
     };
   }
 

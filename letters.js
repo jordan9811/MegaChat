@@ -254,6 +254,19 @@ export function attachLetters(app, deps) {
       if (!Number.isFinite(dur) || dur <= 0 || dur > cfg.letters.maxSeconds + 1) {
         return res.status(400).json({ error: `MegaChats are capped at ${cfg.letters.maxSeconds}s in this room` });
       }
+      // Below the sampling floor a clip can never be PROVEN to have aired, so
+      // it must never be sold. This sits above the payment handshake on
+      // purpose: rejecting after a charge would mean issuing a refund for
+      // something we should not have accepted in the first place.
+      if (dur < cfg.letters.minSeconds) {
+        return res.status(400).json({
+          error: `MegaChats need to be at least ${cfg.letters.minSeconds} seconds`,
+          reason: 'below_min_duration',
+          minSeconds: cfg.letters.minSeconds,
+          durationS: dur,
+          hint: `Shorter clips can't be reliably verified on stream, so we don't charge for them. Record at least ${cfg.letters.minSeconds}s.`,
+        });
+      }
       if (!/^video\/(webm|mp4)/.test(String(mime || ''))) {
         return res.status(400).json({ error: 'Unsupported recording format' });
       }
