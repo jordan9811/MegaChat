@@ -17,7 +17,7 @@ import * as store from './bounty-store.js';
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
 
-/** @typedef {{ ref:string, ts:number, clipId:string, platform:string, handle:string }} FrameRef */
+/** @typedef {{ ref:string, ts:number, clipId:string, playbackId:string, platform:string, handle:string }} FrameRef */
 
 export class FrameSource {
   /** @returns {Promise<FrameRef[]>} */
@@ -78,10 +78,11 @@ export class MockFrameSource extends FrameSource {
     for (const t of timestamps) {
       const ts = typeof t === 'object' ? t.ts : t;
       const clipId = typeof t === 'object' ? t.clipId : null;
+      const playbackId = typeof t === 'object' ? t.playbackId : null;
       const per = this.fixture.frames?.[String(ts)];
       const available = per ? per.available !== false : this.fixture.defaultAvailable !== false;
       if (!available) continue;
-      out.push({ ref: `mock://${platform}/${handle}/${ts}`, ts, clipId, platform, handle });
+      out.push({ ref: `mock://${platform}/${handle}/${ts}`, ts, clipId, playbackId, platform, handle });
     }
     return out;
   }
@@ -116,7 +117,10 @@ function sampleInstantsForWindow(win, perClip) {
   const step = Math.max(1, Math.floor(usable.length / perClip));
   for (let i = 0; i < usable.length && picks.length < perClip; i += step) {
     const c = usable[i];
-    picks.push({ ts: Math.floor((c.issuedAt + Math.min(c.expiresAt, c.issuedAt + bountyConfig.codeValidityMs)) / 2), clipId: win.clipId });
+    picks.push({
+      ts: Math.floor((c.issuedAt + Math.min(c.expiresAt, c.issuedAt + bountyConfig.codeValidityMs)) / 2),
+      clipId: win.clipId, playbackId: win.playbackId,
+    });
   }
   return picks;
 }
@@ -184,7 +188,7 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
       clipConf += Number(res.confidence || 0);
       if (counted) clipHits += 1;
       checks.push({
-        ts: frame.ts, ref: frame.ref, clipId: win.clipId,
+        ts: frame.ts, ref: frame.ref, clipId: win.clipId, playbackId: win.playbackId,
         found: !!res.found, confidence: res.confidence, pixelHeight: px,
         legible, counted,
       });
@@ -194,18 +198,21 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
     // A clip counts as verified when at least one legible sample found its code.
     const verified = clipHits > 0;
     clipVerdicts.push({
-      clipId: win.clipId, verified, samples: clipChecks, hits: clipHits,
+      clipId: win.clipId, playbackId: win.playbackId, verified, samples: clipChecks, hits: clipHits,
       confidence: +conf.toFixed(3), tooSmall, durationS: win.durationS,
     });
     if (tooSmall > 0) {
       store.pushAirSessionViolation(airSessionId, {
         type: 'CODE_TOO_SMALL_IN_FRAME',
         at: Date.now(),
-        detail: { clipId: win.clipId, samples: tooSmall, floorPx: bountyConfig.minCodePixelHeight },
+        detail: { clipId: win.clipId, playbackId: win.playbackId, samples: tooSmall, floorPx: bountyConfig.minCodePixelHeight },
       });
     }
   }
 
+  // Unit is the verified PLAYBACK, not the distinct clip: airing the same
+  // clip twice is two pieces of evidence and pays twice, provided each airing
+  // is separately evidenced by its own code set.
   const verifiedClips = clipVerdicts.filter((c) => c.verified).length;
   const verifiedClipSeconds = +clipVerdicts
     .filter((c) => c.verified)

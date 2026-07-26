@@ -269,23 +269,25 @@ export function pushPlaybackWindow(id, win) {
   return rec;
 }
 
-export function updatePlaybackWindow(id, clipId, patch) {
+export function updatePlaybackWindow(id, playbackId, patch) {
   const store = load();
   const rec = store.airSessions[id];
   if (!rec) throw new Error(`No air session ${id}`);
-  const win = (rec.playbackWindows || []).find((w) => w.clipId === clipId);
+  // Keyed on the PLAYBACK, not the clip — the same clip can air twice and each
+  // airing is separate evidence.
+  const win = (rec.playbackWindows || []).find((w) => w.playbackId === playbackId);
   if (!win) return rec;
   Object.assign(win, patch);
   save();
   return rec;
 }
 
-export function pushWindowCode(id, clipId, codeRec) {
+export function pushWindowCode(id, playbackId, codeRec) {
   const store = load();
   const rec = store.airSessions[id];
   if (!rec) throw new Error(`No air session ${id}`);
-  const win = (rec.playbackWindows || []).find((w) => w.clipId === clipId);
-  if (!win) throw new Error(`No playback window for clip ${clipId}`);
+  const win = (rec.playbackWindows || []).find((w) => w.playbackId === playbackId);
+  if (!win) throw new Error(`No playback window ${playbackId}`);
   win.codes.push(codeRec);
   save();
   return rec;

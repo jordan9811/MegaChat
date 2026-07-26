@@ -26,7 +26,7 @@
  *    evidence we cannot actually check.
  */
 
-import { randomInt, createHash } from 'crypto';
+import { randomInt, createHash, randomUUID } from 'crypto';
 import { bountyConfig } from './bounty-claim.config.js';
 import * as store from './bounty-store.js';
 
@@ -40,12 +40,18 @@ function randomBody(len) {
 }
 
 /**
- * Clip-scoped namespace, derived server-side from (airSessionId, clipId).
- * Deterministic so it can be re-derived during verification, and distinct
- * per clip so the prefix alone already separates two clips' codes.
+ * PLAYBACK-scoped namespace, derived server-side from
+ * (airSessionId, playbackId) where playbackId = clipId + a per-playback nonce.
+ *
+ * Why not clip-scoped: the same clip can legitimately air twice in one
+ * session. Keying on clipId alone made the second airing indistinguishable
+ * from the first — same namespace, and (before this fix) the second playback
+ * wrote into the FIRST playback's already-closed window and issued no codes at
+ * all, so an honest streamer replaying a clip earned nothing for it. Keying on
+ * the playback instance makes each airing independently attestable.
  */
-export function namespaceFor(airSessionId, clipId) {
-  const h = createHash('sha256').update(`${airSessionId}:${clipId}`).digest('hex').toUpperCase();
+export function namespaceFor(airSessionId, playbackId) {
+  const h = createHash('sha256').update(`${airSessionId}:${playbackId}`).digest('hex').toUpperCase();
   let ns = '';
   for (const ch of h) {
     if (ALPHABET.includes(ch)) ns += ch;
@@ -78,8 +84,13 @@ export function startClipPlayback(airSessionId, { clipId, durationS, now = Date.
   const durMs = Math.max(0, Number(durationS) || 0) * 1000;
   const belowFloor = (durMs / 1000) < bountyConfig.minClipSeconds;
 
+  // Per-playback identity. Two airings of the same clip are two separate
+  // pieces of evidence and must never share a code space.
+  const playbackId = `${clipId}#${randomUUID().slice(0, 8)}`;
+
   const win = {
     clipId,
+    playbackId,
     startedAt: now,
     endsAt: now + durMs,
     durationS: durMs / 1000,
@@ -92,24 +103,30 @@ export function startClipPlayback(airSessionId, { clipId, durationS, now = Date.
     store.pushAirSessionViolation(airSessionId, {
       type: 'BELOW_SAMPLING_FLOOR',
       at: now,
-      detail: { clipId, durationS: durMs / 1000, floorS: bountyConfig.minClipSeconds },
+      detail: { clipId, playbackId, durationS: durMs / 1000, floorS: bountyConfig.minClipSeconds },
     });
-    return { window: win, code: null, reason: 'BELOW_SAMPLING_FLOOR' };
+    return { window: win, playbackId, code: null, reason: 'BELOW_SAMPLING_FLOOR' };
   }
 
-  const code = issueCodeForWindow(airSessionId, clipId, { now });
-  return { window: win, code };
+  const code = issueCodeForWindow(airSessionId, playbackId, { now });
+  return { window: win, playbackId, code };
 }
 
 /** The clip finished (or was cut short). Closes the window at `now`. */
-export function endClipPlayback(airSessionId, { clipId, now = Date.now() } = {}) {
+export function endClipPlayback(airSessionId, { clipId, playbackId, now = Date.now() } = {}) {
   const s = store.getAirSession(airSessionId);
   if (!s) return null;
-  const win = (s.playbackWindows || []).find((w) => w.clipId === clipId && w.endsAt > now);
+  // Prefer an explicit playbackId; otherwise close the most recent STILL-OPEN
+  // window for this clip. Never `.find()` by clipId alone — that returns the
+  // first window and would close (or write into) a previous airing.
+  const wins = (s.playbackWindows || []);
+  const win = playbackId
+    ? wins.find((w) => w.playbackId === playbackId)
+    : [...wins].reverse().find((w) => w.clipId === clipId && w.endsAt > now);
   if (!win) return null;
   // Truncate the window AND any code validity that ran past the real end —
   // a code must never be checkable after its clip left the screen.
-  store.updatePlaybackWindow(airSessionId, clipId, {
+  store.updatePlaybackWindow(airSessionId, win.playbackId, {
     endsAt: now,
     codes: win.codes.map((c) => ({ ...c, expiresAt: Math.min(c.expiresAt, now) })),
   });
@@ -120,16 +137,16 @@ export function endClipPlayback(airSessionId, { clipId, now = Date.now() } = {})
  * Issue a code inside an OPEN clip window. Validity is clamped to the clip's
  * end so windows cannot overlap across clips.
  */
-export function issueCodeForWindow(airSessionId, clipId, { now = Date.now() } = {}) {
+export function issueCodeForWindow(airSessionId, playbackId, { now = Date.now() } = {}) {
   const s = store.getAirSession(airSessionId);
   if (!s || s.status !== 'OPEN') return null;
   if (s.badgeTooSmall) return null; // early-warning halt; see reportBadgeTooSmall
 
-  const win = (s.playbackWindows || []).find((w) => w.clipId === clipId);
+  const win = (s.playbackWindows || []).find((w) => w.playbackId === playbackId);
   if (!win || win.belowSamplingFloor) return null;
   if (now < win.startedAt || now >= win.endsAt) return null;
 
-  const ns = namespaceFor(airSessionId, clipId);
+  const ns = namespaceFor(airSessionId, playbackId);
   const live = new Set(store.allIssuedCodes());
   let code = null;
   for (let i = 0; i < 50; i++) {
@@ -140,12 +157,13 @@ export function issueCodeForWindow(airSessionId, clipId, { now = Date.now() } = 
 
   const rec = {
     code,
-    clipId,
+    clipId: win.clipId,
+    playbackId,
     issuedAt: now,
-    // Clamped: never valid past the clip it belongs to.
+    // Clamped: never valid past the airing it belongs to.
     expiresAt: Math.min(now + bountyConfig.codeValidityMs, win.endsAt),
   };
-  store.pushWindowCode(airSessionId, clipId, rec);
+  store.pushWindowCode(airSessionId, playbackId, rec);
   return rec;
 }
 
@@ -161,7 +179,7 @@ export function currentOrRotate(airSessionId, { now = Date.now() } = {}) {
 
   const last = win.codes[win.codes.length - 1];
   if (!last || now - last.issuedAt >= bountyConfig.codeRotateMs) {
-    return issueCodeForWindow(airSessionId, win.clipId, { now });
+    return issueCodeForWindow(airSessionId, win.playbackId, { now });
   }
   return last;
 }
