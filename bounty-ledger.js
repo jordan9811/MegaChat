@@ -46,7 +46,7 @@ export function checksum(record) {
   return createHash('sha256').update(canonical(record)).digest('hex').slice(0, 16);
 }
 
-export function createLedger({ filePath, log = console } = {}) {
+export function createLedger({ filePath, log = console, kind = 'ledger' } = {}) {
   const dir = path.dirname(filePath);
   /** @type {any[]} */
   let rows = [];
@@ -105,7 +105,7 @@ export function createLedger({ filePath, log = console } = {}) {
       // recoverable — an interrupted append never reported success upstream.
       if (isLast && !hasTrailingNewline) {
         log.warn(
-          `[bounty-ledger] torn final record at seq ${good.length + 1} — truncating to ${good.length} valid record(s). ` +
+          `[bounty-${kind}] torn final record at seq ${good.length + 1} — truncating to ${good.length} valid record(s). ` +
           'This is the crash-mid-append case and is safe: the interrupted write never returned success.',
         );
         try {
@@ -118,10 +118,12 @@ export function createLedger({ filePath, log = console } = {}) {
       }
 
       // Anything else: interior corruption or a sequence gap. Refuse.
+      const consequence = kind === 'evidence'
+        ? 'Refusing to start: payouts are computed from this evidence, and a verifier reading past this point would count fewer playbacks than actually aired.'
+        : 'Refusing to start: every balance derived after this point would be wrong.';
       throw new LedgerCorrupt(
-        `Escrow ledger is corrupt at line ${i + 1} (expected seq ${good.length + 1}). ` +
-        'Refusing to start: every balance derived after this point would be wrong. ' +
-        'Inspect ' + filePath,
+        `Escrow ${kind} is corrupt at line ${i + 1} (expected seq ${good.length + 1}). ` +
+        consequence + ' Inspect ' + filePath,
         { line: i + 1, expectedSeq: good.length + 1, parseOk, sumOk, seqOk },
       );
     }

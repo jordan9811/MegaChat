@@ -17,6 +17,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { createLedger } from './bounty-ledger.js';
+import * as ev from './bounty-evidence.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -74,6 +75,19 @@ export function verifyLedgerIntegrity() {
   return getLedger().load();
 }
 
+/** Validate the EVIDENCE chain (codes, playbacks, verifications). */
+export function verifyEvidenceIntegrity() {
+  return ev.verifyEvidenceIntegrity();
+}
+export function evidenceIsTrustworthy() {
+  return ev.evidenceIsTrustworthy();
+}
+/** Evidence-vs-cache divergence check for one air session. */
+export function reconcileSessionEvidence(airSessionId) {
+  const rec = load().airSessions[airSessionId];
+  return ev.reconcileWindows(airSessionId, rec?.playbackWindows || []);
+}
+
 function save() {
   ensureDir();
   fs.writeFileSync(STORE_PATH, JSON.stringify(cache, null, 2), 'utf8');
@@ -84,6 +98,7 @@ export function _resetCache() {
   cache = null;
   if (ledger) ledger._reset();
   ledger = null;
+  ev._reset();
 }
 
 // ── Handle keys ─────────────────────────────────────────────────────────────
@@ -238,6 +253,7 @@ export function createAirSession({ claimId, roomId, platform }) {
   };
   store.airSessions[rec.id] = rec;
   save();
+  ev.recordAirSessionOpened(rec.id, claimId, roomId || null, platform || null);
   return rec;
 }
 
@@ -266,6 +282,7 @@ export function pushPlaybackWindow(id, win) {
   if (!Array.isArray(rec.playbackWindows)) rec.playbackWindows = [];
   rec.playbackWindows.push(win);
   save();
+  ev.recordPlaybackStarted(id, win); // authoritative copy
   return rec;
 }
 
@@ -279,6 +296,8 @@ export function updatePlaybackWindow(id, playbackId, patch) {
   if (!win) return rec;
   Object.assign(win, patch);
   save();
+  // A window only ever closes (endsAt truncation) — record it as evidence.
+  if (patch.endsAt != null) ev.recordPlaybackEnded(id, playbackId, patch.endsAt);
   return rec;
 }
 
@@ -290,6 +309,7 @@ export function pushWindowCode(id, playbackId, codeRec) {
   if (!win) throw new Error(`No playback window ${playbackId}`);
   win.codes.push(codeRec);
   save();
+  ev.recordCodeIssued(id, codeRec); // THE evidence a payout rests on
   return rec;
 }
 
@@ -299,6 +319,7 @@ export function pushAirSessionViolation(id, violation) {
   if (!rec) throw new Error(`No air session ${id}`);
   rec.violations.push(violation);
   save();
+  ev.recordViolation(id, violation);
   return rec;
 }
 
@@ -369,6 +390,7 @@ export function recordVerification({
   };
   store.verifications[rec.id] = rec;
   save();
+  ev.recordVerificationEvidence(rec);
   return rec;
 }
 

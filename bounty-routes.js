@@ -82,6 +82,17 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     throw e;
   }
 
+  // Same treatment for the EVIDENCE chain — the watermark codes a payout is
+  // computed from. Corruption here does not lose bookkeeping, it makes a
+  // verifier count fewer playbacks than aired and underpay, silently.
+  try {
+    const { recovered } = store.verifyEvidenceIntegrity();
+    if (recovered) log.warn(`[bounty] evidence log recovered ${recovered} torn record(s) at startup`);
+  } catch (e) {
+    log.error(`[bounty] REFUSING TO START — evidence chain is corrupt: ${e.message}`);
+    throw e;
+  }
+
   log.warn('[bounty] BOUNTY_CLAIM ON — escrow is a LEDGER ONLY. Settlement is stubbed; no funds move.');
 
   // Protect reserved handles from being claimed as ordinary room handles.

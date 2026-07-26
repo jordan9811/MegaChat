@@ -206,6 +206,29 @@ export function release({
   const existing = store.findByIdempotencyKey(idempotencyKey);
   if (existing) return { rows: [existing], deduped: true, released: 0, match: 0 };
 
+  // EVIDENCE GATE. A payout is computed from issued watermark codes, so we
+  // must be able to vouch for them. Two independent checks:
+  //   1. the evidence chain validated at boot (no interior corruption)
+  //   2. this session's cached windows match the evidence log
+  // Failing either means paying against proof we cannot stand behind, which
+  // is precisely what the evidence log exists to prevent.
+  const trust = store.evidenceIsTrustworthy();
+  if (!trust.ok) {
+    return {
+      rows: [], deduped: false, released: 0, match: 0,
+      skipped: 'evidence_unverified', detail: trust.error,
+    };
+  }
+  if (airSessionId) {
+    const rec = store.reconcileSessionEvidence(airSessionId);
+    if (rec.diverged) {
+      return {
+        rows: [], deduped: false, released: 0, match: 0,
+        skipped: 'evidence_diverged', detail: rec,
+      };
+    }
+  }
+
   // A session awaiting human review does not pay until a reviewer resolves it.
   // Ambiguous evidence must never silently become a payout OR a silent denial.
   if (airSessionId && store.hasOpenReview(airSessionId)) {
