@@ -92,11 +92,24 @@ export function createWebhookTracker({ log = console, onSession = () => {} } = {
   /** Classify an identity into our own participant kinds. */
   function kindOf(identity) {
     const id = String(identity || '');
+    if (isProbe(id)) return 'probe';
     if (id.startsWith('overlay:')) return 'overlay';
     if (id.startsWith('host:')) return 'booth';
     if (id.startsWith('seat:')) return 'guest';
     if (id.startsWith('viewer:')) return 'viewer';
     return 'unknown';
+  }
+
+  /**
+   * Synthetic identities used to verify the webhook path end-to-end.
+   * They are RECORDED (so a probe is visible and auditable) but EXCLUDED from
+   * budget metering — otherwise our own deployment checks would eat a real
+   * streamer's burn budget and could, in the limit, trip the breaker and block
+   * live traffic. Pattern is deliberately explicit rather than clever: an
+   * identity has to be deliberately named a probe to be discounted.
+   */
+  function isProbe(identity) {
+    return /__probe__|__ackprobe|^probe:|^test:/i.test(String(identity || ''));
   }
 
   function handle(event) {
@@ -157,17 +170,24 @@ export function createWebhookTracker({ log = console, onSession = () => {} } = {
   function stats(now = Date.now()) {
     const dayAgo = now - 86_400_000;
     const monthStart = new Date(new Date(now).getFullYear(), new Date(now).getMonth(), 1).getTime();
-    const closedMinutes = (since) => sessions.reduce((a, s) => {
+    // Budget metering EXCLUDES probes; the raw counts still include them so a
+    // probe is never invisible, just never billed against the budget.
+    const billable = sessions.filter((s) => s.kind !== 'probe');
+    const closedMinutes = (since) => billable.reduce((a, s) => {
       const st = Math.max(s.start, since);
       return s.end > st ? a + (s.end - st) / 60_000 : a;
     }, 0);
-    const openMinutes = (since) => [...open.values()].reduce((a, o) => {
-      const st = Math.max(o.startedAt, since);
-      return now > st ? a + (now - st) / 60_000 : a;
-    }, 0);
+    const openMinutes = (since) => [...open.entries()]
+      .filter(([k]) => !isProbe(k.split('|')[1]))
+      .reduce((a, [, o]) => {
+        const st = Math.max(o.startedAt, since);
+        return now > st ? a + (now - st) / 60_000 : a;
+      }, 0);
+    const probeClosed = sessions.length - billable.length;
     return {
       openCount: open.size,
       closedCount: sessions.length,
+      probeSessionsExcluded: probeClosed,
       minutesToday: +(closedMinutes(dayAgo) + openMinutes(dayAgo)).toFixed(2),
       minutesThisMonth: +(closedMinutes(monthStart) + openMinutes(monthStart)).toFixed(2),
       openSessions: [...open.entries()].map(([k, o]) => {
