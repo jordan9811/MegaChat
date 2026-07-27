@@ -45,6 +45,10 @@ export const EVIDENCE_TYPES = {
   CODE_ISSUED: 'CODE_ISSUED',
   PLAYBACK_ENDED: 'PLAYBACK_ENDED',
   VIOLATION: 'VIOLATION',
+  /** Concurrent viewer count sampled at clip playback. Payout-relevant and
+   *  IMPOSSIBLE to backfill: once the broadcast ends, the count at a given
+   *  instant is gone forever, so it is captured the moment it exists. */
+  VIEWER_SAMPLE: 'VIEWER_SAMPLE',
   VERIFICATION: 'VERIFICATION',
 };
 
@@ -116,6 +120,13 @@ export const recordCodeIssued = (airSessionId, code) =>
 
 export const recordPlaybackEnded = (airSessionId, playbackId, endsAt) =>
   append(EVIDENCE_TYPES.PLAYBACK_ENDED, { airSessionId, playbackId, endsAt });
+
+export const recordViewerSample = (airSessionId, sample) =>
+  append(EVIDENCE_TYPES.VIEWER_SAMPLE, {
+    airSessionId, playbackId: sample.playbackId || null, clipId: sample.clipId || null,
+    handle: sample.handle, platform: sample.platform || 'twitch',
+    live: sample.live, viewerCount: sample.viewerCount,
+  });
 
 export const recordViolation = (airSessionId, violation) =>
   append(EVIDENCE_TYPES.VIOLATION, { airSessionId, ...violation });

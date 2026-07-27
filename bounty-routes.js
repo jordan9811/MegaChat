@@ -17,6 +17,9 @@ import * as watermark from './bounty-watermark.js';
 import * as verifier from './bounty-verifier.js';
 import * as clips from './bounty-clips.js';
 import { moderateMedia, moderationConfigured } from './moderation.js';
+import * as evidence from './bounty-evidence.js';
+import { twitchApiConfigured, getStreamByLogin } from './twitch-api.js';
+import { readIdentityFromRequest } from './auth.js';
 import settlement from './bounty-settlement.js';
 
 /**
@@ -39,6 +42,43 @@ export class StubIdentityVerifier extends IdentityVerifier {
 }
 
 /**
+ * REAL Twitch ownership proof — activated by BOUNTY_IDENTITY_REAL=1.
+ *
+ * A claim is approved only when the REQUESTER'S SIGNED-IN IDENTITY is a
+ * Twitch account whose login matches the claimed handle. That identity was
+ * established by a real OAuth round trip (legacy /auth/twitch or Privy's
+ * Twitch login), verified server-side and sealed into the tamper-evident
+ * mc_identity cookie — so "I am this channel" is proven by Twitch itself,
+ * not asserted in a request body.
+ *
+ * Kept behind its own flag rather than replacing the stub outright: the stub
+ * remains the default so unattended test environments keep working, and
+ * turning real verification on for production is one explicit env flip that
+ * shows up in the boot log. Kick gets the same shape when its credentials
+ * exist (OAuth 2.1 + PKCE, auth on id.kick.com, API on api.kick.com — noted
+ * for the run that has keys).
+ */
+export class TwitchIdentityVerifier extends IdentityVerifier {
+  async verify(platform, handle, _claimant, { req } = {}) {
+    if (platform !== 'twitch') {
+      return { approved: false, method: 'REAL_UNSUPPORTED_PLATFORM' };
+    }
+    const identity = req ? readIdentityFromRequest(req) : null;
+    if (!identity) {
+      return { approved: false, method: 'REAL_NOT_SIGNED_IN' };
+    }
+    if (identity.provider !== 'twitch') {
+      return { approved: false, method: `REAL_WRONG_PROVIDER:${identity.provider}` };
+    }
+    const owns = String(identity.username || identity.handle || '')
+      .toLowerCase() === String(handle).toLowerCase();
+    return owns
+      ? { approved: true, method: 'TWITCH_OAUTH_SESSION', platform, handle, login: identity.username }
+      : { approved: false, method: 'REAL_HANDLE_MISMATCH' };
+  }
+}
+
+/**
  * Playback hooks handed to letters.js. These are the ONLY thing that opens a
  * watermark window: a code cannot exist unless the server itself started a
  * clip. Exported separately so they can be wired even in tests.
@@ -56,6 +96,26 @@ export function makeClipHooks({ log = console } = {}) {
       if (r && !r.code) {
         log.warn(`[bounty] clip ${clipId} is ${durationS}s — below the ${bountyConfig.minClipSeconds}s sampling floor, it will not be payable`);
       }
+      // Capture the channel's CONCURRENT VIEWER COUNT alongside the watermark
+      // evidence. Payout is meant to scale with audience, and this number
+      // cannot be backfilled — once the broadcast ends, the count at this
+      // instant is gone. Fire-and-forget: a Helix round-trip must never sit
+      // inside the playback path of a live stream.
+      if (s.platform === 'twitch' && twitchApiConfigured()) {
+        const claim = store.getClaim(s.claimId);
+        const reserved = claim ? store.getReservedHandleByKey(claim.handleKey) : null;
+        const handle = reserved?.handle;
+        if (handle) {
+          void getStreamByLogin(handle, { log }).then((stream) => {
+            if (!stream) return; // "could not ask" is not evidence of anything
+            evidence.recordViewerSample(s.id, {
+              playbackId: r?.playbackId || null, clipId,
+              handle, platform: 'twitch',
+              live: stream.live, viewerCount: stream.viewerCount,
+            });
+          });
+        }
+      }
     },
     onClipEnd(roomId, { clipId }) {
       if (!bountyConfig.enabled) return;
@@ -71,7 +131,12 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     log.log('[bounty] BOUNTY_CLAIM off — no routes mounted, no surfaces rendered');
     return { mounted: false };
   }
-  const identity = identityVerifier || new StubIdentityVerifier();
+  // BOUNTY_IDENTITY_REAL=1 flips claims from the auto-approving stub to the
+  // session-bound Twitch proof. Loud at boot either way — which verifier is
+  // deciding who owns a handle must never be a surprise.
+  const identity = identityVerifier
+    || (process.env.BOUNTY_IDENTITY_REAL === '1' ? new TwitchIdentityVerifier() : new StubIdentityVerifier());
+  log.log(`[bounty] identity verifier: ${identity.constructor.name}`);
 
   // Validate the escrow ledger chain BEFORE serving anything. Pools are
   // derived by folding this ledger, so starting on a corrupt one would serve
@@ -525,11 +590,17 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       if (reserved.claimStatus === 'ACCUMULATING') {
         escrow.transition({ handleKey: key, to: 'RESERVED', actor: claimant || 'claimant', reason: 'claim started' });
       }
-      escrow.transition({ handleKey: key, to: 'CLAIM_PENDING', actor: claimant || 'claimant', reason: 'claim opened' });
+      // Re-entering CLAIM_PENDING is legal-by-skip: with real identity
+      // verification a DENIED attempt used to leave the handle wedged here,
+      // and every later claim — including the actual channel owner's — 409'd.
+      // An impostor must never be able to lock a streamer out by failing.
+      if (store.getReservedHandleByKey(key).claimStatus !== 'CLAIM_PENDING') {
+        escrow.transition({ handleKey: key, to: 'CLAIM_PENDING', actor: claimant || 'claimant', reason: 'claim opened' });
+      }
 
       const claim = store.createClaim({ handleKey: key, claimant, ttlMs: bountyConfig.claimTtlMs });
 
-      const idv = await identity.verify(platform, handle, claimant);
+      const idv = await identity.verify(platform, handle, claimant, { req });
       store.updateClaim(claim.id, {
         verificationState: idv.approved ? 'VERIFIED' : 'DENIED',
         verificationMethod: idv.method,
@@ -539,6 +610,16 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         actor: claimant || 'claimant', reason: idv.method,
         meta: { approved: idv.approved, stubbed: idv.method.startsWith('STUBBED') },
       });
+
+      // A denied claim RELEASES the handle back to RESERVED so the next
+      // attempt (most importantly the real owner's) is not blocked by this
+      // one's failure.
+      if (!idv.approved) {
+        escrow.transition({
+          handleKey: key, to: 'RESERVED', actor: 'identity',
+          reason: `claim denied: ${idv.method}`, claimId: claim.id,
+        });
+      }
 
       let wonPledges = [];
       if (idv.approved) {
