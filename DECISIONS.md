@@ -82,3 +82,11 @@ One line each: what / why / how to undo. Newest at the bottom.
 - **Probe identities are recorded but excluded from budget metering** — our own deployment checks must not eat a streamer's burn budget or, in the limit, trip the breaker and block live traffic. Pattern is explicit rather than heuristic so nothing real is silently written off; `probeSessionsExcluded` keeps the discount auditable. Undo: drop the isProbe filter in stats().
 - **Reported the Cloud/ledger delta as a harness artifact instead of a finding** — the −1.2 min gap was my script not integrating during a 75s sleep (0.50 observed + 1.25 unpolled = 1.75 vs ledger 1.70, inside one poll interval). Calling it a discrepancy would have manufactured a bug. Undo: n/a.
 - **Did NOT implement the sub-3s residual** — explicitly a product decision. Wrote options with tradeoffs instead, and flagged that the status quo is accidentally "redistribute to pool", which is the paid-for-airtime flaw already corrected once. Undo: n/a.
+
+## 2026-07-27 — overnight-hardening merged to trunk
+Fast-forward 93ab50e → c526a2f (11 commits). Full gate suite re-run on the
+post-merge tip before push: bounty 101/0, lazy-connect 65/0, browse-deck 19/0,
+e2e 19/0, min-duration 10/0, ops-alerts 19/0, dead-calls 3/0, mirror-drift 5/0.
+This commit exists partly to trigger the SECOND deploy that lets the new boot
+marker prove the /data volume survives restarts — deploy 1 wrote the first
+marker and correctly reported "unproven"; this deploy reads it back.
