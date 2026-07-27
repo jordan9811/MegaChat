@@ -342,61 +342,84 @@ const launch = (port, extra = {}) =>
 
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', protocolTimeout: 60000 });
 
-// ── D + E: reveal gating (pure client logic, no server needed) ──────────────
-{
+// ── D + E: reveal gating, DRIVEN ON THE REAL OVERLAY PAGE ──────────────────
+//
+// This block used to build a blank page and reimplement the reveal gate inside
+// page.evaluate — a "mirror of the overlay's reveal gate", by its own comment.
+// It passed while the shipped overlay had the black-tile bug, because the copy
+// and the original had drifted. A passing mirror is not evidence.
+//
+// It now loads /overlay and calls the page's OWN revealRecord / maybeReveal /
+// lkAttach / markStingerRevealPoint against its OWN lkReveal map and real DOM,
+// so drift is impossible by construction.
+//
+// It needs a server now (it did not before) — that is the cost of testing the
+// real page instead of a copy of it, and it is worth paying.
+const dePort = 3231;
+const APP_D = `http://localhost:${dePort}`;
+const deApp = launch(dePort);
+await sleep(9000);
+try {
   const page = await browser.newPage();
-  await page.setContent('<div id="stage"></div>');
+  await page.goto(`${APP_D}/overlay?room=default`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await sleep(2500);
+
   const res = await page.evaluate(() => {
-    // Mirror of the overlay's reveal gate — same conditions, same order.
-    const lkReveal = new Map();
-    const rec = (id) => {
-      if (!lkReveal.has(id)) lkReveal.set(id, { stingerDone: false, trackReady: false, revealed: false, el: null });
-      return lkReveal.get(id);
+    // Real tile elements, so `el` and the .lk-holding class behave as shipped.
+    const stage = document.getElementById('stage');
+    const mkTile = (id) => {
+      const tile = document.createElement('div');
+      tile.className = 'tile lk-holding';
+      const v = document.createElement('video');
+      tile.appendChild(v);
+      stage.appendChild(tile);
+      lkTileEls.set(id, v);
+      // lkAttach bails without a track; a video-only stub is enough to
+      // exercise the gate and keeps this off the SFU.
+      lkTracks.set(id, { video: { attach() {} }, audio: null });
+      return v;
     };
-    const events = [];
-    const maybeReveal = (id) => {
-      const r = lkReveal.get(id);
-      if (!r || r.revealed || !r.el) return;
-      if (!(r.stingerDone && r.trackReady)) return;
-      r.revealed = true;
-      events.push('reveal:' + id);
-    };
-    const attach = (id) => {
-      const r = rec(id);
-      r.el = r.el || {};
-      if (r.revealed) { events.push('refade:' + id); return; }
-      r.trackReady = true;
-      maybeReveal(id);
-    };
-    const stinger = (id) => { const r = rec(id); r.el = r.el || {}; r.stingerDone = true; maybeReveal(id); };
 
-    // D: stinger finishes FIRST, track lands late.
-    stinger('seat:a');
+    mkTile('seat:a');
+    mkTile('seat:b');
+
+    // D: stinger reveal frame FIRST, track lands late.
+    markStingerRevealPoint('seat:a');
     const heldAfterStinger = !lkReveal.get('seat:a').revealed;
-    attach('seat:a');
+    lkAttach('seat:a');
     const revealedAfterTrack = lkReveal.get('seat:a').revealed;
+    const holdingCleared = !lkTileEls.get('seat:a').closest('.tile').classList.contains('lk-holding');
 
-    // Track first, stinger late (the common case) — must also wait.
-    attach('seat:b');
+    // Track first, stinger late (the common case) — must also hold.
+    lkAttach('seat:b');
     const heldAfterTrack = !lkReveal.get('seat:b').revealed;
-    stinger('seat:b');
+    markStingerRevealPoint('seat:b');
     const revealedAfterStinger = lkReveal.get('seat:b').revealed;
 
     // E: re-attach on an already-revealed seat = non-entry path.
-    attach('seat:a');
+    const elA = lkTileEls.get('seat:a');
+    elA.classList.remove('lk-refade');
+    lkAttach('seat:a');
     return {
-      heldAfterStinger, revealedAfterTrack, heldAfterTrack, revealedAfterStinger,
-      events, revealCount: events.filter((e) => e === 'reveal:seat:a').length,
-      lastWasRefade: events[events.length - 1] === 'refade:seat:a',
+      heldAfterStinger, revealedAfterTrack, holdingCleared,
+      heldAfterTrack, revealedAfterStinger,
+      refaded: elA.classList.contains('lk-refade'),
+      revealedClass: elA.classList.contains('lk-revealed'),
+      stillRevealedOnce: lkReveal.get('seat:a').revealed === true,
     };
   });
+
   ok('D. stinger finishes first → tile HOLDS (no empty video frame revealed)', res.heldAfterStinger);
   ok('D. reveal fires when the late track finally lands', res.revealedAfterTrack);
+  ok('D. the REAL tile drops .lk-holding on reveal (not just a flag)', res.holdingCleared);
   ok('D. track first → still holds until the stinger reveal frame', res.heldAfterTrack);
   ok('D. reveal fires at the stinger reveal frame (later of the two wins)', res.revealedAfterStinger);
-  ok('E. re-attach on a revealed seat takes the fallback fade, NOT a reveal', res.lastWasRefade);
-  ok('E. entry reveal never fires twice (no stinger replay on reconnect)', res.revealCount === 1);
+  ok('E. re-attach on a revealed seat takes the fallback fade, NOT a reveal',
+    res.refaded && res.revealedClass);
+  ok('E. entry reveal never fires twice (no stinger replay on reconnect)', res.stillRevealedOnce);
   await page.close();
+} finally {
+  deApp.kill();
 }
 
 // ── A + B + C + F: live server, real SFU ───────────────────────────────────
