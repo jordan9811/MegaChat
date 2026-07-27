@@ -37,7 +37,15 @@ export const breakerConfig = {
   overrideTtlMs: num(process.env.LK_OVERRIDE_TTL_MS, 60 * 60_000),
 };
 
-export function createBreaker({ log = console, getUsage, config = breakerConfig } = {}) {
+export function createBreaker({
+  log = console, getUsage, config = breakerConfig,
+  /**
+   * Optional push notifier (ops-alerts.js). Without it, everything below
+   * behaves exactly as before and alarms live in the logs only — which is
+   * precisely the failure mode this hook exists to end.
+   */
+  alerter = null,
+} = {}) {
   /** @type {{until:number, by:string, reason:string}|null} */
   let override = null;
   const alarmed = new Set(); // sessions already alarmed, so we warn once each
@@ -120,6 +128,17 @@ export function createBreaker({ log = console, getUsage, config = breakerConfig 
       if (s === 'blocked') log.error(`${line} — ⛔ BLOCKING NEW CONNECTIONS (live sessions untouched)`);
       else if (s === 'warn') log.warn(`${line} — ⚠ approaching budget`);
       else log.log(line);
+      // Push on the way UP only. Recovering to ok is good news and does not
+      // need to wake anyone; the state is on /api/livekit/burn either way.
+      if (alerter && (s === 'warn' || s === 'blocked')) {
+        alerter.budget({
+          state: s === 'blocked' ? 'blocking' : 'warning',
+          pctDaily: +(r.daily * 100).toFixed(1),
+          pctMonthly: +(r.monthly * 100).toFixed(1),
+          minutesToday: +u.minutesToday.toFixed(1),
+          openCount: u.openSessions.length,
+        });
+      }
       lastState = s;
     }
 
@@ -141,6 +160,13 @@ export function createBreaker({ log = console, getUsage, config = breakerConfig 
           `has been connected ${sess.minutes.toFixed(0)} min (threshold ${config.longSessionMin}), ` +
           `started ${a.startedAt}. This is the alarm that would have caught the 30-hour leak on day one.`,
         );
+        if (alerter) {
+          alerter.longSession({
+            room: sess.room, identity: sess.identity, kind: sess.kind,
+            minutes: sess.minutes.toFixed(0),
+            pctDaily: +(r.daily * 100).toFixed(1),
+          });
+        }
       }
     }
     return { state: s, ratios: r, usage: u, alarms };

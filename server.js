@@ -30,6 +30,8 @@ import { attachDashboardRoutes } from './dashboard-routes.js';
 import { createActivityManager } from './livekit-activity.js';
 import { createWebhookTracker, verifyWebhookJwt, reconcile } from './livekit-webhooks.js';
 import { createBreaker, breakerConfig } from './livekit-breaker.js';
+import { createAlerter } from './ops-alerts.js';
+import { bountyConfig } from './bounty-claim.config.js';
 import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
 import { attachBountyRoutes, makeClipHooks } from './bounty-routes.js';
 import { verifyRoomAccess } from './auth.js';
@@ -625,7 +627,25 @@ setImmediate(() => {
     .then(() => lkBreaker.evaluate())
     .catch((e) => console.warn(`[lk-webhook] boot reconcile failed: ${e.message}`));
 });
-const lkBreaker = createBreaker({ getUsage: () => lkWebhooks.stats() });
+const opsAlerts = createAlerter();
+const lkBreaker = createBreaker({ getUsage: () => lkWebhooks.stats(), alerter: opsAlerts });
+
+/**
+ * Fan recordings fill a fixed volume, and a full store REFUSES new
+ * contributions rather than truncating them — so "storage is full" is a
+ * revenue outage, not a housekeeping note. Watch it the same way as the
+ * LiveKit budget. Inert unless the bounty flag is on.
+ */
+if (bountyConfig.enabled) {
+  const clipWatch = setInterval(async () => {
+    try {
+      const { stats } = await import('./bounty-clips.js');
+      const s = stats();
+      if (s.pctUsed >= 75) opsAlerts.clipStorage(s);
+    } catch { /* observability only */ }
+  }, 10 * 60_000);
+  if (clipWatch.unref) clipWatch.unref();
+}
 {
   const t = setInterval(() => lkBreaker.evaluate(), 60_000);
   if (t.unref) t.unref();
@@ -1197,6 +1217,31 @@ app.post('/api/livekit/burn/purge-foreign', (req, res) => {
   }
   lkBreaker.evaluate();
   res.json({ ok: true, purged: removed.length, removed, burn: lkBreaker.snapshot() });
+});
+
+/**
+ * Test-fire the alert path. An alerting system nobody has ever seen fire is
+ * indistinguishable from one that is broken, so this exists to be run right
+ * after setting OPS_ALERT_WEBHOOK.
+ */
+app.post('/api/livekit/burn/test-alert', async (req, res) => {
+  if (!opsAlerts.enabled) {
+    return res.status(503).json({
+      ok: false,
+      error: 'OPS_ALERT_WEBHOOK is not set — alarms are logs-only',
+      hint: 'Set OPS_ALERT_WEBHOOK to a Discord or Slack incoming-webhook URL and restart.',
+    });
+  }
+  const out = await opsAlerts.send('test-fire', {
+    severity: 'info',
+    title: 'MegaChat alert path test',
+    lines: [
+      'This is a test fire, not a real alarm.',
+      `Requested by: ${String(req.body?.by || 'unspecified')}`,
+      'If you can read this, budget warnings and long-session alarms will reach you.',
+    ],
+  });
+  res.json({ ok: !out.failed, result: out, stats: opsAlerts.stats() });
 });
 
 /** Operator override — requires who and why, both logged. */
