@@ -64,6 +64,30 @@ export const bountyConfig = {
    */
   minClipSeconds: Number(process.env.BOUNTY_MIN_CLIP_SECONDS || 3),
 
+  // ── Clip storage (bounty-clips.js) ──────────────────────────────────────
+  /**
+   * The bounty mechanic promises a streamer that clips recorded for them will
+   * still be there when they claim their handle — up to `reservationTtlMs`,
+   * i.e. 90 days. That promise needs actual storage, which has actual limits.
+   *
+   * These are REJECTION thresholds, never truncation: a fan is charged for a
+   * clip, so storing a partial one is worse than refusing it up front.
+   */
+  /** Per clip. Matches the 25MB ceiling letters.js already enforces. */
+  clipMaxBytes: num(process.env.BOUNTY_CLIP_MAX_BYTES, 25 * 1024 * 1024),
+  /**
+   * Whole store. Default ~2GB: at the 25MB worst case that is only ~80 clips,
+   * at realistic 5-8MB sizes several hundred. Sized for early onboarding on a
+   * Railway volume, NOT for scale — see docs/decisions/bounty-clip-storage.md
+   * for the object-store swap.
+   */
+  clipStoreMaxBytes: num(process.env.BOUNTY_CLIP_STORE_MAX_BYTES, 2 * 1024 * 1024 * 1024),
+  /** Per handle, so one popular streamer cannot consume the whole volume. */
+  clipsPerHandleMax: num(process.env.BOUNTY_CLIPS_PER_HANDLE, 200),
+  /** How long a contribution may sit with no clip uploaded before it is
+   *  refundable as never-delivered. */
+  clipUploadGraceMs: num(process.env.BOUNTY_CLIP_UPLOAD_GRACE_MS, 10 * 60_000),
+
   // ── Anti-malicious-compliance ───────────────────────────────────────────
   /**
    * Minimum badge height as a fraction of canvas height. Below this the

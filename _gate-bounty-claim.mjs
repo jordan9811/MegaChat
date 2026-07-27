@@ -18,6 +18,7 @@
 import { spawn } from 'child_process';
 import { readFileSync, readdirSync } from 'fs';
 import fsSync from 'fs';
+import path from 'path';
 import puppeteer from 'puppeteer-core';
 
 let pass = 0, fail = 0;
@@ -303,6 +304,121 @@ let ambiguousSessionId = null;
   const again = escrow.refundExpired({ handleKey: key, actor: 'gate', settlement: quietSettlement });
   ok('F. refunding again is idempotent (no double refund)',
     store.getPool(key).refunded === 40, `still ${store.getPool(key).refunded}`);
+}
+
+// ── O. CLIP STORAGE: the bounty mechanic's missing content layer ───────────
+{
+  const clips = await import('./bounty-clips.js');
+  const vid = (n) => Buffer.concat([Buffer.from('\x1aE\xdf\xa3'), Buffer.alloc(n, 7)]);
+  const mk = (h) => {
+    escrow.reserve({ platform: 'twitch', handle: h });
+    return store.handleKey('twitch', h);
+  };
+
+  const kc = mk('clipstore');
+  const c1 = escrow.contribute({ platform: 'twitch', handle: 'clipstore', contributor: '0xf1', amount: '10' });
+  const stored = clips.storeClip({
+    handleKey: kc, contributionId: c1.id, contributor: '0xf1',
+    mime: 'video/webm', durationS: 8, data: vid(4096),
+  });
+  const payload = vid(4096);
+  ok('O. a fan recording is STORED against the handle',
+    !!stored.clipId && stored.bytes === payload.length,
+    `${stored.bytes} bytes (expected ${payload.length})`);
+  ok('O. it is content-addressed so damage is detectable', /^[a-f0-9]{64}$/.test(stored.sha256));
+  ok('O. it appears in what a claiming streamer has waiting',
+    clips.listClips(kc).some((c) => c.clipId === stored.clipId), `${clips.listClips(kc).length} clip(s)`);
+
+  // THE point of the whole module: survive a restart.
+  clips._reset();
+  ok('O. THE CLIP SURVIVES A RESTART (this is the entire reason the module exists)',
+    clips.listClips(kc).some((c) => c.clipId === stored.clipId),
+    `after reset: ${clips.listClips(kc).length} clip(s)`);
+
+  const back = clips.readClip(stored.clipId);
+  ok('O. the bytes read back are the SAME bytes',
+    back.ok && back.data.equals(payload), `${back.data?.length} vs ${payload.length}`);
+  ok('O. and they verify against the stored hash', back.ok && back.record.sha256 === stored.sha256);
+
+  // Corruption must be refused, not served — a streamer playing a damaged
+  // clip would fail verification and blame the wrong thing.
+  const mediaFile = path.join(clips._paths.MEDIA_DIR, `${stored.clipId}.bin`);
+  const good = fsSync.readFileSync(mediaFile);
+  fsSync.writeFileSync(mediaFile, Buffer.concat([good.subarray(0, 100), Buffer.from('TAMPERED')]));
+  const bad = clips.readClip(stored.clipId);
+  ok('O. a TAMPERED clip is refused, never silently served',
+    bad.ok === false && bad.error === 'media_corrupt', bad.error);
+  fsSync.writeFileSync(mediaFile, good);
+  ok('O. restoring the bytes makes it readable again', clips.readClip(stored.clipId).ok === true);
+
+  // Limits reject rather than truncate — the fan is charged either way.
+  let tooShort = null;
+  try {
+    clips.storeClip({ handleKey: kc, mime: 'video/webm', durationS: 1, data: vid(64) });
+  } catch (e) { tooShort = e; }
+  ok('O. a clip under the sampling floor never enters the store',
+    tooShort?.code === 'below_min_duration', tooShort?.message);
+
+  let tooBig = null;
+  const realMax = bountyConfig.clipMaxBytes;
+  bountyConfig.clipMaxBytes = 1024;
+  try {
+    clips.storeClip({ handleKey: kc, mime: 'video/webm', durationS: 5, data: vid(4096) });
+  } catch (e) { tooBig = e; }
+  bountyConfig.clipMaxBytes = realMax;
+  ok('O. an oversize clip is REJECTED, not truncated', tooBig?.code === 'clip_too_large', tooBig?.message);
+
+  let full = null;
+  const realStore = bountyConfig.clipStoreMaxBytes;
+  bountyConfig.clipStoreMaxBytes = 1000;
+  try {
+    clips.storeClip({ handleKey: kc, mime: 'video/webm', durationS: 5, data: vid(4096) });
+  } catch (e) { full = e; }
+  bountyConfig.clipStoreMaxBytes = realStore;
+  ok('O. a full store refuses new clips instead of silently dropping old ones',
+    full?.code === 'store_full', full?.message);
+
+  let capped = null;
+  const realCap = bountyConfig.clipsPerHandleMax;
+  bountyConfig.clipsPerHandleMax = 1;
+  try {
+    clips.storeClip({ handleKey: kc, mime: 'video/webm', durationS: 5, data: vid(2048) });
+  } catch (e) { capped = e; }
+  bountyConfig.clipsPerHandleMax = realCap;
+  ok('O. one handle cannot consume the whole volume', capped?.code === 'handle_clip_cap', capped?.message);
+
+  // Refund reclaims the recording along with the money.
+  escrow.refund({
+    handleKey: kc, reason: 'UNVERIFIABLE_CLIP', actor: 'gate',
+    contributionIds: [c1.id], settlement: quietSettlement,
+  });
+  ok('O. refunding a contribution PURGES its clip (money and recording together)',
+    !clips.listClips(kc).some((c) => c.clipId === stored.clipId),
+    `${clips.listClips(kc).length} left`);
+  const rec = clips.getClipRecord(stored.clipId);
+  ok('O. but the RECORD survives the purge — "a fan paid, where did it go?" stays answerable',
+    !!rec && !!rec.purgedAt && /UNVERIFIABLE_CLIP/.test(rec.purgeReason || ''), rec?.purgeReason);
+  ok('O. and the bytes are actually gone from disk', !fsSync.existsSync(mediaFile));
+
+  // Orphan sweep: files with no owner go, missing media is REPORTED not tidied.
+  const kOrph = mk('cliporph');
+  const c2 = escrow.contribute({ platform: 'twitch', handle: 'cliporph', contributor: '0xf2', amount: '5' });
+  const s2 = clips.storeClip({
+    handleKey: kOrph, contributionId: c2.id, mime: 'video/webm', durationS: 6, data: vid(512),
+  });
+  fsSync.writeFileSync(path.join(clips._paths.MEDIA_DIR, 'nobody-owns-me.bin'), Buffer.alloc(16));
+  let swept = clips.sweepOrphans();
+  ok('O. an unowned media file is swept', swept.deletedOrphanFiles.includes('nobody-owns-me'));
+  ok('O. a live clip is NOT swept', clips.readClip(s2.clipId).ok === true);
+
+  fsSync.unlinkSync(path.join(clips._paths.MEDIA_DIR, `${s2.clipId}.bin`));
+  swept = clips.sweepOrphans();
+  ok('O. MISSING media is reported as data loss, never quietly purged',
+    swept.missingMedia.includes(s2.clipId) && !!clips.getClipRecord(s2.clipId)
+      && !clips.getClipRecord(s2.clipId).purgedAt,
+    JSON.stringify(swept.missingMedia));
+  ok('O. and reading it says media_missing rather than pretending it is fine',
+    clips.readClip(s2.clipId).error === 'media_missing');
 }
 
 // ── N. GENERALIZED REFUNDS: enumerated reasons, idempotent across reasons ──

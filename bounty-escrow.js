@@ -18,6 +18,7 @@
 
 import { bountyConfig } from './bounty-claim.config.js';
 import * as store from './bounty-store.js';
+import * as clips from './bounty-clips.js';
 
 export const STATES = [
   'ACCUMULATING',
@@ -163,6 +164,10 @@ export const REFUND_REASONS = {
     full: false,
     text: 'clip could not be verified as aired',
   },
+  CLIP_NEVER_UPLOADED: {
+    full: false,
+    text: 'contribution was paid but no recording was ever uploaded',
+  },
   DISPUTE_RESOLVED: {
     full: false,
     text: 'refunded by dispute resolution',
@@ -261,6 +266,16 @@ export function refund({
     });
     if (!deduped) {
       store.updateContribution(c.id, { status: 'REFUNDED' });
+      // The fan's money and the fan's recording go back together. Leaving the
+      // clip behind would mean a streamer could still be handed something
+      // nobody is paying for, and it would hold volume space forever.
+      try {
+        clips.purgeForContribution(c.id, `refund:${reason}`);
+      } catch (e) {
+        // Never let storage cleanup block a refund — the money is the part
+        // that matters, and an orphaned clip is caught by the sweeper.
+        console.warn(`[bounty] clip purge failed for contribution ${c.id}: ${e.message}`);
+      }
       // TODO(run-b): real settlement. Stub records intent only.
       settlement?.refund({ to: c.contributor, amount: c.amount, ref: c.id });
     }

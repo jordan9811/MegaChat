@@ -187,6 +187,12 @@ export function listContributions(key) {
   return Object.values(load().contributions).filter((c) => c.handleKey === key);
 }
 
+/** Look up a contribution without knowing its handle — the clip upload route
+ *  is handed only a contribution id. */
+export function getContribution(id) {
+  return load().contributions[id] || null;
+}
+
 export function updateContribution(id, patch) {
   const store = load();
   const rec = store.contributions[id];

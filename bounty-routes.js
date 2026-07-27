@@ -9,11 +9,13 @@
  * whose settlement dependency is the record-intent stub.
  */
 
+import express from 'express';
 import { bountyConfig, bountyClientConfig } from './bounty-claim.config.js';
 import * as store from './bounty-store.js';
 import * as escrow from './bounty-escrow.js';
 import * as watermark from './bounty-watermark.js';
 import * as verifier from './bounty-verifier.js';
+import * as clips from './bounty-clips.js';
 import settlement from './bounty-settlement.js';
 
 /**
@@ -129,13 +131,87 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   // ── Contribute (a recorded MegaChat against an unclaimed handle) ─────────
+  //
+  // Two steps on purpose, mirroring the letters flow: the contribution is
+  // recorded first and the recording is uploaded against it second. The
+  // reverse would store bytes for a contribution that might never exist.
   app.post('/api/bounty/contribute', (req, res) => {
     try {
       const { platform, handle, contributor, amount, letterRef } = req.body || {};
       const c = escrow.contribute({ platform, handle, contributor, amount, letterRef });
-      res.json({ ok: true, contribution: c, pool: store.getPool(c.handleKey) });
+      res.json({
+        ok: true,
+        contribution: c,
+        pool: store.getPool(c.handleKey),
+        // Until this is uploaded the pool has money with nothing behind it.
+        uploadUrl: `/api/bounty/clip/${encodeURIComponent(c.id)}`,
+        uploadDeadline: Date.now() + bountyConfig.clipUploadGraceMs,
+        clipLimits: {
+          minSeconds: bountyConfig.minClipSeconds,
+          maxBytes: bountyConfig.clipMaxBytes,
+        },
+      });
     } catch (e) { fail(res, e); }
   });
+
+  // ── Upload the actual recording for a contribution ───────────────────────
+  app.post('/api/bounty/clip/:contributionId',
+    express.raw({ type: () => true, limit: bountyConfig.clipMaxBytes + 1024 }),
+    (req, res) => {
+      try {
+        const contributionId = req.params.contributionId;
+        const contribution = store.getContribution(contributionId);
+        if (!contribution) return res.status(404).json({ error: 'No such contribution' });
+        if (contribution.status !== 'HELD') {
+          return res.status(409).json({ error: `Contribution is ${contribution.status}` });
+        }
+        const existing = clips.listClips(contribution.handleKey)
+          .find((c) => c.contributionId === contributionId);
+        if (existing) {
+          // Idempotent: a retried upload must not store the clip twice and
+          // must not burn a second slot against the handle cap.
+          return res.json({ ok: true, clip: existing, deduped: true });
+        }
+        const out = clips.storeClip({
+          handleKey: contribution.handleKey,
+          contributionId,
+          contributor: contribution.contributor,
+          mime: req.get('content-type') || 'video/webm',
+          durationS: Number(req.get('x-clip-duration') || req.query.durationS),
+          data: req.body,
+        });
+        res.json({ ok: true, clip: out });
+      } catch (e) { fail(res, e); }
+    });
+
+  /** What a claiming streamer actually has waiting for them. */
+  app.get('/api/bounty/clips', (req, res) => {
+    const key = store.handleKey(req.query.platform, req.query.handle);
+    if (!key) return res.status(400).json({ error: 'platform and handle required' });
+    res.json({
+      clips: clips.listClips(key).map(({ sha256, ...c }) => ({ ...c, sha256Short: sha256.slice(0, 12) })),
+      storage: clips.stats(),
+    });
+  });
+
+  /** Serve a stored clip. Refuses rather than serving bytes that changed. */
+  app.get('/api/bounty/clip/:clipId/media', (req, res) => {
+    const out = clips.readClip(req.params.clipId);
+    if (!out.ok) {
+      const code = out.error === 'not_found' ? 404 : 410;
+      return res.status(code).json({
+        error: out.error,
+        hint: out.error === 'media_corrupt'
+          ? 'This clip no longer matches the bytes we stored and will not be served. It is recorded as damaged, not silently replaced.'
+          : 'This clip is no longer available.',
+      });
+    }
+    res.setHeader('Content-Type', out.record.mime);
+    res.setHeader('Content-Length', String(out.data.length));
+    res.send(out.data);
+  });
+
+  app.get('/api/bounty/admin/clip-storage', (_req, res) => res.json(clips.stats()));
 
   // ── Claim flow ───────────────────────────────────────────────────────────
   app.post('/api/bounty/claim', async (req, res) => {
