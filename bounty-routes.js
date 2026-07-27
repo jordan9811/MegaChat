@@ -95,6 +95,33 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     throw e;
   }
 
+  // And the CLIP INDEX, for the same reason as the other two: it is the record
+  // of what a fan paid for and what a streamer is owed. It was the only one of
+  // the three append-only chains not validated at boot, which meant corruption
+  // would have surfaced lazily on the first upload instead of loudly here.
+  {
+    const t = clips.verifyClipIndexIntegrity();
+    if (!t.ok) {
+      log.error(`[bounty] REFUSING TO START — clip index is corrupt: ${t.error}`);
+      throw new Error(`clip index corrupt: ${t.error}`);
+    }
+    const s = clips.stats();
+    log.log(`[bounty] clip store: ${s.clips} clip(s), ${(s.bytes / 1e6).toFixed(1)}MB (${s.pctUsed}% of budget)`);
+    // Orphaned media wastes volume; missing media is DATA LOSS and must be said
+    // out loud rather than tidied away.
+    const sweep = clips.sweepOrphans();
+    if (sweep.deletedOrphanFiles.length) {
+      log.warn(`[bounty] swept ${sweep.deletedOrphanFiles.length} orphaned clip file(s)`);
+    }
+    if (sweep.missingMedia.length) {
+      log.error(
+        `[bounty] ⚠ ${sweep.missingMedia.length} clip(s) have an index record but NO MEDIA on disk: `
+        + `${sweep.missingMedia.join(', ')}. A fan paid for these and they cannot be played. `
+        + `They are NOT being auto-purged — decide whether to refund them.`,
+      );
+    }
+  }
+
   log.warn('[bounty] BOUNTY_CLAIM ON — escrow is a LEDGER ONLY. Settlement is stubbed; no funds move.');
 
   // Protect reserved handles from being claimed as ordinary room handles.
@@ -286,8 +313,17 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         return res.status(403).json({ error: 'Claim identity is not verified' });
       }
       const s = store.createAirSession({ claimId, roomId, platform });
-      const first = watermark.issueCode(s.id);
-      res.json({ ok: true, airSession: store.getAirSession(s.id), code: first });
+      // NO CODE IS ISSUED HERE, and that is the whole point of the
+      // playback-bound redesign: a code exists only while a clip is actually
+      // playing, because a code that exists at session-open would prove the
+      // overlay was parked, not that anything aired.
+      //
+      // This line used to call watermark.issueCode(), which that redesign
+      // deleted. Nothing caught it because every gate creates air sessions
+      // through store.createAirSession() directly rather than through this
+      // route — so the route threw on its first real use and the mechanic was
+      // dead the moment a streamer tried to go live.
+      res.json({ ok: true, airSession: store.getAirSession(s.id), code: null });
     } catch (e) { fail(res, e); }
   });
 
