@@ -27,6 +27,7 @@ import {
   letterPriceFor,
 } from './rooms-store.js';
 import { verifyRoomAccess } from './auth.js';
+import { moderateMedia } from './moderation.js';
 import { toWebRequest } from './meter-mpp.js';
 import { toAtomic, fromAtomic } from './token-utils.js';
 
@@ -104,87 +105,33 @@ export function attachLetters(app, deps) {
   // (seconds of latency budget, not minutes).
   const moderationConfigured = () => !!process.env.MODERATION_API_KEY;
 
+  /**
+   * DELEGATES to the shared pipeline in moderation.js (extracted so bounty
+   * clips run the SAME transcript+frames review instead of a second, slightly
+   * different one). This wrapper only maps the graded result back onto the
+   * pass/flag semantics this queue has always had:
+   *  - fail-open on error or no inputs (a verdict is never faked)
+   *  - 'borderline' strictness flags on ANY category flag
+   *  - 'severe' strictness flags on worst score ≥ 0.7 — the same number the
+   *    shared module's 'violation' floor defaults to
+   */
   async function moderateLetter(letter, cfg) {
-    const key = process.env.MODERATION_API_KEY;
-    const base = (process.env.MODERATION_API_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
-    let transcript = '';
-    try {
-      const fd = new FormData();
-      fd.append('file', new Blob([letter.media], { type: letter.mime }), 'megachat.webm');
-      fd.append('model', 'whisper-1');
-      const tr = await fetch(`${base}/audio/transcriptions`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${key}` },
-        body: fd,
-        signal: AbortSignal.timeout(15000),
-      });
-      if (tr.ok) transcript = String((await tr.json()).text || '');
-      else log.warn(`[letters] transcription ${tr.status} — continuing frames-only`);
-    } catch (err) {
-      log.warn('[letters] transcription failed (fail-open):', err.message);
-    }
-
-    // omni-moderation accepts AT MOST ONE image per request (400
-    // too_many_images above that) — the mock API in the P2 gate accepted
-    // many, which hid this: with ≥2 sampled frames every real review
-    // 400'd and failed open, i.e. moderation never actually ran. Split:
-    // transcript + first frame ride together, every further frame gets its
-    // own request (the endpoint is free), and the verdict is the WORST
-    // result across all of them.
-    const frames = letter.frames || [];
-    const requests = [];
-    const first = [];
-    if (transcript) first.push({ type: 'text', text: transcript });
-    if (frames[0]) first.push({ type: 'image_url', image_url: { url: frames[0] } });
-    if (first.length) requests.push(first);
-    for (const f of frames.slice(1)) {
-      requests.push([{ type: 'image_url', image_url: { url: f } }]);
-    }
-    if (requests.length === 0) return { verdict: 'pass', reason: null };
-
-    try {
-      const results = await Promise.all(requests.map(async (input) => {
-        const mr = await fetch(`${base}/moderations`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: 'omni-moderation-latest', input }),
-          signal: AbortSignal.timeout(15000),
-        });
-        if (!mr.ok) {
-          // surface the API's own reason — a bare status code made real
-          // misconfigurations (bad payload, wrong key scope)
-          // indistinguishable from transient blips
-          const body = await mr.text().catch(() => '');
-          throw new Error(`moderation ${mr.status}: ${body.replace(/\s+/g, ' ').slice(0, 300)}`);
-        }
-        const data = await mr.json();
-        return (data.results && data.results[0]) || null;
-      }));
-
-      let anyFlagged = false;
-      const scores = {};
-      for (const r of results) {
-        if (!r) continue;
-        if (r.flagged) anyFlagged = true;
-        for (const [k, v] of Object.entries(r.category_scores || {})) {
-          if (!(k in scores) || v > scores[k]) scores[k] = v;
-        }
-      }
-      const top = Object.entries(scores).sort((a, b) => b[1] - a[1])[0] || null;
-      const flagged = cfg.letters.aiStrictness === 'borderline'
-        ? anyFlagged
-        : !!(top && top[1] >= 0.7);
-      if (!flagged) return { verdict: 'pass', reason: null };
-      const pct = top ? Math.round(top[1] * 100) : 0;
-      return {
-        verdict: 'flag',
-        reason: `${top ? top[0] : 'flagged'} (${pct}%)`
-          + (transcript ? ` — “${transcript.slice(0, 90)}”` : ''),
-      };
-    } catch (err) {
-      log.warn('[letters] moderation failed (fail-open):', err.message);
+    const out = await moderateMedia({
+      media: letter.media, mime: letter.mime, frames: letter.frames || [], log,
+    });
+    if (!out.configured || out.error || out.grade === null) {
       return { verdict: 'pass', reason: null };
     }
+    const flagged = cfg.letters.aiStrictness === 'borderline'
+      ? out.flagged
+      : out.topScore >= 0.7;
+    if (!flagged) return { verdict: 'pass', reason: null };
+    const pct = Math.round((out.topScore || 0) * 100);
+    return {
+      verdict: 'flag',
+      reason: `${out.topCategory || 'flagged'} (${pct}%)`
+        + (out.transcript ? ` — “${out.transcript.slice(0, 90)}”` : ''),
+    };
   }
 
   /** Route a fully-uploaded letter to its resting state (+ broadcast). */

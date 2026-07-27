@@ -15,6 +15,7 @@
  *  F. Queue — approval states over HTTP, sort order, approved becomes playable.
  */
 import { spawn } from 'child_process';
+import { createServer } from 'http';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
@@ -28,12 +29,36 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const PORT = 3301;
 const APP = `http://localhost:${PORT}`;
 
+// Mock moderation API — OpenAI-shaped, verdict switched per test case.
+let mockScore = 0.05;
+const seenMod = { transcriptions: 0, moderations: 0 };
+const mock = createServer((req, res) => {
+  let b = '';
+  req.on('data', (c) => { b += c; });
+  req.on('end', () => {
+    if (req.url === '/__score') { mockScore = JSON.parse(b).score; return res.end('{"ok":true}'); }
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/v1/audio/transcriptions') {
+      seenMod.transcriptions++;
+      return res.end(JSON.stringify({ text: 'hello streamer, love the content' }));
+    }
+    seenMod.moderations++;
+    res.end(JSON.stringify({
+      results: [{ flagged: mockScore >= 0.4, category_scores: { harassment: mockScore } }],
+    }));
+  });
+});
+await new Promise((r) => mock.listen(3998, r));
+const setScore = (score) => fetch('http://localhost:3998/__score', { method: 'POST', body: JSON.stringify({ score }) });
+
 const app = spawn(process.execPath, ['server.js', '--prod'], {
   env: {
     ...process.env, PORT: String(PORT), DATA_DIR: mkdtempSync(path.join(tmpdir(), 'mc-prog-')),
     BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
     // Expiry must be testable inside a gate run.
     BOUNTY_PLEDGE_MIN_EXPIRY_MS: '500',
+    // Point the shared moderation pipeline at the in-gate mock.
+    MODERATION_API_KEY: 'mock-key', MODERATION_API_BASE: 'http://localhost:3998/v1',
   },
   stdio: 'ignore', cwd: process.cwd(),
 });
@@ -250,8 +275,51 @@ try {
   ok('F. an approved clip leaves the queue', !q2.body.queue.some((c) => c.clipId === f1.clipId));
   const media = await fetch(`${APP}/api/bounty/clip/${f1.clipId}/media`);
   ok('F. approved clips are playable', media.status === 200, `HTTP ${media.status}`);
+  // ── G. moderation wiring — trigger at upload, graded, sorts the queue ────
+  const gm = async (handle, contributor, score, amount = '5') => {
+    await setScore(score);
+    const pl = await post('/api/bounty/pledge', {
+      targets: [{ platform: 'twitch', handle }], contributor, amount, expiresInMs: 3600_000,
+    });
+    await post(`${pl.body.uploadUrl}/frames`, { frames: ['data:image/jpeg;base64,AAAA'] });
+    const u = await upload(pl.body.uploadUrl, 9);
+    // The verdict lands post-ack; poll the queue until it appears.
+    let clip = null;
+    for (let i = 0; i < 20; i++) {
+      await sleep(300);
+      const qq = await get(`/api/bounty/queue?platform=twitch&handle=${handle}`);
+      clip = qq.body.queue.find((c) => c.clipId === u.body.clip?.clipId);
+      if (clip?.moderation) break;
+    }
+    return clip;
+  };
+
+  const tBefore = seenMod.transcriptions;
+  const clean = await gm('modq', '0xfanG', 0.05);
+  ok('G. moderation TRIGGERS AT UPLOAD (transcription + moderation hit the API)',
+    seenMod.transcriptions > tBefore && seenMod.moderations > 0,
+    `t=${seenMod.transcriptions} m=${seenMod.moderations}`);
+  ok('G. a low score grades CLEAN with high confidence',
+    clean?.moderation?.grade === 'clean' && clean?.moderation?.confidence > 0.5,
+    JSON.stringify(clean?.moderation));
+
+  const border = await gm('modq', '0xfanG', 0.55);
+  ok('G. a mid score grades BORDERLINE', border?.moderation?.grade === 'borderline',
+    JSON.stringify(border?.moderation));
+
+  const viol = await gm('modq', '0xfanG', 0.93);
+  ok('G. a high score grades VIOLATION with the category named',
+    viol?.moderation?.grade === 'violation' && viol?.moderation?.topCategory === 'harassment',
+    JSON.stringify(viol?.moderation));
+
+  const qSorted = await get('/api/bounty/queue?platform=twitch&handle=modq');
+  const grades = qSorted.body.queue.map((c) => c.moderation?.grade);
+  ok('G. the queue sorts the safe pile first, violations last',
+    grades[0] === 'clean' && grades[grades.length - 1] === 'violation',
+    grades.join(' -> '));
 } finally {
   app.kill();
+  mock.close();
 }
 console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

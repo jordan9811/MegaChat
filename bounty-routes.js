@@ -16,6 +16,7 @@ import * as escrow from './bounty-escrow.js';
 import * as watermark from './bounty-watermark.js';
 import * as verifier from './bounty-verifier.js';
 import * as clips from './bounty-clips.js';
+import { moderateMedia, moderationConfigured } from './moderation.js';
 import settlement from './bounty-settlement.js';
 
 /**
@@ -207,7 +208,36 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
           durationS: Number(req.get('x-clip-duration') || req.query.durationS),
           data: req.body,
         });
-        res.json({ ok: true, clip: out });
+        res.json({ ok: true, clip: out, moderation: moderationConfigured() ? 'queued' : 'not_configured' });
+
+        // Moderation runs AT UPLOAD, never at playback: bounty clips air
+        // later on someone's live broadcast, and nothing may hold a
+        // classifier round-trip over a live stream. Post-ack so the fan's
+        // upload latency never includes OpenAI's.
+        if (moderationConfigured()) {
+          const frames = pendingFrames.get(contributionId)?.frames || [];
+          pendingFrames.delete(contributionId);
+          setImmediate(async () => {
+            try {
+              const verdict = await moderateMedia({
+                media: req.body, mime: req.get('content-type') || 'video/webm', frames, log,
+                borderlineFloor: bountyConfig.moderationBorderlineFloor,
+                violationFloor: bountyConfig.moderationViolationFloor,
+              });
+              if (verdict.grade) {
+                clips.recordModeration(out.clipId, {
+                  grade: verdict.grade, confidence: verdict.confidence,
+                  topCategory: verdict.topCategory,
+                });
+                log.log(`[bounty] clip ${out.clipId} moderated: ${verdict.grade} (${verdict.confidence})`);
+              } else {
+                log.warn(`[bounty] clip ${out.clipId} moderation inconclusive (${verdict.error || 'no verdict'}) — queue shows it unmoderated`);
+              }
+            } catch (e) {
+              log.warn(`[bounty] moderation failed for ${out.clipId}: ${e.message}`);
+            }
+          });
+        }
       } catch (e) { fail(res, e); }
     });
 
