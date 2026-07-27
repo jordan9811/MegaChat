@@ -356,3 +356,58 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   not converted. Needs a funded test wallet.
 - Owner-blocked: paste a real webhook URL into `OPS_ALERT_WEBHOOK` and hit the
   test-fire route; confirm Railway is not set to sleep when idle.
+
+## Bounty program — fan-facing build (2026-07-27, `feat/bounty-program`)
+
+### Shipped this run (all behind BOUNTY_CLAIM, settlement still a stub)
+- **Pledges/restaking**: one escrow across ≤3 streamers, guaranteed-first pool
+  display, atomic first-claim-wins (synchronous resolution, raced over HTTP in
+  the gate), contributor-set expiry with sweeper refunds via `PLEDGE_EXPIRED`.
+- **Program page** (`/bounty`), **streamer pages** (`/bounty/s/:platform/:handle`),
+  **record-and-send** (own recording context; pay at submit; min duration and
+  rejection policy disclosed before payment), **contributor status page**
+  (`/bounty/mine`), **approval queue** (default-on, sorted by moderation grade,
+  decline-vs-policy split), linked from the footer ribbon and the landing
+  left-rail campaign module.
+- **Moderation**: shared `moderation.js` (letters delegates to it), graded
+  clean/borderline/violation + confidence, triggered at upload never playback,
+  verdict stored as clip evidence, frame density scales with clip length.
+- **Rejection reputation**: first policy strike full refund; repeats 50%
+  (config), withheld share to the STREAMER's pool via FORFEIT rows; unconfirmed
+  flags never cost money; streamer declines never strike.
+- **Real Twitch claim identity** (`BOUNTY_IDENTITY_REAL=1`) + **viewer-count
+  evidence** (`VIEWER_SAMPLE`) captured at each twitch playback via Helix.
+
+### Defects found BY the gates this run (all fixed)
+- A DENIED claim wedged the handle in `CLAIM_PENDING` — an impostor could lock
+  the real owner out by failing. Denied claims now release to `RESERVED`.
+- A clip whose moderation call errors showed "in review" to the fan forever,
+  even while sitting in the claimed streamer's queue. `pending_moderation` is
+  now pre-claim only.
+- My own UI verifier inherited the shell's real `MODERATION_API_KEY` and was
+  one run from billing real OpenAI per gate run. Gate servers blank it now.
+
+### Still open after this run
+- **Fresh-account cost is ZERO — the rejection deterrent is weak.** The
+  `contributor` field is an unauthenticated string; strikes attach to it.
+  Anyone probing the classifier re-enters with a new string for free. Reported
+  honestly rather than papered over: account-level reputation only deters once
+  pledging requires a signed-in identity (Privy login is itself free/instant,
+  so even then the cost is friction, not money). Options: require sign-in to
+  pledge, or key strikes to the payment instrument once real settlement lands.
+- **Bounty routes have NO auth generally** (pre-existing): approve/reject and
+  admin routes are open. Fine for a flag-gated preview; must be closed before
+  any public flag-on. The claim route is the only one with real identity now.
+- **`_gate-p2-moderation.mjs` fails 6/4 ON TRUNK** — pre-existing, proven by
+  stash/re-run showing identical results without this branch's changes. It
+  drives real mainnet dust and its letter under test never uploads. Needs its
+  own investigation; the shared moderation module is covered mock-driven in
+  `_gate-bounty-program.mjs` G.
+- **Twitch console registration remains owner-verifiable only** — see
+  `docs/decisions/oauth-domain-audit.md` for the byte-for-byte URIs and the
+  60-second test. The embed and app credentials are proven good.
+- **Kick**: no credentials; stub + precise notes in the audit doc.
+- Clip upload as an alternative to recording: deliberately out of scope.
+- Post-release clawback: designed (docs/decisions/post-release-clawback.md),
+  not built. Restaking makes staged release (its recommendation) MORE
+  attractive, since contested wins concentrate money into single pools faster.

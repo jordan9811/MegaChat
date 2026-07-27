@@ -96,7 +96,10 @@ try {
   });
   ok('E. claim drawer opens', e.open);
   ok('E. drawer is portaled directly under <body> (stacking-context escape)', e.onBody);
-  ok('E. drawer says the claim flow is a stub', e.hasStubNote);
+  // The stub note is GONE on purpose: the claim backend exists now and the
+  // CTA routes to /bounty. Asserting the stub note would pin the deck to a
+  // world this branch just retired.
+  ok('E. drawer routes to the real bounty program (stub note retired)', !e.hasStubNote);
   ok('E. drawer bounty carries testnet framing', e.hasTestnet);
   await page.keyboard.press('Escape');
   await sleep(400);

@@ -737,7 +737,9 @@ try {
   await sleep(1200);
   const txt = await page.evaluate(() => document.body.innerText);
   ok('G. flag off: /bounty renders no bounty surface (no board, no claim CTA)',
-    !/This is me|Creator bounties waiting|Claim this handle/i.test(txt) && /Not available yet/i.test(txt));
+    // Copy updated with the program-page rebuild: flag-off now reads
+    // "Not open yet" and must still show no board, no claim CTA, no recorder.
+    !/This is me|Claim this handle|Record a MegaChat for/i.test(txt) && /Not open yet/i.test(txt));
   await page.close();
 } finally { off.kill(); }
 
@@ -756,7 +758,7 @@ try {
   await sleep(2000);
   const txt = await page.evaluate(() => document.body.innerText);
   ok('G. flag on: the board renders the real pool', /gateshow/i.test(txt), txt.slice(0, 80).replace(/\n/g, ' '));
-  ok('G. flag on: the preview build states no funds move', /no funds move/i.test(txt));
+  ok('G. flag on: the preview build states no funds move', /no (real )?funds move/i.test(txt));
   await page.close();
 } finally { on.kill(); }
 

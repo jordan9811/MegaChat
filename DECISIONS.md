@@ -90,3 +90,28 @@ e2e 19/0, min-duration 10/0, ops-alerts 19/0, dead-calls 3/0, mirror-drift 5/0.
 This commit exists partly to trigger the SECOND deploy that lets the new boot
 marker prove the /data volume survives restarts — deploy 1 wrote the first
 marker and correctly reported "unproven"; this deploy reads it back.
+
+## 2026-07-27 — bounty program build (feat/bounty-program)
+- **Own recording context, no fake room.** A MegaChat records into a room; an
+  unclaimed streamer has none. Faking one would drag seat auth, meter plumbing
+  and the overlay queue into a flow that needs a camera and an upload URL. The
+  recorder shares what matters by construction: the same min-duration config
+  and the same server-side moderation pipeline.
+- **Pledge escrow anchors on the first target.** One Contribution row on
+  targets[0]; the pledge record projects contested visibility onto the others;
+  claim moves the row winner-ward with a SLASH/WIN ledger pair. Chosen over
+  per-target rows (double-counts money) and over a synthetic pledge-pool handle
+  (invents a pool no streamer owns).
+- **Atomicity by synchronicity.** claimPledges has no await between read and
+  write; Node's run-to-completion is the lock. Documented in-code as a contract
+  ("introducing an await reopens the race — do not").
+- **`PLEDGE_EXPIRED` is its own refund reason.** The prompt said "the
+  unclaimed-expiry reason", but HANDLE_EXPIRED is a full-pool retirement;
+  a single pledge expiring on a living pool is a different event and the
+  ledger should say which one happened.
+- **Real identity behind BOUNTY_IDENTITY_REAL=1, stub stays default.** Flipping
+  the default would break every unattended environment; go-live is one explicit
+  env flip, printed at boot, with the method written to the ledger either way.
+- **`paid` is in the status ladder but unreachable, and the endpoint says so.**
+  Settlement is a stub; showing a fake `paid` would be worse than admitting the
+  rung exists for later.
