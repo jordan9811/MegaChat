@@ -1310,7 +1310,28 @@ app.post('/api/livekit/overlay/beat', (req, res) => {
 app.get('/api/livekit/overlay/health', (req, res) => {
   const resolved = resolveRoomFromRequest(req.query, req.query);
   if (resolved.error) return res.status(404).json({ error: resolved.error });
-  res.json(lkActivity.overlayHealth(resolved.roomId));
+  const health = lkActivity.overlayHealth(resolved.roomId);
+  // Overlays no longer evict each other, which fixed the black OBS tile but
+  // means a duplicated scene or a forgotten browser tab is now two BILLED
+  // participants for one broadcast — silently, and for as long as it is left
+  // open. The activity manager only tracks one overlay slot per room, so this
+  // has to come from the webhook side, which sees every participant.
+  const dupes = lkWebhooks.stats().duplicateOverlays
+    .find((d) => d.room === (livekit ? livekit.lkRoomName(resolved.roomId) : resolved.roomId));
+  res.json({
+    ...health,
+    duplicateOverlays: dupes
+      ? {
+        count: dupes.count,
+        wastedParticipants: dupes.wastedParticipants,
+        extraMinutes: dupes.extraMinutes,
+        identities: dupes.identities,
+        hint: `${dupes.count} overlay browser sources are connected to this room. `
+          + 'Only one is needed — the others are being billed for nothing. '
+          + 'Close any duplicate OBS browser source or leftover overlay tab.',
+      }
+      : null,
+  });
 });
 
 /** Session ledger — how the next leak gets caught on day one. */

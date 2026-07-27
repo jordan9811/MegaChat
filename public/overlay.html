@@ -694,20 +694,60 @@
     // LIVEKIT-AUDIT.md — connect-on-mount with no teardown is what drained
     // 5,000 free minutes with nobody on camera.
     /** Per-browser-source id: stable across reloads, unique per source/tab. */
+    /**
+     * Per-browser-source id: STABLE ACROSS RELOADS, unique per source/tab.
+     *
+     * Both properties are load-bearing and they pull in opposite directions:
+     *  - not stable across reloads → this page reloads itself on WS close, so
+     *    every reload mints a new identity and STACKS another billed
+     *    participant. That is the leak lazy-connect exists to prevent.
+     *  - not unique per source → two overlays on one room evict each other,
+     *    which is the black-OBS-tile bug.
+     *
+     * The fallback chain never trades the first for the second:
+     *
+     *  1. sessionStorage — survives reload, scoped to this source. Normal path.
+     *  2. window.name — survives reload within the same window and needs no
+     *     storage permission. This is the one that saves us if OBS's CEF has
+     *     storage disabled.
+     *  3. NO SUFFIX AT ALL. If neither works we deliberately fall back to the
+     *     old room-scoped `overlay:<roomId>`. That reintroduces mutual
+     *     eviction between two overlays — visible instantly as a black tile,
+     *     and recoverable — rather than silently billing a new participant on
+     *     every reload forever. Given the choice, take the loud failure.
+     */
     function overlayInstanceId() {
+      const mint = () => Math.random().toString(36).slice(2, 10);
       try {
         let id = sessionStorage.getItem('mc-overlay-instance');
         if (!id) {
-          id = Math.random().toString(36).slice(2, 10);
+          id = mint();
           sessionStorage.setItem('mc-overlay-instance', id);
         }
         return id;
-      } catch {
-        // Storage blocked (rare in OBS CEF). Fall back to a per-load id —
-        // slightly worse dedupe, still never evicts another source.
-        if (!window.__mcOverlayInstance) window.__mcOverlayInstance = Math.random().toString(36).slice(2, 10);
-        return window.__mcOverlayInstance;
-      }
+      } catch { /* storage blocked — try window.name */ }
+
+      try {
+        const PREFIX = 'mc-overlay:';
+        if (typeof window.name === 'string' && window.name.startsWith(PREFIX)) {
+          const id = window.name.slice(PREFIX.length);
+          if (id) return id;
+        }
+        const id = mint();
+        window.name = PREFIX + id;
+        // Only trust it if it actually stuck.
+        if (window.name === PREFIX + id) {
+          console.warn('[overlay] sessionStorage unavailable — using window.name for a reload-stable id');
+          return id;
+        }
+      } catch { /* fall through */ }
+
+      console.error(
+        '[overlay] no reload-stable storage available. Falling back to a room-scoped identity: '
+        + 'a second overlay on this room WILL disconnect this one. This is deliberate — the '
+        + 'alternative silently bills a new participant on every reload.',
+      );
+      return '';
     }
 
     let lkLazy = { enabled: false };

@@ -257,6 +257,30 @@ export function createWebhookTracker({
     return 'foreign';
   }
 
+  /** Overlays doubled up on one room — see stats().duplicateOverlays. */
+  function duplicateOverlays() {
+    const byRoom = new Map();
+    for (const [k, o] of open) {
+      const [room, ...rest] = k.split('|');
+      const identity = rest.join('|');
+      if (!identity.startsWith('overlay:')) continue;
+      if (!byRoom.has(room)) byRoom.set(room, []);
+      byRoom.get(room).push({ identity, startedAt: o.startedAt });
+    }
+    return [...byRoom.entries()]
+      .filter(([, list]) => list.length > 1)
+      .map(([room, list]) => ({
+        room,
+        count: list.length,
+        // Everything past the first is avoidable spend.
+        wastedParticipants: list.length - 1,
+        identities: list.map((x) => x.identity),
+        extraMinutes: +(list.slice(1).reduce(
+          (a, x) => a + (Date.now() - x.startedAt) / 60_000, 0,
+        ).toFixed(2)),
+      }));
+  }
+
   /** Not billable: our own probes, and anything not minted by this server. */
   function isBillable(identity) {
     return !isProbe(identity) && !isForeign(identity);
@@ -295,9 +319,43 @@ export function createWebhookTracker({
    * "Demo Room"/"John Doe" values are matched only as a secondary label for
    * reporting, never as the exclusion rule.
    */
+  /**
+   * The whitelist FAILS OPEN, and that is the inverse of the bug it fixed.
+   *
+   * Excluding unprefixed identities stopped a LiveKit dashboard test from
+   * eating 37.5% of a day's budget. But it also means any identity type we
+   * add later that does not match one of these four prefixes is silently
+   * unmetered and invisible to the breaker — a leak the leak-detector cannot
+   * see. We cannot safely meter what we do not recognise (that was the
+   * original bug), so instead every unrecognised prefix is COUNTED and
+   * LOGGED LOUDLY, once per distinct identity, so a new participant type
+   * announces itself the first time it appears rather than never.
+   */
+  const KNOWN_PREFIXES = ['overlay:', 'host:', 'seat:', 'viewer:'];
+  const unknownPrefixes = new Map(); // prefix → { count, firstSeenAt, example }
+
+  function noteUnknownPrefix(identity, room) {
+    const id = String(identity || '');
+    const prefix = id.includes(':') ? `${id.split(':')[0]}:` : '(no prefix)';
+    const seen = unknownPrefixes.get(prefix);
+    if (seen) { seen.count++; return; }
+    unknownPrefixes.set(prefix, { count: 1, firstSeenAt: Date.now(), example: id, room });
+    // Dashboard tests are a known, explained case — do not cry wolf for them.
+    if (foreignLabel(room, id) === 'livekit_dashboard_test') {
+      log.warn(`[lk-webhook] ignoring a LiveKit dashboard test participant (${id} in ${room}) — not billed`);
+      return;
+    }
+    log.error(
+      `[lk-webhook] ⚠ UNRECOGNISED IDENTITY PREFIX "${prefix}" (e.g. "${id}" in room "${room}"). `
+      + `It is NOT being counted against the burn budget because this server did not mint it. `
+      + `If MegaChat now issues this identity type, add it to KNOWN_PREFIXES in livekit-webhooks.js `
+      + `or its minutes will stay invisible to the circuit breaker.`,
+    );
+  }
+
   function isForeign(identity) {
     const id = String(identity || '');
-    return !/^(overlay|host|seat|viewer):/.test(id);
+    return !KNOWN_PREFIXES.some((p) => id.startsWith(p));
   }
 
   /** Cosmetic label so reports can say WHY something was discounted. */
@@ -323,6 +381,9 @@ export function createWebhookTracker({
     const ts = rawTs > 1e12 ? rawTs : rawTs * 1000 || Date.now();
 
     if (event.event === 'participant_joined' && identity) {
+      // Announce a participant type we do not recognise the FIRST time it
+      // appears — otherwise its minutes are invisible to the breaker forever.
+      if (isForeign(identity) && !isProbe(identity)) noteUnknownPrefix(identity, room);
       const k = key(room, identity);
       const stashed = pendingLeft.get(k);
       if (stashed) {
@@ -393,6 +454,12 @@ export function createWebhookTracker({
       persisted: !!statePath,
       bootReconcile,
       excludedSessions: excludedClosed,
+      // Unmetered-by-design identities that we could not classify. Non-empty
+      // here means something is burning minutes the breaker cannot see.
+      unknownPrefixes: [...unknownPrefixes.entries()].map(([prefix, v]) => ({ prefix, ...v })),
+      // Two overlays on one room is legal (they no longer evict each other)
+      // but it is two BILLED participants for one broadcast.
+      duplicateOverlays: duplicateOverlays(),
       probeSessionsExcluded: excludedClosed, // retained name for compatibility
       minutesToday: +(closedMinutes(dayAgo) + openMinutes(dayAgo)).toFixed(2),
       minutesThisMonth: +(closedMinutes(monthStart) + openMinutes(monthStart)).toFixed(2),
