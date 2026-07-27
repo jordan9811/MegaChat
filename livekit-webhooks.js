@@ -15,7 +15,12 @@
  * authoritative ledger would be worse than no ledger at all.
  */
 
+import fs from 'fs';
+import path from 'path';
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
+
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+const DEFAULT_STATE_PATH = path.join(DATA_DIR, 'livekit-webhook-state.json');
 
 /** Constant-time compare that tolerates length mismatch without throwing. */
 function safeEqual(a, b) {
@@ -75,23 +80,168 @@ export function verifyWebhookJwt(authHeader, rawBody, { apiKey, apiSecret, maxAg
  *  - an out-of-order left-before-joined still produces a correct session,
  *    because we reconcile on (room, identity) rather than assuming ordering
  */
-export function createWebhookTracker({ log = console, onSession = () => {} } = {}) {
+export function createWebhookTracker({
+  log = console,
+  onSession = () => {},
+  /** Pass null to opt out of persistence (tests that want a clean tracker). */
+  statePath = DEFAULT_STATE_PATH,
+  /**
+   * Optional async () => Set<`${room}|${identity}`> of who LiveKit says is
+   * ACTUALLY connected right now. Supplied by the server from RoomService.
+   * Without it, boot reconciliation falls back to the conservative policy.
+   */
+  liveParticipants = null,
+} = {}) {
   const seen = new Map();            // eventId → ts (replay guard)
   const open = new Map();            // `${room}|${identity}` → { startedAt, sid }
   const sessions = [];               // closed, authoritative
   const pendingLeft = new Map();     // left-before-joined stash
   const DEDUPE_TTL_MS = 10 * 60_000;
+  const MAX_SESSIONS = 5000;
+
   /**
-   * When this tracker started observing. It is memory-only by design — we
-   * cannot replay webhooks we were not running to receive — so anything that
-   * compares us against a PERSISTED ledger has to clamp to this floor or it
-   * is comparing two different spans of time and calling the difference a bug.
+   * When this tracker started observing.
+   *
+   * This USED to be `Date.now()` at construction, which meant the breaker's
+   * view of the day's burn reset on every deploy — so the daily cap could be
+   * walked past simply by deploying, and a leak spanning a restart was
+   * invisible to the one thing built to catch it. It is now restored from
+   * disk, so the observation window is continuous across boots.
    */
-  const observingSince = Date.now();
+  let observingSince = Date.now();
+  let lastPersistedAt = 0;
+  let bootReconcile = { ran: false, policy: null, resumed: 0, closed: 0, confirmed: 0, note: null };
+
+  function snapshotState() {
+    return {
+      observingSince,
+      lastPersistedAt: Date.now(),
+      open: [...open.entries()].map(([k, o]) => ({ k, ...o })),
+      sessions: sessions.slice(-MAX_SESSIONS),
+    };
+  }
+
+  function persist() {
+    if (!statePath) return;
+    try {
+      const dir = path.dirname(statePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(statePath, JSON.stringify(snapshotState()), 'utf8');
+    } catch {
+      /* metering state is observability; never crash a broadcast over it */
+    }
+  }
+
+  function restore() {
+    if (!statePath || !fs.existsSync(statePath)) return null;
+    try {
+      const raw = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      if (!raw || typeof raw !== 'object') return null;
+      if (Number.isFinite(raw.observingSince)) observingSince = raw.observingSince;
+      lastPersistedAt = Number(raw.lastPersistedAt) || 0;
+      if (Array.isArray(raw.sessions)) sessions.push(...raw.sessions);
+      const resumed = [];
+      for (const o of raw.open || []) {
+        if (!o?.k) continue;
+        // Marked UNCONFIRMED: we know this participant was connected when we
+        // died, we do not know whether they are still connected now.
+        open.set(o.k, { startedAt: o.startedAt, sid: o.sid || null, unconfirmed: true });
+        resumed.push(o.k);
+      }
+      return { resumed, sessions: raw.sessions?.length || 0 };
+    } catch (e) {
+      log.error(`[lk-webhook] could not restore metering state: ${e.message}`);
+      return null;
+    }
+  }
 
   function gcSeen() {
     const cutoff = Date.now() - DEDUPE_TTL_MS;
     for (const [id, ts] of seen) if (ts < cutoff) seen.delete(id);
+  }
+
+  /**
+   * BOOT RECONCILIATION POLICY for sessions that were open when we died.
+   *
+   * The problem: we know participant X was connected at shutdown. We do not
+   * know whether they left during the downtime, because the participant_left
+   * webhook for that departure arrived while nothing was listening. It is
+   * gone; webhooks are not replayable.
+   *
+   * Policy, in order of preference:
+   *
+   *  1. ASK LIVEKIT. If a `liveParticipants` probe is available we use
+   *     RoomService as the authority — that is the whole philosophy of this
+   *     module, and it applies just as much at boot. Still connected → confirm
+   *     and keep accruing. Not connected → close at `lastPersistedAt`, the
+   *     last moment we can honestly attest they were there.
+   *
+   *  2. NO PROBE → KEEP OPEN, and say so loudly. This deliberately risks
+   *     OVER-counting. The breaker exists to stop overspending; under-counting
+   *     burn is the failure that defeats it, while over-counting at worst
+   *     blocks new tokens early — visible, explainable, and overridable by an
+   *     operator. Given a choice between a false alarm and a missed leak, this
+   *     module takes the false alarm every time.
+   *
+   * Closing at `lastPersistedAt` rather than "now" matters: it never invents
+   * minutes across a downtime window we were not observing.
+   */
+  async function reconcileOnBoot() {
+    const unconfirmed = [...open.entries()].filter(([, o]) => o.unconfirmed);
+    bootReconcile = {
+      ran: true, policy: null, resumed: unconfirmed.length,
+      closed: 0, confirmed: 0, note: null,
+    };
+    if (!unconfirmed.length) {
+      bootReconcile.policy = 'nothing-to-reconcile';
+      return bootReconcile;
+    }
+
+    if (typeof liveParticipants !== 'function') {
+      bootReconcile.policy = 'keep-open-conservative';
+      bootReconcile.note =
+        `${unconfirmed.length} session(s) were open at shutdown and cannot be confirmed `
+        + '(no RoomService probe wired). Keeping them OPEN and continuing to meter them. '
+        + 'This may OVER-count; that is the deliberate direction, because under-counting '
+        + 'is what makes a circuit breaker useless.';
+      log.warn(`[lk-webhook] boot: ${bootReconcile.note}`);
+      return bootReconcile;
+    }
+
+    try {
+      const live = await liveParticipants();
+      const liveSet = live instanceof Set ? live : new Set(live || []);
+      const endAt = lastPersistedAt || Date.now();
+      for (const [k, o] of unconfirmed) {
+        if (liveSet.has(k)) {
+          open.set(k, { ...o, unconfirmed: false, resumedAt: Date.now() });
+          bootReconcile.confirmed++;
+          continue;
+        }
+        const [room, ...rest] = k.split('|');
+        const identity = rest.join('|');
+        open.delete(k);
+        const rec = {
+          room, identity, kind: kindOf(identity),
+          start: o.startedAt, end: endAt,
+          durationMs: Math.max(0, endAt - o.startedAt),
+          source: 'webhook', closedBy: 'boot-reconcile',
+        };
+        sessions.push(rec); onSession(rec);
+        bootReconcile.closed++;
+      }
+      bootReconcile.policy = 'roomservice-authoritative';
+      bootReconcile.note =
+        `confirmed ${bootReconcile.confirmed} still-connected, closed ${bootReconcile.closed} `
+        + `that left during downtime (ended at last-known-alive, not now)`;
+      log.log(`[lk-webhook] boot reconcile: ${bootReconcile.note}`);
+      persist();
+    } catch (e) {
+      bootReconcile.policy = 'keep-open-conservative';
+      bootReconcile.note = `RoomService probe failed (${e.message}) — keeping sessions open rather than guessing them closed`;
+      log.warn(`[lk-webhook] boot: ${bootReconcile.note}`);
+    }
+    return bootReconcile;
   }
 
   const key = (room, identity) => `${room}|${identity}`;
@@ -184,10 +334,13 @@ export function createWebhookTracker({ log = console, onSession = () => {} } = {
           durationMs: Math.max(0, stashed.ts - ts),
           source: 'webhook', outOfOrder: true,
         };
-        sessions.push(rec); onSession(rec);
+        sessions.push(rec); onSession(rec); persist();
         return { ok: true, closed: true, outOfOrder: true };
       }
-      if (!open.has(k)) open.set(k, { startedAt: ts, sid: event.participant?.sid || null });
+      if (!open.has(k)) {
+        open.set(k, { startedAt: ts, sid: event.participant?.sid || null });
+        persist();
+      }
       return { ok: true, opened: true };
     }
 
@@ -206,7 +359,7 @@ export function createWebhookTracker({ log = console, onSession = () => {} } = {
         durationMs: Math.max(0, ts - o.startedAt),
         source: 'webhook',
       };
-      sessions.push(rec); onSession(rec);
+      sessions.push(rec); onSession(rec); persist();
       return { ok: true, closed: true };
     }
 
@@ -235,6 +388,10 @@ export function createWebhookTracker({ log = console, onSession = () => {} } = {
       closedCount: sessions.length,
       observingSince,
       observedMinutes: +((now - observingSince) / 60_000).toFixed(2),
+      // Survives restarts now, so this window is real elapsed observation
+      // rather than "time since the last deploy".
+      persisted: !!statePath,
+      bootReconcile,
       excludedSessions: excludedClosed,
       probeSessionsExcluded: excludedClosed, // retained name for compatibility
       minutesToday: +(closedMinutes(dayAgo) + openMinutes(dayAgo)).toFixed(2),
@@ -257,6 +414,7 @@ export function createWebhookTracker({ log = console, onSession = () => {} } = {
    * Returns what it removed so the action is reportable rather than silent.
    */
   function purgeForeign() {
+    // (persists at the end — a purge that vanishes on restart is not a purge)
     const removed = [];
     for (const [k, o] of [...open.entries()]) {
       const identity = k.split('|').slice(1).join('|');
@@ -270,12 +428,26 @@ export function createWebhookTracker({ log = console, onSession = () => {} } = {
         });
       }
     }
+    if (removed.length) persist();
     return removed;
+  }
+
+  // Restore BEFORE returning so the very first stats() call already reflects
+  // what the previous boot knew. Reconciliation is async and runs after.
+  const restored = restore();
+  if (restored) {
+    log.log(`[lk-webhook] restored metering state: ${restored.sessions} closed session(s), `
+      + `${restored.resumed.length} still open, observing since `
+      + `${new Date(observingSince).toISOString()}`);
   }
 
   return {
     handle, stats, sessions, open, verifyWebhookJwt,
     purgeForeign, isBillable, isForeign, kindOf, _seen: seen,
+    reconcileOnBoot,
+    bootReconcile: () => bootReconcile,
+    /** Test seam — forces a write without waiting for an event. */
+    _persist: persist,
   };
 }
 

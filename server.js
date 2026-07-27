@@ -603,8 +603,27 @@ const lkActivity = createActivityManager({ broadcastToRoom, hasOverlay });
  */
 const lkWebhooks = createWebhookTracker({
   onSession: (rec) => {
-    console.log(`[lk-webhook] session ${rec.kind} ${rec.identity} in ${rec.room} — ${(rec.durationMs / 60_000).toFixed(2)}min${rec.outOfOrder ? ' (out-of-order delivery, reconciled)' : ''}`);
+    console.log(`[lk-webhook] session ${rec.kind} ${rec.identity} in ${rec.room} — ${(rec.durationMs / 60_000).toFixed(2)}min${rec.outOfOrder ? ' (out-of-order delivery, reconciled)' : ''}${rec.closedBy === 'boot-reconcile' ? ' (closed by boot reconciliation)' : ''}`);
   },
+  /**
+   * Boot reconciliation authority. A participant_left that arrived while we
+   * were restarting is gone for good — webhooks are not replayable — so on
+   * boot we ask LiveKit who is ACTUALLY connected rather than guessing.
+   */
+  // Resolved lazily: `livekit` is constructed much further down this file, so
+  // reading it here at module-eval time is a temporal-dead-zone crash. The
+  // probe only runs from reconcileOnBoot(), by which point it exists.
+  liveParticipants: async () => {
+    if (!livekit) throw new Error('LiveKit is not configured — no RoomService to ask');
+    return livekit.liveParticipantKeys();
+  },
+});
+// Fire-and-forget: metering must not block the server coming up, and the
+// conservative fallback already holds if this never resolves.
+setImmediate(() => {
+  lkWebhooks.reconcileOnBoot()
+    .then(() => lkBreaker.evaluate())
+    .catch((e) => console.warn(`[lk-webhook] boot reconcile failed: ${e.message}`));
 });
 const lkBreaker = createBreaker({ getUsage: () => lkWebhooks.stats() });
 {

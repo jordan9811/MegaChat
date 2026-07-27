@@ -145,7 +145,10 @@ const launch = (port, extra = {}) =>
   ok('I. unsigned / tampered-body / bad-signature all REJECTED',
     rejects.length === 3, rejects.join(','));
 
-  const tracker = createWebhookTracker({ log: { log() {}, warn() {}, error() {} } });
+  // statePath:null — section I is about event handling, not persistence, and
+  // a tracker that quietly loaded real metering state would make these cases
+  // depend on whatever the last run left behind.
+  const tracker = createWebhookTracker({ log: { log() {}, warn() {}, error() {} }, statePath: null });
   const joinEv = JSON.parse(mkEvent('participant_joined', 'overlay:r1', 'r1', 1700000000));
   tracker.handle(joinEv);
   const dup = tracker.handle(joinEv);
@@ -156,7 +159,7 @@ const launch = (port, extra = {}) =>
   ok('I. identity is classified into our participant kinds',
     tracker.sessions[0].kind === 'overlay');
 
-  const t2 = createWebhookTracker({ log: { log() {}, warn() {}, error() {} } });
+  const t2 = createWebhookTracker({ log: { log() {}, warn() {}, error() {} }, statePath: null });
   t2.handle(JSON.parse(mkEvent('participant_left', 'seat:x', 'r2', 1700000600)));
   t2.handle(JSON.parse(mkEvent('participant_joined', 'seat:x', 'r2', 1700000000)));
   ok('I. OUT-OF-ORDER (left before joined) reconciles to the right duration',
@@ -199,6 +202,99 @@ const launch = (port, extra = {}) =>
   ok('I. a shared window within tolerance reports MATCH, not noise',
     agreed.diverged === false && agreed.comparableWindow === true && agreed.note === null,
     `delta=${agreed.deltaMinutes}`);
+}
+
+// ── K. METERING SURVIVES RESTART (the daily cap was deploy-resettable) ─────
+{
+  const { createWebhookTracker } = await import('./livekit-webhooks.js');
+  const { mkdtempSync, copyFileSync } = await import('fs');
+  const { tmpdir } = await import('os');
+  const pathMod = await import('path');
+  const dir = mkdtempSync(pathMod.join(tmpdir(), 'mc-whstate-'));
+  const statePath = pathMod.join(dir, 'state.json');
+  const quiet = { log() {}, warn() {}, error() {} };
+
+  const ev = (type, identity, room, tsSec, id) => JSON.stringify({
+    event: type, id, createdAt: tsSec,
+    room: { name: room, sid: `RM_${room}` },
+    participant: { identity, sid: `PA_${identity}` },
+  });
+
+  // Boot 1: one closed 10-minute session, one still open.
+  const t1 = createWebhookTracker({ log: quiet, statePath });
+  t1.handle(JSON.parse(ev('participant_joined', 'seat:a', 'r1', 1700000000, 'e1')));
+  t1.handle(JSON.parse(ev('participant_left', 'seat:a', 'r1', 1700000600, 'e2')));
+  t1.handle(JSON.parse(ev('participant_joined', 'seat:b', 'r1', Math.floor(Date.now() / 1000) - 300, 'e3')));
+  const before = t1.stats();
+  ok('K. boot 1 meters a closed session and holds an open one',
+    before.closedCount === 1 && before.openCount === 1, `${before.closedCount}/${before.openCount}`);
+
+  // Boot 2: same state file. THE cap-evasion bug: this used to come back zero.
+  const t2 = createWebhookTracker({ log: quiet, statePath });
+  const after = t2.stats();
+  ok('K. RESTART PRESERVES the closed session (daily cap was deploy-resettable)',
+    after.closedCount === 1, `closedCount=${after.closedCount}`);
+  ok('K. restart preserves the metered minutes, not just the count',
+    Math.abs(after.minutesToday - before.minutesToday) < 0.2,
+    `${before.minutesToday} -> ${after.minutesToday}`);
+  ok('K. the observation window is CONTINUOUS across boots (not reset to now)',
+    after.observingSince === before.observingSince,
+    `${after.observingSince} vs ${before.observingSince}`);
+  ok('K. the still-open session is resumed, not lost',
+    after.openCount === 1 && after.openSessions[0].identity === 'seat:b');
+
+  // Each policy below must start from the SAME post-boot-1 state. Reconciling
+  // persists its own outcome (correctly), so without this snapshot the second
+  // policy case would find nothing left to reconcile.
+  const pristine = `${statePath}.pristine`;
+  copyFileSync(statePath, pristine);
+  const rewind = () => copyFileSync(pristine, statePath);
+
+  // Policy 1 — no RoomService probe: keep open, conservatively over-count.
+  rewind();
+  const t3 = createWebhookTracker({ log: quiet, statePath });
+  const r3 = await t3.reconcileOnBoot();
+  ok('K. with NO probe the policy is keep-open (over-count beats under-count)',
+    r3.policy === 'keep-open-conservative' && t3.stats().openCount === 1, r3.policy);
+  ok('K. and it says plainly that it may over-count', /OVER-count/i.test(r3.note || ''));
+
+  // Policy 2 — probe says they LEFT during downtime: close at last-known-alive.
+  rewind();
+  const t4 = createWebhookTracker({
+    log: quiet, statePath, liveParticipants: async () => new Set(),
+  });
+  const r4 = await t4.reconcileOnBoot();
+  ok('K. with a probe, a participant gone during downtime is CLOSED',
+    r4.policy === 'roomservice-authoritative' && r4.closed === 1 && t4.stats().openCount === 0,
+    JSON.stringify(r4));
+  const closedRec = t4.sessions.find((s) => s.closedBy === 'boot-reconcile');
+  ok('K. it is closed at LAST-KNOWN-ALIVE, never inventing downtime minutes',
+    !!closedRec && closedRec.end <= Date.now() && closedRec.end >= closedRec.start,
+    `dur=${((closedRec?.durationMs || 0) / 60000).toFixed(2)}min`);
+
+  // Policy 3 — probe says they are STILL THERE: confirm and keep metering.
+  rewind();
+  const t5 = createWebhookTracker({
+    log: quiet, statePath, liveParticipants: async () => new Set(['r1|seat:b']),
+  });
+  const r5 = await t5.reconcileOnBoot();
+  ok('K. a participant still connected is CONFIRMED and keeps accruing',
+    r5.confirmed === 1 && r5.closed === 0 && t5.stats().openCount === 1, JSON.stringify(r5));
+
+  // Policy 4 — probe THROWS: must not guess sessions closed.
+  rewind();
+  const t6 = createWebhookTracker({
+    log: quiet, statePath,
+    liveParticipants: async () => { throw new Error('roomservice down'); },
+  });
+  const r6 = await t6.reconcileOnBoot();
+  ok('K. a FAILED probe leaves sessions open rather than guessing them closed',
+    r6.policy === 'keep-open-conservative' && t6.stats().openCount === 1, r6.note);
+
+  // Opting out of persistence must still work (tests, ephemeral runs).
+  const t7 = createWebhookTracker({ log: quiet, statePath: null });
+  ok('K. statePath:null opts out cleanly with no state carried over',
+    t7.stats().closedCount === 0 && t7.stats().persisted === false);
 }
 
 // ── J. BURN BREAKER — warn, block, override, long-session alarm ─────────────

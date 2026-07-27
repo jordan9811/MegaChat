@@ -90,5 +90,26 @@ export function createLivekitService({ log = console } = {}) {
         return [];
       }
     },
+
+    /**
+     * Everything LiveKit currently holds, keyed by its OWN room names rather
+     * than our room ids. Boot reconciliation needs this shape because webhook
+     * events carry the LiveKit name, and because a room may exist on their
+     * side that we have no record of (a dashboard test fire, for instance —
+     * exactly the phantom that once ate 37.5% of a day's budget).
+     *
+     * Throws rather than returning empty: an empty list and a failed call mean
+     * opposite things to the caller. "Nobody is connected" would close every
+     * resumed session; "we could not ask" must leave them open.
+     */
+    async liveParticipantKeys() {
+      const keys = new Set();
+      for (const room of await rooms.listRooms()) {
+        for (const p of await rooms.listParticipants(room.name)) {
+          keys.add(`${room.name}|${p.identity}`);
+        }
+      }
+      return keys;
+    },
   };
 }
