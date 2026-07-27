@@ -21,11 +21,67 @@ const STORE_PATH = path.join(DATA_DIR, 'rooms.json');
 
 export const DEFAULT_ROOM_ID = 'default';
 
+const BOOT_MARKER_PATH = path.join(DATA_DIR, 'boot-marker.json');
+/**
+ * Persistence EVIDENCE, not persistence configuration.
+ *
+ * The previous check was `!!process.env.DATA_DIR`, which only proves someone
+ * set a variable — it cannot tell an attached volume from a path pointing at
+ * container-local disk that the next deploy erases. That distinction is the
+ * whole question, and a storage design resting on the wrong answer is
+ * worthless. So instead of asking the config, we leave a marker and see
+ * whether it is still there next boot.
+ *
+ * Note the asymmetry: seeing a prior boot PROVES the directory survived a
+ * restart. Not seeing one proves nothing — it is equally consistent with a
+ * genuine first boot after this code shipped. So this reports `proven` or
+ * `unproven`, and never claims a volume is absent.
+ */
+function readBootHistory() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(BOOT_MARKER_PATH, 'utf8'));
+    return Array.isArray(raw?.boots) ? raw.boots : [];
+  } catch {
+    return [];
+  }
+}
+
+const priorBoots = readBootHistory();
+const thisBoot = { id: randomUUID().slice(0, 8), at: new Date().toISOString() };
+try {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(
+    BOOT_MARKER_PATH,
+    JSON.stringify({ boots: [...priorBoots, thisBoot].slice(-20) }, null, 2),
+    'utf8',
+  );
+} catch {
+  /* observability only — never worth failing a boot over */
+}
+
 /** Where rooms/identities actually live, and whether that survives a deploy.
  *  Exposed on /api/health because "did the volume attach?" is otherwise
  *  invisible until data silently vanishes on the next push. */
 export function dataDirInfo() {
-  return { dir: DATA_DIR, persistent: !!process.env.DATA_DIR };
+  const proven = priorBoots.length > 0;
+  return {
+    dir: DATA_DIR,
+    // Kept as the same boolean field, but it now means PROVEN rather than
+    // merely configured.
+    persistent: proven,
+    configured: !!process.env.DATA_DIR,
+    evidence: {
+      status: proven ? 'proven' : 'unproven',
+      priorBoots: priorBoots.length,
+      firstSeenAt: priorBoots[0]?.at || null,
+      lastBootAt: priorBoots[priorBoots.length - 1]?.at || null,
+      thisBootAt: thisBoot.at,
+      note: proven
+        ? 'a marker written by an earlier boot was still here — this directory survives restarts'
+        : 'no earlier boot marker found. This is expected on the first boot after this check shipped '
+          + 'and does NOT mean the volume is missing; check again after the next deploy.',
+    },
+  };
 }
 
 // LiveKit is now the default transport once its 3 env vars are present

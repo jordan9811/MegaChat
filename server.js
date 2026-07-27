@@ -422,8 +422,12 @@ app.get('/api/health', (req, res) => {
   const data = dataDirInfo();
   res.json({
     ok: true,
-    // false here means the NEXT deploy wipes every room, handle and identity.
+    // TRUE here means an earlier boot's marker was still on disk, i.e. this
+    // directory demonstrably survives a restart. FALSE means "not proven yet",
+    // NOT "the volume is missing" — see persistence.note.
     persistentData: data.persistent,
+    persistence: data.evidence,
+    dataDirConfigured: data.configured,
     dataDir: data.dir,
     livekitConfigured: !!livekit,
     rooms: listRooms().length,
