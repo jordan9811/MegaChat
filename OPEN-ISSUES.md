@@ -262,3 +262,97 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   window clamp is right whether the ledger survives a deploy or only an
   in-place restart.) A real check would write and re-read a marker file across
   boots, or read the mount table.
+
+## Overnight closeout (2026-07-27, `feat/overnight-hardening`)
+
+### The finding of the night
+- **T2 — THE BOUNTY MECHANIC HAD NO CONTENT LAYER.** The trace asked for came
+  back worse than "clips do not persist": there were no clips. `letterRef` on
+  `BountyContribution` was write-only (set by `addContribution`, read by
+  nothing, only other appearances are two test fixtures). No bounty route
+  touched media. And a MegaChat is recorded INTO a room, which an unclaimed
+  streamer does not have — so there was no container for the recording the
+  product promises to keep for 90 days. Escrow, watermark, verifier and payout
+  were all real and all accounting for something that did not exist.
+  **FIXED:** new `bounty-clips.js` — append-only index (seq + checksum, same
+  primitives as the escrow and evidence logs) plus content-addressed media on
+  the volume. Clips are evidence, not cache: a purge appends a reason instead
+  of erasing, so "a fan paid for this, where did it go?" stays answerable.
+  Design + capacity + object-store swap: `docs/decisions/bounty-clip-storage.md`.
+
+- **T8 — THE MECHANIC WAS DEAD AT GO-LIVE.** `/api/bounty/air-session` called
+  `watermark.issueCode()`, deleted by the playback-bound redesign. Every call
+  threw. A streamer who claimed their handle and tried to go live got a 400.
+  **FIXED**, and not by renaming: issuing a code at session-open is exactly what
+  that redesign forbade, so the route now returns `code: null` and says why.
+  Nothing caught it because every gate creates air sessions through
+  `store.createAirSession()` rather than the HTTP route — the same family of
+  mistake as the mirror problem. `_verify-no-dead-calls.mjs` now resolves every
+  cross-module call statically so the next deletion cannot leave a caller behind.
+
+### Also resolved this run
+- **T1 — the daily cap was deploy-resettable.** Webhook session state was
+  memory-only, so every restart zeroed the breaker's view of the day's burn:
+  the cap could be walked past by deploying, and a leak spanning a restart was
+  invisible to the thing built to catch it. Now persisted, with `observingSince`
+  restored so the observation window is continuous. **Boot reconciliation
+  policy:** ask LiveKit who is actually connected (RoomService); still there →
+  confirm, gone → close at last-known-alive, never inventing downtime minutes.
+  With no probe, or a FAILED probe, sessions stay open — deliberately risking
+  over-counting, because under-counting is the failure that defeats a circuit
+  breaker. Gate K, 12 cases across all four policies.
+- **Persistence was never actually proven.** `dataDirInfo()` returned
+  `!!process.env.DATA_DIR`, which only proves someone set a variable. Now each
+  boot writes a marker and reads what earlier boots left, so `/api/health`
+  reports `proven` or `unproven` and never claims a volume is absent (the
+  asymmetry is deliberate — seeing a prior boot proves survival, not seeing one
+  proves nothing). The marker is gitignored: a committed one would report
+  "proven" on a fresh container with no volume, which is the exact false
+  confidence this removes.
+- **T3 — alarms now reach a human.** `ops-alerts.js` posts to a Discord/Slack/
+  generic webhook (`OPS_ALERT_WEBHOOK`), wired to budget warn, budget block,
+  long-session, and clip-storage pressure. No-ops when unset, never throws into
+  a caller, rate-limits PER CONDITION so a flapping alarm cannot swallow a new
+  one, and reports how many occurrences were suppressed. `POST
+  /api/livekit/burn/test-alert` exists because an alerting system nobody has
+  seen fire is indistinguishable from a broken one.
+- **T4a — duplicate overlays bill twice.** Coexistence was the right fix for the
+  black tile, but a duplicated scene is now two billed participants for one
+  broadcast. Detected and surfaced (with `wastedParticipants` and
+  `extraMinutes`) in burn metering and on the overlay health endpoint. Never
+  evicts.
+- **T4b — the prefix whitelist fails open.** Any identity type added later that
+  is not `overlay:/host:/seat:/viewer:` would be silently unmetered. Unknown
+  prefixes are now counted and logged loudly on first sight, naming the constant
+  to change. Dashboard tests exempted so it does not cry wolf.
+- **T4c — the sessionStorage fallback rebuilt the original leak.** It fell back
+  to a per-JS-context id that does NOT survive a reload — and the overlay
+  reloads itself when its websocket drops, so every reload minted a fresh
+  identity and stacked a billed participant. New chain: sessionStorage →
+  `window.name` → no suffix at all (room-scoped identity), deliberately choosing
+  mutual eviction (a visible black tile) over silent per-reload billing.
+- **T5 — the Twitch thumbnail does render.** Confirmed in production: the
+  `jordandotfun` room carries `twitchChannel` on `/api/rooms/public` from the
+  default-on prefill. Both branches driven against the real component.
+- **T6 — mirror audit.** ~700 cases, 19 genuine mirrors (2.7%) in 3 files.
+  Converted the reveal gate (the one that already bit us) to drive the real
+  overlay page. Added a drift detector for the payment-path mirror, which cannot
+  be cheaply converted without a funded wallet. Full ranking and the honest
+  caveat in `docs/decisions/mirror-test-audit.md`.
+- **T7 — clawback designed, not built.** `docs/decisions/post-release-clawback.md`.
+  Recommends staged release (hold back ~20% to a maturity date), because it is
+  the only option that turns "get money back" into "do not send it yet".
+
+### Still open after this run
+- **Nothing calls `storeClip` from any UI.** The routes exist and are gated; the
+  contribute surface still has to record and upload. Filed rather than
+  half-built — the recording UI is a product surface and this was not the run to
+  invent one. **This is now the top blocker for the bounty mechanic.**
+- **Contributions with no uploaded clip are refundable (`CLIP_NEVER_UPLOADED`)
+  but nothing sweeps for them automatically.**
+- **The platform match has no reversal story** in any refund or clawback path.
+- **No post-release clawback** (T7 designed it; not implemented).
+- **`_gate-mpp-clientpath.mjs` still mirrors the payment path.** Drift-checked,
+  not converted. Needs a funded test wallet.
+- Owner-blocked: paste a real webhook URL into `OPS_ALERT_WEBHOOK` and hit the
+  test-fire route; confirm Railway is not set to sleep when idle.
