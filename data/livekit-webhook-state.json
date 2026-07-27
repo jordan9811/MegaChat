@@ -1,1 +1,0 @@
-{"observingSince":1785128095318,"lastPersistedAt":1785128095326,"open":[],"sessions":[{"room":"r1","identity":"overlay:r1","kind":"overlay","start":1700000000000,"end":1700000600000,"durationMs":600000,"source":"webhook"},{"room":"r2","identity":"seat:x","kind":"guest","start":1700000000000,"end":1700000600000,"durationMs":600000,"source":"webhook","outOfOrder":true}]}

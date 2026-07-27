@@ -10,3 +10,8 @@ tools/
 
 # lazy-connect runtime ledger (observability artifact, not source)
 data/livekit-sessions.json
+
+# webhook metering state + persistence boot marker (runtime, not source)
+data/livekit-webhook-state.json
+data/boot-marker.json
+data/bounty-clips/
