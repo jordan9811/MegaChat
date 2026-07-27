@@ -240,6 +240,243 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
 
   app.get('/api/bounty/admin/clip-storage', (_req, res) => res.json(clips.stats()));
 
+  // ── Pledges (the fan-facing program) ─────────────────────────────────────
+
+  /**
+   * One escrow, up to N target streamers, contributor-set expiry.
+   * Payment note, disclosed here as everywhere: escrow is a ledger and
+   * settlement is a stub — no real funds move in this build.
+   */
+  app.post('/api/bounty/pledge', (req, res) => {
+    try {
+      const { targets, contributor, amount, expiresInMs } = req.body || {};
+      const out = escrow.pledge({ targets, contributor, amount, expiresInMs });
+      res.json({
+        ok: true,
+        pledge: out.pledge,
+        contribution: out.contribution,
+        uploadUrl: `/api/bounty/clip/${encodeURIComponent(out.contribution.id)}`,
+        uploadDeadline: Date.now() + bountyConfig.clipUploadGraceMs,
+        clipLimits: { minSeconds: bountyConfig.minClipSeconds, maxBytes: bountyConfig.clipMaxBytes },
+        // The rejection policy, machine-readable, so the client can show it
+        // BEFORE payment rather than after a dispute.
+        rejectionPolicy: {
+          streamerDeclineRefund: 1,
+          firstPolicyRejectionRefund: 1,
+          repeatPolicyRejectionRefund: bountyConfig.rejectionRefundFraction,
+          withheldShareGoesTo: 'streamer_pool',
+          strikesRequire: 'human review or high-confidence classifier',
+        },
+      });
+    } catch (e) { fail(res, e); }
+  });
+
+  /**
+   * Client-sampled frames for moderation, posted BEFORE the media upload.
+   * Held in memory only — they are classifier input, not evidence; the
+   * verdict computed from them is what gets recorded. A restart between
+   * frames and upload degrades to transcript-only moderation, same
+   * fail-open posture as room MegaChats.
+   */
+  const pendingFrames = new Map(); // contributionId → { frames, at }
+  app.post('/api/bounty/clip/:contributionId/frames', express.json({ limit: '6mb' }), (req, res) => {
+    const frames = (req.body?.frames || []).filter((f) => /^data:image\//.test(String(f))).slice(0, 16);
+    pendingFrames.set(req.params.contributionId, { frames, at: Date.now() });
+    // Bound the map — entries are only useful for minutes.
+    if (pendingFrames.size > 200) {
+      const cutoff = Date.now() - 30 * 60_000;
+      for (const [k, v] of pendingFrames) if (v.at < cutoff) pendingFrames.delete(k);
+    }
+    res.json({ ok: true, frames: frames.length });
+  });
+
+  /** Guaranteed-first pool display. Never a blended headline. */
+  app.get('/api/bounty/pool-view', (req, res) => {
+    const key = store.handleKey(req.query.platform, req.query.handle);
+    if (!key) return res.status(400).json({ error: 'platform and handle required' });
+    res.json({
+      view: escrow.poolView(key),
+      reserved: store.getReservedHandleByKey(key),
+      clips: clips.listClips(key).length,
+    });
+  });
+
+  /**
+   * The program page feed. Platform-wide DISPLAYED total (what every pool
+   * page adds up to, which multi-counts contested pledges) and REAL value
+   * (one escrow per pledge) are both reported, labelled — per the design
+   * requirement that rehypothecated money is never presented as bigger than
+   * it is.
+   */
+  app.get('/api/bounty/program', (_req, res) => {
+    const views = store.listReservedHandles().map((r) => ({
+      ...escrow.poolView(r.key),
+      seeded: !!r.seeded,
+      claimed: !!r.claimedBy,
+      // A pool with no fan money behind it is promotional by definition,
+      // whoever created it.
+      promotional: !!r.seeded || (store.listContributions(r.key).length === 0),
+      clipsWaiting: clips.listClips(r.key).length,
+    }))
+      .sort((a, b) => (b.guaranteed + b.contestedTotal) - (a.guaranteed + a.contestedTotal));
+    const realValue = views.reduce((a, v) => a + v.totalContributed, 0);
+    const displayedTotal = views.reduce((a, v) => a + v.guaranteed + v.contestedTotal, 0);
+    res.json({
+      pools: views,
+      currency: bountyConfig.currency,
+      totals: {
+        realValue: +realValue.toFixed(6),
+        displayedTotal: +displayedTotal.toFixed(6),
+        note: 'displayedTotal counts a contested pledge once per target; realValue counts each escrow once',
+      },
+    });
+  });
+
+  /**
+   * Contributor status page: one row per contribution with its current state
+   * and what happens next. `paid` is a defined rung that nothing reaches yet
+   * — settlement is a stub — and the endpoint says so rather than faking it.
+   */
+  app.get('/api/bounty/my', (req, res) => {
+    const contributor = String(req.query.contributor || '').trim();
+    if (!contributor) return res.status(400).json({ error: 'contributor required' });
+    const moderationOn = !!process.env.MODERATION_API_KEY;
+    const mine = (store.listPledges({ contributor }) || []).map((p) => {
+      const c = store.getContribution(p.contributionId);
+      // Purged records included on purpose: "your clip was refunded" must
+      // still name the clip it is talking about.
+      const clip = c ? clips.clipForContribution(c.id) : null;
+      const reserved = c ? store.getReservedHandleByKey(c.handleKey) : null;
+      let state = 'pending_upload';
+      let next = 'Upload your recording — the pledge refunds if none arrives.';
+      if (c?.status === 'REFUNDED') {
+        const reasonRow = store.listLedger({ handleKey: c.handleKey })
+          .filter((r) => r.type === 'REFUND' && r.meta?.contributionId === c.id).pop();
+        const why = reasonRow?.meta?.refundReason || 'refunded';
+        state = why === 'PLEDGE_EXPIRED' || why === 'HANDLE_EXPIRED' ? 'expired_refunded'
+          : why === 'STREAMER_DECLINED' ? 'declined_refunded'
+            : why === 'POLICY_VIOLATION' ? 'rejected_policy' : 'refunded';
+        next = state === 'rejected_policy'
+          ? 'Refund issued per the rejection policy disclosed at record time.'
+          : 'Refund recorded in the ledger. Nothing further happens.';
+      } else if (clip) {
+        if (clip.approval?.state === 'REJECTED') {
+          state = clip.approval.reasonCode === 'POLICY_VIOLATION' ? 'rejected_policy' : 'declined_refunded';
+          next = 'Refund is being recorded.';
+        } else if (moderationOn && !clip.moderation) {
+          state = 'pending_moderation';
+          next = 'Automatic review runs shortly after upload.';
+        } else if (!reserved?.claimedBy) {
+          state = 'awaiting_claim';
+          next = `Waiting for ${reserved?.handle || 'the streamer'} to claim. Refunds automatically if the pledge expires first.`;
+        } else if (clip.approval?.state === 'APPROVED') {
+          state = clip.playCount > 0 ? 'played' : 'approved';
+          next = clip.playCount > 0
+            ? 'Played on stream. Payout accounting runs against the pool (settlement not yet live).'
+            : 'Approved — waits for the streamer to play it on air.';
+        } else {
+          state = 'claimed_pending_review';
+          next = 'The streamer reviews every clip before it can air.';
+        }
+      }
+      return {
+        pledgeId: p.id, contributionId: c?.id || null, amount: p.amount,
+        targets: p.targets, pledgeStatus: p.status, winner: p.winner,
+        expiresAt: p.expiresAt, state, next,
+        clip: clip ? {
+          clipId: clip.clipId, durationS: clip.durationS,
+          moderation: clip.moderation, approval: clip.approval, playCount: clip.playCount,
+        } : null,
+      };
+    });
+    res.json({
+      contributions: mine.sort((a, b) => (b.expiresAt || 0) - (a.expiresAt || 0)),
+      states: ['pending_upload', 'pending_moderation', 'awaiting_claim', 'claimed_pending_review',
+        'approved', 'played', 'paid', 'expired_refunded', 'declined_refunded', 'rejected_policy', 'refunded'],
+      note: '`paid` becomes reachable when real settlement lands; today releases are ledger entries only.',
+    });
+  });
+
+  // ── Streamer approval queue ──────────────────────────────────────────────
+  //
+  // Every clip is reviewable before it can play on air. Default, not
+  // optional. Sorted so the safe pile clears fast: clean high-confidence
+  // first, violations last and loudly flagged.
+
+  const gradeRank = { clean: 0, borderline: 1, violation: 2 };
+  app.get('/api/bounty/queue', (req, res) => {
+    const key = store.handleKey(req.query.platform, req.query.handle);
+    if (!key) return res.status(400).json({ error: 'platform and handle required' });
+    const queue = clips.listClips(key)
+      .filter((c) => !c.approval)
+      .map((c) => ({
+        clipId: c.clipId, durationS: c.durationS, bytes: c.bytes,
+        storedAt: c.storedAt, contributor: c.contributor,
+        moderation: c.moderation,
+        mediaUrl: `/api/bounty/clip/${c.clipId}/media`,
+      }))
+      .sort((a, b) => {
+        const ga = gradeRank[a.moderation?.grade] ?? 1; // unmoderated sorts with borderline
+        const gb = gradeRank[b.moderation?.grade] ?? 1;
+        if (ga !== gb) return ga - gb;
+        // Within a grade, higher confidence first — most certain verdicts up top.
+        return (b.moderation?.confidence ?? 0) - (a.moderation?.confidence ?? 0);
+      });
+    res.json({ queue, count: queue.length });
+  });
+
+  app.post('/api/bounty/clip/:clipId/approve', (req, res) => {
+    try {
+      const clip = clips.approveClip(req.params.clipId, { by: String(req.body?.by || 'streamer') });
+      if (!clip) return res.status(404).json({ error: 'No such clip' });
+      res.json({ ok: true, clip });
+    } catch (e) { fail(res, e); }
+  });
+
+  app.post('/api/bounty/clip/:clipId/reject', (req, res) => {
+    try {
+      const { by, reasonCode, reason, confidence } = req.body || {};
+      const out = escrow.refundRejectedClip({
+        clipId: req.params.clipId, by: String(by || 'streamer'),
+        reasonCode, reason,
+        confidence: Number.isFinite(+confidence) ? +confidence : null,
+        // A queue rejection IS human review by definition.
+        humanReviewed: true,
+        settlement,
+      });
+      res.json({ ok: true, ...out });
+    } catch (e) { fail(res, e); }
+  });
+
+  /** Deterministic sweeper trigger (the interval below is the ambient one). */
+  app.post('/api/bounty/admin/sweep-pledges', (_req, res) => {
+    try {
+      res.json({ ok: true, swept: escrow.sweepExpiredPledges({ settlement }) });
+    } catch (e) { fail(res, e); }
+  });
+
+  /** Hand-picked program entries. Labelled promotional on every surface. */
+  app.post('/api/bounty/admin/seed', (req, res) => {
+    try {
+      const { platform, handle } = req.body || {};
+      const key = store.handleKey(platform, handle);
+      if (!key) return res.status(400).json({ error: 'platform and handle required' });
+      if (!store.getReservedHandleByKey(key)) {
+        store.reserveHandle({ platform, handle, ttlMs: bountyConfig.reservationTtlMs });
+      }
+      store.updateReservedHandle(key, { seeded: true });
+      res.json({ ok: true, reserved: store.getReservedHandleByKey(key) });
+    } catch (e) { fail(res, e); }
+  });
+
+  const pledgeSweeper = setInterval(() => {
+    try {
+      const swept = escrow.sweepExpiredPledges({ settlement });
+      if (swept.length) log.log(`[bounty] pledge sweeper refunded ${swept.length} expired pledge(s)`);
+    } catch (e) { log.warn(`[bounty] pledge sweep failed: ${e.message}`); }
+  }, bountyConfig.pledgeSweepMs);
+  if (pledgeSweeper.unref) pledgeSweeper.unref();
+
   // ── Claim flow ───────────────────────────────────────────────────────────
   app.post('/api/bounty/claim', async (req, res) => {
     try {
@@ -267,12 +504,23 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         meta: { approved: idv.approved, stubbed: idv.method.startsWith('STUBBED') },
       });
 
+      let wonPledges = [];
       if (idv.approved) {
         escrow.transition({ handleKey: key, to: 'CLAIM_VERIFIED', actor: 'identity', reason: idv.method, claimId: claim.id });
         escrow.transition({ handleKey: key, to: 'AWAITING_AIRTIME', actor: 'system', reason: 'awaiting broadcast', claimId: claim.id });
         store.updateReservedHandle(key, { claimedBy: claimant || null });
+        // Contested pledges resolve at the moment of a VERIFIED claim, and
+        // nowhere else. claimPledges is synchronous by contract, so two
+        // claims racing through the awaits above cannot split a pledge —
+        // whichever continuation lands here first takes every shared pledge
+        // whole. Keep it directly after the transitions, with no await in
+        // between.
+        wonPledges = escrow.claimPledges(key, { actor: claimant || 'claimant' });
       }
-      res.json({ ok: true, claim: store.getClaim(claim.id), identity: idv, pool: store.getPool(key) });
+      res.json({
+        ok: true, claim: store.getClaim(claim.id), identity: idv,
+        pool: store.getPool(key), poolView: escrow.poolView(key), wonPledges,
+      });
     } catch (e) { fail(res, e); }
   });
 

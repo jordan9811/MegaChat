@@ -148,6 +148,282 @@ export function contribute({ platform, handle, contributor, amount, letterRef, a
 }
 
 /**
+ * A PLEDGE: one escrow, offered across up to `pledgeMaxTargets` streamers.
+ * $100 across three streamers escrows $100 — the single Contribution row
+ * lives on the ANCHOR (first target); the pledge record is what makes the
+ * same money visible, as contested, on the others. First claim takes it.
+ *
+ * Targets are deduped and capped here rather than trusted from the client,
+ * because "how many pools can one dollar appear in" is a money-display
+ * invariant, not a UI preference.
+ */
+export function pledge({ targets, contributor, amount, expiresInMs, actor = 'fan' }) {
+  assertEnabled();
+  const seen = new Set();
+  const clean = [];
+  for (const t of targets || []) {
+    const key = store.handleKey(t.platform, t.handle);
+    if (!key) throw new Error(`Invalid target ${t.platform}/${t.handle}`);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    clean.push({ ...t, key });
+  }
+  if (!clean.length) throw new Error('A pledge needs at least one target streamer');
+  if (clean.length > bountyConfig.pledgeMaxTargets) {
+    throw new Error(`A pledge may target at most ${bountyConfig.pledgeMaxTargets} streamers`);
+  }
+  if (!(parseFloat(amount) > 0)) throw new Error('Pledge amount must be positive');
+
+  const ttl = Math.min(
+    bountyConfig.pledgeMaxExpiryMs,
+    Math.max(bountyConfig.pledgeMinExpiryMs, Number(expiresInMs) || bountyConfig.pledgeDefaultExpiryMs),
+  );
+
+  for (const t of clean) {
+    if (!store.getReservedHandleByKey(t.key)) {
+      store.reserveHandle({ platform: t.platform, handle: t.handle, ttlMs: bountyConfig.reservationTtlMs });
+    }
+  }
+
+  const anchor = clean[0].key;
+  const c = store.addContribution({ handleKey: anchor, contributor, amount });
+  const p = store.addPledge({
+    contributor, amount, targets: clean.map((t) => t.key),
+    contributionId: c.id, expiresAt: Date.now() + ttl,
+  });
+  store.updateContribution(c.id, { pledgeId: p.id });
+  store.appendLedger({
+    handleKey: anchor, type: 'CONTRIBUTION', amount, bucket: 'contributor',
+    actor,
+    reason: clean.length === 1
+      ? 'pledge for unclaimed handle'
+      : `pledge contested across ${clean.length} handles — first claim takes it`,
+    meta: { contributionId: c.id, pledgeId: p.id, targets: clean.map((t) => t.key) },
+  });
+  return { pledge: p, contribution: c };
+}
+
+/**
+ * The moment a handle's claim is approved, every open pledge naming it
+ * resolves: winner takes the escrow, the other targets are slashed.
+ *
+ * SYNCHRONOUS BY DESIGN — there is deliberately no await anywhere between
+ * reading OPEN and writing CLAIMED. Node runs a synchronous function to
+ * completion, so two claim requests racing through the HTTP layer cannot
+ * interleave inside this resolution: whoever's continuation lands first wins
+ * every shared pledge whole, and the loser's call finds nothing OPEN.
+ * Introducing an await in here reopens the race — do not.
+ */
+export function claimPledges(handleKey, { actor = 'claimant' } = {}) {
+  assertEnabled();
+  const now = Date.now();
+  const open = store.listPledges({ status: 'OPEN', handleKey });
+  const won = [];
+  for (const p of open) {
+    if (now > p.expiresAt) continue; // lapsed — the sweeper refunds it, a claim never revives it
+    store.updatePledge(p.id, { status: 'CLAIMED', winner: handleKey, claimedAt: now });
+    const c = store.getContribution(p.contributionId);
+    if (c && c.status === 'HELD' && c.handleKey !== handleKey) {
+      // updateContribution mutates the SAME object `c` points at, so the
+      // origin key must be captured before the move or every read below
+      // silently sees the winner.
+      const fromKey = c.handleKey;
+      // The escrow row moves from the anchor to the winner, with both sides
+      // written to the ledger so the anchor's history explains where the
+      // contested stake went.
+      store.appendLedger({
+        handleKey: fromKey, type: 'PLEDGE_SLASH', amount: c.amount, bucket: 'contributor',
+        actor, reason: `contested pledge claimed by ${handleKey} — stake leaves this pool`,
+        idempotencyKey: `pledge-slash:${p.id}`,
+        meta: { pledgeId: p.id, contributionId: c.id, wonBy: handleKey },
+      });
+      store.appendLedger({
+        handleKey, type: 'PLEDGE_WIN', amount: c.amount, bucket: 'contributor',
+        actor, reason: `contested pledge won — stake lands in this pool`,
+        idempotencyKey: `pledge-win:${p.id}`,
+        meta: { pledgeId: p.id, contributionId: c.id, from: fromKey },
+      });
+      store.updateContribution(c.id, { handleKey });
+      // The recording follows the money.
+      const clip = clips.listClips().find((x) => x.contributionId === c.id);
+      if (clip) clips.reassignClip(clip.clipId, handleKey, { pledgeId: p.id });
+    }
+    won.push({ pledgeId: p.id, amount: p.amount, contested: p.targets.length > 1 });
+  }
+  return won;
+}
+
+/**
+ * Pool DISPLAY math. The raw pool (getPool) counts every HELD row on the
+ * handle — which, for a multi-target pledge, sits on the anchor and may yet
+ * be won by someone else. A streamer must see what is exclusively theirs
+ * FIRST and contested money second, labelled with how many rivals are racing
+ * for it. Never a blended headline: a claimant who finds most of "their"
+ * pool gone learns about restaking from the worst possible teacher.
+ */
+export function poolView(key) {
+  const pool = store.getPool(key);
+  const now = Date.now();
+  const openHere = store.listPledges({ status: 'OPEN', handleKey: key })
+    .filter((p) => p.expiresAt > now);
+  let contestedIn = 0;      // multi-target pledges naming this handle
+  let contestedAnchored = 0; // the subset whose escrow row sits HERE (inside pool total)
+  const contested = [];
+  for (const p of openHere) {
+    if (p.targets.length === 1) continue;
+    const amt = parseFloat(p.amount);
+    contestedIn += amt;
+    if (p.targets[0] === key) contestedAnchored += amt;
+    contested.push({
+      pledgeId: p.id, amount: +amt.toFixed(6),
+      rivals: p.targets.length - 1, expiresAt: p.expiresAt,
+    });
+  }
+  const guaranteed = Math.max(0, pool.totalContributed - contestedAnchored);
+  return {
+    ...pool,
+    guaranteed: +guaranteed.toFixed(6),
+    contestedTotal: +contestedIn.toFixed(6),
+    contested,
+    openPledges: openHere.length,
+  };
+}
+
+/**
+ * Refund every OPEN pledge past its expiry. Money and recording go back
+ * together via the enumerated PLEDGE_EXPIRED reason. Called on an interval
+ * and exposed on an admin route so gates can trigger it deterministically.
+ */
+export function sweepExpiredPledges({ actor = 'system', settlement } = {}) {
+  assertEnabled();
+  const now = Date.now();
+  const lapsed = store.listPledges({ status: 'OPEN' }).filter((p) => now > p.expiresAt);
+  const out = [];
+  for (const p of lapsed) {
+    store.updatePledge(p.id, { status: 'EXPIRED' });
+    const c = store.getContribution(p.contributionId);
+    if (c && c.status === 'HELD') {
+      refund({
+        handleKey: c.handleKey, reason: 'PLEDGE_EXPIRED', actor,
+        contributionIds: [c.id], reference: p.id, settlement,
+      });
+    }
+    out.push({ pledgeId: p.id, amount: p.amount, contributor: p.contributor });
+  }
+  return out;
+}
+
+/**
+ * A rejected clip's refund — the incentive fix.
+ *
+ * Today a rejection refunds in full, so probing the classifier costs nothing
+ * and can be repeated forever. Now:
+ *  - a streamer declining a CLEAN clip refunds in full, no strike — taste is
+ *    not a policy violation, split by reason code;
+ *  - the FIRST confirmed policy violation refunds in full but records a
+ *    strike;
+ *  - later confirmed violations refund at `rejectionRefundFraction`, and the
+ *    withheld remainder goes to the TARGET STREAMER'S POOL — never to the
+ *    platform, because the platform profiting from its own rejections is a
+ *    conflict of interest that will be noticed the first time a rejection is
+ *    disputed in public;
+ *  - an UNCONFIRMED flag (no human review, confidence under the floor) never
+ *    costs money and never strikes. A false positive must be an
+ *    inconvenience, not a fee.
+ */
+export function refundRejectedClip({
+  clipId, by, reasonCode, reason = null,
+  confidence = null, humanReviewed = false, settlement,
+}) {
+  assertEnabled();
+  if (!['STREAMER_DECLINED', 'POLICY_VIOLATION'].includes(reasonCode)) {
+    throw new Error(`reasonCode must be STREAMER_DECLINED or POLICY_VIOLATION, got "${reasonCode}"`);
+  }
+  const clip = clips.getClipRecord(clipId);
+  if (!clip) throw new Error(`No clip ${clipId}`);
+  const c = clip.contributionId ? store.getContribution(clip.contributionId) : null;
+  if (!c) throw new Error(`Clip ${clipId} has no contribution attached`);
+  if (c.status !== 'HELD') {
+    // Already refunded (double-click, retry) — report, never double-pay.
+    return { deduped: true, contributionId: c.id, status: c.status };
+  }
+
+  clips.rejectClip(clipId, { by, reasonCode, reason });
+
+  if (reasonCode === 'STREAMER_DECLINED') {
+    const rows = refund({
+      handleKey: c.handleKey, reason: 'STREAMER_DECLINED', actor: by,
+      contributionIds: [c.id], reference: clipId, note: reason, settlement,
+    });
+    return { refunded: c.amount, withheld: '0', strike: false, rows };
+  }
+
+  const confirmed = humanReviewed
+    || (Number.isFinite(confidence) && confidence >= bountyConfig.rejectionConfidenceFloor);
+  if (!confirmed) {
+    const rows = refund({
+      handleKey: c.handleKey, reason: 'POLICY_VIOLATION', actor: by,
+      contributionIds: [c.id], reference: clipId,
+      note: `${reason || 'flagged'} — UNCONFIRMED (no human review, confidence ${confidence ?? 'n/a'}), full refund, no strike`,
+      settlement,
+    });
+    return { refunded: c.amount, withheld: '0', strike: false, confirmed: false, rows };
+  }
+
+  const prior = store.getStrikes(c.contributor).policyRejections;
+  store.addStrike(c.contributor, { clipId, reason, confidence, by });
+
+  if (prior === 0) {
+    const rows = refund({
+      handleKey: c.handleKey, reason: 'POLICY_VIOLATION', actor: by,
+      contributionIds: [c.id], reference: clipId,
+      note: `${reason || 'policy violation'} — first offence, full refund, strike recorded`,
+      settlement,
+    });
+    return { refunded: c.amount, withheld: '0', strike: true, rows };
+  }
+
+  // Graduated: partial refund, remainder forfeits INTO the streamer's pool.
+  const amount = parseFloat(c.amount);
+  const back = +(amount * bountyConfig.rejectionRefundFraction).toFixed(6);
+  const withheld = +(amount - back).toFixed(6);
+
+  const { row, deduped } = store.appendLedger({
+    handleKey: c.handleKey, type: 'REFUND', amount: String(back), bucket: 'contributor',
+    actor: by,
+    reason: `${REFUND_REASONS.POLICY_VIOLATION.text} — repeat offence (${prior} prior), `
+      + `${Math.round(bountyConfig.rejectionRefundFraction * 100)}% refund`,
+    idempotencyKey: `refund:${c.id}`,
+    meta: {
+      contributionId: c.id, contributor: c.contributor,
+      refundReason: 'POLICY_VIOLATION', reference: clipId,
+      fraction: bountyConfig.rejectionRefundFraction,
+    },
+  });
+  if (deduped) return { deduped: true, rows: [row] };
+
+  store.updateContribution(c.id, { status: 'REFUNDED' });
+  try { clips.purgeForContribution(c.id, 'refund:POLICY_VIOLATION'); } catch { /* sweeper catches */ }
+  // TODO(run-b): real settlement. Stub records intent only.
+  settlement?.refund({ to: c.contributor, amount: String(back), ref: c.id });
+
+  // The withheld share stays claimable by the TARGET streamer: a fresh HELD
+  // row plus a FORFEIT ledger entry saying exactly where it came from.
+  const forfeit = store.addContribution({
+    handleKey: c.handleKey, contributor: c.contributor, amount: String(withheld),
+  });
+  store.updateContribution(forfeit.id, { forfeitOfClip: clipId, pledgeId: null });
+  store.appendLedger({
+    handleKey: c.handleKey, type: 'FORFEIT', amount: String(withheld), bucket: 'contributor',
+    actor: by,
+    reason: 'withheld share of a repeat policy rejection — stays in the streamer pool, never the platform',
+    idempotencyKey: `forfeit:${c.id}`,
+    meta: { fromContribution: c.id, clipId, toContribution: forfeit.id },
+  });
+  return { refunded: String(back), withheld: String(withheld), strike: true, rows: [row] };
+}
+
+/**
  * Every reason money can go back to a contributor. Refunds are enumerated
  * rather than free-text because "why was this refunded" is a question the
  * ledger has to answer years later, and a typo'd string is not an answer.
@@ -167,6 +443,18 @@ export const REFUND_REASONS = {
   CLIP_NEVER_UPLOADED: {
     full: false,
     text: 'contribution was paid but no recording was ever uploaded',
+  },
+  PLEDGE_EXPIRED: {
+    full: false,
+    text: 'pledge expired before any streamer claimed it',
+  },
+  STREAMER_DECLINED: {
+    full: false,
+    text: 'streamer declined a clean clip — full refund, no strike',
+  },
+  POLICY_VIOLATION: {
+    full: false,
+    text: 'clip rejected for a policy violation',
   },
   DISPUTE_RESOLVED: {
     full: false,

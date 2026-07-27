@@ -55,6 +55,16 @@ export const CLIP_EVENTS = {
   STORED: 'CLIP_STORED',
   PLAYED: 'CLIP_PLAYED',
   PURGED: 'CLIP_PURGED',
+  /** A multi-target pledge was claimed by a non-anchor streamer — the clip
+   *  follows the money to the winner. Append-only: the original STORED row
+   *  keeps the history, this row changes the current owner. */
+  REASSIGNED: 'CLIP_REASSIGNED',
+  /** Graded moderation verdict. Part of the clip's evidence record because a
+   *  refund decision (policy strike vs clean decline) is computed FROM it. */
+  MODERATED: 'CLIP_MODERATED',
+  /** Streamer approval-queue outcomes. */
+  APPROVED: 'CLIP_APPROVED',
+  REJECTED: 'CLIP_REJECTED',
 };
 
 let ledger = createLedger({ filePath: INDEX_PATH, kind: 'clip-index' });
@@ -127,6 +137,10 @@ function fold() {
         playCount: 0,
         purgedAt: null,
         purgeReason: null,
+        reassignedAt: null,
+        reassignedFrom: null,
+        moderation: null,   // graded verdict, written at upload time
+        approval: null,     // streamer approve/reject, written from the queue
       });
     } else if (r.type === CLIP_EVENTS.PLAYED) {
       const c = byId.get(r.clipId);
@@ -134,6 +148,23 @@ function fold() {
     } else if (r.type === CLIP_EVENTS.PURGED) {
       const c = byId.get(r.clipId);
       if (c) { c.purgedAt = r.at; c.purgeReason = r.reason; }
+    } else if (r.type === CLIP_EVENTS.REASSIGNED) {
+      const c = byId.get(r.clipId);
+      if (c) { c.handleKey = r.toHandleKey; c.reassignedAt = r.at; c.reassignedFrom = r.fromHandleKey; }
+    } else if (r.type === CLIP_EVENTS.MODERATED) {
+      const c = byId.get(r.clipId);
+      if (c) {
+        c.moderation = {
+          grade: r.grade, confidence: r.confidence,
+          topCategory: r.topCategory || null, at: r.at,
+        };
+      }
+    } else if (r.type === CLIP_EVENTS.APPROVED) {
+      const c = byId.get(r.clipId);
+      if (c) { c.approval = { state: 'APPROVED', by: r.by, at: r.at }; }
+    } else if (r.type === CLIP_EVENTS.REJECTED) {
+      const c = byId.get(r.clipId);
+      if (c) { c.approval = { state: 'REJECTED', by: r.by, reasonCode: r.reasonCode, reason: r.reason || null, at: r.at }; }
     }
   }
   return byId;
@@ -255,6 +286,15 @@ export function getClipRecord(clipId) {
   return fold().get(clipId) || null;
 }
 
+/** The clip (live or purged) attached to one contribution. Status surfaces
+ *  need the purged record too — "your clip was refunded" must still show
+ *  WHICH clip. */
+export function clipForContribution(contributionId, { includePurged = true } = {}) {
+  const hit = [...fold().values()].find((c) => c.contributionId === contributionId);
+  if (!hit) return null;
+  return includePurged || isLive(hit) ? hit : null;
+}
+
 export function purgeForHandle(handleKey, reason = 'handle_refunded') {
   const purged = [];
   for (const c of listClips(handleKey)) {
@@ -262,6 +302,48 @@ export function purgeForHandle(handleKey, reason = 'handle_refunded') {
     purged.push(c.clipId);
   }
   return purged;
+}
+
+/** The pledge was claimed by a non-anchor streamer — the clip follows the
+ *  money. Appends, never rewrites; the STORED row keeps the history. */
+export function reassignClip(clipId, toHandleKey, { pledgeId = null } = {}) {
+  const rec = getClip(clipId);
+  if (!rec) return null;
+  if (rec.handleKey === toHandleKey) return rec; // idempotent
+  ledger.append({
+    type: CLIP_EVENTS.REASSIGNED, clipId,
+    fromHandleKey: rec.handleKey, toHandleKey, pledgeId, at: Date.now(),
+  });
+  return getClip(clipId);
+}
+
+/** Graded moderation verdict — evidence, because refund math reads it. */
+export function recordModeration(clipId, { grade, confidence, topCategory }) {
+  if (!getClipRecord(clipId)) return null;
+  ledger.append({
+    type: CLIP_EVENTS.MODERATED, clipId,
+    grade, confidence, topCategory: topCategory || null, at: Date.now(),
+  });
+  return getClipRecord(clipId);
+}
+
+export function approveClip(clipId, { by }) {
+  if (!getClip(clipId)) return null;
+  ledger.append({ type: CLIP_EVENTS.APPROVED, clipId, by, at: Date.now() });
+  return getClip(clipId);
+}
+
+/**
+ * @param {string} reasonCode STREAMER_DECLINED | POLICY_VIOLATION — the split
+ *   that decides whether the contributor takes a reputation strike.
+ */
+export function rejectClip(clipId, { by, reasonCode, reason }) {
+  if (!getClip(clipId)) return null;
+  ledger.append({
+    type: CLIP_EVENTS.REJECTED, clipId, by,
+    reasonCode, reason: reason || null, at: Date.now(),
+  });
+  return getClip(clipId);
 }
 
 /** Purge the clip attached to a single contribution (used by refunds). */

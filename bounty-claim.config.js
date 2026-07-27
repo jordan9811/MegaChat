@@ -88,6 +88,40 @@ export const bountyConfig = {
    *  refundable as never-delivered. */
   clipUploadGraceMs: num(process.env.BOUNTY_CLIP_UPLOAD_GRACE_MS, 10 * 60_000),
 
+  // ── Pledges (fan-facing program) ────────────────────────────────────────
+  /**
+   * One pledge may be offered across several streamers — first to claim takes
+   * it, the rest are slashed. Capped so a whale cannot smear one pledge across
+   * the whole directory and make every pool read as contested noise.
+   */
+  pledgeMaxTargets: num(process.env.BOUNTY_PLEDGE_MAX_TARGETS, 3),
+  /** Contributor-set expiry, bounded. Nothing is ever locked indefinitely. */
+  pledgeDefaultExpiryMs: num(process.env.BOUNTY_PLEDGE_DEFAULT_EXPIRY_MS, 7 * 24 * 60 * 60_000),
+  pledgeMinExpiryMs: num(process.env.BOUNTY_PLEDGE_MIN_EXPIRY_MS, 24 * 60 * 60_000),
+  pledgeMaxExpiryMs: num(process.env.BOUNTY_PLEDGE_MAX_EXPIRY_MS, 30 * 24 * 60 * 60_000),
+  /** How often the expiry sweeper looks for lapsed pledges. */
+  pledgeSweepMs: num(process.env.BOUNTY_PLEDGE_SWEEP_MS, 10 * 60_000),
+
+  // ── Rejection reputation ────────────────────────────────────────────────
+  /**
+   * A rejected clip used to refund in full, so probing the classifier was
+   * free and unlimited. First POLICY rejection still refunds in full;
+   * subsequent ones refund at this fraction. A streamer declining a clean
+   * clip is NOT a policy rejection and always refunds in full.
+   */
+  rejectionRefundFraction: Number(process.env.BOUNTY_REJECTION_REFUND_FRACTION || 0.5),
+  /**
+   * A strike requires a CONFIRMED rejection: human-reviewed, or classifier
+   * confidence at/above this. A raw flag must never cost anyone money.
+   */
+  rejectionConfidenceFloor: Number(process.env.BOUNTY_REJECTION_CONFIDENCE_FLOOR || 0.9),
+
+  // ── Moderation grading (bounty clips) ───────────────────────────────────
+  /** Below this top-category score a clip is CLEAN. */
+  moderationBorderlineFloor: Number(process.env.BOUNTY_MOD_BORDERLINE_FLOOR || 0.4),
+  /** At/above this it is a VIOLATION; between the two it is BORDERLINE. */
+  moderationViolationFloor: Number(process.env.BOUNTY_MOD_VIOLATION_FLOOR || 0.7),
+
   // ── Anti-malicious-compliance ───────────────────────────────────────────
   /**
    * Minimum badge height as a fraction of canvas height. Below this the

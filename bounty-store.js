@@ -44,6 +44,8 @@ const EMPTY = () => ({
   airSessions: {},       // id  → AirSession
   verifications: {},     // id  → VerificationAttempt
   reviews: {},           // id  → ReviewItem (ambiguous verifications)
+  pledges: {},           // id  → Pledge (one escrow, up to N target streamers)
+  strikes: {},           // contributor → { policyRejections, history: [] }
 });
 
 let cache = null;
@@ -166,7 +168,7 @@ export function updateReservedHandle(key, patch) {
 
 // ── BountyContribution ──────────────────────────────────────────────────────
 
-export function addContribution({ handleKey: key, contributor, amount, letterRef }) {
+export function addContribution({ handleKey: key, contributor, amount, letterRef, pledgeId }) {
   const store = load();
   if (!store.reservedHandles[key]) throw new Error(`No reserved handle ${key}`);
   const rec = {
@@ -175,12 +177,79 @@ export function addContribution({ handleKey: key, contributor, amount, letterRef
     contributor,
     amount: String(amount),
     letterRef: letterRef || null,
+    pledgeId: pledgeId || null,
     createdAt: Date.now(),
     status: 'HELD',
   };
   store.contributions[rec.id] = rec;
   save();
   return rec;
+}
+
+// ── Pledge ──────────────────────────────────────────────────────────────────
+//
+// A pledge is ONE escrow offered across up to N streamers. The escrowed money
+// lives as a single Contribution row on the ANCHOR handle (targets[0]); the
+// pledge record is what makes the same money visible — as contested — on the
+// other targets. First claim wins; the rest see it vanish, which is why pool
+// DISPLAY leads with guaranteed money (see escrow.poolView).
+
+export function addPledge({ contributor, amount, targets, contributionId, expiresAt }) {
+  const store = load();
+  const rec = {
+    id: randomUUID(),
+    contributor,
+    amount: String(amount),
+    targets: [...targets],       // handleKeys, anchor first
+    contributionId,              // the ONE escrow row (lives on the anchor)
+    expiresAt,
+    status: 'OPEN',              // OPEN | CLAIMED | EXPIRED
+    winner: null,
+    claimedAt: null,
+    createdAt: Date.now(),
+  };
+  store.pledges[rec.id] = rec;
+  save();
+  return rec;
+}
+
+export function getPledge(id) {
+  return load().pledges[id] || null;
+}
+
+export function listPledges(filter = {}) {
+  let all = Object.values(load().pledges);
+  if (filter.status) all = all.filter((p) => p.status === filter.status);
+  if (filter.handleKey) all = all.filter((p) => p.targets.includes(filter.handleKey));
+  if (filter.contributor) all = all.filter((p) => p.contributor === filter.contributor);
+  return all;
+}
+
+export function updatePledge(id, patch) {
+  const store = load();
+  const rec = store.pledges[id];
+  if (!rec) throw new Error(`No pledge ${id}`);
+  Object.assign(rec, patch);
+  save();
+  return rec;
+}
+
+// ── Rejection strikes (account-level reputation) ────────────────────────────
+
+export function getStrikes(contributor) {
+  const s = load().strikes[String(contributor)] || null;
+  return s || { policyRejections: 0, history: [] };
+}
+
+export function addStrike(contributor, { clipId, reason, confidence, by }) {
+  const store = load();
+  const key = String(contributor);
+  const s = store.strikes[key] || (store.strikes[key] = { policyRejections: 0, history: [] });
+  s.policyRejections += 1;
+  s.history.push({ clipId, reason, confidence, by, at: Date.now() });
+  if (s.history.length > 50) s.history.splice(0, s.history.length - 50);
+  save();
+  return { ...s };
 }
 
 export function listContributions(key) {
