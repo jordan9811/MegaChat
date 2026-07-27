@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 // (landing is force-dynamic), so it can change without a code edit.
 const NAV_LINKS = [
   { label: 'Browse rooms', href: '/#browse' },
+  { label: 'Bounties', href: '/bounty' },
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'How it works', href: '/how-it-works' },
   { label: 'Roadmap', href: '/roadmap' },

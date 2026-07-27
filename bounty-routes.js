@@ -393,7 +393,13 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         if (clip.approval?.state === 'REJECTED') {
           state = clip.approval.reasonCode === 'POLICY_VIOLATION' ? 'rejected_policy' : 'declined_refunded';
           next = 'Refund is being recorded.';
-        } else if (moderationOn && !clip.moderation) {
+        } else if (moderationOn && !clip.moderation && !reserved?.claimedBy) {
+          // Pre-claim only. Once the streamer has claimed, the clip is in
+          // THEIR queue whether or not the classifier ever answered (the
+          // queue treats unmoderated as reviewable), so telling the fan
+          // "automatic review is running" would be describing a state the
+          // streamer is already past. Found by the UI verifier: a clip whose
+          // moderation call failed read "in review" forever.
           state = 'pending_moderation';
           next = 'Automatic review runs shortly after upload.';
         } else if (!reserved?.claimedBy) {

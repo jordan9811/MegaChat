@@ -149,3 +149,129 @@ export function adminOverride(platform: string, handle: string, to: string, reas
     body: { platform, handle, to, reason, actor: 'admin' },
   })
 }
+
+// ── Bounty program (fan-facing) ─────────────────────────────────────────────
+
+export type PoolView = BountyPool & {
+  guaranteed: number
+  contestedTotal: number
+  contested: { pledgeId: string; amount: number; rivals: number; expiresAt: number }[]
+  openPledges: number
+}
+
+export type ProgramPool = PoolView & {
+  seeded: boolean
+  claimed: boolean
+  promotional: boolean
+  clipsWaiting: number
+}
+
+export function getProgram() {
+  return req<{
+    pools: ProgramPool[]
+    currency: string
+    totals: { realValue: number; displayedTotal: number; note: string }
+  }>('/api/bounty/program')
+}
+
+export function getPoolView(platform: string, handle: string) {
+  return req<{ view: PoolView; reserved: { claimedBy?: string | null; seeded?: boolean } | null; clips: number }>(
+    `/api/bounty/pool-view?platform=${encodeURIComponent(platform)}&handle=${encodeURIComponent(handle)}`,
+  )
+}
+
+export type RejectionPolicy = {
+  streamerDeclineRefund: number
+  firstPolicyRejectionRefund: number
+  repeatPolicyRejectionRefund: number
+  withheldShareGoesTo: string
+  strikesRequire: string
+}
+
+export function createPledge(args: {
+  targets: { platform: string; handle: string }[]
+  contributor: string
+  amount: string
+  expiresInMs: number
+}) {
+  return req<{
+    ok: boolean
+    pledge: { id: string; targets: string[]; expiresAt: number }
+    contribution: { id: string }
+    uploadUrl: string
+    uploadDeadline: number
+    clipLimits: { minSeconds: number; maxBytes: number }
+    rejectionPolicy: RejectionPolicy
+  }>('/api/bounty/pledge', { method: 'POST', body: args })
+}
+
+export function postFrames(uploadUrl: string, frames: string[]) {
+  return req<{ ok: boolean; frames: number }>(`${uploadUrl}/frames`, {
+    method: 'POST', body: { frames },
+  })
+}
+
+export async function uploadClip(uploadUrl: string, blob: Blob, durationS: number) {
+  const res = await fetch(`${backendHttpUrl()}${uploadUrl}?durationS=${durationS}`, {
+    method: 'POST',
+    headers: { 'Content-Type': blob.type || 'video/webm', 'x-clip-duration': String(durationS) },
+    body: blob,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as { error?: string }).error || `Upload failed (${res.status})`)
+  return data as { ok: boolean; clip: { clipId: string } }
+}
+
+export type MyContribution = {
+  pledgeId: string
+  contributionId: string | null
+  amount: string
+  targets: string[]
+  pledgeStatus: string
+  winner: string | null
+  expiresAt: number
+  state: string
+  next: string
+  clip: {
+    clipId: string
+    durationS: number
+    moderation: { grade: string; confidence: number } | null
+    approval: { state: string; reasonCode?: string } | null
+    playCount: number
+  } | null
+}
+
+export function getMyContributions(contributor: string) {
+  return req<{ contributions: MyContribution[]; states: string[]; note: string }>(
+    `/api/bounty/my?contributor=${encodeURIComponent(contributor)}`,
+  )
+}
+
+export type QueueClip = {
+  clipId: string
+  durationS: number
+  bytes: number
+  storedAt: number
+  contributor: string | null
+  moderation: { grade: string; confidence: number; topCategory: string | null } | null
+  mediaUrl: string
+}
+
+export function getQueue(platform: string, handle: string) {
+  return req<{ queue: QueueClip[]; count: number }>(
+    `/api/bounty/queue?platform=${encodeURIComponent(platform)}&handle=${encodeURIComponent(handle)}`,
+  )
+}
+
+export function approveClip(clipId: string, by: string) {
+  return req<{ ok: boolean }>(`/api/bounty/clip/${encodeURIComponent(clipId)}/approve`, {
+    method: 'POST', body: { by },
+  })
+}
+
+export function rejectClip(clipId: string, args: { by: string; reasonCode: 'STREAMER_DECLINED' | 'POLICY_VIOLATION'; reason: string }) {
+  return req<{ ok: boolean; refunded?: string; withheld?: string; strike?: boolean }>(
+    `/api/bounty/clip/${encodeURIComponent(clipId)}/reject`,
+    { method: 'POST', body: args },
+  )
+}

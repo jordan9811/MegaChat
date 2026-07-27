@@ -146,15 +146,15 @@ function ClaimDrawer({ target, onClose }: { target: CampaignTarget; onClose: () 
           while the campaign runs.
         </p>
 
-        {/* TODO(claim-flow): stub — routes to the dashboard until a claim backend exists */}
+        {/* The claim backend exists now — this routes to the real program. */}
         <a
-          href="/dashboard"
+          href="/bounty"
           className="mt-5 inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--neon-lime)] px-5 py-2.5 text-sm font-bold text-black transition-transform hover:scale-[1.02]"
         >
-          Claim this bounty <ArrowRight className="size-4" />
+          Open the bounty program <ArrowRight className="size-4" />
         </a>
         <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          Claim flow is a stub — this opens the room dashboard for now.
+          Live pools, real claim flow, and record-a-MegaChat live at /bounty.
         </p>
       </div>
     </div>,
@@ -179,7 +179,13 @@ export function CampaignDashboard(_props: DeckModuleProps) {
         tag={<DemoTag />}
         bodyClassName="max-h-[calc(100vh-12rem)] overflow-y-auto"
       >
-        {/* pool header */}
+        {/* pool header — links through to the real program page */}
+        <a
+          href="/bounty"
+          className="block border-b border-border/60 px-4 py-2 text-xs font-bold text-[var(--neon-cyan)] transition-colors hover:bg-card/60"
+        >
+          Bounty program: record for streamers who aren&apos;t here yet →
+        </a>
         <div className="border-b border-border/60 px-4 py-3">
           <p className="font-heading text-2xl font-black text-foreground">
             {c.pool}
