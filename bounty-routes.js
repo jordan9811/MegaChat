@@ -562,6 +562,31 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     } catch (e) { fail(res, e); }
   });
 
+  /**
+   * Operator/rehearsal playback trigger: open and close watermark windows
+   * over HTTP without driving the whole letters queue. This is how the
+   * corpus generator and the dress rehearsal issue REAL codes through the
+   * real store — the same startClipPlayback the letters hook calls.
+   */
+  app.post('/api/bounty/admin/playback', (req, res) => {
+    try {
+      const { airSessionId, clipId, durationS } = req.body || {};
+      if (!store.getAirSession(airSessionId)) return res.status(404).json({ error: 'No such air session' });
+      const out = watermark.startClipPlayback(airSessionId, {
+        clipId: String(clipId || 'rehearsal'), durationS: Number(durationS) || 10,
+      });
+      res.json({ ok: true, playbackId: out?.playbackId || null, code: out?.code || null, reason: out?.reason || null });
+    } catch (e) { fail(res, e); }
+  });
+
+  app.post('/api/bounty/admin/playback/end', (req, res) => {
+    try {
+      const { airSessionId, clipId, playbackId } = req.body || {};
+      watermark.endClipPlayback(airSessionId, { clipId, playbackId });
+      res.json({ ok: true });
+    } catch (e) { fail(res, e); }
+  });
+
   /** Deterministic sweeper trigger (the interval below is the ambient one). */
   app.post('/api/bounty/admin/sweep-pledges', (_req, res) => {
     try {

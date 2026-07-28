@@ -239,7 +239,13 @@
       text-transform: uppercase;
       color: var(--neon-lime);
     }
-    #bounty-badge .bb-code {
+    #bounty-matrix { display: block; image-rendering: pixelated; }
+    /* the text span is only the too-small warning now — the code itself is
+       the dot-matrix canvas above */
+    #bounty-badge .bb-code { display: none; }
+    #bounty-badge.too-small .bb-code { display: inline; }
+    #bounty-badge.too-small #bounty-matrix { display: none; }
+    #bounty-badge .bb-code-legacy {
       font-family: 'Courier New', monospace;
       font-size: 22px;
       letter-spacing: .18em;
@@ -461,8 +467,12 @@
        ?bounty=<airSessionId>, so a normal room renders exactly as before. -->
   <div id="bounty-badge" aria-hidden="true">
     <span class="bb-mark">MEGACHAT</span>
+    <!-- machine-readable: 5x7 dot-matrix in a white registration ring, drawn
+         from the SAME font table the verifier reads with (code-matrix.js) -->
+    <canvas id="bounty-matrix"></canvas>
     <span class="bb-code" id="bounty-code"></span>
   </div>
+  <script src="/code-matrix.cjs"></script>
 
   <script>
     // ─── Layout config ───────────────────────────────────────────────────────
@@ -986,7 +996,16 @@
 
           badge.classList.remove('too-small');
           badge.classList.add('show');
-          codeEl.textContent = data.code;
+          codeEl.textContent = '';
+          // DOT=4 -> 28px glyphs at 1080p, ~12.4px after a 480p downscale —
+          // right at the verifier's pixel floor, which is deliberate: the
+          // corpus measures exactly where legibility dies.
+          const mtx = document.getElementById('bounty-matrix');
+          if (mtx && window.MCCodeMatrix) {
+            window.MCCodeMatrix.drawMatrix(mtx.getContext('2d'), data.code, 4);
+          } else {
+            codeEl.textContent = data.code; // matrix lib failed to load — legacy text
+          }
 
           // Measure AFTER paint so the rect reflects the rendered code.
           requestAnimationFrame(() => {
