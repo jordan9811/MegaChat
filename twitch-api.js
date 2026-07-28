@@ -37,6 +37,18 @@ async function appToken() {
   return cached.token;
 }
 
+/** Generic Helix GET with the cached app token — VOD discovery and user
+ *  lookup ride this. Throws on HTTP errors; callers classify. */
+export async function helix(pathAndQuery) {
+  const token = await appToken();
+  const r = await fetch(`${API_BASE()}/helix${pathAndQuery}`, {
+    headers: { 'Client-Id': process.env.TWITCH_CLIENT_ID, Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!r.ok) throw new Error(`helix ${pathAndQuery.split('?')[0]} ${r.status}`);
+  return r.json();
+}
+
 /**
  * @returns {Promise<{live: boolean, viewerCount: number|null, startedAt: string|null}|null>}
  *   null when unconfigured or the API could not be asked.

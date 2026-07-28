@@ -52,16 +52,14 @@ export class CodeChecker {
  * credentials and the actual VOD/clip endpoint shapes, plus a decision on VOD
  * segments (delayed, reliable) vs live HLS (immediate, lossy). Do NOT guess.
  */
-export class TwitchFrameSource extends FrameSource {}
-/** TODO(run-b): same, for Kick. No public API contract confirmed. */
-export class KickFrameSource extends FrameSource {}
-/**
- * TODO(run-b): real OCR. MUST return pixelHeight — see the CodeChecker
- * contract above. Open question in OPEN-ISSUES: OCR the whole frame (robust,
- * slow) or crop to the badge's expected region (fast, breaks if the streamer
- * repositions the source, which they're allowed to do).
- */
-export class OcrCodeChecker extends CodeChecker {}
+// The REAL implementations live in their own modules now:
+//   frame-sources.js — TwitchFrameSource / KickFrameSource (VOD-first, the
+//     extractor isolated behind resolveMediaUrl, typed unavailability)
+//   bounty-ocr.js — the deterministic matrix decoder
+//   ocr-frame-checker.js — the adapter binding it to THIS findCode contract
+// The open question above resolved itself: neither whole-frame OCR nor a
+// position crop — the badge carries a registration ring, so the reader FINDS
+// it anywhere in the frame at any scale. Repositioning the source is free.
 
 // ── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -167,7 +165,24 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
 
   for (const win of windows) {
     const instants = sampleInstantsForWindow(win, perClip);
-    const frames = await fs_.getFrames(session.platform, session.handle || '', instants);
+    let frames;
+    try {
+      frames = await fs_.getFrames(session.platform, session.handle || '', instants);
+    } catch (e) {
+      if (e?.code === 'frame_source_unavailable') {
+        // "We could not look" is a DISTINCT verdict from "we looked and it
+        // was not there". A deleted VOD, a sub-only archive, or a missing
+        // extractor must never read as FAIL — that would cost the streamer
+        // money over our access problem. Surfaced as its own result and
+        // routed to the review queue like AMBIGUOUS.
+        return {
+          airSessionId, result: 'SOURCE_UNAVAILABLE', sourceState: e.state,
+          sourceDetail: e.detail, confidence: 0, verifiedClips: 0,
+          verifiedClipSeconds: 0, checks: [], clipVerdicts: [],
+        };
+      }
+      throw e;
+    }
     let clipHits = 0, clipChecks = 0, clipConf = 0, tooSmall = 0;
 
     for (const frame of frames) {

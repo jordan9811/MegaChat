@@ -777,18 +777,42 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         escrow.transition({ handleKey: key, to: 'VERIFYING', actor: 'verifier', reason: 'verification started', claimId: claim.id, airSessionId: s.id });
       }
 
-      const v = await verifier.verifyAirSession(s.id);
+      // mode:'real' selects the REAL pipeline: platform frame source
+      // (VOD-first; live for a during-broadcast spot check) + the
+      // deterministic matrix decoder. Default stays fixture-driven so every
+      // gate runs with zero network and zero spend.
+      let sourceOpts = {};
+      if (req.body?.mode === 'real') {
+        const { frameSourceFor } = await import('./frame-sources.js');
+        const { OcrFrameChecker } = await import('./ocr-frame-checker.js');
+        sourceOpts = {
+          frameSource: frameSourceFor(s.platform, {
+            log, mode: req.body.sourceMode || 'vod',
+            vodUrl: req.body.vodUrl || null,
+            frames: req.body.frames || [],
+          }),
+          codeChecker: new OcrFrameChecker({ log }),
+        };
+        if (req.body.vodStartMs && sourceOpts.frameSource) {
+          sourceOpts.frameSource.vodStartMs = Number(req.body.vodStartMs);
+        }
+      }
+      const v = await verifier.verifyAirSession(s.id, sourceOpts);
 
       // AMBIGUOUS evidence goes to a human instead of silently paying zero.
       // On mainnet, a streamer who did the work and got neither money nor a
       // person looking at their case is a support incident and a trust
       // incident at once.
       let review = null;
-      if (v.result === 'AMBIGUOUS' && !store.hasOpenReview(s.id)) {
+      if ((v.result === 'AMBIGUOUS' || v.result === 'SOURCE_UNAVAILABLE') && !store.hasOpenReview(s.id)) {
         review = store.createReview({
           airSessionId: s.id, claimId: claim.id, handleKey: key,
-          verificationId: v.attempt.id, confidence: v.confidence,
-          reason: `ambiguous: ${v.verifiedClips} clip(s) matched at confidence ${v.confidence}`,
+          verificationId: v.attempt?.id || null, confidence: v.confidence,
+          reason: v.result === 'SOURCE_UNAVAILABLE'
+            // "We could not look" — a human decides whether to retry later or
+            // verify manually. Never a FAIL, never silently zero.
+            ? `source unavailable: ${v.sourceState}${v.sourceDetail ? ` — ${v.sourceDetail}` : ''}`
+            : `ambiguous: ${v.verifiedClips} clip(s) matched at confidence ${v.confidence}`,
         });
         store.appendLedger({
           handleKey: key, claimId: claim.id, airSessionId: s.id,
