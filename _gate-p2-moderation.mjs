@@ -46,7 +46,12 @@ const mock = createServer((req, res) => {
     let b = '';
     req.on('data', (c) => { b += c; });
     req.on('end', () => {
-      try { seen.lastInputTypes = JSON.parse(b).input.map((i) => i.type); } catch { /* ignore */ }
+      // UNION across requests, not last-write-wins: since the
+      // one-image-per-request fix, the pipeline SPLITS into [text+frame1],
+      // [frame2], ... — the final request is image-only BY DESIGN, and
+      // asserting on the last one alone failed the gate against correct
+      // behavior.
+      try { for (const i of JSON.parse(b).input) if (!seen.lastInputTypes.includes(i.type)) seen.lastInputTypes.push(i.type); } catch { /* ignore */ }
       res.setHeader('Content-Type', 'application/json');
       const flagged = mockMode === 'flag';
       res.end(JSON.stringify({
@@ -145,7 +150,11 @@ try {
   const events = [];
   const ws = new WebSocket('ws://localhost:3222');
   await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej); });
-  ws.send(JSON.stringify({ type: 'subscribe_room', room: roomB.id }));
+  // role:'overlay' — clips only PLAY while an overlay is connected (a
+  // deliberate product change AFTER this gate was written: paid clips must
+  // not burn into a room where nothing renders them). Without it the
+  // play-path case starves forever.
+  ws.send(JSON.stringify({ type: 'subscribe_room', room: roomB.id, role: 'overlay' }));
   ws.on('message', (raw) => { try { const m = JSON.parse(raw.toString()); if (/^letter_/.test(m.type)) events.push({ ...m, at: Date.now() }); } catch { } });
   const t0 = Date.now();
   const b = await sendMegaChat('http://localhost:3222', roomB);
