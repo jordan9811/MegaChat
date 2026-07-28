@@ -411,3 +411,39 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
 - Post-release clawback: designed (docs/decisions/post-release-clawback.md),
   not built. Restaking makes staged release (its recommendation) MORE
   attractive, since contested wins concentrate money into single pools faster.
+
+## Run B — real verification (2026-07-28, `feat/run-b-verification`)
+
+### Resolved this run
+- **The p2-moderation "pre-existing trunk failure" was a July-24 ZOMBIE
+  server on :3222** — every gate run's real server died on EADDRINUSE with
+  stdio:'ignore' eating the error, and the gate unknowingly tested the stale
+  process. Plus two assertions stale against deliberate product changes.
+  10/0 after. Lesson filed: port collisions + stdio:'ignore' = silently
+  testing the wrong server.
+- **Kick identity + channel reads real** (OAuth 2.1 PKCE, slug-keyed,
+  two-host split pinned by gate); redirect to register:
+  `https://megachat.fun/auth/kick/callback`.
+- **Badge is machine-readable** (dot-matrix + registration ring, shared
+  writer/reader table); **corpus** (84 frames, 7 conditions, script-generated);
+  **deterministic decoder** with measured pixelHeight; **real FrameSources**
+  (VOD-first, extractor seam, typed unavailability); **full distance over
+  HTTP proven** — see docs/run-b-verification.md for the detection table.
+
+### New/remaining
+- **THE WEAKEST JOINT: verified airtime with zero audience still pays.**
+  Viewer samples are captured into evidence at every playback precisely so
+  release math can weight by audience — nothing enforces it yet. This should
+  be the next money change before any real settlement.
+- **720p is the documented minimum verifiable quality** (480p marginal at 92%
+  with confidence at the review threshold). Reviewers need this context.
+- **Kick VOD discovery has no official API** — live-first there; direct VOD
+  URLs work when supplied. Unofficial v2 API deliberately not used.
+- **The dress rehearsal awaits one real broadcast**: `node _rehearsal-run-b.mjs
+  --handle <login>` with TWITCH_STREAM_KEY set (or --skip-push while live).
+  Live-HLS grab + VOD discovery against a real channel are the only untested
+  stages, and they are untestable without it.
+- yt-dlp 2026.07.04 installed locally as the extractor; Railway needs it (or
+  streamlink) in the image for production verification — the seam reports
+  EXTRACTOR_UNAVAILABLE → review queue rather than failing, so this degrades
+  honestly.

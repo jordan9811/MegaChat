@@ -115,3 +115,19 @@ marker and correctly reported "unproven"; this deploy reads it back.
 - **`paid` is in the status ladder but unreachable, and the endpoint says so.**
   Settlement is a stub; showing a fake `paid` would be worse than admitting the
   rung exists for later.
+
+## 2026-07-28 — Run B verification (feat/run-b-verification)
+- **Template decoding over general OCR.** We control the writer, so the badge
+  became a purpose-built mark (dot matrix + registration ring) and the reader
+  a matched decoder from the same font table. tesseract was skipped entirely:
+  deterministic, zero-dep, CI-forever, and measurably strong (100%@720p+).
+- **Matched-filter decode selection.** Verification asks "is the issued code
+  present", not "what does this say" — among jittered alignments, one reading
+  the expected code wins. FP safety is measured (0/12 absent frames), not
+  argued.
+- **SOURCE_UNAVAILABLE is a verdict, not an error.** Could-not-look routes to
+  the review queue and pays nothing; FAIL is reserved for looked-and-absent.
+- **Kick live-first** — official API has no VOD listing; the unofficial v2
+  API was deliberately not built on.
+- **±1.5s timestamp tolerance**, derived from the shortest code window's
+  midpoint margin.
