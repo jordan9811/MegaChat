@@ -36,20 +36,28 @@ writeFileSync(path.join(dataDir, 'identities.json'), JSON.stringify({
       provider: 'twitch', platformId: 'tw9', username: 'realstreamer',
       handle: 'realstreamer', createdAt: new Date().toISOString(),
     },
+    'kick:kk7': {
+      provider: 'kick', platformId: 'kk7', username: 'kickstreamer',
+      handle: 'kickstreamer', createdAt: new Date().toISOString(),
+    },
   },
-  handles: { realstreamer: 'twitch:tw9' },
+  handles: { realstreamer: 'twitch:tw9', kickstreamer: 'kick:kk7' },
 }));
 const seal = (o) => {
   const p = Buffer.from(JSON.stringify(o)).toString('base64url');
   return `${p}.${createHmac('sha256', AUTH_SECRET).update(p).digest('base64url')}`;
 };
 const sessionCookie = `mc_identity=${encodeURIComponent(seal({ provider: 'twitch', platformId: 'tw9' }))}`;
+const kickCookie = `mc_identity=${encodeURIComponent(seal({ provider: 'kick', platformId: 'kk7' }))}`;
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
   env: {
     ...process.env, PORT: String(PORT), DATA_DIR: dataDir, AUTH_SECRET,
     BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '1', KEEP_ORPHAN_ROOMS: 'true',
     MODERATION_API_KEY: '',
+    // Mock kick creds: mounts /auth/kick and the kick verifier path. The
+    // start route only BUILDS a redirect — no live call happens in this gate.
+    KICK_CLIENT_ID: 'mock-kick-id', KICK_CLIENT_SECRET: 'mock-kick-secret',
   },
   stdio: 'ignore', cwd: process.cwd(),
 });
@@ -98,6 +106,44 @@ try {
   ok('A. the ledger records HOW identity was verified (never mistakable for a stub)',
     JSON.stringify(ledg).includes('TWITCH_OAUTH_SESSION')
     && !JSON.stringify(ledg).match(/STUBBED_APPROVAL/), 'method in IDENTITY_CHECK row');
+
+  // ── K. Kick identity claim, same rules, plus the two-host proof ──────────
+  await post('/api/bounty/pledge', {
+    targets: [{ platform: 'kick', handle: 'kickstreamer' }],
+    contributor: '0xfan', amount: '8', expiresInMs: 7 * 86_400_000,
+  });
+
+  const cross = await post('/api/bounty/claim',
+    { platform: 'kick', handle: 'kickstreamer', claimant: 'x' },
+    { cookie: sessionCookie }); // a TWITCH session
+  ok('K. a TWITCH session cannot claim a KICK handle (cross-platform is no proof)',
+    cross.body.identity?.approved === false
+    && cross.body.identity?.method === 'REAL_WRONG_PROVIDER:twitch',
+    cross.body.identity?.method);
+
+  const kickRight = await post('/api/bounty/claim',
+    { platform: 'kick', handle: 'kickstreamer', claimant: 'kickstreamer' },
+    { cookie: kickCookie });
+  ok('K. the Kick channel owner claims THEIR slug via their session',
+    kickRight.body.identity?.approved === true
+    && kickRight.body.identity?.method === 'KICK_OAUTH_SESSION',
+    kickRight.body.identity?.method);
+
+  // The start route, driven for real: the 302 must carry the derived redirect
+  // byte-for-byte and point at the AUTH host with PKCE — the two-host split
+  // is the classic Kick integration failure and this pins it.
+  const start = await fetch(`${APP}/auth/kick`, { redirect: 'manual' });
+  const loc = start.headers.get('location') || '';
+  ok('K. /auth/kick 302s to id.kick.com/oauth/authorize (AUTH host, not api.kick.com)',
+    start.status === 302 && loc.startsWith('https://id.kick.com/oauth/authorize?'), loc.slice(0, 60));
+  ok('K. the redirect_uri is the derived callback, byte-for-byte',
+    decodeURIComponent((loc.match(/redirect_uri=([^&]+)/) || [])[1] || '')
+      === `http://localhost:${PORT}/auth/kick/callback`,
+    decodeURIComponent((loc.match(/redirect_uri=([^&]+)/) || [])[1] || ''));
+  ok('K. PKCE S256 is on the wire (OAuth 2.1, mandatory)',
+    /code_challenge=/.test(loc) && /code_challenge_method=S256/.test(loc));
+  ok('K. the requested scopes cover user AND channel (the slug lives on the channel)',
+    /user%3Aread/.test(loc) && /channel%3Aread/.test(loc));
 } finally {
   app.kill();
 }
@@ -143,6 +189,34 @@ ok('B. it is bound to the playback, not just the session',
   !!sample?.playbackId && sample?.clipId === 'VC1', sample?.playbackId);
 ok('B. the evidence chain still validates with the new row type',
   (() => { try { store.verifyEvidenceIntegrity(); return true; } catch { return false; } })());
+
+// Kick viewer capture through the SAME hook, against the kick mock.
+process.env.KICK_CLIENT_ID = 'mock-id';
+process.env.KICK_CLIENT_SECRET = 'mock-secret';
+process.env.KICK_ID_BASE = 'http://localhost:3999';
+process.env.KICK_API_BASE = 'http://localhost:3999';
+mock.removeAllListeners('request');
+mock.on('request', (req, res) => {
+  let b = ''; req.on('data', (c) => { b += c; });
+  req.on('end', () => {
+    res.setHeader('Content-Type', 'application/json');
+    if (/oauth\/token|oauth2\/token/.test(req.url)) return res.end(JSON.stringify({ access_token: 'mock', expires_in: 3600 }));
+    if (/channels/.test(req.url)) return res.end(JSON.stringify({ data: [{ slug: 'kickview', stream: { is_live: true, viewer_count: 777, start_time: '2026-07-27T00:00:00Z' } }] }));
+    res.end(JSON.stringify({ data: [{ viewer_count: 1234 }] }));
+  });
+});
+
+escrowMod.reserve({ platform: 'kick', handle: 'kickview' });
+const kClaim = store.createClaim({ handleKey: 'kick:kickview', claimant: 'kv', ttlMs: 1e9 });
+store.createAirSession({ claimId: kClaim.id, roomId: 'kroom', platform: 'kick' });
+hooks.onClipPlay('kroom', { clipId: 'KC1', durationS: 8 });
+await sleep(1500);
+
+const rows2 = readFileSync(evPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+const kSample = rows2.find((r) => r.type === 'VIEWER_SAMPLE' && r.platform === 'kick');
+ok('B. KICK playback captures a VIEWER_SAMPLE too (same evidence path)',
+  kSample?.live === true && kSample?.viewerCount === 777 && kSample?.clipId === 'KC1',
+  JSON.stringify(kSample || {}));
 
 mock.close();
 console.log(`\nRESULT: ${pass} pass, ${fail} fail`);

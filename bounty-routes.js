@@ -19,6 +19,7 @@ import * as clips from './bounty-clips.js';
 import { moderateMedia, moderationConfigured } from './moderation.js';
 import * as evidence from './bounty-evidence.js';
 import { twitchApiConfigured, getStreamByLogin } from './twitch-api.js';
+import { kickApiConfigured, getChannelBySlug } from './kick-api.js';
 import { readIdentityFromRequest } from './auth.js';
 import settlement from './bounty-settlement.js';
 
@@ -58,25 +59,34 @@ export class StubIdentityVerifier extends IdentityVerifier {
  * exist (OAuth 2.1 + PKCE, auth on id.kick.com, API on api.kick.com — noted
  * for the run that has keys).
  */
-export class TwitchIdentityVerifier extends IdentityVerifier {
+export class PlatformIdentityVerifier extends IdentityVerifier {
+  static SUPPORTED = new Set(['twitch', 'kick']);
   async verify(platform, handle, _claimant, { req } = {}) {
-    if (platform !== 'twitch') {
+    if (!PlatformIdentityVerifier.SUPPORTED.has(platform)) {
       return { approved: false, method: 'REAL_UNSUPPORTED_PLATFORM' };
     }
     const identity = req ? readIdentityFromRequest(req) : null;
     if (!identity) {
       return { approved: false, method: 'REAL_NOT_SIGNED_IN' };
     }
-    if (identity.provider !== 'twitch') {
+    // Cross-platform proof is no proof: a Twitch session says nothing about
+    // who owns a Kick slug of the same name, and vice versa.
+    if (identity.provider !== platform) {
       return { approved: false, method: `REAL_WRONG_PROVIDER:${identity.provider}` };
     }
     const owns = String(identity.username || identity.handle || '')
       .toLowerCase() === String(handle).toLowerCase();
     return owns
-      ? { approved: true, method: 'TWITCH_OAUTH_SESSION', platform, handle, login: identity.username }
+      ? {
+        approved: true,
+        method: platform === 'twitch' ? 'TWITCH_OAUTH_SESSION' : 'KICK_OAUTH_SESSION',
+        platform, handle, login: identity.username,
+      }
       : { approved: false, method: 'REAL_HANDLE_MISMATCH' };
   }
 }
+/** Back-compat name from the Twitch-only iteration. */
+export const TwitchIdentityVerifier = PlatformIdentityVerifier;
 
 /**
  * Playback hooks handed to letters.js. These are the ONLY thing that opens a
@@ -101,16 +111,19 @@ export function makeClipHooks({ log = console } = {}) {
       // cannot be backfilled — once the broadcast ends, the count at this
       // instant is gone. Fire-and-forget: a Helix round-trip must never sit
       // inside the playback path of a live stream.
-      if (s.platform === 'twitch' && twitchApiConfigured()) {
+      const captureViewers = s.platform === 'twitch' ? (twitchApiConfigured() ? getStreamByLogin : null)
+        : s.platform === 'kick' ? (kickApiConfigured() ? getChannelBySlug : null)
+          : null;
+      if (captureViewers) {
         const claim = store.getClaim(s.claimId);
         const reserved = claim ? store.getReservedHandleByKey(claim.handleKey) : null;
         const handle = reserved?.handle;
         if (handle) {
-          void getStreamByLogin(handle, { log }).then((stream) => {
+          void captureViewers(handle, { log }).then((stream) => {
             if (!stream) return; // "could not ask" is not evidence of anything
             evidence.recordViewerSample(s.id, {
               playbackId: r?.playbackId || null, clipId,
-              handle, platform: 'twitch',
+              handle, platform: s.platform,
               live: stream.live, viewerCount: stream.viewerCount,
             });
           });
@@ -135,7 +148,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   // session-bound Twitch proof. Loud at boot either way — which verifier is
   // deciding who owns a handle must never be a surprise.
   const identity = identityVerifier
-    || (process.env.BOUNTY_IDENTITY_REAL === '1' ? new TwitchIdentityVerifier() : new StubIdentityVerifier());
+    || (process.env.BOUNTY_IDENTITY_REAL === '1' ? new PlatformIdentityVerifier() : new StubIdentityVerifier());
   log.log(`[bounty] identity verifier: ${identity.constructor.name}`);
 
   // Validate the escrow ledger chain BEFORE serving anything. Pools are

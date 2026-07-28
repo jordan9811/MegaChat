@@ -32,6 +32,19 @@ const PROVIDERS = {
     scope: 'users.read tweet.read',
     pkce: true, // X mandates PKCE
   },
+  kick: {
+    clientId: () => process.env.KICK_CLIENT_ID || '',
+    clientSecret: () => process.env.KICK_CLIENT_SECRET || '',
+    // OAuth 2.1 + PKCE. THE HOSTS DIFFER AND THAT IS THE CLASSIC FAILURE:
+    // authorization AND token live on id.kick.com; every API read lives on
+    // api.kick.com. Conflating them yields opaque 404s.
+    authBase: () => process.env.KICK_AUTH_BASE || 'https://id.kick.com/oauth',
+    apiBase: () => process.env.KICK_API_BASE || 'https://api.kick.com/public/v1',
+    // user:read for who they are, channel:read for THE SLUG — bounty handles
+    // are channel slugs, and slug can differ from display name.
+    scope: 'user:read channel:read',
+    pkce: true, // OAuth 2.1 — PKCE is mandatory
+  },
 };
 
 const SECRET = () =>
@@ -311,6 +324,47 @@ export function attachAuth(app, { log = console } = {}) {
         if (!u) throw new Error('could not read Twitch user');
         username = u.login;
         platformId = u.id;
+      } else if (p === 'kick') {
+        // OAuth 2.1 token exchange: credentials ride the BODY (Kick does not
+        // take Basic auth here, unlike X below), PKCE verifier mandatory,
+        // and the token endpoint is on the AUTH host (id.kick.com) while
+        // both introspection reads below are on the API host (api.kick.com).
+        const pk = unseal(cookies[`mc_pkce_${p}`]);
+        if (!pk) throw new Error('missing PKCE verifier');
+        const tokenRes = await fetch(`${cfg.authBase()}/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: cfg.clientId(),
+            client_secret: cfg.clientSecret(),
+            code: String(req.query.code),
+            grant_type: 'authorization_code',
+            redirect_uri: redirectUri(req, p),
+            code_verifier: pk.verifier,
+          }),
+        });
+        const token = await tokenRes.json();
+        if (!tokenRes.ok || !token.access_token) throw new Error(token.error_description || token.error || 'token exchange failed');
+        const userRes = await fetch(`${cfg.apiBase()}/users`, {
+          headers: { Authorization: `Bearer ${token.access_token}` },
+        });
+        const users = await userRes.json();
+        const u = users?.data?.[0];
+        if (!u) throw new Error('could not read Kick user');
+        platformId = String(u.user_id);
+        // The handle that matters is the CHANNEL SLUG — that is what a bounty
+        // pool is keyed on and what viewers type. Display name only as a
+        // fallback when the channel read fails.
+        try {
+          const chRes = await fetch(`${cfg.apiBase()}/channels`, {
+            headers: { Authorization: `Bearer ${token.access_token}` },
+          });
+          const ch = (await chRes.json())?.data?.[0];
+          username = ch?.slug || String(u.name || '').toLowerCase();
+        } catch {
+          username = String(u.name || '').toLowerCase();
+        }
+        if (!username) throw new Error('could not resolve Kick channel slug');
       } else {
         const pk = unseal(cookies[`mc_pkce_${p}`]);
         if (!pk) throw new Error('missing PKCE verifier');
