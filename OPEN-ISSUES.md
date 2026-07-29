@@ -469,7 +469,14 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   our wall clock. Both fixed. Re-run with
   `node _rehearsal-run-b.mjs --handle <login>`; TWITCH_STREAM_KEY lives in
   Railway variables, not in local .env by default.
-- **PER-VOD CALIBRATION IS THE REAL FIX, AND IS NOT BUILT.** The VOD seek is
+- **RESOLVED: per-VOD calibration is built and measured.** The offset is
+  recovered from each broadcast's own content (probe, decode, see which code is
+  actually on screen). Stub gate: injected 4s/16s/24s recovered to 0.4s/0.0s/0.1s,
+  6/6 clips each, residual window ±4.9s instead of a flat 20s. Real VOD
+  2832201336 from a deliberately wrong 0ms prior: 13.2s from a 3-point cluster,
+  4/4 clips, ±5.5s residual. The constant survives only as a loudly-logged
+  fallback. Superseded note below kept for the reasoning.
+- **SUPERSEDED: per-VOD calibration is the real fix, and is not built.** The VOD seek is
   corrected by a constant (`vodTimelineSkewMs`, default 16s) measured on ONE
   broadcast. The gate documents the fragility this leaves: a 4s residual still
   verifies but drops to AMBIGUOUS, sending a streamer who did the work to human
@@ -527,3 +534,44 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   reach mainnet as-is.
 - **Settlement is still a stub and Gate H still finds zero transfer calls.**
   Unchanged by design — supervised and separate.
+
+## Calibration run (2026-07-29, later still)
+
+### P1 — open
+- **The stub calibration gate cannot construct offsets at/above ~30s.** Its
+  fixture builds a VOD by chaining six `overlay` filters over a long timeline,
+  and past ~30s of leading pad it stops rendering every badge reliably (2 of 6
+  at 40s, even with `-loop 1` on the image inputs). Worse, the fixture
+  self-check I wrote to catch exactly that was itself wrong — it reported 0/6
+  readable at 4s/16s/24s, where calibration demonstrably reads 6/6 — so I
+  deleted it rather than ship a check that lies. Inside the stub I could not
+  separate fixture from product at those offsets, so the gate asserts only the
+  three it can honestly construct. `_verify-calibration-real-vod.mjs` covers the
+  range that matters against a real archive. Rebuilding the fixture by
+  concatenating per-badge segments instead of chaining overlays would probably
+  fix it, and would let the stub cover 30-45s.
+- **One junk probe per real VOD appears to be normal.** The real broadcast
+  produced 13.2s, 13.2s, 14.7s and 23.1s — the outlier most plausibly a probe
+  that decoded a neighbouring clip's badge, since real clips run 30s with codes
+  rotating every 4s. Handled by clustering rather than by tightening anything,
+  but the *cause* is unconfirmed. If outliers turn out to be more common than
+  one-in-four, the candidate ordering during calibration is the thing to look at.
+- **The skew is treated as CONSTANT per VOD on two quantized samples.** Every
+  point can only place the offset within ±codeValidityMs/2, so the data cannot
+  distinguish a constant offset from a slow drift. If a longer broadcast ever
+  shows an ordered progression across probes rather than scatter, that is drift
+  and the model needs revisiting. The spread check would surface it as
+  DISAGREEMENT first, which is the safe direction.
+- **`_rehearsal-run-b.mjs` exits with a libuv assertion** (`!(handle->flags &
+  UV_HANDLE_CLOSING)`) after its report prints. Pre-existing, cosmetic so far
+  because it fires on the exit path, but it would eat a report if it ever moved
+  earlier.
+
+### Verified this run
+- Rehearsal can now demonstrate a clean stream-context pass: `--warmup-s`
+  (default 60s) plus a wait past it, with the override printed loudly so it is
+  never mistaken for the production 10-minute rule. It also spawns through
+  `_gate-helpers.mjs` now instead of a blind sleep.
+- Root cause is carried up from calibration: a missing credential still reports
+  `API_UNAVAILABLE`, not "could not calibrate", and the extractor's stderr
+  travels in the detail.
