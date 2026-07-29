@@ -32,6 +32,7 @@ import { spawnSync } from 'child_process';
 import { mkdirSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
+import { bountyConfig } from './bounty-claim.config.js';
 import { randomUUID } from 'crypto';
 import { FrameSource } from './bounty-verifier.js';
 import { twitchApiConfigured, helix } from './twitch-api.js';
@@ -155,10 +156,18 @@ export class TwitchFrameSource extends FrameSource {
         // samples while the code is actually on air.
         grabFrame(media.url, 0, file);
       } else {
-        const offsetS = (ts - vodStart) / 1000;
+        // A VOD's media timeline runs BEHIND our wall clock — measured at
+        // ~15-17s on the first real broadcast, of which created_at explains
+        // only ~5s. Seeking to (ts - created_at) therefore lands ~4 code
+        // rotations early: the badge is right there at a legible size and the
+        // code is simply the wrong one. See bountyConfig.vodTimelineSkewMs.
+        const offsetS = (ts - vodStart + bountyConfig.vodTimelineSkewMs) / 1000;
         grabFrame(media.url, offsetS, file);
       }
       out.push({
+        // The verifier needs to know a frame is LIVE, because live frames are
+        // older than the timestamp that asked for them.
+        live: !!media.live,
         ref: file, ts,
         clipId: typeof t === 'object' ? t.clipId : null,
         playbackId: typeof t === 'object' ? t.playbackId : null,

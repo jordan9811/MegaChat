@@ -161,6 +161,40 @@ export const bountyConfig = {
    * the worst failure this system has.
    */
   minVerifiableHeightPx: num(process.env.BOUNTY_MIN_VERIFIABLE_HEIGHT, 720),
+  /**
+   * How far the public live stream lags the encoder. A live frame grab returns
+   * the head of the HLS playlist, not "now" — measured at roughly 12-25s on a
+   * real Twitch broadcast, against a 4s code rotation. Codes visible in a live
+   * frame are therefore several rotations stale, and the verifier widens its
+   * accepted window by this much for live frames only. Generous on purpose:
+   * being wrong here costs a streamer their payout, and the anti-fraud
+   * property (codes bound to one playback instance by nonce) does not depend
+   * on this number.
+   */
+  liveBroadcastDelayMs: num(process.env.BOUNTY_LIVE_DELAY_MS, 45_000),
+  /**
+   * How far a Twitch VOD's media timeline sits behind our wall clock.
+   *
+   * MEASURED, not guessed: on the first real broadcast (VOD 2832201336) the
+   * frame we seeked to for wall-clock T showed the badge from T-16.7s and
+   * T-15.0s on two independent samples. The VOD's `created_at` is only ~5s
+   * after the stream start, so created_at anchoring alone does not explain it
+   * — the ingest/transcode pipeline shifts the rest.
+   *
+   * Against a 4s code rotation that is ~4 rotations of error, which is why
+   * every clip read a badge at a legible 28px and still verified nothing. The
+   * seek is shifted by this, and the accepted-code window widened to absorb
+   * the residual.
+   *
+   * ONE broadcast is one sample. Treat the value as provisional until more
+   * VODs are measured; the widened acceptance window is what keeps a wrong
+   * constant from costing a streamer their payout.
+   */
+  vodTimelineSkewMs: num(process.env.BOUNTY_VOD_SKEW_MS, 16_000),
+  /** Residual timeline error absorbed by the accepted-code window (both live
+   *  and VOD). Bounded by the clip's own code list, so widening it can never
+   *  let one clip's code satisfy a different clip. */
+  mediaSkewToleranceMs: num(process.env.BOUNTY_MEDIA_SKEW_TOLERANCE_MS, 20_000),
 
   // ── Anti-malicious-compliance ───────────────────────────────────────────
   /**

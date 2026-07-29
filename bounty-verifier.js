@@ -131,6 +131,27 @@ function sampleInstantsForWindow(win, perClip) {
  *   verifiedClipSeconds  — their combined duration
  * `verifiedMinutes` is retained only as a derived convenience for display.
  */
+/**
+ * The channel this session is broadcasting to.
+ *
+ * Air sessions do NOT carry a handle — they carry a claimId, and the handle
+ * lives on the reserved handle the claim points at. Reading `session.handle`
+ * yielded undefined for every session ever created, so the real frame sources
+ * built `https://www.twitch.tv/` with nothing after the slash and yt-dlp
+ * rejected it as an unsupported URL. Live grabs and VOD discovery were both
+ * dead on arrival, for everyone.
+ *
+ * Nothing caught it because every gate drives the verifier with fixtures,
+ * which never touch this argument. It took an actual broadcast, which is the
+ * whole reason the rehearsal exists.
+ */
+function sessionHandle(session) {
+  if (session.handle) return session.handle; // honoured if ever set explicitly
+  const claim = session.claimId ? store.getClaim(session.claimId) : null;
+  const reserved = claim?.handleKey ? store.getReservedHandleByKey(claim.handleKey) : null;
+  return reserved?.handle || '';
+}
+
 export async function verifyAirSession(airSessionId, { frameSource, codeChecker } = {}) {
   const session = store.getAirSession(airSessionId);
   if (!session) throw new Error(`No air session ${airSessionId}`);
@@ -176,7 +197,7 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
     const instants = sampleInstantsForWindow(win, perClip);
     let frames;
     try {
-      frames = await fs_.getFrames(session.platform, session.handle || '', instants);
+      frames = await fs_.getFrames(session.platform, sessionHandle(session), instants);
     } catch (e) {
       if (e?.code === 'frame_source_unavailable') {
         // "We could not look" is a DISTINCT verdict from "we looked and it
@@ -197,8 +218,31 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
 
     for (const frame of frames) {
       // Only codes bound to THIS clip and valid at this instant are accepted.
+      //
+      // LIVE FRAMES ARE OLDER THAN THE CLOCK THAT REQUESTED THEM. A live grab
+      // returns whatever is at the head of the public HLS playlist, which runs
+      // well behind the encoder — measured at roughly 12-25s on a real Twitch
+      // broadcast. Codes rotate every 4s by default, so the code actually
+      // visible in that frame expired several rotations before `frame.ts` and
+      // this filter removed the only code that could ever have matched. The
+      // live spot-check could not verify anything, for anyone, and on Kick —
+      // which has no VOD and therefore no second attempt — that meant live
+      // verification could never pay out at all.
+      //
+      // So live frames accept any code from this playback still within the
+      // broadcast-delay allowance. The property that stops fraud is unchanged:
+      // codes are bound to THIS playback instance by nonce, so displaying one
+      // still requires having run this server's overlay for this clip. What is
+      // deliberately given up is millisecond-exact "on screen at this instant",
+      // which the public HLS cannot witness anyway.
+      // VOD frames get the same treatment for the same reason: the archive's
+      // media timeline runs behind our wall clock, so the seek is corrected by
+      // vodTimelineSkewMs and this window absorbs whatever error remains.
+      const delay = frame.live
+        ? bountyConfig.liveBroadcastDelayMs
+        : bountyConfig.mediaSkewToleranceMs;
       const expected = win.codes
-        .filter((c) => c.issuedAt <= frame.ts && c.expiresAt > frame.ts)
+        .filter((c) => c.issuedAt <= frame.ts + delay && c.expiresAt > frame.ts - delay)
         .map((c) => c.code);
       if (expected.length === 0) continue;
 
