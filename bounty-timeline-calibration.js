@@ -197,7 +197,29 @@ export async function calibrateTimeline({
   }
 
   const estimates = points.map((p) => p.estimateMs);
-  const spreadMs = Math.max(...estimates) - Math.min(...estimates);
+
+  // ROBUST TO A MINORITY OF BAD PROBES, because real VODs produce them.
+  //
+  // Measured on the real broadcast (VOD 2832201336) from a deliberately wrong
+  // 0ms prior, the four points came back 13.2s, 13.2s, 14.7s and 23.1s. Three
+  // agree to within 1.5s and match the value measured by hand; one is junk —
+  // most likely a probe that decoded a neighbouring clip's badge, which is easy
+  // on a real broadcast where clips run 30s and codes rotate every 4s. A plain
+  // max-minus-min spread let that single outlier condemn the whole VOD to
+  // review and fall back to the widest window, which is the same "one sample
+  // decides" mistake this project keeps paying for.
+  //
+  // So: cluster around the median, keep the points that agree within one
+  // point's own uncertainty, and require a MAJORITY-SIZED cluster. Disagreement
+  // now means the agreeing points are too few — not that one probe misfired.
+  const centre = median(estimates);
+  const inlierTolMs = Math.round(validity / 2) + config.calibrationResidualMarginMs;
+  const inliers = points.filter((p) => Math.abs(p.estimateMs - centre) <= inlierTolMs);
+  const outliers = points.filter((p) => !inliers.includes(p));
+  const inlierEstimates = inliers.map((p) => p.estimateMs);
+  const spreadMs = inlierEstimates.length
+    ? Math.max(...inlierEstimates) - Math.min(...inlierEstimates)
+    : Math.max(...estimates) - Math.min(...estimates);
 
   // A TRUNCATED SEARCH IS NOT AGREEMENT.
   //
@@ -212,24 +234,24 @@ export async function calibrateTimeline({
       + `${unmeasured} probe(s) unmeasured — refusing to report agreement from the rest`);
     return {
       state: CALIBRATION_STATES.DISAGREEMENT,
-      skewMs: median(estimates), residualMs: config.mediaSkewToleranceMs,
-      spreadMs, points, grabs, fellBack: false, probesAttempted,
+      skewMs: centre, residualMs: config.mediaSkewToleranceMs,
+      spreadMs, points, outliers: outliers.length, grabs, fellBack: false, probesAttempted,
       detail: `calibration ran out of probe budget with ${unmeasured} of ${probesAttempted} `
         + 'point(s) unmeasured, so the points that did agree cannot be trusted to '
         + 'describe the whole VOD — the timeline may not be consistent',
     };
   }
 
-  if (spreadMs > config.calibrationMaxSpreadMs) {
-    // Not forced into an average: a timeline this inconsistent is a finding.
-    log.warn?.(`[calibration] points disagree by ${spreadMs}ms `
-      + `(limit ${config.calibrationMaxSpreadMs}ms): ${estimates.join(', ')}`);
+  if (inliers.length < config.calibrationMinPoints) {
+    log.warn?.(`[calibration] only ${inliers.length} of ${points.length} points cluster `
+      + `within ±${inlierTolMs}ms: ${estimates.join(', ')}`);
     return {
       state: CALIBRATION_STATES.DISAGREEMENT,
-      skewMs: median(estimates), residualMs: config.mediaSkewToleranceMs,
-      spreadMs, points, grabs, fellBack: false, probesAttempted,
-      detail: `calibration points disagree by ${(spreadMs / 1000).toFixed(1)}s across `
-        + `${points.length} points (${estimates.map((e) => (e / 1000).toFixed(1)).join('s, ')}s) — `
+      skewMs: centre, residualMs: config.mediaSkewToleranceMs,
+      spreadMs, points, outliers: outliers.length, grabs, fellBack: false, probesAttempted,
+      detail: `calibration points disagree: only ${inliers.length} of ${points.length} agree `
+        + `within ±${(inlierTolMs / 1000).toFixed(1)}s `
+        + `(${estimates.map((e) => (e / 1000).toFixed(1)).join('s, ')}s) — `
         + 'the VOD timeline is not consistent enough to seek by measurement',
     };
   }
@@ -241,10 +263,19 @@ export async function calibrateTimeline({
   // tolerance, which was wide enough to hide the very error it absorbed.
   const residualMs = Math.round(validity / 2) + spreadMs + config.calibrationResidualMarginMs;
 
+  if (outliers.length) {
+    log.warn?.(`[calibration] discarded ${outliers.length} outlying point(s) `
+      + `(${outliers.map((o) => (o.estimateMs / 1000).toFixed(1)).join('s, ')}s) around a `
+      + `${(median(inlierEstimates) / 1000).toFixed(1)}s cluster`);
+  }
   return {
     state: CALIBRATION_STATES.MEASURED,
-    skewMs: median(estimates),
-    residualMs, spreadMs, points, grabs, fellBack: false, probesAttempted, detail: null,
+    skewMs: median(inlierEstimates),
+    residualMs, spreadMs, points, outliers: outliers.length,
+    grabs, fellBack: false, probesAttempted,
+    detail: outliers.length
+      ? `${outliers.length} outlying probe(s) discarded around a ${inliers.length}-point cluster`
+      : null,
   };
 }
 
@@ -254,7 +285,9 @@ export function describeCalibration(cal) {
   switch (cal.state) {
     case CALIBRATION_STATES.MEASURED:
       return `timeline measured at ${(cal.skewMs / 1000).toFixed(1)}s behind wall clock `
-        + `from ${cal.points.length} point(s), spread ${(cal.spreadMs / 1000).toFixed(1)}s, `
+        + `from ${cal.points.length - (cal.outliers || 0)} agreeing point(s)`
+        + `${cal.outliers ? ` (${cal.outliers} outlier(s) discarded)` : ''}, `
+        + `spread ${(cal.spreadMs / 1000).toFixed(1)}s, `
         + `residual window ±${(cal.residualMs / 1000).toFixed(1)}s`;
     case CALIBRATION_STATES.DISAGREEMENT:
       return cal.detail;

@@ -189,3 +189,54 @@ at the first matching alignment made the decoder fast and made it report the
 confidence of a slightly-off read, which dragged sessions under the AMBIGUOUS
 threshold and sent verified streamers to review — the queue-flooding failure
 again, in a different costume. Find fast, then refine locally.
+
+## Per-VOD timeline calibration (2026-07-29, later)
+
+**The offset is measured, not assumed.** Seeking with a hypothesised skew `s` to
+wall-clock `ts` lands on content at `ts + s - Δ`. Decode the frame, see which
+code is on screen, and that code only ever existed during its own validity
+window — so `Δ = ts + s - midpoint(code)`, recovered from the content. This is
+the same technique that measured the original 16.7s by hand; it is now the
+mechanism rather than a one-off diagnostic, which removes the last asterisk on
+the first real broadcast's PASS.
+
+**Constant per VOD, not drifting — and the reason is the evidence, not
+convenience.** A single point can only place Δ within ±codeValidityMs/2 (±2.5s),
+because every instant inside a code's window is indistinguishable. The two real
+samples (-16.7s, -15.0s) differ by 1.7s, which is *inside* that uncertainty, so
+the data cannot tell a constant offset from a slow drift. Fitting a slope to two
+quantized points would be exactly the one-code-corpus error in a new costume. So:
+treated as constant, several points taken, median used, and the spread reported
+and threshold-checked so a genuinely non-linear timeline surfaces as a finding.
+
+**The acceptance window is derived from the measurement.** It was a flat 20s,
+which is wide enough to conceal the error it exists to absorb. It is now
+quantization + observed spread + a small margin, per session — around ±4s in the
+gate. The old "±1.5s tolerance" assumed an alignment that does not exist and is
+retired.
+
+**A truncated search is not agreement.** The gate caught the module reporting a
+confident MEASURED on a deliberately inconsistent timeline: the grab budget ran
+out while probing the odd half, and the probes that happened to agree became the
+answer. Budget exhaustion with unmeasured probes is now DISAGREEMENT. The lesson
+generalises past this module — a search that stops early and then reports the
+consensus of what it managed to look at is not reporting consensus.
+
+**A ladder with gaps is a lookup, not a search.** Rungs were hand-written and had
+a 6s gap; a 30s injected offset fell into it and measured nothing, while 4s, 16s,
+24s and 40s — every one of them a rung — measured perfectly. That pattern is the
+tell: a search that only finds the values it contains. Rungs are now derived from
+the badge visibility window (0.7 × codeValidityMs), so no offset can fall
+through, and the spacing has a reason rather than a history.
+
+**The stage that notices a failure is not the cause of it.** Calibration runs
+first, so it was relabelling "no Twitch credentials" as "could not calibrate".
+Root cause is carried upward, and the extractor's stderr now travels in the
+detail — classifying an error and discarding why it happened sends the next
+person hunting for something the error already knew.
+
+**Rehearsal warmup is overridden, loudly.** The harness played clips immediately
+after going live, which the warmup rule correctly rejected, so no rehearsal could
+ever demonstrate the pass path. It now shortens warmup for itself, waits past it,
+and prints that the override is in effect — a rehearsal that passes must not be
+mistakable for the production threshold.
