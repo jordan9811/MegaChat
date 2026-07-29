@@ -324,6 +324,13 @@ export function createAirSession({ claimId, roomId, platform }) {
     violations: [],       // e.g. { type:'BADGE_TOO_SMALL', at, detail }
     startedAt: Date.now(),
     endedAt: null,
+    // Platform truth about the BROADCAST — distinct from startedAt/endedAt,
+    // which describe this air session and are controlled by whoever opens it.
+    // Written only from live observations (see the stream-context gate); null
+    // means "never observed", which routes to review rather than passing.
+    broadcastStartedAt: null,
+    broadcastEndedAt: null,
+    lastLiveObservedAt: null,
     verifiedMinutes: 0,
   };
   store.airSessions[rec.id] = rec;

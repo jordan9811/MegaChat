@@ -159,7 +159,14 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
     };
   }
 
-  const perClip = Math.max(1, Math.floor(bountyConfig.sampleSize / windows.length));
+  // KICK HAS NO SECOND CHANCE. Twitch verification can re-run against the
+  // archive; Kick's official API exposes no VOD listing, so a live spot-check
+  // is the only shot. Equal density there is accidental parity, not a
+  // decision — Kick samples 2x so a single unlucky frame cannot decide a
+  // payout that can never be re-checked.
+  const densityMultiplier = session.platform === 'kick' ? 2 : 1;
+  const perClip = Math.max(1,
+    Math.floor((bountyConfig.sampleSize * densityMultiplier) / windows.length));
   const checks = [];
   const clipVerdicts = [];
 
@@ -184,6 +191,7 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
       throw e;
     }
     let clipHits = 0, clipChecks = 0, clipConf = 0, tooSmall = 0;
+    const clipSamples = [];
 
     for (const frame of frames) {
       // Only codes bound to THIS clip and valid at this instant are accepted.
@@ -202,19 +210,36 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
       clipChecks += 1;
       clipConf += Number(res.confidence || 0);
       if (counted) clipHits += 1;
-      checks.push({
+      const sample = {
         ts: frame.ts, ref: frame.ref, clipId: win.clipId, playbackId: win.playbackId,
         found: !!res.found, confidence: res.confidence, pixelHeight: px,
         legible, counted,
-      });
+      };
+      checks.push(sample);
+      clipSamples.push(sample);
     }
 
     const conf = clipChecks ? clipConf / clipChecks : 0;
     // A clip counts as verified when at least one legible sample found its code.
     const verified = clipHits > 0;
+    // BELOW-FLOOR QUALITY, SURFACED NOT SWALLOWED. A 480p streamer is not
+    // rejected — they are silently docked for samples that failed to read,
+    // and underpaying someone who did the work is the worst failure this
+    // system has. Count reads that LANDED but sat close to the floor, so the
+    // shortfall is attributable to stream quality instead of looking like
+    // ordinary partial verification.
+    const marginal = clipSamples.filter((c) =>
+      c.pixelHeight > 0
+      && c.pixelHeight < bountyConfig.minCodePixelHeight * bountyConfig.qualityWarnRatio).length;
+    const medianPx = (() => {
+      const hs = clipSamples.map((c) => c.pixelHeight).filter((h) => h > 0).sort((a, b) => a - b);
+      return hs.length ? hs[Math.floor(hs.length / 2)] : 0;
+    })();
     clipVerdicts.push({
       clipId: win.clipId, playbackId: win.playbackId, verified, samples: clipChecks, hits: clipHits,
       confidence: +conf.toFixed(3), tooSmall, durationS: win.durationS,
+      marginalQuality: marginal, medianPixelHeight: medianPx,
+      belowQualityFloor: medianPx > 0 && medianPx < bountyConfig.minCodePixelHeight * bountyConfig.qualityWarnRatio,
     });
     if (tooSmall > 0) {
       store.pushAirSessionViolation(airSessionId, {
@@ -263,6 +288,9 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
     verifiedClips, verifiedClipSeconds,
     verifiedMinutes: +(verifiedClipSeconds / 60).toFixed(3),
     hitRate, attempt, checks, clipVerdicts,
+    // Aggregates the release path and the review queue both read.
+    belowQualityFloorClips: clipVerdicts.filter((c) => c.belowQualityFloor).length,
+    samplingDensity: perClip,
     skippedBelowFloor: skippedShort.length,
   };
 }

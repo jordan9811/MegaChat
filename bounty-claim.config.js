@@ -122,6 +122,37 @@ export const bountyConfig = {
   /** At/above this it is a VIOLATION; between the two it is BORDERLINE. */
   moderationViolationFloor: Number(process.env.BOUNTY_MOD_VIOLATION_FLOOR || 0.7),
 
+  // ── Stream-context enforcement (pass/fail, NOT payout scaling) ──────────
+  /**
+   * The requirement is that the streamer genuinely went live and played the
+   * clips as part of a real broadcast — not that they went live at 4am,
+   * dumped everything to nobody, and ended the stream.
+   *
+   * This is a GATE, not a dial. Payout stays exactly as it is: verified
+   * playbacks release against the pledge, UNWEIGHTED. The bounty amount is
+   * already a derivative of the streamer's audience (fans pledge more to
+   * bigger streamers), so weighting payout by viewers charges for the same
+   * thing twice and penalises exactly the mid-size streamers most likely to
+   * onboard. Deliberately absent: any viewer-count threshold under any name,
+   * and any playback-spacing rule — streamers run their segment how they like.
+   */
+  /** No playback counts inside the first N ms of the broadcast. Primary
+   *  check: a farmer must sit live for ten minutes before collecting. */
+  streamWarmupMs: num(process.env.BOUNTY_STREAM_WARMUP_MS, 10 * 60_000),
+  /** The stream must continue at least this long past the last counted
+   *  playback. Lower importance; closes the dump-and-quit exit. */
+  streamTailMs: num(process.env.BOUNTY_STREAM_TAIL_MS, 60_000),
+
+  // ── Stream quality floor (told, not shorted) ────────────────────────────
+  /**
+   * Below the verifier's pixel floor a legitimate streamer is not rejected —
+   * they are quietly docked for samples that failed to read, which is the
+   * worst failure mode this system has. Frames measured under this are
+   * flagged explicitly so a shortfall never masquerades as normal partial
+   * verification. Derived from the same floor the verifier enforces.
+   */
+  qualityWarnRatio: Number(process.env.BOUNTY_QUALITY_WARN_RATIO || 1.35),
+
   // ── Anti-malicious-compliance ───────────────────────────────────────────
   /**
    * Minimum badge height as a fraction of canvas height. Below this the

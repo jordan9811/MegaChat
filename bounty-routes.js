@@ -93,6 +93,58 @@ export const TwitchIdentityVerifier = PlatformIdentityVerifier;
  * watermark window: a code cannot exist unless the server itself started a
  * clip. Exported separately so they can be wired even in tests.
  */
+/**
+ * Capture what the PLATFORM says about this channel at the instant a clip
+ * plays: concurrent viewers, and when the broadcast began.
+ *
+ * Shared deliberately. This used to live inside the clip hook only, so the
+ * admin/rehearsal playback route — the one the dress-rehearsal harness drives
+ * during an actual broadcast — recorded nothing at all. The stream-context
+ * gate would then have judged the one broadcast we most care about on missing
+ * data.
+ *
+ * Fire-and-forget by contract: a platform round-trip must never sit inside the
+ * playback path of a live stream.
+ */
+function captureBroadcastObservation(s, { playbackId, clipId, log = console } = {}) {
+  const look = s.platform === 'twitch' ? (twitchApiConfigured() ? getStreamByLogin : null)
+    : s.platform === 'kick' ? (kickApiConfigured() ? getChannelBySlug : null)
+      : null;
+  if (!look) return; // no creds — "could not ask" is not evidence of anything
+  const claim = store.getClaim(s.claimId);
+  const handle = claim ? store.getReservedHandleByKey(claim.handleKey)?.handle : null;
+  if (!handle) return;
+  void look(handle, { log }).then((stream) => {
+    if (!stream) return;
+    evidence.recordViewerSample(s.id, {
+      playbackId: playbackId || null, clipId: clipId || null,
+      handle, platform: s.platform,
+      live: stream.live, viewerCount: stream.viewerCount,
+    });
+    // THE BROADCAST START, TAKEN WHILE THE CHANNEL IS PROVABLY LIVE. This is
+    // the only moment it can be had: verification is VOD-first and runs after
+    // the stream is over, when the platform reports the channel offline and
+    // the start time is simply gone. Asking at verify time returned null for
+    // every honest session and routed all of them to NO_BROADCAST_START
+    // review — broken in exactly the direction that punishes real streamers.
+    //
+    // Platform truth, not ours: the channel's start time, not when the air
+    // session opened, which whoever is claiming controls.
+    const cur = store.getAirSession(s.id) || s;
+    const patch = {};
+    if (stream.live && stream.startedAt) {
+      const t = Date.parse(stream.startedAt);
+      // Earliest observation wins — re-reading the same broadcast mid-session
+      // must not walk the start time forward.
+      if (Number.isFinite(t) && (!cur.broadcastStartedAt || t < cur.broadcastStartedAt)) {
+        patch.broadcastStartedAt = t;
+      }
+    }
+    if (stream.live) patch.lastLiveObservedAt = Date.now();
+    if (Object.keys(patch).length) store.updateAirSession(s.id, patch);
+  }).catch(() => { /* never let a platform hiccup touch the playback path */ });
+}
+
 export function makeClipHooks({ log = console } = {}) {
   const findOpenSession = (roomId) =>
     store.listAirSessions().find((s) => s.status === 'OPEN' && s.roomId === roomId) || null;
@@ -106,29 +158,9 @@ export function makeClipHooks({ log = console } = {}) {
       if (r && !r.code) {
         log.warn(`[bounty] clip ${clipId} is ${durationS}s — below the ${bountyConfig.minClipSeconds}s sampling floor, it will not be payable`);
       }
-      // Capture the channel's CONCURRENT VIEWER COUNT alongside the watermark
-      // evidence. Payout is meant to scale with audience, and this number
-      // cannot be backfilled — once the broadcast ends, the count at this
-      // instant is gone. Fire-and-forget: a Helix round-trip must never sit
-      // inside the playback path of a live stream.
-      const captureViewers = s.platform === 'twitch' ? (twitchApiConfigured() ? getStreamByLogin : null)
-        : s.platform === 'kick' ? (kickApiConfigured() ? getChannelBySlug : null)
-          : null;
-      if (captureViewers) {
-        const claim = store.getClaim(s.claimId);
-        const reserved = claim ? store.getReservedHandleByKey(claim.handleKey) : null;
-        const handle = reserved?.handle;
-        if (handle) {
-          void captureViewers(handle, { log }).then((stream) => {
-            if (!stream) return; // "could not ask" is not evidence of anything
-            evidence.recordViewerSample(s.id, {
-              playbackId: r?.playbackId || null, clipId,
-              handle, platform: s.platform,
-              live: stream.live, viewerCount: stream.viewerCount,
-            });
-          });
-        }
-      }
+      // Viewer count + broadcast start, captured together while the channel
+      // is provably live. See captureBroadcastObservation.
+      captureBroadcastObservation(s, { playbackId: r?.playbackId || null, clipId, log });
     },
     onClipEnd(roomId, { clipId }) {
       if (!bountyConfig.enabled) return;
@@ -571,10 +603,15 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   app.post('/api/bounty/admin/playback', (req, res) => {
     try {
       const { airSessionId, clipId, durationS } = req.body || {};
-      if (!store.getAirSession(airSessionId)) return res.status(404).json({ error: 'No such air session' });
+      const sess = store.getAirSession(airSessionId);
+      if (!sess) return res.status(404).json({ error: 'No such air session' });
       const out = watermark.startClipPlayback(airSessionId, {
         clipId: String(clipId || 'rehearsal'), durationS: Number(durationS) || 10,
       });
+      // Same platform observation the live room path takes. The dress
+      // rehearsal drives THIS route during a real broadcast, so leaving it out
+      // meant the one session that matters most carried no broadcast start.
+      captureBroadcastObservation(sess, { playbackId: out?.playbackId || null, clipId, log });
       res.json({ ok: true, playbackId: out?.playbackId || null, code: out?.code || null, reason: out?.reason || null });
     } catch (e) { fail(res, e); }
   });
@@ -757,9 +794,36 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     } catch (e) { fail(res, e); }
   });
 
-  app.post('/api/bounty/air-session/:id/end', (req, res) => {
+  app.post('/api/bounty/air-session/:id/end', async (req, res) => {
     try {
-      const s = store.updateAirSession(req.params.id, { status: 'CLOSED', endedAt: Date.now() });
+      const prev = store.getAirSession(req.params.id);
+      // OBSERVE WHETHER THE BROADCAST IS STILL RUNNING, once, here. This is the
+      // last moment the answer exists: the tail check ("did the stream continue
+      // past the last counted playback?") cannot be answered at verify time,
+      // hours later, when every channel looks offline.
+      //
+      // Still live  → broadcastEndedAt stays null and the tail check passes.
+      //               A streamer who closes the overlay and keeps streaming is
+      //               the normal case and must never be flagged for it.
+      // Offline now → we know the stream ended somewhere between the last live
+      //               observation and now. We record NOW, the generous end of
+      //               that interval, because the cost of a wrong tail flag
+      //               falls on someone who did the work.
+      const patch = { status: 'CLOSED', endedAt: Date.now() };
+      if (prev) {
+        const look = prev.platform === 'twitch' ? (twitchApiConfigured() ? getStreamByLogin : null)
+          : prev.platform === 'kick' ? (kickApiConfigured() ? getChannelBySlug : null)
+            : null;
+        const claim = look ? store.getClaim(prev.claimId) : null;
+        const handle = claim ? store.getReservedHandleByKey(claim.handleKey)?.handle : null;
+        if (handle) {
+          // Never let a platform hiccup block a streamer from closing out.
+          const stream = await look(handle, { log }).catch(() => null);
+          if (stream && stream.live === false) patch.broadcastEndedAt = Date.now();
+          else if (stream && stream.live) patch.lastLiveObservedAt = Date.now();
+        }
+      }
+      const s = store.updateAirSession(req.params.id, patch);
       res.json({ ok: true, airSession: s });
     } catch (e) { fail(res, e); }
   });
@@ -799,16 +863,52 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       }
       const v = await verifier.verifyAirSession(s.id, sourceOpts);
 
+      // ── STREAM CONTEXT: a gate, not a dial ──────────────────────────────
+      // Did these playbacks happen inside a real broadcast? Warmup + tail,
+      // pass/fail per playback, failures to HUMAN REVIEW. Broadcast start
+      // comes from PLATFORM truth (the viewer samples captured at playback
+      // carry it) — never from when our own air session opened, which a
+      // farmer controls.
+      let context = null;
+      if (v.verifiedClips > 0) {
+        const { evaluateStreamContext, describeContext } = await import('./bounty-stream-context.js');
+        // READ THE OBSERVATION, DO NOT RE-ASK. Both values were captured while
+        // the channel was live (start at clip playback, end at session close).
+        // Asking Helix here instead returns "offline, no start time" for every
+        // session verified from a VOD — i.e. the normal path — which silently
+        // sent honest streamers to review. Re-read the record: it is fresh
+        // enough to matter and old enough to exist.
+        const fresh = store.getAirSession(s.id) || s;
+        context = evaluateStreamContext({
+          broadcastStartedAt: fresh.broadcastStartedAt || null,
+          broadcastEndedAt: fresh.broadcastEndedAt || null,
+          playbacks: (v.clipVerdicts || []).filter((c) => c.verified).map((c) => ({
+            clipId: c.clipId, playbackId: c.playbackId,
+            startedAt: (s.playbackWindows || []).find((w) => w.playbackId === c.playbackId)?.startedAt || 0,
+          })),
+        });
+        context.summary = describeContext(context);
+      }
+
       // AMBIGUOUS evidence goes to a human instead of silently paying zero.
       // On mainnet, a streamer who did the work and got neither money nor a
       // person looking at their case is a support incident and a trust
       // incident at once.
       let review = null;
-      if ((v.result === 'AMBIGUOUS' || v.result === 'SOURCE_UNAVAILABLE') && !store.hasOpenReview(s.id)) {
+      const contextNeedsReview = !!context?.needsReview;
+      const qualityNeedsReview = (v.belowQualityFloorClips || 0) > 0;
+      if ((v.result === 'AMBIGUOUS' || v.result === 'SOURCE_UNAVAILABLE'
+        || contextNeedsReview || qualityNeedsReview) && !store.hasOpenReview(s.id)) {
         review = store.createReview({
           airSessionId: s.id, claimId: claim.id, handleKey: key,
           verificationId: v.attempt?.id || null, confidence: v.confidence,
-          reason: v.result === 'SOURCE_UNAVAILABLE'
+          reason: contextNeedsReview
+            // The SPECIFIC condition, so a reviewer acts in seconds.
+            ? `stream context: ${context.summary}`
+            : qualityNeedsReview
+              ? `stream quality below the verifier floor on ${v.belowQualityFloorClips} clip(s) — `
+                + 'reads landed but marginal; do not let the shortfall look like normal partial verification'
+              : v.result === 'SOURCE_UNAVAILABLE'
             // "We could not look" — a human decides whether to retry later or
             // verify manually. Never a FAIL, never silently zero.
             ? `source unavailable: ${v.sourceState}${v.sourceDetail ? ` — ${v.sourceDetail}` : ''}`
@@ -831,7 +931,14 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         confidence: v.confidence,
         actor: 'verifier', idempotencyKey: `release:${s.id}`, settlement,
       });
-      res.json({ ok: true, verification: v, release: out, review, pool: store.getPool(key) });
+      res.json({
+        ok: true, verification: v, release: out, review,
+        // Payout is UNCHANGED by context — verified playbacks release against
+        // the pledge, unweighted. Context decides whether a human looks, not
+        // how much anyone is paid.
+        streamContext: context,
+        pool: store.getPool(key),
+      });
     } catch (e) { fail(res, e); }
   });
 
