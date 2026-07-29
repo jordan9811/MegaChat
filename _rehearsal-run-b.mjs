@@ -30,15 +30,25 @@
  *   --minutes <n>      broadcast length (default 12, keep it short)
  *   --skip-push        assume the channel is ALREADY live with the overlay
  *                      (real-usage rehearsal): only seeds, plays, verifies.
+ *   --preflight        check every precondition and EXIT without broadcasting.
+ *                      Run this before committing to a live stream.
  *
  * Cost: Twitch API reads only (no spend); zero LiveKit; one short broadcast
  * on your own channel.
  */
-import { spawn } from 'child_process';
-import { mkdtempSync } from 'fs';
+import { spawn, spawnSync } from 'child_process';
+import { mkdtempSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import puppeteer from 'puppeteer-core';
+
+// LOAD .env IN THIS PROCESS. The harness spawns server.js (which loads .env
+// itself), but the harness ALSO calls the Twitch API directly — the live
+// confirm loop and the preflight. Without this it runs credential-less and
+// every Helix call returns null, which the pipeline correctly reports as
+// API_UNAVAILABLE... during a live broadcast, when it is too late to fix.
+// Caught by the preflight on its first run.
+try { process.loadEnvFile('.env'); } catch { /* no .env — env may be injected */ }
 
 const arg = (k, d) => {
   const i = process.argv.indexOf(`--${k}`);
@@ -58,9 +68,53 @@ if (!HANDLE) {
   console.error('usage: node _rehearsal-run-b.mjs --handle <your-twitch-login> [--minutes 12] [--skip-push]');
   process.exit(1);
 }
-if (!KEY && !has('skip-push')) {
+if (!KEY && !has('skip-push') && !has('preflight')) {
   console.error('TWITCH_STREAM_KEY is not set. Either set it, or go live yourself (overlay in OBS) and pass --skip-push.');
   process.exit(1);
+}
+
+// ── preflight ───────────────────────────────────────────────────────────────
+// Everything that can be proven WITHOUT broadcasting, so a live attempt is
+// never the thing that discovers a missing tool. Exits non-zero if the
+// rehearsal would fail for a reason other than "not live yet".
+if (has('preflight')) {
+  const rows = [];
+  const check = (name, okv, detail = '') => { rows.push({ name, ok: !!okv, detail }); };
+  // Some ffmpeg builds print capability listings to stderr and/or exit
+  // non-zero with no input file — judge on the OUTPUT, not the exit code.
+  const ffOut = (args) => {
+    const r = spawnSync('ffmpeg', ['-hide_banner', ...args], { encoding: 'utf8' });
+    return r.error ? '' : `${r.stdout || ''}${r.stderr || ''}`;
+  };
+
+  check('TWITCH_STREAM_KEY present (unattended broadcast)', !!KEY,
+    KEY ? 'set' : 'ABSENT — use --skip-push and go live yourself');
+  check('ffmpeg present with RTMP output', /rtmp/.test(ffOut(['-protocols'])));
+  check('libx264 encoder available', /libx264/.test(ffOut(['-encoders'])));
+  check('Chrome available for the overlay screencast',
+    existsSync('C:/Program Files/Google/Chrome/Application/chrome.exe'));
+  const ytOk = spawnSync('yt-dlp', ['--version'], { encoding: 'utf8' });
+  const ytOkay = !ytOk.error && ytOk.status === 0;
+  check('extractor (yt-dlp) available for VOD/live frame grabs', ytOkay,
+    ytOkay ? String(ytOk.stdout).trim() : 'install yt-dlp or streamlink');
+  check('Twitch API credentials configured',
+    !!(process.env.TWITCH_CLIENT_ID && process.env.TWITCH_CLIENT_SECRET));
+  try {
+    const { getStreamByLogin } = await import('./twitch-api.js');
+    const probe = await getStreamByLogin(HANDLE);
+    check('Twitch Helix reachable + channel resolvable', probe !== null,
+      probe ? (probe.live ? `${HANDLE} is LIVE now (${probe.viewerCount} viewers)` : `${HANDLE} is offline`) : 'API unreachable');
+  } catch (e) { check('Twitch Helix reachable', false, e.message); }
+
+  console.log('\n── REHEARSAL PREFLIGHT ──');
+  for (const r of rows) console.log(`${r.ok ? ' OK ' : 'MISS'}  ${r.name}${r.detail ? ` — ${r.detail}` : ''}`);
+  const blocking = rows.filter((r) => !r.ok && !/STREAM_KEY/.test(r.name));
+  console.log(blocking.length
+    ? `\n${blocking.length} blocking gap(s) — fix before going live.`
+    : KEY
+      ? '\nREADY: run without --preflight to broadcast unattended.'
+      : '\nREADY except the stream key: go live yourself with the overlay and re-run with --skip-push.');
+  process.exit(blocking.length ? 1 : 0);
 }
 
 const post = (p, body) => fetch(`${APP}${p}`, {
