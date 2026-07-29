@@ -50,9 +50,35 @@ export function evaluateStreamContext({
   now = Date.now(),
   warmupMs = bountyConfig.streamWarmupMs,
   tailMs = bountyConfig.streamTailMs,
+  observable = true,
 } = {}) {
   const counted = [];
   const rejected = [];
+
+  // NO PLATFORM API CONFIGURED = NO CHECK, NOT A FAILED CHECK.
+  //
+  // Without credentials the broadcast start can never be observed, so every
+  // single session would land in review — the queue floods, real reviewers
+  // stop reading it, and the check that was supposed to catch farming becomes
+  // noise that hides it. That is worse than not having the check.
+  //
+  // This is deliberately NOT the same as "credentials exist but the start is
+  // missing", which stays a review condition below: that one is a broadcast
+  // we could have observed and didn't, which is exactly what a farmer looks
+  // like. This one is a deployment fact the streamer has no control over.
+  // It is reported as notEvaluated rather than OK so it can never read as a
+  // check that passed.
+  if (!broadcastStartedAt && !observable) {
+    return {
+      counted: playbacks,
+      rejected: [],
+      warnings: [],
+      needsReview: false,
+      notEvaluated: true,
+      warmupMs,
+      tailMs,
+    };
+  }
 
   if (!broadcastStartedAt) {
     // We could not establish when the broadcast began, so we cannot judge
@@ -116,6 +142,7 @@ export function evaluateStreamContext({
 
 /** One-line reviewer summary — the specific condition, not "failed checks". */
 export function describeContext(ctx) {
+  if (ctx.notEvaluated) return 'stream context not evaluated — no platform API configured';
   const bits = [];
   if (ctx.rejected.length) {
     const inWarmup = ctx.rejected.filter((r) => r.failure === CONTEXT_FAILURES.INSIDE_WARMUP).length;

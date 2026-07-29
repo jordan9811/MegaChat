@@ -52,6 +52,19 @@ export type BountyClientConfig = {
   disputeWindowMs: number
   releaseRatePerClip: number
   minClipSeconds: number
+  /** Lowest broadcast height measured as reliably verifiable (720). */
+  minVerifiableHeightPx: number
+  /** How verification behaves per platform — one source of truth, shared
+   *  with the verifier's sampling density. */
+  platformProfiles: Record<string, PlatformProfile>
+}
+
+export type PlatformProfile = {
+  platform: string
+  /** False for Kick: no VOD listing API, so the live pass is the only pass. */
+  vodRetry: boolean
+  samplingMultiplier: number
+  notice: string
 }
 
 async function req<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
@@ -95,6 +108,14 @@ export function getClaim(id: string) {
     verifiedMinutes: number
     underReview: boolean
     reviewOpenedAt: number | null
+    /** Badge legibility as MEASURED on their own broadcast. */
+    quality: {
+      belowFloorClips: number
+      smallestBadgePx: number | null
+      floorPx: number
+      minVerifiableHeightPx: number
+    }
+    platformProfile: PlatformProfile | null
     disputeWindowEndsAt: number | null
     ledger: { id: string; type: string; amount: string; bucket: string; at: number; reason: string | null }[]
   }>(`/api/bounty/claim/${encodeURIComponent(id)}`)

@@ -113,6 +113,21 @@ ok('D. the reviewer summary names the specific condition',
   describeContext(d));
 ok('D. a clean session summarises as OK', describeContext(bOk) === 'stream context OK');
 
+// ── D2. no platform API = no check, not a failed check ────────────────────
+// Routing every session to review when credentials are absent floods the
+// queue, and a flooded queue hides the farming it was built to catch.
+const unobs = evaluateStreamContext({
+  broadcastStartedAt: null, playbacks: [pb(1, 15)], observable: false,
+});
+ok('D2. an UNOBSERVABLE deployment does not manufacture a review',
+  unobs.needsReview === false && unobs.notEvaluated === true);
+ok('D2. ...and does not silently claim the check passed either',
+  describeContext(unobs) === 'stream context not evaluated — no platform API configured',
+  describeContext(unobs));
+ok('D2. ...while a deployment that COULD look and found no start still reviews',
+  evaluateStreamContext({ broadcastStartedAt: null, playbacks: [pb(1, 15)], observable: true })
+    .needsReview === true);
+
 // ── E. the deliberate absences ────────────────────────────────────────────
 const src = readFileSync('bounty-stream-context.js', 'utf8');
 const code = src.split('*/').slice(1).join('*/'); // strip the doc comment

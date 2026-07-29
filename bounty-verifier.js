@@ -12,7 +12,7 @@
  */
 
 import fs from 'fs';
-import { bountyConfig } from './bounty-claim.config.js';
+import { bountyConfig, platformProfile } from './bounty-claim.config.js';
 import * as store from './bounty-store.js';
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
@@ -164,7 +164,9 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
   // is the only shot. Equal density there is accidental parity, not a
   // decision — Kick samples 2x so a single unlucky frame cannot decide a
   // payout that can never be re-checked.
-  const densityMultiplier = session.platform === 'kick' ? 2 : 1;
+  // Read from the shared profile, so the density the verifier applies and the
+  // density a streamer is told about cannot drift apart.
+  const densityMultiplier = platformProfile(session.platform)?.samplingMultiplier || 1;
   const perClip = Math.max(1,
     Math.floor((bountyConfig.sampleSize * densityMultiplier) / windows.length));
   const checks = [];
@@ -271,12 +273,17 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
   else if (hitRate >= 0.999) result = 'PASS';
   else result = 'PARTIAL';
 
+  const measuredPx = clipVerdicts.map((c) => c.medianPixelHeight)
+    .filter((h) => Number.isFinite(h) && h > 0);
   const attempt = store.recordVerification({
     airSessionId, checker: checkerName,
     evidenceRef: checks.map((c) => c.ref).join(',') || null,
     result, confidence: +avgConfidence.toFixed(3),
     verifiedMinutes: +(verifiedClipSeconds / 60).toFixed(3),
     verifiedClips, verifiedClipSeconds,
+    belowQualityFloorClips: clipVerdicts.filter((c) => c.belowQualityFloor).length,
+    smallestBadgePx: measuredPx.length ? Math.min(...measuredPx) : null,
+    samplingDensity: perClip,
   });
   store.updateAirSession(airSessionId, {
     verifiedClips, verifiedClipSeconds,

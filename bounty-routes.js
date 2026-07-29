@@ -10,7 +10,7 @@
  */
 
 import express from 'express';
-import { bountyConfig, bountyClientConfig } from './bounty-claim.config.js';
+import { bountyConfig, bountyClientConfig, platformProfile } from './bounty-claim.config.js';
 import * as store from './bounty-store.js';
 import * as escrow from './bounty-escrow.js';
 import * as watermark from './bounty-watermark.js';
@@ -728,8 +728,27 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     // difference between a support ticket and a trust incident.
     const reviews = sessions.flatMap((s) => store.listReviews({ airSessionId: s.id }));
     const openReview = reviews.find((r) => r.state === 'OPEN') || null;
+    // TELL THEM THE BADGE READ MARGINALLY. Below the verifier's pixel floor a
+    // legitimate streamer is not rejected — they are quietly docked for
+    // samples that failed to read, and a shortfall that looks like ordinary
+    // partial verification is the one failure they cannot argue with because
+    // they never learn it happened. So it is named, with the number.
+    const attempts = sessions.flatMap((s) => store.listVerifications(s.id));
+    const belowFloorClips = attempts.reduce((a, v) => a + (v.belowQualityFloorClips || 0), 0);
+    const measured = attempts.map((v) => v.smallestBadgePx)
+      .filter((h) => Number.isFinite(h) && h > 0);
     res.json({
       claim,
+      quality: {
+        belowFloorClips,
+        // The smallest the badge actually measured across their broadcast —
+        // concrete beats "improve your quality".
+        smallestBadgePx: measured.length ? Math.min(...measured) : null,
+        floorPx: bountyConfig.minCodePixelHeight,
+        minVerifiableHeightPx: bountyConfig.minVerifiableHeightPx,
+      },
+      platformProfile: platformProfile(claim.platform
+        || sessions.find((s) => s.platform)?.platform || null),
       pool: store.getPool(claim.handleKey),
       airSessions: sessions,
       verifiedClips: sessions.reduce((a, s) => a + (s.verifiedClips || 0), 0),
@@ -882,6 +901,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         context = evaluateStreamContext({
           broadcastStartedAt: fresh.broadcastStartedAt || null,
           broadcastEndedAt: fresh.broadcastEndedAt || null,
+          // Whether this deployment could have observed the broadcast at all.
+          // Distinguishes "no credentials" from "credentials, but no start" —
+          // see the flood note in bounty-stream-context.js.
+          observable: s.platform === 'kick' ? kickApiConfigured() : twitchApiConfigured(),
           playbacks: (v.clipVerdicts || []).filter((c) => c.verified).map((c) => ({
             clipId: c.clipId, playbackId: c.playbackId,
             startedAt: (s.playbackWindows || []).find((w) => w.playbackId === c.playbackId)?.startedAt || 0,
@@ -897,22 +920,30 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       let review = null;
       const contextNeedsReview = !!context?.needsReview;
       const qualityNeedsReview = (v.belowQualityFloorClips || 0) > 0;
-      if ((v.result === 'AMBIGUOUS' || v.result === 'SOURCE_UNAVAILABLE'
-        || contextNeedsReview || qualityNeedsReview) && !store.hasOpenReview(s.id)) {
+      // EVERY applicable cause, not the first one an if/else happened to hit.
+      // These conditions co-occur — a marginal 480p broadcast is exactly the
+      // kind that also trips a context check — and a reviewer shown only one
+      // of them fixes one thing and closes the case.
+      const causes = [];
+      if (contextNeedsReview) causes.push(`stream context: ${context.summary}`);
+      if (qualityNeedsReview) {
+        causes.push(`stream quality below the verifier floor on ${v.belowQualityFloorClips} clip(s)`
+          + ` (smallest badge ${v.attempt?.smallestBadgePx ?? '?'}px vs ${bountyConfig.minCodePixelHeight}px floor)`
+          + ' — reads landed but marginal; do not let the shortfall look like normal partial verification');
+      }
+      if (v.result === 'SOURCE_UNAVAILABLE') {
+        // "We could not look" — a human decides whether to retry later or
+        // verify manually. Never a FAIL, never silently zero.
+        causes.push(`source unavailable: ${v.sourceState}${v.sourceDetail ? ` — ${v.sourceDetail}` : ''}`);
+      }
+      if (v.result === 'AMBIGUOUS') {
+        causes.push(`ambiguous: ${v.verifiedClips} clip(s) matched at confidence ${v.confidence}`);
+      }
+      if (causes.length && !store.hasOpenReview(s.id)) {
         review = store.createReview({
           airSessionId: s.id, claimId: claim.id, handleKey: key,
           verificationId: v.attempt?.id || null, confidence: v.confidence,
-          reason: contextNeedsReview
-            // The SPECIFIC condition, so a reviewer acts in seconds.
-            ? `stream context: ${context.summary}`
-            : qualityNeedsReview
-              ? `stream quality below the verifier floor on ${v.belowQualityFloorClips} clip(s) — `
-                + 'reads landed but marginal; do not let the shortfall look like normal partial verification'
-              : v.result === 'SOURCE_UNAVAILABLE'
-            // "We could not look" — a human decides whether to retry later or
-            // verify manually. Never a FAIL, never silently zero.
-            ? `source unavailable: ${v.sourceState}${v.sourceDetail ? ` — ${v.sourceDetail}` : ''}`
-            : `ambiguous: ${v.verifiedClips} clip(s) matched at confidence ${v.confidence}`,
+          reason: causes.join(' | '),
         });
         store.appendLedger({
           handleKey: key, claimId: claim.id, airSessionId: s.id,

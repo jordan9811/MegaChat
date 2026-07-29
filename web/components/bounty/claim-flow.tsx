@@ -65,6 +65,11 @@ export function ClaimFlow({
   const match = status?.pool.releasedPlatformMatch ?? 0
   const disputeEnds = status?.disputeWindowEndsAt ?? null
   const underReview = status?.underReview ?? false
+  const quality = status?.quality ?? null
+  // Prefer what the server resolved for this claim; fall back to the config
+  // map so the platform notice is up BEFORE the first status poll returns.
+  const profile = status?.platformProfile
+    ?? (pool.platform ? config.platformProfiles?.[pool.platform] ?? null : null)
 
   return (
     <div className="rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm">
@@ -162,7 +167,51 @@ export function ClaimFlow({
               Clips shorter than {config.minClipSeconds}s can&apos;t be reliably checked and
               don&apos;t count toward the bounty.
             </p>
+            {/* The quality floor, said UP FRONT. Below it the badge lands on
+                the edge of what the reader can resolve, and the failure mode
+                is a quiet shortfall rather than a rejection — so a streamer
+                has to hear the number before they go live, not after. The
+                number itself comes from config; restating it here is how the
+                two drift apart. */}
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+              <strong className="text-foreground">
+                Stream at {config.minVerifiableHeightPx}p or better.
+              </strong>{' '}
+              Below that the badge gets small enough that reads start to fail — at 480p
+              we measured about 1 clip in 12 going unread. You are never rejected for it,
+              and we&apos;ll say so on the check rather than just paying less.
+            </p>
           </div>
+
+          {/* Kick has no VOD, so it has no retry. A materially different
+              bargain, said before they rely on it. */}
+          {profile && !profile.vodRetry ? (
+            <div className="rounded-xl border border-[var(--neon-cyan)]/40 bg-[var(--neon-cyan)]/5 p-3">
+              <p className="text-sm font-bold text-[var(--neon-cyan)]">
+                On {profile.platform}, the live check is the only check
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{profile.notice}</p>
+            </div>
+          ) : null}
+
+          {/* Measured on THEIR broadcast: named, with the number, so a
+              shortfall can never pass for ordinary partial verification. */}
+          {quality && quality.belowFloorClips > 0 ? (
+            <div className="rounded-xl border border-[var(--neon-amber)]/50 bg-[var(--neon-amber)]/5 p-3">
+              <p className="flex items-center gap-1.5 text-sm font-bold text-[var(--neon-amber)]">
+                <CircleAlert className="size-4" /> Your badge is reading small
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                On {quality.belowFloorClips} clip{quality.belowFloorClips === 1 ? '' : 's'} the
+                code measured{' '}
+                {quality.smallestBadgePx ? `${Math.round(quality.smallestBadgePx)}px` : 'near'} tall
+                against a {quality.floorPx}px floor — readable, but with little margin. Raise
+                your output to {quality.minVerifiableHeightPx}p or give the badge more room, and
+                the checks get comfortable. <strong className="text-foreground">This is a
+                warning, not a deduction</strong>; anything inconclusive goes to a person.
+              </p>
+            </div>
+          ) : null}
 
           <div>
             <p className="text-sm font-semibold text-foreground">2. Go live and play the MegaChats</p>

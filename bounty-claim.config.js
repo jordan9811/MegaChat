@@ -152,6 +152,15 @@ export const bountyConfig = {
    * verification. Derived from the same floor the verifier enforces.
    */
   qualityWarnRatio: Number(process.env.BOUNTY_QUALITY_WARN_RATIO || 1.35),
+  /**
+   * The lowest broadcast height we have MEASURED as reliably verifiable.
+   * From the synthetic corpus: 1080p 100%, 720p 100%, 480p 92% (median badge
+   * height 12.3px against a 12px floor — i.e. sitting on the line). A 480p
+   * streamer is not blocked; they are TOLD, up front and again on any
+   * affected verification, because underpaying someone who did the work is
+   * the worst failure this system has.
+   */
+  minVerifiableHeightPx: num(process.env.BOUNTY_MIN_VERIFIABLE_HEIGHT, 720),
 
   // ── Anti-malicious-compliance ───────────────────────────────────────────
   /**
@@ -212,6 +221,38 @@ export const bountyConfig = {
 };
 
 /** Client-safe subset (bounty board, claim pages, overlay). */
+/**
+ * How verification actually behaves per platform — ONE source of truth for
+ * the verifier's sampling density and for the words a streamer reads before
+ * they rely on it.
+ *
+ * Twitch keeps VODs, so a live read that fails can be retried against the
+ * archive: a missed frame costs nothing. Kick publishes no VOD listing API,
+ * so the live pass is the ONLY pass. That is a materially different bargain
+ * and a Kick streamer is entitled to know it BEFORE they go live, not after
+ * an unpaid bounty. We compensate with double the sampling density; we do not
+ * pretend the difference away.
+ */
+export const PLATFORM_PROFILES = {
+  twitch: {
+    platform: 'twitch',
+    vodRetry: true,
+    samplingMultiplier: 1,
+    notice: 'Twitch keeps a VOD, so if a live check misses a code we re-check '
+      + 'the archive afterwards. A dropped frame during the stream costs you nothing.',
+  },
+  kick: {
+    platform: 'kick',
+    vodRetry: false,
+    samplingMultiplier: 2,
+    notice: 'Kick has no VOD we can read, so the live check is the only check — '
+      + 'there is no second look after the stream. We sample twice as often to '
+      + 'make up for it, but keep the badge unobstructed the whole time a MegaChat '
+      + 'is playing. If a check is inconclusive it goes to a person, never to a denial.',
+  },
+};
+export const platformProfile = (p) => PLATFORM_PROFILES[String(p || '').toLowerCase()] || null;
+
 export function bountyClientConfig() {
   return {
     enabled: bountyConfig.enabled,
@@ -222,6 +263,8 @@ export function bountyClientConfig() {
     disputeWindowMs: bountyConfig.disputeWindowMs,
     releaseRatePerClip: bountyConfig.releaseRatePerClip,
     minClipSeconds: bountyConfig.minClipSeconds,
+    minVerifiableHeightPx: bountyConfig.minVerifiableHeightPx,
+    platformProfiles: PLATFORM_PROFILES,
   };
 }
 

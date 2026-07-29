@@ -458,6 +458,8 @@ export function hasOpenReview(airSessionId) {
 
 export function recordVerification({
   airSessionId, checker, evidenceRef, result, confidence, verifiedMinutes,
+  verifiedClips = 0, verifiedClipSeconds = 0,
+  belowQualityFloorClips = 0, smallestBadgePx = null, samplingDensity = null,
 }) {
   const store = load();
   const rec = {
@@ -468,6 +470,16 @@ export function recordVerification({
     result,
     confidence,
     verifiedMinutes: verifiedMinutes ?? 0,
+    verifiedClips,
+    verifiedClipSeconds,
+    // QUALITY TRAVELS WITH THE RECORD, not just the response of the moment.
+    // These decide whether a human is called in, so by the project's own rule
+    // — anything a payout is computed FROM is evidence — they have to survive
+    // the request. Without them a streamer paid short at 480p could never be
+    // shown why, and neither could the reviewer.
+    belowQualityFloorClips,
+    smallestBadgePx,
+    samplingDensity,
     checkedAt: Date.now(),
   };
   store.verifications[rec.id] = rec;
