@@ -90,7 +90,7 @@ function mean(f, x0, y0, w, h) {
  * contrast, then refine the best hit on a fine grid. Returns null when no
  * candidate clears the contrast floor — "no badge in frame".
  */
-export function locateRing(f, nChars, { minPitch = 1, maxPitch = 10 } = {}) {
+function locateRingCandidates(f, nChars, { minPitch = 1, maxPitch = 10 } = {}) {
   const dims = matrixSize(nChars);
   // One best CANDIDATE PER PITCH, each refined before the global compare.
   //
@@ -115,9 +115,9 @@ export function locateRing(f, nChars, { minPitch = 1, maxPitch = 10 } = {}) {
     }
     if (bestAtPitch && bestAtPitch.score > 40) candidates.push(bestAtPitch);
   }
-  if (!candidates.length) return null;
+  if (!candidates.length) return [];
 
-  let best = null;
+  const refined = [];
   for (const cand of candidates) {
     let ref = cand;
     const r = Math.max(3, cand.step);
@@ -129,9 +129,26 @@ export function locateRing(f, nChars, { minPitch = 1, maxPitch = 10 } = {}) {
         }
       }
     }
-    if (!best || ref.score > best.score) best = ref;
+    if (ref.score >= 60) refined.push(ref);
   }
-  return best && best.score >= 60 ? best : null;
+  refined.sort((a, b) => b.score - a.score);
+  return refined;
+}
+
+/**
+ * Every plausible ring, best-scoring first. Exposed because the WINNER IS NOT
+ * ALWAYS RIGHT: measured across distinct issued codes at 720p, the locator
+ * sometimes crowns a pitch-0.75 patch of background over the true pitch-2.5
+ * matrix, and no amount of jitter around that winner can reach the real one.
+ * The decoder is a matched filter, so it can afford to try the runners-up.
+ */
+export function locateRings(f, nChars, opts = {}) {
+  return locateRingCandidates(f, nChars, opts);
+}
+
+/** Back-compat: the single best hypothesis. */
+export function locateRing(f, nChars, opts = {}) {
+  return locateRingCandidates(f, nChars, opts)[0] || null;
 }
 
 function ringScore(f, x, y, pitch, dims) {
@@ -222,34 +239,76 @@ export class OcrCodeChecker {
   /** @param {{gray: Buffer, width: number, height: number}} frame */
   async check(frame, expectedCode) {
     const n = String(expectedCode).length;
-    const ring = locateRing(frame, n);
-    if (!ring) return { found: false, confidence: 0, pixelHeight: 0, text: null };
+    // TRY THE RUNNERS-UP, NOT JUST THE WINNER. The locator maximises ring
+    // contrast, which is not the same thing as being right: measured across
+    // distinct issued codes at 720p it sometimes crowns a pitch-0.75 patch of
+    // background over the true pitch-2.5 matrix, and no jitter around that
+    // winner can ever reach the real one.
+    const rings = locateRings(frame, n);
+    if (!rings.length) return { found: false, confidence: 0, pixelHeight: 0, text: null };
     // Non-integer pitches (720p ≈ 2.67 dots/px) drift the sample grid by a
     // fraction of a dot across 47 columns — enough to mirror a 9 into a 6.
     // Jitter the ring hypothesis and decode at each alignment.
     //
     // Selection is a MATCHED FILTER, which is the honest shape for
     // verification: we are not doing blind OCR, we are asking "is the code
-    // the server issued present in this frame?". Among alignments, one that
-    // reads the expected text wins (highest confidence among those);
-    // otherwise the most confident read is reported for what it saw. Raw
-    // max-confidence selection was actively harmful — a half-dot-shifted
-    // grid reads border rows as clean '-' glyphs and outscores the true
-    // alignment. False-positive safety is not argued, it is measured: the
-    // corpus asserts ZERO absent-frame finds, because all 7 characters would
-    // have to misread into exactly the expected string at once.
+    // the server issued present in this frame?". An alignment that reads the
+    // expected text wins; otherwise the most confident read is reported for
+    // what it saw. Raw max-confidence selection was actively harmful — a
+    // half-dot-shifted grid reads border rows as clean '-' glyphs and
+    // outscores the true alignment. False-positive safety is not argued, it
+    // is measured: the corpus asserts ZERO absent-frame finds, because all 7
+    // characters would have to misread into exactly the expected string at
+    // once.
     const expected = String(expectedCode).toUpperCase();
-    let dec = decodeAt(frame, ring, n);
+    let dec = decodeAt(frame, rings[0], n);
     let matched = dec.text === expected ? dec : null;
-    // ±2px and a finer pitch fan: the ring locator optimizes ring contrast,
-    // whose peak can sit 2px from the decode optimum at fractional pitches —
-    // measured, not guessed, on the 720p corpus where dx=+2 was the truth.
-    for (const dp of [-0.16, -0.12, -0.08, -0.04, 0.04, 0.08, 0.12, 0.16]) {
-      for (const dx of [-2, -1, 0, 1, 2]) {
-        for (const dy of [-2, -1, 0, 1, 2]) {
-          const d = decodeAt(frame, { ...ring, pitch: ring.pitch + dp, x: ring.x + dx, y: ring.y + dy }, n);
-          if (d.text === expected && (!matched || d.confidence > matched.confidence)) matched = d;
-          if (d.confidence > dec.confidence) dec = d;
+    // THE OFFSET WINDOW IS IN DOTS, NOT PIXELS.
+    //
+    // It used to be a flat ±2px, tuned on the corpus — which was generated
+    // from a SINGLE issued code, and whose optimum sat at dx=+2, exactly on
+    // the boundary of the window that was chosen. Swept across distinct codes
+    // at 720p, roughly half were never read at all: the true decode optimum
+    // sits up to about three dots from the ring-contrast peak, and every
+    // miss decoded as "-------", the border-row artifact this selection logic
+    // already warns about. The window now spans that ambiguity in DOTS,
+    // converted at the measured pitch, so it holds at any resolution instead
+    // of only the one it was tuned on.
+    //
+    // Cost is controlled in two phases: scan wide but stop at the FIRST
+    // alignment that reads the code, then refine locally around that hit.
+    //
+    // The refine is not optional. Confidence is the margin between the best
+    // and second-best glyph match, so a correct read at a slightly-off
+    // alignment scores genuinely low — and a first-hit-wins search reports
+    // exactly that. Under-reporting confidence on a real read drags the
+    // session's average under the AMBIGUOUS threshold and sends a streamer
+    // who did the work to human review, which is the same queue-flooding
+    // failure in a different costume. Refining recovers the clean number for
+    // ~27 extra decodes.
+    let at = null;
+    outer:
+    for (const ring of rings.slice(0, 3)) {
+      const span = Math.max(2, Math.ceil((BORDER + 1) * ring.pitch));
+      for (const dp of [0, -0.16, -0.12, -0.08, -0.04, 0.04, 0.08, 0.12, 0.16]) {
+        for (let dx = -span; dx <= span; dx++) {
+          for (let dy = -span; dy <= span; dy++) {
+            const hyp = { ...ring, pitch: ring.pitch + dp, x: ring.x + dx, y: ring.y + dy };
+            const d = decodeAt(frame, hyp, n);
+            if (d.text === expected) { matched = d; at = hyp; break outer; }
+            if (d.confidence > dec.confidence) dec = d;
+          }
+        }
+      }
+    }
+    if (at) {
+      for (const dp of [-0.08, -0.04, 0, 0.04, 0.08]) {
+        for (let dx = -2; dx <= 2; dx++) {
+          for (let dy = -2; dy <= 2; dy++) {
+            const d = decodeAt(frame, { ...at, pitch: at.pitch + dp, x: at.x + dx, y: at.y + dy }, n);
+            // Only alignments that still read the code may raise its score.
+            if (d.text === expected && d.confidence > matched.confidence) matched = d;
+          }
         }
       }
     }
