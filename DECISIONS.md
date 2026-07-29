@@ -131,3 +131,61 @@ marker and correctly reported "unproven"; this deploy reads it back.
   API was deliberately not built on.
 - **±1.5s timestamp tolerance**, derived from the shortest code window's
   midpoint margin.
+
+## Prove-and-clear run (2026-07-29)
+
+**Stream context is a GATE, not a dial — and there is no viewer threshold.**
+The pushback was right that proving clips aired does not prove anyone watched,
+but weighting payout by viewer count is the wrong fix: the bounty amount is
+already a derivative of the streamer's audience, because fans pledge more to
+bigger streamers. Weighting charges for the same thing twice and penalises
+mid-size streamers, who are exactly the ones most likely to onboard. So:
+warmup (nothing counts in the first 10 min) plus tail (stream must continue
+past the last counted playback), both pass/fail, both configurable, failures
+to human review naming the specific condition. Median-relative thresholds were
+considered and rejected — a newly onboarded streamer has no history at the
+moment it would matter, and Twitch exposes current concurrents but not
+historical averages. The absence is written into bounty-stream-context.js and
+asserted by the gate so it cannot come back under another name.
+
+**Broadcast start is captured at playback time, not verify time.** The first
+implementation asked the platform at verify time. Verification is VOD-first,
+so it runs after the stream ended, when the channel reads offline and the
+start time no longer exists — every honest session would have routed to
+NO_BROADCAST_START review. Platform truth that only exists while live must be
+captured while live. The same applies to the viewer count, which is why both
+now share one capture path — including the admin/rehearsal playback route,
+which had been recording nothing at all and would have left the one real
+broadcast we care about with no context data.
+
+**"No platform API configured" is notEvaluated, not a failed check.** Routing
+every session to review when credentials are absent floods the queue, and a
+flooded queue hides the farming the check exists to catch. "Credentials exist
+but no start was recorded" stays a review condition, because that is what a
+farmer actually looks like. A deployment fact the streamer cannot control is
+not evidence against them.
+
+**Review reasons name every applicable cause.** Marginal quality and a context
+flag co-occur constantly; an if/else chain showed the reviewer one of them,
+who then fixes one thing and closes the case.
+
+**A corpus fixes its sample; a gate can re-draw it.** The badge corpus was
+generated from ONE issued code, so "720p 100%" was a statement about one glyph
+sequence. Swept across distinct codes, roughly half were never read at 720p —
+the documented minimum quality — which is the project's own worst failure
+mode: the streamer does the work and quietly is not paid. Two defects, both
+invisible to a one-code corpus: an alignment window tuned in raw pixels
+against that code (its own comment recorded the optimum sitting ON the
+boundary of the window chosen — a search whose answer lands on its own edge is
+probably too small), and a ring locator that returned only the highest-contrast
+hypothesis, which is not the same as the right one. Both fixed; the window is
+now expressed in dots and converted at the measured pitch, so it holds at any
+resolution rather than the one it was tuned on. _gate-decoder-codes.mjs draws
+fresh codes every run so the next bad glyph sequence fails CI instead of a
+payout.
+
+**Confidence has to survive the optimisation that finds the code.** Stopping
+at the first matching alignment made the decoder fast and made it report the
+confidence of a slightly-off read, which dragged sessions under the AMBIGUOUS
+threshold and sent verified streamers to review — the queue-flooding failure
+again, in a different costume. Find fast, then refine locally.

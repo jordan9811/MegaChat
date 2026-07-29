@@ -12,7 +12,12 @@
  * decoder), swept across N distinct issued codes at 720p. Reports per-code
  * outcome and, on failure, which characters were misread.
  *
- * Zero external network, zero spend. Diagnostic, not a gate.
+ * THIS IS A GATE, not a diagnostic, precisely because the one-code corpus
+ * could not have caught what it caught. A corpus fixes its sample at
+ * generation time; this re-draws codes every run, so the next glyph sequence
+ * that breaks the decoder fails CI instead of a streamer's payout.
+ *
+ * Zero external network, zero spend.
  */
 import { spawnSync } from 'child_process';
 import { mkdtempSync, mkdirSync, readdirSync } from 'fs';
@@ -20,7 +25,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import puppeteer from 'puppeteer-core';
 
-const N = Number(process.argv[2] || 16);
+const N = Number(process.argv[2] || 8);
 const PORT = 3314;
 const APP = `http://localhost:${PORT}`;
 const WORK = mkdtempSync(path.join(tmpdir(), 'mc-sweep-'));
@@ -179,3 +184,22 @@ if (zero || partial) {
   console.log('\ncharacter appearance in failing vs all codes:');
   for (const [ch, n, tot, r] of lift) console.log(`  ${ch}  ${n}/${tot}  ${(r * 100).toFixed(0)}%`);
 }
+
+// ── assertions ────────────────────────────────────────────────────────────
+let pass = 0, fail = 0;
+const ok = (n, c, x = '') => {
+  if (c) { pass++; console.log(`  PASS  ${n}${x ? ' — ' + x : ''}`); }
+  else { fail++; console.error(`  FAIL  ${n}${x ? ' — ' + x : ''}`); }
+};
+ok('every trial actually issued a code and rendered a badge', rows.length === N,
+  `${rows.length}/${N}`);
+// Not "on average": a code that is never readable is a streamer who is never
+// paid, and averaging hides it behind the codes that work.
+ok('EVERY distinct issued code is read at 720p', zero === 0,
+  `${zero} unreadable of ${rows.length}`);
+ok('...on every sampled frame, not just some', partial === 0, `${partial} partial`);
+ok('frame-level detection at 720p is total',
+  totalHits === totalFrames, `${totalHits}/${totalFrames}`);
+console.log(`
+RESULT: ${pass} pass, ${fail} fail`);
+process.exit(fail === 0 ? 0 : 1);

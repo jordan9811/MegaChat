@@ -431,12 +431,22 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   HTTP proven** — see docs/run-b-verification.md for the detection table.
 
 ### New/remaining
-- **THE WEAKEST JOINT: verified airtime with zero audience still pays.**
-  Viewer samples are captured into evidence at every playback precisely so
-  release math can weight by audience — nothing enforces it yet. This should
-  be the next money change before any real settlement.
+- **RESOLVED as a gate, deliberately not as weighting: stream context.**
+  Playbacks inside the first 10 minutes of a broadcast do not count, and the
+  stream must continue >=1 min past the last counted playback; both
+  configurable, failures route to human review naming the condition. Payout
+  is NOT weighted by viewer count and must not become so — the bounty amount
+  is already a derivative of the streamer's audience, so gating on viewers
+  charges twice and penalises mid-size streamers hardest. The absence is
+  recorded in bounty-stream-context.js and asserted by _gate-stream-context.mjs
+  so it cannot return under another name.
+- **Broadcast start is captured at playback time, never at verify time.**
+  Verification is VOD-first and runs after the stream ends, when the platform
+  reports the channel offline and the start time is gone. Anything that needs
+  live platform truth must be captured while the channel is observably live.
 - **720p is the documented minimum verifiable quality** (480p marginal at 92%
-  with confidence at the review threshold). Reviewers need this context.
+  with confidence at the review threshold). Reviewers need this context, and
+  streamers are now told at claim/setup and on any affected verification.
 - **Kick VOD discovery has no official API** — live-first there; direct VOD
   URLs work when supplied. Unofficial v2 API deliberately not used.
 - **The dress rehearsal awaits one real broadcast**: `node _rehearsal-run-b.mjs
@@ -447,3 +457,44 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   streamlink) in the image for production verification — the seam reports
   EXTRACTOR_UNAVAILABLE → review queue rather than failing, so this degrades
   honestly.
+
+## Prove-and-clear run (2026-07-29)
+
+### P0 — still open
+- **THE REAL BROADCAST STILL HAS NOT HAPPENED.** `TWITCH_STREAM_KEY` is absent
+  locally and the Railway CLI is present but unlinked (linking is
+  interactive), so Phase 1 could not run and was not simulated. The harness is
+  preflight-clean on everything else: ffmpeg with RTMP + libx264, Chrome for
+  the overlay screencast, .env loaded in-process. `node _rehearsal-run-b.mjs
+  --preflight` reports readiness; `--skip-push` runs it against a stream you
+  start yourself. Live-HLS grab and VOD discovery against a real channel
+  remain the only untested stages.
+- **A one-code corpus hid a ~50% miss rate at 720p, and would again.**
+  Fixed this run (see DECISIONS), but the lesson generalises: every synthetic
+  corpus in this repo fixes its sample at generation time. `_gate-decoder-codes.mjs`
+  re-draws codes each run for the badge specifically. Any other measurement
+  quoted from a fixed corpus deserves the same suspicion before it is used to
+  make a promise to a streamer.
+- **480p is now warned about, not fixed.** 92% detection with the badge median
+  at 12.3px against a 12px floor. The streamer is told up front and on the
+  verification, and marginal reads route to a human. Raising the badge size at
+  low resolutions would actually fix it; nobody has.
+
+### P1
+- **`_gate-overlay.mjs` and `_gate-auth.mjs` assume a server already on :3000**
+  rather than spawning one, so they hard-crash with ERR_CONNECTION_REFUSED in
+  a clean checkout. Pre-existing and unrelated to this run's changes, but they
+  are outside the `_gate-helpers.mjs` harness that the spawn audit adopted, so
+  they are exactly as fragile as the suites that audit fixed. Adopt the
+  harness.
+- **Kick OAuth registration validity is still unproven.** The negative control
+  confirmed Kick, like Twitch, renders its login page regardless of whether
+  the redirect URI is registered — so a rendering login page proves nothing.
+  Only a full round trip with a real Kick account will settle it. The
+  app-token read path IS proven live in production (deepak, 510 concurrent
+  viewers).
+- **Admin routes remain open** (`/api/bounty/admin/*`, including the playback
+  and override routes). Behind BOUNTY_CLAIM, but unauthenticated. Must not
+  reach mainnet as-is.
+- **Settlement is still a stub and Gate H still finds zero transfer calls.**
+  Unchanged by design — supervised and separate.
