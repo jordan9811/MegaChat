@@ -191,10 +191,62 @@ export const bountyConfig = {
    * constant from costing a streamer their payout.
    */
   vodTimelineSkewMs: num(process.env.BOUNTY_VOD_SKEW_MS, 16_000),
-  /** Residual timeline error absorbed by the accepted-code window (both live
-   *  and VOD). Bounded by the clip's own code list, so widening it can never
-   *  let one clip's code satisfy a different clip. */
+  /**
+   * Residual timeline error absorbed by the accepted-code window when the skew
+   * was NOT measured — i.e. the fallback path only. When calibration runs, the
+   * window is derived from what the measurement actually leaves behind (see
+   * bounty-timeline-calibration.js), which is far tighter than this. Bounded by
+   * the clip's own code list either way, so widening can never let one clip's
+   * code satisfy a different clip.
+   */
   mediaSkewToleranceMs: num(process.env.BOUNTY_MEDIA_SKEW_TOLERANCE_MS, 20_000),
+
+  // ── Per-broadcast timeline calibration ──────────────────────────────────
+  /**
+   * The skew is MEASURED per VOD rather than assumed: probe frames, decode to
+   * see which code is actually on screen, and recover the offset from the
+   * content. vodTimelineSkewMs above is only the opening guess and the
+   * fallback. See bounty-timeline-calibration.js for the derivation.
+   */
+  /** How many playback windows to probe, spread across the session. */
+  calibrationMaxProbes: num(process.env.BOUNTY_CALIBRATION_PROBES, 6),
+  /** One decode could be luck. Require agreement across at least this many. */
+  calibrationMinPoints: num(process.env.BOUNTY_CALIBRATION_MIN_POINTS, 3),
+  /**
+   * Disagreement past this is a FINDING, not something to average away: the
+   * timeline is non-linear or the VOD is unreliable, and it routes to review.
+   * Set above one point's quantization (±codeValidityMs/2) so ordinary
+   * measurement noise is not mistaken for a broken timeline.
+   */
+  calibrationMaxSpreadMs: num(process.env.BOUNTY_CALIBRATION_MAX_SPREAD_MS, 6_000),
+  /** Extra slack on the derived acceptance window, over quantization+spread. */
+  calibrationResidualMarginMs: num(process.env.BOUNTY_CALIBRATION_MARGIN_MS, 1_500),
+  /**
+   * Hard ceiling on frame grabs, so a bad VOD cannot cost unbounded time.
+   * Generous on purpose: the happy path spends ~1 grab per probe because the
+   * first success seeds every later probe, so this ceiling is only reached on a
+   * timeline that is already suspect — and cutting the search short there used
+   * to yield a confident answer built from whichever probes agreed.
+   */
+  calibrationMaxGrabs: num(process.env.BOUNTY_CALIBRATION_MAX_GRABS, 36),
+  /** Codes offered per probe, nearest-in-time first. See the note on cost. */
+  calibrationCandidateCap: num(process.env.BOUNTY_CALIBRATION_CANDIDATES, 8),
+  /**
+   * The probe ladder is DERIVED, not a hand-written list.
+   *
+   * A probe can only decode when its hypothesis puts the badge on screen, and a
+   * badge is only up for codeValidityMs. So rungs must be spaced no wider than
+   * that visibility window or a true offset landing BETWEEN two rungs is
+   * unreachable — which is exactly what a hand-written ladder did: it had a 6s
+   * gap and a 30s offset fell into it and measured nothing at all, while 4s,
+   * 16s, 24s and 40s (all of them rungs) measured perfectly. A list that only
+   * finds the values it happens to contain is not a search.
+   */
+  /** Rung spacing. Under one badge's visibility, with margin. */
+  calibrationLadderStepMs: num(process.env.BOUNTY_CALIBRATION_LADDER_STEP_MS,
+    Math.round(num(process.env.BOUNTY_CODE_VALIDITY_MS, 5_000) * 0.7)),
+  /** Highest delay worth hypothesising. Past the worst yet measured (25s). */
+  calibrationLadderMaxMs: num(process.env.BOUNTY_CALIBRATION_LADDER_MAX_MS, 48_000),
 
   // ── Anti-malicious-compliance ───────────────────────────────────────────
   /**

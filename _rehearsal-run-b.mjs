@@ -59,13 +59,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log('[rehearsal]', ...a);
 
 const HANDLE = arg('handle', null);
+/** Rehearsal-only warmup, in seconds. The harness waits past this before the
+ *  first playback so stream context can actually pass. */
+const WARMUP_S = Number(arg('warmup-s', 60));
 const MINUTES = Math.min(15, Number(arg('minutes', 12)));
 const PORT = 3306;
 const APP = `http://localhost:${PORT}`;
 const KEY = process.env.TWITCH_STREAM_KEY;
 
 if (!HANDLE) {
-  console.error('usage: node _rehearsal-run-b.mjs --handle <your-twitch-login> [--minutes 12] [--skip-push]');
+  console.error('usage: node _rehearsal-run-b.mjs --handle <your-twitch-login> '
+    + '[--minutes 12] [--skip-push] [--warmup-s 60]');
   process.exit(1);
 }
 if (!KEY && !has('skip-push') && !has('preflight')) {
@@ -124,15 +128,28 @@ const post = (p, body) => fetch(`${APP}${p}`, {
 const get = (p) => fetch(`${APP}${p}`).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 
 // ── 1. server + session ─────────────────────────────────────────────────────
-const app = spawn(process.execPath, ['server.js', '--prod'], {
+// Spawned through the gate harness: occupied-port refusal, early-exit stderr,
+// readiness polling instead of a blind sleep, and a nonce proving the server
+// answering is the one WE started. This harness drives a real broadcast — it is
+// the last place that should be guessing whether its server came up.
+const { startGateServer } = await import('./_gate-helpers.mjs');
+const dataDir = process.env.REHEARSAL_DATA_DIR || mkdtempSync(path.join(tmpdir(), 'mc-rehearsal-'));
+const srv = await startGateServer({
+  port: PORT, dataDir, args: ['--prod'], label: 'rehearsal',
   env: {
-    ...process.env, PORT: String(PORT),
-    DATA_DIR: process.env.REHEARSAL_DATA_DIR || mkdtempSync(path.join(tmpdir(), 'mc-rehearsal-')),
     BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
+    // REHEARSAL-ONLY WARMUP OVERRIDE. The shipped rule ignores playbacks in the
+    // first 10 minutes of a broadcast, so a harness that plays clips right after
+    // going live can never demonstrate a clean context pass — every rehearsal
+    // ended with four INSIDE_WARMUP rejections that looked like a failure and
+    // were in fact the rule working. Shortened here, and the harness waits past
+    // it, so the run exercises the pass path end to end. Printed loudly below
+    // so nobody reads a rehearsal pass as the production threshold.
+    BOUNTY_STREAM_WARMUP_MS: String(WARMUP_S * 1000),
   },
-  stdio: 'ignore', cwd: process.cwd(),
+  readyTimeoutMs: 45_000,
 });
-await sleep(11000);
+const app = srv.child;
 
 let browser, pusher;
 const cleanup = async () => {
@@ -206,6 +223,15 @@ try {
   }
 
   // ── 3. real clip playbacks with rotating codes ────────────────────────────
+  // SIT OUT THE WARMUP FIRST. Playing immediately is what a farmer does, and
+  // the stream-context gate rejects it correctly — so the rehearsal has to wait
+  // like a real streamer would, or it can only ever demonstrate the failure.
+  const warmupWaitMs = WARMUP_S * 1000 + 10_000;
+  log(`WARMUP OVERRIDE: ${WARMUP_S}s for this rehearsal (production is `
+    + `${Math.round(10 * 60)}s). Waiting ${Math.round(warmupWaitMs / 1000)}s before the first clip `
+    + 'so stream context can pass.');
+  await sleep(warmupWaitMs);
+
   const playbacks = [];
   for (let i = 0; i < 3; i++) {
     const p = await post('/api/bounty/admin/playback', { airSessionId: airId, clipId: `REHEARSAL${i + 1}`, durationS: 30 });
@@ -227,7 +253,7 @@ try {
   }
 
   // Keep the broadcast up to the requested length so the VOD is substantial.
-  const remaining = MINUTES * 60_000 - 3 * 38_000;
+  const remaining = MINUTES * 60_000 - 3 * 38_000 - warmupWaitMs;
   if (!has('skip-push') && remaining > 0) {
     log(`holding the broadcast ${Math.round(remaining / 60000)} more minute(s)…`);
     await sleep(remaining);

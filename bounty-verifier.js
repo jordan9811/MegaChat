@@ -13,6 +13,9 @@
 
 import fs from 'fs';
 import { bountyConfig, platformProfile } from './bounty-claim.config.js';
+import {
+  calibrateTimeline, describeCalibration, CALIBRATION_STATES,
+} from './bounty-timeline-calibration.js';
 import * as store from './bounty-store.js';
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
@@ -152,7 +155,7 @@ function sessionHandle(session) {
   return reserved?.handle || '';
 }
 
-export async function verifyAirSession(airSessionId, { frameSource, codeChecker } = {}) {
+export async function verifyAirSession(airSessionId, { frameSource, codeChecker, log = console } = {}) {
   const session = store.getAirSession(airSessionId);
   if (!session) throw new Error(`No air session ${airSessionId}`);
 
@@ -193,11 +196,56 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
   const checks = [];
   const clipVerdicts = [];
 
+  // ── CALIBRATE BEFORE SCORING ────────────────────────────────────────────
+  // Measure this broadcast's wall-clock-to-media offset from its own content
+  // instead of trusting a constant fitted to one earlier VOD. Everything below
+  // then seeks with the measured value, and the accepted-code window is sized
+  // from what that measurement actually leaves behind.
+  const handleForSource = sessionHandle(session);
+  const calibration = await calibrateTimeline({
+    frameSource: fs_, codeChecker: cc, session,
+    platform: session.platform, handle: handleForSource, log,
+  });
+  if (calibration.state === CALIBRATION_STATES.INSUFFICIENT_POINTS) {
+    // "We could not measure the timeline" is a could-not-look, not a verdict
+    // against the streamer. Forcing an offset here would score a real session
+    // on a guess and dock someone for our own blind spot.
+    const rec = store.recordVerification({
+      airSessionId, checker: checkerName, evidenceRef: null,
+      result: 'SOURCE_UNAVAILABLE', confidence: 0, verifiedMinutes: 0,
+    });
+    return {
+      airSessionId, result: 'SOURCE_UNAVAILABLE',
+      // Prefer the underlying source state when the source itself was the
+      // problem; TIMELINE_UNCALIBRATED only means "the source was readable but
+      // its timeline could not be measured".
+      sourceState: calibration.sourceState || 'TIMELINE_UNCALIBRATED',
+      sourceDetail: calibration.sourceDetail || calibration.detail,
+      confidence: 0, verifiedClips: 0, verifiedClipSeconds: 0,
+      checks: [], clipVerdicts: [], attempt: rec, calibration,
+    };
+  }
+  if (calibration.fellBack) {
+    // Loud on purpose: a systematic calibration failure must be visible, not
+    // absorbed into a plausible-looking pass.
+    log.warn?.(`[verifier] TIMELINE NOT CALIBRATED for session ${airSessionId} — `
+      + `falling back to the documented ${bountyConfig.vodTimelineSkewMs}ms constant. `
+      + `${describeCalibration(calibration)}`);
+  }
+  // DISAGREEMENT is not forced into an offset and not scored away. Best-effort
+  // scoring continues with the median so a reviewer can see what evidence
+  // exists, but the session is flagged so a human decides regardless of the
+  // score — a timeline this inconsistent means the seek cannot be trusted, and
+  // silently passing or failing on it would both be wrong.
+  const timelineNeedsReview = calibration.state === CALIBRATION_STATES.DISAGREEMENT;
+  if (timelineNeedsReview) log.warn?.(`[verifier] ${describeCalibration(calibration)}`);
+  const seekOpts = { skewMs: calibration.skewMs };
+
   for (const win of windows) {
     const instants = sampleInstantsForWindow(win, perClip);
     let frames;
     try {
-      frames = await fs_.getFrames(session.platform, sessionHandle(session), instants);
+      frames = await fs_.getFrames(session.platform, handleForSource, instants, seekOpts);
     } catch (e) {
       if (e?.code === 'frame_source_unavailable') {
         // "We could not look" is a DISTINCT verdict from "we looked and it
@@ -235,12 +283,14 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
       // still requires having run this server's overlay for this clip. What is
       // deliberately given up is millisecond-exact "on screen at this instant",
       // which the public HLS cannot witness anyway.
-      // VOD frames get the same treatment for the same reason: the archive's
-      // media timeline runs behind our wall clock, so the seek is corrected by
-      // vodTimelineSkewMs and this window absorbs whatever error remains.
+      // VOD frames: the seek was corrected by a MEASURED offset, so this window
+      // only has to absorb the residual that measurement leaves behind —
+      // quantization plus point spread, computed per session rather than a flat
+      // constant wide enough to hide the error it was absorbing. The ±1.5s
+      // tolerance this replaced assumed an alignment that does not exist.
       const delay = frame.live
         ? bountyConfig.liveBroadcastDelayMs
-        : bountyConfig.mediaSkewToleranceMs;
+        : calibration.residualMs;
       const expected = win.codes
         .filter((c) => c.issuedAt <= frame.ts + delay && c.expiresAt > frame.ts - delay)
         .map((c) => c.code);
@@ -328,6 +378,13 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
     belowQualityFloorClips: clipVerdicts.filter((c) => c.belowQualityFloor).length,
     smallestBadgePx: measuredPx.length ? Math.min(...measuredPx) : null,
     samplingDensity: perClip,
+    // How this session's timeline was established. A payout computed from
+    // frames seeked by a measured offset should carry that measurement.
+    timelineSkewMs: calibration.skewMs,
+    timelineState: calibration.state,
+    timelineSpreadMs: calibration.spreadMs,
+    timelineResidualMs: calibration.residualMs,
+    timelineFellBack: !!calibration.fellBack,
   });
   store.updateAirSession(airSessionId, {
     verifiedClips, verifiedClipSeconds,
@@ -343,5 +400,9 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker 
     belowQualityFloorClips: clipVerdicts.filter((c) => c.belowQualityFloor).length,
     samplingDensity: perClip,
     skippedBelowFloor: skippedShort.length,
+    // How the timeline was established, so routes and reviewers can see it.
+    calibration,
+    timelineNeedsReview,
+    timelineSummary: describeCalibration(calibration),
   };
 }

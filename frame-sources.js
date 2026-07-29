@@ -76,9 +76,15 @@ export function resolveMediaUrl(pageUrl, { log = console } = {}) {
       { encoding: 'utf8', timeout: 60000 });
     if (r.status === 0 && r.stdout.trim()) return r.stdout.trim().split('\n')[0];
     const err = String(r.stderr || '');
-    if (/subscriber|premium|paywall/i.test(err)) throw new FrameSourceUnavailable(SOURCE_STATES.VOD_SUBSCRIBER_ONLY, pageUrl);
-    if (/processing|not.*available yet/i.test(err)) throw new FrameSourceUnavailable(SOURCE_STATES.VOD_NOT_PROCESSED, pageUrl);
-    if (/does not exist|404|unable to download|removed/i.test(err)) throw new FrameSourceUnavailable(SOURCE_STATES.NO_VOD_COVERING_TS, pageUrl);
+    // The extractor's own words go into the detail. Classifying the failure and
+    // then discarding WHY sends the next person hunting for a cause the error
+    // already knew — and a timeout misfiled as "no VOD" reads as the streamer's
+    // problem when it is ours.
+    const why = `${pageUrl}${err ? ` — ${err.replace(/\s+/g, ' ').trim().slice(0, 200)}` : ''}`;
+    if (/subscriber|premium|paywall/i.test(err)) throw new FrameSourceUnavailable(SOURCE_STATES.VOD_SUBSCRIBER_ONLY, why);
+    if (/processing|not.*available yet/i.test(err)) throw new FrameSourceUnavailable(SOURCE_STATES.VOD_NOT_PROCESSED, why);
+    if (/timed out|timeout/i.test(err)) throw new FrameSourceUnavailable(SOURCE_STATES.EXTRACTION_FAILED, why);
+    if (/does not exist|404|unable to download|removed/i.test(err)) throw new FrameSourceUnavailable(SOURCE_STATES.NO_VOD_COVERING_TS, why);
     if (/offline|is not currently live/i.test(err)) throw new FrameSourceUnavailable(SOURCE_STATES.CHANNEL_OFFLINE, pageUrl);
     throw new FrameSourceUnavailable(SOURCE_STATES.EXTRACTION_FAILED, err.slice(0, 200));
   }
@@ -116,6 +122,15 @@ export class TwitchFrameSource extends FrameSource {
     super();
     this.log = log;
     this.mode = mode; // 'vod' | 'live'
+    /**
+     * A VOD can be CALIBRATED: it is seekable, so probing it at known offsets
+     * recovers the true wall-clock-to-media mapping instead of trusting a
+     * constant. A live stream cannot — there is one addressable instant (the
+     * playlist head), so its delay is absorbed by the acceptance window
+     * instead. Mock sources leave this false and skip calibration entirely.
+     */
+    this.calibratable = mode !== 'live';
+    this._media = null; // resolved once per verification; extractor calls are slow
   }
 
   /** Helix archive listing → the VOD whose [start, start+duration] covers ts. */
@@ -136,9 +151,20 @@ export class TwitchFrameSource extends FrameSource {
       `${handle}: no archive covers ${new Date(tsMs).toISOString()}`);
   }
 
-  async getFrames(platform, handle, timestamps) {
+  /**
+   * @param {object} [opts]
+   * @param {number} [opts.skewMs] Wall-clock→media offset to seek with. The
+   *   calibration pass drives this directly to probe the timeline; normal
+   *   verification passes the value calibration measured. Falls back to the
+   *   documented constant only when nobody supplies one.
+   */
+  async getFrames(platform, handle, timestamps, opts = {}) {
     const out = [];
-    let media = null, vodStart = null;
+    // Resolved media is cached for the life of this source. Calibration probes
+    // the same VOD several times and each extractor call is a subprocess and a
+    // network round trip; re-resolving per frame made calibration cost more
+    // than the verification it corrects.
+    let media = this._media, vodStart = this._vodStart ?? null;
     for (const t of timestamps) {
       const ts = typeof t === 'object' ? t.ts : t;
       if (!media) {
@@ -149,6 +175,8 @@ export class TwitchFrameSource extends FrameSource {
           media = { url: resolveMediaUrl(vod.url, this), live: false };
           vodStart = vod.startMs;
         }
+        this._media = media;
+        this._vodStart = vodStart;
       }
       const file = path.join(workDir(), `tw-${randomUUID().slice(0, 8)}.png`);
       if (media.live) {
@@ -156,12 +184,12 @@ export class TwitchFrameSource extends FrameSource {
         // samples while the code is actually on air.
         grabFrame(media.url, 0, file);
       } else {
-        // A VOD's media timeline runs BEHIND our wall clock — measured at
-        // ~15-17s on the first real broadcast, of which created_at explains
-        // only ~5s. Seeking to (ts - created_at) therefore lands ~4 code
-        // rotations early: the badge is right there at a legible size and the
-        // code is simply the wrong one. See bountyConfig.vodTimelineSkewMs.
-        const offsetS = (ts - vodStart + bountyConfig.vodTimelineSkewMs) / 1000;
+        // A VOD's media timeline runs BEHIND our wall clock. The offset is
+        // MEASURED per broadcast by the calibration pass and handed in here;
+        // the constant is only a documented fallback for when calibration
+        // could not run. See bounty-timeline-calibration.js.
+        const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
+        const offsetS = (ts - vodStart + skew) / 1000;
         grabFrame(media.url, offsetS, file);
       }
       out.push({

@@ -925,6 +925,12 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       // kind that also trips a context check — and a reviewer shown only one
       // of them fixes one thing and closes the case.
       const causes = [];
+      if (v.timelineNeedsReview) {
+        // The seek offset could not be trusted, so neither can the score in
+        // either direction. Named distinctly so a reviewer does not mistake it
+        // for a streamer problem — it is a platform-timeline problem.
+        causes.push(`timeline not consistent: ${v.timelineSummary}`);
+      }
       if (contextNeedsReview) causes.push(`stream context: ${context.summary}`);
       if (qualityNeedsReview) {
         causes.push(`stream quality below the verifier floor on ${v.belowQualityFloorClips} clip(s)`
