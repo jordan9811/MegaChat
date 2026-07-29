@@ -450,7 +450,14 @@ app.get('/api/health/platforms', async (req, res) => {
       const c = await getChannelBySlug(handleKick, { log: console });
       return c === null
         ? { configured: true, reachable: false, sample: handleKick }
-        : { configured: true, reachable: true, sample: handleKick, live: c.live, viewerCount: c.viewerCount };
+        : {
+          configured: true, reachable: true, sample: handleKick,
+          live: c.live, viewerCount: c.viewerCount,
+          // ?shape=1 surfaces the field names the API actually returned, so a
+          // silent schema drift is diagnosable from outside instead of
+          // looking like "every channel is offline".
+          ...(req.query.shape ? { shape: c._shape } : {}),
+        };
     })().catch((e) => ({ configured: true, reachable: false, error: e.message })),
   ]);
   res.json({ twitch: tw, kick });

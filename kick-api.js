@@ -60,11 +60,19 @@ export async function getChannelBySlug(slug, { log = console } = {}) {
     if (!r.ok) throw new Error(`kick channels ${r.status}`);
     const ch = (await r.json()).data?.[0] || null;
     if (!ch) return { live: false, viewerCount: 0, startedAt: null };
-    const stream = ch.stream || {};
+    // Kick has shipped this sub-object under both `stream` and `livestream`
+    // across API revisions, and the live flag as is_live / isLive. Reading
+    // only one spelling silently reports every channel offline — which is
+    // indistinguishable from a quiet night, so it must not be guessed at.
+    const stream = ch.stream || ch.livestream || {};
+    const live = stream.is_live ?? stream.isLive ?? ch.is_live ?? false;
+    const viewers = stream.viewer_count ?? stream.viewerCount ?? stream.viewers ?? 0;
     return {
-      live: !!stream.is_live,
-      viewerCount: Number(stream.viewer_count) || 0,
-      startedAt: stream.start_time || null,
+      live: !!live,
+      viewerCount: Number(viewers) || 0,
+      startedAt: stream.start_time || stream.startTime || null,
+      // Shape actually observed, for diagnostics — never any credential.
+      _shape: { keys: Object.keys(ch), streamKeys: Object.keys(stream) },
     };
   } catch (e) {
     log.warn(`[kick-api] channel lookup failed for ${slug}: ${e.message}`);
