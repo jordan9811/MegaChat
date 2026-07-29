@@ -420,6 +420,42 @@ app.get('/r/:handle/overlay', (req, res) =>
 // Expose the Arc / Gateway config the frontend needs to build payments.
 // Boot/infra truth in one place: is data durable across deploys, and did the
 // seeded rooms come back? Cheap to curl, saves guessing from the outside.
+/**
+ * PLATFORM INTEGRATION HEALTH — does the app-token path actually work?
+ *
+ * Deliberately on the always-mounted health surface rather than behind
+ * BOUNTY_CLAIM: the credentials live only in the deployed environment, so
+ * this is the only way to prove from outside that Twitch/Kick reads work in
+ * production. Returns capability and a sample public read — never a token,
+ * never a secret. `configured` says whether keys exist; `reachable` says
+ * whether they actually WORK, which is the distinction that matters (a
+ * present-but-rejected key looks configured and behaves broken).
+ */
+app.get('/api/health/platforms', async (req, res) => {
+  const handleTw = String(req.query.twitch || 'twitch');
+  const handleKick = String(req.query.kick || 'xqc');
+  const [tw, kick] = await Promise.all([
+    (async () => {
+      const { twitchApiConfigured, getStreamByLogin } = await import('./twitch-api.js');
+      if (!twitchApiConfigured()) return { configured: false, reachable: null };
+      const s = await getStreamByLogin(handleTw, { log: console });
+      // null means "could not ask" — never conflated with "offline".
+      return s === null
+        ? { configured: true, reachable: false, sample: handleTw }
+        : { configured: true, reachable: true, sample: handleTw, live: s.live, viewerCount: s.viewerCount };
+    })().catch((e) => ({ configured: true, reachable: false, error: e.message })),
+    (async () => {
+      const { kickApiConfigured, getChannelBySlug } = await import('./kick-api.js');
+      if (!kickApiConfigured()) return { configured: false, reachable: null };
+      const c = await getChannelBySlug(handleKick, { log: console });
+      return c === null
+        ? { configured: true, reachable: false, sample: handleKick }
+        : { configured: true, reachable: true, sample: handleKick, live: c.live, viewerCount: c.viewerCount };
+    })().catch((e) => ({ configured: true, reachable: false, error: e.message })),
+  ]);
+  res.json({ twitch: tw, kick });
+});
+
 app.get('/api/health', (req, res) => {
   const data = dataDirInfo();
   res.json({
