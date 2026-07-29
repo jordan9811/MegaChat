@@ -461,14 +461,28 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
 ## Prove-and-clear run (2026-07-29)
 
 ### P0 — still open
-- **THE REAL BROADCAST STILL HAS NOT HAPPENED.** `TWITCH_STREAM_KEY` is absent
-  locally and the Railway CLI is present but unlinked (linking is
-  interactive), so Phase 1 could not run and was not simulated. The harness is
-  preflight-clean on everything else: ffmpeg with RTMP + libx264, Chrome for
-  the overlay screencast, .env loaded in-process. `node _rehearsal-run-b.mjs
-  --preflight` reports readiness; `--skip-push` runs it against a stream you
-  start yourself. Live-HLS grab and VOD discovery against a real channel
-  remain the only untested stages.
+- **RESOLVED: the real broadcast happened and verification PASSED.**
+  jordandotfun, 2026-07-29T20:37:57Z, ~12 min RTMP, Helix-confirmed live, VOD
+  2832201336. Final VOD verification: PASS, 4/4 clip playbacks, badge 27.7-28px.
+  It found two P0s in the first ninety seconds (see DECISIONS) — the handle was
+  never passed to the frame sources, and the media timeline is ~15-17s behind
+  our wall clock. Both fixed. Re-run with
+  `node _rehearsal-run-b.mjs --handle <login>`; TWITCH_STREAM_KEY lives in
+  Railway variables, not in local .env by default.
+- **PER-VOD CALIBRATION IS THE REAL FIX, AND IS NOT BUILT.** The VOD seek is
+  corrected by a constant (`vodTimelineSkewMs`, default 16s) measured on ONE
+  broadcast. The gate documents the fragility this leaves: a 4s residual still
+  verifies but drops to AMBIGUOUS, sending a streamer who did the work to human
+  review; a residual past the clip's own code coverage cannot verify at all,
+  and no wider filter fixes it. Calibration is straightforward and already
+  demonstrated — decode a frame against ALL of the session's codes, find which
+  one is actually on screen, and derive the true offset. That is how the 16.7s
+  figure was measured. Until it exists, treat the constant as provisional and
+  expect short clips (the floor is 3s) to be the first casualties.
+- **A live spot-check on Kick now matters more, not less.** Kick has no VOD, so
+  the live path is the only path there, and the live delay measured 12-25s
+  against a 4s rotation. The widened live allowance covers it, but Kick's live
+  path has never been exercised against a real Kick broadcast.
 - **A one-code corpus hid a ~50% miss rate at 720p, and would again.**
   Fixed this run (see DECISIONS), but the lesson generalises: every synthetic
   corpus in this repo fixes its sample at generation time. `_gate-decoder-codes.mjs`
@@ -487,6 +501,21 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   are outside the `_gate-helpers.mjs` harness that the spawn audit adopted, so
   they are exactly as fragile as the suites that audit fixed. Adopt the
   harness.
+- **An open review keeps its ORIGINAL reason and never learns the newer one.**
+  On the real broadcast the session's open review still read "source
+  unavailable: EXTRACTION_FAILED" while the current finding was "4 playbacks
+  inside the 10-minute warmup". Dedup by `hasOpenReview` is right; silently
+  discarding the newer, more relevant cause is not. Reasons should append.
+- **The rehearsal plays clips immediately after going live**, which the warmup
+  rule correctly rejects, so the harness can never produce a clean context
+  pass. Either wait out the warmup or run it with a short
+  BOUNTY_STREAM_WARMUP_MS and say so in the output.
+- **`NO_VOD_COVERING_TS` is reported for an offline channel in LIVE mode.**
+  There is a `CHANNEL_OFFLINE` state; yt-dlp's offline message just matches the
+  wrong branch first. A reviewer sees the wrong reason.
+- **The rehearsal's VOD wait prints `not yet (undefined)`** because a 500
+  response has no `verification` to read a state from. It masked a real 500 as
+  a patience problem.
 - **Kick OAuth registration validity is still unproven.** The negative control
   confirmed Kick, like Twitch, renders its login page regardless of whether
   the redirect URI is registered — so a rendering login page proves nothing.
