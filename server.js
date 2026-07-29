@@ -471,6 +471,10 @@ app.get('/api/health', (req, res) => {
     // directory demonstrably survives a restart. FALSE means "not proven yet",
     // NOT "the volume is missing" — see persistence.note.
     persistentData: data.persistent,
+    // Echoed so a test harness can prove the server answering on a port is
+    // the one IT started — a stale process cannot know a nonce minted
+    // seconds ago. Absent in production; see _gate-helpers.mjs.
+    ...(process.env.GATE_NONCE ? { gateNonce: process.env.GATE_NONCE } : {}),
     persistence: data.evidence,
     dataDirConfigured: data.configured,
     dataDir: data.dir,

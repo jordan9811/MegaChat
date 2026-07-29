@@ -51,18 +51,18 @@ const mock = createServer((req, res) => {
 await new Promise((r) => mock.listen(3998, r));
 const setScore = (score) => fetch('http://localhost:3998/__score', { method: 'POST', body: JSON.stringify({ score }) });
 
-const app = spawn(process.execPath, ['server.js', '--prod'], {
-  env: {
-    ...process.env, PORT: String(PORT), DATA_DIR: mkdtempSync(path.join(tmpdir(), 'mc-prog-')),
-    BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
+const { startGateServer } = await import('./_gate-helpers.mjs');
+// Harness-spawned: occupied-port refusal, spawn-error surfacing,
+// readiness polling, and a nonce proving the responder is ours.
+const srv = await startGateServer({
+  port: PORT,
+  env: { BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
     // Expiry must be testable inside a gate run.
     BOUNTY_PLEDGE_MIN_EXPIRY_MS: '500',
     // Point the shared moderation pipeline at the in-gate mock.
-    MODERATION_API_KEY: 'mock-key', MODERATION_API_BASE: 'http://localhost:3998/v1',
-  },
-  stdio: 'ignore', cwd: process.cwd(),
+    MODERATION_API_KEY: 'mock-key', MODERATION_API_BASE: 'http://localhost:3998/v1' },
 });
-await sleep(11000);
+const app = srv.child;
 
 const post = (p, body) => fetch(`${APP}${p}`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' },

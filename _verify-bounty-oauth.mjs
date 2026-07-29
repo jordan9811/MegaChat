@@ -50,18 +50,23 @@ const seal = (o) => {
 const sessionCookie = `mc_identity=${encodeURIComponent(seal({ provider: 'twitch', platformId: 'tw9' }))}`;
 const kickCookie = `mc_identity=${encodeURIComponent(seal({ provider: 'kick', platformId: 'kk7' }))}`;
 
-const app = spawn(process.execPath, ['server.js', '--prod'], {
-  env: {
-    ...process.env, PORT: String(PORT), DATA_DIR: dataDir, AUTH_SECRET,
-    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '1', KEEP_ORPHAN_ROOMS: 'true',
+const { startGateServer } = await import('./_gate-helpers.mjs');
+// Harness-spawned: occupied-port refusal, spawn-error surfacing,
+// readiness polling, and a nonce proving the responder is ours.
+const srv = await startGateServer({
+  port: PORT,
+  // Seeded identities live in this dataDir.
+  dataDir,
+  // AUTH_SECRET must match the one the sealed session cookies were signed
+  // with — my bulk adoption dropped it because it shared a line with
+  // DATA_DIR, and every identity case then read REAL_NOT_SIGNED_IN.
+  env: { AUTH_SECRET, BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '1', KEEP_ORPHAN_ROOMS: 'true',
     MODERATION_API_KEY: '',
     // Mock kick creds: mounts /auth/kick and the kick verifier path. The
     // start route only BUILDS a redirect — no live call happens in this gate.
-    KICK_CLIENT_ID: 'mock-kick-id', KICK_CLIENT_SECRET: 'mock-kick-secret',
-  },
-  stdio: 'ignore', cwd: process.cwd(),
+    KICK_CLIENT_ID: 'mock-kick-id', KICK_CLIENT_SECRET: 'mock-kick-secret' },
 });
-await sleep(11000);
+const app = srv.child;
 
 const post = (p, body, headers = {}) => fetch(`${APP}${p}`, {
   method: 'POST', headers: { 'Content-Type': 'application/json', ...headers },

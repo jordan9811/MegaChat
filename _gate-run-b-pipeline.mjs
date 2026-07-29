@@ -42,17 +42,17 @@ const ff = (args, what) => {
   if (r.status !== 0) throw new Error(`ffmpeg ${what}: ${r.stderr?.slice(0, 200)}`);
 };
 
-const app = spawn(process.execPath, ['server.js', '--prod'], {
-  env: {
-    ...process.env, PORT: String(PORT), DATA_DIR: mkdtempSync(path.join(tmpdir(), 'mc-pipe-d-')),
-    BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
+const { startGateServer } = await import('./_gate-helpers.mjs');
+// Harness-spawned: occupied-port refusal, spawn-error surfacing,
+// readiness polling, and a nonce proving the responder is ours.
+const srv = await startGateServer({
+  port: PORT,
+  env: { BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
     // The gate must never reach a real platform API.
     TWITCH_CLIENT_ID: '', TWITCH_CLIENT_SECRET: '', KICK_CLIENT_ID: '', KICK_CLIENT_SECRET: '',
-    BOUNTY_CODE_ROTATE_MS: '600000', BOUNTY_CODE_VALIDITY_MS: '600000',
-  },
-  stdio: 'ignore', cwd: process.cwd(),
+    BOUNTY_CODE_ROTATE_MS: '600000', BOUNTY_CODE_VALIDITY_MS: '600000' },
 });
-await sleep(11000);
+const app = srv.child;
 
 let browser;
 try {

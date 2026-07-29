@@ -42,11 +42,17 @@ writeFileSync(path.join(dataDir, 'rooms.json'), JSON.stringify({
   },
 }));
 
-const app = spawn(process.execPath, ['server.js', '--prod'], {
-  env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, KEEP_ORPHAN_ROOMS: 'true' },
-  stdio: 'ignore', cwd: process.cwd(),
+const { startGateServer } = await import('./_gate-helpers.mjs');
+// Harness-spawned: occupied-port refusal, spawn-error surfacing,
+// readiness polling, and a nonce proving the responder is ours.
+const srv = await startGateServer({
+  port: PORT,
+  env: { KEEP_ORPHAN_ROOMS: 'true' },
+  // The seeded room lives in this dataDir — the harness must NOT mint its
+  // own, or the room under test does not exist.
+  dataDir,
 });
-await sleep(10000);
+const app = srv.child;
 
 const submit = (durationS) => fetch(`${APP}/api/letter/submit?room=${ROOM}`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' },

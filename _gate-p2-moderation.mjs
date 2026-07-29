@@ -71,12 +71,21 @@ await new Promise((r) => mock.listen(3997, r));
 const setMode = (m) => fetch('http://localhost:3997/__mode', { method: 'POST', body: JSON.stringify({ mode: m }) });
 
 // ── Two app instances: no-key (:3221) and mock-key (:3222) ──────────────────
-const boot = (port, extraEnv) => spawn(process.execPath, ['server.js', '--prod'], {
-  env: { ...process.env, PORT: String(port), ...extraEnv }, stdio: 'ignore', cwd: process.cwd(),
+// Spawned through the shared harness: refuses to start on an occupied port,
+// surfaces spawn/early-exit errors, waits for real readiness, and proves via
+// a nonce that the responder is OUR process. This suite is why that exists —
+// it spent three days driving a zombie server that held :3222.
+const { startGateServer } = await import('./_gate-helpers.mjs');
+const plainSrv = await startGateServer({
+  port: 3221, label: 'no-key', env: { MODERATION_API_KEY: '', MODERATION_API_BASE: '' },
 });
-const plain = boot(3221, { MODERATION_API_KEY: '', MODERATION_API_BASE: '' });
-const modded = boot(3222, { MODERATION_API_KEY: 'mock-key', MODERATION_API_BASE: 'http://localhost:3997/v1' });
-await sleep(9000);
+const moddedSrv = await startGateServer({
+  port: 3222, label: 'mock-key',
+  env: { MODERATION_API_KEY: 'mock-key', MODERATION_API_BASE: 'http://localhost:3997/v1' },
+});
+const plain = plainSrv.child;
+const modded = moddedSrv.child;
+
 
 const viewer = privateKeyToAccount(process.env.TEST_VIEWER_KEY);
 const wallet = createWalletClient({ account: viewer, chain: tempo, transport: http(process.env.TEMPO_RPC_URL || 'https://rpc.tempo.xyz') });
