@@ -1301,6 +1301,25 @@
         return audioCtx;
       } catch { return null; }
     }
+    // OBS injects `window.obsstudio` into every browser source, and its
+    // embedded browser permits autoplay — but an AudioContext can still boot
+    // 'suspended' there, and the resume() inside the first playStinger call
+    // races the sound itself: the opening milliseconds of the first join sound
+    // get swallowed. Pre-warm the context at boot IN OBS ONLY. In a normal
+    // tab, resuming without a user gesture is rejected by autoplay policy by
+    // design, and the existing best-effort path is untouched — sounds there
+    // remain silent until a gesture, which is correct for a preview tab.
+    // This wires audio AROUND the transitions; the stinger machinery,
+    // reveal gating and connect lifecycle are byte-identical.
+    window.__audioEnv = window.obsstudio ? 'obs' : 'browser';
+    if (window.obsstudio) {
+      const warmAudio = () => {
+        const c = getCtx();
+        if (c && c.state === 'suspended') c.resume().catch(() => {});
+      };
+      warmAudio();
+      document.addEventListener('visibilitychange', warmAudio);
+    }
     // ═══ Stinger SFX — synthesized per stinger, timed to the animations. ═══
     // WebAudio recipes (royalty-free by construction, no assets to load).
     // Master toggle per room: stingerSounds (dashboard, default on). Volumes

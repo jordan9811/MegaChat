@@ -113,6 +113,32 @@ if (CHECK_STINGERS) {
   clean === 1 ? ok('stage back to 1 tile (gate-1) after stinger runs') : bad('tiles left over: ' + clean);
 }
 
+// ── OBS audio environment (one-click run) ──────────────────────────────────
+// The overlay pre-warms its AudioContext ONLY when OBS's injected
+// window.obsstudio is present. A normal tab must not create a context at boot
+// (autoplay policy makes that a rejected resume and a console warning farm).
+{
+  const norm = await page.evaluate(() => ({
+    env: window.__audioEnv,
+    ctxAtBoot: !!window.__sfxPlays && window.__audioEnv === 'browser',
+  }));
+  (norm.env === 'browser') ? ok('plain browser detected as env=browser') : bad('env should be browser, got ' + norm.env);
+
+  const obsPage = await browser.newPage();
+  await obsPage.evaluateOnNewDocument(() => {
+    // What OBS injects into every browser source (subset we key on).
+    window.obsstudio = { pluginVersion: '5.5.2' };
+  });
+  await obsPage.goto(`http://localhost:${PORT}/overlay?room=default`, { waitUntil: 'networkidle2', timeout: 30000 });
+  await sleep(600);
+  const obs = await obsPage.evaluate(() => ({
+    env: window.__audioEnv,
+    hasObs: !!window.obsstudio,
+  }));
+  (obs.env === 'obs') ? ok('obsstudio-injected page detected as env=obs (audio pre-warm path)') : bad('env should be obs, got ' + obs.env);
+  await obsPage.close();
+}
+
 await browser.close();
 srv.kill();
 console.log(failures === 0 ? 'GATE PASS' : `GATE FAIL (${failures})`);
