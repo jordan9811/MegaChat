@@ -575,3 +575,27 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
 - Root cause is carried up from calibration: a missing credential still reports
   `API_UNAVAILABLE`, not "could not calibrate", and the extractor's stderr
   travels in the detail.
+
+## OBS one-click run (2026-07-29, night)
+
+### Resolved
+- **The two clean-checkout-crashing gates are fixed and green.** _gate-overlay
+  spawns via the harness now; _gate-auth had three stacked rots (blind sleep,
+  a 127.0.0.1 base that turned every POST into a GET via the passkey redirect,
+  and a stale Arc token address triggering live on-chain validation inside a
+  gate). Detail in the warm-up commit.
+
+### Open
+- **Real-OBS verification is owner-side by design.** The conformance mock and
+  the in-browser UI gate cover everything deterministic; rows 8-14 of
+  docs/obs-oneclick-checklist.md (mixer meter, audible monitoring, scene-switch
+  persistence, virtual-cam eyeball checks) need the owner's machine —
+  `node _verify-obs-oneclick.mjs` walks them as assertions.
+- **Safari has no loopback mixed-content exemption**, so one-click cannot work
+  there from the https site; Safari users land on the manual fallback, which is
+  first-class by design. Not fixable from our side.
+- **The monitoring toggle applies to the input named "MegaChat Overlay" only.**
+  A streamer who renames the source in OBS breaks the toggle's live-apply (the
+  next Add to OBS re-adopts by name). Minor; filed rather than chased.
+- **OBS_ONECLICK is off by default** everywhere including production. Flip it
+  after the owner's checklist passes on a real machine.

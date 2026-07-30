@@ -240,3 +240,45 @@ after going live, which the warmup rule correctly rejected, so no rehearsal coul
 ever demonstrate the pass path. It now shortens warmup for itself, waits past it,
 and prints that the override is in effect — a rehearsal that passes must not be
 mistakable for the production threshold.
+
+## OBS one-click run (2026-07-29, night)
+
+**One client file for browser and gates.** The obs-websocket client is plain JS
+on globalThis.WebSocket + crypto.subtle, imported unchanged by the Next UI and
+by Node gates. Two implementations would let the tested one and the shipped one
+drift — the badge writer/reader already encodes that lesson. The mock computes
+the auth with node:crypto, so every gate run cross-checks the two hash
+implementations byte-exactly.
+
+**The password's home is localStorage, and the proof is interception.** Policy
+alone ("we don't send it") is a claim; the UI gate watches every request to our
+origin for the secret and fails if it ever appears. What crosses the loopback
+socket is the salted hash, computed in the page.
+
+**Find-or-update, never error.** An existing "MegaChat Overlay" input is
+adopted and corrected — including the hand-shrunk case, which is the whole
+reason the feature exists. Re-clicking the button is the documented repair
+path, and the gate holds it.
+
+**Verified-ready is read back, not assumed.** After Add to OBS the UI calls
+verify, which re-fetches settings, transform, enablement and does the badge
+legibility arithmetic explicitly. Green means OBS said so.
+
+**The mirror hazard resolved by construction, not by code.** Overlay tiles are
+WS-seat-driven; the booth's host feed has no seat, so the overlay never renders
+the host's own feed and virtual-cam → booth → overlay cannot loop. The only
+real edge — the host buying a seat in their own room with the virtual cam — is
+undetectable server-side (a seat is a seat), so it is a warning at picker time
+rather than an exclusion that would have to guess.
+
+**Audio pre-warm is OBS-only.** In a normal tab, creating/resuming an
+AudioContext without a gesture is rejected by autoplay policy — correct for a
+preview tab, and noisy to fight. The pre-warm keys on window.obsstudio, which
+only OBS injects. Around the transitions, never inside them; the real-SFU
+suites re-prove the stinger/reveal machinery untouched.
+
+**Real OBS is the owner's checklist, not CI.** Installing OBS in this
+environment buys little: the protocol is conformance-gated, the UI is
+end-to-end-gated in a real browser, and what remains (mixer meters, monitoring
+devices, CEF quirks) needs human ears anyway. docs/obs-oneclick-checklist.md +
+_verify-obs-oneclick.mjs phrase that half as assertions.
