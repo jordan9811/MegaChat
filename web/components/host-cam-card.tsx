@@ -282,11 +282,26 @@ export function HostCamCard() {
 
   // Try (or retry) publishing camera `id` while already on air. Shared by
   // the manual picker AND the auto-upgrade below — same recovery either way.
+  // OBS Virtual Camera registers as an ordinary system camera; the OS label
+  // is how we recognise it. It emits the streamer's produced 1080p scene, so
+  // capturing it at LiveKit's 720p default would down-res the one source that
+  // is deliberately full-canvas.
+  const isObsVirtualCam = (id: string) =>
+    /obs.*virtual/i.test(cams.find((c) => c.id === id)?.label || '')
+
   async function tryEnableCamera(id: string) {
     const r = lkRef.current
     if (!r) return false
     try {
-      await r.localParticipant.setCameraEnabled(true, id ? { deviceId: id } : undefined)
+      const opts = id
+        ? {
+          deviceId: id,
+          ...(isObsVirtualCam(id)
+            ? { resolution: { width: 1920, height: 1080, frameRate: 30 } }
+            : {}),
+        }
+        : undefined
+      await r.localParticipant.setCameraEnabled(true, opts)
       const pub = [...r.localParticipant.videoTrackPublications.values()][0]
       if (pub?.track && videoRef.current) pub.track.attach(videoRef.current)
       setMicOnly(false)
@@ -330,6 +345,13 @@ export function HostCamCard() {
     setError(null)
     try {
       if (micOnly) {
+        await tryEnableCamera(id)
+      } else if (id && isObsVirtualCam(id)) {
+        // switchActiveDevice keeps the old capture constraints, which would
+        // pin the virtual cam at the previous camera's 720p. Re-open the
+        // track with 1080p constraints instead; the brief gap is the normal
+        // cost of a resolution change.
+        await r.localParticipant.setCameraEnabled(false)
         await tryEnableCamera(id)
       } else if (id) {
         await r.switchActiveDevice('videoinput', id)
@@ -404,6 +426,15 @@ export function HostCamCard() {
               ))}
             </select>
           </label>
+        ) : null}
+        {armed && camId && isObsVirtualCam(camId) ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            <strong className="text-foreground">OBS Virtual Camera carries no audio</strong> — your
+            booth mic stays the mic; scene audio from OBS won&apos;t reach the room. And if your OBS
+            scene contains this room&apos;s overlay <em>and</em> you also join as a guest with this
+            camera, you&apos;d be broadcasting your own broadcast — keep the overlay out of the scene
+            you send here.
+          </p>
         ) : null}
 
         <p id="boothStatus" aria-live="polite" className="text-xs text-muted-foreground">
