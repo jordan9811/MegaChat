@@ -57,6 +57,9 @@ export type BountyClientConfig = {
   /** How verification behaves per platform — one source of truth, shared
    *  with the verifier's sampling density. */
   platformProfiles: Record<string, PlatformProfile>
+  /** OBS one-click flag + the badge geometry its verify step checks. */
+  obsOneClick?: boolean
+  badgeCssPx?: number
 }
 
 export type PlatformProfile = {

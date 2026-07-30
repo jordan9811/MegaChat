@@ -13,6 +13,7 @@ import {
   startClaim, getClaim, startAirSession,
   type BountyPool, type BountyClientConfig,
 } from '@/lib/bounty-api'
+import { ObsOneClick } from '@/components/obs/obs-oneclick'
 
 type Stage = 'idle' | 'claiming' | 'setup' | 'live' | 'error'
 
@@ -133,20 +134,32 @@ export function ClaimFlow({
           </div>
 
           <div>
-            <p className="text-sm font-semibold text-foreground">1. Add this as a browser source in OBS</p>
-            <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-border bg-input/30 px-3 py-2">
-              <code className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">{overlayUrl}</code>
-              <button
-                type="button"
-                onClick={() => {
-                  if (overlayUrl) void navigator.clipboard.writeText(overlayUrl)
-                  setCopied(true); setTimeout(() => setCopied(false), 1500)
-                }}
-                className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-[var(--neon-cyan)]"
-              >
-                <Copy className="size-3.5" /> {copied ? 'Copied' : 'Copy'}
-              </button>
-            </div>
+            <p className="text-sm font-semibold text-foreground">1. Add the overlay to OBS</p>
+            {config.obsOneClick && overlayUrl ? (
+              // One-click path (flag-gated). Its manual fallback is built in,
+              // so this replaces the bare URL row rather than stacking on it.
+              <div className="mt-1.5">
+                <ObsOneClick
+                  overlayUrl={overlayUrl}
+                  badgeMinHeightPx={config.badgeMinHeightPx}
+                  badgeCssPx={config.badgeCssPx ?? 28}
+                />
+              </div>
+            ) : (
+              <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-border bg-input/30 px-3 py-2">
+                <code className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">{overlayUrl}</code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (overlayUrl) void navigator.clipboard.writeText(overlayUrl)
+                    setCopied(true); setTimeout(() => setCopied(false), 1500)
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-[var(--neon-cyan)]"
+                >
+                  <Copy className="size-3.5" /> {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* The rule that decides whether they get paid. Stated plainly. */}

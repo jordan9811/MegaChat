@@ -351,6 +351,14 @@ export function bountyClientConfig() {
     minClipSeconds: bountyConfig.minClipSeconds,
     minVerifiableHeightPx: bountyConfig.minVerifiableHeightPx,
     platformProfiles: PLATFORM_PROFILES,
+    /**
+     * OBS one-click (Add to OBS via obs-websocket). Flag-gated: the UI renders
+     * nothing without it, and the manual copy-the-URL path stays the default.
+     * The badge CSS height feeds the verify step's legibility arithmetic
+     * (DOT=4 → 28px glyphs, same constant the overlay draws with).
+     */
+    obsOneClick: process.env.OBS_ONECLICK === '1',
+    badgeCssPx: num(process.env.BOUNTY_BADGE_CSS_PX, 28),
   };
 }
 
