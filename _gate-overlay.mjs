@@ -8,6 +8,20 @@ const ok = (m) => console.log('  OK ', m);
 const bad = (m) => { failures++; console.error('  FAIL', m); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Harness-spawned: this gate previously assumed a server already listening on
+// :3000 and hard-crashed with ERR_CONNECTION_REFUSED on a clean checkout —
+// which meant the overlay, the page that renders money-bearing badges, had no
+// working gate at all.
+import path from 'node:path';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+const PORT = 3009;
+const { startGateServer } = await import('./_gate-helpers.mjs');
+const srv = await startGateServer({
+  port: PORT, dataDir: mkdtempSync(path.join(tmpdir(), 'mc-ovl-')), label: 'overlay',
+  env: { KEEP_ORPHAN_ROOMS: 'true' },
+});
+
 const browser = await puppeteer.launch({
   executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   headless: 'new',
@@ -15,7 +29,7 @@ const browser = await puppeteer.launch({
 const page = await browser.newPage();
 await page.setViewport({ width: 800, height: 700 });
 page.on('pageerror', (e) => bad('page exception: ' + e.message));
-await page.goto('http://localhost:3000/overlay?room=default', { waitUntil: 'networkidle2', timeout: 30000 });
+await page.goto(`http://localhost:${PORT}/overlay?room=default`, { waitUntil: 'networkidle2', timeout: 30000 });
 await sleep(800);
 
 // Transparent canvas
@@ -100,5 +114,6 @@ if (CHECK_STINGERS) {
 }
 
 await browser.close();
+srv.kill();
 console.log(failures === 0 ? 'GATE PASS' : `GATE FAIL (${failures})`);
 process.exit(failures === 0 ? 0 : 1);

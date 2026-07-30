@@ -9,39 +9,32 @@ import fs from 'node:fs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.GATE_PORT || 3005;
-const BASE = `http://127.0.0.1:${PORT}`;
+// localhost, NOT 127.0.0.1: the server 301-redirects 127.0.0.1 to localhost
+// (passkeys are domain-bound), and fetch turns a redirected POST into a GET —
+// so every POST here silently became a GET, missed its route, and fell through
+// to Next's 404 page. The product was fine; the gate's base URL was the bug.
+const BASE = `http://localhost:${PORT}`;
 const ROOM_PW = 'gate-test-secret';
 const WRONG_PW = 'wrong-password';
-const ARC_USDC = '0x3600000000000000000000000000000000000000';
 const fails = [];
 
 function ok(m) { console.log('  ✓', m); }
 function fail(m) { fails.push(m); console.error('  ✗', m); }
 
-const dataDir = path.join(ROOT, 'data');
+// Harness-spawned on a TEMP data dir: readiness polling instead of a blind
+// 2.5s sleep (the server takes ~10s to mount Next, so every clean-checkout run
+// failed with 'fetch failed'), a nonce proving the responder is ours, and no
+// more backing up and restoring the developer's real rooms.json.
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+const { startGateServer } = await import('./_gate-helpers.mjs');
+const dataDir = mkdtempSync(path.join(tmpdir(), 'mc-auth-'));
 const roomsPath = path.join(dataDir, 'rooms.json');
-let roomsBackup = null;
-if (fs.existsSync(roomsPath)) {
-  roomsBackup = fs.readFileSync(roomsPath, 'utf8');
-}
-
-let serverProc;
-try {
-  serverProc = spawn('node', ['server.js'], {
-    cwd: ROOT,
-    env: {
-      ...process.env,
-      PORT: String(PORT),
-      ROOM_DEFAULT_PASSWORD: 'legacy-default-pw',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    shell: true,
-  });
-} catch (e) {
-  fail('spawn: ' + e.message);
-}
-
-await sleep(2500);
+const srv = await startGateServer({
+  port: Number(PORT), dataDir, label: 'auth',
+  env: { ROOM_DEFAULT_PASSWORD: 'legacy-default-pw', KEEP_ORPHAN_ROOMS: 'true' },
+});
+const serverProc = srv.child;
 
 try {
   for (const p of ['/dashboard', '/', '/overlay']) {
@@ -50,7 +43,9 @@ try {
     else ok(`GET ${p} 200`);
   }
 
-  const dashHtml = await (await fetch(`${BASE}/dashboard`)).text();
+  // The legacy static dashboard moved to /dashboard.html when Next took over
+  // /dashboard; the password-field markers under test live in the legacy page.
+  const dashHtml = await (await fetch(`${BASE}/dashboard.html`)).text();
   if (dashHtml.includes('STREAMER_DASHBOARD_KEY')) fail('dashboard still references global key');
   else ok('global dashboard key removed from UI');
   if (!dashHtml.includes('createRoomPassword')) fail('create flow missing room password');
@@ -61,11 +56,11 @@ try {
   const created = await fetch(`${BASE}/api/dashboard/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: 'Auth Gate Room',
-      password: ROOM_PW,
-      config: { paymentTokenAddress: ARC_USDC },
-    }),
+    // No custom payment token: a custom address triggers LIVE on-chain
+    // decimals() validation, which is an external call this gate must not
+    // make — and the hardcoded Arc address went stale on Tempo anyway. Auth
+    // semantics are what is under test, and they do not depend on the token.
+    body: JSON.stringify({ name: 'Auth Gate Room', password: ROOM_PW }),
   });
   const cdata = await created.json();
   if (!created.ok || !cdata.room?.id) fail('create room with password failed');
@@ -115,9 +110,6 @@ try {
 
 if (serverProc) serverProc.kill();
 await sleep(400);
-
-if (roomsBackup != null) fs.writeFileSync(roomsPath, roomsBackup);
-else if (fs.existsSync(roomsPath)) fs.unlinkSync(roomsPath);
 
 console.log('');
 if (fails.length) {
