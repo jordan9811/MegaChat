@@ -599,3 +599,19 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   next Add to OBS re-adopts by name). Minor; filed rather than chased.
 - **OBS_ONECLICK is off by default** everywhere including production. Flip it
   after the owner's checklist passes on a real machine.
+
+### OBS one-click — UNVERIFIED RISKS (flagged 2026-07-30, audit not completed)
+- **P0-if-true: the OBS setting KEYS are unverified against real obs-websocket.**
+  The conformance mock accepts whatever the client sends, so if `reroute_audio`,
+  `restart_when_active`, or `shutdown` are not the exact browser_source setting
+  names real OBS uses, OBS silently ignores them AND `verifyOverlayInObs` reads
+  back our own values and reports GREEN on a misconfigured source. A verify that
+  lies is worse than no verify. Check each key against
+  obsproject/obs-websocket docs/generated/protocol.md before flipping the flag.
+- **Loopback transport is asserted, not proven.** `ws://127.0.0.1:4455` from an
+  HTTPS page: Chrome's Private Network / Local Network Access rules have been
+  tightening. May now prompt or block. Not fatal (manual fallback), but the
+  one-click path may not be the default path. Verify before promising it.
+- Both are settled by the owner running `node _verify-obs-oneclick.mjs` against
+  REAL OBS — it reads settings back from OBS itself, so a wrong key name shows
+  up as a failed check there and nowhere else.
