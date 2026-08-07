@@ -1,6 +1,7 @@
 import type { ObsClient } from './obs-client.mjs'
 
 export const OVERLAY_INPUT_NAME: string
+export const MANAGED_SETTING_KEYS: string[]
 export const MONITOR: { HEAR: string; MUTE_LOCAL: string }
 
 export function addOverlayToObs(client: ObsClient, opts: {
@@ -22,6 +23,7 @@ export function verifyOverlayInObs(client: ObsClient, opts: {
   overlayUrl: string
   badgeMinHeightPx?: number
   badgeCssPx?: number
+  checkBadge?: boolean
 }): Promise<{
   ok: boolean
   checks: ObsVerifyCheck[]

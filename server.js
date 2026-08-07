@@ -499,6 +499,12 @@ app.get('/api/config', (req, res) => {
     // Lazy connect: tells the overlay whether to hold a LiveKit connection
     // while idle (it should not) and how to run its signal channel.
     lazyConnect: lazyClientConfig(cfg.lazyConnectScope),
+    // OBS one-click. Lives on the NORMAL room config, not just the bounty one:
+    // every room hands out an overlay URL that has to reach OBS, and that is
+    // the common case. Bounty claiming makes correct sizing mandatory (the
+    // badge must stay legible or the streamer is not paid); for an ordinary
+    // room it is a convenience offered ALONGSIDE the manual setup.
+    obsOneClick: process.env.OBS_ONECLICK === '1',
     chainId: CHAIN_ID,
     chainIdHex: '0x' + CHAIN_ID.toString(16),
     chainName: 'Tempo',

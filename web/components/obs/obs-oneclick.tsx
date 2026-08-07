@@ -31,13 +31,22 @@ type Phase = 'idle' | 'testing' | 'connected' | 'adding' | 'verified' | 'failed'
 
 export function ObsOneClick({
   overlayUrl,
-  badgeMinHeightPx,
-  badgeCssPx,
+  badgeMinHeightPx = 18,
+  badgeCssPx = 28,
+  mode = 'bounty',
 }: {
   overlayUrl: string
-  badgeMinHeightPx: number
-  badgeCssPx: number
+  badgeMinHeightPx?: number
+  badgeCssPx?: number
+  /**
+   * 'bounty' — the overlay carries the payment badge, so canvas-exact sizing
+   *   is mandatory and the copy says why.
+   * 'room'   — an ordinary room. Same correct setup, but it is a convenience
+   *   offered alongside manual, not a correctness requirement.
+   */
+  mode?: 'bounty' | 'room'
 }) {
+  const isBounty = mode === 'bounty'
   const [password, setPassword] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -105,7 +114,7 @@ export function ObsOneClick({
         setCanvas({ w: added.baseWidth, h: added.baseHeight })
         // Verify, then say so — the green state is read back from OBS, not
         // assumed from "we just set it".
-        result = await verifyOverlayInObs(c, { overlayUrl, badgeMinHeightPx, badgeCssPx })
+        result = await verifyOverlayInObs(c, { overlayUrl, badgeMinHeightPx, badgeCssPx, checkBadge: isBounty })
       })
       if (result && (result as { ok: boolean }).ok) {
         setChecks((result as { checks: ObsVerifyCheck[] }).checks)
@@ -118,7 +127,7 @@ export function ObsOneClick({
     } catch (e) {
       setError(describe(e)); setPhase('failed')
     }
-  }, [withClient, overlayUrl, hearSounds, badgeMinHeightPx, badgeCssPx])
+  }, [withClient, overlayUrl, hearSounds, badgeMinHeightPx, badgeCssPx, isBounty])
 
   const toggleHear = useCallback(async (next: boolean) => {
     setHearSounds(next)
@@ -194,7 +203,9 @@ export function ObsOneClick({
         </button>
         <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
           Creates the overlay as a browser source sized exactly to your canvas —
-          full size, no scaling — so the payment badge can never end up too small to verify.
+          full size, no scaling{isBounty
+            ? ' — so the payment badge can never end up too small to verify'
+            : ', so tiles land exactly where they were designed to'}.
           Re-clicking repairs a moved or resized source.
         </p>
         {/* Chrome 142+ gates local-network access behind a permission prompt.

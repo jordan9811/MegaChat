@@ -6,15 +6,30 @@
 // afterthought. The OBS how-to is a collapsed guide, not a permanent wall of
 // text.
 
+import { useEffect, useState } from 'react'
 import { Link2, ChevronDown, BookOpen } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import { CopyRow } from '@/components/copy-row'
 import { useRoom } from '@/components/room-provider'
+import { ObsOneClick } from '@/components/obs/obs-oneclick'
 
 export function ShareLinksCard() {
   const { mode, room, joinUrl, overlayUrl, identityHandle, updateDraft } = useRoom()
 
   if (mode !== 'managing' || !room || !joinUrl || !overlayUrl) return null
+
+  // The flag rides on the room config route, so an ordinary room can offer
+  // this without the bounty feature being on at all.
+  const [obsOneClick, setObsOneClick] = useState(false)
+  useEffect(() => {
+    if (!room?.id) return
+    let cancelled = false
+    fetch(`/api/config?room=${encodeURIComponent(room.id)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => { if (!cancelled && c?.obsOneClick) setObsOneClick(true) })
+      .catch(() => { /* button just stays hidden */ })
+    return () => { cancelled = true }
+  }, [room?.id])
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const viewerLink = origin
@@ -43,6 +58,25 @@ export function ShareLinksCard() {
       <div className="flex flex-col gap-2 px-5 py-5 sm:px-6">
         <CopyRow label="Viewer" value={viewerLink} />
         <CopyRow label="OBS" value={obsLink} />
+
+        {/* One-click OBS setup, flag-gated. For an ORDINARY room this is a
+            convenience sitting next to the copyable link above — not a
+            correctness requirement the way it is for a bounty claim, where a
+            hand-shrunk source hides the payment badge. Same button, honest
+            framing, and the copy row above remains the equal alternative. */}
+        {obsOneClick ? (
+          <details className="mt-1 rounded-lg border border-border/60 bg-background/30">
+            <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <ChevronDown className="size-3.5" /> Add it to OBS for me
+                <span className="font-normal text-muted-foreground">— or just copy the link above</span>
+              </span>
+            </summary>
+            <div className="px-3 pb-3">
+              <ObsOneClick overlayUrl={obsLink} mode="room" />
+            </div>
+          </details>
+        ) : null}
         {room.transport !== 'livekit' ? (
           <CopyRow
             label="Host cam"

@@ -129,6 +129,11 @@ export async function verifyOverlayInObs(client, {
   overlayUrl,
   badgeMinHeightPx = 18,
   badgeCssPx = 28,
+  // A bounty overlay carries the payment badge, so canvas-exact sizing is a
+  // money requirement. An ordinary room's overlay has no badge — sizing is
+  // still correct-by-default, just not payment-critical — so the legibility
+  // assertion would be meaningless there.
+  checkBadge = true,
 } = {}) {
   const checks = [];
   const push = (name, ok, got, want) => checks.push({ name, ok, got: String(got), want: String(want) });
@@ -192,7 +197,7 @@ export async function verifyOverlayInObs(client, {
   } catch {
     push('in program scene', false, 'not in scene', sceneName);
   }
-  if (inScene) {
+  if (inScene && checkBadge) {
     push('badge clears legibility floor',
       impliedBadgePx >= badgeMinHeightPx,
       `${impliedBadgePx}px`, `>=${badgeMinHeightPx}px`);
