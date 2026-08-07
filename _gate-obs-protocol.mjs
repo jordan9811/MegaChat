@@ -99,6 +99,18 @@ function makeMockObs({ port, password = PASSWORD, seed = {} } = {}) {
       }));
       const findItem = (scene, name) => (state.scenes[scene] || []).find((i) => i.sourceName === name);
       switch (requestType) {
+      case 'GetInputDefaultSettings': {
+        // The REAL browser_source defaults (obs-browser browser_source_get_defaults).
+        // `seed.declaredKeys` lets a case simulate an OBS that does not know one
+        // of our keys, which is the failure the runtime check exists to catch.
+        const all = { url: 'https://obsproject.com/browser-source', width: 800, height: 600,
+          fps: 30, fps_custom: false, shutdown: false, restart_when_active: false,
+          webpage_control_level: 1, css: '', reroute_audio: false };
+        const keys = state.declaredKeys || Object.keys(all);
+        const out = {};
+        for (const k of keys) out[k] = all[k];
+        return reply(true, { defaultInputSettings: out });
+      }
         case 'GetVersion':
           return reply(true, { obsVersion: '30.2.0', obsWebSocketVersion: '5.5.2', rpcVersion: 1 });
         case 'GetVideoSettings':
@@ -288,6 +300,29 @@ const OVERLAY_URL = 'https://megachat.fun/overlay?room=gate&bounty=abc123';
     seq.includes('CreateSceneItem') && res.sceneItemId != null
     && mock.state.scenes['Live Scene'].some((i) => i.sourceName === OVERLAY_INPUT_NAME),
     seq.join(' → '));
+  client.close();
+  await mock.close();
+}
+
+// ── 4b. THE VERIFY-THAT-LIES CASE ─────────────────────────────────────────
+// An OBS that does not declare `reroute_audio` (renamed, or we mistyped it).
+// Every echo-back check still passes, because obs_data stores whatever we
+// send — only the declared-keys check can catch it.
+{
+  const mock = makeMockObs({ port: 4464, seed: {
+    declaredKeys: ['url', 'width', 'height', 'fps', 'shutdown', 'restart_when_active', 'css'],
+  } });
+  const client = new ObsClient({ url: 'ws://127.0.0.1:4464', password: PASSWORD });
+  await client.connect();
+  await addOverlayToObs(client, { overlayUrl: OVERLAY_URL });
+  const verify = await verifyOverlayInObs(client, { overlayUrl: OVERLAY_URL });
+  const keyCheck = verify.checks.find((c) => c.name === 'OBS recognises every setting we write');
+  ok('an OBS that does not know one of our settings FAILS verification',
+    verify.ok === false && keyCheck?.ok === false, keyCheck?.got);
+  ok('...and it names the offending key rather than a vague failure',
+    /reroute_audio/.test(keyCheck?.got || ''), keyCheck?.got);
+  ok('...while the echo-back checks all still pass (proving they cannot catch it)',
+    verify.checks.filter((c) => c.name !== 'OBS recognises every setting we write').every((c) => c.ok));
   client.close();
   await mock.close();
 }

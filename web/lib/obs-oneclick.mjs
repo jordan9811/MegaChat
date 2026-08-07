@@ -37,6 +37,16 @@ import { ObsError, OBS_ERRORS } from './obs-client.mjs';
 
 export const OVERLAY_INPUT_NAME = 'MegaChat Overlay';
 
+/**
+ * Every browser_source setting this flow writes. Verified against obs-browser's
+ * own browser_source_get_defaults, and — more importantly — re-verified at
+ * RUNTIME against whatever OBS the streamer is actually running (see the
+ * schemaless note in verifyOverlayInObs).
+ */
+export const MANAGED_SETTING_KEYS = [
+  'url', 'width', 'height', 'shutdown', 'restart_when_active', 'reroute_audio',
+];
+
 /** obs-websocket v5 RequestStatus codes we branch on. */
 const CODE_RESOURCE_NOT_FOUND = 600;
 const CODE_RESOURCE_EXISTS = 601;
@@ -135,6 +145,30 @@ export async function verifyOverlayInObs(client, {
     return { ok: false, checks, sceneName, baseWidth, baseHeight };
   }
   push('source exists', true, inputName, inputName);
+
+  // OBS'S SETTINGS STORE IS SCHEMALESS, so reading our own values back proves
+  // only that we sent them. obs_data accepts and echoes ANY key: mistype
+  // `reroute_audio`, or ship against an OBS that renamed it, and OBS silently
+  // ignores the setting while every check below still reads green — a verify
+  // that lies, on the one thing that decides whether a streamer gets paid.
+  //
+  // So ask OBS which keys the browser_source kind actually DECLARES, and
+  // assert ours are among them. This is the only readback that cannot be
+  // satisfied by our own input, and it re-verifies on the streamer's real OBS
+  // version rather than trusting a constant checked once against upstream.
+  try {
+    const defaults = await client.request('GetInputDefaultSettings', { inputKind: 'browser_source' });
+    const known = new Set(Object.keys(defaults?.defaultInputSettings || {}));
+    const unknown = MANAGED_SETTING_KEYS.filter((k) => !known.has(k));
+    push('OBS recognises every setting we write', known.size > 0 && unknown.length === 0,
+      unknown.length ? `unknown to this OBS: ${unknown.join(', ')}` : `${MANAGED_SETTING_KEYS.length} keys known`,
+      'all recognised');
+  } catch (e) {
+    // Older obs-websocket without GetInputDefaultSettings: say so rather than
+    // quietly claiming the stronger guarantee.
+    push('OBS recognises every setting we write', false,
+      `could not ask (${e?.comment || e?.message || 'unsupported'})`, 'all recognised');
+  }
   push('overlay URL', settings.url === overlayUrl, settings.url, overlayUrl);
   push('width = canvas', settings.width === baseWidth, settings.width, baseWidth);
   push('height = canvas', settings.height === baseHeight, settings.height, baseHeight);

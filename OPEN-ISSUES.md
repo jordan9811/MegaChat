@@ -600,14 +600,16 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
 - **OBS_ONECLICK is off by default** everywhere including production. Flip it
   after the owner's checklist passes on a real machine.
 
-### OBS one-click — UNVERIFIED RISKS (flagged 2026-07-30, audit not completed)
-- **P0-if-true: the OBS setting KEYS are unverified against real obs-websocket.**
-  The conformance mock accepts whatever the client sends, so if `reroute_audio`,
-  `restart_when_active`, or `shutdown` are not the exact browser_source setting
-  names real OBS uses, OBS silently ignores them AND `verifyOverlayInObs` reads
-  back our own values and reports GREEN on a misconfigured source. A verify that
-  lies is worse than no verify. Check each key against
-  obsproject/obs-websocket docs/generated/protocol.md before flipping the flag.
+### OBS one-click — risk status (updated 2026-07-30)
+- **RESOLVED: the setting keys are correct AND now self-verifying.** All six
+  (`url`, `width`, `height`, `shutdown`, `restart_when_active`, `reroute_audio`)
+  match obs-browser's own `browser_source_get_defaults`. More importantly the
+  underlying hazard is closed structurally: obs_data is SCHEMALESS, so echoing
+  our own values back could never have caught a wrong key. verifyOverlayInObs
+  now calls `GetInputDefaultSettings({inputKind:'browser_source'})` and asserts
+  every key we write is one THAT OBS declares — a readback our own input cannot
+  satisfy, re-checked on each streamer's actual OBS version. Gated with a
+  negative case proving the echo-back checks stay green while the new one fails.
 - **Loopback transport is asserted, not proven.** `ws://127.0.0.1:4455` from an
   HTTPS page: Chrome's Private Network / Local Network Access rules have been
   tightening. May now prompt or block. Not fatal (manual fallback), but the

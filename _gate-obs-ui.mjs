@@ -58,6 +58,10 @@ wss.on('connection', (sock) => {
     }));
     const scene = obsState.scenes.Main;
     switch (requestType) {
+      case 'GetInputDefaultSettings':
+        return reply(true, { defaultInputSettings: { url: '', width: 800, height: 600, fps: 30,
+          fps_custom: false, shutdown: false, restart_when_active: false,
+          webpage_control_level: 1, css: '', reroute_audio: false } });
       case 'GetVersion': return reply(true, { obsVersion: '30.2.0', obsWebSocketVersion: '5.5.2' });
       case 'GetVideoSettings': return reply(true, { baseWidth: 1920, baseHeight: 1080 });
       case 'GetCurrentProgramScene': return reply(true, { currentProgramSceneName: 'Main' });
