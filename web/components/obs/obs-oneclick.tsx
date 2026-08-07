@@ -197,6 +197,16 @@ export function ObsOneClick({
           full size, no scaling — so the payment badge can never end up too small to verify.
           Re-clicking repairs a moved or resized source.
         </p>
+        {/* Chrome 142+ gates local-network access behind a permission prompt.
+            WebSockets were not covered at launch, but Chrome has stated it is
+            extending it to them — so a streamer may see the prompt with no
+            warning and read it as us doing something shady. Naming it first
+            turns an alarming dialog into an expected one. */}
+        <p className="mt-1 text-center text-[11px] text-muted-foreground">
+          Your browser may ask permission to <em>connect to devices on your local
+          network</em> — that&apos;s OBS on your own machine. Allow it, or use the
+          manual setup below.
+        </p>
 
         <label className="mt-2 flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <input
