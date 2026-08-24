@@ -617,3 +617,41 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
 - Both are settled by the owner running `node _verify-obs-oneclick.mjs` against
   REAL OBS — it reads settings back from OBS itself, so a wrong key name shows
   up as a failed check there and nowhere else.
+
+## Platform parity and lockdown (2026-08-24, `feat/platform-parity`)
+
+### Resolved
+- **Verification no longer depends on platform VODs.** Self-capture holds a
+  rolling window per air session and freezes the part covering each clip.
+  Retention: ~60s of media (~22MB at 720p) per clip playback, kept 14 days,
+  purged with its pledge and age-swept regardless.
+- **Bounty routes authorize server-side**, enumerated in `bounty-auth.js` so a
+  new route cannot ship without a tier. 34 routes: 8 public, 2 fan, 8 streamer,
+  5 capability, 11 admin.
+- **Pledging requires a signed-in account** and strikes attach to it.
+- **`/api/bounty/my` no longer takes a contributor query string** — it was an
+  enumeration hole as well as broken once contributions became account-keyed.
+
+### Open
+- **KICK IS STILL UNPROVEN.** `_rehearsal-kick.mjs` is shipped and its preflight
+  is honest. To run it you need, in env: `KICK_STREAM_KEY` and `KICK_RTMP_URL`
+  (both from Kick → Creator Dashboard → Stream Settings; the ingest URL is PER
+  ACCOUNT and the harness refuses to guess), plus `KICK_CLIENT_ID` /
+  `KICK_CLIENT_SECRET` locally — those exist in Railway but not in local `.env`.
+  Then: `node _rehearsal-kick.mjs --slug <your-slug>`.
+- **Fresh-account cost is friction, not money.** A new platform OAuth account
+  resets strikes. Keying to the payment instrument is the only real fix and
+  waits on settlement.
+- **`BOUNTY_ADMIN_KEY` must be set in Railway before the flag is ever public.**
+  Unset means admin routes refuse (503), which is safe but will look like a
+  broken admin panel to whoever finds it first.
+- **Self-capture has not run against a real broadcast.** It is gated against a
+  stub live stream with real badges and the server doing the capturing, but the
+  first real test is the Kick rehearsal — or a re-run of the Twitch one, which
+  now captures as well.
+- **Capture storage is unbounded across concurrent sessions.** Per-session cost
+  is bounded (~22MB live, ~22MB per frozen clip), but nothing caps the total the
+  way `clipStoreMaxBytes` caps clips. Fine at preview scale; needs a ceiling
+  before a public flag-on.
+- **X and pump.fun** — see `docs/platform-feasibility.md`. Both parked with
+  reasons, neither built.

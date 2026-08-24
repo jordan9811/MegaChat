@@ -282,3 +282,57 @@ environment buys little: the protocol is conformance-gated, the UI is
 end-to-end-gated in a real browser, and what remains (mixer meters, monitoring
 devices, CEF quirks) needs human ears anyway. docs/obs-oneclick-checklist.md +
 _verify-obs-oneclick.mjs phrase that half as assertions.
+
+## Platform parity and lockdown (2026-08-24)
+
+**Self-capture, not a better VOD hunt.** The Kick problem was framed as "Kick
+has no VOD". The fix is not to find one — it is to stop needing theirs. An air
+session holds a rolling window of the live stream and freezes the part covering
+each clip when that clip ends. Freezing on END is what makes the unknown
+broadcast delay irrelevant: by then the segments carrying the clip have
+arrived, so the skew never has to be known in advance to know what to keep. The
+frozen window is then just a seekable video with an unknown offset — which is
+exactly what per-VOD calibration already solves — so the verifier path is
+identical on every platform and nothing downstream changed.
+
+**The window is a bound, not a recording.** In memory, so the discard is real
+rather than a cleanup job that might not run; started on session open and
+stopped on close, so the boundary is code rather than copy; one window per clip
+rather than the broadcast. That distinction is the difference between a
+verification capture and taping someone's stream, and it had to be true in the
+implementation.
+
+**Authorization is a table, not scattered checks.** Every bounty route is
+enumerated with a tier, and registration goes through a wrapper that throws on
+an unknown path. A route cannot be added without deciding what it is, and the
+check runs before the handler so a handler that forgets is not the hole. The
+gate diffs the table against reality in BOTH directions, because a stale entry
+describes something imaginary just as an unlisted route is unprotected.
+
+**CAPABILITY is a tier, so that "no auth here" reads as a decision.** The OBS
+overlay polls from a browser source that cannot hold a cookie; its unguessable
+UUID is the credential. Writing that down as a tier is what stops it looking
+like an oversight to the next reader — and stops someone "fixing" it and
+breaking every overlay.
+
+**Authenticate before resolving.** Resolving the subject first gave anonymous
+callers a free existence oracle: 404 vs 401 told them whether any claim, clip
+or air session existed. Nobody without a session learns anything now.
+
+**Gates authenticate; they do not bypass.** Twelve suites broke when the routes
+closed, and the fix was to mint real sealed identities for them rather than add
+a test-only escape hatch to the auth path. An escape hatch there is the thing
+that turns out to be reachable in production. _verify-bounty-oauth keeps
+managing its own identities, because it IS the identity test and the shared
+minter was overwriting its fixtures.
+
+**Purge after the state change, never before.** Deleting captures at the start
+of refundExpired destroyed evidence for refunds that then failed. Evidence must
+not be deleted for something that did not happen.
+
+**X and pump.fun: confirmed parked, not assumed parked.** X gives live status
+for Spaces only and no sanctioned pullable stream at any tier we could pay for;
+pump.fun's entire API surface is reverse-engineered from traffic. Self-capture
+removes the VOD requirement but cannot conjure a stream where the platform
+offers none — which is the actual reason both stay parked, and a more precise
+reason than "the API is expensive".
