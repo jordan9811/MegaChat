@@ -157,8 +157,14 @@ export function contribute({ platform, handle, contributor, amount, letterRef, a
  * because "how many pools can one dollar appear in" is a money-display
  * invariant, not a UI preference.
  */
-export function pledge({ targets, contributor, amount, expiresInMs, actor = 'fan' }) {
+export function pledge({ targets, contributor, amount, expiresInMs, actor = 'fan', displayName = null }) {
   assertEnabled();
+  // `contributor` is now the ACCOUNT key (provider:platformId) supplied by the
+  // route from the sealed identity — never a client string, because strikes
+  // attach to it. Refuse rather than silently accept an anonymous pledge: the
+  // FAN tier should have stopped this, and a fallback here would quietly
+  // restore the free-reset hole it exists to close.
+  if (!contributor) throw new Error('A pledge requires a signed-in account');
   const seen = new Set();
   const clean = [];
   for (const t of targets || []) {

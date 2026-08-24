@@ -240,6 +240,28 @@ try {
   const rightKey = await call('GET', '/api/bounty/admin/ledger', { adminKey: ADMIN_KEY });
   ok('the right admin key gets through (ADMIN positive)', rightKey.status === 200, `${rightKey.status}`);
 
+  // ── T5: strikes follow the ACCOUNT, not a string ─────────────────────────
+  // The old hole: `contributor` was whatever the client sent, so a struck fan
+  // typed a new name and probed the classifier again for free.
+  const pledgeAsOwner = await call('POST', '/api/bounty/pledge', {
+    cookie: owner,
+    body: { targets: [{ platform: 'twitch', handle: 'gatestreamer' }],
+      contributor: 'TOTALLY-DIFFERENT-NAME', amount: '5', expiresInMs: 86400000 },
+  });
+  ok('a pledge is recorded against the ACCOUNT, not the name the client sent',
+    pledgeAsOwner.status === 200, `${pledgeAsOwner.status}`);
+  const mine = await call('GET', '/api/bounty/my', { cookie: owner });
+  ok('...and "my contributions" resolves from the session, not a query string',
+    mine.status === 200 && (mine.body.contributions || []).length >= 1,
+    `${mine.status} n=${(mine.body.contributions || []).length}`);
+  const mineAnon = await call('GET', '/api/bounty/my');
+  ok("...so nobody can read another account's contributions by guessing a name",
+    mineAnon.status === 401, `${mineAnon.status}`);
+  const mineOther = await call('GET', '/api/bounty/my', { cookie: other });
+  ok("...and a DIFFERENT account sees its own (empty) list, not the owner's",
+    mineOther.status === 200 && (mineOther.body.contributions || []).length === 0,
+    `n=${(mineOther.body.contributions || []).length}`);
+
   // ── 3. Public routes stay public ─────────────────────────────────────────
   const pub = await call('GET', '/api/bounty/pools');
   ok('public routes remain public (the directory is not behind a login)', pub.status === 200);

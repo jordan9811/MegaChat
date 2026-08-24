@@ -172,6 +172,15 @@ export function makeClipHooks({ log = console } = {}) {
   };
 }
 
+/**
+ * The stable account behind a request — provider + platform id, which the
+ * streamer cannot change without a new platform account. Strikes key on this.
+ */
+function accountKey(req) {
+  const id = readIdentityFromRequest(req);
+  return id ? `${id.provider}:${id.platformId}` : null;
+}
+
 export function attachBountyRoutes(app, { log = console, identityVerifier } = {}) {
   if (!bountyConfig.enabled) {
     log.log('[bounty] BOUNTY_CLAIM off — no routes mounted, no surfaces rendered');
@@ -413,7 +422,20 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   guarded.post('/api/bounty/pledge', (req, res) => {
     try {
       const { targets, contributor, amount, expiresInMs } = req.body || {};
-      const out = escrow.pledge({ targets, contributor, amount, expiresInMs });
+      // THE CONTRIBUTOR IS THE ACCOUNT, NOT A STRING THEY CHOSE.
+      //
+      // `contributor` used to be whatever the client sent, and strikes attach
+      // to it — so probing the moderation classifier was free: get struck,
+      // type a new name, start over. The identity behind the request is now
+      // authoritative (FAN tier guarantees one exists), and the client's
+      // string is kept only as a display label. A fresh account now costs a
+      // fresh OAuth account, which is friction rather than money, but it is no
+      // longer zero.
+      const account = accountKey(req);
+      const out = escrow.pledge({
+        targets, contributor: account, amount, expiresInMs,
+        displayName: typeof contributor === 'string' ? contributor.slice(0, 64) : null,
+      });
       res.json({
         ok: true,
         pledge: out.pledge,
@@ -501,8 +523,12 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
    * — settlement is a stub — and the endpoint says so rather than faking it.
    */
   guarded.get('/api/bounty/my', (req, res) => {
-    const contributor = String(req.query.contributor || '').trim();
-    if (!contributor) return res.status(400).json({ error: 'contributor required' });
+    // "MY" MEANS THE SIGNED-IN ACCOUNT. It used to take the contributor as a
+    // query string, which since contributions became account-keyed is both
+    // broken AND an enumeration hole: anyone could read anyone's
+    // contributions by guessing the string. The session decides now.
+    const contributor = accountKey(req);
+    if (!contributor) return res.status(401).json({ error: 'Sign in to see your MegaChats', reason: 'auth_required' });
     const moderationOn = !!process.env.MODERATION_API_KEY;
     const mine = (store.listPledges({ contributor }) || []).map((p) => {
       const c = store.getContribution(p.contributionId);

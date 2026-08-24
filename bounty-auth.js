@@ -62,7 +62,8 @@ export const ROUTE_POLICY = {
   'GET /api/bounty/pool-view': { tier: TIER.PUBLIC },
   'GET /api/bounty/program': { tier: TIER.PUBLIC },
   'GET /api/bounty/clips': { tier: TIER.PUBLIC },
-  'GET /api/bounty/my': { tier: TIER.PUBLIC },
+  // Reads the signed-in account's own contributions — never a query string.
+  'GET /api/bounty/my': { tier: TIER.FAN },
   // Carries its own identity proof (PlatformIdentityVerifier) inside the
   // handler — the whole point of the route is establishing who you are.
   'POST /api/bounty/claim': { tier: TIER.PUBLIC },

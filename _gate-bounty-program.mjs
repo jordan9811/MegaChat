@@ -58,7 +58,8 @@ const srv = await startGateServer({
   // Bounty routes authorize server-side now; the harness mints a sealed
   // identity per handle plus an admin key. Gates authenticate exactly the
   // way a streamer does — no test-only bypass in the auth path.
-  bountyAuth: { handles: ['expirer', 'judge', 'modq', 'raceanchor', 'racefour', 'racethree', 'racetwo'] },
+  bountyAuth: { handles: ['expirer', 'judge', 'modq', 'raceanchor', 'racefour', 'racethree', 'racetwo',
+    'fanA', 'fanB', 'fanC', 'fanD', 'fanE', 'fanF', 'fanG'] },
   port: PORT,
   env: { BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
     // Expiry must be testable inside a gate run.
@@ -76,6 +77,9 @@ const post = (p, body, as) => fetch(`${APP}${p}`, {
   body: JSON.stringify(body),
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 const get = (p, as) => fetch(`${APP}${p}`, { headers: srv.headers(as) }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+// '0xfanD' -> the 'fanD' identity. Strikes key on the ACCOUNT now, so each
+// fixture fan has to be a real distinct account or they share a rap sheet.
+const asFan = (c) => `fan${String(c).replace('0xfan', '')}`;
 const vid = (n) => Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(n, 9)]);
 const upload = (url, durationS, bytes = 4096) => fetch(`${APP}${url}?durationS=${durationS}`, {
   method: 'POST', headers: { 'Content-Type': 'video/webm', ...srv.headers() }, body: vid(bytes),
@@ -90,7 +94,7 @@ try {
   ];
   const p1 = await post('/api/bounty/pledge', {
     targets: t3, contributor: '0xfanA', amount: '100', expiresInMs: 3600_000,
-  });
+  }, 'fanA');
   ok('A. a pledge across three streamers is accepted', p1.status === 200 && !!p1.body.pledge, p1.body.error);
   ok('A. it discloses the rejection policy BEFORE any upload',
     p1.body.rejectionPolicy?.repeatPolicyRejectionRefund === 0.5
@@ -100,13 +104,13 @@ try {
   const four = await post('/api/bounty/pledge', {
     targets: [...t3, { platform: 'twitch', handle: 'racefour' }],
     contributor: '0xfanA', amount: '10',
-  });
+  }, 'fanA');
   ok('A. a FOURTH target is refused (cap is server-side, not UI politeness)',
     four.status === 400 && /at most 3/.test(four.body.error || ''), four.body.error);
 
   const dup = await post('/api/bounty/pledge', {
     targets: [t3[0], t3[0], t3[1]], contributor: '0xfanA', amount: '10', expiresInMs: 3600_000,
-  });
+  }, 'fanA');
   ok('A. duplicate targets are deduped, not double-listed',
     dup.status === 200 && dup.body.pledge.targets.length === 2, JSON.stringify(dup.body.pledge?.targets));
 
@@ -134,7 +138,7 @@ try {
   const solo = await post('/api/bounty/pledge', {
     targets: [{ platform: 'twitch', handle: 'racetwo' }],
     contributor: '0xfanB', amount: '25', expiresInMs: 3600_000,
-  });
+  }, 'fanB');
   ok('B. a single-target pledge lands as GUARANTEED', solo.status === 200);
   const vTwo2 = await get('/api/bounty/pool-view?platform=twitch&handle=racetwo');
   ok('B. guaranteed and contested never blend',
@@ -191,7 +195,7 @@ try {
   const exp = await post('/api/bounty/pledge', {
     targets: [{ platform: 'twitch', handle: 'expirer' }],
     contributor: '0xfanC', amount: '40', expiresInMs: 600,
-  });
+  }, 'fanC');
   ok('D. a short expiry (bounded by env) is accepted', exp.status === 200);
   const upE = await upload(exp.body.uploadUrl, 6);
   const expClip = upE.body.clip?.clipId;
@@ -200,7 +204,7 @@ try {
   ok('D. the sweeper refunds the lapsed pledge',
     swept.body.swept?.some((s) => s.pledgeId === exp.body.pledge.id),
     JSON.stringify(swept.body.swept));
-  const myC = await get('/api/bounty/my?contributor=0xfanC');
+  const myC = await get('/api/bounty/my', 'fanC');
   ok('D. the contributor status page says expired_refunded, with what happens next',
     myC.body.contributions[0]?.state === 'expired_refunded'
     && /refund/i.test(myC.body.contributions[0]?.next || ''),
@@ -215,7 +219,7 @@ try {
   const mk = async (handle, contributor, amount) => {
     const pl = await post('/api/bounty/pledge', {
       targets: [{ platform: 'twitch', handle }], contributor, amount, expiresInMs: 3600_000,
-    });
+    }, asFan(contributor));
     const u = await upload(pl.body.uploadUrl, 7);
     return { pledge: pl.body.pledge, clipId: u.body.clip?.clipId };
   };
@@ -287,7 +291,7 @@ try {
     await setScore(score);
     const pl = await post('/api/bounty/pledge', {
       targets: [{ platform: 'twitch', handle }], contributor, amount, expiresInMs: 3600_000,
-    });
+    }, asFan(contributor));
     await post(`${pl.body.uploadUrl}/frames`, { frames: ['data:image/jpeg;base64,AAAA'] });
     const u = await upload(pl.body.uploadUrl, 9);
     // The verdict lands post-ack; poll the queue until it appears.
