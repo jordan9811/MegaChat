@@ -29,8 +29,8 @@
  */
 import { spawn } from 'child_process';
 import { createServer } from 'net';
-import { randomUUID } from 'crypto';
-import { mkdtempSync } from 'fs';
+import { randomUUID, createHmac } from 'crypto';
+import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 
@@ -50,6 +50,44 @@ export function portInUse(port, host = '127.0.0.1') {
  * Spawn server.js and return only once it is verifiably OURS and answering.
  * @throws with a diagnostic message (never a silent stale-server pass).
  */
+/**
+ * Bounty routes authorize server-side now (see bounty-auth.js), so a suite
+ * that drives them needs credentials. This mints them: a sealed mc_identity
+ * cookie per handle plus an admin key, with the identity records seeded into
+ * the server's own data dir so `readIdentityFromRequest` resolves a username.
+ *
+ * Deliberately NOT a bypass. Gates authenticate exactly the way a streamer
+ * does; a test-only escape hatch in the auth path is the thing that later
+ * turns out to be reachable in production.
+ */
+export function mintBountyAuth({ handles = [], dataDir }) {
+  const authSecret = `gate-auth-${randomUUID()}`;
+  const adminKey = `gate-admin-${randomUUID()}`;
+  const identities = {};
+  const cookies = {};
+  handles.forEach((raw, i) => {
+    // "handle" or "platform:handle"; platform defaults to twitch.
+    const [platform, handle] = raw.includes(':') ? raw.split(':') : ['twitch', raw];
+    const platformId = String(1000 + i);
+    identities[`${platform}:${platformId}`] = {
+      provider: platform, platformId, username: handle, handle: null, createdAt: Date.now(),
+    };
+    const payload = Buffer.from(JSON.stringify({ provider: platform, platformId })).toString('base64url');
+    const sig = createHmac('sha256', authSecret).update(payload).digest('base64url');
+    cookies[raw] = `mc_identity=${encodeURIComponent(`${payload}.${sig}`)}`;
+  });
+  writeFileSync(path.join(dataDir, 'identities.json'),
+    JSON.stringify({ identities, handles: {} }));
+  const first = handles[0];
+  const cookieFor = (h) => cookies[h] ?? cookies[first] ?? '';
+  return {
+    authSecret, adminKey, cookieFor,
+    env: { AUTH_SECRET: authSecret, BOUNTY_ADMIN_KEY: adminKey },
+    /** Spread into a fetch's headers to act as `handle` (default: the first). */
+    headers: (h) => ({ Cookie: cookieFor(h), 'x-bounty-admin-key': adminKey }),
+  };
+}
+
 export async function startGateServer({
   port,
   env = {},
@@ -57,6 +95,8 @@ export async function startGateServer({
   readyTimeoutMs = 45_000,
   dataDir = null,
   label = `:${port}`,
+  /** e.g. { handles: ['pipestreamer', 'kick:someslug'] } */
+  bountyAuth = null,
 } = {}) {
   if (await portInUse(port)) {
     throw new Error(
@@ -70,13 +110,19 @@ export async function startGateServer({
   let stderr = '';
   let exitedEarly = null;
 
+  const resolvedDataDir = dataDir || mkdtempSync(path.join(tmpdir(), 'mc-gate-'));
+  const auth = bountyAuth
+    ? mintBountyAuth({ ...bountyAuth, dataDir: resolvedDataDir })
+    : null;
+
   const child = spawn(process.execPath, args, {
     cwd: process.cwd(),
     env: {
       ...process.env,
       PORT: String(port),
-      DATA_DIR: dataDir || mkdtempSync(path.join(tmpdir(), 'mc-gate-')),
+      DATA_DIR: resolvedDataDir,
       GATE_NONCE: nonce,
+      ...(auth ? auth.env : {}),
       ...env,
     },
     // stdio 'ignore' is what hid the original failure. Pipe and KEEP it.
@@ -102,6 +148,12 @@ export async function startGateServer({
         if (body.gateNonce === nonce) {
           return {
             child, port, nonce,
+            dataDir: resolvedDataDir,
+            // Present only when bountyAuth was requested. `headers(handle)`
+            // spreads into a fetch to act as that streamer plus admin.
+            adminKey: auth?.adminKey ?? null,
+            cookieFor: auth ? auth.cookieFor : () => '',
+            headers: auth ? auth.headers : () => ({}),
             stderr: () => stderr,
             kill: () => { try { child.kill(); } catch { /* already gone */ } },
           };

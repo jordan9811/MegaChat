@@ -47,11 +47,14 @@ const WORK = mkdtempSync(path.join(tmpdir(), 'mc-cal-'));
 const VOD_LEAD_S = 5;     // created_at this far before the first badge, as Twitch does
 const CLIPS = 6;          // >= calibrationMinPoints, one probe target each
 
-const post = (p, body) => fetch(`${APP}${p}`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+// `as` picks WHICH streamer identity to send. Streamer-tier routes authorize
+// against the handle they target, so a gate driving two channels needs two
+// cookies; omitting it acts as the first handle.
+const post = (p, body, as) => fetch(`${APP}${p}`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers(as) },
   body: JSON.stringify(body),
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
-const get = (p) => fetch(`${APP}${p}`).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+const get = (p, as) => fetch(`${APP}${p}`, { headers: srv.headers(as) }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 const vid = (n) => Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(n, 5)]);
 const ff = (args, what) => {
   const r = spawnSync('ffmpeg', ['-v', 'error', '-y', ...args], { encoding: 'utf8' });
@@ -114,6 +117,10 @@ await new Promise((r) => server.listen(STUB, r));
 
 const { startGateServer } = await import('./_gate-helpers.mjs');
 const srv = await startGateServer({
+  // Bounty routes authorize server-side now; the harness mints a sealed
+  // identity per handle plus an admin key. Gates authenticate exactly the
+  // way a streamer does — no test-only bypass in the auth path.
+  bountyAuth: { handles: ['calstreamer'] },
   port: PORT,
   env: {
     BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
@@ -133,7 +140,7 @@ try {
     contributor: '0xcal', amount: '90', expiresInMs: 86_400_000,
   });
   await fetch(`${APP}${pl.body.uploadUrl}?durationS=8`, {
-    method: 'POST', headers: { 'Content-Type': 'video/webm' }, body: vid(2048),
+    method: 'POST', headers: { 'Content-Type': 'video/webm', ...srv.headers() }, body: vid(2048),
   });
   const claim = await post('/api/bounty/claim', { platform: 'twitch', handle: 'calstreamer', claimant: 'cal' });
   // Broadcast started well before the clips, so stream-context passes cleanly

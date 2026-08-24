@@ -54,13 +54,17 @@ const { startGateServer } = await import('./_gate-helpers.mjs');
 // Harness-spawned: occupied-port refusal, spawn-error surfacing,
 // readiness polling, and a nonce proving the responder is ours.
 const srv = await startGateServer({
+  // NO bountyAuth here on purpose: this suite IS the identity test. It seals
+  // its own cookies and seeds its own identities.json, and the harness minter
+  // would overwrite both. It only needs the admin key, set in env below.
   port: PORT,
   // Seeded identities live in this dataDir.
   dataDir,
   // AUTH_SECRET must match the one the sealed session cookies were signed
   // with — my bulk adoption dropped it because it shared a line with
   // DATA_DIR, and every identity case then read REAL_NOT_SIGNED_IN.
-  env: { AUTH_SECRET, BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '1', KEEP_ORPHAN_ROOMS: 'true',
+  env: { AUTH_SECRET, BOUNTY_ADMIN_KEY: 'oauth-verify-admin-key',
+    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '1', KEEP_ORPHAN_ROOMS: 'true',
     MODERATION_API_KEY: '',
     // Mock kick creds: mounts /auth/kick and the kick verifier path. The
     // start route only BUILDS a redirect — no live call happens in this gate.
@@ -78,13 +82,13 @@ try {
   await post('/api/bounty/pledge', {
     targets: [{ platform: 'twitch', handle: 'realstreamer' }],
     contributor: '0xfan', amount: '10', expiresInMs: 7 * 86_400_000,
-  });
+  }, { cookie: sessionCookie });
 
   // A second pool so the wrong-handle case exercises identity, not a 404.
   await post('/api/bounty/pledge', {
     targets: [{ platform: 'twitch', handle: 'someoneelse' }],
     contributor: '0xfan', amount: '5', expiresInMs: 7 * 86_400_000,
-  });
+  }, { cookie: sessionCookie });
 
   const anon = await post('/api/bounty/claim', { platform: 'twitch', handle: 'realstreamer', claimant: 'whoever' });
   ok('A. an anonymous claim is DENIED', anon.body.identity?.approved === false, anon.body.identity?.method);
@@ -106,7 +110,8 @@ try {
     right.body.identity?.approved === true, right.body.identity?.method);
   ok('A. the approval method is the OAuth session, not a stub',
     right.body.identity?.method === 'TWITCH_OAUTH_SESSION');
-  const ledg = await fetch(`${APP}/api/bounty/admin/ledger?handleKey=twitch:realstreamer`)
+  const ledg = await fetch(`${APP}/api/bounty/admin/ledger?handleKey=twitch:realstreamer`,
+    { headers: { 'x-bounty-admin-key': 'oauth-verify-admin-key' } })
     .then((r) => r.json()).catch(() => ({}));
   ok('A. the ledger records HOW identity was verified (never mistakable for a stub)',
     JSON.stringify(ledg).includes('TWITCH_OAUTH_SESSION')
@@ -116,7 +121,7 @@ try {
   await post('/api/bounty/pledge', {
     targets: [{ platform: 'kick', handle: 'kickstreamer' }],
     contributor: '0xfan', amount: '8', expiresInMs: 7 * 86_400_000,
-  });
+  }, { cookie: sessionCookie });
 
   const cross = await post('/api/bounty/claim',
     { platform: 'kick', handle: 'kickstreamer', claimant: 'x' },

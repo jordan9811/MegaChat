@@ -32,8 +32,11 @@ const WORK = mkdtempSync(path.join(tmpdir(), 'mc-sweep-'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(...a);
 
-const post = (p, body) => fetch(`${APP}${p}`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+// `as` picks WHICH streamer identity to send. Streamer-tier routes authorize
+// against the handle they target, so a gate driving two channels needs two
+// cookies; omitting it acts as the first handle.
+const post = (p, body, as) => fetch(`${APP}${p}`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers(as) },
   body: JSON.stringify(body),
 }).then((r) => r.json());
 const vid = (n) => Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(n, 5)]);
@@ -44,6 +47,10 @@ const ff = (args, what) => {
 
 const { startGateServer } = await import('./_gate-helpers.mjs');
 const srv = await startGateServer({
+  // Bounty routes authorize server-side now; the harness mints a sealed
+  // identity per handle plus an admin key. Gates authenticate exactly the
+  // way a streamer does — no test-only bypass in the auth path.
+  bountyAuth: { handles: ['sweeper'] },
   port: PORT,
   env: {
     BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
@@ -60,7 +67,7 @@ try {
     contributor: '0xs', amount: '500', expiresInMs: 86_400_000,
   });
   await fetch(`${APP}${pl.uploadUrl}?durationS=8`, {
-    method: 'POST', headers: { 'Content-Type': 'video/webm' }, body: vid(2048),
+    method: 'POST', headers: { 'Content-Type': 'video/webm', ...srv.headers() }, body: vid(2048),
   });
   const claim = await post('/api/bounty/claim', { platform: 'twitch', handle: 'sweeper', claimant: 's' });
 

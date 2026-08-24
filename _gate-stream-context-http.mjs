@@ -51,11 +51,14 @@ const stub = http.createServer((req, res) => {
 });
 await new Promise((r) => stub.listen(STUB, r));
 
-const post = (p, body) => fetch(`${APP}${p}`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+// `as` picks WHICH streamer identity to send. Streamer-tier routes authorize
+// against the handle they target, so a gate driving two channels needs two
+// cookies; omitting it acts as the first handle.
+const post = (p, body, as) => fetch(`${APP}${p}`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers(as) },
   body: JSON.stringify(body),
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
-const get = (p) => fetch(`${APP}${p}`).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+const get = (p, as) => fetch(`${APP}${p}`, { headers: srv.headers(as) }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 const vid = (n) => Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(n, 5)]);
 
 // The frame pipeline is not what is under test here — the run-b gate already
@@ -75,6 +78,10 @@ const evidenceRows = () => {
 
 const { startGateServer } = await import('./_gate-helpers.mjs');
 const srv = await startGateServer({
+  // Bounty routes authorize server-side now; the harness mints a sealed
+  // identity per handle plus an admin key. Gates authenticate exactly the
+  // way a streamer does — no test-only bypass in the auth path.
+  bountyAuth: { handles: ['ctxstreamer', 'ctxfarmer', 'ctxquitter'] },
   port: PORT,
   env: {
     BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
@@ -102,12 +109,14 @@ async function setup(handle, room) {
     contributor: '0xctx', amount: '40', expiresInMs: 86_400_000,
   });
   await fetch(`${APP}${pl.body.uploadUrl}?durationS=8`, {
-    method: 'POST', headers: { 'Content-Type': 'video/webm' }, body: vid(2048),
+    method: 'POST', headers: { 'Content-Type': 'video/webm', ...srv.headers() }, body: vid(2048),
   });
-  const claim = await post('/api/bounty/claim', { platform: 'twitch', handle, claimant: 'ctx' });
+  // Act AS this handle: streamer routes authorize against the handle they
+  // target, so each channel in the gate needs its own identity.
+  const claim = await post('/api/bounty/claim', { platform: 'twitch', handle, claimant: 'ctx' }, handle);
   const air = await post('/api/bounty/air-session', {
     claimId: claim.body.claim.id, platform: 'twitch', roomId: room,
-  });
+  }, handle);
   return air.body.airSession.id;
 }
 /** Play a clip and wait for the fire-and-forget platform observation to land. */
@@ -143,9 +152,9 @@ try {
   // what used to null the broadcast start and send honest sessions to review.
   await sleep(5000); // outlive the 4s tail: they streamed on after the clip
   chan.live = false;
-  await post(`/api/bounty/air-session/${airA}/end`, {});
+  await post(`/api/bounty/air-session/${airA}/end`, {}, 'ctxstreamer');
   const callsBeforeVerify = helixCalls;
-  const vA = await post(`/api/bounty/air-session/${airA}/verify`, {});
+  const vA = await post(`/api/bounty/air-session/${airA}/verify`, {}, 'ctxstreamer');
   ok('verification does NOT ask the platform — it reads what was observed live',
     helixCalls === callsBeforeVerify,
     `${helixCalls - callsBeforeVerify} lookups during verify`);
@@ -165,7 +174,7 @@ try {
   chan.startedAt = new Date(Date.now() - 2 * MIN).toISOString(); // just went live
   const airB = await setup('ctxfarmer', 'ctxroom2');
   await playClip(airB, 'CTX2');
-  const vB = await post(`/api/bounty/air-session/${airB}/verify`, {});
+  const vB = await post(`/api/bounty/air-session/${airB}/verify`, {}, 'ctxfarmer');
   ok('a playback INSIDE the warmup does not count',
     vB.body.streamContext?.counted?.length === 0
     && vB.body.streamContext?.rejected?.length === 1,
@@ -184,11 +193,11 @@ try {
   const airC = await setup('ctxquitter', 'ctxroom3');
   await playClip(airC, 'CTX3');
   chan.live = false;              // they cut the stream right after the clip
-  await post(`/api/bounty/air-session/${airC}/end`, {});
+  await post(`/api/bounty/air-session/${airC}/end`, {}, 'ctxquitter');
   const sC = await sessionOf(airC);
   ok('ending the session observes that the broadcast is over',
     Number.isFinite(sC?.broadcastEndedAt), `broadcastEndedAt=${sC?.broadcastEndedAt}`);
-  const vC = await post(`/api/bounty/air-session/${airC}/verify`, {});
+  const vC = await post(`/api/bounty/air-session/${airC}/verify`, {}, 'ctxquitter');
   ok('a stream ending too soon after the last playback is flagged',
     (vC.body.streamContext?.warnings || []).some((w) => w.failure === 'STREAM_ENDED_TOO_SOON'),
     vC.body.streamContext?.summary);

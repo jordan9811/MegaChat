@@ -16,7 +16,7 @@
  *  H. Source audit — no real settlement/transfer call anywhere in the feature.
  */
 import { spawn } from 'child_process';
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync, readdirSync , mkdirSync } from 'fs';
 import fsSync from 'fs';
 import path from 'path';
 import puppeteer from 'puppeteer-core';
@@ -711,8 +711,15 @@ let ambiguousSessionId = null;
 console.log(`\n  [server-side subtotal] ${pass} pass, ${fail} fail`);
 
 // ── G. flag OFF: no routes, no surfaces ────────────────────────────────────
+// Bounty routes authorize server-side now. Mint the same credentials a real
+// streamer would hold, into THIS server's data dir, and carry them on every
+// request below.
+const { mintBountyAuth } = await import('./_gate-helpers.mjs');
+mkdirSync(`${SCRATCH}-http`, { recursive: true });
+const srv = mintBountyAuth({ handles: ['gateshow', 'revq', 'wm', 'vf'], dataDir: `${SCRATCH}-http` });
+
 const launch = (port, env) => spawn(process.execPath, ['server.js', '--prod'], {
-  env: { ...process.env, PORT: String(port), DATA_DIR: `${SCRATCH}-http`, ...env },
+  env: { ...process.env, PORT: String(port), DATA_DIR: `${SCRATCH}-http`, ...srv.env, ...env },
   stdio: 'ignore', cwd: process.cwd(),
 });
 
@@ -750,7 +757,7 @@ try {
   const cfg = await fetch('http://localhost:3251/api/bounty/config').then((r) => r.json());
   ok('G. flag on: config route reports enabled', cfg.enabled === true);
   await fetch('http://localhost:3251/api/bounty/contribute', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers() },
     body: JSON.stringify({ platform: 'twitch', handle: 'gateshow', contributor: '0x', amount: '80', letterRef: 'L' }),
   });
   const page = await browser.newPage();

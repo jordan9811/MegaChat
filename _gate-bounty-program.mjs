@@ -55,6 +55,10 @@ const { startGateServer } = await import('./_gate-helpers.mjs');
 // Harness-spawned: occupied-port refusal, spawn-error surfacing,
 // readiness polling, and a nonce proving the responder is ours.
 const srv = await startGateServer({
+  // Bounty routes authorize server-side now; the harness mints a sealed
+  // identity per handle plus an admin key. Gates authenticate exactly the
+  // way a streamer does — no test-only bypass in the auth path.
+  bountyAuth: { handles: ['expirer', 'judge', 'modq', 'raceanchor', 'racefour', 'racethree', 'racetwo'] },
   port: PORT,
   env: { BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
     // Expiry must be testable inside a gate run.
@@ -64,14 +68,17 @@ const srv = await startGateServer({
 });
 const app = srv.child;
 
-const post = (p, body) => fetch(`${APP}${p}`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+// `as` picks WHICH streamer identity to send. Streamer-tier routes authorize
+// against the handle they target, so a gate driving two channels needs two
+// cookies; omitting it acts as the first handle.
+const post = (p, body, as) => fetch(`${APP}${p}`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers(as) },
   body: JSON.stringify(body),
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
-const get = (p) => fetch(`${APP}${p}`).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+const get = (p, as) => fetch(`${APP}${p}`, { headers: srv.headers(as) }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 const vid = (n) => Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(n, 9)]);
 const upload = (url, durationS, bytes = 4096) => fetch(`${APP}${url}?durationS=${durationS}`, {
-  method: 'POST', headers: { 'Content-Type': 'video/webm' }, body: vid(bytes),
+  method: 'POST', headers: { 'Content-Type': 'video/webm', ...srv.headers() }, body: vid(bytes),
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 
 try {
@@ -218,7 +225,7 @@ try {
   const e1 = await mk('judge', '0xfanD', '10');
   const r1 = await post(`/api/bounty/clip/${e1.clipId}/reject`, {
     by: 'judgeStreamer', reasonCode: 'STREAMER_DECLINED', reason: 'not my vibe',
-  });
+  }, 'judge');
   ok('E. a streamer declining a clean clip refunds IN FULL', r1.body.refunded === '10' && r1.body.withheld === '0',
     JSON.stringify({ r: r1.body.refunded, w: r1.body.withheld }));
   ok('E. ...and records NO strike', r1.body.strike === false);
@@ -227,7 +234,7 @@ try {
   const e2 = await mk('judge', '0xfanD', '10');
   const r2 = await post(`/api/bounty/clip/${e2.clipId}/reject`, {
     by: 'judgeStreamer', reasonCode: 'POLICY_VIOLATION', reason: 'slur at 0:03',
-  });
+  }, 'judge');
   ok('E. the FIRST confirmed policy rejection still refunds in full', r2.body.refunded === '10');
   ok('E. ...but records the strike', r2.body.strike === true);
 
@@ -236,7 +243,7 @@ try {
   const e3 = await mk('judge', '0xfanD', '20');
   const r3 = await post(`/api/bounty/clip/${e3.clipId}/reject`, {
     by: 'judgeStreamer', reasonCode: 'POLICY_VIOLATION', reason: 'again',
-  });
+  }, 'judge');
   ok('E. a REPEAT policy rejection refunds at the configured fraction',
     r3.body.refunded === '10' && r3.body.withheld === '10',
     JSON.stringify({ r: r3.body.refunded, w: r3.body.withheld }));
@@ -259,19 +266,19 @@ try {
   const e4 = await mk('judge', '0xfanE', '10');
   const r4 = await post(`/api/bounty/clip/${e4.clipId}/reject`, {
     by: 'auto-moderation', reasonCode: 'POLICY_VIOLATION', reason: 'low-confidence flag', confidence: 0.2,
-  });
+  }, 'judge');
   ok('E. (route treats queue rejections as human-reviewed — full refund first offence for THIS account)',
     r4.body.refunded === '10', JSON.stringify(r4.body));
 
   // ── F. queue ─────────────────────────────────────────────────────────────
   const f1 = await mk('judge', '0xfanF', '5');
-  const q = await get('/api/bounty/queue?platform=twitch&handle=judge');
+  const q = await get('/api/bounty/queue?platform=twitch&handle=judge', 'judge');
   ok('F. the queue lists the pending clip with a playable media URL',
     q.body.queue.some((c) => c.clipId === f1.clipId && /media/.test(c.mediaUrl)),
     `${q.body.count} queued`);
-  const ap = await post(`/api/bounty/clip/${f1.clipId}/approve`, { by: 'judgeStreamer' });
+  const ap = await post(`/api/bounty/clip/${f1.clipId}/approve`, { by: 'judgeStreamer' }, 'judge');
   ok('F. approve marks the clip APPROVED', ap.body.clip?.approval?.state === 'APPROVED');
-  const q2 = await get('/api/bounty/queue?platform=twitch&handle=judge');
+  const q2 = await get('/api/bounty/queue?platform=twitch&handle=judge', 'judge');
   ok('F. an approved clip leaves the queue', !q2.body.queue.some((c) => c.clipId === f1.clipId));
   const media = await fetch(`${APP}/api/bounty/clip/${f1.clipId}/media`);
   ok('F. approved clips are playable', media.status === 200, `HTTP ${media.status}`);
@@ -287,7 +294,7 @@ try {
     let clip = null;
     for (let i = 0; i < 20; i++) {
       await sleep(300);
-      const qq = await get(`/api/bounty/queue?platform=twitch&handle=${handle}`);
+      const qq = await get(`/api/bounty/queue?platform=twitch&handle=${handle}`, handle);
       clip = qq.body.queue.find((c) => c.clipId === u.body.clip?.clipId);
       if (clip?.moderation) break;
     }
@@ -312,7 +319,7 @@ try {
     viol?.moderation?.grade === 'violation' && viol?.moderation?.topCategory === 'harassment',
     JSON.stringify(viol?.moderation));
 
-  const qSorted = await get('/api/bounty/queue?platform=twitch&handle=modq');
+  const qSorted = await get('/api/bounty/queue?platform=twitch&handle=modq', 'modq');
   const grades = qSorted.body.queue.map((c) => c.moderation?.grade);
   ok('G. the queue sorts the safe pile first, violations last',
     grades[0] === 'clean' && grades[grades.length - 1] === 'violation',

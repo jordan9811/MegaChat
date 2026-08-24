@@ -22,6 +22,7 @@ import { twitchApiConfigured, getStreamByLogin } from './twitch-api.js';
 import { kickApiConfigured, getChannelBySlug } from './kick-api.js';
 import { readIdentityFromRequest } from './auth.js';
 import settlement from './bounty-settlement.js';
+import { policyFor, authorize, TIER } from './bounty-auth.js';
 
 /**
  * Identity verification is STUBBED in Run A — real OAuth is Run B.
@@ -176,6 +177,28 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     log.log('[bounty] BOUNTY_CLAIM off — no routes mounted, no surfaces rendered');
     return { mounted: false };
   }
+  /**
+   * EVERY route registers through this, and it looks the path up in
+   * bounty-auth.js — which THROWS on an unknown path. Authorization is
+   * therefore structural: you cannot add a bounty route without deciding its
+   * tier, and the middleware runs before the handler rather than inside it,
+   * so a handler that forgets to check cannot be the hole. The recorded list
+   * is handed back for the gate to diff against the policy table.
+   */
+  const registeredRoutes = [];
+  const guarded = {
+    get(path, ...handlers) {
+      const policy = policyFor('GET', path);
+      registeredRoutes.push(`GET ${path}`);
+      app.get(path, authorize(policy, { log }), ...handlers);
+    },
+    post(path, ...handlers) {
+      const policy = policyFor('POST', path);
+      registeredRoutes.push(`POST ${path}`);
+      app.post(path, authorize(policy, { log }), ...handlers);
+    },
+  };
+
   // BOUNTY_IDENTITY_REAL=1 flips claims from the auto-approving stub to the
   // session-bound Twitch proof. Loud at boot either way — which verifier is
   // deciding who owns a handle must never be a surprise.
@@ -256,13 +279,13 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   };
 
   // ── Public: bounty board ─────────────────────────────────────────────────
-  app.get('/api/bounty/config', (_req, res) => res.json(bountyClientConfig()));
+  guarded.get('/api/bounty/config', (_req, res) => res.json(bountyClientConfig()));
 
-  app.get('/api/bounty/pools', (_req, res) => {
+  guarded.get('/api/bounty/pools', (_req, res) => {
     res.json({ pools: store.listPools(), currency: bountyConfig.currency });
   });
 
-  app.get('/api/bounty/pool', (req, res) => {
+  guarded.get('/api/bounty/pool', (req, res) => {
     const key = store.handleKey(req.query.platform, req.query.handle);
     if (!key) return res.status(400).json({ error: 'platform and handle required' });
     res.json({ pool: store.getPool(key), reserved: store.getReservedHandleByKey(key) });
@@ -273,7 +296,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   // Two steps on purpose, mirroring the letters flow: the contribution is
   // recorded first and the recording is uploaded against it second. The
   // reverse would store bytes for a contribution that might never exist.
-  app.post('/api/bounty/contribute', (req, res) => {
+  guarded.post('/api/bounty/contribute', (req, res) => {
     try {
       const { platform, handle, contributor, amount, letterRef } = req.body || {};
       const c = escrow.contribute({ platform, handle, contributor, amount, letterRef });
@@ -293,7 +316,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   // ── Upload the actual recording for a contribution ───────────────────────
-  app.post('/api/bounty/clip/:contributionId',
+  guarded.post('/api/bounty/clip/:contributionId',
     express.raw({ type: () => true, limit: bountyConfig.clipMaxBytes + 1024 }),
     (req, res) => {
       try {
@@ -352,7 +375,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     });
 
   /** What a claiming streamer actually has waiting for them. */
-  app.get('/api/bounty/clips', (req, res) => {
+  guarded.get('/api/bounty/clips', (req, res) => {
     const key = store.handleKey(req.query.platform, req.query.handle);
     if (!key) return res.status(400).json({ error: 'platform and handle required' });
     res.json({
@@ -362,7 +385,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   /** Serve a stored clip. Refuses rather than serving bytes that changed. */
-  app.get('/api/bounty/clip/:clipId/media', (req, res) => {
+  guarded.get('/api/bounty/clip/:clipId/media', (req, res) => {
     const out = clips.readClip(req.params.clipId);
     if (!out.ok) {
       const code = out.error === 'not_found' ? 404 : 410;
@@ -378,7 +401,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     res.send(out.data);
   });
 
-  app.get('/api/bounty/admin/clip-storage', (_req, res) => res.json(clips.stats()));
+  guarded.get('/api/bounty/admin/clip-storage', (_req, res) => res.json(clips.stats()));
 
   // ── Pledges (the fan-facing program) ─────────────────────────────────────
 
@@ -387,7 +410,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
    * Payment note, disclosed here as everywhere: escrow is a ledger and
    * settlement is a stub — no real funds move in this build.
    */
-  app.post('/api/bounty/pledge', (req, res) => {
+  guarded.post('/api/bounty/pledge', (req, res) => {
     try {
       const { targets, contributor, amount, expiresInMs } = req.body || {};
       const out = escrow.pledge({ targets, contributor, amount, expiresInMs });
@@ -419,7 +442,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
    * fail-open posture as room MegaChats.
    */
   const pendingFrames = new Map(); // contributionId → { frames, at }
-  app.post('/api/bounty/clip/:contributionId/frames', express.json({ limit: '6mb' }), (req, res) => {
+  guarded.post('/api/bounty/clip/:contributionId/frames', express.json({ limit: '6mb' }), (req, res) => {
     const frames = (req.body?.frames || []).filter((f) => /^data:image\//.test(String(f))).slice(0, 16);
     pendingFrames.set(req.params.contributionId, { frames, at: Date.now() });
     // Bound the map — entries are only useful for minutes.
@@ -431,7 +454,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   /** Guaranteed-first pool display. Never a blended headline. */
-  app.get('/api/bounty/pool-view', (req, res) => {
+  guarded.get('/api/bounty/pool-view', (req, res) => {
     const key = store.handleKey(req.query.platform, req.query.handle);
     if (!key) return res.status(400).json({ error: 'platform and handle required' });
     res.json({
@@ -448,7 +471,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
    * requirement that rehypothecated money is never presented as bigger than
    * it is.
    */
-  app.get('/api/bounty/program', (_req, res) => {
+  guarded.get('/api/bounty/program', (_req, res) => {
     const views = store.listReservedHandles().map((r) => ({
       ...escrow.poolView(r.key),
       seeded: !!r.seeded,
@@ -477,7 +500,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
    * and what happens next. `paid` is a defined rung that nothing reaches yet
    * — settlement is a stub — and the endpoint says so rather than faking it.
    */
-  app.get('/api/bounty/my', (req, res) => {
+  guarded.get('/api/bounty/my', (req, res) => {
     const contributor = String(req.query.contributor || '').trim();
     if (!contributor) return res.status(400).json({ error: 'contributor required' });
     const moderationOn = !!process.env.MODERATION_API_KEY;
@@ -550,7 +573,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   // first, violations last and loudly flagged.
 
   const gradeRank = { clean: 0, borderline: 1, violation: 2 };
-  app.get('/api/bounty/queue', (req, res) => {
+  guarded.get('/api/bounty/queue', (req, res) => {
     const key = store.handleKey(req.query.platform, req.query.handle);
     if (!key) return res.status(400).json({ error: 'platform and handle required' });
     const queue = clips.listClips(key)
@@ -571,7 +594,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     res.json({ queue, count: queue.length });
   });
 
-  app.post('/api/bounty/clip/:clipId/approve', (req, res) => {
+  guarded.post('/api/bounty/clip/:clipId/approve', (req, res) => {
     try {
       const clip = clips.approveClip(req.params.clipId, { by: String(req.body?.by || 'streamer') });
       if (!clip) return res.status(404).json({ error: 'No such clip' });
@@ -579,7 +602,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     } catch (e) { fail(res, e); }
   });
 
-  app.post('/api/bounty/clip/:clipId/reject', (req, res) => {
+  guarded.post('/api/bounty/clip/:clipId/reject', (req, res) => {
     try {
       const { by, reasonCode, reason, confidence } = req.body || {};
       const out = escrow.refundRejectedClip({
@@ -600,7 +623,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
    * corpus generator and the dress rehearsal issue REAL codes through the
    * real store — the same startClipPlayback the letters hook calls.
    */
-  app.post('/api/bounty/admin/playback', (req, res) => {
+  guarded.post('/api/bounty/admin/playback', (req, res) => {
     try {
       const { airSessionId, clipId, durationS } = req.body || {};
       const sess = store.getAirSession(airSessionId);
@@ -616,7 +639,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     } catch (e) { fail(res, e); }
   });
 
-  app.post('/api/bounty/admin/playback/end', (req, res) => {
+  guarded.post('/api/bounty/admin/playback/end', (req, res) => {
     try {
       const { airSessionId, clipId, playbackId } = req.body || {};
       watermark.endClipPlayback(airSessionId, { clipId, playbackId });
@@ -625,14 +648,14 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   /** Deterministic sweeper trigger (the interval below is the ambient one). */
-  app.post('/api/bounty/admin/sweep-pledges', (_req, res) => {
+  guarded.post('/api/bounty/admin/sweep-pledges', (_req, res) => {
     try {
       res.json({ ok: true, swept: escrow.sweepExpiredPledges({ settlement }) });
     } catch (e) { fail(res, e); }
   });
 
   /** Hand-picked program entries. Labelled promotional on every surface. */
-  app.post('/api/bounty/admin/seed', (req, res) => {
+  guarded.post('/api/bounty/admin/seed', (req, res) => {
     try {
       const { platform, handle } = req.body || {};
       const key = store.handleKey(platform, handle);
@@ -654,7 +677,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   if (pledgeSweeper.unref) pledgeSweeper.unref();
 
   // ── Claim flow ───────────────────────────────────────────────────────────
-  app.post('/api/bounty/claim', async (req, res) => {
+  guarded.post('/api/bounty/claim', async (req, res) => {
     try {
       const { platform, handle, claimant } = req.body || {};
       const key = store.handleKey(platform, handle);
@@ -716,7 +739,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     } catch (e) { fail(res, e); }
   });
 
-  app.get('/api/bounty/claim/:id', (req, res) => {
+  guarded.get('/api/bounty/claim/:id', (req, res) => {
     const claim = store.getClaim(req.params.id);
     if (!claim) return res.status(404).json({ error: 'No such claim' });
     const sessions = store.listAirSessions(claim.id);
@@ -763,7 +786,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   // ── Air sessions + watermark ─────────────────────────────────────────────
-  app.post('/api/bounty/air-session', (req, res) => {
+  guarded.post('/api/bounty/air-session', (req, res) => {
     try {
       const { claimId, roomId, platform } = req.body || {};
       const claim = store.getClaim(claimId);
@@ -787,7 +810,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   /** Overlay polls this for the code it must render. */
-  app.get('/api/bounty/air-session/:id/code', (req, res) => {
+  guarded.get('/api/bounty/air-session/:id/code', (req, res) => {
     try {
       const rec = watermark.currentOrRotate(req.params.id);
       const s = store.getAirSession(req.params.id);
@@ -803,7 +826,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   /** Overlay self-reports badge legibility. See the trust note in bounty-watermark.js. */
-  app.post('/api/bounty/air-session/:id/badge', (req, res) => {
+  guarded.post('/api/bounty/air-session/:id/badge', (req, res) => {
     try {
       const { tooSmall, detail } = req.body || {};
       const s = tooSmall
@@ -813,7 +836,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     } catch (e) { fail(res, e); }
   });
 
-  app.post('/api/bounty/air-session/:id/end', async (req, res) => {
+  guarded.post('/api/bounty/air-session/:id/end', async (req, res) => {
     try {
       const prev = store.getAirSession(req.params.id);
       // OBSERVE WHETHER THE BROADCAST IS STILL RUNNING, once, here. This is the
@@ -848,7 +871,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   // ── Verify + release ─────────────────────────────────────────────────────
-  app.post('/api/bounty/air-session/:id/verify', async (req, res) => {
+  guarded.post('/api/bounty/air-session/:id/verify', async (req, res) => {
     try {
       const s = store.getAirSession(req.params.id);
       if (!s) return res.status(404).json({ error: 'No such air session' });
@@ -980,7 +1003,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   // ── Refund path ──────────────────────────────────────────────────────────
-  app.post('/api/bounty/refund-expired', (req, res) => {
+  guarded.post('/api/bounty/refund-expired', (req, res) => {
     try {
       const key = store.handleKey(req.body?.platform, req.body?.handle);
       if (!key) return res.status(400).json({ error: 'platform and handle required' });
@@ -990,7 +1013,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   // ── Admin ────────────────────────────────────────────────────────────────
-  app.get('/api/bounty/admin/sessions', (_req, res) => {
+  guarded.get('/api/bounty/admin/sessions', (_req, res) => {
     const sessions = store.listAirSessions().map((s) => ({
       ...s,
       verifications: store.listVerifications(s.id),
@@ -999,7 +1022,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     res.json({ sessions, settlementIntents: settlement.pending() });
   });
 
-  app.post('/api/bounty/admin/override', (req, res) => {
+  guarded.post('/api/bounty/admin/override', (req, res) => {
     try {
       const { platform, handle, to, reason, actor } = req.body || {};
       const key = store.handleKey(platform, handle);
@@ -1013,7 +1036,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   // ── Review queue (ambiguous verifications) ───────────────────────────────
-  app.get('/api/bounty/admin/reviews', (_req, res) => {
+  guarded.get('/api/bounty/admin/reviews', (_req, res) => {
     const now = Date.now();
     const reviews = store.listReviews().map((r) => ({
       ...r,
@@ -1029,7 +1052,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     });
   });
 
-  app.post('/api/bounty/admin/reviews/:id/assign', (req, res) => {
+  guarded.post('/api/bounty/admin/reviews/:id/assign', (req, res) => {
     try {
       const r = store.updateReview(req.params.id, { assignee: req.body?.assignee || null });
       res.json({ ok: true, review: r });
@@ -1037,7 +1060,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   });
 
   /** Resolve a review. A reason is REQUIRED and is written to the ledger. */
-  app.post('/api/bounty/admin/reviews/:id/resolve', async (req, res) => {
+  guarded.post('/api/bounty/admin/reviews/:id/resolve', async (req, res) => {
     try {
       const { approve, reason, actor } = req.body || {};
       if (!reason || !String(reason).trim()) {
@@ -1076,12 +1099,13 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     } catch (e) { fail(res, e); }
   });
 
-  app.get('/api/bounty/admin/ledger', (req, res) => {
+  guarded.get('/api/bounty/admin/ledger', (req, res) => {
     const key = req.query.platform && req.query.handle
       ? store.handleKey(req.query.platform, req.query.handle) : null;
     res.json({ ledger: store.listLedger(key ? { handleKey: key } : {}) });
   });
 
   log.log('[bounty] routes mounted (flagged ON)');
-  return { mounted: true };
+  log.log(`[bounty] ${registeredRoutes.length} routes mounted, all behind bounty-auth policy`);
+  return { mounted: true, routes: registeredRoutes };
 }

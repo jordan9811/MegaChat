@@ -31,11 +31,14 @@ const PORT = 3305;
 const APP = `http://localhost:${PORT}`;
 const WORK = mkdtempSync(path.join(tmpdir(), 'mc-pipe-'));
 
-const post = (p, body) => fetch(`${APP}${p}`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+// `as` picks WHICH streamer identity to send. Streamer-tier routes authorize
+// against the handle they target, so a gate driving two channels needs two
+// cookies; omitting it acts as the first handle.
+const post = (p, body, as) => fetch(`${APP}${p}`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers(as) },
   body: JSON.stringify(body),
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
-const get = (p) => fetch(`${APP}${p}`).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+const get = (p, as) => fetch(`${APP}${p}`, { headers: srv.headers(as) }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 const vid = (n) => Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(n, 5)]);
 const ff = (args, what) => {
   const r = spawnSync('ffmpeg', ['-v', 'error', '-y', ...args], { encoding: 'utf8' });
@@ -46,6 +49,10 @@ const { startGateServer } = await import('./_gate-helpers.mjs');
 // Harness-spawned: occupied-port refusal, spawn-error surfacing,
 // readiness polling, and a nonce proving the responder is ours.
 const srv = await startGateServer({
+  // Bounty routes authorize server-side now; the harness mints a sealed
+  // identity per handle plus an admin key. Gates authenticate exactly the
+  // way a streamer does — no test-only bypass in the auth path.
+  bountyAuth: { handles: ['pipestreamer'] },
   port: PORT,
   env: { BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
     // The gate must never reach a real platform API.
@@ -62,7 +69,7 @@ try {
     contributor: '0xpipe', amount: '50', expiresInMs: 86_400_000,
   });
   await fetch(`${APP}${pl.body.uploadUrl}?durationS=8`, {
-    method: 'POST', headers: { 'Content-Type': 'video/webm' }, body: vid(4096),
+    method: 'POST', headers: { 'Content-Type': 'video/webm', ...srv.headers() }, body: vid(4096),
   });
   const claim = await post('/api/bounty/claim', { platform: 'twitch', handle: 'pipestreamer', claimant: 'pipe' });
   const air = await post('/api/bounty/air-session', { claimId: claim.body.claim.id, platform: 'twitch', roomId: 'piperoom' });

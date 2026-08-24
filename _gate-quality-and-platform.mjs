@@ -27,11 +27,14 @@ const ok = (n, c, x = '') => {
 const PORT = 3313;
 const APP = `http://localhost:${PORT}`;
 
-const post = (p, body) => fetch(`${APP}${p}`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+// `as` picks WHICH streamer identity to send. Streamer-tier routes authorize
+// against the handle they target, so a gate driving two channels needs two
+// cookies; omitting it acts as the first handle.
+const post = (p, body, as) => fetch(`${APP}${p}`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers(as) },
   body: JSON.stringify(body),
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
-const get = (p) => fetch(`${APP}${p}`).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+const get = (p, as) => fetch(`${APP}${p}`, { headers: srv.headers(as) }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 const vid = (n) => Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(n, 5)]);
 
 const WORK = mkdtempSync(path.join(tmpdir(), 'mc-qual-'));
@@ -45,6 +48,10 @@ writeFileSync(FIXTURE, JSON.stringify({
 
 const { startGateServer } = await import('./_gate-helpers.mjs');
 const srv = await startGateServer({
+  // Bounty routes authorize server-side now; the harness mints a sealed
+  // identity per handle plus an admin key. Gates authenticate exactly the
+  // way a streamer does — no test-only bypass in the auth path.
+  bountyAuth: { handles: ['qualstreamer', 'kick:qualslug'] },
   port: PORT,
   env: {
     BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
@@ -56,20 +63,23 @@ const srv = await startGateServer({
 const app = srv.child;
 
 async function runSession(platform, handle, room, clipId) {
+  // The identity that owns THIS handle — a Twitch cookie cannot open a Kick
+  // handle's air session, which is exactly what the auth layer enforces.
+  const as = platform === 'kick' ? `kick:${handle}` : handle;
   const pl = await post('/api/bounty/pledge', {
     targets: [{ platform, handle }], contributor: '0xq', amount: '40', expiresInMs: 86_400_000,
   });
   await fetch(`${APP}${pl.body.uploadUrl}?durationS=8`, {
-    method: 'POST', headers: { 'Content-Type': 'video/webm' }, body: vid(2048),
+    method: 'POST', headers: { 'Content-Type': 'video/webm', ...srv.headers() }, body: vid(2048),
   });
-  const claim = await post('/api/bounty/claim', { platform, handle, claimant: 'q' });
+  const claim = await post('/api/bounty/claim', { platform, handle, claimant: 'q' }, as);
   const air = await post('/api/bounty/air-session', {
     claimId: claim.body.claim.id, platform, roomId: room,
-  });
+  }, as);
   const airId = air.body.airSession.id;
   await post('/api/bounty/admin/playback', { airSessionId: airId, clipId, durationS: 600 });
   await post('/api/bounty/admin/playback/end', { airSessionId: airId, clipId });
-  const v = await post(`/api/bounty/air-session/${airId}/verify`, {});
+  const v = await post(`/api/bounty/air-session/${airId}/verify`, {}, as);
   return { claimId: claim.body.claim.id, airId, v };
 }
 
@@ -134,7 +144,7 @@ try {
     `${st.body.quality?.smallestBadgePx}px vs floor ${st.body.quality?.floorPx}px`);
   ok('...and the resolution to aim for (720p, the measured verifiable floor)',
     st.body.quality?.minVerifiableHeightPx === 720);
-  const kst = await get(`/api/bounty/claim/${kk.claimId}`);
+  const kst = await get(`/api/bounty/claim/${kk.claimId}`, 'kick:qualslug');
   ok('a Kick claim carries its platform profile so the UI can warn on it',
     kst.body.platformProfile?.vodRetry === false,
     kst.body.platformProfile?.platform);

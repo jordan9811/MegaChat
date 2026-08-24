@@ -27,9 +27,12 @@ const PORT = 3299;
 const APP = `http://localhost:${PORT}`;
 const dataDir = mkdtempSync(path.join(tmpdir(), 'mc-e2e-'));
 
+const { mintBountyAuth } = await import('./_gate-helpers.mjs');
+const srv = mintBountyAuth({ handles: ['e2estreamer'], dataDir });
+
 const app = spawn(process.execPath, ['server.js', '--prod'], {
   env: {
-    ...process.env, PORT: String(PORT), DATA_DIR: dataDir,
+    ...process.env, PORT: String(PORT), DATA_DIR: dataDir, ...srv.env,
     BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
   },
   stdio: ['ignore', 'pipe', 'pipe'], cwd: process.cwd(),
@@ -39,11 +42,14 @@ app.stdout.on('data', (d) => { serverLog += d; });
 app.stderr.on('data', (d) => { serverLog += d; });
 await sleep(11000);
 
-const post = (p, body) => fetch(`${APP}${p}`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+// `as` picks WHICH streamer identity to send. Streamer-tier routes authorize
+// against the handle they target, so a gate driving two channels needs two
+// cookies; omitting it acts as the first handle.
+const post = (p, body, as) => fetch(`${APP}${p}`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers(as) },
   body: JSON.stringify(body),
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
-const get = (p) => fetch(`${APP}${p}`).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+const get = (p, as) => fetch(`${APP}${p}`, { headers: srv.headers(as) }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 
 try {
   const cfg = await get('/api/bounty/config');

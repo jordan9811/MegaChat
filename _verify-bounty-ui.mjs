@@ -24,9 +24,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const PORT = 3302;
 const APP = `http://localhost:${PORT}`;
 
+const { mintBountyAuth } = await import('./_gate-helpers.mjs');
+const uiDataDir = mkdtempSync(path.join(tmpdir(), 'mc-ui-'));
+const srv = mintBountyAuth({ handles: ['promostreamer', 'organicstreamer'], dataDir: uiDataDir });
+
 const app = spawn(process.execPath, ['server.js', '--prod'], {
   env: {
-    ...process.env, PORT: String(PORT), DATA_DIR: mkdtempSync(path.join(tmpdir(), 'mc-ui-')),
+    ...process.env, PORT: String(PORT), DATA_DIR: uiDataDir, ...srv.env,
     BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
     // The parent shell carries the REAL MODERATION_API_KEY (prod letters use
     // it). Inheriting it here would ship fake-cam footage to real OpenAI and
@@ -39,11 +43,11 @@ await sleep(11000);
 
 // Seed: one promotional entry + one organic pool with money already in it.
 await fetch(`${APP}/api/bounty/admin/seed`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers() },
   body: JSON.stringify({ platform: 'twitch', handle: 'promostreamer' }),
 });
 await fetch(`${APP}/api/bounty/pledge`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers() },
   body: JSON.stringify({
     targets: [{ platform: 'twitch', handle: 'organicstreamer' }],
     contributor: '0xseed', amount: '75', expiresInMs: 7 * 86_400_000,
@@ -75,6 +79,13 @@ try {
   await page.screenshot({ path: 'screens/bounty-program.png' });
 
   // ── streamer page ────────────────────────────────────────────────────────
+  // The review queue is streamer-authorized now, so the PAGE needs the sealed
+  // identity a signed-in streamer would carry.
+  await page.setCookie({
+    name: 'mc_identity',
+    value: decodeURIComponent(srv.cookieFor('organicstreamer').split('=').slice(1).join('=')),
+    domain: 'localhost', path: '/',
+  });
   await page.goto(`${APP}/bounty/s/twitch/organicstreamer`, { waitUntil: 'networkidle2', timeout: 60000 });
   await sleep(2000);
   const sText = await page.evaluate(() => document.body.innerText);
@@ -137,7 +148,7 @@ try {
 
   // ── claim → approval queue ───────────────────────────────────────────────
   await fetch(`${APP}/api/bounty/claim`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers() },
     body: JSON.stringify({ platform: 'twitch', handle: 'organicstreamer', claimant: 'orgstreamer' }),
   });
   await page.goto(`${APP}/bounty/s/twitch/organicstreamer`, { waitUntil: 'networkidle2', timeout: 60000 });

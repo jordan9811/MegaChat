@@ -51,6 +51,10 @@ console.log(`real air session ${sess.id.slice(0, 8)} — ${windows.length} playb
 
 const { startGateServer } = await import('./_gate-helpers.mjs');
 const srv = await startGateServer({
+  // Bounty routes authorize server-side now; the harness mints a sealed
+  // identity per handle plus an admin key. Gates authenticate exactly the
+  // way a streamer does — no test-only bypass in the auth path.
+  bountyAuth: { handles: ['jordandotfun'] },
   port: PORT, dataDir: DATA,
   env: {
     BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
@@ -64,7 +68,7 @@ const srv = await startGateServer({
 
 try {
   const r = await fetch(`http://localhost:${PORT}/api/bounty/air-session/${sess.id}/verify`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers() },
     body: JSON.stringify({ mode: 'real', sourceMode: 'vod' }),
   });
   const d = await r.json();

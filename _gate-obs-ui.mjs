@@ -109,6 +109,10 @@ wss.on('connection', (sock) => {
 
 const { startGateServer } = await import('./_gate-helpers.mjs');
 const srv = await startGateServer({
+  // Bounty routes authorize server-side now; the harness mints a sealed
+  // identity per handle plus an admin key. Gates authenticate exactly the
+  // way a streamer does — no test-only bypass in the auth path.
+  bountyAuth: { handles: ['obsstreamer'] },
   port: PORT, dataDir: mkdtempSync(path.join(tmpdir(), 'mc-obsui-')), label: 'obs-ui',
   env: {
     BOUNTY_CLAIM: '1', OBS_ONECLICK: '1', KEEP_ORPHAN_ROOMS: 'true',
@@ -116,8 +120,11 @@ const srv = await startGateServer({
   },
 });
 
-const post = (p, body) => fetch(`${APP}${p}`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+// `as` picks WHICH streamer identity to send. Streamer-tier routes authorize
+// against the handle they target, so a gate driving two channels needs two
+// cookies; omitting it acts as the first handle.
+const post = (p, body, as) => fetch(`${APP}${p}`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers(as) },
   body: JSON.stringify(body),
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 
@@ -134,7 +141,7 @@ try {
     contributor: '0xobs', amount: '25', expiresInMs: 86_400_000,
   });
   await fetch(`${APP}${pl.body.uploadUrl}?durationS=8`, {
-    method: 'POST', headers: { 'Content-Type': 'video/webm' },
+    method: 'POST', headers: { 'Content-Type': 'video/webm', ...srv.headers() },
     body: Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(2048, 5)]),
   });
 
@@ -143,6 +150,13 @@ try {
   });
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 1000 });
+  // The PAGE drives the claim flow, and air-session is streamer-authorized now,
+  // so the browser needs the same sealed identity a real streamer would have
+  // after signing in with Twitch.
+  const cookieValue = decodeURIComponent(srv.cookieFor('obsstreamer').split('=').slice(1).join('='));
+  await page.setCookie({
+    name: 'mc_identity', value: cookieValue, domain: 'localhost', path: '/',
+  });
 
   // Prove the password never reaches OUR server: watch every request to the
   // app origin for the secret.
