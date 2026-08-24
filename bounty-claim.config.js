@@ -201,6 +201,36 @@ export const bountyConfig = {
    */
   mediaSkewToleranceMs: num(process.env.BOUNTY_MEDIA_SKEW_TOLERANCE_MS, 20_000),
 
+  // ── Self-capture (platform-independent verification) ────────────────────
+  /**
+   * Verification stops depending on the platform keeping a VOD. During an air
+   * session we hold a rolling window of the live stream and freeze only the
+   * part covering a clip when that clip ends. See bounty-capture.js.
+   */
+  selfCaptureEnabled: process.env.BOUNTY_SELF_CAPTURE !== '0',
+  /**
+   * How much live media to hold at once. MUST exceed the worst broadcast delay
+   * plus the longest clip, or the content for a clip could age out before the
+   * playback ends — measured delay is 12-25s, clips run to ~30s, so 60s leaves
+   * real headroom. ~22MB at 720p/3Mbps per open session.
+   */
+  captureWindowMs: num(process.env.BOUNTY_CAPTURE_WINDOW_MS, 60_000),
+  /** How often to re-read the media playlist for new segments. */
+  capturePollMs: num(process.env.BOUNTY_CAPTURE_POLL_MS, 2_000),
+  /**
+   * How long a frozen capture is kept. It exists to settle a payout and a
+   * dispute, so it outlives neither: purged with its pledge, and swept at this
+   * age regardless.
+   */
+  captureRetentionMs: num(process.env.BOUNTY_CAPTURE_RETENTION_MS, 14 * 24 * 60 * 60_000),
+  /**
+   * Skip platform page resolution and capture this HLS url directly. For
+   * environments where the extractor cannot resolve a channel page — a staging
+   * box behind egress rules, a self-hosted deployment, or a gate driving a stub
+   * live stream. Unset in production, where the channel page is the truth.
+   */
+  captureHlsOverride: process.env.BOUNTY_CAPTURE_HLS_URL || null,
+
   // ── Per-broadcast timeline calibration ──────────────────────────────────
   /**
    * The skew is MEASURED per VOD rather than assumed: probe frames, decode to

@@ -29,7 +29,7 @@
  * money the way "we looked and it was not there" does.
  */
 import { spawnSync } from 'child_process';
-import { mkdirSync } from 'fs';
+import { mkdirSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { bountyConfig } from './bounty-claim.config.js';
@@ -44,6 +44,7 @@ export const SOURCE_STATES = {
   VOD_NOT_PROCESSED: 'VOD_NOT_PROCESSED',
   CHANNEL_OFFLINE: 'CHANNEL_OFFLINE',             // live grab on a dead channel
   EXTRACTION_FAILED: 'EXTRACTION_FAILED',
+  NO_CAPTURE: 'NO_CAPTURE',                        // self-capture missing for this session
   API_UNAVAILABLE: 'API_UNAVAILABLE',
 };
 
@@ -308,8 +309,72 @@ export class LocalFileFrameSource extends FrameSource {
 }
 
 /** The right source for an air session, VOD-first where the platform allows. */
+/**
+ * SELF-CAPTURE AS A FRAME SOURCE — the platform-independent path.
+ *
+ * A frozen capture is just a seekable local video whose timeline offset is
+ * unknown, which is exactly the shape the per-VOD calibration already solves.
+ * So this needs no special verifier handling: it is `calibratable`, and
+ * calibration measures where the badge actually sits inside the window.
+ *
+ * That is the whole point of T1 — Kick and X have no VOD to discover, but a
+ * capture is ours, so the verifier path is identical on every platform.
+ */
+export class CaptureFrameSource extends FrameSource {
+  constructor({ log = console, capturePath, anchorMs = null } = {}) {
+    super();
+    this.log = log;
+    this.capturePath = capturePath;
+    // The wall-clock instant the capture was frozen. The window ENDS at
+    // roughly (frozenAt - broadcastDelay), and calibration finds the rest.
+    this.anchorMs = anchorMs;
+    this.calibratable = true;
+    this._durationS = null;
+  }
+
+  /** Media duration, probed once — the seek is relative to the window start. */
+  durationS() {
+    if (this._durationS != null) return this._durationS;
+    const r = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration',
+      '-of', 'csv=p=0', this.capturePath], { encoding: 'utf8' });
+    this._durationS = r.status === 0 ? (parseFloat(r.stdout.trim()) || 0) : 0;
+    return this._durationS;
+  }
+
+  async getFrames(platform, handle, timestamps, opts = {}) {
+    if (!this.capturePath || !existsSync(this.capturePath)) {
+      throw new FrameSourceUnavailable(SOURCE_STATES.NO_CAPTURE, `no capture at ${this.capturePath}`);
+    }
+    const dur = this.durationS();
+    const out = [];
+    for (const t of timestamps) {
+      const ts = typeof t === 'object' ? t.ts : t;
+      // Map wall clock into the window: the capture's LAST frame is the most
+      // recent media we held, so a timestamp `d` ms before the freeze sits at
+      // (duration - d/1000) seconds in. `skewMs` shifts that by whatever
+      // calibration measured, exactly as the VOD path uses it.
+      const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
+      const back = ((this.anchorMs ?? Date.now()) - ts + skew) / 1000;
+      const offsetS = Math.max(0, dur - back);
+      const file = path.join(workDir(), `cap-${randomUUID().slice(0, 8)}.png`);
+      grabFrame(this.capturePath, offsetS, file);
+      out.push({
+        live: false, ref: file, ts,
+        clipId: typeof t === 'object' ? t.clipId : null,
+        playbackId: typeof t === 'object' ? t.playbackId : null,
+        platform, handle, toleranceMs: TOLERANCE_MS, source: 'capture',
+      });
+    }
+    return out;
+  }
+}
+
 export function frameSourceFor(platform, opts = {}) {
   if (opts.mode === 'files') return new LocalFileFrameSource(opts);
+  // SELF-CAPTURE IS PRIMARY. It works on every platform, including the ones
+  // with no VOD at all; the Twitch archive stays as a secondary path for
+  // sessions captured before this existed, or where capture failed.
+  if (opts.mode === 'capture' || opts.capturePath) return new CaptureFrameSource(opts);
   if (platform === 'twitch') return new TwitchFrameSource(opts);
   if (platform === 'kick') return new KickFrameSource(opts);
   throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE, `no frame source for ${platform}`);

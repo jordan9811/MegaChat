@@ -23,6 +23,7 @@ import { kickApiConfigured, getChannelBySlug } from './kick-api.js';
 import { readIdentityFromRequest } from './auth.js';
 import settlement from './bounty-settlement.js';
 import { policyFor, authorize, TIER } from './bounty-auth.js';
+import * as capture from './bounty-capture.js';
 
 /**
  * Identity verification is STUBBED in Run A — real OAuth is Run B.
@@ -179,6 +180,33 @@ export function makeClipHooks({ log = console } = {}) {
 function accountKey(req) {
   const id = readIdentityFromRequest(req);
   return id ? `${id.provider}:${id.platformId}` : null;
+}
+
+/**
+ * Resolve the channel's live HLS and begin the rolling capture. Fire and
+ * forget: a capture that cannot start must never block a streamer from going
+ * live — it degrades to the platform VOD path, loudly.
+ */
+async function startSessionCapture(session, { log = console } = {}) {
+  try {
+    const claim = store.getClaim(session.claimId);
+    const handle = claim ? store.getReservedHandleByKey(claim.handleKey)?.handle : null;
+    if (!handle) return;
+    let hlsUrl = bountyConfig.captureHlsOverride;
+    if (!hlsUrl) {
+      const { resolveMediaUrl } = await import('./frame-sources.js');
+      const page = session.platform === 'kick'
+        ? `https://kick.com/${handle.toLowerCase()}`
+        : `https://www.twitch.tv/${handle.toLowerCase()}`;
+      hlsUrl = resolveMediaUrl(page, { log });
+    }
+    await capture.startCapture(session.id, {
+      hlsUrl, platform: session.platform, handle, log,
+    });
+  } catch (e) {
+    log.warn?.(`[capture] could not start for ${session.id}: ${e?.state || e?.message}`
+      + ' — verification falls back to the platform VOD path');
+  }
 }
 
 export function attachBountyRoutes(app, { log = console, identityVerifier } = {}) {
@@ -669,7 +697,11 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     try {
       const { airSessionId, clipId, playbackId } = req.body || {};
       watermark.endClipPlayback(airSessionId, { clipId, playbackId });
-      res.json({ ok: true });
+      // FREEZE ON END, not on start: by now the segments carrying this clip
+      // have had time to arrive despite the 12-25s broadcast delay, which is
+      // the entire reason the buffer rolls instead of grabbing on demand.
+      const frozen = capture.freezeWindow(airSessionId, { clipId, playbackId, log });
+      res.json({ ok: true, capture: frozen ? { bytes: frozen.bytes, spanMs: frozen.spanMs } : null });
     } catch (e) { fail(res, e); }
   });
 
@@ -821,6 +853,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         return res.status(403).json({ error: 'Claim identity is not verified' });
       }
       const s = store.createAirSession({ claimId, roomId, platform });
+      // SELF-CAPTURE STARTS WITH THE SESSION AND ONLY WITH THE SESSION. This
+      // is the boundary that makes it a verification capture rather than a
+      // recording of someone's broadcast — enforced here, not promised in copy.
+      void startSessionCapture(s, { log });
       // NO CODE IS ISSUED HERE, and that is the whole point of the
       // playback-bound redesign: a code exists only while a clip is actually
       // playing, because a code that exists at session-open would prove the
@@ -877,6 +913,8 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       //               observation and now. We record NOW, the generous end of
       //               that interval, because the cost of a wrong tail flag
       //               falls on someone who did the work.
+      // Nothing is held past the session it was captured for.
+      capture.stopCapture(req.params.id, { log });
       const patch = { status: 'CLOSED', endedAt: Date.now() };
       if (prev) {
         const look = prev.platform === 'twitch' ? (twitchApiConfigured() ? getStreamByLogin : null)
@@ -917,9 +955,23 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       if (req.body?.mode === 'real') {
         const { frameSourceFor } = await import('./frame-sources.js');
         const { OcrFrameChecker } = await import('./ocr-frame-checker.js');
+        // SELF-CAPTURE FIRST. It exists on every platform, including the ones
+        // with no VOD at all, so it is the default source whenever this
+        // session has one. The Twitch archive stays as the fallback for
+        // sessions captured before this shipped, or where capture failed.
+        const captures = capture.capturesFor(s.id);
+        const preferCapture = captures.length > 0 && req.body.sourceMode !== 'vod'
+          && req.body.sourceMode !== 'live' && req.body.sourceMode !== 'files';
+        if (preferCapture) {
+          log.log?.(`[verify] using self-capture for ${s.id} (${captures.length} window(s))`);
+        }
         sourceOpts = {
           frameSource: frameSourceFor(s.platform, {
-            log, mode: req.body.sourceMode || 'vod',
+            log,
+            ...(preferCapture
+              ? { mode: 'capture', capturePath: captures[0], anchorMs: s.endedAt || Date.now() }
+              : {}),
+            mode: preferCapture ? 'capture' : (req.body.sourceMode || 'vod'),
             vodUrl: req.body.vodUrl || null,
             frames: req.body.frames || [],
           }),

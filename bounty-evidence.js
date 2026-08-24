@@ -45,6 +45,7 @@ export const EVIDENCE_TYPES = {
   CODE_ISSUED: 'CODE_ISSUED',
   PLAYBACK_ENDED: 'PLAYBACK_ENDED',
   VIOLATION: 'VIOLATION',
+  CAPTURE_FROZEN: 'CAPTURE_FROZEN',
   /** Concurrent viewer count sampled at clip playback. Payout-relevant and
    *  IMPOSSIBLE to backfill: once the broadcast ends, the count at a given
    *  instant is gone forever, so it is captured the moment it exists. */
@@ -126,6 +127,17 @@ export const recordViewerSample = (airSessionId, sample) =>
     airSessionId, playbackId: sample.playbackId || null, clipId: sample.clipId || null,
     handle: sample.handle, platform: sample.platform || 'twitch',
     live: sample.live, viewerCount: sample.viewerCount,
+  });
+
+/**
+ * A frozen self-capture. Payouts are computed from frames read out of these,
+ * so by this project's own rule — anything a payout is computed FROM is
+ * evidence — the capture has to be in the chain, not just on disk.
+ */
+export const recordCaptureFrozen = (airSessionId, rec) =>
+  append(EVIDENCE_TYPES.CAPTURE_FROZEN, {
+    airSessionId, playbackId: rec.playbackId, clipId: rec.clipId,
+    file: rec.file, bytes: rec.bytes, segments: rec.segments, spanMs: rec.spanMs,
   });
 
 export const recordViolation = (airSessionId, violation) =>

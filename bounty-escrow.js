@@ -18,6 +18,7 @@
 
 import { bountyConfig } from './bounty-claim.config.js';
 import * as store from './bounty-store.js';
+import * as capture from './bounty-capture.js';
 import * as clips from './bounty-clips.js';
 
 export const STATES = [
@@ -300,6 +301,25 @@ export function poolView(key) {
  * together via the enumerated PLEDGE_EXPIRED reason. Called on an interval
  * and exposed on an admin route so gates can trigger it deterministically.
  */
+/**
+ * A self-capture outlives neither the claim it proves nor the money it proved
+ * it for. When a pledge is refunded or swept, the captures taken for that
+ * handle's sessions go with it — retention is a promise about video of
+ * someone's broadcast, so it has to be executed, not documented.
+ */
+function purgeCapturesForHandle(handleKey, { log = console } = {}) {
+  try {
+    const sessions = store.listAirSessions()
+      .filter((s) => store.getClaim(s.claimId)?.handleKey === handleKey);
+    let files = 0;
+    for (const s of sessions) files += capture.purgeCaptures(s.id, { log }).files;
+    return files;
+  } catch (e) {
+    log.warn?.(`[capture] purge for ${handleKey} failed: ${e.message}`);
+    return 0;
+  }
+}
+
 export function sweepExpiredPledges({ actor = 'system', settlement } = {}) {
   assertEnabled();
   const now = Date.now();
@@ -591,7 +611,14 @@ export function refund({
  * cases call it by name.
  */
 export function refundExpired({ handleKey, actor = 'system', settlement }) {
-  return refund({ handleKey, reason: 'HANDLE_EXPIRED', actor, settlement });
+  // PURGE ONLY AFTER THE REFUND ACTUALLY HAPPENS. Purging first meant a refund
+  // that then threw — an illegal transition, say, because the claim was mid
+  // verification — had already destroyed the captures that prove the airtime.
+  // The gate caught this: evidence must not be deleted for a state change that
+  // did not occur.
+  const out = refund({ handleKey, reason: 'HANDLE_EXPIRED', actor, settlement });
+  purgeCapturesForHandle(handleKey);
+  return out;
 }
 
 /**
