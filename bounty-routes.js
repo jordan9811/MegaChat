@@ -696,11 +696,19 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   guarded.post('/api/bounty/admin/playback/end', (req, res) => {
     try {
       const { airSessionId, clipId, playbackId } = req.body || {};
+      // Resolve the window BEFORE closing it, so the capture is named after
+      // the playback it covers even when the caller only knew the clip id.
+      // Without this the file was keyed on clipId while its evidence row was
+      // keyed on a null playbackId, and the verifier could not match a capture
+      // to the window it proves.
+      const win = watermark.openWindowFor(airSessionId, { clipId, playbackId });
       watermark.endClipPlayback(airSessionId, { clipId, playbackId });
       // FREEZE ON END, not on start: by now the segments carrying this clip
       // have had time to arrive despite the 12-25s broadcast delay, which is
       // the entire reason the buffer rolls instead of grabbing on demand.
-      const frozen = capture.freezeWindow(airSessionId, { clipId, playbackId, log });
+      const frozen = capture.freezeWindow(airSessionId, {
+        clipId, playbackId: playbackId || win?.playbackId || null, log,
+      });
       res.json({ ok: true, capture: frozen ? { bytes: frozen.bytes, spanMs: frozen.spanMs } : null });
     } catch (e) { fail(res, e); }
   });
@@ -898,6 +906,38 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     } catch (e) { fail(res, e); }
   });
 
+  /**
+   * The overlay page describing its own render environment — the canvas it was
+   * handed and whether the document is hidden.
+   *
+   * EVIDENCE, NOT A GATE. Kept separate from /badge so the two cannot be
+   * confused: /badge is a rendering decision the overlay makes about ITSELF
+   * (stop drawing codes that would be illegible), while this is an observation
+   * we record and weigh at verification time. Neither blocks anything here.
+   */
+  guarded.post('/api/bounty/air-session/:id/overlay-env', (req, res) => {
+    try {
+      const { width, height, visibilityState, at } = req.body || {};
+      const rec = watermark.recordOverlayEnv(req.params.id, { width, height, visibilityState, at });
+      res.json({ ok: true, canvasAnomaly: rec.canvasAnomaly, detail: rec.detail });
+    } catch (e) { fail(res, e); }
+  });
+
+  /**
+   * One obs-websocket visibility sample from the streamer's claim page.
+   *
+   * The streamer's own machine reporting on itself, so it is corroboration
+   * rather than proof and is treated as such downstream. Recording it is
+   * always safe: it decides whether a human looks, never whether anyone is
+   * paid, and a streamer who never posts one is not penalised.
+   */
+  guarded.post('/api/bounty/air-session/:id/obs-scene', (req, res) => {
+    try {
+      const rec = watermark.recordObsScene(req.params.id, req.body || {});
+      res.json({ ok: true, state: rec.state, playbackId: rec.playbackId });
+    } catch (e) { fail(res, e); }
+  });
+
   guarded.post('/api/bounty/air-session/:id/end', async (req, res) => {
     try {
       const prev = store.getAirSession(req.params.id);
@@ -952,6 +992,11 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       // deterministic matrix decoder. Default stays fixture-driven so every
       // gate runs with zero network and zero spend.
       let sourceOpts = {};
+      // Where the verifying frames came from decides the CONFIDENCE TIER
+      // below — i.e. whether a human needs to look. Tracked here, at the one
+      // place that actually chooses the source, rather than inferred later
+      // from the request body (which describes a preference, not an outcome).
+      let frameOrigin = null;
       if (req.body?.mode === 'real') {
         const { frameSourceFor } = await import('./frame-sources.js');
         const { OcrFrameChecker } = await import('./ocr-frame-checker.js');
@@ -959,18 +1004,21 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         // with no VOD at all, so it is the default source whenever this
         // session has one. The Twitch archive stays as the fallback for
         // sessions captured before this shipped, or where capture failed.
-        const captures = capture.capturesFor(s.id);
+        // ALL of them, each with the playback it covers. One capture is one
+        // clip's window, so passing only the first made every probe past the
+        // first clip seek off the end of the file — which is what made
+        // multi-clip sessions fail to calibrate on the primary path.
+        const captures = capture.captureRecordsFor(s.id, { log });
         const preferCapture = captures.length > 0 && req.body.sourceMode !== 'vod'
           && req.body.sourceMode !== 'live' && req.body.sourceMode !== 'files';
         if (preferCapture) {
           log.log?.(`[verify] using self-capture for ${s.id} (${captures.length} window(s))`);
         }
+        frameOrigin = preferCapture ? 'capture' : 'external';
         sourceOpts = {
           frameSource: frameSourceFor(s.platform, {
             log,
-            ...(preferCapture
-              ? { mode: 'capture', capturePath: captures[0], anchorMs: s.endedAt || Date.now() }
-              : {}),
+            ...(preferCapture ? { mode: 'capture', captures } : {}),
             mode: preferCapture ? 'capture' : (req.body.sourceMode || 'vod'),
             vodUrl: req.body.vodUrl || null,
             frames: req.body.frames || [],
@@ -1014,6 +1062,41 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         context.summary = describeContext(context);
       }
 
+      // ── CONFIDENCE TIER: does a human need to look? ─────────────────────
+      // NOT payout scaling. Every tier that passes pays exactly the same
+      // amount — weighting payout by how well we happened to be able to
+      // observe someone charges them for our own limitations. The tier
+      // decides review routing and nothing else.
+      //
+      // Only computed for mode:'real'. A fixture run has no broadcast to have
+      // confidence ABOUT, and inventing a tier for one would put a number on
+      // nothing.
+      let confidence = null;
+      if (req.body?.mode === 'real') {
+        const { evaluateConfidence, foldSceneSamples, foldOverlayEnv } =
+          await import('./bounty-confidence.js');
+        const verifiedPlaybackIds = (v.clipVerdicts || [])
+          .filter((c) => c.verified).map((c) => c.playbackId);
+        // Read the corroborating signals from EVIDENCE, not from the mutable
+        // session record: the tier changes who looks at a payout, so it is
+        // decided from the append-only chain like everything else that does.
+        const chain = evidence.evidenceFor(s.id);
+        // Evidence records are flat — {type, at, airSessionId, ...payload} —
+        // so the record IS the sample.
+        const sceneSamples = chain.filter((r) => r.type === evidence.EVIDENCE_TYPES.OBS_SCENE_SAMPLE);
+        const envSamples = chain.filter((r) => r.type === evidence.EVIDENCE_TYPES.OVERLAY_ENV);
+        const obsScene = foldSceneSamples(sceneSamples, verifiedPlaybackIds);
+        const overlayEnv = foldOverlayEnv(envSamples, verifiedPlaybackIds);
+        confidence = evaluateConfidence({
+          frameOrigin,
+          obsScene,
+          overlayEnv,
+          belowQualityFloor: (v.belowQualityFloorClips || 0) > 0,
+          streamContextOk: !context?.needsReview,
+        });
+        confidence.evidence = { obsScene, overlayEnv };
+      }
+
       // AMBIGUOUS evidence goes to a human instead of silently paying zero.
       // On mainnet, a streamer who did the work and got neither money nor a
       // person looking at their case is a support incident and a trust
@@ -1046,6 +1129,20 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       if (v.result === 'AMBIGUOUS') {
         causes.push(`ambiguous: ${v.verifiedClips} clip(s) matched at confidence ${v.confidence}`);
       }
+      // Corroborating signals that DISAGREE with a verification. Only reasons
+      // not already named above — a below-floor read is one finding, not two.
+      if (confidence?.needsReview && v.verifiedClips > 0) {
+        const fresh = confidence.warnings.filter((w) => w !== 'BELOW_QUALITY_FLOOR');
+        if (fresh.includes('OVERLAY_NOT_VISIBLE')) {
+          causes.push(`OBS reported the overlay not visible: ${confidence.evidence.obsScene.detail}`);
+        }
+        if (fresh.includes('CANVAS_ANOMALY')) {
+          causes.push(`overlay environment: ${confidence.evidence.overlayEnv.detail}`);
+        }
+        if (fresh.includes('UNKNOWN_FRAME_ORIGIN')) {
+          causes.push('frames of unknown origin — cannot tell whether this came from the platform or our own capture');
+        }
+      }
       if (causes.length && !store.hasOpenReview(s.id)) {
         review = store.createReview({
           airSessionId: s.id, claimId: claim.id, handleKey: key,
@@ -1071,6 +1168,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       });
       res.json({
         ok: true, verification: v, release: out, review,
+        // What tier this landed in and WHY. Surfaced to the streamer, not just
+        // to admin: "we could not confirm your overlay was on screen, so a
+        // person is looking" is a thing someone can act on. Silence is not.
+        confidence,
         // Payout is UNCHANGED by context — verified playbacks release against
         // the pledge, unweighted. Context decides whether a human looks, not
         // how much anyone is paid.

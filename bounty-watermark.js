@@ -29,6 +29,8 @@
 import { randomInt, createHash, randomUUID } from 'crypto';
 import { bountyConfig } from './bounty-claim.config.js';
 import * as store from './bounty-store.js';
+import * as ev from './bounty-evidence.js';
+import { canvasLooksWrong } from './bounty-confidence.js';
 
 /** No 0/O, 1/I/L, 5/S, 8/B, 2/Z — unambiguous when downscaled. */
 const ALPHABET = '34679ACDEFGHJKMNPQRTUVWXY';
@@ -113,16 +115,31 @@ export function startClipPlayback(airSessionId, { clipId, durationS, now = Date.
 }
 
 /** The clip finished (or was cut short). Closes the window at `now`. */
+/**
+ * Which window does a "this clip ended" call mean?
+ *
+ * Prefer an explicit playbackId; otherwise the most recent STILL-OPEN window
+ * for this clip. Never `.find()` by clipId alone — that returns the FIRST
+ * window and would close (or write into) a previous airing of the same clip.
+ *
+ * Exported because the freeze needs the same answer the close does: naming a
+ * capture after the clip when the evidence row names it after the playback
+ * left the two unable to find each other, and the verifier could not tell
+ * which window a capture covered.
+ */
+export function openWindowFor(airSessionId, { clipId, playbackId, now = Date.now() } = {}) {
+  const s = store.getAirSession(airSessionId);
+  if (!s) return null;
+  const wins = s.playbackWindows || [];
+  return (playbackId
+    ? wins.find((w) => w.playbackId === playbackId)
+    : [...wins].reverse().find((w) => w.clipId === clipId && w.endsAt > now)) || null;
+}
+
 export function endClipPlayback(airSessionId, { clipId, playbackId, now = Date.now() } = {}) {
   const s = store.getAirSession(airSessionId);
   if (!s) return null;
-  // Prefer an explicit playbackId; otherwise close the most recent STILL-OPEN
-  // window for this clip. Never `.find()` by clipId alone — that returns the
-  // first window and would close (or write into) a previous airing.
-  const wins = (s.playbackWindows || []);
-  const win = playbackId
-    ? wins.find((w) => w.playbackId === playbackId)
-    : [...wins].reverse().find((w) => w.clipId === clipId && w.endsAt > now);
+  const win = openWindowFor(airSessionId, { clipId, playbackId, now });
   if (!win) return null;
   // Truncate the window AND any code validity that ran past the real end —
   // a code must never be checkable after its clip left the screen.
@@ -223,6 +240,100 @@ export function reportBadgeTooSmall(airSessionId, detail) {
   });
   store.updateAirSession(airSessionId, { badgeTooSmall: true });
   return store.getAirSession(airSessionId);
+}
+
+/**
+ * Attribute a client-reported sample to the playback window covering it.
+ *
+ * SERVER-SIDE ON PURPOSE. If the client named its own playbackId it could
+ * claim a "visible" sample covers a playback during which the overlay was
+ * hidden, which is the one thing this signal must not let it do cheaply.
+ * The client supplies a timestamp; we decide what it covers.
+ *
+ * Timestamps are clamped to now — a clock-skewed or hand-edited client cannot
+ * post samples into the future to cover playbacks that have not happened.
+ */
+function playbackIdAt(session, at) {
+  const t = Math.min(Number(at) || 0, Date.now());
+  // The window's end field is `endsAt` — set to the clip's scheduled end at
+  // start and TRUNCATED to the real end when the playback closes. Reading a
+  // field that does not exist made every window look open, so every sample
+  // attributed to the FIRST clip of the session regardless of when it arrived.
+  const w = (session.playbackWindows || []).find(
+    (win) => t >= win.startedAt && t <= win.endsAt,
+  );
+  return w ? w.playbackId : null;
+}
+
+/** Keep the session record readable; evidence holds the full history. */
+const SAMPLE_TAIL = 50;
+
+/**
+ * Record one OBS scene-item visibility sample.
+ *
+ * Records, and does not judge. A NOT_VISIBLE sample is not a violation and
+ * must never read as one: the streamer may be mid scene-switch, or between
+ * clips, or running a starting-soon screen. Whether it MATTERS is decided at
+ * verification time, against the playbacks that actually earned money.
+ */
+export function recordObsScene(airSessionId, sample = {}) {
+  const s = store.getAirSession(airSessionId);
+  if (!s) throw new Error(`No air session ${airSessionId}`);
+  const at = Math.min(Number(sample.at) || Date.now(), Date.now());
+  const rec = {
+    at,
+    playbackId: playbackIdAt(s, at),
+    state: String(sample.state || 'ERROR'),
+    visible: !!sample.visible,
+    checked: !!sample.checked,
+    sceneName: sample.sceneName || null,
+    detail: sample.detail || null,
+    rect: sample.rect || null,
+  };
+  const tail = [...(s.obsSceneSamples || []), rec].slice(-SAMPLE_TAIL);
+  store.updateAirSession(airSessionId, {
+    obsSceneSamples: tail,
+    obsSceneLast: { at: rec.at, state: rec.state, visible: rec.visible, detail: rec.detail },
+  });
+  ev.recordObsSceneSample(airSessionId, rec);
+  return rec;
+}
+
+/**
+ * Record the overlay page's own view of its render environment: the canvas it
+ * was handed, and whether the document was hidden.
+ *
+ * `document.visibilityState` in an OBS browser source is 'visible' whenever
+ * the source is rendering, INCLUDING while it sits in a non-active scene with
+ * shutdown-when-not-visible off — which is how we configure it. So 'hidden'
+ * here means something quite specific (the source was stopped, or the overlay
+ * is open in a background browser tab rather than in OBS at all) and is worth
+ * a look; 'visible' proves considerably less than it sounds like it does.
+ */
+export function recordOverlayEnv(airSessionId, env = {}) {
+  const s = store.getAirSession(airSessionId);
+  if (!s) throw new Error(`No air session ${airSessionId}`);
+  const at = Math.min(Number(env.at) || Date.now(), Date.now());
+  const { anomaly, detail } = canvasLooksWrong({ width: env.width, height: env.height });
+  const rec = {
+    at,
+    playbackId: playbackIdAt(s, at),
+    width: Number(env.width) || null,
+    height: Number(env.height) || null,
+    visibilityState: env.visibilityState === 'hidden' ? 'hidden' : 'visible',
+    canvasAnomaly: anomaly,
+    detail,
+  };
+  const tail = [...(s.overlayEnvSamples || []), rec].slice(-SAMPLE_TAIL);
+  store.updateAirSession(airSessionId, {
+    overlayEnvSamples: tail,
+    overlayEnvLast: {
+      at: rec.at, width: rec.width, height: rec.height,
+      visibilityState: rec.visibilityState, canvasAnomaly: rec.canvasAnomaly,
+    },
+  });
+  ev.recordOverlayEnv(airSessionId, rec);
+  return rec;
 }
 
 export function clearBadgeViolation(airSessionId) {

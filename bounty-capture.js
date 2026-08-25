@@ -231,6 +231,58 @@ export function capturesFor(airSessionId) {
 }
 
 /**
+ * Every capture a session holds, WITH the playback each one covers.
+ *
+ * `capturesFor` returns bare paths, which is enough to purge but not enough to
+ * verify: one capture covers ONE clip playback's ~60s window, so a verifier
+ * handed only the first file can read nothing about any other clip. That was a
+ * real failure — a multi-clip session could never calibrate its timeline,
+ * because every probe after the first seeked outside the only file it had, so
+ * self-capture verification returned SOURCE_UNAVAILABLE on the path that is
+ * supposed to be primary.
+ *
+ * The playback id is in the filename by construction (see freezeWindow), and
+ * `frozenAt` comes from the evidence chain, falling back to the file's mtime
+ * for captures written before that record existed.
+ */
+export function captureRecordsFor(airSessionId, { log = console } = {}) {
+  const files = capturesFor(airSessionId);
+  if (!files.length) return [];
+  let frozenByFile = new Map();
+  try {
+    // Keyed on the FILE, which the evidence row records verbatim. Keying on
+    // the playback id looked tidier and did not work: a capture frozen from a
+    // clipId-only call recorded a null playbackId while its filename carried
+    // the clip id, so nothing matched and every capture lost its anchor.
+    frozenByFile = new Map(evidence.evidenceFor(airSessionId)
+      .filter((r) => r.type === evidence.EVIDENCE_TYPES.CAPTURE_FROZEN && r.file)
+      .map((r) => [path.basename(String(r.file)), r]));
+  } catch (e) {
+    // A verification must not die because the evidence chain is unreadable —
+    // mtime is a worse anchor, not a useless one, and calibration measures the
+    // residual anyway.
+    log.warn?.(`[capture] could not read evidence for ${airSessionId}: ${e?.message}`);
+  }
+  return files.map((file) => {
+    const base = path.basename(file).replace(/\.ts$/, '');
+    const rec = frozenByFile.get(path.basename(file));
+    // The evidence row is authoritative for which playback this covers; the
+    // filename is the fallback for captures written before it was recorded.
+    const playbackId = rec?.playbackId || base.slice(`${airSessionId}__`.length) || null;
+    let frozenAt = rec?.at || rec?.frozenAt || null;
+    if (!frozenAt) {
+      try { frozenAt = statSync(file).mtimeMs; } catch { frozenAt = null; }
+    }
+    // spanMs is the buffer's OWN measurement, summed from the playlist's
+    // EXTINF durations at freeze time. It is the trustworthy duration: a
+    // byte-concatenated MPEG-TS reports whatever its FIRST segment claims when
+    // the segments do not share a continuous timeline, and a seek computed
+    // from that lands nowhere. See CaptureFrameSource.durationS.
+    return { file, playbackId, clipId: rec?.clipId || null, frozenAt, spanMs: rec?.spanMs ?? null };
+  }).filter((r) => r.frozenAt);
+}
+
+/**
  * Delete a session's captures. Called when its pledge is refunded or purged —
  * a verification capture outlives neither the claim it proves nor the money it
  * proved it for.

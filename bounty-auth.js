@@ -85,11 +85,24 @@ export const ROUTE_POLICY = {
   'POST /api/bounty/air-session': { tier: TIER.STREAMER, subject: SUBJECT.BODY_CLAIM },
   'POST /api/bounty/air-session/:id/end': { tier: TIER.STREAMER, subject: SUBJECT.PARAM_AIR_SESSION },
   'POST /api/bounty/air-session/:id/verify': { tier: TIER.STREAMER, subject: SUBJECT.PARAM_AIR_SESSION },
+  /**
+   * OBS scene-item visibility samples. STREAMER, not CAPABILITY: this comes
+   * from the CLAIM PAGE (the only place that holds an obs-websocket
+   * connection), where the streamer is signed in — so there is no reason to
+   * accept it on a bare UUID, and every reason not to.
+   */
+  'POST /api/bounty/air-session/:id/obs-scene': { tier: TIER.STREAMER, subject: SUBJECT.PARAM_AIR_SESSION },
   'POST /api/bounty/refund-expired': { tier: TIER.STREAMER, subject: SUBJECT.BODY_HANDLE },
 
   // ── Capability: the overlay, which cannot hold a session ────────────────
   'GET /api/bounty/air-session/:id/code': { tier: TIER.CAPABILITY },
   'POST /api/bounty/air-session/:id/badge': { tier: TIER.CAPABILITY },
+  /**
+   * The overlay describing its own render environment. CAPABILITY like the
+   * badge report: it is the overlay page talking, and the overlay has no
+   * session — its air-session UUID is the whole credential.
+   */
+  'POST /api/bounty/air-session/:id/overlay-env': { tier: TIER.CAPABILITY },
 
   // ── Admin ───────────────────────────────────────────────────────────────
   'GET /api/bounty/admin/clip-storage': { tier: TIER.ADMIN },
