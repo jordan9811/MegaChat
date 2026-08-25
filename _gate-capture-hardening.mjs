@@ -37,6 +37,7 @@ import {
 import {
   evaluateConfidence, canvasLooksWrong, foldSceneSamples, foldOverlayEnv, TIER,
 } from './bounty-confidence.js';
+import { liveEdgeSlice } from './bounty-capture.js';
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = '') => {
@@ -199,6 +200,28 @@ const FULL = {
     foldOverlayEnv([env('p1', { canvasAnomaly: true, detail: '1×1' })], ['p1']).canvasAnomaly === true);
   ok('A4. a hidden document during a paying clip is recorded',
     foldOverlayEnv([env('p1', { visibilityState: 'hidden' })], ['p1']).pageHidden === true);
+}
+
+// ── A5. a capture starts at the LIVE EDGE, whatever shape the playlist is ─
+{
+  // MEASURED on a real pump.fun broadcast (2026-08-25): their media playlist
+  // is APPEND-ONLY — MEDIA-SEQUENCE pinned at 0, no ENDLIST, and the list just
+  // grows. 100 minutes in it listed 3,063 segments. At ~800kB per 1080p60
+  // segment, a first poll that walked the whole list would have pulled ~2.4GB
+  // of back catalogue before ever reaching the live edge.
+  const appendOnly = Array.from({ length: 3063 }, (_, i) => ({ seq: i, uri: `s${i}`, durationS: 2 }));
+  const tail = liveEdgeSlice(appendOnly, 30_000);
+  ok('A5. an APPEND-ONLY playlist is entered at the live edge, not from the start',
+    tail.length <= 20 && tail[tail.length - 1].seq === 3062,
+    `${tail.length} of ${appendOnly.length} segments taken, ending at the newest`);
+  ok('A5. ...and it is enough media to fill the window',
+    tail.reduce((a, x) => a + x.durationS * 1000, 0) >= 30_000);
+
+  // Twitch and Kick slide: nothing may change for them.
+  const sliding = Array.from({ length: 6 }, (_, i) => ({ seq: 100 + i, uri: `s${i}`, durationS: 2 }));
+  ok('A5. a SLIDING playlist is taken whole, exactly as before',
+    liveEdgeSlice(sliding, 30_000).length === 6);
+  ok('A5. an empty playlist is not an error', liveEdgeSlice([], 30_000).length === 0);
 }
 
 // ══ B. THE OBS CHECK, AGAINST THE MOCK ════════════════════════════════════

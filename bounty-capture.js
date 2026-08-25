@@ -78,6 +78,40 @@ export function parseMediaPlaylist(text, baseUrl) {
   return { mediaSequence, segments };
 }
 
+
+/**
+ * Only the tail of a playlist is worth fetching.
+ *
+ * A rolling buffer holds `windowMs` of media, so anything older than that is
+ * evicted the moment it arrives — downloading it is pure waste. On a Twitch or
+ * Kick playlist that costs nothing either way, because their playlists SLIDE
+ * and list about six segments.
+ *
+ * It is not nothing everywhere. MEASURED on a real pump.fun broadcast
+ * (2026-08-25): their media playlist is APPEND-ONLY — `EXT-X-MEDIA-SEQUENCE`
+ * stays at 0, there is no `EXT-X-ENDLIST`, and the list simply grows. A
+ * stream 100 minutes in listed 3,063 segments in a 320 kB playlist, and at
+ * ~800 kB per 1080p60 segment a naive first poll would have tried to download
+ * ~2.4 GB of back catalogue before reaching the live edge.
+ *
+ * Taking the tail makes the first poll start AT the live edge on any playlist
+ * shape, which is the only place a live capture should ever start.
+ *
+ * @param {number} keepMs how much media to keep. A margin over the window is
+ *   deliberate: eviction is by media duration, and starting exactly at the
+ *   boundary would leave the buffer one segment short of a full window.
+ */
+export function liveEdgeSlice(segments, keepMs) {
+  if (!Array.isArray(segments) || !segments.length) return [];
+  let acc = 0;
+  let i = segments.length;
+  while (i > 0 && acc < keepMs) {
+    i -= 1;
+    acc += (segments[i].durationS || 0) * 1000;
+  }
+  return segments.slice(i);
+}
+
 /**
  * The in-memory ring for one air session. Holds at most `windowMs` of media
  * and drops the oldest as new segments arrive.
@@ -143,7 +177,16 @@ export async function startCapture(airSessionId, {
       const res = await fetchImpl(state.hlsUrl, { signal: AbortSignal.timeout(8000) });
       if (!res.ok) throw new Error(`playlist ${res.status}`);
       const { segments } = parseMediaPlaylist(await res.text(), state.hlsUrl);
-      for (const seg of segments) {
+      // START AT THE LIVE EDGE. Everything older than the window is evicted on
+      // arrival, so fetching it buys nothing — and on an append-only playlist
+      // it is the difference between a few hundred kB and a few gigabytes.
+      const fresh = liveEdgeSlice(segments, bountyConfig.captureWindowMs * 1.5);
+      if (fresh.length < segments.length && !state.trimmedOnce) {
+        state.trimmedOnce = true;
+        log.log?.(`[capture] playlist lists ${segments.length} segments; starting at the `
+          + `live edge with the last ${fresh.length}`);
+      }
+      for (const seg of fresh) {
         if (state.stopped) return;
         if (state.buffer.has(seg.seq)) continue;
         const r = await fetchImpl(seg.uri, { signal: AbortSignal.timeout(8000) });
