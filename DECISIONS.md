@@ -336,3 +336,88 @@ pump.fun's entire API surface is reverse-engineered from traffic. Self-capture
 removes the VOD requirement but cannot conjure a stream where the platform
 offers none — which is the actual reason both stay parked, and a more precise
 reason than "the API is expensive".
+
+
+## Capture hardening + pump.fun (2026-08-25, `feat/capture-hardening`)
+
+- **Confidence tiers decide REVIEW ROUTING, never payout** — tier 1 external
+  capture, 2 self-capture + OBS confirmed, 3 self-capture alone, 4 a signal
+  disagrees. 1-3 auto-verify, 4 goes to a person. Weighting payout by evidence
+  quality would charge a streamer for our own ability to observe them, which is
+  the same mistake as weighting by viewer count. The gate asserts the evaluator
+  returns no amount/rate/multiplier/weight field at all, and that the no-OBS
+  streamer is paid identically. Undo: delete `bounty-confidence.js` and the
+  one block in the verify route.
+- **CORRECTED THE BRIEF'S PREMISE: self-capture does not merely prove the
+  overlay rendered** — `bounty-capture.js` polls the PUBLIC channel stream via
+  `resolveMediaUrl`, so a source loaded but not in the active scene never
+  reaches it and simply fails to verify. The "obvious cheat" T2 was written to
+  close was already closed by where we read from. T1/T2 were built anyway
+  because they are worth having against ACCIDENT and for diagnosis — but the
+  tier design says what each signal actually proves rather than inheriting the
+  stronger claim. Undo: n/a (fact about shipped code).
+- **The OBS scene check is corroboration, not proof** — it runs in the
+  streamer's browser against the streamer's OBS. It can raise confidence; it is
+  deliberately never the only thing holding a verification up, and
+  `NO_CONNECTION` is blameless and unreported. Undo: n/a (rule).
+- **`document.visibilityState` is recorded but is NOT a warning** — MEASURED:
+  headless Chrome and any background browser tab report 'hidden' while
+  rendering perfectly, so it flagged every session in the gate including the
+  clean ones. A warning that fires on the good case is a tax on the honest.
+  Undo: re-add `PAGE_HIDDEN` to `WARNINGS` and to the warnings push.
+- **Canvas plausibility is deliberately loose (160px floor)** — 1080p, 1440p,
+  vertical and ultrawide all pass; only 1×1-class absurdity flags. A false
+  CANVAS_ANOMALY sends an honest streamer to review for owning an unusual
+  monitor. Undo: `BOUNTY_OVERLAY_MIN_CANVAS_PX`.
+- **Samples are attributed to playbacks SERVER-SIDE and clamped to now** — the
+  client supplies a timestamp, never a playback id, so it cannot claim a
+  "visible" sample covers a playback during which the overlay was hidden, and
+  cannot post into the future. Undo: n/a (security property).
+- **Only samples DURING verified playbacks can count against anyone** — hiding
+  the overlay between MegaChats is not a violation; the overlay only has to be
+  up while a clip is playing, because that is the only time it carries a code.
+  Undo: n/a (rule).
+- **`obs-scene` is STREAMER-tier, `overlay-env` is CAPABILITY-tier** — the
+  scene report comes from the signed-in claim page, so there is no reason to
+  accept it on a bare air-session UUID; the overlay has no session and its UUID
+  is the whole credential. Undo: edit `ROUTE_POLICY`.
+- **Captures are keyed to the PLAYBACK, not the clip** — the freeze now resolves
+  the playback id before closing the window, and capture→evidence lookup keys on
+  the FILE the evidence row records verbatim. The tidier-looking playback-id key
+  did not work: a clipId-only freeze recorded a null playbackId. Undo: n/a
+  (bugfix).
+- **Capture duration comes from the buffer's own `spanMs`, not from ffprobe** —
+  a capture is HLS segments concatenated byte-wise, and ffprobe reports the
+  FIRST segment's duration when they do not share one timeline. A 20s window
+  measured 2s and every seek clamped to zero. `spanMs` is summed from EXTINF
+  at freeze time and cannot be wrong that way. Undo: n/a (bugfix).
+- **`decodeThrough` seek for captures only** — an input-side seek in a
+  concatenated stream trusts a broken index and returns the wrong frame, which
+  means a streamer who did the work is not paid. NOT defaulted on: the VOD path
+  seeks hours into an archive. Undo: drop the option at the one call site.
+- **A capture enters at the LIVE EDGE on every playlist shape** — everything
+  older than the window is evicted on arrival, so fetching it buys nothing. On
+  pump.fun's append-only playlist it was the difference between a few hundred kB
+  and ~2.4 GB. Undo: delete the `liveEdgeSlice` call in the poll.
+- **The mock obs-websocket is now shared (`_gate-mock-obs.mjs`)** — the new
+  gate drives the same mock the protocol gate proved correct, rather than a
+  second one that could drift into agreeing with whatever it tests. Undo: inline
+  it back.
+- **pump.fun UN-PARKED on video, still blocked on identity** — it serves plain
+  pullable 1080p60 HLS with PROGRAM-DATE-TIME. The earlier "WebRTC only" verdict
+  was inference from documentation; this is eight live streams and every request
+  recorded. The lesson generalises: for "is there a pullable stream", open the
+  page and record the requests BEFORE writing the verdict. Undo: n/a (fact).
+- **The LiveKit token is client-discoverable and we are not going to use it** —
+  an anonymous headless browser obtained a 413-char join JWT. Joining a room on
+  a token minted for a page view is participation under credentials issued for
+  something else. Recorded as an observation, explicitly not a plan. Undo: n/a
+  (rule).
+- **The probe accepts no terms and clicks no consent** — a blocking dialog is
+  reported as a finding. Playback worked with it untouched, so nothing was
+  traded away for the answer. Undo: n/a (rule).
+- **Gate `_gate-capture-hardening.mjs` 59/0** — pure tier/geometry logic, the
+  mock obs-websocket in six states, and three full HTTP broadcasts against a
+  stub live stream carrying real overlay badges: tier 2 auto-verifies, tier 4
+  opens a review naming every cause, and the no-OBS streamer verifies and is
+  paid the same (10 vs 10). Undo: n/a (evidence).
