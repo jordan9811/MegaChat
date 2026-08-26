@@ -813,3 +813,139 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
 - **Rumble's Live Stream API response shape is docs-derived, UNPROVEN on a real
   wire** — rumble-api.js and its gate both say so. First real creator URL is
   the test that counts, exactly as Kick was.
+
+## Real-broadcast testing run (2026-08-26, `feat/real-broadcast`)
+
+### THE FINDING: self-capture could never have worked on a real broadcast
+
+Two independent, deterministic bugs, both living entirely in the gap between a
+stub stream and a real encoder. Neither is flaky — both fail every real
+broadcast, every time, on every platform whose only evidence path is
+self-capture (Kick, Rumble, X).
+
+- **Capture never started.** The real order is claim → open air session → go
+  live. At session open the channel is offline, the extractor answers "the
+  channel is not currently live", and the single-shot resolve treated that as
+  permanent. Verification then fell back to a VOD path Kick/Rumble/X do not
+  have. FIXED: retries on a 15m budget, stops early if the session closes.
+- **The freeze kept the wrong 60 seconds.** The buffer holds the newest media
+  the PUBLIC stream has published — D = 12-25s behind wall clock. Freezing when
+  a clip ENDS kept media up to (end − D), so a clip of length L retained only
+  L−D seconds of itself and a clip shorter than the delay retained nothing.
+  Unrecoverable by seeking: the missing tail needs a NEGATIVE skew and the
+  calibration ladder is non-negative by construction. FIXED: freezes are
+  scheduled D + a segment past the clip's end; session close and verification
+  both settle pending freezes first.
+
+**Why 23 green gates missed both:** every stub publishes a segment
+milliseconds after writing it, so D ≈ 0, ladder rung 0 is correct, and
+freezing at playback end happens to keep the right media. `_gate-broadcast-delay.mjs`
+(10/0) is the missing test — a stub where content is stamped when CREATED and
+appears in the playlist D later. **This is the fourth green-test-hiding-a-broken-path
+bug in a month.** The first three were: one corpus code hiding a ~50% decoder
+miss rate; a gate asserting verification RAN rather than FOUND; a stub server
+that was stale. The pattern is now conclusive and structural, not bad luck.
+
+### Rumble: the live-status URL is a BROADCAST credential
+
+Measured on the real wire, not inferred. Our docs-derived field assumptions
+(`livestreams[]`, `is_live`, `watching_now`, `created_on`, `title`) were all
+CORRECT. What the docs never said: every livestream entry carries
+`server_url` + `stream_key` in plaintext, so possession of the creator's API
+URL confers the power to BROADCAST AS that channel. `rumble-api.js`'s note that
+"possession is transferable in a way OAuth is not" was right and far too mild.
+No active leak (the parser copies four scalars by name; the URL never reaches a
+client, config, evidence or persistence) — but it was one debug line away.
+Gated: `_gate-yt-rumble` A4 asserts no `stream_key`/`server_url` in the result
+and exactly four keys.
+
+### Rehearsal harnesses had been dead for weeks
+
+- **Twitch**: `args: ['--prod']` REPLACED the helper default rather than
+  appending, so it spawned `node --prod` with no script (exit 9). Broken since
+  the harness moved onto the shared gate harness. Invisible because rehearsals
+  need a real broadcast and so are not in the gate suite.
+- **Twitch**: sent no credentials at all since the 2026-08-24 route lockdown —
+  pledge 401'd and `undefined` flowed into the literal URL
+  `http://localhost:3306undefined`. Now uses `bountyAuth` + `srv.headers()`,
+  with a `must()` helper that stops at the rejected call.
+- **Both**: hardcoded 3 clips — EXACTLY `calibrationMinPoints`, zero margin,
+  against a documented ~1-junk-probe-in-4 rate. Now `--clips`, default 5.
+  **Two clips can never verify anything** on a platform without PROGRAM-DATE-TIME.
+- **Twitch**: the mid-broadcast live spot-check ran the FULL verify+release
+  route — it could open a review blocking every later release, or consume the
+  session's one `release:<id>` idempotency key on a single clip. Now opt-in.
+
+### Open — needs a credential or a decision, not engineering
+
+- **YouTube: UNTESTED.** Every `YOUTUBE_*` credential was blank. Not stubbed
+  around, not guessed — skipped and reported, per the brief.
+- **pump.fun: CANNOT BROADCAST.** No ingest/RTMP URL was supplied and the repo
+  contains zero pump.fun ingest references. A stream is addressed by coin mint,
+  so streaming requires launching a coin — a Solana transaction. The wallet
+  supplied is a PUBLIC address; the ownership-signature path needs a PRIVATE
+  key that only the human can use, in their own wallet UI. Both correctly out
+  of scope for an agent.
+- **Rumble ingest mismatch, unresolved.** The supplied `RUMBLE_RTMP_URL`
+  (`rtmp://rtmp.rumble.com/live`) does not match what Rumble's own API returns
+  for the live stream (`rtmp://ls__.live.rmbl.ws/slot-__`). Pushing to the
+  wrong host is the "streams nowhere, silently" failure. The API's values are
+  authoritative and per-livestream; a Rumble harness should read them from the
+  API rather than env.
+- **No Rumble rehearsal harness exists.** Adapting the Kick one needs: plain
+  RTMP not RTMPS, live status from the creator URL not an OAuth API, and no
+  slug — the identity is a username (`type: "user"`, `channel_id: null`).
+- **`BOUNTY_ADMIN_KEY` still unset in Railway** — admin routes answer 503.
+- **Capture storage still has no global ceiling.**
+
+### Hazard: the git branch moved mid-run
+
+The working tree was switched to `feat/ui-overhaul @ 24c1996` by something
+outside this run, mid-audit. That branch is missing ~710 lines of verification
+work, and a broadcast nearly went out on pre-T3 code. If more than one session
+or person works this repo, pin the SHA at the top of any broadcast script and
+abort on mismatch.
+
+### THE REAL BROADCAST, and the money bug it found
+
+`jordandotfun` on Twitch, 12 minutes, 5 clips, real codes, real encoder.
+Verdict: **AMBIGUOUS, 4 of 5 clips verified, confidence 0.484**, badge heights
+`[28, 28, 28, 28, 27.7, 28, 28, 28, 28, 4.1]`. **Release: 0 of 25.**
+
+Two things came out of it.
+
+**1. External capture WORKS on a real encoder.** 4 of 5 clips read back off the
+platform's own VOD, 9 of 10 samples at a clean 28px — exactly the height the
+design predicts (DOT=4 → 28px). No detection gap versus the synthetic corpus at
+this resolution: the corpus claims ~100% at 1080p/720p and the real encoder
+delivered legible badges on every sample but one. The one 4.1px outlier is a
+single frame sampled mid-transition, not a systemic shortfall.
+
+**2. P0 — CONFIDENCE IS AVERAGED OVER MISSES, SO IT PAYS AN HONEST STREAMER
+ZERO.** `avgConfidence` is the mean of `confidence` across EVERY sampled frame
+(`bounty-verifier.js` — `checks.push(sample)` runs whether or not `res.found`),
+and a frame that found no code contributes ~0. Codes rotate every 4s and
+samples land where they land, so roughly half of any real sample set finds
+nothing — that is normal sampling, not evidence against anyone. The mean lands
+near 0.5, under `minConfidence` 0.6, so `escrow.release` returns
+`skipped: 'low_confidence'` and the run pays **nothing**.
+
+That is exactly the outcome the config comments call the worst failure this
+system has: *"underpaying someone who did the work."* It happened on the very
+first real broadcast, at full badge legibility, with the streamer having done
+everything right.
+
+The measurement conflates two different things. `hitRate` (4/5 = 0.8) already
+answers "how many clips did we cover". Confidence should answer "how sure are
+we of the reads we actually got" — i.e. the mean over FOUND samples, or the
+per-clip confidence of verified clips only. A miss is a sampling artifact.
+**Not fixed in this run** — it is a money-path change and deserves its own
+gate proving a miss-heavy-but-legible sample set still pays.
+
+**3. Minor: captures key on clipId, not playbackId, when a clip runs its full
+declared duration.** The files landed as `<session>__REHEARSAL1.ts` rather than
+`__REHEARSAL1#<nonce>`. `openWindowFor` filters `w.endsAt > now`, and a clip
+that runs exactly its declared `durationS` has `endsAt ≈ now` at the end call,
+so the window does not resolve and `playbackId` is null. Capture→playback
+routing then falls back to nearest-by-time instead of exact. Degrades
+precision, not correctness.
