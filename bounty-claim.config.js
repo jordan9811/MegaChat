@@ -424,6 +424,18 @@ export const PLATFORM_PROFILES = {
       + 'overlay was on screen. Keep the badge unobstructed while a MegaChat '
       + 'plays. If a check is inconclusive it goes to a person, never to a denial.',
   },
+  pumpfun: {
+    platform: 'pumpfun',
+    // The append-only playlist keeps the whole broadcast addressable while
+    // pump.fun serves it — a re-check reads the same public URL. Retention
+    // after the stream is UNPROVEN, so our own recording is still kept.
+    vodRetry: true,
+    samplingMultiplier: 1,
+    notice: 'pump.fun serves a public replay of your stream while it stays up, '
+      + 'and every moment of it is timestamped — checks land exactly where your '
+      + 'MegaChats played. We keep our own recording too, in case the replay '
+      + 'disappears. If a check is inconclusive it goes to a person, never to a denial.',
+  },
   kick: {
     platform: 'kick',
     vodRetry: false,

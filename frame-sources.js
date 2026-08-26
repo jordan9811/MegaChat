@@ -398,6 +398,116 @@ export class RumbleFrameSource extends FrameSource {
   }
 }
 
+// ── pump.fun ────────────────────────────────────────────────────────────────
+
+/**
+ * pump.fun serves plain public HLS (measured 2026-08-25 across eight live
+ * streams: 1080p60 ladder, 2s MPEG-TS segments, no auth) with TWO properties
+ * no other platform here has at once:
+ *
+ *   1. the media playlist is APPEND-ONLY — MEDIA-SEQUENCE pinned at 0, no
+ *      ENDLIST, the full broadcast history stays listed while it serves; and
+ *   2. EVERY segment carries EXT-X-PROGRAM-DATE-TIME.
+ *
+ * Together they make external verification a LOOKUP, not a search: parse the
+ * playlist, find the segment whose wall-clock window covers the code's issue
+ * time, download that one segment, read the frame. No VOD discovery, no
+ * timeline calibration (wallClockSkew tells the calibrator the offset is
+ * known), no seeking through gigabytes.
+ *
+ * What this source does NOT solve, on purpose: DISCOVERY. The mint→playlist
+ * mapping rides pump.fun's undocumented frontend API, and building the money
+ * path on a reverse-engineered endpoint is a business risk, not a technical
+ * one. The playlist URL arrives via the session's watch URL; anything else is
+ * a typed refusal that names the gap.
+ */
+export class PumpFunFrameSource extends FrameSource {
+  constructor({ log = console, watchUrl = null, fetchImpl = fetch } = {}) {
+    super();
+    this.log = log;
+    this.watchUrl = watchUrl;
+    this.fetchImpl = fetchImpl;
+    this.calibratable = false; // wallClockSkew supersedes probing entirely
+    this._segments = null;     // parsed once per verification
+  }
+
+  wallClockSkew() {
+    // Only claim the bypass once the playlist has actually shown its stamps.
+    if (!this._segments?.length) return null;
+    if (!this._segments.every((x) => Number.isFinite(x.pdtMs))) return null;
+    return {
+      skewMs: 0,
+      residualMs: 4_000,
+      detail: `PROGRAM-DATE-TIME on all ${this._segments.length} listed segment(s)`,
+    };
+  }
+
+  async loadPlaylist() {
+    if (this._segments) return this._segments;
+    if (!/\.m3u8(\?|$)/i.test(String(this.watchUrl || ''))) {
+      throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE,
+        'pump.fun verification needs the clips.pump.fun playlist URL — the mint→stream '
+        + 'mapping rides an undocumented API this build deliberately does not call');
+    }
+    const { parseMediaPlaylist } = await import('./bounty-capture.js');
+    let url = this.watchUrl;
+    let body = await (await this.fetchImpl(url, { signal: AbortSignal.timeout(10_000) })).text();
+    if (/#EXT-X-STREAM-INF/i.test(body)) {
+      // A master playlist: take the top rendition and fetch its media playlist.
+      const rel = body.split(/\r?\n/).find((l) => l.trim() && !l.startsWith('#'));
+      url = new URL(rel, url).toString();
+      body = await (await this.fetchImpl(url, { signal: AbortSignal.timeout(10_000) })).text();
+    }
+    const { segments } = parseMediaPlaylist(body, url);
+    if (!segments.length) {
+      throw new FrameSourceUnavailable(SOURCE_STATES.EXTRACTION_FAILED, 'playlist listed no segments');
+    }
+    if (!segments.every((x) => Number.isFinite(x.pdtMs))) {
+      throw new FrameSourceUnavailable(SOURCE_STATES.EXTRACTION_FAILED,
+        'pump.fun playlist without PROGRAM-DATE-TIME — cannot map wall clock to media');
+    }
+    this._segments = segments;
+    return segments;
+  }
+
+  async getFrames(platform, handle, timestamps, opts = {}) {
+    const segments = await this.loadPlaylist();
+    const out = [];
+    for (const t of timestamps) {
+      const ts = typeof t === 'object' ? t.ts : t;
+      const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : 0;
+      const want = ts + skew;
+      // The segment whose [pdt, pdt+duration) window covers the instant.
+      const seg = segments.find((x) => want >= x.pdtMs && want < x.pdtMs + x.durationS * 1000)
+        // Half-open windows leave the final edge uncovered; take the last
+        // segment when the instant sits within one duration past it.
+        || (want >= segments[segments.length - 1].pdtMs ? segments[segments.length - 1] : null);
+      if (!seg) {
+        throw new FrameSourceUnavailable(SOURCE_STATES.NO_VOD_COVERING_TS,
+          `no listed segment covers ${new Date(ts).toISOString()}`);
+      }
+      // ONE segment, not the stream: download just the 2s of media that
+      // carries the instant, then read the frame at the intra-segment offset.
+      const segRes = await this.fetchImpl(seg.uri, { signal: AbortSignal.timeout(15_000) });
+      if (!segRes.ok) {
+        throw new FrameSourceUnavailable(SOURCE_STATES.EXTRACTION_FAILED, `segment ${segRes.status}`);
+      }
+      const segFile = path.join(workDir(), `pf-seg-${randomUUID().slice(0, 8)}.ts`);
+      const fsMod = await import('fs');
+      fsMod.writeFileSync(segFile, Buffer.from(await segRes.arrayBuffer()));
+      const file = path.join(workDir(), `pf-${randomUUID().slice(0, 8)}.png`);
+      grabFrame(segFile, Math.max(0, (want - seg.pdtMs) / 1000), file, { decodeThrough: true });
+      out.push({
+        live: false, ref: file, ts,
+        clipId: typeof t === 'object' ? t.clipId : null,
+        playbackId: typeof t === 'object' ? t.playbackId : null,
+        platform, handle, toleranceMs: TOLERANCE_MS,
+      });
+    }
+    return out;
+  }
+}
+
 // ── Local files ─────────────────────────────────────────────────────────────
 
 /**
@@ -530,6 +640,28 @@ export class CaptureFrameSource extends FrameSource {
     return after || this.captures[this.captures.length - 1];
   }
 
+  /**
+   * Does EVERY capture window know its own wall clock? True only when each
+   * carries a PROGRAM-DATE-TIME anchor (pump.fun stamps every segment). Then
+   * the wall-clock→media mapping is exact by construction and calibration
+   * has nothing left to measure — bounty-timeline-calibration consults this
+   * and skips its probe ladder entirely.
+   *
+   * The residual is the stamp's own granularity: one segment duration of
+   * quantization plus encoder stamping slack. It is NOT the broadcast delay
+   * — PDT names when the media was ENCODED, which is exactly the clock our
+   * code-issue timestamps live on.
+   */
+  wallClockSkew() {
+    if (!this.captures.length) return null;
+    if (!this.captures.every((c) => Number.isFinite(c.firstPdtMs))) return null;
+    return {
+      skewMs: 0,
+      residualMs: 4_000,
+      detail: `PROGRAM-DATE-TIME on all ${this.captures.length} window(s) — offset known, not measured`,
+    };
+  }
+
   async getFrames(platform, handle, timestamps, opts = {}) {
     const present = this.captures.filter((c) => existsSync(c.file));
     if (!present.length) {
@@ -542,13 +674,21 @@ export class CaptureFrameSource extends FrameSource {
       const playbackId = typeof t === 'object' ? t.playbackId : null;
       const cap = this.pick(ts, playbackId);
       const dur = this.durationS(cap.file);
-      // Map wall clock into the window: the capture's LAST frame is the most
-      // recent media we held, so a timestamp `d` ms before the freeze sits at
-      // (duration - d/1000) seconds in. `skewMs` shifts that by whatever
-      // calibration measured, exactly as the VOD path uses it.
       const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
-      const back = (cap.frozenAt - ts + skew) / 1000;
-      const offsetS = Math.max(0, dur - back);
+      let offsetS;
+      if (Number.isFinite(cap.firstPdtMs)) {
+        // EXACT: the window's first segment names its own wall clock, so a
+        // code issued at `ts` sits (ts - firstPdtMs) into the media. No
+        // estimate, no broadcast-delay guess — the anchor IS the mapping.
+        offsetS = Math.max(0, (ts + skew - cap.firstPdtMs) / 1000);
+      } else {
+        // ESTIMATE: the capture's LAST frame is the most recent media held,
+        // so a timestamp `d` ms before the freeze sits at (duration - d/1000)
+        // seconds in. `skewMs` shifts that by whatever calibration measured,
+        // exactly as the VOD path uses it.
+        const back = (cap.frozenAt - ts + skew) / 1000;
+        offsetS = Math.max(0, dur - back);
+      }
       const file = path.join(workDir(), `cap-${randomUUID().slice(0, 8)}.png`);
       grabFrame(cap.file, offsetS, file, { decodeThrough: true });
       out.push({
@@ -590,6 +730,7 @@ export function frameSourceFor(platform, opts = {}) {
   if (platform === 'kick') return new KickFrameSource(opts);
   if (platform === 'youtube') return new YouTubeFrameSource(opts);
   if (platform === 'rumble') return new RumbleFrameSource(opts);
+  if (platform === 'pumpfun') return new PumpFunFrameSource(opts);
   if (platform === 'x') {
     return new UnavailableFrameSource({
       detail: 'X exposes no pullable stream at any tier — verification on X uses '

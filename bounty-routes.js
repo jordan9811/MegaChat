@@ -745,7 +745,12 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       const frozen = capture.freezeWindow(airSessionId, {
         clipId, playbackId: playbackId || win?.playbackId || null, log,
       });
-      res.json({ ok: true, capture: frozen ? { bytes: frozen.bytes, spanMs: frozen.spanMs } : null });
+      res.json({
+        ok: true,
+        capture: frozen
+          ? { bytes: frozen.bytes, spanMs: frozen.spanMs, firstPdtMs: frozen.firstPdtMs ?? null }
+          : null,
+      });
     } catch (e) { fail(res, e); }
   });
 

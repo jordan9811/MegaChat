@@ -60,19 +60,30 @@ export function parseMediaPlaylist(text, baseUrl) {
   const lines = String(text).split(/\r?\n/);
   let mediaSequence = 0;
   let pendingDuration = 0;
+  let pendingPdtMs = null;
   const segments = [];
   for (const line of lines) {
     if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
       mediaSequence = Number(line.split(':')[1]) || 0;
     } else if (line.startsWith('#EXTINF:')) {
       pendingDuration = parseFloat(line.split(':')[1]) || 0;
+    } else if (line.startsWith('#EXT-X-PROGRAM-DATE-TIME:')) {
+      // A WALL CLOCK, when the platform stamps one (pump.fun stamps every
+      // segment; Twitch and Kick stamp none). Carried per segment because it
+      // is the one thing that can replace timeline calibration outright: a
+      // capture whose segments know their own wall time needs no probing to
+      // map a code's issue time onto media.
+      const t = Date.parse(line.slice('#EXT-X-PROGRAM-DATE-TIME:'.length).trim());
+      pendingPdtMs = Number.isFinite(t) ? t : null;
     } else if (line && !line.startsWith('#')) {
       segments.push({
         uri: new URL(line, baseUrl).toString(),
         durationS: pendingDuration,
         seq: mediaSequence + segments.length,
+        ...(pendingPdtMs != null ? { pdtMs: pendingPdtMs } : {}),
       });
       pendingDuration = 0;
+      pendingPdtMs = null;
     }
   }
   return { mediaSequence, segments };
@@ -120,6 +131,7 @@ export class RollingBuffer {
   constructor({ windowMs = bountyConfig.captureWindowMs } = {}) {
     this.windowMs = windowMs;
     this.segments = []; // { seq, uri, durationS, bytes: Buffer, fetchedAt }
+    this.highWaterSeq = -1; // highest seq ever pushed — see has()
   }
 
   /** Total media duration currently held, in ms. */
@@ -131,10 +143,26 @@ export class RollingBuffer {
     return this.segments.reduce((a, s) => a + s.bytes.length, 0);
   }
 
-  has(seq) { return this.segments.some((s) => s.seq === seq); }
+  /**
+   * "Already fetched?" must cover EVICTED segments, not just held ones.
+   *
+   * The first implementation checked only the live ring. On a SLIDING
+   * playlist (Twitch, Kick) that was accidentally sufficient — old segments
+   * leave the playlist and never resurface. On an APPEND-ONLY playlist
+   * (pump.fun) every past segment stays listed forever, so the moment the
+   * window evicted one, the next poll saw it as new and re-downloaded it —
+   * measured at 205 fetches of 40 backlog segments in under ten seconds,
+   * every 250ms, for the length of the broadcast. The high-water mark is the
+   * fix: sequence numbers only move forward, so anything at or below it has
+   * been fetched once already, held or not.
+   */
+  has(seq) {
+    return seq <= this.highWaterSeq || this.segments.some((s) => s.seq === seq);
+  }
 
   /** Append and evict, oldest first, until the window fits. */
   push(seg) {
+    if (Number.isFinite(seg?.seq)) this.highWaterSeq = Math.max(this.highWaterSeq, seg.seq);
     this.segments.push(seg);
     // Evict by MEDIA duration, not by wall clock: a stall that stops segments
     // arriving must not silently empty the buffer we are about to freeze.
@@ -233,12 +261,17 @@ export function freezeWindow(airSessionId, { playbackId, clipId, log = console }
   const file = path.join(CAPTURE_DIR, `${airSessionId}__${playbackId || clipId || 'window'}.ts`);
   const bytes = state.buffer.concat();
   writeFileSync(file, bytes);
+  const first = state.buffer.segments[0];
   const record = {
     airSessionId, playbackId: playbackId || null, clipId: clipId || null,
     file, bytes: bytes.length,
     segments: state.buffer.segments.length,
     spanMs: Math.round(state.buffer.spanMs),
     frozenAt: Date.now(),
+    // The first held segment's PROGRAM-DATE-TIME, when the platform stamps
+    // one: the capture's media t=0 in WALL CLOCK, exact. Null on platforms
+    // that do not stamp (Twitch, Kick) — calibration measures those instead.
+    firstPdtMs: Number.isFinite(first?.pdtMs) ? first.pdtMs : null,
   };
   // Evidence, same append-only treatment as the clip index and the ledger:
   // a payout computed FROM this capture must be able to point at it.
@@ -321,7 +354,11 @@ export function captureRecordsFor(airSessionId, { log = console } = {}) {
     // byte-concatenated MPEG-TS reports whatever its FIRST segment claims when
     // the segments do not share a continuous timeline, and a seek computed
     // from that lands nowhere. See CaptureFrameSource.durationS.
-    return { file, playbackId, clipId: rec?.clipId || null, frozenAt, spanMs: rec?.spanMs ?? null };
+    return {
+      file, playbackId, clipId: rec?.clipId || null, frozenAt,
+      spanMs: rec?.spanMs ?? null,
+      firstPdtMs: Number.isFinite(rec?.firstPdtMs) ? rec.firstPdtMs : null,
+    };
   }).filter((r) => r.frozenAt);
 }
 

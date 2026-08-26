@@ -53,6 +53,12 @@ export const CALIBRATION_STATES = {
   DISAGREEMENT: 'DISAGREEMENT',
   /** Source cannot be calibrated at all (live stream, or a fixture source). */
   NOT_APPLICABLE: 'NOT_APPLICABLE',
+  /**
+   * The offset is KNOWN, not measured: every capture window carries the
+   * platform's own PROGRAM-DATE-TIME stamp (pump.fun stamps every segment).
+   * Zero probe grabs spent; the residual is the stamp's granularity.
+   */
+  WALL_CLOCK: 'WALL_CLOCK',
 };
 
 const median = (xs) => {
@@ -102,6 +108,21 @@ export async function calibrateTimeline({
     residualMs: config.mediaSkewToleranceMs,
     spreadMs: null, points: [], grabs: 0, fellBack: true, detail: null,
   };
+  // A source whose windows carry PROGRAM-DATE-TIME knows its offset by
+  // construction — probing it would spend frame grabs to re-derive a number
+  // the platform already stamped on every segment. Skip to the answer, with
+  // the residual sized to the stamp's granularity rather than to a search.
+  if (typeof frameSource.wallClockSkew === 'function') {
+    const wc = frameSource.wallClockSkew();
+    if (wc) {
+      return {
+        state: CALIBRATION_STATES.WALL_CLOCK,
+        skewMs: wc.skewMs, residualMs: wc.residualMs,
+        spreadMs: 0, points: [], grabs: 0, fellBack: false,
+        detail: wc.detail,
+      };
+    }
+  }
   if (!frameSource?.calibratable) return { ...fallback, detail: 'source is not calibratable' };
 
   const codes = allCodes(session);
@@ -289,6 +310,9 @@ export function describeCalibration(cal) {
         + `${cal.outliers ? ` (${cal.outliers} outlier(s) discarded)` : ''}, `
         + `spread ${(cal.spreadMs / 1000).toFixed(1)}s, `
         + `residual window ±${(cal.residualMs / 1000).toFixed(1)}s`;
+    case CALIBRATION_STATES.WALL_CLOCK:
+      return `timeline anchored by the platform's own wall clock (${cal.detail}); `
+        + `residual window ±${(cal.residualMs / 1000).toFixed(1)}s, 0 probe grabs spent`;
     case CALIBRATION_STATES.DISAGREEMENT:
       return cal.detail;
     case CALIBRATION_STATES.INSUFFICIENT_POINTS:
