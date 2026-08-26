@@ -772,6 +772,29 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   sessions in capture-hardening), all against stubs. The bugs found this week
   are exactly what a stub hides.
 
+### Attack surface, reasoned through and one hole closed THIS run
+- **The watch URL is unbound from the identity — closed for the platforms that
+  are claimable today.** Broadening `watchUrl` to lead capture (needed for
+  YouTube/pump.fun, which have no channel page) briefly let a TWITCH/KICK
+  streamer point our recorder at a stream other than their own: run the codes
+  on a throwaway broadcast, hand us that URL, never overlay the real audience
+  stream. Fixed — `captureSourceUrl()` pins Twitch/Kick to the channel page
+  derived from the PROVEN handle; the watch URL is honoured only where no such
+  page exists, and those platforms are not claimable yet. Gated in
+  _gate-self-capture (6).
+- **The residual, for whoever builds YouTube/Rumble/pump.fun claims:** their
+  watch URL will be the sole capture address, so binding it to the verified
+  identity is REQUIRED before those claims ship. YouTube's Data API already
+  returns the video's `channelId` — assert it equals the claimant's channel.
+  Rumble's creator URL and pump.fun's mint are the identity by construction
+  (see the ownership filings). Do not ship a claim path that reads a
+  client-supplied capture URL without this check.
+- **What stays closed:** hiding the overlay (self-capture reads the public
+  stream), dumping to nobody (stream-context warmup+tail), shrinking the badge
+  (verify-time pixel floor), forging the OBS "visible" report (it only raises
+  tier 2 vs 3 — both pay the same and both auto-verify, so forging buys
+  nothing), claiming another's handle (OAuth ownership, now including X).
+
 ### New, filed precisely
 - **pump.fun ownership is unsolved and NOT built this run.** Streams key to a
   coin mint, not an account. What it would take: (1) wallet-signature binding —

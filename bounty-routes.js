@@ -213,6 +213,23 @@ function accountKey(req) {
  * forget: a capture that cannot start must never block a streamer from going
  * live — it degrades to the platform VOD path, loudly.
  */
+/**
+ * Which URL should self-capture record for this session? EXPORTED and pure so
+ * the identity-binding rule below is gated directly, not inferred through an
+ * extractor call.
+ *
+ * The channel page derived from the PROVEN handle wins wherever one exists
+ * (Twitch, Kick) — it is bound to the OAuth identity the claim verified. A
+ * client-supplied watch URL is trusted ONLY on platforms with no channel page
+ * (youtube/rumble/pumpfun/x), where it is the sole address rather than an
+ * override of a trustworthy one — and those are not claimable yet.
+ */
+export function captureSourceUrl(session, handle) {
+  if (session.platform === 'twitch') return `https://www.twitch.tv/${String(handle).toLowerCase()}`;
+  if (session.platform === 'kick') return `https://kick.com/${String(handle).toLowerCase()}`;
+  return session.watchUrl || null;
+}
+
 async function startSessionCapture(session, { log = console } = {}) {
   try {
     const claim = store.getClaim(session.claimId);
@@ -221,17 +238,21 @@ async function startSessionCapture(session, { log = console } = {}) {
     let hlsUrl = bountyConfig.captureHlsOverride;
     if (!hlsUrl) {
       const { resolveMediaUrl } = await import('./frame-sources.js');
-      // The session's own watch URL first — it is exact on every platform,
-      // and it is the ONLY address on youtube/rumble/x, where guessing a
-      // channel page would have pointed the recorder at the wrong site
-      // entirely (the old else-branch sent every non-kick platform to
-      // twitch.tv/<handle>).
-      const page = session.watchUrl
-        || (session.platform === 'kick' ? `https://kick.com/${handle.toLowerCase()}`
-          : session.platform === 'twitch' ? `https://www.twitch.tv/${handle.toLowerCase()}`
-            : null);
+      // THE CHANNEL PAGE DERIVED FROM THE PROVEN HANDLE WINS wherever one
+      // exists (Twitch, Kick). That page is bound to the OAuth identity the
+      // claim verified; a client-supplied watch URL is not, so honouring it
+      // here would let a streamer point our recorder at a DIFFERENT stream —
+      // run the codes on a throwaway broadcast, hand us that URL, and never
+      // put the overlay on their real audience stream at all.
+      //
+      // The watch URL is used ONLY on platforms with no channel page to derive
+      // (youtube/rumble/pumpfun/x), and those are not claimable yet — so it is
+      // the sole address, never an override of a trustworthy one. Binding that
+      // URL to the identity is the work those platforms' claim paths still owe
+      // (YouTube's Data API returns the video's channelId; see OPEN-ISSUES).
+      const page = captureSourceUrl(session, handle);
       if (!page) {
-        log.warn?.(`[capture] no watch URL for ${session.platform} session ${session.id} — self-capture skipped`);
+        log.warn?.(`[capture] no channel page or watch URL for ${session.platform} session ${session.id} — self-capture skipped`);
         return;
       }
       hlsUrl = resolveMediaUrl(page, { log });

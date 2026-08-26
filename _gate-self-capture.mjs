@@ -267,5 +267,27 @@ try {
   if (browser) await browser.close();
   await new Promise((r) => server.close(r));
 }
+// ── 6. capture is pinned to the PROVEN handle, not a client watch URL ─────
+// A streamer opens the air session and may hand us a watch URL. On platforms
+// with a channel page bound to the OAuth identity (Twitch, Kick), honouring
+// that URL would let them point our recorder at a DIFFERENT stream — run the
+// codes on a throwaway broadcast, hand us that URL, never overlay their real
+// audience stream. The handle-derived page must win there; the watch URL is
+// the SOLE address only where no channel page exists.
+{
+  const { captureSourceUrl } = await import('./bounty-routes.js');
+  ok('6. twitch capture ignores a supplied watch URL (pinned to the proven handle)',
+    captureSourceUrl({ platform: 'twitch', watchUrl: 'https://evil.example/other' }, 'MyHandle')
+    === 'https://www.twitch.tv/myhandle');
+  ok('6. kick capture ignores a supplied watch URL',
+    captureSourceUrl({ platform: 'kick', watchUrl: 'https://evil.example/other' }, 'MyHandle')
+    === 'https://kick.com/myhandle');
+  ok('6. youtube capture uses the supplied watch URL (its only address)',
+    captureSourceUrl({ platform: 'youtube', watchUrl: 'https://youtube.com/watch?v=x' }, 'h')
+    === 'https://youtube.com/watch?v=x');
+  ok('6. a no-channel-page platform with no watch URL is null (skip, never guess)',
+    captureSourceUrl({ platform: 'youtube' }, 'h') === null);
+}
+
 console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);
