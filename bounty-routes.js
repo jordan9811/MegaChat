@@ -22,6 +22,7 @@ import { twitchApiConfigured, getStreamByLogin } from './twitch-api.js';
 import { kickApiConfigured, getChannelBySlug } from './kick-api.js';
 import { youtubeApiConfigured, getVideoLiveDetails, extractVideoId } from './youtube-api.js';
 import { rumbleApiConfigured, getRumbleLiveStatus } from './rumble-api.js';
+import { getStreamByMint } from './pumpfun-api.js';
 import { readIdentityFromRequest } from './auth.js';
 import settlement from './bounty-settlement.js';
 import { policyFor, authorize, TIER, platformLoginFor } from './bounty-auth.js';
@@ -132,6 +133,16 @@ function liveLookerFor(s) {
   }
   if (s.platform === 'rumble') {
     return rumbleApiConfigured() ? (_handle, o) => getRumbleLiveStatus(o) : null;
+  }
+  if (s.platform === 'pumpfun') {
+    // Keyed by the coin mint, which rides on the session's watchUrl (a mint,
+    // a coin page, or a playlist URL all resolve). No credential of ours is
+    // involved, so there is nothing to be "configured".
+    return async (_handle, o) => {
+      const { extractPumpFunMint } = await import('./frame-sources.js');
+      const mint = extractPumpFunMint(s.watchUrl);
+      return mint ? getStreamByMint(mint, o) : null;
+    };
   }
   return null;
 }

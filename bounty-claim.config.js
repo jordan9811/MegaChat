@@ -225,14 +225,33 @@ export const bountyConfig = {
   /**
    * How long to wait after a clip ends before freezing its window.
    *
-   * MUST exceed the broadcast delay, or the clip's own tail has not reached
-   * the public stream yet and the capture holds the wrong 60 seconds — see
-   * scheduleFreeze. Defaults to the documented delay plus a segment of slack.
-   * Waiting too long is free (the window is 60s); waiting too little is the
-   * difference between a verified clip and nothing at all.
+   * WAITING TOO LONG IS NOT FREE, which is what the first version of this got
+   * wrong. It derived from `liveBroadcastDelayMs` (45s) — a number chosen to be
+   * deliberately GENEROUS for a completely different job, sizing the accepted-
+   * code window — and landed on 51s. The freeze delay has the opposite
+   * pressure, because the buffer is a sliding window: waiting F seconds means
+   * freezing on media published in [end + F − window, end + F], so every extra
+   * second of F throws away a second of the clip's HEAD.
+   *
+   * The clip's content is published across [end − L + D, end + D] for a clip
+   * of length L at broadcast delay D, so the whole of it is held only when
+   *
+   *     D  ≤  F  ≤  window − L + D
+   *
+   * At the measured 12-25s delay, a 30s clip and the 60s window, that is
+   * 25 ≤ F ≤ 42. The old 51s sat OUTSIDE it at every delay — it kept the
+   * clip's tail and dropped its head, leaving calibration fewer codes to land
+   * on. Kick's first real broadcast verified 1 of 5 clips against Twitch's
+   * 4 of 5 on the archive path; this is the leading suspect.
+   *
+   * 30s is the middle of that band: past the worst delay ever measured, with a
+   * segment of slack, and comfortably inside the window bound.
+   *
+   * If you raise `minClipSeconds` or lower `captureWindowMs`, re-derive this —
+   * the inequality above is the whole contract, and it is easy to violate by
+   * changing a neighbour.
    */
-  captureFreezeDelayMs: num(process.env.BOUNTY_CAPTURE_FREEZE_DELAY_MS,
-    num(process.env.BOUNTY_LIVE_DELAY_MS, 45_000) + 6_000),
+  captureFreezeDelayMs: num(process.env.BOUNTY_CAPTURE_FREEZE_DELAY_MS, 30_000),
   /**
    * How long to keep retrying the capture-start resolve while a channel is
    * not yet live. THE ORDER THAT MADE THIS NECESSARY: a streamer claims their

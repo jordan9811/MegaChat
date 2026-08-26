@@ -421,11 +421,30 @@ export class RumbleFrameSource extends FrameSource {
  * one. The playlist URL arrives via the session's watch URL; anything else is
  * a typed refusal that names the gap.
  */
+/**
+ * A pump.fun coin mint out of whatever the streamer pasted: a bare mint, a
+ * coin page, or a /live link. Returns null rather than guessing — a wrong mint
+ * verifies somebody else's broadcast.
+ */
+export function extractPumpFunMint(input) {
+  const s = String(input || '').trim();
+  if (!s) return null;
+  // Base58, and pump.fun mints conventionally end in "pump".
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(s)) return s;
+  const m = /pump\.fun\/(?:coin\/|live\/|board\/)?([1-9A-HJ-NP-Za-km-z]{32,48})/.exec(s);
+  return m ? m[1] : null;
+}
+
 export class PumpFunFrameSource extends FrameSource {
-  constructor({ log = console, watchUrl = null, fetchImpl = fetch } = {}) {
+  constructor({ log = console, watchUrl = null, mint = null, fetchImpl = fetch } = {}) {
     super();
     this.log = log;
     this.watchUrl = watchUrl;
+    // A MINT IS ENOUGH NOW. livestream-api.pump.fun turns it into the stream's
+    // own directory, so the playlist is derived rather than discovered — which
+    // is why this source no longer has to refuse everything but a hand-supplied
+    // .m3u8. See pumpfun-api.js for the measurement behind that.
+    this.mint = mint;
     this.fetchImpl = fetchImpl;
     this.calibratable = false; // wallClockSkew supersedes probing entirely
     this._segments = null;     // parsed once per verification
@@ -444,13 +463,32 @@ export class PumpFunFrameSource extends FrameSource {
 
   async loadPlaylist() {
     if (this._segments) return this._segments;
-    if (!/\.m3u8(\?|$)/i.test(String(this.watchUrl || ''))) {
-      throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE,
-        'pump.fun verification needs the clips.pump.fun playlist URL — the mint→stream '
-        + 'mapping rides an undocumented API this build deliberately does not call');
+    let url = this.watchUrl;
+    // Not a playlist URL? Derive one from the mint. This used to be a hard
+    // refusal on the belief that the mapping was undiscoverable; it is one
+    // unauthenticated GET keyed by the mint.
+    if (!/\.m3u8(\?|$)/i.test(String(url || ''))) {
+      const mint = this.mint || extractPumpFunMint(url);
+      if (!mint) {
+        throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE,
+          'pump.fun verification needs the coin mint (or a clips.pump.fun playlist URL)');
+      }
+      const { getStreamByMint } = await import('./pumpfun-api.js');
+      const info = await getStreamByMint(mint, this.log);
+      if (!info) {
+        throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE,
+          `pump.fun livestream api could not be asked about ${String(mint).slice(0, 12)}…`);
+      }
+      if (!info.playlistUrl) {
+        // The stream exists but has published no media directory yet — a
+        // could-not-look, distinct from "the badge was not there".
+        throw new FrameSourceUnavailable(SOURCE_STATES.NO_VOD_COVERING_TS,
+          `pump.fun reports ${info.live ? 'live' : 'offline'} with no playlist published yet`);
+      }
+      url = info.playlistUrl;
+      this.log?.log?.(`[pumpfun] derived playlist for ${String(mint).slice(0, 8)}… from the livestream api`);
     }
     const { parseMediaPlaylist } = await import('./bounty-capture.js');
-    let url = this.watchUrl;
     let body = await (await this.fetchImpl(url, { signal: AbortSignal.timeout(10_000) })).text();
     if (/#EXT-X-STREAM-INF/i.test(body)) {
       // A master playlist: take the top rendition and fetch its media playlist.
@@ -682,11 +720,27 @@ export class CaptureFrameSource extends FrameSource {
         // estimate, no broadcast-delay guess — the anchor IS the mapping.
         offsetS = Math.max(0, (ts + skew - cap.firstPdtMs) / 1000);
       } else {
-        // ESTIMATE: the capture's LAST frame is the most recent media held,
-        // so a timestamp `d` ms before the freeze sits at (duration - d/1000)
-        // seconds in. `skewMs` shifts that by whatever calibration measured,
-        // exactly as the VOD path uses it.
-        const back = (cap.frozenAt - ts + skew) / 1000;
+        // ESTIMATE, ANCHORED ON ENCODE TIME — not on the freeze instant.
+        //
+        // THE BUG THIS FIXES, which cost Kick two real broadcasts (1/5 then
+        // 0/5 while the badge was legible at 28px in 9 of 13 samples): the
+        // newest media in the buffer was PUBLISHED at ~frozenAt but ENCODED
+        // D = 12-25s earlier. Treating the file's end as "frozenAt" therefore
+        // put every seek D seconds too late, and recovering that needed
+        // skewMs = -D — a NEGATIVE value, while the calibration ladder is
+        // built non-negative (0 … calibrationLadderMaxMs). The correct
+        // hypothesis was not merely missed, it was outside the search space,
+        // so the failure was deterministic rather than flaky and no number of
+        // probes could ever have found it.
+        //
+        // Anchoring on (frozenAt - liveBroadcastDelayMs) states the delay we
+        // already know about, and leaves calibration to measure only the
+        // residual — which lands at (liveBroadcastDelayMs - actual D), i.e.
+        // POSITIVE and inside the existing ladder for every delay we have
+        // measured. Calibration still does the real work; it is just no longer
+        // asked to search for it in the wrong direction.
+        const encodeAnchor = cap.frozenAt - bountyConfig.liveBroadcastDelayMs;
+        const back = (encodeAnchor - ts + skew) / 1000;
         offsetS = Math.max(0, dur - back);
       }
       const file = path.join(workDir(), `cap-${randomUUID().slice(0, 8)}.png`);
