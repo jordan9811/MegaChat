@@ -690,14 +690,35 @@ export class CaptureFrameSource extends FrameSource {
    * — PDT names when the media was ENCODED, which is exactly the clock our
    * code-issue timestamps live on.
    */
+  /**
+   * DELIBERATELY RETURNS NULL — a PDT stamp is an ANCHOR, not an answer.
+   *
+   * This used to report {skewMs: 0} and skip calibration outright, on the
+   * reasoning that a segment carrying its own wall clock needs no probing.
+   * The stamp is exact; the inference from it was not. PROGRAM-DATE-TIME marks
+   * when a segment was PACKAGED, and the overlay rendered its code one
+   * broadcast delay EARLIER — so content showing a code issued at T lands in a
+   * segment stamped T + D.
+   *
+   * MEASURED on Kick's first real broadcasts: the PDT seek computed 19.69s
+   * while the badge actually began at 20.0s in the same file, and the gap
+   * between a code's issue time and its first appearance was 12.1s — the
+   * broadcast delay, unmeasured because the bypass had already declared the
+   * timeline solved. Three Kick attempts verified 1/5, 0/5, 0/5 with the badge
+   * legible at 28px throughout, and two fixes aimed at the estimate branch
+   * changed nothing because a PDT-stamped capture never executes that branch.
+   *
+   * Every gate agreed with the bypass because every stub publishes segments
+   * the instant it writes them, making D ~= 0 and the bypass accidentally
+   * right. Same blind spot that hid the freeze-timing bug.
+   *
+   * So: keep PDT as the anchor in getFrames — it removes the frozenAt/duration
+   * estimate error entirely, which is a real gain — and let calibration
+   * MEASURE the delay on top of it. The residual it searches for is then just
+   * D, which is positive and well inside the ladder.
+   */
   wallClockSkew() {
-    if (!this.captures.length) return null;
-    if (!this.captures.every((c) => Number.isFinite(c.firstPdtMs))) return null;
-    return {
-      skewMs: 0,
-      residualMs: 4_000,
-      detail: `PROGRAM-DATE-TIME on all ${this.captures.length} window(s) — offset known, not measured`,
-    };
+    return null;
   }
 
   async getFrames(platform, handle, timestamps, opts = {}) {

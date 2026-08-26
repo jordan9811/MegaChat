@@ -1,5 +1,27 @@
 /**
- * GATE — pump.fun capture: PROGRAM-DATE-TIME replaces timeline calibration.
+ * GATE — pump.fun capture: PROGRAM-DATE-TIME ANCHORS timeline calibration.
+ *
+ * SUPERSEDED IN PART, 2026-08-26, by Kick's first real broadcasts. This gate
+ * used to be titled "...REPLACES timeline calibration" and asserted that a
+ * PDT-stamped capture could SKIP calibration outright. That was wrong, and
+ * wrong in the direction that costs an honest streamer money.
+ *
+ * PDT marks when a segment was PACKAGED. The overlay rendered its code one
+ * broadcast delay EARLIER, so content showing a code issued at T lands in a
+ * segment stamped T + D. Measured on Kick: the PDT seek computed 19.69s where
+ * the badge actually began at 20.0s in the same file, and a code's first
+ * appearance trailed its issue time by 12.1s. The bypass had already declared
+ * that gap solved, so it was never measured — three real Kick broadcasts
+ * verified 1/5, 0/5 and 0/5 with the badge legible at 28px throughout.
+ *
+ * This gate AGREED with the bug, because its stub publishes each segment the
+ * instant it writes it. That makes D ~= 0 and the bypass accidentally correct
+ * — the same stub-has-no-delay blind spot that hid the freeze-timing bug, now
+ * covered by _gate-broadcast-delay.mjs.
+ *
+ * PDT IS AN ANCHOR, NOT AN ANSWER. Keeping it as the seek anchor removes the
+ * frozenAt/duration estimate error entirely, which is a real and separate
+ * gain; calibration still MEASURES the broadcast delay on top of it.
  *
  * The hardest part of Twitch verification is that the media timeline sits an
  * unknown ~15-17s behind our wall clock — bounty-timeline-calibration.js
@@ -94,10 +116,15 @@ const { calibrateTimeline, CALIBRATION_STATES, describeCalibration } = await imp
     frameSource: anchored, codeChecker: { findCode: async () => ({ found: false }) },
     session, platform: 'pumpfun', handle: 'h', log: { warn() {} },
   });
-  ok('B. every-window PDT → WALL_CLOCK with ZERO probe grabs',
-    cal.state === CALIBRATION_STATES.WALL_CLOCK && cal.grabs === 0 && probeCalls === 0
-    && cal.skewMs === 0 && cal.fellBack === false,
-    describeCalibration(cal));
+  // A PDT-stamped capture must still be PROBED. The source is poisoned to
+  // throw on any grab, so REACHING it is the proof — the exact inverse of what
+  // this assertion used to demand.
+  ok('B. a PDT-stamped capture is still MEASURED, never bypassed',
+    probeCalls > 0 && cal.state !== CALIBRATION_STATES.WALL_CLOCK,
+    `${probeCalls} probe(s) attempted, state=${cal.state}`);
+  ok('B. ...and wallClockSkew no longer claims the timeline is solved',
+    anchored.wallClockSkew() === null,
+    'PDT anchors the seek; the broadcast delay on top of it is still unknown');
 
   // One window missing its stamp: the bypass must NOT engage on a partial
   // truth — a mixed session falls back to measuring.
@@ -108,7 +135,7 @@ const { calibrateTimeline, CALIBRATION_STATES, describeCalibration } = await imp
     ],
     log: { warn() {} },
   });
-  ok('B. a window WITHOUT the stamp disables the bypass (no partial truths)',
+  ok('B. a mixed-stamp session is measured too (there is no bypass left to disable)',
     mixed.wallClockSkew() === null);
 
   // And the measuring path actually ENGAGES when there is no wall clock: a
@@ -289,15 +316,21 @@ try {
 
   await post(`/api/bounty/air-session/${airId}/end`, {}, 'pumpfun:pfstreamer');
   const v = await post(`/api/bounty/air-session/${airId}/verify`, { mode: 'real' }, 'pumpfun:pfstreamer');
-  ok('C. ONE clip verifies — the measuring path needs 3 agreeing points, the wall clock needs none',
-    v.status === 200 && (v.body.verification?.verifiedClips || 0) === 1,
-    `${v.body.verification?.verifiedClips} clip(s), ${v.body.verification?.result}`);
+  // ONE clip can no longer verify, and that is now the CORRECT outcome rather
+  // than a regression. Calibration needs calibrationMinPoints (3) agreeing
+  // points and gets one probe target per playback window, so a single-clip
+  // session is unmeasurable. The old pass here was bought entirely by the
+  // bypass this run deleted — it read as "PDT is so good it needs one clip",
+  // and it actually meant "the delay was never checked".
   const calState = v.body.verification?.calibration;
-  ok('C. calibration state is WALL_CLOCK with ZERO probe grabs spent',
-    calState?.state === 'WALL_CLOCK' && calState?.grabs === 0 && calState?.fellBack === false,
-    `state=${calState?.state} grabs=${calState?.grabs}`);
-  ok('C. ...and the release went through on it',
-    (v.body.release?.released ?? 0) > 0, `released=${v.body.release?.released}`);
+  ok('C. a single-clip session cannot calibrate, and says which way it failed',
+    v.status === 200 && calState?.state === 'INSUFFICIENT_POINTS'
+    && (v.body.verification?.verifiedClips || 0) === 0,
+    `state=${calState?.state}, ${v.body.verification?.verifiedClips} clip(s)`);
+  ok('C. ...with probe grabs actually spent looking, not skipped',
+    (calState?.grabs || 0) > 0, `grabs=${calState?.grabs}`);
+  ok('C. ...so nothing is released on a timeline nobody measured',
+    (v.body.release?.released ?? 0) === 0, `released=${v.body.release?.released}`);
 
   // ── D. the external source: PDT lookup, one segment, proven by pixel ────
   // A second stub path serving a segmented luminance clock as an append-only
@@ -360,14 +393,26 @@ try {
   ok('D. ...and the source reports its wall clock for the calibration bypass',
     src.wallClockSkew()?.skewMs === 0, JSON.stringify(src.wallClockSkew()));
 
+  // DISCOVERY IS SOLVED — a coin page or a bare mint now resolves to a real
+  // playlist through livestream-api.pump.fun, so the old blanket refusal is
+  // gone. What must STILL be refused is input carrying no mint at all:
+  // verifying the wrong stream is worse than verifying none.
+  const { extractPumpFunMint } = await import('./frame-sources.js');
+  const MINT = '24GWZn5HerwLTVoZuC3H7Kxg6jLFMvroA1hTU4uWpump';
+  ok('D. a coin page and a bare mint resolve to the same mint',
+    extractPumpFunMint(`https://pump.fun/coin/${MINT}`) === MINT
+    && extractPumpFunMint(MINT) === MINT);
+  ok('D. ...and input carrying no mint is refused rather than guessed at',
+    extractPumpFunMint('https://example.com/nope') === null
+    && extractPumpFunMint('') === null);
   let refusal = null;
   try {
-    await new PumpFunFrameSource({ watchUrl: 'https://pump.fun/coin/SomeMint' })
+    await new PumpFunFrameSource({ watchUrl: 'https://example.com/not-pumpfun' })
       .getFrames('pumpfun', 'x', [{ ts: 1 }]);
   } catch (e) { refusal = e; }
-  ok('D. a coin-page watch URL is a TYPED refusal naming the discovery gap',
-    refusal?.state === 'API_UNAVAILABLE' && /undocumented/i.test(refusal?.detail || ''),
-    `${refusal?.state}: ${String(refusal?.detail).slice(0, 70)}`);
+  ok('D. a mint-less watch URL is a TYPED refusal naming what is missing',
+    refusal?.state === 'API_UNAVAILABLE' && /mint/i.test(refusal?.detail || ''),
+    `${refusal?.state}: ${String(refusal?.detail).slice(0, 60)}`);
 } finally {
   if (browser) await browser.close();
   if (srv) srv.kill();
