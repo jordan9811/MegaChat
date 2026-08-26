@@ -242,15 +242,24 @@ function parseTwitchDuration(d) {
  * a finding about the platform, not a failure: filed in OPEN-ISSUES.
  */
 export class KickFrameSource extends FrameSource {
-  constructor({ log = console, mode = 'live', vodUrl = null } = {}) {
+  constructor({ log = console, mode = 'live', vodUrl = null, vodStartMs = null } = {}) {
     super();
     this.log = log;
     this.mode = mode;
     this.vodUrl = vodUrl;     // operator-supplied direct VOD page URL
-    this.vodStartMs = null;   // must accompany vodUrl for offset math
+    this.vodStartMs = vodStartMs; // must accompany vodUrl for offset math
+    /**
+     * THIS LINE WAS MISSING, and its absence was silent. Every other source
+     * sets it; Kick alone left it undefined, so `calibratable` was falsy and
+     * an operator-supplied Kick VOD skipped calibration entirely and fell back
+     * to the documented 16s constant — the exact "trust a constant instead of
+     * measuring" failure calibration exists to prevent. Nothing failed loudly
+     * because a missing property is just falsy.
+     */
+    this.calibratable = mode !== 'live';
   }
 
-  async getFrames(platform, handle, timestamps) {
+  async getFrames(platform, handle, timestamps, opts = {}) {
     const out = [];
     let media = null;
     for (const t of timestamps) {
@@ -267,8 +276,21 @@ export class KickFrameSource extends FrameSource {
         }
       }
       const file = path.join(workDir(), `kick-${randomUUID().slice(0, 8)}.png`);
-      grabFrame(media.url, media.live ? 0 : (ts - this.vodStartMs) / 1000, file);
+      if (media.live) {
+        grabFrame(media.url, 0, file);
+      } else {
+        // The measured offset, not a raw subtraction. This used to seek to
+        // (ts - vodStartMs) with no skew term at all, discarding whatever
+        // calibration had just spent frame grabs to establish.
+        const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
+        grabFrame(media.url, (ts - this.vodStartMs + skew) / 1000, file);
+      }
       out.push({
+        // The verifier widens its acceptance window for LIVE frames, because a
+        // live grab is one broadcast delay older than the timestamp that asked
+        // for it. Omitting this made every live Kick frame get judged against
+        // the tight post-calibration residual instead.
+        live: !!media.live,
         ref: file, ts,
         clipId: typeof t === 'object' ? t.clipId : null,
         playbackId: typeof t === 'object' ? t.playbackId : null,
@@ -365,7 +387,7 @@ export class RumbleFrameSource extends FrameSource {
     this.calibratable = mode !== 'live';
   }
 
-  async getFrames(platform, handle, timestamps) {
+  async getFrames(platform, handle, timestamps, opts = {}) {
     const out = [];
     let media = null;
     for (const t of timestamps) {
@@ -386,7 +408,11 @@ export class RumbleFrameSource extends FrameSource {
         }
       }
       const file = path.join(workDir(), `rum-${randomUUID().slice(0, 8)}.png`);
-      grabFrame(media.url, media.live ? 0 : (ts - this.vodStartMs) / 1000, file);
+      // Same omission as Kick's: this source is `calibratable`, so calibration
+      // measures a skew for it and then handed the result to a signature that
+      // did not accept it.
+      const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
+      grabFrame(media.url, media.live ? 0 : (ts - this.vodStartMs + skew) / 1000, file);
       out.push({
         live: media.live, ref: file, ts,
         clipId: typeof t === 'object' ? t.clipId : null,

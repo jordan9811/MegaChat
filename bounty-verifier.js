@@ -110,16 +110,50 @@ export class MockCodeChecker extends CodeChecker {
 /**
  * Pick sample instants INSIDE a clip's window. Mid-code rather than at the
  * issue boundary, so a frame lands where the code is definitely on screen.
+ *
+ * KEPT CLEAR OF THE WINDOW EDGES BY THE SEEK'S OWN UNCERTAINTY. Mid-code is
+ * the right instant in a world with no seek error; with one, the first code's
+ * midpoint sits only codeValidityMs/2 (2.5s) into the clip, and a residual
+ * larger than that lands the frame BEFORE the clip began.
+ *
+ * MEASURED on Kick run #4, whose calibration reported residualMs 6521: the
+ * first sample of two separate clips landed in the previous playback's tail
+ * and read a perfectly legible 28px badge carrying the NEIGHBOURING window's
+ * code. The verifier scored both as misses, which is correct — window scoping
+ * is what stops one clip's code satisfying another, and seeing it bite is
+ * reassuring — but they were OUR seek error being charged to the streamer's
+ * detection rate, dragging it from 10/13 to 8/13.
+ *
+ * The instant is SHIFTED, never dropped. Dropping unseekable samples would
+ * shrink the denominator, and detectionRate is a release gate — anything that
+ * lets the measurement choose its own denominator is a fraud surface. Shifting
+ * keeps the sample count, the evidentiary weight and the arithmetic identical,
+ * and only asks for a frame at a moment we can actually land on.
+ *
+ * The clamp never leaves the code's own validity: if the window is too tight
+ * for the residual to fit, mid-code is still the best instant available and is
+ * used unchanged. A residual that wide is a calibration problem, and the
+ * calibration states are where it belongs — not smuggled in here.
  */
-function sampleInstantsForWindow(win, perClip) {
+function sampleInstantsForWindow(win, perClip, residualMs = 0) {
   const usable = win.codes.filter((c) => c.expiresAt > c.issuedAt);
   if (usable.length === 0) return [];
+  const guard = Math.max(0, Number(residualMs) || 0);
+  const safeFrom = Number.isFinite(win.startedAt) ? win.startedAt + guard : -Infinity;
+  const safeTo = Number.isFinite(win.endsAt) ? win.endsAt - guard : Infinity;
   const picks = [];
   const step = Math.max(1, Math.floor(usable.length / perClip));
   for (let i = 0; i < usable.length && picks.length < perClip; i += step) {
     const c = usable[i];
+    const from = c.issuedAt;
+    const to = Math.min(c.expiresAt, c.issuedAt + bountyConfig.codeValidityMs);
+    const mid = Math.floor((from + to) / 2);
+    // Pull toward the middle of the clip, but never outside THIS code's
+    // validity — a shifted instant that no longer has a valid code would be
+    // dropped by the caller, which is the denominator change this avoids.
+    const ts = Math.min(Math.max(mid, Math.min(safeFrom, to)), Math.max(safeTo, from));
     picks.push({
-      ts: Math.floor((c.issuedAt + Math.min(c.expiresAt, c.issuedAt + bountyConfig.codeValidityMs)) / 2),
+      ts: Math.min(Math.max(ts, from), to),
       clipId: win.clipId, playbackId: win.playbackId,
     });
   }
@@ -242,7 +276,7 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
   const seekOpts = { skewMs: calibration.skewMs };
 
   for (const win of windows) {
-    const instants = sampleInstantsForWindow(win, perClip);
+    const instants = sampleInstantsForWindow(win, perClip, calibration.residualMs);
     let frames;
     try {
       frames = await fs_.getFrames(session.platform, handleForSource, instants, seekOpts);

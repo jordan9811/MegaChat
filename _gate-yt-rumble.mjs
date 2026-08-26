@@ -102,6 +102,7 @@ process.env.RUMBLE_LIVESTREAM_API_URL = `http://localhost:${STUB}/rumble/ls?key=
 
 const { youtubeApiConfigured, getVideoLiveDetails, extractVideoId } = await import('./youtube-api.js');
 const { rumbleApiConfigured, getRumbleLiveStatus } = await import('./rumble-api.js');
+const { bountyConfig } = await import('./bounty-claim.config.js');
 
 // ── A1. video-id extraction: every shape a streamer will actually paste ───
 {
@@ -260,10 +261,36 @@ const secondsAt = (png) => {
     mode: 'vod', vodUrl: 'https://rumble.com/v-gate-vod.html',
     vodStartMs: Date.now() - 60_000, resolver, log: { warn() {} },
   });
-  const rvf = await rv.getFrames('rumble', 'ignored', [{ ts: rv.vodStartMs + 12_000 }]);
+  // A MEASURED SKEW MUST REACH THE SEEK. This asserted a raw
+  // (ts - vodStartMs) subtraction, which passed only because the source's
+  // getFrames had no `opts` parameter at all: RumbleFrameSource declares
+  // itself `calibratable`, so calibration spent frame grabs measuring a skew
+  // for it and then handed the result to a signature that could not accept
+  // it. The measurement was computed and dropped on the floor.
+  const rvf = await rv.getFrames('rumble', 'ignored',
+    [{ ts: rv.vodStartMs + 12_000 }], { skewMs: 0 });
   const rsec = secondsAt(rvf[0].ref);
-  ok('B4. rumble vod seeks by the supplied start',
+  ok('B4. rumble vod honours a MEASURED skew of 0 — seeks by the supplied start',
     Math.abs(rsec - 12) <= 1.5, `frame encodes ${rsec.toFixed(1)}s, wanted 12s`);
+  const rvf2 = await rv.getFrames('rumble', 'ignored',
+    [{ ts: rv.vodStartMs + 12_000 }], { skewMs: 5_000 });
+  ok('B4. ...and a non-zero measured skew actually moves the seek',
+    Math.abs(secondsAt(rvf2[0].ref) - 17) <= 1.5,
+    `frame encodes ${secondsAt(rvf2[0].ref).toFixed(1)}s, wanted 17s`);
+  // With no measurement supplied it falls back to the documented constant,
+  // exactly as Twitch does. NOTE the constant is derived from TWITCH VODs and
+  // has never been checked against a real Rumble one — which is precisely why
+  // the calibrated value has to be able to override it.
+  const rvf3 = await rv.getFrames('rumble', 'ignored', [{ ts: rv.vodStartMs + 12_000 }]);
+  // Asserted as "clearly past the unskewed position" rather than pinned to
+  // 12 + 16 = 28s, because this fixture is only ~30s long: a 28s seek lands in
+  // its tail and the encoded clock saturates around 30.3s. Pinning the exact
+  // value here would be measuring the fixture's length, not the fallback.
+  const rsec3 = secondsAt(rvf3[0].ref);
+  ok('B4. ...and with no measurement it falls back to the documented constant',
+    rsec3 >= 12 + bountyConfig.vodTimelineSkewMs / 1000 - 2.5,
+    `frame encodes ${rsec3.toFixed(1)}s, constant ${bountyConfig.vodTimelineSkewMs / 1000}s `
+    + '(fixture saturates near its ~30s end)');
   let rThrew = null;
   try { await new RumbleFrameSource({ mode: 'vod' }).getFrames('rumble', 'x', [{ ts: 1 }]); }
   catch (e) { rThrew = e; }
