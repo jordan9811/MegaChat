@@ -68,11 +68,20 @@ export function parseMediaPlaylist(text, baseUrl) {
     } else if (line.startsWith('#EXTINF:')) {
       pendingDuration = parseFloat(line.split(':')[1]) || 0;
     } else if (line.startsWith('#EXT-X-PROGRAM-DATE-TIME:')) {
-      // A WALL CLOCK, when the platform stamps one (pump.fun stamps every
-      // segment; Twitch and Kick stamp none). Carried per segment because it
-      // is the one thing that can replace timeline calibration outright: a
-      // capture whose segments know their own wall time needs no probing to
-      // map a code's issue time onto media.
+      // A WALL CLOCK, when the platform stamps one. This comment used to say
+      // "pump.fun stamps every segment; Twitch and Kick stamp none", and the
+      // second half was simply false — KICK STAMPS EVERY SEGMENT TOO,
+      // measured on its first real broadcasts 2026-08-26. Believing otherwise
+      // cost three broadcasts and two fixes aimed at a branch Kick never runs.
+      // Do not assert which platforms stamp; read the playlist.
+      //
+      // It also used to say this "can replace timeline calibration outright".
+      // It cannot. PDT records when a segment was PACKAGED, and the overlay
+      // rendered its code one broadcast delay earlier, so a code issued at T
+      // lands in a segment stamped T + D. The stamp is an ANCHOR — it fixes
+      // media-to-wall exactly, which the frozenAt/duration estimate never
+      // did — but D still has to be measured. See frame-sources.js
+      // wallClockSkew() for the whole reckoning.
       const t = Date.parse(line.slice('#EXT-X-PROGRAM-DATE-TIME:'.length).trim());
       pendingPdtMs = Number.isFinite(t) ? t : null;
     } else if (line && !line.startsWith('#')) {
