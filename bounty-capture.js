@@ -280,6 +280,75 @@ export function freezeWindow(airSessionId, { playbackId, clipId, log = console }
   return record;
 }
 
+/**
+ * Freezes waiting for the broadcast delay to deliver a clip's tail.
+ * airSessionId -> Set<Promise>. See scheduleFreeze.
+ */
+const pendingFreezes = new Map();
+
+/**
+ * FREEZE LATER, NOT AT PLAYBACK END — the bug this exists to fix.
+ *
+ * The rolling buffer holds the newest media the PUBLIC stream has published,
+ * and that is D = 12-25s behind wall clock. Freezing the instant a clip ends
+ * therefore captures media encoded up to (end - D): a clip of length L leaves
+ * only L-D seconds of itself in the file, and a clip shorter than the delay
+ * leaves NOTHING. The original design note — "freeze on END so the unknown
+ * delay is irrelevant" — had the right instinct and forgot which end of the
+ * buffer is fresh.
+ *
+ * It could not be recovered by seeking either: reaching the missing tail would
+ * need a NEGATIVE skew, and the calibration ladder is non-negative by
+ * construction, so the correct hypothesis was not even in the search space.
+ * The failure was deterministic, not flaky — every real broadcast, every time.
+ *
+ * Every gate missed it because stub streams publish segments milliseconds
+ * after writing them, making D ~= 0 and rung 0 correct. A delay-aware stub is
+ * the only thing that can see this class of bug.
+ *
+ * Waiting D + one segment past the clip's end puts the whole clip inside the
+ * window. The 60s window has room: 25s delay + a 30s clip + slack.
+ */
+export function scheduleFreeze(airSessionId, {
+  playbackId, clipId, delayMs = bountyConfig.captureFreezeDelayMs, log = console,
+} = {}) {
+  if (!active.has(airSessionId)) {
+    log.warn?.(`[capture] freeze requested for ${airSessionId} with no running capture`);
+    return Promise.resolve(null);
+  }
+  const p = new Promise((resolve) => {
+    setTimeout(() => {
+      try { resolve(freezeWindow(airSessionId, { playbackId, clipId, log })); }
+      catch (e) {
+        log.warn?.(`[capture] scheduled freeze failed for ${playbackId || clipId}: ${e?.message}`);
+        resolve(null);
+      }
+    }, Math.max(0, delayMs));
+  });
+  if (!pendingFreezes.has(airSessionId)) pendingFreezes.set(airSessionId, new Set());
+  const set = pendingFreezes.get(airSessionId);
+  set.add(p);
+  void p.then(() => set.delete(p));
+  log.log?.(`[capture] freeze for ${playbackId || clipId} scheduled in ${Math.round(delayMs / 1000)}s `
+    + '(waiting out the broadcast delay so the clip has actually aired)');
+  return p;
+}
+
+/**
+ * Settle every scheduled freeze for a session. The session must NOT stop
+ * capturing before these fire — that is the whole point of scheduling them.
+ */
+export async function awaitPendingFreezes(airSessionId) {
+  const set = pendingFreezes.get(airSessionId);
+  if (!set || !set.size) return [];
+  const out = await Promise.all([...set]);
+  pendingFreezes.delete(airSessionId);
+  return out.filter(Boolean);
+}
+
+/** How many freezes are still waiting. The gate asserts on this. */
+export const pendingFreezeCount = (airSessionId) => pendingFreezes.get(airSessionId)?.size || 0;
+
 /** Stop capturing and release the buffer. Idempotent. */
 export function stopCapture(airSessionId, { log = console } = {}) {
   const state = active.get(airSessionId);

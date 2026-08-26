@@ -121,6 +121,9 @@ try {
       // air-session lifecycle, the freeze-on-playback-end and the verify
       // source preference are all the shipped code paths, not a re-creation
       // of them inside the gate.
+      // Zero-delay stub: nothing to wait out, so freeze effectively at once.
+      // The real delay is exercised in _gate-broadcast-delay.mjs.
+      BOUNTY_CAPTURE_FREEZE_DELAY_MS: '400',
       BOUNTY_CAPTURE_HLS_URL: `http://localhost:${HLS}/live.m3u8`,
       BOUNTY_CAPTURE_WINDOW_MS: '20000',
       BOUNTY_CAPTURE_POLL_MS: '250',
@@ -196,9 +199,13 @@ try {
 
     // ── 2. freeze on playback end, under the delay ────────────────────────
     const ended = await post('/api/bounty/admin/playback/end', { airSessionId: airId, clipId: 'CAP1' });
-    ok('2. ending a playback freezes a window and reports it',
-      !!ended.body.capture && ended.body.capture.bytes > 0,
-      JSON.stringify(ended.body.capture));
+    ok('2. ending a playback SCHEDULES a freeze (it no longer takes one inline)',
+      ended.body.freeze?.scheduled === true && ended.body.capture === null,
+      `${ended.body.freeze?.why || JSON.stringify(ended.body)}`);
+    await sleep(1200); // let the scheduled freeze fire
+    ok('2. ...and the window lands on disk once it fires',
+      serverCaptures().length === 1 && statSync(serverCaptures()[0]).size > 0,
+      `${serverCaptures().length} file(s)`);
     const caps = serverCaptures();
     ok('2. ...persisted as exactly one capture file for that playback',
       caps.length === 1, caps.map((c) => path.basename(c)).join(','));

@@ -171,6 +171,9 @@ try {
       BOUNTY_CODE_ROTATE_MS: '4000', BOUNTY_CODE_VALIDITY_MS: '5000',
       BOUNTY_CAPTURE_HLS_URL: `http://localhost:${HLS}/live.m3u8`,
       BOUNTY_CAPTURE_WINDOW_MS: '20000', BOUNTY_CAPTURE_POLL_MS: '250',
+      // Zero-delay stub: nothing to wait out, so freeze effectively at once.
+      // The real delay is exercised in _gate-broadcast-delay.mjs.
+      BOUNTY_CAPTURE_FREEZE_DELAY_MS: '400',
       BOUNTY_STREAM_WARMUP_MS: '0', BOUNTY_STREAM_TAIL_MS: '0',
     },
   });
@@ -258,10 +261,20 @@ try {
   await sleep(900);
 
   const ended = await post('/api/bounty/admin/playback/end', { airSessionId: airId, clipId: 'PF1' });
+  ok('C. the freeze is scheduled rather than taken inline', ended.body.freeze?.scheduled === true);
+  await sleep(1200); // let the scheduled freeze fire
+  // Read the anchor from the EVIDENCE row, which is where verification reads it.
+  const frozenRow = (() => {
+    const f = path.join(srv.dataDir, 'bounty-evidence.jsonl');
+    if (!existsSync(f)) return null;
+    return readFileSync(f, 'utf8').split(String.fromCharCode(10)).filter(Boolean)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(Boolean).reverse().find((r) => r.type === 'CAPTURE_FROZEN');
+  })();
   ok('C. the freeze recorded the window\'s PROGRAM-DATE-TIME anchor',
-    Number.isFinite(ended.body.capture?.firstPdtMs)
-    && Math.abs(ended.body.capture.firstPdtMs - Date.now()) < 5 * 60_000,
-    `firstPdtMs=${ended.body.capture?.firstPdtMs}`);
+    Number.isFinite(frozenRow?.firstPdtMs)
+    && Math.abs(frozenRow.firstPdtMs - Date.now()) < 5 * 60_000,
+    `firstPdtMs=${frozenRow?.firstPdtMs}`);
   // Live-edge entry means starting ~one window before the head — the tail of
   // the backlog IS the window's warm-up, so up to windowMs×1.5 / segDur
   // fetches of the newest backlog are correct. What must never happen is the

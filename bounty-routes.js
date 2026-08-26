@@ -255,11 +255,53 @@ async function startSessionCapture(session, { log = console } = {}) {
         log.warn?.(`[capture] no channel page or watch URL for ${session.platform} session ${session.id} — self-capture skipped`);
         return;
       }
-      hlsUrl = resolveMediaUrl(page, { log });
+      // RESOLVE WITH RETRIES, because the normal order puts this call before
+      // the streamer goes live: they claim their handle, open the air session,
+      // and only then hit Go Live. At session open the channel is offline and
+      // every extractor answers "the channel is not currently live" — which
+      // the single-shot resolve treated as permanent, so SELF-CAPTURE NEVER
+      // STARTED AT ALL in the real sequence, on any platform. It logged one
+      // warning and returned, and verification silently fell back to a VOD
+      // path that Kick, Rumble and X do not have.
+      //
+      // Retrying is the whole fix: the session is open, the streamer is on
+      // their way live, and the only question is how long to keep looking.
+      const deadline = Date.now() + bountyConfig.captureStartRetryMs;
+      let attempt = 0;
+      for (;;) {
+        // Never keep polling for a session nobody is using any more.
+        const fresh = store.getAirSession(session.id);
+        if (!fresh || fresh.status !== 'OPEN') {
+          log.log?.(`[capture] session ${session.id} closed before the channel went live — capture not started`);
+          return;
+        }
+        try {
+          hlsUrl = resolveMediaUrl(page, { log });
+          if (hlsUrl) break;
+        } catch (e) {
+          const offline = /not currently live|CHANNEL_OFFLINE|offline/i.test(
+            `${e?.state || ''} ${e?.detail || ''} ${e?.message || ''}`);
+          if (!offline || Date.now() > deadline) throw e;
+        }
+        attempt += 1;
+        if (Date.now() > deadline) {
+          log.warn?.(`[capture] ${handle} never went live within `
+            + `${Math.round(bountyConfig.captureStartRetryMs / 60_000)}m of session open — capture not started`);
+          return;
+        }
+        // Loud once, then quiet: this is the EXPECTED state for the first
+        // minutes of a session, not an error.
+        if (attempt === 1) {
+          log.log?.(`[capture] ${handle} is not live yet — waiting to start the recording `
+            + `(retrying every ${Math.round(bountyConfig.captureStartRetryEveryMs / 1000)}s)`);
+        }
+        await new Promise((r) => setTimeout(r, bountyConfig.captureStartRetryEveryMs));
+      }
     }
     await capture.startCapture(session.id, {
       hlsUrl, platform: session.platform, handle, log,
     });
+    log.log?.(`[capture] recording started for ${session.platform}:${handle}`);
   } catch (e) {
     log.warn?.(`[capture] could not start for ${session.id}: ${e?.state || e?.message}`
       + ' — verification falls back to the platform VOD path');
@@ -763,14 +805,25 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       // FREEZE ON END, not on start: by now the segments carrying this clip
       // have had time to arrive despite the 12-25s broadcast delay, which is
       // the entire reason the buffer rolls instead of grabbing on demand.
-      const frozen = capture.freezeWindow(airSessionId, {
-        clipId, playbackId: playbackId || win?.playbackId || null, log,
-      });
+      // SCHEDULED, not immediate. At this instant the buffer's newest media is
+      // still D = 12-25s behind wall clock, so the tail of the clip that just
+      // ended has not been published yet — freezing now would keep the wrong
+      // 60 seconds. See scheduleFreeze for the full derivation.
+      //
+      // The response therefore reports a freeze that is PENDING. Anything that
+      // needs the artifact (verification, session close) awaits it.
+      const pb = playbackId || win?.playbackId || null;
+      const pending = capture.scheduleFreeze(airSessionId, { clipId, playbackId: pb, log });
+      void pending;
       res.json({
         ok: true,
-        capture: frozen
-          ? { bytes: frozen.bytes, spanMs: frozen.spanMs, firstPdtMs: frozen.firstPdtMs ?? null }
-          : null,
+        capture: null,
+        freeze: {
+          scheduled: capture.pendingFreezeCount(airSessionId) > 0,
+          playbackId: pb,
+          inMs: bountyConfig.captureFreezeDelayMs,
+          why: 'waiting out the broadcast delay so the clip has actually aired',
+        },
       });
     } catch (e) { fail(res, e); }
   });
@@ -1056,7 +1109,12 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       //               observation and now. We record NOW, the generous end of
       //               that interval, because the cost of a wrong tail flag
       //               falls on someone who did the work.
-      // Nothing is held past the session it was captured for.
+      // SETTLE PENDING FREEZES FIRST. Freezes are scheduled D+ seconds after
+      // each clip ends; stopping the capture before they fire would discard
+      // the very media they are waiting for and leave the session with no
+      // artifacts at all.
+      const settled = await capture.awaitPendingFreezes(req.params.id);
+      if (settled.length) log.log?.(`[capture] settled ${settled.length} pending freeze(s) before closing`);
       capture.stopCapture(req.params.id, { log });
       const patch = { status: 'CLOSED', endedAt: Date.now() };
       if (prev) {
@@ -1109,6 +1167,11 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         // clip's window, so passing only the first made every probe past the
         // first clip seek off the end of the file — which is what made
         // multi-clip sessions fail to calibrate on the primary path.
+        // A verify can arrive before the scheduled freezes have fired (the
+        // rehearsal harnesses verify immediately after the last clip). Settle
+        // them first or this reads zero captures and reports SOURCE_UNAVAILABLE
+        // for a session whose evidence is seconds from existing.
+        await capture.awaitPendingFreezes(s.id);
         const captures = capture.captureRecordsFor(s.id, { log });
         const preferCapture = captures.length > 0 && req.body.sourceMode !== 'vod'
           && req.body.sourceMode !== 'live' && req.body.sourceMode !== 'files';

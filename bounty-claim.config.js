@@ -222,6 +222,27 @@ export const bountyConfig = {
    * dispute, so it outlives neither: purged with its pledge, and swept at this
    * age regardless.
    */
+  /**
+   * How long to wait after a clip ends before freezing its window.
+   *
+   * MUST exceed the broadcast delay, or the clip's own tail has not reached
+   * the public stream yet and the capture holds the wrong 60 seconds — see
+   * scheduleFreeze. Defaults to the documented delay plus a segment of slack.
+   * Waiting too long is free (the window is 60s); waiting too little is the
+   * difference between a verified clip and nothing at all.
+   */
+  captureFreezeDelayMs: num(process.env.BOUNTY_CAPTURE_FREEZE_DELAY_MS,
+    num(process.env.BOUNTY_LIVE_DELAY_MS, 45_000) + 6_000),
+  /**
+   * How long to keep retrying the capture-start resolve while a channel is
+   * not yet live. THE ORDER THAT MADE THIS NECESSARY: a streamer claims their
+   * handle, opens an air session, and THEN goes live — so at session open the
+   * channel is offline, the extractor answers "not currently live", and the
+   * single-shot resolve gave up permanently. Self-capture never started at
+   * all in the real sequence, on any platform.
+   */
+  captureStartRetryMs: num(process.env.BOUNTY_CAPTURE_START_RETRY_MS, 15 * 60_000),
+  captureStartRetryEveryMs: num(process.env.BOUNTY_CAPTURE_START_RETRY_EVERY_MS, 15_000),
   captureRetentionMs: num(process.env.BOUNTY_CAPTURE_RETENTION_MS, 14 * 24 * 60 * 60_000),
   /**
    * Skip platform page resolution and capture this HLS url directly. For

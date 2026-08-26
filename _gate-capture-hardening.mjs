@@ -612,6 +612,9 @@ try {
       BOUNTY_CODE_ROTATE_MS: '4000', BOUNTY_CODE_VALIDITY_MS: '5000',
       BOUNTY_CAPTURE_HLS_URL: `http://localhost:${HLS}/live.m3u8`,
       BOUNTY_CAPTURE_WINDOW_MS: '20000', BOUNTY_CAPTURE_POLL_MS: '250',
+      // Zero-delay stub: nothing to wait out, so freeze effectively at once.
+      // The real delay is exercised in _gate-broadcast-delay.mjs.
+      BOUNTY_CAPTURE_FREEZE_DELAY_MS: '400',
       BOUNTY_STREAM_WARMUP_MS: '0', BOUNTY_STREAM_TAIL_MS: '0',
       BOUNTY_TIER3_AUTO_VERIFY: '0',
     },
