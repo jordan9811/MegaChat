@@ -421,3 +421,40 @@ reason than "the API is expensive".
   stub live stream carrying real overlay badges: tier 2 auto-verifies, tier 4
   opens a review naming every cause, and the no-OBS streamer verifies and is
   paid the same (10 vs 10). Undo: n/a (evidence).
+
+
+## Loose-ends run (2026-08-26, `feat/loose-ends`)
+
+- **Ownership reads WHAT A PLATFORM'S OWN OAUTH CALLED YOU, not the provider
+  name** — `platformLoginFor()`. The display-name ladder (twitch > x > google)
+  answers "what to show"; it CANNOT answer "who owns this X handle" for someone
+  with both linked. Two questions, two functions, kept apart on purpose. Undo:
+  n/a (the alternative shipped broken for every real sign-in).
+- **Confidence tiers decide review routing AND now block release; they never
+  touch the amount** — the RELEASE ledger row records confidenceTier for audit
+  only, and the gate asserts the evaluator returns no amount/rate/multiplier.
+  Undo: n/a (rule).
+- **X, YouTube, Rumble, pump.fun capture/observation ship BEFORE their claim
+  paths** — capture is honest and gated; ownership is the missing piece and is
+  filed per platform. A platform with capture but no claim path simply has no
+  reserved handles to verify, so nothing is exposed. Undo: n/a (staging).
+- **The session's watch URL leads capture on every platform** — it is exact
+  where a channel-page guess was wrong (X/YouTube/Rumble) and no worse where a
+  guess worked (Twitch/Kick). Undo: n/a (bugfix).
+- **PROGRAM-DATE-TIME bypasses calibration only when EVERY window carries it** —
+  a partial truth (one unstamped window) falls back to measuring rather than
+  trusting a mix. Residual is the stamp's granularity (4s), not a broadcast-
+  delay guess. Undo: n/a (correctness).
+- **The pump.fun external source refuses a coin-page URL rather than calling the
+  undocumented discovery API** — building the money path on a reverse-engineered
+  endpoint is a business risk, not a technical one. It verifies against a
+  clips.pump.fun playlist URL and names the gap otherwise. Undo: n/a (rule).
+- **Buffer has() uses a high-water mark, not membership** — "already fetched"
+  must survive eviction, or an append-only playlist refetches its whole history
+  every poll. Undo: n/a (bugfix).
+- **Claim re-entry verifies the caller before handing back a verified claim** —
+  the first cut handed it to anyone, an auth hole under real verification. Undo:
+  n/a (security).
+- **_gate-phase5-oauth.mjs deleted, not repaired** — it gated deleted UI and
+  crashed; _gate-privy-auth.mjs gates what exists. A gate that crashes trains
+  the suite output to be ignored. Undo: n/a (process).

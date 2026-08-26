@@ -705,12 +705,11 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   while rendering perfectly; making it a warning sent every session in the gate
   to review, including the clean ones. Revisit only with a signal that
   distinguishes "source stopped" from "not the foreground tab".
-- **P6 — `_gate-phase5-oauth.mjs` IS STALE AND CRASHES. Pre-existing, not from
-  this run.** It drives `#authTwitchBtn` on `/join`, which commit `3a8d55e`
-  ("one front door — Privy does Twitch, so the second sign-in is deleted")
-  removed on purpose. The gate has been asserting against deleted UI since
-  then. Either retarget it at the Privy flow or delete it — a gate that
-  crashes is indistinguishable from a gate nobody runs.
+- **P6 — RESOLVED (2026-08-26).** `_gate-phase5-oauth.mjs` deleted;
+  `_gate-privy-auth.mjs` (16/0) replaces it, gating the real front door's
+  rejection wall (forged/junk/missing tokens mint nothing — asserted by
+  byte-comparing the identity store before and after) and asserting the
+  deleted second sign-in stays deleted.
 - **Still open from the previous run**, unchanged: Kick unproven
   (`KICK_STREAM_KEY`/`KICK_RTMP_URL` needed), `BOUNTY_ADMIN_KEY` unset in
   Railway, capture storage has no global ceiling, fresh-account cost is
@@ -719,3 +718,75 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   better gated — three real sessions, real badges, real decoder — but the stub
   live stream is still a stub. The four bugs above are exactly the kind that a
   stub hides and a real broadcast finds.
+
+## Loose-ends run (2026-08-26, `feat/loose-ends`)
+
+### Resolved
+- **The fan front door is PROVEN.** `record-flow.tsx` was already built;
+  what was missing was proof it works. `_gate-record-flow.mjs` (23/0) drives
+  real Chrome with the fake camera end to end and asserts on what LANDED — a
+  real 183KB webm in the store, keyed to the pledge's contribution, the pool
+  grown by the amount typed in the browser, pay-at-submit proven by ABSENCE
+  (a discarded take leaves ledger and store byte-identical).
+- **The confidence tiers now DECIDE the money**, not just describe it. Tier 4
+  and the tier-3 forced-review knob block the release (skipped=pending_review);
+  the RELEASE ledger row records confidenceTier for audit. `_gate-capture-
+  hardening` 59 → 67/0.
+- **YouTube + Rumble external capture**, stub-gated (`_gate-yt-rumble` 28/0):
+  frame sources, live-status APIs, verifier profiles, per-platform observation
+  unified through `liveLookerFor()`. Offsets proven by pixel.
+- **X ownership** via Privy's twitter_oauth handle, proven not assumed
+  (`_gate-x-claims` 16/0). SUPPORTED += x; X verifies on self-capture +
+  obs-websocket with no external stream.
+- **pump.fun capture** with PROGRAM-DATE-TIME replacing timeline calibration
+  (`_gate-pumpfun-pdt` 17/0): known offset, zero probe grabs, external
+  PDT-indexed lookup downloading one segment.
+
+### Found and fixed while building (each the "clean number, single case" class)
+- **THE STRUCTURAL ONE: real identity verification was broken for EVERY
+  streamer who signed in through the front door.** Both ownership checks
+  required identity.provider === platform, which no Privy identity satisfies —
+  so with `BOUNTY_IDENTITY_REAL=1`, no real streamer could claim or pass a
+  STREAMER route on ANY platform. Invisible because gates mint legacy
+  provider-shaped identities. Fixed with `platformLoginFor()`.
+- **The rolling buffer refetched evicted segments forever on append-only
+  playlists** — 205 fetches of 40 segments in ten seconds; sliding playlists
+  hid it. Fixed with a high-water mark.
+- **self-capture guessed twitch.tv/<handle> for every non-Kick platform** — an
+  X/YouTube/Rumble session would have recorded the wrong site. Now leads on the
+  session's own watch URL.
+- **Claim re-entry handed the claim back BEFORE verifying the caller** (an auth
+  hole I wrote yesterday) — any signed-in account could re-enter any verified
+  claim. Caught by _gate-x-claims B5. Now verifies first.
+- **The verified-owner claim wall**: a failed session-open left the handle in
+  AWAITING_AIRTIME and re-claiming 409'd with escrow jargon — the claim UI
+  retries claim+session together, so it hit the wall on the second try.
+
+### Still open (unchanged — genuinely need a credential or a broadcast)
+- **KICK still unproven** — `KICK_STREAM_KEY`/`KICK_RTMP_URL` needed.
+- **`BOUNTY_ADMIN_KEY` unset in Railway** — admin routes refuse (503) until set.
+- **Capture storage has no global ceiling** — per-session is bounded, the total
+  is not.
+- **SELF-CAPTURE STILL HAS NOT RUN AGAINST A REAL BROADCAST.** Better gated
+  than ever (pump.fun's PDT path, YouTube's actualStartTime, three real
+  sessions in capture-hardening), all against stubs. The bugs found this week
+  are exactly what a stub hides.
+
+### New, filed precisely
+- **pump.fun ownership is unsolved and NOT built this run.** Streams key to a
+  coin mint, not an account. What it would take: (1) wallet-signature binding —
+  the streamer signs a server nonce with the wallet that created the mint (the
+  creator address is on-chain, verifiable with NO pump.fun cooperation),
+  yielding platformLogins-style proof keyed `pumpfun:<mint>`; buildable today.
+  (2) sanctioned mint→playlist discovery — today reverse-engineered only.
+  (3) a product decision on whether MegaChat wants coin-keyed payouts, since
+  the "handle" a fan pledges to would be a mint address, not a name. Only (1)
+  is engineering.
+- **YouTube/Rumble/pump.fun CLAIMS are not in SUPPORTED** — capture and
+  observation are wired and gated, but ownership verification for these is not
+  built (Google OAuth yields an email not a channel; Rumble's URL-capability
+  and pump.fun's wallet-signature designs are filed above). Capture activates
+  the moment a claim path does.
+- **Rumble's Live Stream API response shape is docs-derived, UNPROVEN on a real
+  wire** — rumble-api.js and its gate both say so. First real creator URL is
+  the test that counts, exactly as Kick was.
