@@ -309,13 +309,17 @@ export function updateClaim(id, patch) {
 
 // ── AirSession ──────────────────────────────────────────────────────────────
 
-export function createAirSession({ claimId, roomId, platform }) {
+export function createAirSession({ claimId, roomId, platform, watchUrl }) {
   const store = load();
   const rec = {
     id: randomUUID(),
     claimId,
     roomId: roomId || null,
     platform: platform || null,
+    // The streamer's own watch/stream-page URL, handed over at session open.
+    // YouTube cannot be observed without it (live status is per-VIDEO, not
+    // per-channel), and on every platform it beats guessing a channel URL.
+    watchUrl: typeof watchUrl === 'string' ? watchUrl.slice(0, 300) : null,
     // Codes now live INSIDE playback windows — a code with no clip is not a
     // thing that can exist. { clipId, startedAt, endsAt, durationS,
     // belowSamplingFloor, codes: [{ code, clipId, issuedAt, expiresAt }] }

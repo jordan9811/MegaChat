@@ -279,6 +279,125 @@ export class KickFrameSource extends FrameSource {
   }
 }
 
+// ── YouTube ─────────────────────────────────────────────────────────────────
+
+/**
+ * YouTube needs no discovery step at all: the streamer hands us their WATCH
+ * URL at air-session open, that URL is the live stream while it airs, and the
+ * SAME URL is the archive afterwards. The broadcast start comes from the Data
+ * API's actualStartTime, so vod offset math needs nothing hand-supplied.
+ *
+ * `resolver` is injectable so gates exercise the URL-selection and offset
+ * logic against local fixtures without shelling to yt-dlp — the resolver IS
+ * the extractor seam, and the default is the shipped one.
+ */
+export class YouTubeFrameSource extends FrameSource {
+  constructor({ log = console, mode = 'vod', watchUrl = null, vodStartMs = null,
+    resolver = resolveMediaUrl } = {}) {
+    super();
+    this.log = log;
+    this.mode = mode;           // 'vod' | 'live'
+    this.watchUrl = watchUrl;   // the URL the streamer handed the air session
+    this.vodStartMs = vodStartMs; // broadcast start; fetched from the API if absent
+    this.resolver = resolver;
+    this.calibratable = mode !== 'live';
+    this._media = null;
+  }
+
+  async getFrames(platform, handle, timestamps, opts = {}) {
+    if (!this.watchUrl) {
+      throw new FrameSourceUnavailable(SOURCE_STATES.NO_VOD_COVERING_TS,
+        'youtube verification needs the watch URL the streamer gave at session open');
+    }
+    const out = [];
+    for (const t of timestamps) {
+      const ts = typeof t === 'object' ? t.ts : t;
+      if (!this._media) {
+        this._media = { url: this.resolver(this.watchUrl, this), live: this.mode === 'live' };
+        if (!this._media.live && !Number.isFinite(this.vodStartMs)) {
+          const { getVideoLiveDetails, extractVideoId } = await import('./youtube-api.js');
+          const details = await getVideoLiveDetails(extractVideoId(this.watchUrl), this);
+          const started = details?.startedAt ? Date.parse(details.startedAt) : NaN;
+          if (!Number.isFinite(started)) {
+            throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE,
+              'youtube archive offset needs actualStartTime and the Data API could not supply it');
+          }
+          this.vodStartMs = started;
+        }
+      }
+      const file = path.join(workDir(), `yt-${randomUUID().slice(0, 8)}.png`);
+      if (this._media.live) {
+        grabFrame(this._media.url, 0, file);
+      } else {
+        const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
+        grabFrame(this._media.url, (ts - this.vodStartMs + skew) / 1000, file);
+      }
+      out.push({
+        live: this._media.live, ref: file, ts,
+        clipId: typeof t === 'object' ? t.clipId : null,
+        playbackId: typeof t === 'object' ? t.playbackId : null,
+        platform, handle, toleranceMs: TOLERANCE_MS,
+      });
+    }
+    return out;
+  }
+}
+
+// ── Rumble ──────────────────────────────────────────────────────────────────
+
+/**
+ * Live-first, exactly like Kick and for the same reason: no sanctioned VOD
+ * discovery. yt-dlp carries three dedicated Rumble extractors, so the live
+ * pull is the streamer's page URL; a replay is operator-supplied
+ * vodUrl+vodStartMs when one exists. Self-capture remains the primary
+ * evidence on this platform — this source is the external corroboration.
+ */
+export class RumbleFrameSource extends FrameSource {
+  constructor({ log = console, mode = 'live', watchUrl = null,
+    vodUrl = null, vodStartMs = null, resolver = resolveMediaUrl } = {}) {
+    super();
+    this.log = log;
+    this.mode = mode;
+    this.watchUrl = watchUrl; // the streamer's live page URL
+    this.vodUrl = vodUrl;
+    this.vodStartMs = vodStartMs;
+    this.resolver = resolver;
+    this.calibratable = mode !== 'live';
+  }
+
+  async getFrames(platform, handle, timestamps) {
+    const out = [];
+    let media = null;
+    for (const t of timestamps) {
+      const ts = typeof t === 'object' ? t.ts : t;
+      if (!media) {
+        if (this.mode === 'vod') {
+          if (!this.vodUrl || !Number.isFinite(this.vodStartMs)) {
+            throw new FrameSourceUnavailable(SOURCE_STATES.NO_VOD_COVERING_TS,
+              'rumble has no VOD discovery — supply vodUrl+vodStartMs or use live mode');
+          }
+          media = { url: this.resolver(this.vodUrl, this), live: false };
+        } else {
+          if (!this.watchUrl) {
+            throw new FrameSourceUnavailable(SOURCE_STATES.NO_VOD_COVERING_TS,
+              'rumble live verification needs the stream page URL from session open');
+          }
+          media = { url: this.resolver(this.watchUrl, this), live: true };
+        }
+      }
+      const file = path.join(workDir(), `rum-${randomUUID().slice(0, 8)}.png`);
+      grabFrame(media.url, media.live ? 0 : (ts - this.vodStartMs) / 1000, file);
+      out.push({
+        live: media.live, ref: file, ts,
+        clipId: typeof t === 'object' ? t.clipId : null,
+        playbackId: typeof t === 'object' ? t.playbackId : null,
+        platform, handle, toleranceMs: TOLERANCE_MS,
+      });
+    }
+    return out;
+  }
+}
+
 // ── Local files ─────────────────────────────────────────────────────────────
 
 /**
@@ -451,5 +570,7 @@ export function frameSourceFor(platform, opts = {}) {
   if (opts.mode === 'capture' || opts.capturePath) return new CaptureFrameSource(opts);
   if (platform === 'twitch') return new TwitchFrameSource(opts);
   if (platform === 'kick') return new KickFrameSource(opts);
+  if (platform === 'youtube') return new YouTubeFrameSource(opts);
+  if (platform === 'rumble') return new RumbleFrameSource(opts);
   throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE, `no frame source for ${platform}`);
 }

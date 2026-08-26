@@ -391,6 +391,28 @@ export const PLATFORM_PROFILES = {
     notice: 'Twitch keeps a VOD, so if a live check misses a code we re-check '
       + 'the archive afterwards. A dropped frame during the stream costs you nothing.',
   },
+  youtube: {
+    platform: 'youtube',
+    // The SAME watch URL is the live stream while it airs and the archive
+    // after — no discovery step, so a missed live read retries against the
+    // replay exactly like Twitch.
+    vodRetry: true,
+    samplingMultiplier: 1,
+    notice: 'YouTube keeps the replay at the same link, so if a live check '
+      + 'misses a code we re-check the replay afterwards. A dropped frame '
+      + 'during the stream costs you nothing.',
+  },
+  rumble: {
+    platform: 'rumble',
+    // No sanctioned VOD discovery — live-first, same bargain as Kick, and
+    // the streamer is told the same way.
+    vodRetry: false,
+    samplingMultiplier: 2,
+    notice: 'Rumble gives us no replay we can read, so the live check is the '
+      + 'only check — we sample twice as often to make up for it, and our own '
+      + 'recording of the public stream is the primary evidence. If a check '
+      + 'is inconclusive it goes to a person, never to a denial.',
+  },
   kick: {
     platform: 'kick',
     vodRetry: false,

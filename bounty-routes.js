@@ -20,6 +20,8 @@ import { moderateMedia, moderationConfigured } from './moderation.js';
 import * as evidence from './bounty-evidence.js';
 import { twitchApiConfigured, getStreamByLogin } from './twitch-api.js';
 import { kickApiConfigured, getChannelBySlug } from './kick-api.js';
+import { youtubeApiConfigured, getVideoLiveDetails, extractVideoId } from './youtube-api.js';
+import { rumbleApiConfigured, getRumbleLiveStatus } from './rumble-api.js';
 import { readIdentityFromRequest } from './auth.js';
 import settlement from './bounty-settlement.js';
 import { policyFor, authorize, TIER } from './bounty-auth.js';
@@ -108,10 +110,28 @@ export const TwitchIdentityVerifier = PlatformIdentityVerifier;
  * Fire-and-forget by contract: a platform round-trip must never sit inside the
  * playback path of a live stream.
  */
+/**
+ * One place that knows how to ask each platform "is this broadcasting".
+ * Twitch/Kick are keyed by HANDLE; YouTube is keyed by the session's watch
+ * URL (live status is per-video); Rumble by the creator's API URL. All
+ * return the same {live, viewerCount, startedAt} shape or null.
+ */
+function liveLookerFor(s) {
+  if (s.platform === 'twitch') return twitchApiConfigured() ? getStreamByLogin : null;
+  if (s.platform === 'kick') return kickApiConfigured() ? getChannelBySlug : null;
+  if (s.platform === 'youtube') {
+    const videoId = extractVideoId(s.watchUrl);
+    return (youtubeApiConfigured() && videoId)
+      ? (_handle, o) => getVideoLiveDetails(videoId, o) : null;
+  }
+  if (s.platform === 'rumble') {
+    return rumbleApiConfigured() ? (_handle, o) => getRumbleLiveStatus(o) : null;
+  }
+  return null;
+}
+
 function captureBroadcastObservation(s, { playbackId, clipId, log = console } = {}) {
-  const look = s.platform === 'twitch' ? (twitchApiConfigured() ? getStreamByLogin : null)
-    : s.platform === 'kick' ? (kickApiConfigured() ? getChannelBySlug : null)
-      : null;
+  const look = liveLookerFor(s);
   if (!look) return; // no creds — "could not ask" is not evidence of anything
   const claim = store.getClaim(s.claimId);
   const handle = claim ? store.getReservedHandleByKey(claim.handleKey)?.handle : null;
@@ -751,6 +771,27 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       const reserved = store.getReservedHandleByKey(key);
       if (!reserved) return res.status(404).json({ error: 'No bounty reserved for that handle' });
 
+      // RE-ENTRY FOR THE VERIFIED OWNER. Once a claim verifies, the handle
+      // advances past CLAIM_PENDING (AWAITING_AIRTIME, AIRING, …) and the
+      // transition below becomes illegal — so a streamer whose air-session
+      // open failed once (bad watch URL, closed tab) was walled out of their
+      // own claim with a 409 full of escrow jargon. The caller has already
+      // passed STREAMER authorization for THIS handle, so handing back the
+      // existing live claim is the honest answer, not a state violation.
+      if (!['ACCUMULATING', 'RESERVED', 'CLAIM_PENDING'].includes(reserved.claimStatus)) {
+        const existing = (store.listClaims(key) || [])
+          .filter((c) => c.verificationState === 'VERIFIED' && c.expiresAt > Date.now())
+          .sort((a, b) => b.createdAt - a.createdAt)[0];
+        if (existing) {
+          return res.json({
+            ok: true, reclaimed: true, claim: existing,
+            identity: { approved: true, method: existing.verificationMethod },
+          });
+        }
+        // No live claim to hand back — fall through and let the state machine
+        // refuse loudly rather than minting a claim the escrow cannot honour.
+      }
+
       if (reserved.claimStatus === 'ACCUMULATING') {
         escrow.transition({ handleKey: key, to: 'RESERVED', actor: claimant || 'claimant', reason: 'claim started' });
       }
@@ -854,13 +895,21 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   // ── Air sessions + watermark ─────────────────────────────────────────────
   guarded.post('/api/bounty/air-session', (req, res) => {
     try {
-      const { claimId, roomId, platform } = req.body || {};
+      const { claimId, roomId, platform, watchUrl } = req.body || {};
       const claim = store.getClaim(claimId);
       if (!claim) return res.status(404).json({ error: 'No such claim' });
       if (claim.verificationState !== 'VERIFIED') {
         return res.status(403).json({ error: 'Claim identity is not verified' });
       }
-      const s = store.createAirSession({ claimId, roomId, platform });
+      // The watch URL is REQUIRED for YouTube: live status is per-video, so
+      // without it the whole session would be unobservable and every playback
+      // would route to review for our blind spot, not theirs.
+      if (platform === 'youtube' && !extractVideoId(watchUrl)) {
+        return res.status(400).json({
+          error: 'YouTube sessions need your watch URL (the youtube.com/watch?v=… link for this stream)',
+        });
+      }
+      const s = store.createAirSession({ claimId, roomId, platform, watchUrl });
       // SELF-CAPTURE STARTS WITH THE SESSION AND ONLY WITH THE SESSION. This
       // is the boundary that makes it a verification capture rather than a
       // recording of someone's broadcast — enforced here, not promised in copy.
@@ -957,9 +1006,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       capture.stopCapture(req.params.id, { log });
       const patch = { status: 'CLOSED', endedAt: Date.now() };
       if (prev) {
-        const look = prev.platform === 'twitch' ? (twitchApiConfigured() ? getStreamByLogin : null)
-          : prev.platform === 'kick' ? (kickApiConfigured() ? getChannelBySlug : null)
-            : null;
+        const look = liveLookerFor(prev);
         const claim = look ? store.getClaim(prev.claimId) : null;
         const handle = claim ? store.getReservedHandleByKey(claim.handleKey)?.handle : null;
         if (handle) {
@@ -1021,6 +1068,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
             ...(preferCapture ? { mode: 'capture', captures } : {}),
             mode: preferCapture ? 'capture' : (req.body.sourceMode || 'vod'),
             vodUrl: req.body.vodUrl || null,
+            // YouTube/Rumble verify against the URL the streamer handed the
+            // session — the watch URL IS the live stream and (on YouTube)
+            // the replay.
+            watchUrl: s.watchUrl || null,
             frames: req.body.frames || [],
           }),
           codeChecker: new OcrFrameChecker({ log }),
@@ -1053,7 +1104,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
           // Whether this deployment could have observed the broadcast at all.
           // Distinguishes "no credentials" from "credentials, but no start" —
           // see the flood note in bounty-stream-context.js.
-          observable: s.platform === 'kick' ? kickApiConfigured() : twitchApiConfigured(),
+          // "Could this deployment have observed the broadcast at all?" — the
+          // same per-platform answer the observation path uses, so the two
+          // can never disagree about whether silence was our blind spot.
+          observable: !!liveLookerFor(s),
           playbacks: (v.clipVerdicts || []).filter((c) => c.verified).map((c) => ({
             clipId: c.clipId, playbackId: c.playbackId,
             startedAt: (s.playbackWindows || []).find((w) => w.playbackId === c.playbackId)?.startedAt || 0,
