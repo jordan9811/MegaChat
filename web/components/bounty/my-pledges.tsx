@@ -22,29 +22,30 @@ const STATE_LABEL: Record<string, { label: string; cls: string }> = {
   refunded: { label: 'Refunded', cls: 'border-border text-muted-foreground' },
 }
 
-export function MyPledges({ initialMe }: { initialMe?: string }) {
-  const [me, setMe] = useState(initialMe || '')
+// The old signature took a contributor string; the server has ignored it
+// since contributions became account-keyed (the query param was an
+// enumeration hole as well as broken). The page half-kept the old model:
+// it would not even FETCH until you typed a string the server then threw
+// away — so a signed-in fan with no localStorage saw an empty lookup form
+// forever. The session decides now, on both ends.
+export function MyPledges({ initialMe: _ignored }: { initialMe?: string }) {
   const [rows, setRows] = useState<MyContribution[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [needsAuth, setNeedsAuth] = useState(false)
 
-  const load = useCallback(async (who: string) => {
-    if (!who.trim()) return
+  const load = useCallback(async () => {
     try {
       setError(null)
-      setRows((await getMyContributions(who.trim())).contributions)
-      try { localStorage.setItem('mc-bounty-contributor', who.trim()) } catch { /* private mode */ }
+      setNeedsAuth(false)
+      setRows((await getMyContributions()).contributions)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Lookup failed')
+      const msg = e instanceof Error ? e.message : 'Lookup failed'
+      if (/sign in/i.test(msg)) setNeedsAuth(true)
+      else setError(msg)
     }
   }, [])
 
-  useEffect(() => {
-    let who = initialMe
-    if (!who) {
-      try { who = localStorage.getItem('mc-bounty-contributor') || '' } catch { /* private mode */ }
-    }
-    if (who) { setMe(who); void load(who) }
-  }, [initialMe, load])
+  useEffect(() => { void load() }, [load])
 
   return (
     <div className="flex flex-col gap-5">
@@ -55,19 +56,16 @@ export function MyPledges({ initialMe }: { initialMe?: string }) {
         </p>
       </div>
 
-      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void load(me) }}>
-        <input value={me} onChange={(e) => setMe(e.target.value)}
-          placeholder="0x… or the account you pledged with"
-          className="w-full max-w-md rounded-xl border border-border bg-input/30 px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground" />
-        <button type="submit" className="rounded-full border border-border px-4 py-2 text-sm font-bold text-foreground">
-          Look up
-        </button>
-      </form>
+      {needsAuth ? (
+        <p className="text-sm text-muted-foreground">
+          Sign in (top right) to see your MegaChats — they&apos;re attached to your account, not to a name you type.
+        </p>
+      ) : null}
       {error ? <p className="text-sm text-[var(--neon-magenta)]">{error}</p> : null}
 
       {rows && rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nothing yet under that account. <a href="/bounty" className="text-[var(--neon-cyan)] underline-offset-2 hover:underline">Find a streamer to back →</a>
+          Nothing yet. <a href="/bounty" className="text-[var(--neon-cyan)] underline-offset-2 hover:underline">Find a streamer to back →</a>
         </p>
       ) : null}
 

@@ -67,6 +67,22 @@ export function RecordFlow({
   const [extraTargets, setExtraTargets] = useState<string[]>([]) // "platform:handle"
   const [policy, setPolicy] = useState<RejectionPolicy | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // null = still checking / unknown · false = anonymous · true = signed in
+  const [signedIn, setSignedIn] = useState<boolean | null>(null)
+
+  // The pledge route is FAN-tier, so an anonymous fan's submit would die with
+  // a 401 AFTER they recorded and filled the form. Ask who they are when the
+  // terms open and say so on the pay button instead of failing late. Unknown
+  // (fetch failed) deliberately does NOT disable — the server still decides.
+  useEffect(() => {
+    if (stage !== 'terms') return
+    let gone = false
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => { if (!gone) setSignedIn(!!d.identity) })
+      .catch(() => { if (!gone) setSignedIn(null) })
+    return () => { gone = true }
+  }, [stage])
 
   const stopTracks = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop())
@@ -156,7 +172,6 @@ export function RecordFlow({
 
   async function paySubmit() {
     if (!blob) return
-    if (!contributor.trim()) { setError('Enter the wallet or account the refund would go to'); return }
     if (!(parseFloat(amount) > 0)) { setError('Enter a positive amount'); return }
     setStage('sending')
     setError(null)
@@ -178,7 +193,6 @@ export function RecordFlow({
         await postFrames(pledge.uploadUrl, framesRef.current).catch(() => { /* fail-open */ })
       }
       await uploadClip(pledge.uploadUrl, blob, durationS)
-      try { localStorage.setItem('mc-bounty-contributor', contributor.trim()) } catch { /* private mode */ }
       setStage('done')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Submit failed')
@@ -249,10 +263,14 @@ export function RecordFlow({
                 className="mt-1 w-full rounded-xl border border-border bg-input/30 px-3.5 py-2.5 text-sm text-foreground" />
             </label>
             <label className="block">
-              <span className="text-sm font-medium text-foreground">Refund account</span>
+              <span className="text-sm font-medium text-foreground">Display name <span className="font-normal text-muted-foreground">(optional)</span></span>
               <input value={contributor} onChange={(e) => setContributor(e.target.value)}
-                placeholder="0x… or your MegaChat account"
+                placeholder="Shown beside your bounty"
                 className="mt-1 w-full rounded-xl border border-border bg-input/30 px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground" />
+              {/* The money keys to the signed-in ACCOUNT, not to this string —
+                  saying otherwise here would misstate where a refund goes, on
+                  the exact screen where someone decides to pay. */}
+              <span className="mt-1 block text-xs text-muted-foreground">Refunds go to the account you&apos;re signed in with.</span>
             </label>
           </div>
 
@@ -317,11 +335,17 @@ export function RecordFlow({
             </ul>
           </div>
 
-          <button type="button" disabled={stage === 'sending'} onClick={paySubmit}
+          <button type="button" disabled={stage === 'sending' || signedIn === false} onClick={paySubmit}
             className="inline-flex items-center gap-2 rounded-full bg-[var(--neon-lime)] px-5 py-2.5 text-sm font-bold text-black transition-transform hover:scale-[1.02] disabled:opacity-60">
             <Send className="size-4" />
             {stage === 'sending' ? 'Sending…' : `Pay ${amount} ${config.currency} & send`}
           </button>
+          {signedIn === false ? (
+            <p className="text-xs text-[var(--neon-amber)]">
+              Sign in first (top right) — the bounty and any refund attach to your account.
+              Your recording stays right here while you do.
+            </p>
+          ) : null}
         </div>
       ) : null}
 

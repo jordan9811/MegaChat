@@ -159,9 +159,7 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
           target={{ platform, handle }}
           config={config}
           otherPools={others}
-          onDone={(contributor) => {
-            window.location.href = `/bounty/mine${contributor ? `?me=${encodeURIComponent(contributor)}` : ''}`
-          }}
+          onDone={() => { window.location.href = '/bounty/mine' }}
         />
       ) : null}
 

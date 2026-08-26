@@ -269,10 +269,10 @@ export type MyContribution = {
   } | null
 }
 
-export function getMyContributions(contributor: string) {
-  return req<{ contributions: MyContribution[]; states: string[]; note: string }>(
-    `/api/bounty/my?contributor=${encodeURIComponent(contributor)}`,
-  )
+export function getMyContributions() {
+  // "My" means the signed-in account — the server ignores any contributor
+  // param on purpose (it was an enumeration hole before the lockdown).
+  return req<{ contributions: MyContribution[]; states: string[]; note: string }>('/api/bounty/my')
 }
 
 export type QueueClip = {
