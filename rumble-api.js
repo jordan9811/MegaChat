@@ -36,6 +36,29 @@
 export const rumbleApiConfigured = () => !!process.env.RUMBLE_LIVESTREAM_API_URL;
 
 /**
+ * ⚠ THE FIELDS WE DELIBERATELY DO NOT RETURN, AND WHY ⚠
+ *
+ * MEASURED ON THE REAL WIRE 2026-08-26 (not inferred): every entry in
+ * `livestreams` carries the channel's INGEST CREDENTIALS in plaintext —
+ *
+ *     "server_url": "rtmp://ls__.live.rmbl.ws/slot-__",
+ *     "stream_key": "____-____-____"
+ *
+ * So the creator's API URL is not a read token. Whoever holds it can BROADCAST
+ * AS THAT CHANNEL. That is a strictly larger power than "check if they are
+ * live", and it changes the threat model this module was written under: the
+ * header above says possession is transferable, which was right and far too
+ * mild.
+ *
+ * The allowlist below is therefore a SECURITY BOUNDARY, not tidiness. Four
+ * scalar fields are copied out by name; the raw response is never returned,
+ * never logged, never persisted, and goes out of scope here. Do not "just log
+ * the body" to debug this — one such line publishes a broadcast credential to
+ * wherever logs go.
+ *
+ * The URL itself is equally sensitive: nothing derived from it (including
+ * error messages that might embed it) may reach a log.
+ *
  * @param {object} [opts]
  * @param {string} [opts.apiUrl] creator-generated URL; defaults to the env.
  * @returns {Promise<{live:boolean, viewerCount:number, startedAt:string|null,
@@ -56,6 +79,7 @@ export async function getRumbleLiveStatus({ apiUrl, log = console } = {}) {
     // one that is live NOW. None live is a real answer, not a failure.
     const liveNow = streams.find((s) => s?.is_live === true || s?.live === true) || null;
     if (!liveNow) return { live: false, viewerCount: 0, startedAt: null, title: null };
+    // Copied field by field, by name. Never spread the source object.
     return {
       live: true,
       viewerCount: Number(liveNow.watching_now ?? liveNow.viewers ?? 0) || 0,
@@ -63,7 +87,10 @@ export async function getRumbleLiveStatus({ apiUrl, log = console } = {}) {
       title: liveNow.title || null,
     };
   } catch (e) {
-    log.warn?.(`[rumble-api] could not ask: ${e.message}`);
+    // NOT e.message: a fetch failure can carry the request URL, and that URL is
+    // the broadcast credential. The error name is enough to tell "unreachable"
+    // from "malformed", which is all this log ever needed to say.
+    log.warn?.(`[rumble-api] could not ask (${e?.name || 'Error'})`);
     return null;
   }
 }

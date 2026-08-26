@@ -65,12 +65,31 @@ const stub = http.createServer((req, res) => {
     state.rumbleCalls += 1;
     if (url.searchParams.get('key') !== 'gate-creator-key') { res.statusCode = 403; return res.end('{}'); }
     res.setHeader('Content-Type', 'application/json');
-    // OUR ASSUMPTION of Rumble's Live Stream API shape — docs-derived,
-    // unproven on a real wire; rumble-api.js says the same thing.
+    // THE REAL WIRE SHAPE, captured from a live creator URL on 2026-08-26 —
+    // no longer docs-derived. The identity envelope and, critically, the
+    // INGEST CREDENTIALS every livestream entry carries: server_url and
+    // stream_key in plaintext. The stub serves them precisely so the
+    // no-leak assertion below is testing against reality.
+    const entry = (over) => ({
+      id: 'r1', title: 'gate rumble', created_on: state.rumbleStart,
+      is_live: true, scheduled_on: null, visibility: 'public',
+      categories: { primary: null, secondary: null },
+      server_url: 'rtmp://ls18.live.rmbl.ws/slot-23',
+      stream_key: 'GATEKEYDONOTLEAK',
+      likes: 0, dislikes: 0, watching_now: state.rumbleViewers,
+      chat: { latest_message: null, recent_messages: [], latest_rant: null, recent_rants: [] },
+      ...over,
+    });
     return res.end(JSON.stringify({
+      now: Math.floor(Date.now() / 1000),
+      type: 'user', user_id: '4qdjv0', username: 'gatecreator',
+      channel_id: null, channel_name: null, since: null, max_num_results: 50,
+      followers: { num_followers: 0, num_followers_total: 0, latest_follower: null, recent_followers: [] },
+      subscribers: { num_subscribers: 0, latest_subscriber: null, recent_subscribers: [] },
+      gifted_subs: { num_gifted_subs: 0, latest_gifted_sub: null, recent_gifted_subs: [] },
       livestreams: state.rumbleLive
-        ? [{ id: 'r1', title: 'gate rumble', is_live: true, watching_now: state.rumbleViewers, created_on: state.rumbleStart }]
-        : [{ id: 'r0', title: 'old one', is_live: false, watching_now: 0, created_on: state.rumbleStart }],
+        ? [entry({})]
+        : [entry({ id: 'r0', title: 'old one', is_live: false, watching_now: 0 })],
     }));
   }
   res.statusCode = 404; res.end('{}');
@@ -145,6 +164,25 @@ const { rumbleApiConfigured, getRumbleLiveStatus } = await import('./rumble-api.
     wrongKey === null);
   const unreachable = await getRumbleLiveStatus({ apiUrl: 'http://localhost:1/nope' });
   ok('A3. unreachable is null, never a fake "nobody watching"', unreachable === null);
+
+  // ── A4. THE CREDENTIAL BOUNDARY ────────────────────────────────────────
+  // MEASURED, not supposed: a real Rumble live-status response carries
+  // server_url + stream_key for every livestream, so the creator's API URL
+  // confers the power to BROADCAST AS that channel. Our parser must copy out
+  // four scalars and let the rest die. Asserted on the serialized result so a
+  // future 'return { ...liveNow, live: true }' — the tidy-looking refactor
+  // that would publish a broadcast credential — fails here.
+  state.rumbleLive = true;
+  const live2 = await getRumbleLiveStatus();
+  const serialized = JSON.stringify(live2);
+  ok('A4. the parsed result carries NO ingest credential',
+    !/GATEKEYDONOTLEAK/.test(serialized) && !/rmbl\.ws/.test(serialized)
+    && !/stream_key/.test(serialized) && !/server_url/.test(serialized),
+    serialized);
+  ok('A4. ...and is EXACTLY the four safe fields, nothing spread in',
+    JSON.stringify(Object.keys(live2).sort())
+    === JSON.stringify(['live', 'startedAt', 'title', 'viewerCount']),
+    Object.keys(live2).sort().join(','));
 }
 
 // ── B. frame sources: right URL, right offset, proven by the pixel ────────
