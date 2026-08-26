@@ -57,6 +57,36 @@ const CLIPS = Math.max(1, Number(arg('clips', 5)));
 const PORT = 3308;
 const APP = `http://localhost:${PORT}`;
 const KEY = process.env.KICK_STREAM_KEY;
+
+/**
+ * Kick ingests through AWS IVS, whose RTMPS target is ALWAYS
+ *
+ *     rtmps://<endpoint>:443/app/<stream-key>
+ *
+ * The dashboard shows the endpoint and the key in separate boxes, so what
+ * lands in KICK_RTMP_URL is usually the bare host — and appending the key
+ * straight onto it yields `rtmps://<host>/<key>`, missing both the port and
+ * the /app application name. IVS closes that connection during the TLS
+ * handshake, which surfaces as "Error in the pull function / IO error: End of
+ * file" — an error that looks like a network or certificate problem and is
+ * actually a malformed path. That cost this run its first Kick attempt.
+ *
+ * This is NOT guessing the endpoint: the host still comes entirely from the
+ * operator, and a URL that already carries a port and an application path is
+ * passed through untouched. Only the invariant part of the IVS contract is
+ * filled in, and the result is logged so the operator can see exactly what
+ * was pushed to.
+ */
+function ivsTarget(base, key) {
+  let u = String(base || '').trim().replace(/\/+$/, '');
+  if (!u) return null;
+  const hasApp = /\/[A-Za-z0-9_-]+$/.test(u.replace(/^rtmps?:\/\//, ''));
+  if (!hasApp) {
+    if (!/:\d+$/.test(u)) u += ':443';
+    u += '/app';
+  }
+  return `${u}/${key}`;
+}
 const RTMP = process.env.KICK_RTMP_URL;
 
 if (!SLUG) {
@@ -192,7 +222,7 @@ try {
       '-c:v', 'libx264', '-preset', 'veryfast', '-b:v', '3000k', '-maxrate', '3000k',
       '-bufsize', '6000k', '-pix_fmt', 'yuv420p', '-g', '60',
       '-c:a', 'aac', '-b:a', '128k',
-      '-f', 'flv', `${RTMP.replace(/\/$/, '')}/${KEY}`,
+      '-f', 'flv', ivsTarget(RTMP, KEY),
     ], { stdio: ['pipe', 'ignore', 'inherit'] });
     screencast = setInterval(async () => {
       try {
@@ -201,7 +231,8 @@ try {
       } catch { /* frame dropped */ }
     }, 500);
     pusher.on('exit', () => clearInterval(screencast));
-    log('RTMPS push started — waiting for Kick to report the channel live…');
+    log('pushing to', String(ivsTarget(RTMP, KEY)).replace(KEY, '<key>'));
+  log('RTMPS push started — waiting for Kick to report the channel live…');
   } else {
     log('--skip-push: go live yourself now with the overlay in your scene.');
   }

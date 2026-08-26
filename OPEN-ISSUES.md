@@ -949,3 +949,69 @@ that runs exactly its declared `durationS` has `endsAt ≈ now` at the end call,
 so the window does not resolve and `playbackId` is null. Capture→playback
 routing then falls back to nearest-by-time instead of exact. Degrades
 precision, not correctness.
+
+### KICK'S FIRST REAL BROADCAST — and self-capture measurably underperforms
+
+`jordandotfun` on Kick, 10 minutes, 5 clips. **LIVE confirmed by Kick's own API**
+(started 19:28:39Z) — the first time Kick has ever met a real broadcast.
+All 5 self-captures recorded. Stream context OK.
+
+**Verdict: AMBIGUOUS, 1 of 5 clips verified, confidence 0.234.** Badge heights
+`[28,28,28,4.1,28,28,0,28,28,28,28,4.1,28]` — 10 of 13 at a clean 28px.
+
+**The badge was legible and the clips still did not verify.** That rules out
+legibility and points squarely at the seek: self-capture's wall-clock→media
+mapping is an ESTIMATE (`frozenAt` minus the code's issue time, corrected by a
+searched skew), whereas the Twitch VOD path anchors on the archive's own start
+time. Same broadcast quality, same overlay, same decoder:
+
+| path | platform | clips verified |
+|---|---|---|
+| external capture (VOD) | Twitch | **4 / 5** |
+| self-capture | Kick | **1 / 5** |
+
+That gap IS the finding. Tonight's two fixes made self-capture *work at all* —
+it records, it freezes the right window, the badge is in the file. They did not
+make it *reliable*. Self-capture is the only evidence path Kick, Rumble and X
+have, and at 1/5 it is not good enough to pay people on.
+
+**P0 — `BOUNTY_CAPTURE_FREEZE_DELAY_MS` defaults to 51s against a 60s window.**
+Derived as `liveBroadcastDelayMs (45s, deliberately generous) + 6s`, but the
+freeze delay is not the acceptance window and should not inherit its slack.
+At 51s the buffer holds `[end−9s, end+51s]`: for a 30s clip at a real 12-25s
+delay that loses the clip's first several seconds, leaving fewer code
+opportunities for calibration to land on. Should be `max observed delay + one
+segment` ≈ 30s, which holds `[end−30s, end+30s]` and covers a 30s clip whole.
+This is the most likely single cause of 1/5 vs 4/5 and is a one-line change —
+but it needs a delay-aware gate run to prove, not a guess.
+
+### Kick DOES have VODs — our wording was misleading, and it matters
+
+Corrected on the operator's push-back, and they were right. Kick publishes VODs
+in its UI. What does not exist is a way for us to FIND them:
+
+- `GET api.kick.com/public/v1/videos` → **404, the endpoint does not exist**.
+- `yt-dlp https://kick.com/<handle>` resolves as `kick:live` ONLY and 404s the
+  moment the channel is offline.
+- yt-dlp DOES ship a `kick:vod` extractor — it just needs a direct
+  `kick.com/video/<id>` URL.
+
+So the accurate statement is "no VOD **discovery**", not "no VODs", and several
+comments and the platform profile read as the latter. **This is actionable:**
+`KickFrameSource` already accepts `vodUrl` + `vodStartMs`, and the `watchUrl`
+plumbing added this run is exactly the channel for it. If a Kick streamer
+supplies their VOD link, Kick could verify on the archive path that scored 4/5
+on Twitch instead of the self-capture path that scored 1/5. Worth doing before
+any more self-capture tuning.
+
+### The obs-websocket path is still untested against real OBS
+
+Tonight could not test it and no unattended harness can: the harnesses broadcast
+by piping the overlay through ffmpeg, so there is no OBS process to hold a
+websocket connection. It remains gated against a mock in six states only.
+
+Testing it needs a human: OBS running with the overlay as a browser source,
+obs-websocket enabled, the operator going live themselves, and the harness run
+with `--skip-push`. Lowest-stakes of the open gaps — the tier design makes
+obs-websocket corroboration worth nothing on its own (tier 2 and tier 3 pay
+identically), so a bug there cannot cost anyone money.
