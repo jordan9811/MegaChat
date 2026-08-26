@@ -562,6 +562,24 @@ export class CaptureFrameSource extends FrameSource {
   }
 }
 
+/**
+ * A source for platforms with NO pullable external stream (X). Construction
+ * succeeds; USE reports the typed unavailability — so a verification with no
+ * self-capture lands SOURCE_UNAVAILABLE → human review through the normal
+ * pipeline instead of 500ing in the route while building its options.
+ */
+export class UnavailableFrameSource extends FrameSource {
+  constructor({ detail } = {}) {
+    super();
+    this.calibratable = false;
+    this.detail = detail || 'this platform exposes no pullable stream';
+  }
+
+  async getFrames() {
+    throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE, this.detail);
+  }
+}
+
 export function frameSourceFor(platform, opts = {}) {
   if (opts.mode === 'files') return new LocalFileFrameSource(opts);
   // SELF-CAPTURE IS PRIMARY. It works on every platform, including the ones
@@ -572,5 +590,11 @@ export function frameSourceFor(platform, opts = {}) {
   if (platform === 'kick') return new KickFrameSource(opts);
   if (platform === 'youtube') return new YouTubeFrameSource(opts);
   if (platform === 'rumble') return new RumbleFrameSource(opts);
+  if (platform === 'x') {
+    return new UnavailableFrameSource({
+      detail: 'X exposes no pullable stream at any tier — verification on X uses '
+        + 'self-capture (+ obs-websocket corroboration); this session has no capture to read',
+    });
+  }
   throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE, `no frame source for ${platform}`);
 }

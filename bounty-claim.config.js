@@ -413,6 +413,17 @@ export const PLATFORM_PROFILES = {
       + 'recording of the public stream is the primary evidence. If a check '
       + 'is inconclusive it goes to a person, never to a denial.',
   },
+  x: {
+    platform: 'x',
+    // No pullable stream AT ALL: no VOD retry, and the live pass reads our
+    // own rolling capture rather than anything X serves us.
+    vodRetry: false,
+    samplingMultiplier: 2,
+    notice: 'X gives us no stream we can read, so verification runs entirely '
+      + 'on our own recording of your broadcast plus your OBS confirming the '
+      + 'overlay was on screen. Keep the badge unobstructed while a MegaChat '
+      + 'plays. If a check is inconclusive it goes to a person, never to a denial.',
+  },
   kick: {
     platform: 'kick',
     vodRetry: false,

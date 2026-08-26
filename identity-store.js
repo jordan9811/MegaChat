@@ -95,6 +95,8 @@ export function claimIdentity({ provider, platformId, username, handle }) {
     // saved room defaults ride the identity — re-claiming a handle must not
     // wipe them
     ...(existing?.roomDefaults ? { roomDefaults: existing.roomDefaults } : {}),
+    // Platform logins survive re-claims for the same reason defaults do.
+    ...(existing?.platformLogins ? { platformLogins: existing.platformLogins } : {}),
   };
   store.identities[k] = identity;
   store.handles[wanted] = k;
@@ -113,6 +115,28 @@ export function setIdentityDefaults(provider, platformId, defaults) {
   if (!identity) return null;
   if (defaults === null) delete identity.roomDefaults;
   else identity.roomDefaults = defaults;
+  save();
+  return identity;
+}
+
+/**
+ * Per-platform OAuth logins for identities whose provider is an AGGREGATOR
+ * (Privy). identity.username is the DISPLAY ladder's pick — for someone with
+ * Twitch and X linked it is their Twitch name, so it can never serve as X
+ * ownership proof. This map holds what each platform's own OAuth said:
+ * { twitch: 'name', x: 'name' }. Written on every sign-in, so linking a new
+ * platform takes effect the next time the streamer signs in.
+ */
+export function setPlatformLogins(provider, platformId, logins) {
+  const store = load();
+  const identity = store.identities[key(provider, platformId)];
+  if (!identity) return null;
+  const clean = {};
+  for (const [k, v] of Object.entries(logins || {})) {
+    if (typeof v === 'string' && v.trim()) clean[String(k).toLowerCase()] = v.trim().slice(0, 60);
+  }
+  if (Object.keys(clean).length) identity.platformLogins = clean;
+  else delete identity.platformLogins;
   save();
   return identity;
 }

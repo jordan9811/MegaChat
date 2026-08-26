@@ -24,7 +24,7 @@ import { youtubeApiConfigured, getVideoLiveDetails, extractVideoId } from './you
 import { rumbleApiConfigured, getRumbleLiveStatus } from './rumble-api.js';
 import { readIdentityFromRequest } from './auth.js';
 import settlement from './bounty-settlement.js';
-import { policyFor, authorize, TIER } from './bounty-auth.js';
+import { policyFor, authorize, TIER, platformLoginFor } from './bounty-auth.js';
 import * as capture from './bounty-capture.js';
 
 /**
@@ -64,7 +64,11 @@ export class StubIdentityVerifier extends IdentityVerifier {
  * for the run that has keys).
  */
 export class PlatformIdentityVerifier extends IdentityVerifier {
-  static SUPPORTED = new Set(['twitch', 'kick']);
+  // X joins because Privy's twitter_oauth hands us the real @handle (proven
+  // in _gate-x-claims.mjs, not assumed) — no separate X API agreement is
+  // needed for OWNERSHIP; X still has no pullable stream, so verification on
+  // X runs self-capture + obs-websocket only.
+  static SUPPORTED = new Set(['twitch', 'kick', 'x']);
   async verify(platform, handle, _claimant, { req } = {}) {
     if (!PlatformIdentityVerifier.SUPPORTED.has(platform)) {
       return { approved: false, method: 'REAL_UNSUPPORTED_PLATFORM' };
@@ -74,17 +78,19 @@ export class PlatformIdentityVerifier extends IdentityVerifier {
       return { approved: false, method: 'REAL_NOT_SIGNED_IN' };
     }
     // Cross-platform proof is no proof: a Twitch session says nothing about
-    // who owns a Kick slug of the same name, and vice versa.
-    if (identity.provider !== platform) {
-      return { approved: false, method: `REAL_WRONG_PROVIDER:${identity.provider}` };
+    // who owns an X handle of the same name, and vice versa. The check reads
+    // what PLATFORM P's OWN OAUTH called this person — legacy identities via
+    // provider match, Privy identities via the linked-account logins.
+    const login = platformLoginFor(identity, platform);
+    if (!login) {
+      return { approved: false, method: `REAL_NO_${platform.toUpperCase()}_LINK:${identity.provider}` };
     }
-    const owns = String(identity.username || identity.handle || '')
-      .toLowerCase() === String(handle).toLowerCase();
+    const owns = login.toLowerCase() === String(handle).toLowerCase();
     return owns
       ? {
         approved: true,
-        method: platform === 'twitch' ? 'TWITCH_OAUTH_SESSION' : 'KICK_OAUTH_SESSION',
-        platform, handle, login: identity.username,
+        method: `${platform.toUpperCase()}_OAUTH_SESSION`,
+        platform, handle, login,
       }
       : { approved: false, method: 'REAL_HANDLE_MISMATCH' };
   }
@@ -215,9 +221,19 @@ async function startSessionCapture(session, { log = console } = {}) {
     let hlsUrl = bountyConfig.captureHlsOverride;
     if (!hlsUrl) {
       const { resolveMediaUrl } = await import('./frame-sources.js');
-      const page = session.platform === 'kick'
-        ? `https://kick.com/${handle.toLowerCase()}`
-        : `https://www.twitch.tv/${handle.toLowerCase()}`;
+      // The session's own watch URL first — it is exact on every platform,
+      // and it is the ONLY address on youtube/rumble/x, where guessing a
+      // channel page would have pointed the recorder at the wrong site
+      // entirely (the old else-branch sent every non-kick platform to
+      // twitch.tv/<handle>).
+      const page = session.watchUrl
+        || (session.platform === 'kick' ? `https://kick.com/${handle.toLowerCase()}`
+          : session.platform === 'twitch' ? `https://www.twitch.tv/${handle.toLowerCase()}`
+            : null);
+      if (!page) {
+        log.warn?.(`[capture] no watch URL for ${session.platform} session ${session.id} — self-capture skipped`);
+        return;
+      }
       hlsUrl = resolveMediaUrl(page, { log });
     }
     await capture.startCapture(session.id, {
@@ -783,9 +799,21 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
           .filter((c) => c.verificationState === 'VERIFIED' && c.expiresAt > Date.now())
           .sort((a, b) => b.createdAt - a.createdAt)[0];
         if (existing) {
+          // VERIFY THE CALLER FIRST. The first cut of this branch handed the
+          // existing claim to whoever asked, before any identity check ran —
+          // with the stub verifier that was invisible, and with the real one
+          // it meant any signed-in account could walk into any verified
+          // claim. _gate-x-claims.mjs B5 caught it on its first run.
+          const idv = await identity.verify(platform, handle, claimant, { req });
+          if (!idv.approved) {
+            return res.status(403).json({
+              error: 'This handle already has a verified claim, and this sign-in does not own it',
+              identity: { approved: false, method: idv.method },
+            });
+          }
           return res.json({
             ok: true, reclaimed: true, claim: existing,
-            identity: { approved: true, method: existing.verificationMethod },
+            identity: { approved: true, method: idv.method },
           });
         }
         // No live claim to hand back — fall through and let the state machine

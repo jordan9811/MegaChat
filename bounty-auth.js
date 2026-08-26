@@ -154,18 +154,44 @@ function resolveSubjectKey(req, subject) {
 }
 
 /**
+ * What this identity is called ON PLATFORM P, or null when it has no proof
+ * there. Two shapes exist:
+ *  - legacy direct identities: provider IS the platform, username is the
+ *    OAuth login (gates mint these; the old in-house OAuth did too)
+ *  - Privy identities: provider is 'privy' and the per-platform logins live
+ *    in identity.platformLogins, written from Privy's linked_accounts at
+ *    every sign-in. identity.username is the DISPLAY ladder's pick and must
+ *    never be read as platform proof — for someone with Twitch and X linked
+ *    it is their Twitch name.
+ *
+ * Until this existed, BOTH ownership checks required provider === platform —
+ * which no Privy identity ever satisfies, so with real verification on, no
+ * streamer who signed in through the actual front door could claim or pass
+ * a STREAMER-tier route on any platform. The gates never saw it because
+ * they mint the legacy shape.
+ */
+export function platformLoginFor(identity, platform) {
+  if (!identity || !platform) return null;
+  if (identity.provider === platform) {
+    const login = String(identity.username || identity.handle || '').trim();
+    return login || null;
+  }
+  const viaLinks = identity.platformLogins?.[platform];
+  return typeof viaLinks === 'string' && viaLinks.trim() ? viaLinks.trim() : null;
+}
+
+/**
  * Does this request's signed-in identity own `handleKey`? The same proof the
- * claim requires: provider must match the platform and the OAuth login must
- * equal the handle. Never client-asserted.
+ * claim requires: the platform's own OAuth login must equal the handle.
+ * Never client-asserted.
  */
 export function identityOwnsHandle(req, handleKey) {
   if (!handleKey) return false;
   const identity = readIdentityFromRequest(req);
   if (!identity) return false;
   const [platform, handle] = handleKey.split(':');
-  if (identity.provider !== platform) return false;
-  const login = String(identity.username || identity.handle || '').toLowerCase();
-  return !!login && login === handle;
+  const login = platformLoginFor(identity, platform);
+  return !!login && login.toLowerCase() === handle;
 }
 
 /**
