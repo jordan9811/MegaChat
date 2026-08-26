@@ -1015,3 +1015,41 @@ obs-websocket enabled, the operator going live themselves, and the harness run
 with `--skip-push`. Lowest-stakes of the open gaps — the tier design makes
 obs-websocket corroboration worth nothing on its own (tier 2 and tier 3 pay
 identically), so a bug there cannot cost anyone money.
+
+### Rumble: ingest PROVEN, playback URL is the blocker
+
+Tested against the real service on 2026-08-26. Two corrections to what was
+filed earlier tonight.
+
+**1. The `.env` ingest values are STALE and would have failed silently.**
+Supplied: `rtmp://rtmp.rumble.com/live` + `r-4qdjv0-rwk0-jkyn-625e6d`.
+Rumble's own API returns `rtmp://ls18.live.rmbl.ws/slot-23` + a 14-char key.
+Pushing a test pattern to the API's pair took the channel LIVE (`is_live: true`
+confirmed by the same API) — so ingest works, and the harness must read
+`server_url`/`stream_key` from the live-status response rather than from env.
+Rumble's per-livestream slots are assigned dynamically; an env-pinned ingest is
+wrong by construction, not merely out of date.
+
+**2. THE ACTUAL BLOCKER: the playback URL is not discoverable.** Self-capture
+needs a URL to READ the public stream from, and Rumble exposes none:
+- the live-status API carries `id`, `server_url`, `stream_key` — publishing
+  credentials only, no watch/playback URL field anywhere in the response;
+- `rumble.com/user/<name>` resolves through yt-dlp's `RumbleChannel` extractor
+  as a PLAYLIST of past videos ("Downloading 0 items"), never the live stream —
+  and it exits 0 with EMPTY stdout, so `resolveMediaUrl` would classify it as
+  `EXTRACTION_FAILED` rather than `CHANNEL_OFFLINE`, missing the retry-until-live
+  path added for Kick. A second distinct failure shape for the same situation.
+- `rumble.com/embed/v<id>/` DOES exist (HTTP 200, derivable from the API's `id`
+  as `v` + id), but yt-dlp's `RumbleEmbed` extractor gets **403 Forbidden** on
+  its metadata endpoint, with and without a browser User-Agent, both while the
+  channel was live and while offline.
+
+So Rumble is NOT blocked on credentials — it is blocked on obtaining a readable
+playback URL. The operator can supply one trivially (it is the browser address
+bar while live); automated discovery needs either a working embed extraction or
+a Rumble API that returns a watch URL, and neither exists today.
+
+**Slot consumed.** Pushing to the livestream ended it: the API now returns zero
+livestreams. A fresh one must be created in Rumble Studio before another
+attempt, which also means the ingest pair rotates again — reinforcing that it
+must be read live, never pinned.
