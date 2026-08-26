@@ -632,6 +632,12 @@ export function refundExpired({ handleKey, actor = 'system', settlement }) {
 export function release({
   handleKey, claimId, airSessionId, verifiedClips = 0, verifiedClipSeconds = 0,
   confidence, actor = 'verifier', idempotencyKey, settlement,
+  // Fraction of code-valid sampled frames that actually read the code. Split
+  // out of `confidence`, which used to carry it silently — see the gate below
+  // and the reckoning above avgConfidence in bounty-verifier.js. null means
+  // the caller has no detection rate (fixture-driven call sites), which
+  // leaves their behaviour exactly as it was.
+  detectionRate = null,
   // Which confidence tier allowed this release to happen unattended (1-3), or
   // null when no tier applies (fixture-driven verifications). AUDIT ONLY: it
   // is recorded on the ledger row and must never touch the amount — every
@@ -675,6 +681,17 @@ export function release({
 
   if (confidence < bountyConfig.minConfidence) {
     return { rows: [], deduped: false, released: 0, match: 0, skipped: 'low_confidence' };
+  }
+
+  // PRESENCE, GATED SEPARATELY FROM LEGIBILITY. `confidence` above is now
+  // read quality only; it says how cleanly we decoded the badges we found and
+  // says nothing about how often the badge was there. Without this second
+  // gate the split would be a real loosening: flash the badge for one sampled
+  // frame per clip, miss every other sample, and score 0.9 read quality on
+  // the strength of that one frame. Both halves of the old accidental
+  // product must still have to clear a bar.
+  if (detectionRate != null && detectionRate < bountyConfig.minDetectionRate) {
+    return { rows: [], deduped: false, released: 0, match: 0, skipped: 'low_detection_rate' };
   }
 
   const pool = store.getPool(handleKey);

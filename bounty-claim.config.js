@@ -380,8 +380,51 @@ export const bountyConfig = {
   /** Platform match as a fraction of the contributor pool. Tracked as a
    *  SEPARATE ledger entry — never blended into contributor money. */
   platformMatchFraction: Number(process.env.BOUNTY_PLATFORM_MATCH || 0.25),
-  /** Minimum verifier confidence for a release to count. */
+  /** Minimum verifier confidence for a release to count. Since the
+   *  detectionRate split this means READ QUALITY — how decisively the decoder
+   *  resolved the codes it did resolve — and nothing about how often the
+   *  badge was present. The presence half is minDetectionRate below. */
   minConfidence: Number(process.env.BOUNTY_MIN_CONFIDENCE || 0.6),
+  /**
+   * Fraction of CODE-VALID sampled frames that must actually read the code.
+   *
+   * This is the presence evidence that minConfidence used to carry by
+   * accident, back when the mean spanned found and not-found frames alike
+   * (see the reckoning above avgConfidence in bounty-verifier.js). It is a
+   * separate knob because it is a different quantity in different units.
+   *
+   * 0.55, AND IT IS SET BY TWO MEASUREMENTS THAT ARE UNCOMFORTABLY CLOSE.
+   *
+   *   0.50  _gate-media-timeline's 4s-residual fixture — a DELIBERATELY
+   *         broken timeline, which must never auto-pay. Under the old
+   *         diluted mean this was caught by confidence collapsing to 0.55;
+   *         that safety property now lives here, and the floor has to sit
+   *         ABOVE 0.50 for it to keep biting.
+   *   0.6154  Kick run #4 — a broadcast proven honest, all five clips aired,
+   *         every badge read at 28px, replayed from its own capture files.
+   *
+   * 0.115 apart, so the floor lands ~0.05 from each. That thinness is itself
+   * the finding: TWO of run #4's five misses were OUR residual seek error —
+   * frames that landed on the previous clip's tail and showed a perfectly
+   * legible badge carrying the NEIGHBOURING window's code. The streamer's
+   * real presence was 10/13 = 0.769. Our seek error is eating the margin
+   * that should separate "honest" from "broken", and closing it is what
+   * earns the right to raise this number.
+   *
+   * ERRING HIGH IS CORRECT HERE, because the two failure modes are not
+   * symmetric: too high sends an honest session to human REVIEW (recoverable,
+   * a reviewer pays it), too low silently auto-pays a mis-seeked or dishonest
+   * one (not recoverable — the money is gone). 0.6 was rejected only because
+   * it leaves run #4 a 0.015 margin, which would route essentially every real
+   * Kick broadcast to review and drown the queue.
+   *
+   * It still bites where it must: a cheater flashing the badge for one
+   * sampled frame per clip measures d ~= 0.08 against 13 samples. Raise this
+   * only from a measured distribution across several real broadcasts —
+   * _gate-run-b-ocr.mjs computes the found-rate straight from decoder rows
+   * and is the right place to source that number.
+   */
+  minDetectionRate: Number(process.env.BOUNTY_MIN_DETECTION_RATE || 0.55),
   /** Dispute window before a release becomes final. */
   disputeWindowMs: num(process.env.BOUNTY_DISPUTE_WINDOW_MS, 72 * 60 * 60_000),
 

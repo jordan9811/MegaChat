@@ -304,8 +304,13 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
       if (!legible && res.found) tooSmall += 1;
 
       clipChecks += 1;
-      clipConf += Number(res.confidence || 0);
-      if (counted) clipHits += 1;
+      // READ QUALITY ACCUMULATES ONLY FROM READS. On a miss, bounty-ocr.js
+      // returns 0.2 x the decoder's own opinion of a JUNK ring hypothesis —
+      // a number about our locator's noise floor, not about the streamer.
+      // Averaging it with a glyph-match margin is a unit error; see the
+      // reckoning above avgConfidence below. The miss is NOT discarded: it
+      // stays in clipChecks and is held against the session by detectionRate.
+      if (counted) { clipHits += 1; clipConf += Number(res.confidence || 0); }
       const sample = {
         ts: frame.ts, ref: frame.ref, clipId: win.clipId, playbackId: win.playbackId,
         found: !!res.found, confidence: res.confidence, pixelHeight: px,
@@ -315,7 +320,7 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
       clipSamples.push(sample);
     }
 
-    const conf = clipChecks ? clipConf / clipChecks : 0;
+    const conf = clipHits ? clipConf / clipHits : 0;
     // A clip counts as verified when at least one legible sample found its code.
     const verified = clipHits > 0;
     // BELOW-FLOOR QUALITY, SURFACED NOT SWALLOWED. A 480p streamer is not
@@ -324,11 +329,20 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
     // system has. Count reads that LANDED but sat close to the floor, so the
     // shortfall is attributable to stream quality instead of looking like
     // ordinary partial verification.
-    const marginal = clipSamples.filter((c) =>
+    //
+    // MEASURED ONLY WHERE A BADGE WAS ACTUALLY MEASURED. A miss reports the
+    // pixelHeight of whatever junk hypothesis scored best, which on real Kick
+    // captures is 4.1px — GLYPH_H(7) x the locator's minimum pitch, i.e. the
+    // size of the background it was staring at. Letting those into the median
+    // makes a clip sampled [4.1, 4.1, 28] median to 4.1, trip the floor, and
+    // tell an honest streamer their badge was 4.1px against a 12px minimum.
+    // That is an accusation built from frames containing no badge.
+    const reads = clipSamples.filter((c) => c.counted);
+    const marginal = reads.filter((c) =>
       c.pixelHeight > 0
       && c.pixelHeight < bountyConfig.minCodePixelHeight * bountyConfig.qualityWarnRatio).length;
     const medianPx = (() => {
-      const hs = clipSamples.map((c) => c.pixelHeight).filter((h) => h > 0).sort((a, b) => a - b);
+      const hs = reads.map((c) => c.pixelHeight).filter((h) => h > 0).sort((a, b) => a - b);
       return hs.length ? hs[Math.floor(hs.length / 2)] : 0;
     })();
     clipVerdicts.push({
@@ -354,9 +368,44 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
     .filter((c) => c.verified)
     .reduce((a, c) => a + (c.durationS || 0), 0)
     .toFixed(3);
-  const avgConfidence = checks.length
-    ? checks.reduce((a, c) => a + (c.confidence || 0), 0) / checks.length
+  /**
+   * CONFIDENCE IS READ QUALITY. DETECTION RATE IS PRESENCE. THEY ARE NOT THE
+   * SAME NUMBER, AND THIS USED TO MULTIPLY THEM TOGETHER BY ACCIDENT.
+   *
+   * This was `sum(confidence) / checks.length` over EVERY sample, found or
+   * not. bounty-ocr.js returns two incommensurable quantities under one name:
+   * a glyph-match margin on a read, and 0.2 x a junk ring decode on a miss.
+   * Averaging them makes the result identically
+   *
+   *     mean  =  q*d + m*(1-d)          q = read quality, d = detection rate,
+   *                                     m = the meaningless miss score (0.2)
+   *
+   * which was then compared against minConfidence — a threshold calibrated
+   * purely as a LEGIBILITY number (the fixtures are all-found, so their means
+   * never carry a detection rate at all).
+   *
+   * MEASURED on Kick run #4, reproduced exactly from its own capture files:
+   *     13 samples, 8 reads, 5 misses
+   *     q = 0.8430   m = 0.2000   d = 0.6154
+   *     q*d + m*(1-d) = 0.5957  ->  reported 0.596, vs a 0.6 bar
+   * A streamer who genuinely aired all five clips, every badge read at 28px,
+   * was ruled AMBIGUOUS and paid NOTHING — because 84% read quality was
+   * multiplied by 62% presence behind our backs.
+   *
+   * Splitting them is NOT a loosening. Dropping the misses from the mean
+   * WITHOUT gating presence separately would be: flash the badge for one
+   * sampled frame per clip, miss every other, and read q = 0.9. That is why
+   * detectionRate is computed here and gated in BOTH this ladder and
+   * bounty-escrow.js. Every sample in its denominator was taken inside a clip
+   * window at an instant when one of that clip's codes was valid — frames
+   * with no valid code `continue` above and never reach checks — so a miss
+   * here is real evidence, and correct silence is never punished.
+   */
+  const readSamples = checks.filter((c) => c.counted);
+  const avgConfidence = readSamples.length
+    ? readSamples.reduce((a, c) => a + (c.confidence || 0), 0) / readSamples.length
     : 0;
+  const detectionRate = checks.length ? readSamples.length / checks.length : 0;
   const hitRate = clipVerdicts.length ? verifiedClips / clipVerdicts.length : 0;
 
   let result;
@@ -364,6 +413,8 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
   else if (verifiedClips === 0 && checks.some((c) => c.found && !c.legible)) result = 'FAIL_TOO_SMALL';
   else if (verifiedClips === 0) result = 'FAIL';
   else if (avgConfidence < bountyConfig.minConfidence) result = 'AMBIGUOUS';
+  // The presence half, now that confidence no longer carries it silently.
+  else if (detectionRate < bountyConfig.minDetectionRate) result = 'AMBIGUOUS';
   else if (hitRate >= 0.999) result = 'PASS';
   else result = 'PARTIAL';
 
@@ -373,6 +424,7 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
     airSessionId, checker: checkerName,
     evidenceRef: checks.map((c) => c.ref).join(',') || null,
     result, confidence: +avgConfidence.toFixed(3),
+    detectionRate: +detectionRate.toFixed(3),
     verifiedMinutes: +(verifiedClipSeconds / 60).toFixed(3),
     verifiedClips, verifiedClipSeconds,
     belowQualityFloorClips: clipVerdicts.filter((c) => c.belowQualityFloor).length,
@@ -393,6 +445,7 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
 
   return {
     result, confidence: +avgConfidence.toFixed(3),
+    detectionRate: +detectionRate.toFixed(3),
     verifiedClips, verifiedClipSeconds,
     verifiedMinutes: +(verifiedClipSeconds / 60).toFixed(3),
     hitRate, attempt, checks, clipVerdicts,

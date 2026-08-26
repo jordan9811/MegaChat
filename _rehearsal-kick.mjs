@@ -27,7 +27,7 @@
  *   KICK_CLIENT_ID / KICK_CLIENT_SECRET   to read live status back
  */
 import { spawn, spawnSync } from 'child_process';
-import { mkdtempSync, existsSync } from 'fs';
+import { mkdtempSync, existsSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import puppeteer from 'puppeteer-core';
@@ -261,9 +261,21 @@ try {
     await sleep(30_000);
     const end = await post('/api/bounty/admin/playback/end',
       { airSessionId: airId, clipId: `KICK${i}` });
+    // FREEZING IS SCHEDULED, NOT SYNCHRONOUS. The route waits out the
+    // broadcast delay before reading the buffer, so the artifact does not
+    // exist yet when this response is written and `capture` is always null.
+    // Reading only that field printed "self-capture did not run" on every
+    // playback of every run for half a day, including runs where capture
+    // demonstrably worked — a constant string masquerading as an observation.
+    // `freeze.scheduled` is pendingFreezeCount > 0, and scheduleFreeze
+    // registers nothing when no capture is running, so a genuinely dead
+    // self-capture still reports it.
+    const fz = end.body.freeze;
     log(`playback ${i} ended — capture ${end.body.capture
       ? `${(end.body.capture.bytes / 1e6).toFixed(1)}MB / ${end.body.capture.spanMs}ms`
-      : 'NOT FROZEN (self-capture did not run)'}`);
+      : fz?.scheduled
+        ? `freeze scheduled in ${(fz.inMs / 1000).toFixed(0)}s (${fz.playbackId})`
+        : 'NOT FROZEN (self-capture did not run)'}`);
     await sleep(5_000);
   }
 
@@ -276,6 +288,21 @@ try {
   await post(`/api/bounty/air-session/${airId}/end`, {}, `kick:${SLUG}`);
   if (pusher) { clearInterval(screencast); try { pusher.stdin.end(); } catch { /* */ } pusher.kill(); }
   log('stream ended.');
+
+  // DID THE FREEZES ACTUALLY LAND? The old synchronous log line used to be
+  // this assertion by accident; once freezing became scheduled, nothing
+  // replaced it and the harness had NO signal that self-capture produced
+  // anything. Session end awaits every pending freeze, so by here the
+  // CAPTURE_FROZEN rows are final and a count short of CLIPS is a real fault.
+  const frozen = readFileSync(`${dataDir}/bounty-evidence.jsonl`, 'utf8')
+    .split('\n').filter(Boolean)
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+    .filter((r) => r && r.type === 'CAPTURE_FROZEN' && r.airSessionId === airId);
+  log(`self-capture froze ${frozen.length}/${CLIPS} window(s)`
+    + (frozen.length ? ` — ${(frozen.reduce((a, r) => a + (r.bytes || 0), 0) / 1e6).toFixed(1)}MB total` : ''));
+  if (frozen.length < CLIPS) {
+    log(`WARNING: ${CLIPS - frozen.length} window(s) never froze — verification below is running on less evidence than the broadcast produced`);
+  }
 
   // ── verify FROM THE SELF-CAPTURE (Kick has no VOD) ──────────────────────
   const v = await post(`/api/bounty/air-session/${airId}/verify`, { mode: 'real' }, `kick:${SLUG}`);

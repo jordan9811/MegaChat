@@ -1309,7 +1309,12 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         causes.push(`source unavailable: ${v.sourceState}${v.sourceDetail ? ` — ${v.sourceDetail}` : ''}`);
       }
       if (v.result === 'AMBIGUOUS') {
-        causes.push(`ambiguous: ${v.verifiedClips} clip(s) matched at confidence ${v.confidence}`);
+        // Name WHICH half fell short. These are two different failures with
+        // two different remedies -- low read quality means the badge was
+        // hard to decode (encoder, bitrate, scaling), low detection rate
+        // means it was often absent from the frames we sampled.
+        causes.push(`ambiguous: ${v.verifiedClips} clip(s) matched at read confidence `
+          + `${v.confidence}, detection rate ${v.detectionRate}`);
       }
       // Corroborating signals that DISAGREE with a verification. Only reasons
       // not already named above — a below-floor read is one finding, not two.
@@ -1355,6 +1360,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         handleKey: key, claimId: claim.id, airSessionId: s.id,
         verifiedClips: v.verifiedClips, verifiedClipSeconds: v.verifiedClipSeconds,
         confidence: v.confidence,
+        detectionRate: v.detectionRate,
         // The tier is WHY this release was allowed to happen unattended (null
         // on the fixture path, which has no broadcast to have a tier about).
         // On the ledger it makes the auto-release auditable; it never scales
