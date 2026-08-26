@@ -1053,3 +1053,101 @@ a Rumble API that returns a watch URL, and neither exists today.
 livestreams. A fresh one must be created in Rumble Studio before another
 attempt, which also means the ingest pair rotates again — reinforcing that it
 must be read live, never pinned.
+
+## Real broadcast testing — multi-platform (2026-08-26, `feat/real-broadcast`)
+
+### The finding of the night
+
+Every bug below was invisible to the whole gate suite for the same reason:
+**every HLS stub publishes a segment the instant it writes it**, so the
+broadcast delay D between encoder and public playlist is ~0. Anything whose
+behaviour depends on D passes green. Third occurrence this month.
+`_gate-broadcast-delay.mjs` exists specifically to stamp content at CREATE time
+and reveal it D later — extend that one rather than trusting an instant-publish
+stub.
+
+Measured, real encoders, 720p: corpus 100%, Twitch 4/5, Kick 5/5 (was 0/5).
+
+### Resolved this run (with evidence)
+
+- **PROGRAM-DATE-TIME was treated as a calibration BYPASS, not an anchor.**
+  PDT marks when a segment was PACKAGED; the overlay rendered its code one D
+  earlier. `wallClockSkew()` returned `{skewMs: 0, "offset known, not
+  measured"}` and skipped calibration, so D was never measured. Cost three Kick
+  broadcasts (1/5, 0/5, 0/5) with the badge legible at 28px throughout. Also
+  the code asserted "Twitch and Kick stamp none" — **Kick stamps every
+  segment**, which is why two fixes aimed at a branch Kick never executes. PDT
+  is now the seek anchor and calibration measures D on top. 0/5 → 5/5.
+- **`confidence` was read quality TIMES presence, silently.** `bounty-ocr.js`
+  returns a glyph-match margin on a read and `0.2 x` a junk-ring decode on a
+  miss, so the mean over all samples was identically `q*d + m*(1-d)`. Run #4:
+  `q 0.8430, m 0.2000, d 0.6154 -> 0.5957`, reported 0.596 against a 0.6 bar.
+  An honest 5/5 broadcast released NOTHING. Split into `confidence` (read
+  quality) and `detectionRate` (presence), both gated — in the verdict ladder
+  and again in escrow, because splitting without the second gate would help a
+  cheater. `_gate-confidence-split.mjs` (17/0) runs REAL misses through the
+  mean, which no fixture had ever done (they are all-found or all-miss).
+- **`KickFrameSource` never set `calibratable`** — undefined is falsy, so a
+  Kick VOD skipped calibration and used the 16s constant.
+- **Kick and Rumble discarded the measured skew** — both calibratable, both
+  handed the result to a `getFrames` with no `opts` parameter. Kick's VOD
+  branch seeked by a raw `(ts - vodStartMs)` with no skew term at all.
+- **Kick never marked live frames `live`**, so live grabs were judged against
+  the tight post-calibration residual instead of the broadcast delay.
+- **`recordVerification` was a fixed whitelist that ate six fields** — the five
+  `timeline*` values and `detectionRate`. The latter is a RELEASE GATE, so a
+  verification record was gating a payout on a number it did not store.
+- **`openWindowFor` filtered `endsAt > now`**, so a clip playing for exactly
+  its declared duration resolved no playbackId at the boundary and its capture
+  was filed under the clip id. Only 3 of 5 Kick windows were measurable.
+- **Rumble's live-status response embeds the channel's INGEST CREDENTIALS**
+  (`server_url`, `stream_key`) in plaintext. Stripped before the value leaves
+  `rumble-api.js`; the catch clause reports `e?.name`, never `e.message`,
+  because a fetch failure can embed the URL — which IS the credential.
+
+### New / still open
+
+- **R1. The calibration residual exceeds the code validity.** Run #4 measured
+  `residualMs 6521 = validity/2 (2500) + spread (2521) + margin (1500)` against
+  `codeValidityMs 5000`. Consequence: two samples per session land outside
+  their clip (in the previous playback's tail, reading a legible badge carrying
+  the NEIGHBOURING window's code) and are charged to the streamer's detection
+  rate — 8/13 instead of 10/13. **The reducible term is the spread.**
+  `sampleInstantsForWindow` now shifts instants clear of the window edge by the
+  residual, but this does NOT fix it and was not claimed to: with the residual
+  above the validity there is nowhere safe to shift to. HIGHEST-VALUE remaining
+  work on the verification path.
+- **R2. `minDetectionRate` is 0.55 on a 0.05 margin either side.** It sits
+  between a knowingly-broken 4s-residual fixture (0.50) and a broadcast proven
+  honest (0.6154) — only 0.115 apart, because of R1. Raise it only from a
+  measured distribution across several real broadcasts; `_gate-run-b-ocr.mjs`
+  is the right source. Erring HIGH is correct: too high sends an honest session
+  to review (recoverable), too low silently auto-pays (not).
+- **R3. `validity/2` may be over-conservative for a MEDIAN of N points.**
+  Independent quantization errors shrink with sqrt(N). Deliberately NOT changed
+  — altering a payment-critical tolerance on statistical reasoning without
+  measurement is what produced three of this run's bugs. Now measurable:
+  `timelineSpreadMs` and `timelineResidualMs` persist on every record.
+- **R4. pump.fun is blocked on ingest only.** Discovery is SOLVED —
+  `livestream-api.pump.fun/livestream?mintId=<mint>` returns live status,
+  viewers, start, creator wallet and the derivable HLS master, unauthenticated.
+  The endpoint is READ-ONLY and carries no ingest fields, so `PUMPFUN_RTMP_URL`
+  and the coin mint must come from the operator. `PUMPFUN_STREAM_KEY` and
+  `PUMPFUN_WALLET_PUBLIC_ADDRESS` are already set. `_rehearsal-pumpfun.mjs` is
+  written and is the only harness that tests BOTH capture paths on one
+  broadcast. Ownership: the API's `creatorAddress` is half the check for free;
+  proving CONTROL still needs a signature over our nonce.
+- **R5. Rumble needs a new livestream slot** (the old one was consumed) plus
+  the watch URL from the address bar while live. Ingest itself is PROVEN — the
+  API's credentials worked and the channel went live.
+- **R6. Rumble's VOD skew has never been checked against a real VOD.** The
+  constant is derived from Twitch. The calibrated value can now override it.
+- **R7. YouTube untested** — 24-hour livestream activation wait.
+- **R8. obs-websocket untested against real OBS** — needs the operator present
+  with OBS running and the harness run with `--skip-push`.
+
+### Spend
+
+Zero LiveKit minutes (neither rehearsal harness references LiveKit or sets
+`LIVEKIT_URL`). $0 external — Twitch/Kick/Rumble ingest is free and no pump.fun
+test coin was created.
