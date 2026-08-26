@@ -347,6 +347,14 @@ try {
       // stops exercising the search this path depends on.
       BOUNTY_CODE_ROTATE_MS: '4000', BOUNTY_CODE_VALIDITY_MS: '5000',
       BOUNTY_CAPTURE_HLS_URL: `http://localhost:${HLS}/live.m3u8`,
+      // This stub has NO broadcast delay to wait out (segments are published
+      // the instant they are written), so the freeze is immediate. Production
+      // defaults to ~51s, sized to the real 12-25s delay; leaving that default
+      // here scheduled each freeze 51s out against a 20s window, so the buffer
+      // had rolled past the badge long before it fired — captures landed,
+      // correctly keyed, and held the wrong media. The REAL delay is exercised
+      // end to end in _gate-broadcast-delay.mjs.
+      BOUNTY_CAPTURE_FREEZE_DELAY_MS: '0',
       BOUNTY_CAPTURE_WINDOW_MS: '20000',
       BOUNTY_CAPTURE_POLL_MS: '250',
       // Warmup off: this gate is about the OBS/overlay signals, and a failing
@@ -614,7 +622,7 @@ try {
       BOUNTY_CAPTURE_WINDOW_MS: '20000', BOUNTY_CAPTURE_POLL_MS: '250',
       // Zero-delay stub: nothing to wait out, so freeze effectively at once.
       // The real delay is exercised in _gate-broadcast-delay.mjs.
-      BOUNTY_CAPTURE_FREEZE_DELAY_MS: '400',
+      BOUNTY_CAPTURE_FREEZE_DELAY_MS: '0',
       BOUNTY_STREAM_WARMUP_MS: '0', BOUNTY_STREAM_TAIL_MS: '0',
       BOUNTY_TIER3_AUTO_VERIFY: '0',
     },

@@ -316,6 +316,18 @@ export function scheduleFreeze(airSessionId, {
     log.warn?.(`[capture] freeze requested for ${airSessionId} with no running capture`);
     return Promise.resolve(null);
   }
+  // A ZERO DELAY MEANS FREEZE NOW, INLINE. Deferring even to the next tick
+  // decouples the buffer read from the frozenAt stamp, and any wall-clock gap
+  // between them becomes a seek error later. Production always has a real
+  // delay to wait out; a stub with none is asking for the old, exact,
+  // read-and-stamp-together behaviour and should get precisely that.
+  if (delayMs <= 0) {
+    try { return Promise.resolve(freezeWindow(airSessionId, { playbackId, clipId, log })); }
+    catch (e) {
+      log.warn?.(`[capture] inline freeze failed for ${playbackId || clipId}: ${e?.message}`);
+      return Promise.resolve(null);
+    }
+  }
   const p = new Promise((resolve) => {
     setTimeout(() => {
       try { resolve(freezeWindow(airSessionId, { playbackId, clipId, log })); }
