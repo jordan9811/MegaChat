@@ -50,6 +50,19 @@ export const EVIDENCE_TYPES = {
    *  IMPOSSIBLE to backfill: once the broadcast ends, the count at a given
    *  instant is gone forever, so it is captured the moment it exists. */
   VIEWER_SAMPLE: 'VIEWER_SAMPLE',
+  /**
+   * Two CLIENT-REPORTED signals, kept in the chain for the same reason the
+   * viewer sample is: they are about a moment that is gone once the broadcast
+   * ends, so there is no backfilling them later.
+   *
+   * They are recorded as evidence but they are NOT proof, and the distinction
+   * is load-bearing. Both come from software on the streamer's own machine
+   * reporting on itself. They decide whether a HUMAN LOOKS at a verification
+   * (bounty-confidence.js); they never decide a payout on their own, and a
+   * streamer who cannot produce them at all is not penalised.
+   */
+  OBS_SCENE_SAMPLE: 'OBS_SCENE_SAMPLE',
+  OVERLAY_ENV: 'OVERLAY_ENV',
   VERIFICATION: 'VERIFICATION',
 };
 
@@ -138,6 +151,28 @@ export const recordCaptureFrozen = (airSessionId, rec) =>
   append(EVIDENCE_TYPES.CAPTURE_FROZEN, {
     airSessionId, playbackId: rec.playbackId, clipId: rec.clipId,
     file: rec.file, bytes: rec.bytes, segments: rec.segments, spanMs: rec.spanMs,
+  });
+
+/**
+ * One obs-websocket visibility sample from the streamer's claim page.
+ * `playbackId` is attributed server-side from the sample's timestamp, so a
+ * client cannot claim its sample covers a playback it does not.
+ */
+export const recordObsSceneSample = (airSessionId, sample) =>
+  append(EVIDENCE_TYPES.OBS_SCENE_SAMPLE, {
+    airSessionId, playbackId: sample.playbackId || null,
+    state: sample.state, visible: !!sample.visible, checked: !!sample.checked,
+    sceneName: sample.sceneName || null, detail: sample.detail || null,
+    rect: sample.rect || null, at: sample.at,
+  });
+
+/** The overlay page describing its own render environment. */
+export const recordOverlayEnv = (airSessionId, env) =>
+  append(EVIDENCE_TYPES.OVERLAY_ENV, {
+    airSessionId, playbackId: env.playbackId || null,
+    width: env.width ?? null, height: env.height ?? null,
+    visibilityState: env.visibilityState || null,
+    canvasAnomaly: !!env.canvasAnomaly, detail: env.detail || null, at: env.at,
   });
 
 export const recordViolation = (airSessionId, violation) =>

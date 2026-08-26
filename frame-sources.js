@@ -100,11 +100,26 @@ export function resolveMediaUrl(pageUrl, { log = console } = {}) {
 
 /** Grab ONE frame at `offsetS` into a media URL. Pre-input seek: keyframe-
  *  fast then exact, well inside the ±1.5s tolerance. */
-export function grabFrame(mediaUrl, offsetS, outFile) {
+/**
+ * @param {boolean} [opts.decodeThrough] Seek by DECODING to the offset instead
+ *   of jumping via the container index.
+ *
+ *   Needed for a self-capture, which is HLS segments concatenated byte-wise:
+ *   if those segments do not share one continuous timeline, an input-side seek
+ *   trusts a container index that describes only the first segment and
+ *   silently returns the wrong frame — wrong frame meaning a streamer who did
+ *   the work is not paid. Decoding through is exact, and a capture is ~60s.
+ *
+ *   NEVER default this on: the VOD path seeks hours into a Twitch archive, and
+ *   decoding through would take longer than the broadcast did.
+ */
+export function grabFrame(mediaUrl, offsetS, outFile, { decodeThrough = false } = {}) {
+  const seek = String(Math.max(0, offsetS));
+  const args = decodeThrough
+    ? ['-fflags', '+genpts', '-i', mediaUrl, '-ss', seek]
+    : ['-ss', seek, '-i', mediaUrl];
   const r = spawnSync('ffmpeg', [
-    '-v', 'error', '-y',
-    '-ss', String(Math.max(0, offsetS)),
-    '-i', mediaUrl, '-frames:v', '1', outFile,
+    '-v', 'error', '-y', ...args, '-frames:v', '1', outFile,
   ], { encoding: 'utf8', timeout: 120000 });
   if (r.status !== 0) throw new FrameSourceUnavailable(SOURCE_STATES.EXTRACTION_FAILED, String(r.stderr || '').slice(0, 200));
   return outFile;
@@ -321,47 +336,106 @@ export class LocalFileFrameSource extends FrameSource {
  * capture is ours, so the verifier path is identical on every platform.
  */
 export class CaptureFrameSource extends FrameSource {
-  constructor({ log = console, capturePath, anchorMs = null } = {}) {
+  /**
+   * A session holds ONE capture PER CLIP PLAYBACK — roughly a 60s window each,
+   * minutes apart. So this source is a set of windows, not a file, and every
+   * timestamp has to be routed to the window that actually contains it.
+   *
+   * Handing it a single file was a real bug: calibration probes several
+   * playbacks spread across the session, every probe after the first seeked
+   * past the end of the only file present, and self-capture verification —
+   * the PRIMARY path, the one that exists so Kick works at all — came back
+   * SOURCE_UNAVAILABLE / TIMELINE_UNCALIBRATED for any session with more than
+   * one clip. It looked like a platform problem and was ours.
+   *
+   * @param {Array<{file:string, playbackId:string|null, frozenAt:number}>} captures
+   *   Preferred. `capturePath`/`anchorMs` remain for a single known window.
+   */
+  constructor({ log = console, capturePath, anchorMs = null, captures = null } = {}) {
     super();
     this.log = log;
-    this.capturePath = capturePath;
-    // The wall-clock instant the capture was frozen. The window ENDS at
-    // roughly (frozenAt - broadcastDelay), and calibration finds the rest.
-    this.anchorMs = anchorMs;
+    this.captures = (captures && captures.length)
+      ? [...captures].sort((a, b) => a.frozenAt - b.frozenAt)
+      : (capturePath ? [{ file: capturePath, playbackId: null, frozenAt: anchorMs ?? Date.now() }] : []);
     this.calibratable = true;
-    this._durationS = null;
+    this._durationS = new Map();
   }
 
-  /** Media duration, probed once — the seek is relative to the window start. */
-  durationS() {
-    if (this._durationS != null) return this._durationS;
-    const r = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration',
-      '-of', 'csv=p=0', this.capturePath], { encoding: 'utf8' });
-    this._durationS = r.status === 0 ? (parseFloat(r.stdout.trim()) || 0) : 0;
-    return this._durationS;
+  /**
+   * How much media a capture holds. Every seek is relative to this, so getting
+   * it wrong points every frame grab at the wrong instant.
+   *
+   * PREFER THE SPAN THE BUFFER MEASURED, not the container's own answer. A
+   * capture is HLS segments concatenated byte-wise, and ffprobe reports
+   * `format=duration` from the timestamps it finds — which is the FIRST
+   * segment's duration alone whenever the segments do not share a continuous
+   * timeline. A 20-second window then measures as 2 seconds, every seek
+   * clamps to zero, and verification decodes nothing while reporting a
+   * perfectly healthy capture on disk. `spanMs` is summed from the playlist's
+   * own EXTINF values at freeze time and cannot be wrong in that way.
+   *
+   * ffprobe stays as the fallback for captures recorded before the span was
+   * carried through, and its answer is sanity-checked rather than trusted.
+   */
+  durationS(file) {
+    if (this._durationS.has(file)) return this._durationS.get(file);
+    const rec = this.captures.find((c) => c.file === file);
+    let d = Number(rec?.spanMs) > 0 ? rec.spanMs / 1000 : 0;
+    if (!d) {
+      const r = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration',
+        '-of', 'csv=p=0', file], { encoding: 'utf8' });
+      d = r.status === 0 ? (parseFloat(r.stdout.trim()) || 0) : 0;
+      this.log?.warn?.(`[capture] no recorded span for ${path.basename(file)}; `
+        + `falling back to the container's ${d}s, which under-reports a concatenated stream`);
+    }
+    this._durationS.set(file, d);
+    return d;
+  }
+
+  /**
+   * Which window covers this instant?
+   *
+   * By PLAYBACK ID when we have one, because a capture is frozen for exactly
+   * one playback and the mapping is then exact rather than inferred. Otherwise
+   * fall back to the window whose freeze is nearest after the timestamp — a
+   * capture ends at its freeze, so the one that contains `ts` is the earliest
+   * that was frozen after it.
+   */
+  pick(ts, playbackId) {
+    if (!this.captures.length) return null;
+    if (playbackId) {
+      const exact = this.captures.find((c) => c.playbackId === playbackId);
+      if (exact) return exact;
+    }
+    const after = this.captures.find((c) => c.frozenAt >= ts);
+    return after || this.captures[this.captures.length - 1];
   }
 
   async getFrames(platform, handle, timestamps, opts = {}) {
-    if (!this.capturePath || !existsSync(this.capturePath)) {
-      throw new FrameSourceUnavailable(SOURCE_STATES.NO_CAPTURE, `no capture at ${this.capturePath}`);
+    const present = this.captures.filter((c) => existsSync(c.file));
+    if (!present.length) {
+      throw new FrameSourceUnavailable(SOURCE_STATES.NO_CAPTURE,
+        this.captures.length ? `capture files missing for ${this.captures.length} window(s)` : 'no captures for this session');
     }
-    const dur = this.durationS();
     const out = [];
     for (const t of timestamps) {
       const ts = typeof t === 'object' ? t.ts : t;
+      const playbackId = typeof t === 'object' ? t.playbackId : null;
+      const cap = this.pick(ts, playbackId);
+      const dur = this.durationS(cap.file);
       // Map wall clock into the window: the capture's LAST frame is the most
       // recent media we held, so a timestamp `d` ms before the freeze sits at
       // (duration - d/1000) seconds in. `skewMs` shifts that by whatever
       // calibration measured, exactly as the VOD path uses it.
       const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
-      const back = ((this.anchorMs ?? Date.now()) - ts + skew) / 1000;
+      const back = (cap.frozenAt - ts + skew) / 1000;
       const offsetS = Math.max(0, dur - back);
       const file = path.join(workDir(), `cap-${randomUUID().slice(0, 8)}.png`);
-      grabFrame(this.capturePath, offsetS, file);
+      grabFrame(cap.file, offsetS, file, { decodeThrough: true });
       out.push({
         live: false, ref: file, ts,
         clipId: typeof t === 'object' ? t.clipId : null,
-        playbackId: typeof t === 'object' ? t.playbackId : null,
+        playbackId,
         platform, handle, toleranceMs: TOLERANCE_MS, source: 'capture',
       });
     }

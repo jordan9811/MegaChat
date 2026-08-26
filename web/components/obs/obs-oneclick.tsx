@@ -23,6 +23,7 @@ import { ObsClient, OBS_ERRORS, ObsError } from '@/lib/obs-client.mjs'
 import {
   addOverlayToObs, verifyOverlayInObs, MONITOR, type ObsVerifyCheck,
 } from '@/lib/obs-oneclick.mjs'
+import { useObsSceneWatch } from './use-obs-scene-watch'
 
 const LS_PASSWORD = 'mc_obs_ws_password'
 const LS_MONITOR = 'mc_obs_monitor' // '1' hear (default) | '0' mute locally
@@ -34,10 +35,19 @@ export function ObsOneClick({
   badgeMinHeightPx = 18,
   badgeCssPx = 28,
   mode = 'bounty',
+  airSessionId = null,
+  scenePollMs,
 }: {
   overlayUrl: string
   badgeMinHeightPx?: number
   badgeCssPx?: number
+  /**
+   * When set, keep asking OBS whether the overlay is on screen and report it.
+   * Corroboration only — a streamer who never connects OBS is not penalised,
+   * so this being null is a completely ordinary state.
+   */
+  airSessionId?: string | null
+  scenePollMs?: number
   /**
    * 'bounty' — the overlay carries the payment badge, so canvas-exact sizing
    *   is mandatory and the copy says why.
@@ -144,6 +154,16 @@ export function ObsOneClick({
     } catch { /* OBS not up right now — fine */ }
   }, [withClient])
 
+  // Watch only once OBS has been verified: before that there is no overlay
+  // source to have an opinion about, and reporting NOT_IN_SCENE for a source
+  // that has not been added yet would be noise dressed as a finding.
+  const sceneWatch = useObsSceneWatch({
+    airSessionId,
+    password,
+    pollMs: scenePollMs,
+    enabled: isBounty && phase === 'verified',
+  })
+
   const dims = canvas ? `${canvas.w} × ${canvas.h}` : 'your OBS canvas size (usually 1920 × 1080)'
 
   const failedChecks = useMemo(() => checks.filter((c) => !c.ok), [checks])
@@ -244,6 +264,24 @@ export function ObsOneClick({
               </li>
             ))}
           </ul>
+          {/* ── Live scene watch ────────────────────────────────────────
+              Say it while it can still be fixed. A streamer who switched
+              away from the overlay scene has minutes to notice, and the
+              alternative to telling them here is telling them at payout. */}
+          {sceneWatch?.checked && !sceneWatch.visible ? (
+            <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-[var(--neon-amber)]/10 px-2 py-1.5 text-[11px] font-semibold text-[var(--neon-amber)]">
+              <CircleAlert className="mt-px size-3 shrink-0" />
+              <span>
+                {sceneWatch.detail || 'The overlay is not visible in your live scene.'}
+                {' '}MegaChats playing now will not be verifiable.
+              </span>
+            </p>
+          ) : null}
+          {sceneWatch?.checked && sceneWatch.visible ? (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Watching your live scene — overlay on screen{sceneWatch.sceneName ? ` in "${sceneWatch.sceneName}"` : ''}.
+            </p>
+          ) : null}
         </div>
       ) : null}
 

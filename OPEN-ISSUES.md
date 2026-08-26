@@ -653,5 +653,69 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   is bounded (~22MB live, ~22MB per frozen clip), but nothing caps the total the
   way `clipStoreMaxBytes` caps clips. Fine at preview scale; needs a ceiling
   before a public flag-on.
-- **X and pump.fun** — see `docs/platform-feasibility.md`. Both parked with
-  reasons, neither built.
+- **X and pump.fun** — see `docs/platform-feasibility.md`. ~~Both parked~~
+  **SUPERSEDED 2026-08-25: pump.fun serves plain pullable HLS and is un-parked
+  on the video question.** X stays parked — see the capture-hardening section.
+
+## Capture hardening + pump.fun (2026-08-25, `feat/capture-hardening`)
+
+### Resolved
+- **Self-capture verification actually worked end to end for the first time.**
+  Four bugs in the shipped verify path each independently broke it for any
+  session with more than one clip, and together made the PRIMARY verification
+  path return `SOURCE_UNAVAILABLE / TIMELINE_UNCALIBRATED` every time:
+  verify passed only `captures[0]`; `CaptureFrameSource` trusted ffprobe's
+  container duration on a byte-concatenated TS (a 20s window measured 2s, so
+  every seek clamped to zero); captures were named after the clip while their
+  evidence row keyed on a null playback id, so the two could not find each
+  other; and an input-side seek in a concatenated stream trusts a broken index.
+  `_gate-capture-hardening.mjs` now verifies **3 clips off self-capture over
+  HTTP** in three separate sessions.
+- **OBS scene-item visibility (T1), overlay self-reports (T2) and confidence
+  tiers (T4)** shipped. Tiers decide REVIEW ROUTING ONLY — the gate asserts the
+  no-OBS streamer is paid the same as the OBS-corroborated one (10 vs 10).
+- **A capture now enters at the live edge** on any playlist shape. Previously
+  safe only by accident: both platforms we had happened to serve sliding
+  playlists.
+- **pump.fun un-parked on video.** It serves 1080p60 HLS from a public URL our
+  server can pull with no credentials, with `EXT-X-PROGRAM-DATE-TIME` on every
+  segment. The earlier "WebRTC only, stop" verdict was inference from docs.
+
+### Open
+- **P1 — pump.fun is blocked on IDENTITY, not on capture.** Streams are keyed to
+  a coin mint, not to an account we can OAuth against, and MegaChat pays the
+  VERIFIED OWNER of a handle. Everything downstream of "which human is this"
+  already works; nothing upstream of it does. Do not start pump.fun work by
+  writing a frame source — start by answering this.
+- **P2 — pump.fun stream discovery is reverse-engineered.**
+  `frontend-api-v3.pump.fun/coins/currently-live` answers "who is live" and the
+  site's own frontend uses it, but it is undocumented and can change without
+  notice. Acceptable for a probe; not something to put a payout behind.
+- **P3 — pump.fun manifests are ~320 kB and re-fetched every poll.** Their
+  playlist is append-only and grows (3,063 entries at 100 minutes in). At the
+  2s default that is ~160 kB/s per air session on manifests alone. Size for it
+  — or poll slower there — before enabling the platform.
+- **P4 — the OBS scene check is CLIENT-REPORTED and cannot resist a determined
+  cheat.** It is corroboration against ACCIDENT (hidden source, wrong scene,
+  1×1 item) and a diagnosis for support. It is deliberately never the only
+  thing holding a verification up, and `NO_CONNECTION` is blameless. If anyone
+  later proposes requiring obs-websocket to get paid, that inverts the design.
+- **P5 — `document.visibilityState` is recorded but deliberately not a
+  warning.** Headless Chrome and any background browser tab report 'hidden'
+  while rendering perfectly; making it a warning sent every session in the gate
+  to review, including the clean ones. Revisit only with a signal that
+  distinguishes "source stopped" from "not the foreground tab".
+- **P6 — `_gate-phase5-oauth.mjs` IS STALE AND CRASHES. Pre-existing, not from
+  this run.** It drives `#authTwitchBtn` on `/join`, which commit `3a8d55e`
+  ("one front door — Privy does Twitch, so the second sign-in is deleted")
+  removed on purpose. The gate has been asserting against deleted UI since
+  then. Either retarget it at the Privy flow or delete it — a gate that
+  crashes is indistinguishable from a gate nobody runs.
+- **Still open from the previous run**, unchanged: Kick unproven
+  (`KICK_STREAM_KEY`/`KICK_RTMP_URL` needed), `BOUNTY_ADMIN_KEY` unset in
+  Railway, capture storage has no global ceiling, fresh-account cost is
+  friction rather than money.
+- **Self-capture STILL has not run against a real broadcast.** It is now much
+  better gated — three real sessions, real badges, real decoder — but the stub
+  live stream is still a stub. The four bugs above are exactly the kind that a
+  stub hides and a real broadcast finds.

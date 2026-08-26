@@ -60,6 +60,10 @@ export type BountyClientConfig = {
   /** OBS one-click flag + the badge geometry its verify step checks. */
   obsOneClick?: boolean
   badgeCssPx?: number
+  /** How often the claim page asks OBS whether the overlay is on screen. */
+  obsScenePollMs?: number
+  /** Smallest plausible overlay canvas side, CSS px. */
+  overlayMinCanvasPx?: number
 }
 
 export type PlatformProfile = {

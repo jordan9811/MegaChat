@@ -289,6 +289,40 @@ export const bountyConfig = {
   /** Absolute floor in CSS px, for very small canvases. */
   badgeMinHeightPx: num(process.env.BOUNTY_BADGE_MIN_PX, 18),
 
+  // ── Corroborating signals (evidence, never a gate) ──────────────────────
+  /**
+   * Two signals that come from the streamer's own machine: their OBS reporting
+   * whether the overlay source is on screen, and the overlay page reporting
+   * its own canvas size and visibility state.
+   *
+   * Both are CORROBORATION. Neither can be trusted against a determined cheat
+   * — a client can post whatever it likes — and neither is required: a
+   * streamer on the manual-paste path has no obs-websocket at all and is not
+   * penalised one inch for it. What they buy is early detection of ACCIDENT,
+   * which is the common failure, plus a diagnosis instead of a mystery when a
+   * verification comes back empty. See bounty-confidence.js.
+   */
+  /** How often the claim page asks OBS whether the overlay is on screen. */
+  obsScenePollMs: num(process.env.BOUNTY_OBS_SCENE_POLL_MS, 5_000),
+  /**
+   * Smallest plausible overlay canvas side, in CSS px. The overlay reports its
+   * own window.innerWidth/Height, and a browser source shrunk to 1×1 still
+   * renders — it just renders where nobody can read it.
+   *
+   * DELIBERATELY LOOSE. Streamers run 1080p, 1440p, vertical, ultrawide and
+   * odd custom canvases; a false CANVAS_ANOMALY sends an honest streamer to
+   * review for owning an unusual monitor. Only the absurd is flagged, and even
+   * then it only asks a human to look.
+   */
+  overlayMinCanvasPx: num(process.env.BOUNTY_OVERLAY_MIN_CANVAS_PX, 160),
+  /**
+   * Whether self-capture alone (tier 3) may auto-verify. Default YES: most
+   * streamers will never connect obs-websocket, and routing all of them to a
+   * human queue is how a review backlog becomes the actual product. Set to 0
+   * to force every un-corroborated verification through review.
+   */
+  tier3AutoVerify: process.env.BOUNTY_TIER3_AUTO_VERIFY !== '0',
+
   // ── Payout (UNIT: verified CLIP PLAYBACKS, not on-air minutes) ──────────
   /**
    * The unit changed with the watermark redesign. Paying per on-air minute
@@ -388,6 +422,8 @@ export function bountyClientConfig() {
      * (DOT=4 → 28px glyphs, same constant the overlay draws with).
      */
     obsOneClick: process.env.OBS_ONECLICK === '1',
+    obsScenePollMs: bountyConfig.obsScenePollMs,
+    overlayMinCanvasPx: bountyConfig.overlayMinCanvasPx,
     badgeCssPx: num(process.env.BOUNTY_BADGE_CSS_PX, 28),
   };
 }

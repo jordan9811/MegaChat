@@ -30,6 +30,7 @@ export function ClaimFlow({
   const [claimant, setClaimant] = useState('')
   const [claimId, setClaimId] = useState<string | null>(null)
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
+  const [airSessionId, setAirSessionId] = useState<string | null>(null)
   const [status, setStatus] = useState<Awaited<ReturnType<typeof getClaim>> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -53,6 +54,7 @@ export function ClaimFlow({
       setClaimId(r.claim.id)
       if (!r.identity.approved) { setError('Identity check did not approve this claim.'); setStage('error'); return }
       const s = await startAirSession(r.claim.id, pool.platform || '')
+      setAirSessionId(s.airSession.id)
       setOverlayUrl(`${window.location.origin}/overlay?bounty=${encodeURIComponent(s.airSession.id)}`)
       setStage('setup')
     } catch (e) {
@@ -143,6 +145,8 @@ export function ClaimFlow({
                   overlayUrl={overlayUrl}
                   badgeMinHeightPx={config.badgeMinHeightPx}
                   badgeCssPx={config.badgeCssPx ?? 28}
+                  airSessionId={airSessionId}
+                  scenePollMs={config.obsScenePollMs}
                 />
               </div>
             ) : (

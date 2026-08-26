@@ -976,7 +976,57 @@
         } catch { /* next poll retries */ }
       }
 
+      /**
+       * T2 — the overlay describing its own render ENVIRONMENT, as distinct
+       * from its own badge.
+       *
+       * Two things, both recorded as evidence and neither gating anything:
+       *
+       *  1. CANVAS SIZE. window.innerWidth/Height is the browser source's
+       *     configured resolution. A source at 1×1 (or 16×9, or some other
+       *     absurdity) still renders and still reports a happy badge ratio,
+       *     because the badge scales with the canvas — the ratio check above
+       *     cannot see this at all. An absolute size can.
+       *
+       *  2. document.visibilityState. Worth stating precisely, because it is
+       *     easy to over-claim: in an OBS browser source configured the way we
+       *     configure it (shutdown-when-not-visible OFF) the document stays
+       *     'visible' even while its scene is off air. So 'hidden' here means
+       *     something narrow — the source was stopped, or this overlay is open
+       *     in a background BROWSER TAB rather than in OBS — and 'visible'
+       *     proves much less than the name suggests. Recorded for the first
+       *     case; never treated as proof of the second.
+       *
+       * Both are self-reported by the streamer's own machine, so they are
+       * diagnostics, not proof. They are worth having because the failure they
+       * catch — an honest misconfiguration that silently earns nothing — is
+       * the common one, and because they turn an empty verification into a
+       * sentence a support reply can be built from.
+       */
+      let lastEnvKey = null;
+      async function reportEnv() {
+        const w = window.innerWidth || 0;
+        const h = window.innerHeight || 0;
+        const vis = document.visibilityState === 'hidden' ? 'hidden' : 'visible';
+        // Only on CHANGE. A steady 1920×1080 visible overlay would otherwise
+        // write one evidence record every few seconds for the whole broadcast.
+        const key = `${w}x${h}:${vis}`;
+        if (key === lastEnvKey) return;
+        lastEnvKey = key;
+        try {
+          await fetch(`/api/bounty/air-session/${encodeURIComponent(airSessionId)}/overlay-env`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ width: w, height: h, visibilityState: vis, at: Date.now() }),
+          });
+        } catch { lastEnvKey = null; /* unreported — retry on the next poll */ }
+      }
+      // A visibility flip is exactly the moment worth recording, and it can
+      // happen between polls.
+      document.addEventListener('visibilitychange', () => { void reportEnv(); });
+
       async function poll() {
+        void reportEnv();
         try {
           const res = await fetch(`/api/bounty/air-session/${encodeURIComponent(airSessionId)}/code`);
           if (!res.ok) { badge.classList.remove('show'); return; }
@@ -1034,6 +1084,7 @@
             requestAnimationFrame(() => {
               const s = checkSize();
               void report(s.tooSmall, s);
+              void reportEnv(); // the canvas itself changed — that is the point
             });
           });
         });
