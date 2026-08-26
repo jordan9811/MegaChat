@@ -47,6 +47,13 @@ const log = (...a) => console.log('[kick-rehearsal]', ...a);
 const SLUG = arg('slug', null);
 const WARMUP_S = Number(arg('warmup-s', 60));
 const MINUTES = Math.min(15, Number(arg('minutes', 12)));
+/**
+ * See the note in _rehearsal-run-b.mjs: timeline calibration needs 3 AGREEING
+ * points and gets one probe per playback, so 3 clips is the minimum with zero
+ * margin and a real broadcast loses roughly one probe in four. Five leaves
+ * room to lose two.
+ */
+const CLIPS = Math.max(1, Number(arg('clips', 5)));
 const PORT = 3308;
 const APP = `http://localhost:${PORT}`;
 const KEY = process.env.KICK_STREAM_KEY;
@@ -216,7 +223,7 @@ try {
   await sleep((WARMUP_S + 5) * 1000);
 
   // ── air three clips ─────────────────────────────────────────────────────
-  for (let i = 1; i <= 3; i++) {
+  for (let i = 1; i <= CLIPS; i++) {
     const play = await post('/api/bounty/admin/playback',
       { airSessionId: airId, clipId: `KICK${i}`, durationS: 30 });
     log(`playback ${i} open, code ${play.body.code?.code}`);
@@ -230,7 +237,9 @@ try {
   }
 
   // Keep streaming past the last playback so the tail check passes.
-  const holdMs = Math.max(0, MINUTES * 60_000 - (WARMUP_S + 120) * 1000);
+  // Clip time is CLIPS * ~35s, not a hardcoded 2 minutes. With 5 clips the old
+  // constant under-counted by ~55s and the broadcast overran its budget.
+  const holdMs = Math.max(0, MINUTES * 60_000 - (WARMUP_S + CLIPS * 35 + 20) * 1000);
   if (holdMs > 0) { log(`holding the broadcast ${Math.round(holdMs / 60_000)} more minute(s)…`); await sleep(holdMs); }
 
   await post(`/api/bounty/air-session/${airId}/end`, {}, `kick:${SLUG}`);
