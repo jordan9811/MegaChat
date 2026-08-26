@@ -1,0 +1,114 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Schibsted+Grotesk:wght@400;500;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #e2542a; text-decoration: none; }
+    a:hover { color: #f4ede2; }
+    sc-for, sc-if { display: contents; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 900px; background: #17120f; color: #f4ede2; font-family: 'Schibsted Grotesk', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden;">
+
+  <!-- ── masthead ─────────────────────────────────────────────────────── -->
+  <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 30px 56px 0;">
+    <span style="font-family: 'Instrument Serif', Georgia, serif; font-size: 26px; letter-spacing: 0.01em;">MegaChat</span>
+    <div style="display: flex; align-items: center; gap: 30px; font-size: 11px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase; color: #a2948a;">
+      <span style="color: #f4ede2;">Tonight</span><span>Bounties</span><span>How it works</span>
+      <span style="color: #17120f; background: {{accent}}; padding: 9px 18px;">Sign in</span>
+    </div>
+  </div>
+
+  <!-- ── the bill ─────────────────────────────────────────────────────── -->
+  <div style="display: flex; gap: 56px; padding: 34px 56px 0; flex-grow: 1; min-height: 0;">
+
+    <!-- left: who is on, at poster scale -->
+    <div style="flex-grow: 1; display: flex; flex-direction: column;">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid #2e2521;">
+        <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: {{accent}};">On air now</span>
+        <span style="font-size: 11px; letter-spacing: 0.1em; color: #a2948a;">Take a seat — pay by the second, leave whenever</span>
+      </div>
+
+      <sc-for list="{{acts}}" as="act" hint-placeholder-count="4">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 24px; padding: 26px 0 22px; border-bottom: 1px solid #2e2521;">
+          <div style="min-width: 0;">
+            <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 54px; line-height: 0.95; letter-spacing: -0.01em;">{{act.name}}</div>
+            <div style="margin-top: 12px; display: flex; align-items: center; gap: 14px; font-size: 12px; color: #a2948a;">
+              <span style="display: flex; align-items: center; gap: 6px; color: {{accent}}; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; font-size: 11px;">
+                <span style="width: 6px; height: 6px; border-radius: 50%; background: {{accent}}; display: inline-block;"></span>Live
+              </span>
+              <span>{{act.platform}}</span>
+              <span style="color: #8a7c72;">/</span>
+              <span>{{act.seats}}</span>
+            </div>
+          </div>
+          <div style="text-align: right; flex-shrink: 0;">
+            <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 28px; line-height: 1;">{{act.rate}}</div>
+            <div style="margin-top: 5px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #a2948a;">per second</div>
+          </div>
+        </div>
+      </sc-for>
+
+      <div style="margin-top: 30px; padding: 0 0 26px; font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 30px; color: #a2948a; line-height: 1.15;">
+        Skip the chat. Be the stream.
+      </div>
+    </div>
+
+    <!-- right: the pools waiting for people who aren't here yet -->
+    <div style="width: 358px; flex-shrink: 0; border-left: 1px solid #2e2521; padding-left: 34px; display: flex; flex-direction: column;">
+      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: #a2948a; padding-bottom: 16px;">Waiting for <span style="color: #a2948a;">— USDC</span></div>
+      <div style="font-size: 12px; line-height: 1.6; color: #a2948a; padding-bottom: 22px;">
+        Fans recorded these and put money behind them. It sits here until the streamer
+        claims their name and plays them on air.
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 18px;">
+        <sc-for list="{{pools}}" as="pool" hint-placeholder-count="4">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid #2e2521;">
+            <div>
+              <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 24px; line-height: 1.1;">{{pool.name}}</div>
+              <div style="margin-top: 4px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #a2948a;">{{pool.clips}}</div>
+            </div>
+            <div style="font-size: 15px; font-weight: 700; color: {{accent}}; white-space: nowrap;">{{pool.amount}}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top: 28px; display: flex; align-items: center; gap: 10px; font-size: 11px; color: #a2948a; line-height: 1.5;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z"></path><path d="m9 12 2 2 4-4"></path></svg>
+        <span>Paid only when the clip is read back off the public broadcast.</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#e2542a","options":["#e2542a","#d9a441","#5fb98f","#f4ede2"]}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      accent: this.props.accent ?? '#e2542a',
+      acts: [
+        { name: 'nullpointer', platform: 'Twitch', seats: '3 of 4 seats open', rate: '$0.12' },
+        { name: 'kilowatt', platform: 'Kick', seats: '1 of 4 seats open', rate: '$0.08' },
+        { name: 'pinerun', platform: 'Twitch', seats: 'Full — 2 waiting', rate: '$0.20' },
+        { name: 'wiredrose', platform: 'Twitch', seats: '2 of 4 seats open', rate: '$0.15' },
+      ],
+      pools: [
+        { name: 'saltbrick', clips: '31 MegaChats', amount: '412.00' },
+        { name: 'vhs_daughter', clips: '14 MegaChats', amount: '196.50' },
+        { name: 'copperjaw', clips: '22 MegaChats', amount: '305.25' },
+        { name: 'gutterball', clips: '6 MegaChats', amount: '88.00' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

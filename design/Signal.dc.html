@@ -1,0 +1,124 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #4b46c9; text-decoration: none; }
+    a:hover { color: #1a1c1e; }
+    sc-for, sc-if { display: contents; }
+    .pool-row:last-child { border-bottom: none !important; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 900px; background: #fbfbfa; color: #1a1c1e; font-family: 'Host Grotesk', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden;">
+
+  <!-- ── nav: one hairline, nothing else ──────────────────────────────── -->
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 52px; height: 62px; border-bottom: 1px solid #e6e6e3; flex-shrink: 0;">
+    <div style="display: flex; align-items: center; gap: 40px;">
+      <span style="font-weight: 700; font-size: 16px; letter-spacing: -0.01em;">MegaChat</span>
+      <div style="display: flex; align-items: center; gap: 26px; font-size: 13px; color: #6b7075;">
+        <span style="color: #1a1c1e; font-weight: 500;">Live</span><span>Bounties</span><span>How it works</span>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 18px; font-size: 13px;">
+      <span style="color: #6b7075;">Sign in</span>
+      <span style="background: {{accent}}; color: #ffffff; font-weight: 500; padding: 9px 16px; border-radius: 7px;">Start a room</span>
+    </div>
+  </div>
+
+  <div style="padding: 44px 52px 0; flex-grow: 1; display: flex; flex-direction: column; min-height: 0;">
+
+    <!-- ── hero: one sentence, one action, a lot of air ──────────────── -->
+    <div style="max-width: 620px;">
+      <div style="font-size: 42px; font-weight: 600; line-height: 1.08; white-space: nowrap; letter-spacing: -0.028em;">Skip the chat. Be the stream.</div>
+      <div style="margin-top: 18px; font-size: 15px; line-height: 1.62; color: #6b7075;">
+        Pay by the second to put your camera on a live broadcast. Or record a MegaChat for a
+        streamer who isn&#39;t here yet — it waits, with the money behind it, until they claim their name.
+      </div>
+      <div style="margin-top: 26px; display: flex; align-items: center; gap: 12px;">
+        <span style="background: {{accent}}; color: #ffffff; font-weight: 500; font-size: 14px; padding: 11px 20px; border-radius: 8px;">Browse live rooms</span>
+        <span style="border: 1px solid #dcdcd8; color: #1a1c1e; font-weight: 500; font-size: 14px; padding: 11px 20px; border-radius: 8px;">Claim your channel</span>
+      </div>
+    </div>
+
+    <!-- ── live now: three restrained cards ──────────────────────────── -->
+    <div style="margin-top: 40px; display: flex; align-items: baseline; justify-content: space-between;">
+      <span style="font-size: 13px; font-weight: 600;">Live now</span>
+      <span style="font-size: 13px; color: #6b7075;">View all</span>
+    </div>
+    <div style="margin-top: 14px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;">
+      <sc-for list="{{rooms}}" as="room" hint-placeholder-count="3">
+        <div style="border: 1px solid #e6e6e3; border-radius: 12px; background: #ffffff; padding: 18px; display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="width: 7px; height: 7px; border-radius: 50%; background: #17a34a; display: inline-block;"></span>
+              <span style="font-size: 14px; font-weight: 600;">{{room.name}}</span>
+            </div>
+            <span style="font-size: 11px; color: #6b7075; border: 1px solid #e6e6e3; border-radius: 20px; padding: 3px 9px;">{{room.platform}}</span>
+          </div>
+          <div style="display: flex; align-items: flex-end; justify-content: space-between;">
+            <div>
+              <div style="font-size: 22px; font-weight: 600; letter-spacing: -0.02em;">{{room.rate}}</div>
+              <div style="font-size: 12px; color: #6b7075; margin-top: 2px;">per second</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 13px; font-weight: 500;">{{room.seats}}</div>
+              <div style="font-size: 12px; color: #6b7075; margin-top: 2px;">seats open</div>
+            </div>
+          </div>
+          <div style="border-top: 1px solid #f0f0ed; padding-top: 12px; font-size: 13px; font-weight: 500; color: {{accent}};">Take a seat</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- ── bounties: a calm list, not a second card wall ─────────────── -->
+    <div style="margin-top: 28px; display: flex; align-items: baseline; justify-content: space-between;">
+      <span style="font-size: 13px; font-weight: 600;">Bounties waiting to be claimed</span>
+      <span style="font-size: 13px; color: #6b7075;">View all</span>
+    </div>
+    <div style="margin-top: 12px; border: 1px solid #e6e6e3; border-radius: 12px; background: #ffffff; overflow: hidden;">
+      <sc-for list="{{pools}}" as="pool" hint-placeholder-count="3">
+        <div style="display: grid; grid-template-columns: 1fr 130px 150px 110px; gap: 16px; align-items: center; padding: 14px 18px; border-bottom: 1px solid #f0f0ed;" class="pool-row">
+          <div style="font-size: 14px; font-weight: 500;">{{pool.name}}</div>
+          <div style="font-size: 13px; color: #6b7075;">{{pool.platform}}</div>
+          <div style="font-size: 13px; color: #6b7075;">{{pool.clips}}</div>
+          <div style="font-size: 14px; font-weight: 600; text-align: right;">{{pool.amount}}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- ── footer: the trust line, stated plainly and once ──────────────── -->
+  <div style="margin-top: auto; display: flex; align-items: center; gap: 9px; padding: 0 52px; height: 54px; border-top: 1px solid #e6e6e3; font-size: 12px; color: #6b7075; flex-shrink: 0;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z"></path><path d="m9 12 2 2 4-4"></path></svg>
+    <span>A bounty pays out only once the clip has been read back off the public broadcast.</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#4b46c9","options":["#4b46c9","#0f766e","#b4460f","#1a1c1e"]}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      accent: this.props.accent ?? '#4b46c9',
+      rooms: [
+        { name: 'nullpointer', platform: 'Twitch', rate: '$0.12', seats: '3 of 4' },
+        { name: 'kilowatt', platform: 'Kick', rate: '$0.08', seats: '1 of 4' },
+        { name: 'pinerun', platform: 'Twitch', rate: '$0.20', seats: '0 of 4' },
+      ],
+      pools: [
+        { name: 'saltbrick', platform: 'Twitch', clips: '31 MegaChats', amount: '412.00 USDC' },
+        { name: 'vhs_daughter', platform: 'Kick', clips: '14 MegaChats', amount: '196.50 USDC' },
+        { name: 'copperjaw', platform: 'Twitch', clips: '22 MegaChats', amount: '305.25 USDC' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

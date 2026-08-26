@@ -1,0 +1,46 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "A · Ledger", "x": 0, "y": 0, "w": 1280, "h": 900 },
+    { "file": "Marquee.dc.html", "title": "B · Marquee", "x": 1400, "y": 0, "w": 1280, "h": 900 },
+    { "file": "Signal.dc.html", "title": "C · Signal", "x": 0, "y": 1360, "w": 1280, "h": 900 },
+    { "file": "Booth.dc.html", "title": "D · Booth", "x": 1400, "y": 1360, "w": 1280, "h": 900 }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -260,
+      "w": 1100,
+      "text": "FOUR DIRECTIONS FOR MEGACHAT — the same browse/home screen four ways. They differ in organizing idea, not just colour: a feed of proof, a poster bill, a calm grid, a video wall. Notes sit under each frame. Sample numbers throughout — handles invented, amounts plausible placeholders. Pick one and I'll build it across the real screens."
+    },
+    {
+      "id": "note-ledger",
+      "x": 0,
+      "y": 940,
+      "w": 620,
+      "text": "A · LEDGER — the proof IS the aesthetic. One feed, hairline rules, no cards; live rooms and bounty pools are entries in the same ledger, and the verification strip never leaves the screen.\nWhy: the only one that looks like what we actually built — evidence, tiers, codes read off a broadcast.\nTradeoff: reads as a terminal; cold for a fan who just wants on the show."
+    },
+    {
+      "id": "note-marquee",
+      "x": 1400,
+      "y": 940,
+      "w": 620,
+      "text": "B · MARQUEE — a bill, not a dashboard. Streamer names at poster scale in a serif; bounties are a side column of people who aren't here yet.\nWhy: the most personality, and it puts the human first — buying a seat feels like a gig listing.\nTradeoff: hides the machinery; trust has to be earned elsewhere."
+    },
+    {
+      "id": "note-signal",
+      "x": 0,
+      "y": 2300,
+      "w": 620,
+      "text": "C · SIGNAL — the safe modern one. Light, disciplined, one accent, live state as a 7px dot instead of a glow.\nWhy: most legible, least likely to age; a streamer landing on a share link trusts it instantly.\nTradeoff: you have seen it before — that is why it works and why it isn't memorable."
+    },
+    {
+      "id": "note-booth",
+      "x": 1400,
+      "y": 2300,
+      "w": 620,
+      "text": "D · BOOTH — the product is the interface. 48px of chrome, everything else is video; rate and seats ride the tile as a broadcast lower-third; bounties run as a bottom rail.\nWhy: what you're buying is being on camera, so show the cameras.\nTradeoff: needs real feeds — the tiles are placeholders, and dead rooms look worst here."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

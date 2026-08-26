@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #ff4d3d; text-decoration: none; }
+    a:hover { color: #ffffff; }
+    sc-for, sc-if { display: contents; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 900px; background: #08080a; color: #f2f2f4; font-family: Barlow, system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden;">
+
+  <!-- ── the only chrome: one 48px bar ─────────────────────────────────── -->
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 16px; height: 48px; flex-shrink: 0;">
+    <div style="display: flex; align-items: center; gap: 22px;">
+      <span style="font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 19px; letter-spacing: 0.1em;">MEGACHAT</span>
+      <div style="display: flex; align-items: center; gap: 7px; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.16em; color: {{accent}};">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: {{accent}}; display: inline-block;"></span>4 ROOMS ON AIR
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 22px; font-family: 'Barlow Condensed', sans-serif; font-size: 12px; letter-spacing: 0.14em; color: #7b7b85;">
+      <span style="color: #f2f2f4;">ALL</span><span>TWITCH</span><span>KICK</span><span>BOUNTIES</span>
+      <span style="color: #08080a; background: #f2f2f4; font-weight: 700; padding: 7px 14px;">SIGN IN</span>
+    </div>
+  </div>
+
+  <!-- ── the wall: what you are buying is being on one of these ───────── -->
+  <div style="flex-grow: 1; min-height: 0; padding: 0 12px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 6px;">
+    <sc-for list="{{tiles}}" as="tile" hint-placeholder-count="6">
+      <div style="position: relative; overflow: hidden; background: {{tile.bg}};">
+        <!-- placeholder camera feed: soft mesh, deliberately abstract -->
+        <div style="position: absolute; inset: 0; background: {{tile.mesh}};"></div>
+        <div style="position: absolute; left: 50%; top: 58%; width: 190px; height: 190px; margin-left: -95px; border-radius: 50%; background: {{tile.figure}}; filter: blur(26px);"></div>
+        <div style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%);"></div>
+
+        <!-- top-left state -->
+        <div style="position: absolute; top: 11px; left: 12px; display: flex; align-items: center; gap: 6px; font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; color: {{tile.stateColor}};">
+          <span style="width: 6px; height: 6px; border-radius: 50%; background: {{tile.stateColor}}; display: inline-block;"></span>{{tile.state}}
+        </div>
+        <!-- top-right rate -->
+        <div style="position: absolute; top: 9px; right: 12px; font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; color: #f2f2f4; background: rgba(8,8,10,0.55); padding: 3px 8px;">{{tile.rate}}</div>
+
+        <!-- bottom lower-third -->
+        <div style="position: absolute; left: 12px; right: 12px; bottom: 11px; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;">
+          <div style="min-width: 0;">
+            <div style="font-family: 'Barlow Condensed', sans-serif; font-size: 25px; font-weight: 700; letter-spacing: 0.01em; line-height: 1.05;">{{tile.name}}</div>
+            <div style="margin-top: 2px; font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 500; letter-spacing: 0.14em; color: #a3a3ad;">{{tile.meta}}</div>
+          </div>
+          <div style="font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; color: #08080a; background: {{tile.ctaBg}}; padding: 8px 12px; white-space: nowrap;">{{tile.cta}}</div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+
+  <!-- ── bottom rail: the bounty pools, as a ticker ────────────────────── -->
+  <div style="height: 78px; flex-shrink: 0; padding: 0 16px; display: flex; align-items: center; gap: 22px; border-top: 1px solid #1a1a1f;">
+    <div style="font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.16em; color: #7b7b85; white-space: nowrap;">
+      HELD FOR<br>STREAMERS
+    </div>
+    <div style="display: flex; align-items: stretch; gap: 8px; flex-grow: 1; min-width: 0;">
+      <sc-for list="{{pools}}" as="pool" hint-placeholder-count="4">
+        <div style="flex-grow: 1; min-width: 0; background: #101014; border-left: 2px solid {{accent}}; padding: 9px 12px; display: flex; flex-direction: column; justify-content: center;">
+          <div style="font-family: 'Barlow Condensed', sans-serif; font-size: 17px; font-weight: 600; line-height: 1.1;">{{pool.name}}</div>
+          <div style="margin-top: 2px; display: flex; align-items: baseline; gap: 8px;">
+            <span style="font-size: 13px; font-weight: 600; color: {{accent}};">{{pool.amount}}</span>
+            <span style="font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 500; letter-spacing: 0.12em; color: #7b7b85;">{{pool.clips}}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.13em; color: #a3a3ad; white-space: nowrap;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z"></path><path d="m9 12 2 2 4-4"></path></svg>
+      READ BACK OFF<br>THE BROADCAST
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#ff4d3d","options":["#ff4d3d","#43e0a8","#ffd23d","#7c8cff"]}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#ff4d3d';
+    const live = '#43e0a8';
+    return {
+      accent,
+      tiles: [
+        { name: 'nullpointer', meta: 'TWITCH / 3 OF 4 SEATS', rate: '$0.12/s', state: 'ON AIR', stateColor: live,
+          cta: 'TAKE A SEAT', ctaBg: '#f2f2f4', bg: '#141c22',
+          mesh: 'radial-gradient(120% 90% at 22% 18%, #24404f 0%, #141c22 62%)', figure: 'rgba(96,164,190,0.5)' },
+        { name: 'kilowatt', meta: 'KICK / 1 OF 4 SEATS', rate: '$0.08/s', state: 'ON AIR', stateColor: live,
+          cta: 'TAKE A SEAT', ctaBg: '#f2f2f4', bg: '#21181c',
+          mesh: 'radial-gradient(120% 90% at 76% 20%, #4a2b34 0%, #21181c 64%)', figure: 'rgba(206,120,140,0.44)' },
+        { name: 'pinerun', meta: 'TWITCH / FULL, 2 WAITING', rate: '$0.20/s', state: 'FULL', stateColor: '#ffd23d',
+          cta: 'JOIN QUEUE', ctaBg: '#ffd23d', bg: '#161f1a',
+          mesh: 'radial-gradient(120% 90% at 34% 74%, #26402f 0%, #161f1a 62%)', figure: 'rgba(112,186,138,0.42)' },
+        { name: 'wiredrose', meta: 'TWITCH / 2 OF 4 SEATS', rate: '$0.15/s', state: 'ON AIR', stateColor: live,
+          cta: 'TAKE A SEAT', ctaBg: '#f2f2f4', bg: '#1c1a24',
+          mesh: 'radial-gradient(120% 90% at 62% 26%, #363050 0%, #1c1a24 64%)', figure: 'rgba(150,138,216,0.42)' },
+        { name: 'saltbrick', meta: 'TWITCH / BOUNTY OPEN', rate: '412.00 USDC', state: 'OFF AIR', stateColor: '#b9b9c2',
+          cta: 'CLAIM', ctaBg: accent, bg: '#181818',
+          mesh: 'radial-gradient(120% 90% at 26% 30%, #2c2a26 0%, #181818 64%)', figure: 'rgba(0,0,0,0)' },
+        { name: 'vhs_daughter', meta: 'KICK / BOUNTY OPEN', rate: '196.50 USDC', state: 'OFF AIR', stateColor: '#b9b9c2',
+          cta: 'CLAIM', ctaBg: accent, bg: '#171a1c',
+          mesh: 'radial-gradient(120% 90% at 70% 68%, #29343a 0%, #171a1c 64%)', figure: 'rgba(0,0,0,0)' },
+      ],
+      pools: [
+        { name: 'saltbrick', amount: '412.00', clips: '31 CLIPS' },
+        { name: 'vhs_daughter', amount: '196.50', clips: '14 CLIPS' },
+        { name: 'copperjaw', amount: '305.25', clips: '22 CLIPS' },
+        { name: 'gutterball', amount: '88.00', clips: '6 CLIPS' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
