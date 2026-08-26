@@ -1143,6 +1143,15 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
           causes.push('frames of unknown origin — cannot tell whether this came from the platform or our own capture');
         }
       }
+      // THE TIER TABLE MUST DECIDE. If the evaluator says "a person looks"
+      // and no branch above named a cause — the tier-3 forced-review knob
+      // (BOUNTY_TIER3_AUTO_VERIFY=0) is exactly this shape: needsReview with
+      // ZERO warnings — the money must still stop. Before this catch-all, that
+      // knob flipped the verdict and the release proceeded anyway, which is a
+      // tier table that talks but decides nothing.
+      if (confidence?.needsReview && v.verifiedClips > 0 && causes.length === 0) {
+        causes.push(`confidence: ${confidence.summary}`);
+      }
       if (causes.length && !store.hasOpenReview(s.id)) {
         review = store.createReview({
           airSessionId: s.id, claimId: claim.id, handleKey: key,
@@ -1164,6 +1173,11 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         handleKey: key, claimId: claim.id, airSessionId: s.id,
         verifiedClips: v.verifiedClips, verifiedClipSeconds: v.verifiedClipSeconds,
         confidence: v.confidence,
+        // The tier is WHY this release was allowed to happen unattended (null
+        // on the fixture path, which has no broadcast to have a tier about).
+        // On the ledger it makes the auto-release auditable; it never scales
+        // the amount — every passing tier pays the same.
+        confidenceTier: confidence?.tier ?? null,
         actor: 'verifier', idempotencyKey: `release:${s.id}`, settlement,
       });
       res.json({

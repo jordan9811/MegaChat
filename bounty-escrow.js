@@ -632,6 +632,11 @@ export function refundExpired({ handleKey, actor = 'system', settlement }) {
 export function release({
   handleKey, claimId, airSessionId, verifiedClips = 0, verifiedClipSeconds = 0,
   confidence, actor = 'verifier', idempotencyKey, settlement,
+  // Which confidence tier allowed this release to happen unattended (1-3), or
+  // null when no tier applies (fixture-driven verifications). AUDIT ONLY: it
+  // is recorded on the ledger row and must never touch the amount — every
+  // tier that passes pays exactly the same.
+  confidenceTier = null,
 }) {
   assertEnabled();
   if (!idempotencyKey) throw new Error('release requires an idempotencyKey');
@@ -692,9 +697,10 @@ export function release({
   const { row: contribRow } = store.appendLedger({
     handleKey, claimId, airSessionId,
     type: 'RELEASE', amount, bucket: 'contributor', actor,
-    reason: `verified ${verifiedClips} clip playback(s), ${verifiedClipSeconds}s (confidence ${confidence})`,
+    reason: `verified ${verifiedClips} clip playback(s), ${verifiedClipSeconds}s (confidence ${confidence}`
+      + `${confidenceTier != null ? `, tier ${confidenceTier}` : ''})`,
     idempotencyKey,
-    meta: { verifiedClips, verifiedClipSeconds, confidence, disputeWindowEndsAt: finalAt, final: false },
+    meta: { verifiedClips, verifiedClipSeconds, confidence, confidenceTier, disputeWindowEndsAt: finalAt, final: false },
   });
   // Separate row, separate bucket — never blended into the contributor pool.
   const { row: matchRow } = store.appendLedger({

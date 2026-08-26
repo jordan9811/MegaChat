@@ -359,6 +359,12 @@ try {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers(as) },
     body: JSON.stringify(body),
   }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+  const ledgerRows = (dataDir) => {
+    const f = path.join(dataDir, 'bounty-ledger.jsonl');
+    if (!existsSync(f)) return [];
+    return readFileSync(f, 'utf8').split(String.fromCharCode(10)).filter(Boolean)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  };
   const evidenceRows = () => {
     const f = path.join(srv.dataDir, 'bounty-evidence.jsonl');
     if (!existsSync(f)) return [];
@@ -522,6 +528,14 @@ try {
       rows.some((r) => r.type === 'OBS_SCENE_SAMPLE' && r.state === 'VISIBLE'));
     ok('C1. ...and so is the overlay environment report',
       rows.some((r) => r.type === 'OVERLAY_ENV' && r.width === 1920));
+    // T2 wiring: tier 2 AUTO-RELEASES, and the ledger row records the tier
+    // that allowed it — the auto-release is auditable after the fact.
+    ok('C1. tier 2 auto-releases real money against the pool',
+      (vSeen.release?.released ?? 0) > 0, `released=${vSeen.release?.released}`);
+    const rel = ledgerRows(srv.dataDir).find((r) => r.type === 'RELEASE'
+      && r.airSessionId === seen.airId && r.bucket === 'contributor');
+    ok('C1. ...and the RELEASE ledger row carries confidenceTier 2',
+      rel?.meta?.confidenceTier === 2, `meta.confidenceTier=${rel?.meta?.confidenceTier}`);
   }
 
   // ── C2. OBS says hidden during the paying clip: tier 4, a person looks ──
@@ -550,6 +564,9 @@ try {
   ok('C2. ...and a review is opened naming the cause a reviewer can act on',
     !!vHid.review && /not visible/i.test(vHid.review.reason),
     vHid.review?.reason);
+  ok('C2. ...and the RELEASE IS BLOCKED while that review is open',
+    vHid.release?.skipped === 'pending_review' && (vHid.release?.released ?? 0) === 0,
+    `skipped=${vHid.release?.skipped} released=${vHid.release?.released} — tier 4 stops the money, not just the verdict`);
 
   // ── C3. NO OBS CONNECTION AT ALL: tier 3, treated the same ──────────────
   // The whole point. A manual-paste streamer sends nothing, and must not be
@@ -570,6 +587,50 @@ try {
     && vMan.release?.match === vSeen.release?.match,
     `manual ${vMan.release?.released} vs corroborated ${vSeen.release?.released} `
     + '— tiers decide who LOOKS, never who is paid');
+  {
+    const rel = ledgerRows(srv.dataDir).find((r) => r.type === 'RELEASE'
+      && r.airSessionId === manual.airId && r.bucket === 'contributor');
+    ok('C3. ...and its RELEASE ledger row carries confidenceTier 3',
+      rel?.meta?.confidenceTier === 3, `meta.confidenceTier=${rel?.meta?.confidenceTier}`);
+  }
+
+  // ── C4. the tier-3 FORCED-REVIEW knob actually stops the money ──────────
+  // BOUNTY_TIER3_AUTO_VERIFY=0 makes the evaluator say needsReview with ZERO
+  // warnings. Until this run, no review cause matched that shape, so the knob
+  // flipped the verdict while the release went through anyway — a tier table
+  // that talks but decides nothing. Proven on a second server because the
+  // knob is read at boot.
+  srv.kill();
+  await sleep(800);
+  srv = await startGateServer({
+    port: APP_PORT, label: 'hardening-tier3-knob',
+    bountyAuth: { handles: ['hardknob'] },
+    env: {
+      BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
+      TWITCH_CLIENT_ID: '', TWITCH_CLIENT_SECRET: '',
+      KICK_CLIENT_ID: '', KICK_CLIENT_SECRET: '',
+      BOUNTY_CODE_ROTATE_MS: '4000', BOUNTY_CODE_VALIDITY_MS: '5000',
+      BOUNTY_CAPTURE_HLS_URL: `http://localhost:${HLS}/live.m3u8`,
+      BOUNTY_CAPTURE_WINDOW_MS: '20000', BOUNTY_CAPTURE_POLL_MS: '250',
+      BOUNTY_STREAM_WARMUP_MS: '0', BOUNTY_STREAM_TAIL_MS: '0',
+      BOUNTY_TIER3_AUTO_VERIFY: '0',
+    },
+  });
+  {
+    const knob = await broadcast('hardknob', 'hardroomD', null);
+    const vK = knob.verify.body;
+    ok('C4. with the knob off, tier 3 still VERIFIES the clips',
+      (vK.verification?.verifiedClips || 0) > 0, `${vK.verification?.verifiedClips} clip(s)`);
+    ok('C4. ...but the tier verdict is needs-review with zero warnings',
+      vK.confidence?.tier === TIER.SELF_CAPTURE && vK.confidence?.needsReview === true
+      && (vK.confidence?.warnings || []).length === 0,
+      vK.confidence?.summary);
+    ok('C4. ...a review opens naming the confidence verdict as the cause',
+      !!vK.review && /confidence:/i.test(vK.review.reason), vK.review?.reason);
+    ok('C4. ...AND THE MONEY STOPS — release skipped pending_review',
+      vK.release?.skipped === 'pending_review' && (vK.release?.released ?? 0) === 0,
+      `skipped=${vK.release?.skipped} released=${vK.release?.released}`);
+  }
 } finally {
   if (browser) await browser.close();
   if (srv) srv.kill();
