@@ -1,39 +1,33 @@
 /**
- * PUMP.FUN DRESS REHEARSAL — one command, one real broadcast, a real verdict.
+ * RUMBLE DRESS REHEARSAL — one command, one real broadcast, a real verdict.
  *
- * The sibling of _rehearsal-kick.mjs, and the platform where we have the MOST
- * discovery and the LEAST ingest. What is already proven (pumpfun-api.js,
- * measured on the wire 2026-08-26):
+ * Sibling of _rehearsal-kick.mjs and _rehearsal-pumpfun.mjs.
  *
- *   GET https://livestream-api.pump.fun/livestream?mintId=<mint>
+ * WHAT IS ALREADY PROVEN about Rumble, and what is not. The ingest works: an
+ * earlier run pushed to the API-supplied credentials and the channel went
+ * live. What has NEVER been exercised is everything after that — no clip has
+ * been aired on Rumble, no frame captured, nothing verified.
  *
- * returns live status, viewer count, start time, creator wallet AND — via the
- * thumbnail path — the HLS master playlist, with no auth of any kind. So from
- * a bare mint we can both WATCH the stream go live and VERIFY it externally.
- * That is more than Kick gives us, where there is no VOD listing at all.
+ * A WARNING THAT COST US ONCE ALREADY: rumble-api.js's live-status response
+ * embeds the channel's INGEST CREDENTIALS (`server_url`, `stream_key`) in
+ * plaintext. They are stripped before the value leaves that module and its
+ * catch clause reports `e?.name` rather than `e.message`, because a fetch
+ * failure can embed the URL — which IS the credential. Do not widen either.
  *
- * WHAT THE API DOES NOT CARRY, and why this harness needs two arguments
- * instead of one: the endpoint is READ-ONLY. It has no ingest fields — no
- * server URL, no stream key. Those live only on the creator's own livestream
- * page and must be supplied by the operator. They are NEVER guessed here: an
- * invented ingest URL streams silently into nowhere and every check below
- * would then be measuring an empty channel.
- *
- * BOTH CAPTURE PATHS ARE EXERCISED, which no other rehearsal can do:
- *   - self-capture, the rolling buffer frozen per clip (the Kick path)
- *   - external capture, the derived master playlist (the Twitch VOD path)
- * A disagreement between them on the same broadcast is worth more than either
- * number alone, so both are reported side by side.
+ * BOTH CAPTURE PATHS, like pump.fun: Rumble has a public watch page, so the
+ * external source can seek it directly, and self-capture records the same
+ * broadcast independently. They are reported side by side — a disagreement
+ * between two captures of one broadcast is worth more than either number.
  *
  * Usage:
- *   node _rehearsal-pumpfun.mjs --mint <mint-or-coin-url> --preflight
- *   node _rehearsal-pumpfun.mjs --mint <mint-or-coin-url> [--minutes 12] [--clips 5]
- *   node _rehearsal-pumpfun.mjs --mint <mint-or-coin-url> --skip-push  # you go live
+ *   node _rehearsal-rumble.mjs --preflight
+ *   node _rehearsal-rumble.mjs [--minutes 12] [--clips 5]
+ *   node _rehearsal-rumble.mjs --skip-push          # you go live yourself
  *
  * Needs, and says so plainly if missing:
- *   PUMPFUN_RTMP_URL    ingest URL from your own pump.fun livestream page
- *   PUMPFUN_STREAM_KEY  the key from that same page
- * (No client id or secret: live status needs no credential of ours.)
+ *   RUMBLE_RTMP_URL     ingest URL (rtmp://rtmp.rumble.com/live)
+ *   RUMBLE_STREAM_KEY   the key for THIS scheduled stream
+ *   RUMBLE_WATCH_URL    the public rumble.com/v… page for it
  */
 import { spawn, spawnSync } from 'child_process';
 import { mkdtempSync, existsSync, readFileSync } from 'fs';
@@ -49,46 +43,28 @@ const arg = (k, d) => {
 };
 const has = (k) => process.argv.includes(`--${k}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const log = (...a) => console.log('[pumpfun-rehearsal]', ...a);
+const log = (...a) => console.log('[rumble-rehearsal]', ...a);
 
-const { extractPumpFunMint } = await import('./frame-sources.js');
-const RAW_MINT = arg('mint', null);
-const MINT = extractPumpFunMint(RAW_MINT);
+const HANDLE = arg('handle', 'jordandotfun');
 const WARMUP_S = Number(arg('warmup-s', 60));
 const MINUTES = Math.min(15, Number(arg('minutes', 12)));
 const CLIPS = Math.max(1, Number(arg('clips', 5)));
-const PORT = 3309;
+const PORT = 3310;
 const APP = `http://localhost:${PORT}`;
-const KEY = process.env.PUMPFUN_STREAM_KEY;
-const RTMP = process.env.PUMPFUN_RTMP_URL;
-
-if (!MINT) {
-  console.error('usage: node _rehearsal-pumpfun.mjs --mint <mint-or-coin-url> '
-    + '[--minutes 12] [--clips 5] [--skip-push] [--warmup-s 60] [--preflight]');
-  if (RAW_MINT) {
-    console.error(`\n"${RAW_MINT}" carries no pump.fun mint. Accepted forms:`);
-    console.error('  https://pump.fun/coin/<mint>');
-    console.error('  https://pump.fun/live/<mint>');
-    console.error('  <mint>            (base58, conventionally ending in "pump")');
-  }
-  process.exit(1);
-}
+const KEY = process.env.RUMBLE_STREAM_KEY;
+const RTMP = process.env.RUMBLE_RTMP_URL;
+const WATCH = process.env.RUMBLE_WATCH_URL;
 
 /**
- * The ingest target, PASSED THROUGH UNTOUCHED.
- *
- * The Kick harness normalises its URL because Kick runs on AWS IVS, whose
- * rtmps://<host>:443/app/<key> shape is a documented invariant. pump.fun's
- * ingest topology is NOT known to this build, so nothing is inferred: whatever
- * the operator copied is what gets pushed to, and the resolved target is
- * logged with the key redacted so a malformed one is visible immediately
- * rather than surfacing later as an empty channel.
+ * Plain RTMP, and the key simply appends. Unlike Kick — which rides AWS IVS
+ * and needs :443/app/ filled in — Rumble hands out a complete application URL
+ * (rtmp://rtmp.rumble.com/live), so nothing is inferred here. A URL that
+ * already ends in the key is passed through, since some panels hand out one
+ * combined string rather than two boxes.
  */
 function ingestTarget(base, key) {
   const u = String(base || '').trim().replace(/\/+$/, '');
   if (!u) return null;
-  // A URL that already ends in the key is used as-is: some panels hand out a
-  // single combined string rather than two boxes.
   return key && !u.endsWith(key) ? `${u}/${key}` : u;
 }
 
@@ -100,11 +76,10 @@ if (has('preflight')) {
     const r = spawnSync('ffmpeg', ['-hide_banner', ...args], { encoding: 'utf8' });
     return r.error ? '' : `${r.stdout || ''}${r.stderr || ''}`;
   };
-  check('mint parsed from the argument', !!MINT, MINT);
-  check('PUMPFUN_STREAM_KEY present (unattended broadcast)', !!KEY,
-    KEY ? 'set' : 'MISSING — from your pump.fun livestream page');
-  check('PUMPFUN_RTMP_URL present (never guessed)', !!RTMP,
-    RTMP ? RTMP.replace(/\/[^/]*$/, '/…') : 'MISSING — from the same page');
+  check('RUMBLE_STREAM_KEY present', !!KEY, KEY ? 'set' : 'MISSING — from your Rumble studio');
+  check('RUMBLE_RTMP_URL present', !!RTMP, RTMP || 'MISSING');
+  check('RUMBLE_WATCH_URL present (external capture needs the public page)', !!WATCH,
+    WATCH || 'MISSING — the rumble.com/v… link from your address bar');
   check('ffmpeg present with RTMP output', /rtmp/.test(ffOut(['-protocols'])));
   check('libx264 encoder available', /libx264/.test(ffOut(['-encoders'])));
   check('Chrome available for the overlay screencast',
@@ -112,35 +87,34 @@ if (has('preflight')) {
   check('extractor (yt-dlp) available — self-capture reads the live HLS',
     spawnSync('yt-dlp', ['--version'], { encoding: 'utf8' }).status === 0);
 
-  const { getStreamByMint } = await import('./pumpfun-api.js');
-  const info = await getStreamByMint(MINT, { log: console }).catch(() => null);
-  check('livestream api reachable + mint resolvable', !!info,
-    info ? `${info.live ? 'LIVE' : 'offline'}, creator ${String(info.creatorAddress).slice(0, 8)}…`
-      : 'could not ask — a shape change here means "could not ask", never "not live"');
-  check('playlist derivable from the thumbnail path', !!info?.playlistUrl,
-    info?.playlistUrl ? 'external capture available' : 'no media directory published yet (normal when offline)');
+  const { rumbleApiConfigured, getRumbleLiveStatus } = await import('./rumble-api.js');
+  check('Rumble live-status API configured', rumbleApiConfigured(),
+    rumbleApiConfigured() ? 'RUMBLE_LIVESTREAM_API_URL set' : 'MISSING RUMBLE_LIVESTREAM_API_URL');
+  if (rumbleApiConfigured()) {
+    const st = await getRumbleLiveStatus({ log: console }).catch(() => null);
+    check('Rumble API reachable', !!st,
+      st ? `${st.live ? 'LIVE' : 'offline'}${st.title ? ` — ${st.title}` : ''}`
+        : 'could not ask — a shape change means "could not ask", never "not live"');
+  }
 
-  console.log('\n── PUMP.FUN REHEARSAL PREFLIGHT ──');
+  console.log('\n── RUMBLE REHEARSAL PREFLIGHT ──');
   for (const r of rows) console.log(` ${r.ok ? 'OK  ' : 'MISS'} ${r.name}${r.detail ? ` — ${r.detail}` : ''}`);
   const missing = rows.filter((r) => !r.ok);
   console.log(missing.length === 0
     ? '\nREADY: run without --preflight to broadcast unattended.'
-    : `\nNOT READY: ${missing.length} item(s) above. With a stream key absent you can still `
-      + 'go live yourself and re-run with --skip-push.');
-  // The playlist check is expected to miss while offline, so it alone is not fatal.
-  const fatal = missing.filter((r) => !/playlist derivable/.test(r.name));
-  process.exit(fatal.length === 0 ? 0 : 1);
+    : `\nNOT READY: ${missing.length} item(s) above.`);
+  process.exit(missing.length === 0 ? 0 : 1);
 }
 
 if (!KEY && !has('skip-push')) {
-  console.error('PUMPFUN_STREAM_KEY is not set. Either set it (your pump.fun livestream '
-    + 'page) or go live yourself and re-run with --skip-push.');
+  console.error('RUMBLE_STREAM_KEY is not set. Set it from your Rumble studio, or go live '
+    + 'yourself and re-run with --skip-push.');
   process.exit(2);
 }
-if (KEY && !RTMP && !has('skip-push')) {
-  console.error('PUMPFUN_RTMP_URL is not set. The livestream API is READ-ONLY and carries '
-    + 'no ingest fields, so this cannot be derived — copy it from your own page. '
-    + 'Guessing one silently streams nowhere.');
+if (!WATCH) {
+  console.error('RUMBLE_WATCH_URL is not set. Rumble has no API to discover the public watch '
+    + 'page, so it must be copied from the address bar while the stream is live. Without it '
+    + 'external verification has no address to seek and only self-capture can run.');
   process.exit(2);
 }
 
@@ -152,13 +126,7 @@ const post = (p, body, as) => fetch(`${APP}${p}`, {
 const get = (p, as) => fetch(`${APP}${p}`, { headers: srv.headers(as) })
   .then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 
-/**
- * FAIL WHERE IT BREAKS, NOT THREE CALLS LATER. Without this a rejected pledge
- * returns 400, `body.uploadUrl` is undefined, and the run dies on
- * "Failed to parse URL from http://localhost:3309undefined?durationS=8" —
- * which says nothing about the actual cause (a 44-char base58 mint failing a
- * 40-char lowercase handle rule). The Twitch harness learned this the same way.
- */
+/** Fail where it breaks, not three calls later. See _rehearsal-pumpfun.mjs. */
 const must = async (label, p) => {
   const r = await p;
   if (r.status >= 400) {
@@ -168,12 +136,13 @@ const must = async (label, p) => {
 };
 
 const { startGateServer } = await import('./_gate-helpers.mjs');
-const dataDir = process.env.REHEARSAL_DATA_DIR || mkdtempSync(path.join(tmpdir(), 'mc-pumpfun-'));
+const dataDir = process.env.REHEARSAL_DATA_DIR || mkdtempSync(path.join(tmpdir(), 'mc-rumble-'));
 const srv = await startGateServer({
-  port: PORT, dataDir, label: 'pumpfun-rehearsal',
-  bountyAuth: { handles: [`pumpfun:${MINT}`] },
+  port: PORT, dataDir, label: 'rumble-rehearsal',
+  bountyAuth: { handles: [`rumble:${HANDLE}`] },
   env: {
     BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '0', KEEP_ORPHAN_ROOMS: 'true',
+    RUMBLE_LIVESTREAM_API_URL: process.env.RUMBLE_LIVESTREAM_API_URL || '',
     BOUNTY_STREAM_WARMUP_MS: String(WARMUP_S * 1000),
   },
 });
@@ -190,27 +159,25 @@ const cleanup = async () => {
 process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
 
 try {
-  const { getStreamByMint } = await import('./pumpfun-api.js');
+  const { getRumbleLiveStatus } = await import('./rumble-api.js');
 
   // ── fan half: a pledge with a clip, so there is something to air ────────
+  const AS = `rumble:${HANDLE}`;
   const pl = await must('pledge', post('/api/bounty/pledge', {
-    targets: [{ platform: 'pumpfun', handle: MINT }],
-    contributor: '0xpumpfan', amount: '25', expiresInMs: 86_400_000,
-  }, `pumpfun:${MINT}`));
+    targets: [{ platform: 'rumble', handle: HANDLE }],
+    contributor: '0xrumblefan', amount: '25', expiresInMs: 86_400_000,
+  }, AS));
   await fetch(`${APP}${pl.body.uploadUrl}?durationS=8`, {
-    method: 'POST', headers: { 'Content-Type': 'video/webm', ...srv.headers(`pumpfun:${MINT}`) },
+    method: 'POST', headers: { 'Content-Type': 'video/webm', ...srv.headers(AS) },
     body: Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(4096, 5)]),
   });
   const claim = await must('claim', post('/api/bounty/claim',
-    { platform: 'pumpfun', handle: MINT, claimant: MINT }, `pumpfun:${MINT}`));
-  // watchUrl carries the mint so the server's live-status looker and the
-  // external frame source can both resolve the stream without another argument.
+    { platform: 'rumble', handle: HANDLE, claimant: HANDLE }, AS));
   const air = await must('air-session', post('/api/bounty/air-session', {
-    claimId: claim.body.claim.id, platform: 'pumpfun', roomId: 'pfrehearsal',
-    watchUrl: `https://pump.fun/coin/${MINT}`,
-  }, `pumpfun:${MINT}`));
+    claimId: claim.body.claim.id, roomId: 'rumblerehearsal', watchUrl: WATCH,
+  }, AS));
   const airId = air.body.airSession.id;
-  log(`air session ${airId} for pumpfun:${MINT.slice(0, 8)}… — self-capture starts with it`);
+  log(`air session ${airId} for rumble:${HANDLE} — self-capture starts with it`);
 
   // ── the broadcast ───────────────────────────────────────────────────────
   browser = await puppeteer.launch({
@@ -218,13 +185,13 @@ try {
   });
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 720 });
-  await page.goto(`${APP}/overlay?room=pfrehearsal&bounty=${encodeURIComponent(airId)}`,
+  await page.goto(`${APP}/overlay?room=rumblerehearsal&bounty=${encodeURIComponent(airId)}`,
     { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.evaluate(() => { document.body.style.background = '#00ff00'; });
 
   if (!has('skip-push')) {
-    // Same encode profile as the Twitch and Kick rehearsals, so all three runs
-    // are comparable at the same resolution.
+    // Same encode profile as the Twitch, Kick and pump.fun rehearsals, so all
+    // four runs are comparable at the same resolution.
     const target = ingestTarget(RTMP, KEY);
     pusher = spawn('ffmpeg', [
       '-v', 'error',
@@ -246,14 +213,14 @@ try {
     }, 500);
     pusher.on('exit', () => clearInterval(screencast));
     log('pushing to', KEY ? String(target).replace(KEY, '<key>') : String(target));
-    log('push started — waiting for pump.fun to report the stream live…');
+    log('RTMP push started — waiting for Rumble to report the channel live…');
   } else {
     // THE OPERATOR CANNOT ADD AN OVERLAY THEY WERE NEVER GIVEN. This said
     // "go live with the overlay in your scene" and then never printed the
     // URL, which lives on a localhost port this harness picked. --skip-push
     // is the ONLY path on a platform whose ingest key dies with the session,
     // so it has to be genuinely usable rather than nominally supported.
-    const overlayUrl = `${APP}/overlay?room=pfrehearsal&bounty=${encodeURIComponent(airId)}`;
+    const overlayUrl = `${APP}/overlay?room=rumblerehearsal&bounty=${encodeURIComponent(airId)}`;
     BROKEN1
     console.log('  ADD THIS AS A BROWSER SOURCE IN OBS, THEN GO LIVE:');
     console.log('');
@@ -266,43 +233,17 @@ try {
     log('waiting for you to go live…');
   }
 
-  /**
-   * LIVE IS NOT THE SAME AS PUBLISHING, and on pump.fun the gap is real.
-   *
-   * MEASURED 2026-08-27: an ffmpeg push that was aborted at the TLS layer
-   * ("IO error: -10053", "The specified session has been invalidated") and
-   * never delivered a single frame STILL flipped isLive true within seconds,
-   * with no media directory published. pump.fun's isLive tracks ingress state,
-   * not content. Twitch's and Kick's do not behave this way.
-   *
-   * This loop used to accept `live` alone, print "playlist derived: NOT YET",
-   * and carry on — a check that logged a warning instead of acting on it. It
-   * then aired five clips into a stream that was publishing nothing and
-   * verified 0/5, which reads exactly like a capture bug and is not one.
-   *
-   * A playlist is the first moment there is genuinely something to capture, so
-   * that is what is waited for.
-   */
   let live = null;
-  let sawLiveFlag = false;
-  for (let i = 0; i < 24 && !live?.playlistUrl; i++) {
+  for (let i = 0; i < 24 && !live?.live; i++) {
     await sleep(10_000);
-    live = await getStreamByMint(MINT, { log: console }).catch(() => null);
-    if (live?.live && !sawLiveFlag) {
-      sawLiveFlag = true;
-      log(`pump.fun reports LIVE — ${live.viewerCount} viewer(s), started ${live.startedAt}`);
-      log('waiting for a PUBLISHED playlist: the live flag alone does not mean media is flowing');
-    }
-    if (live?.playlistUrl) {
-      log(`MEDIA CONFIRMED — playlist published, external capture available`);
+    live = await getRumbleLiveStatus({ log: console }).catch(() => null);
+    if (live?.live) {
+      log(`LIVE confirmed by Rumble — ${live.viewerCount} viewer(s)`
+        + `${live.title ? `, "${live.title}"` : ''}`);
     }
   }
-  if (!live?.playlistUrl) {
-    log(sawLiveFlag
-      ? 'pump.fun reported the stream LIVE but published NO media within 4 minutes. The '
-        + 'encoder never actually delivered frames — check the ffmpeg errors above. Airing '
-        + 'clips into this would verify 0/5 and mean nothing, so stopping.'
-      : 'pump.fun never reported the stream live. Nothing below would mean anything, so stopping.');
+  if (!live?.live) {
+    log('Rumble never reported the channel live. Nothing below would mean anything, so stopping.');
     await cleanup();
     process.exit(3);
   }
@@ -313,11 +254,11 @@ try {
   // ── air the clips ───────────────────────────────────────────────────────
   for (let i = 1; i <= CLIPS; i++) {
     const play = await post('/api/bounty/admin/playback',
-      { airSessionId: airId, clipId: `PF${i}`, durationS: 30 });
+      { airSessionId: airId, clipId: `RUM${i}`, durationS: 30 });
     log(`playback ${i} open, code ${play.body.code?.code}`);
     await sleep(30_000);
     const end = await post('/api/bounty/admin/playback/end',
-      { airSessionId: airId, clipId: `PF${i}` });
+      { airSessionId: airId, clipId: `RUM${i}` });
     const fz = end.body.freeze;
     log(`playback ${i} ended — capture ${end.body.capture
       ? `${(end.body.capture.bytes / 1e6).toFixed(1)}MB / ${end.body.capture.spanMs}ms`
@@ -330,12 +271,12 @@ try {
   const holdMs = Math.max(0, MINUTES * 60_000 - (WARMUP_S + CLIPS * 35 + 20) * 1000);
   if (holdMs > 0) { log(`holding the broadcast ${Math.round(holdMs / 60_000)} more minute(s)…`); await sleep(holdMs); }
 
-  await post(`/api/bounty/air-session/${airId}/end`, {}, `pumpfun:${MINT}`);
+  await post(`/api/bounty/air-session/${airId}/end`, {}, AS);
   if (pusher) { clearInterval(screencast); try { pusher.stdin.end(); } catch { /* */ } pusher.kill(); }
   log('stream ended.');
 
-  // Session end awaits every pending freeze, so the CAPTURE_FROZEN rows are
-  // final here and a count short of CLIPS is a real fault, not a race.
+  // Session end awaits every pending freeze, so a count short of CLIPS here is
+  // a real fault rather than a race.
   const frozen = readFileSync(`${dataDir}/bounty-evidence.jsonl`, 'utf8')
     .split('\n').filter(Boolean)
     .map((l) => { try { return JSON.parse(l); } catch { return null; } })
@@ -344,13 +285,13 @@ try {
     + (frozen.length ? ` — ${(frozen.reduce((a, r) => a + (r.bytes || 0), 0) / 1e6).toFixed(1)}MB total` : ''));
   const pdt = frozen.filter((r) => Number.isFinite(r.firstPdtMs)).length;
   log(`PROGRAM-DATE-TIME present on ${pdt}/${frozen.length} frozen window(s)`
-    + ' — the anchor, not a calibration bypass');
+    + ' — reported, never assumed: Kick was believed to stamp none and stamps every segment');
   if (frozen.length < CLIPS) {
     log(`WARNING: ${CLIPS - frozen.length} window(s) never froze — verification below is `
       + 'running on less evidence than the broadcast produced');
   }
 
-  // ── verify BOTH WAYS: the whole point of running this on pump.fun ───────
+  // ── verify BOTH WAYS ────────────────────────────────────────────────────
   const show = (label, ver) => {
     console.log(`${label} :`, JSON.stringify({
       result: ver.result, verifiedClips: ver.verifiedClips,
@@ -361,23 +302,20 @@ try {
     }, null, 2));
   };
 
-  const vSelf = await post(`/api/bounty/air-session/${airId}/verify`,
-    { mode: 'real' }, `pumpfun:${MINT}`);
+  const vSelf = await post(`/api/bounty/air-session/${airId}/verify`, { mode: 'real' }, AS);
   const vExt = await post(`/api/bounty/air-session/${airId}/verify`,
-    { mode: 'real', preferCapture: false }, `pumpfun:${MINT}`);
+    { mode: 'real', sourceMode: 'vod' }, AS);
 
-  console.log('\n════ PUMP.FUN REHEARSAL RESULT ════');
+  console.log('\n════ RUMBLE REHEARSAL RESULT ════');
   show('self-capture ', vSelf.body.verification || {});
   show('external     ', vExt.body.verification || {});
   console.log('stream ctx   :', JSON.stringify(vSelf.body.streamContext?.summary ?? null));
-  const pool = await get(`/api/bounty/pool-view?platform=pumpfun&handle=${MINT}`);
+  const pool = await get(`/api/bounty/pool-view?platform=rumble&handle=${HANDLE}`);
   console.log('release(stub):', pool.body.view?.releasedContributor, 'of', pool.body.view?.totalContributed);
-  console.log('\nTwo independent captures of ONE broadcast. A disagreement between them '
-    + 'is worth more than either number alone — report it before the totals.');
-  console.log('Compare against the corpus and the other real encoders: corpus 720p 100%, '
+  console.log('\nCompare against the other real encoders at 720p: corpus 100%, '
     + 'Twitch 4/5, Kick 5/5 (after the PDT-anchor fix).');
 } catch (e) {
-  console.error('[pumpfun-rehearsal] FAILED:', e?.stack || e?.message || e);
+  console.error('[rumble-rehearsal] FAILED:', e?.stack || e?.message || e);
   process.exitCode = 1;
 } finally {
   await cleanup();
