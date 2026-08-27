@@ -92,24 +92,81 @@ turned out to be correct.
   stream. Pushing to the wrong one fails silently, which is the worst kind of
   failure to spend an attempt on.
 
+## Later the same night — Kick proved, the payout bug fixed, pump.fun attempted
+
+**Kick went from 0 out of 5 to 5 out of 5.** It took three failed broadcasts to
+get there, and the reason is worth understanding because it is the same reason
+as everything else this month.
+
+Kick stamps every video segment with a wall clock. We had code that saw those
+stamps and concluded "we know exactly where we are, no need to measure" — and
+skipped the measuring step entirely. But that stamp records when the segment
+was *packaged*, and the badge was drawn on screen about twelve seconds
+earlier. So every frame we looked at was twelve seconds off, and we never
+noticed because we had told ourselves the timeline was already solved. Two
+fixes were made to the wrong part of the code before this was measured rather
+than guessed at. The stamp is now used as a starting point, with the delay
+still measured on top.
+
+**The payout bug is fixed, and it was worse than it looked.** The score that
+decides whether a streamer gets paid was silently multiplying two different
+things together: how *clearly* we read the badge, and how *often* it was
+there. Kick's fifth run read every badge cleanly and aired all five clips —
+and would have been paid nothing, because 84% clarity times 62% presence came
+to 0.596 against a 0.6 threshold. Those are now two separate numbers with two
+separate thresholds. Replaying that same broadcast through the fix, it passes.
+
+Splitting them needed care: simply ignoring the misses would have let someone
+flash the badge once per clip and score highly. So presence is now gated in
+its own right, in two places.
+
+**pump.fun: attempted, failed at the encoder, and the failure was informative.**
+The push never delivered a single frame — the connection was rejected. But
+pump.fun reported the stream **live anyway**, within seconds, with nothing
+being broadcast. Their "is this person live" flag tracks whether something
+connected, not whether video is flowing. That matters because we record that
+flag as evidence a streamer was broadcasting, and that evidence gates payment.
+Fixed, and it is now impossible for a pump.fun stream publishing nothing to
+accumulate proof that it was live.
+
+Two other pump.fun problems, both about identity rather than video: the system
+lowercased every handle, which quietly corrupts a Solana coin address (they are
+case-sensitive), and it capped handles at 40 characters when a coin address is
+44. And two separate parts of the code each had their own opinion about whether
+two handles were "the same", which meant the genuine owner of a coin was
+refused access to their own session.
+
+**Why the ingest failed is still open.** The likely explanation is that
+pump.fun creates a fresh broadcast slot each time you click "go live" and
+destroys it when you stop — so the key sent earlier had already expired. That
+would make pump.fun the one platform where we cannot broadcast unattended.
+It is written down as unproven, and the test that settles it is simply to
+capture a key immediately before a run.
+
 ## Outstanding
 
 **Owner:**
 - **Rotate the credentials you pasted into chat** — the Kick stream key and
   client secret, and especially the Rumble link, which is effectively a
   broadcast password.
-- **Kick is still unproven.** Everything is now fixed and ready; it just needs
-  the attempt. This is the next thing worth doing.
+- ~~**Kick is still unproven.**~~ **DONE — Kick verified 5 of 5** on its fourth
+  real broadcast, matching the synthetic corpus for the first time.
 - **Confirm which Rumble ingest address is correct**, or let the harness read
   it from their API.
 - **A decision on pump.fun** — the video side is genuinely solved, but paying
   out to a coin rather than a person is a product question.
 
 **Engineering:**
-- The confidence-scoring bug above. It is P0 and it blocks real payouts.
+- ~~The confidence-scoring bug above. It is P0 and it blocks real payouts.~~
+  **DONE.** Split into clarity and presence, each separately gated, with the
+  failing broadcast's own numbers written into a test so it cannot come back.
 - No cap on total recording storage.
-- Captures key on the clip rather than the playback when a clip runs its exact
-  declared length.
+- ~~Captures key on the clip rather than the playback when a clip runs its exact
+  declared length.~~ **DONE** — the boundary check was off by one clip rotation.
+- **The timing measurement is not yet accurate enough.** Two samples per session
+  land on the previous clip and get counted against the streamer. It does not
+  stop a payout today, but it leaves less margin than it should.
+- **pump.fun ingest** — see above; likely needs a fresh key per run.
 
 ## Outlook
 
