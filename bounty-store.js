@@ -117,10 +117,38 @@ export function _resetCache() {
  */
 export function handleKey(platform, handle) {
   const p = String(platform || '').trim().toLowerCase();
-  const h = String(handle || '').trim().replace(/^@/, '').toLowerCase();
-  if (!p || !h) return null;
+  if (!p) return null;
+  const raw = String(handle || '').trim().replace(/^@/, '');
+  if (!raw) return null;
+  if (p === 'pumpfun') {
+    const m = normalizePumpFunMint(raw);
+    return m ? `${p}:${m}` : null;
+  }
+  const h = raw.toLowerCase();
   if (!/^[a-z0-9_.-]{1,40}$/.test(h)) return null;
   return `${p}:${h}`;
+}
+
+/**
+ * A pump.fun identity is a SOLANA MINT, and it is CASE-SENSITIVE.
+ *
+ * The rule above is right for every other platform and wrong for this one, in
+ * two ways that both silently returned null: a mint is 32-44 base58 characters
+ * so it overruns the 40-char cap, and `.toLowerCase()` does not normalise a
+ * base58 address, it DESTROYS it — `GnBQjwQ…` and `gnbqjwq…` are not the same
+ * coin, and the second is not a valid address at all. reserveHandle lowercased
+ * the stored handle too, so there was no round-trip back to the real mint:
+ * sessionHandle() would have handed pump.fun verification a corrupted address.
+ *
+ * Case-folding usernames is CORRECT and stays — `Foo` and `foo` are one
+ * streamer and must share one pool. Case-folding a mint is the opposite: it
+ * would collide two different coins onto one pool.
+ *
+ * Base58 excludes 0, O, I and l precisely so humans cannot confuse them, which
+ * is why this cannot be relaxed into a general alphanumeric rule.
+ */
+function normalizePumpFunMint(raw) {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw) ? raw : null;
 }
 
 // ── ReservedHandle ──────────────────────────────────────────────────────────
@@ -145,7 +173,13 @@ export function reserveHandle({ platform, handle, reservedBy = null, ttlMs }) {
   const rec = {
     key,
     platform: String(platform).toLowerCase(),
-    handle: String(handle).replace(/^@/, '').toLowerCase(),
+    // The handle as it will be USED, not merely as it was matched. For a
+    // pump.fun mint that means the original case: this value is what
+    // sessionHandle() hands to the frame sources and the live-status lookers,
+    // and a lowercased base58 address is not a real address.
+    handle: String(platform).toLowerCase() === 'pumpfun'
+      ? String(handle).trim().replace(/^@/, '')
+      : String(handle).replace(/^@/, '').toLowerCase(),
     claimStatus: 'ACCUMULATING',
     claimedBy: null,
     reservedBy,

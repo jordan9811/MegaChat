@@ -189,9 +189,25 @@ export function identityOwnsHandle(req, handleKey) {
   if (!handleKey) return false;
   const identity = readIdentityFromRequest(req);
   if (!identity) return false;
-  const [platform, handle] = handleKey.split(':');
+  const [platform] = handleKey.split(':');
   const login = platformLoginFor(identity, platform);
-  return !!login && login.toLowerCase() === handle;
+  if (!login) return false;
+  /**
+   * NORMALISE THROUGH handleKey, DO NOT RE-IMPLEMENT THE RULE.
+   *
+   * This compared `login.toLowerCase()` against the handle half of the key,
+   * which duplicated the store's case rule in a second place — and the two
+   * silently disagreed the moment the store learned that a pump.fun identity
+   * is a CASE-SENSITIVE base58 mint rather than a username. The key kept
+   * `GnBQjwQ…`, this lowercased the login to `gnbqjwq…`, and the real owner of
+   * the handle got a 403 on their own air session.
+   *
+   * Deriving the key from the login means there is exactly one place that
+   * decides what "the same handle" means, so the two can never drift again.
+   * It also fixes the comparison for a mint that a split(':') would mangle if
+   * an identifier ever contained a colon.
+   */
+  return store.handleKey(platform, login) === handleKey;
 }
 
 /**

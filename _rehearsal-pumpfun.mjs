@@ -152,6 +152,21 @@ const post = (p, body, as) => fetch(`${APP}${p}`, {
 const get = (p, as) => fetch(`${APP}${p}`, { headers: srv.headers(as) })
   .then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 
+/**
+ * FAIL WHERE IT BREAKS, NOT THREE CALLS LATER. Without this a rejected pledge
+ * returns 400, `body.uploadUrl` is undefined, and the run dies on
+ * "Failed to parse URL from http://localhost:3309undefined?durationS=8" —
+ * which says nothing about the actual cause (a 44-char base58 mint failing a
+ * 40-char lowercase handle rule). The Twitch harness learned this the same way.
+ */
+const must = async (label, p) => {
+  const r = await p;
+  if (r.status >= 400) {
+    throw new Error(`${label} failed ${r.status}: ${JSON.stringify(r.body).slice(0, 300)}`);
+  }
+  return r;
+};
+
 const { startGateServer } = await import('./_gate-helpers.mjs');
 const dataDir = process.env.REHEARSAL_DATA_DIR || mkdtempSync(path.join(tmpdir(), 'mc-pumpfun-'));
 const srv = await startGateServer({
@@ -178,22 +193,22 @@ try {
   const { getStreamByMint } = await import('./pumpfun-api.js');
 
   // ── fan half: a pledge with a clip, so there is something to air ────────
-  const pl = await post('/api/bounty/pledge', {
+  const pl = await must('pledge', post('/api/bounty/pledge', {
     targets: [{ platform: 'pumpfun', handle: MINT }],
     contributor: '0xpumpfan', amount: '25', expiresInMs: 86_400_000,
-  }, `pumpfun:${MINT}`);
+  }, `pumpfun:${MINT}`));
   await fetch(`${APP}${pl.body.uploadUrl}?durationS=8`, {
     method: 'POST', headers: { 'Content-Type': 'video/webm', ...srv.headers(`pumpfun:${MINT}`) },
     body: Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(4096, 5)]),
   });
-  const claim = await post('/api/bounty/claim',
-    { platform: 'pumpfun', handle: MINT, claimant: MINT }, `pumpfun:${MINT}`);
+  const claim = await must('claim', post('/api/bounty/claim',
+    { platform: 'pumpfun', handle: MINT, claimant: MINT }, `pumpfun:${MINT}`));
   // watchUrl carries the mint so the server's live-status looker and the
   // external frame source can both resolve the stream without another argument.
-  const air = await post('/api/bounty/air-session', {
+  const air = await must('air-session', post('/api/bounty/air-session', {
     claimId: claim.body.claim.id, platform: 'pumpfun', roomId: 'pfrehearsal',
     watchUrl: `https://pump.fun/coin/${MINT}`,
-  }, `pumpfun:${MINT}`);
+  }, `pumpfun:${MINT}`));
   const airId = air.body.airSession.id;
   log(`air session ${airId} for pumpfun:${MINT.slice(0, 8)}… — self-capture starts with it`);
 

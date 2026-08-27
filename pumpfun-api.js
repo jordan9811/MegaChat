@@ -90,7 +90,35 @@ export async function getStreamByMint(mint, { log = console } = {}) {
       log.warn?.(`[pumpfun-api] livestream ${r.status} for ${String(mint).slice(0, 12)}…`);
       return null;
     }
-    const j = await r.json();
+    /**
+     * OFFLINE IS AN EMPTY 200, AND THAT IS NOT THE SAME AS "COULD NOT ASK".
+     *
+     * MEASURED 2026-08-27, watching a real stream end: this endpoint does NOT
+     * return 404, and it does NOT return `isLive: false`. It returns HTTP 200
+     * with a COMPLETELY EMPTY BODY. Calling .json() on that throws, which the
+     * catch below turned into null — collapsing "nobody is streaming" into
+     * "we could not reach the API", the exact two facts this file's header
+     * promises to keep apart.
+     *
+     * It matters in both directions. A watcher waiting for live === false
+     * waits forever, because null never equals false; and a payout path that
+     * reads null as offline would treat an API outage as proof the streamer
+     * was not there. Reporting a real offline object fixes the first without
+     * creating the second: a genuine failure still returns null below.
+     */
+    const text = await r.text();
+    if (!text.trim()) {
+      return {
+        live: false, viewerCount: 0, startedAt: null, title: null,
+        creatorAddress: null, playlistUrl: null, streamId: null,
+      };
+    }
+    let j = null;
+    try { j = JSON.parse(text); } catch {
+      // A NON-empty body we cannot parse is a shape change, not an answer.
+      log.warn?.(`[pumpfun-api] unparseable body for ${String(mint).slice(0, 12)}…`);
+      return null;
+    }
     if (!j || !j.mintId) return null;
     const startMs = Number(j.streamStartTimestamp);
     return {
