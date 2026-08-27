@@ -517,6 +517,28 @@ try {
   ok('E3. store and auth agree on a case-sensitive mint',
     bstore.handleKey('pumpfun', PF_MINT) === `pumpfun:${PF_MINT}`
     && bstore.handleKey('pumpfun', PF_MINT.toLowerCase()) !== `pumpfun:${PF_MINT}`);
+
+  // E4. `live` DOES NOT MEAN PUBLISHING, and the difference gates payout.
+  // pump.fun's isLive tracks ingress state: a push aborted at the TLS layer
+  // that delivered no frames still flipped it true within seconds, with no
+  // media published. captureBroadcastObservation records this value as
+  // VIEWER-SAMPLE EVIDENCE and stream context is a payout gate, so an
+  // unnarrowed flag lets a stream publishing NOTHING accumulate proof it was
+  // broadcasting. bounty-routes narrows it once, where the quirk is known.
+  const routesSrc = readFileSync('./bounty-routes.js', 'utf8');
+  ok('E4. the pumpfun live looker narrows live to live AND publishing',
+    /live:\s*info\.live\s*&&\s*!!info\.playlistUrl/.test(routesSrc),
+    'hollow-live is not reported as live');
+  ok('E4. ...and "could not ask" still returns null, not offline',
+    /if \(!info\) return null;/.test(routesSrc));
+  // The narrowing must be arithmetic, not wishful: prove both directions.
+  const narrow = (info) => (info ? { ...info, live: info.live && !!info.playlistUrl } : null);
+  ok('E4. live + playlist  -> live',
+    narrow({ live: true, playlistUrl: 'https://x/m.m3u8' }).live === true);
+  ok('E4. live + NO playlist -> NOT live (the measured failure)',
+    narrow({ live: true, playlistUrl: null }).live === false);
+  ok('E4. offline + playlist -> NOT live (a stale directory proves nothing)',
+    narrow({ live: false, playlistUrl: 'https://x/m.m3u8' }).live === false);
 } finally {
   if (browser) await browser.close();
   if (srv) srv.kill();

@@ -35,6 +35,20 @@
  *     signature over a server nonce, which only the human can produce in their
  *     own wallet. But it is the other half of that check, and it is free.
  *
+ * ── `live` DOES NOT MEAN "PUBLISHING". READ `playlistUrl` FOR THAT ──────────
+ * MEASURED 2026-08-27, and it is the sharpest edge on this endpoint: an
+ * ffmpeg push ABORTED AT THE TLS LAYER, which never delivered a single frame,
+ * still flipped `isLive` true within seconds — with no media directory and so
+ * no derivable playlist. This flag tracks INGRESS STATE, not content. Twitch's
+ * Helix and Kick's channels endpoint do not behave this way, so code ported
+ * from either will be wrong here.
+ *
+ * Anything gating on "is the streamer actually broadcasting" — opening an air
+ * session, starting a capture, deciding a session is worth verifying — must
+ * require `playlistUrl`, not `live`. A session opened on the flag alone can
+ * run a whole clip schedule against a stream publishing nothing and verify
+ * 0/5, which reads exactly like a capture bug and is not one.
+ *
  * Still true, and worth keeping in view: this host is not publicly documented.
  * It is a far smaller and more stable surface than the scraped listing — one
  * GET keyed by a mint — but it can change without notice, so treat a shape

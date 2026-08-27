@@ -138,10 +138,26 @@ function liveLookerFor(s) {
     // Keyed by the coin mint, which rides on the session's watchUrl (a mint,
     // a coin page, or a playlist URL all resolve). No credential of ours is
     // involved, so there is nothing to be "configured".
+    //
+    // AND `live` IS NARROWED TO "live AND PUBLISHING" HERE, ONCE.
+    // pump.fun's isLive tracks INGRESS STATE, not content: an ffmpeg push
+    // aborted at the TLS layer, which delivered no frames at all, still
+    // flipped it true within seconds with no media published (measured
+    // 2026-08-27). Every other platform's live flag means media is flowing.
+    //
+    // This matters because the value is recorded as VIEWER-SAMPLE EVIDENCE by
+    // captureBroadcastObservation, and stream context is a gate on payout —
+    // so an unnarrowed flag would let a pump.fun stream publishing NOTHING
+    // accumulate proof that it was broadcasting. Narrowing it at the single
+    // place that knows the platform keeps every consumer honest without each
+    // of them having to learn the quirk.
     return async (_handle, o) => {
       const { extractPumpFunMint } = await import('./frame-sources.js');
       const mint = extractPumpFunMint(s.watchUrl);
-      return mint ? getStreamByMint(mint, o) : null;
+      if (!mint) return null;
+      const info = await getStreamByMint(mint, o);
+      if (!info) return null; // could not ask — still not evidence of anything
+      return { ...info, live: info.live && !!info.playlistUrl };
     };
   }
   return null;

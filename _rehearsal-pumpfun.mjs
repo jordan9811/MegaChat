@@ -251,17 +251,43 @@ try {
     log('--skip-push: go live yourself now with the overlay in your scene.');
   }
 
+  /**
+   * LIVE IS NOT THE SAME AS PUBLISHING, and on pump.fun the gap is real.
+   *
+   * MEASURED 2026-08-27: an ffmpeg push that was aborted at the TLS layer
+   * ("IO error: -10053", "The specified session has been invalidated") and
+   * never delivered a single frame STILL flipped isLive true within seconds,
+   * with no media directory published. pump.fun's isLive tracks ingress state,
+   * not content. Twitch's and Kick's do not behave this way.
+   *
+   * This loop used to accept `live` alone, print "playlist derived: NOT YET",
+   * and carry on — a check that logged a warning instead of acting on it. It
+   * then aired five clips into a stream that was publishing nothing and
+   * verified 0/5, which reads exactly like a capture bug and is not one.
+   *
+   * A playlist is the first moment there is genuinely something to capture, so
+   * that is what is waited for.
+   */
   let live = null;
-  for (let i = 0; i < 24 && !live?.live; i++) {
+  let sawLiveFlag = false;
+  for (let i = 0; i < 24 && !live?.playlistUrl; i++) {
     await sleep(10_000);
     live = await getStreamByMint(MINT, { log: console }).catch(() => null);
-    if (live?.live) {
-      log(`LIVE confirmed by pump.fun — ${live.viewerCount} viewer(s), started ${live.startedAt}`);
-      log(`playlist derived: ${live.playlistUrl ? 'yes (external capture available)' : 'NOT YET'}`);
+    if (live?.live && !sawLiveFlag) {
+      sawLiveFlag = true;
+      log(`pump.fun reports LIVE — ${live.viewerCount} viewer(s), started ${live.startedAt}`);
+      log('waiting for a PUBLISHED playlist: the live flag alone does not mean media is flowing');
+    }
+    if (live?.playlistUrl) {
+      log(`MEDIA CONFIRMED — playlist published, external capture available`);
     }
   }
-  if (!live?.live) {
-    log('pump.fun never reported the stream live. Nothing below would mean anything, so stopping.');
+  if (!live?.playlistUrl) {
+    log(sawLiveFlag
+      ? 'pump.fun reported the stream LIVE but published NO media within 4 minutes. The '
+        + 'encoder never actually delivered frames — check the ffmpeg errors above. Airing '
+        + 'clips into this would verify 0/5 and mean nothing, so stopping.'
+      : 'pump.fun never reported the stream live. Nothing below would mean anything, so stopping.');
     await cleanup();
     process.exit(3);
   }
