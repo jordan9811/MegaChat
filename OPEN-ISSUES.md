@@ -1211,6 +1211,55 @@ Measured, real encoders, 720p: corpus 100%, Twitch 4/5, Kick 5/5 (was 0/5).
   retry to be trustworthy. Until both are fixed, "the suite is green" is a
   claim nobody can actually check in one command.
 
+### From an adversarial review of this run's payment path (18 agents, 14 findings, 11 survived refutation)
+
+FIXED in this run: the too-small-badge silent zero (quality median filtered on
+`counted`, which excluded the very samples it exists to notice), the
+client-supplied air-session `platform` spoof, the pump.fun PDT bypass left on
+`PumpFunFrameSource` after it was deleted from `CaptureFrameSource`, the
+`getStreamByMint(mint, this.log)` options-object bug, and two gate assertions
+that passed for the wrong reason.
+
+STILL OPEN:
+
+- **A1. X is claimable, but its self-capture address is still client-supplied
+  and unbound to the X identity.** (high) `captureSourceUrl` pins the URL only
+  for the literal strings 'twitch' and 'kick'; every other platform falls
+  through to `session.watchUrl`. Deriving `platform` from the claim (done this
+  run) closes the case where a twitch claimant DECLARES another platform, but
+  not the case where an X claimant supplies a watchUrl pointing at a stream
+  they control. Either pin X to a handle-derived URL the way twitch and kick
+  are, or require an ownership proof on the URL itself before capture trusts
+  it. The comment above `captureSourceUrl` still says these platforms "are not
+  claimable yet" — that sentence is now false and is load-bearing.
+
+- **A2. One degraded Privy fetch permanently deletes `platformLogins`.** (high)
+  `privy-identity.js:191`. A single failed or partial account fetch overwrites
+  the stored logins, and those are a streamer's ONLY ownership proof on every
+  STREAMER-tier route — so a transient upstream problem silently revokes access
+  to their own claim, and nothing restores it. Relates to the known
+  SDK-drops-newer-accounts behaviour: the merge must be additive, and an empty
+  or failed fetch must never be written.
+
+- **A3. The `recordVerification` whitelist widening has no test.** (medium)
+  `detectionRate` and the five `timeline*` fields are persisted now, and
+  `detectionRate` is a release gate, but nothing asserts they survive the
+  round-trip. They were silently dropped for months precisely because that
+  destructure is a fixed whitelist with no coverage. Verified by hand against a
+  real session this run; that is not the same as a gate.
+
+- **A4. Gate E4 tests the gate's own copy of the pump.fun live-narrowing.**
+  (low) It re-implements `live && !!playlistUrl` inline and asserts against the
+  re-implementation, so it would still pass if the shipped narrowing were
+  reverted. Same flaw as the first version of the section-F property test,
+  which was fixed by exporting the real function — do the same here.
+
+METHOD NOTE, worth more than any single finding: three of the 14 were REFUTED
+on inspection, including one whose failure scenario was inverted (the fallback
+constant it complained about was protecting that path, not breaking it). The
+refutation pass is what made the other eleven trustworthy. A review that only
+generates findings generates confident wrong ones.
+
 ### Spend
 
 Zero LiveKit minutes (neither rehearsal harness references LiveKit or sets
