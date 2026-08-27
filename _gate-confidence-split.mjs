@@ -322,6 +322,39 @@ ok('E. ...and below what a broadcast proven honest measured (0.6154)',
     countChanged === 0, `${countChanged} windows changed count`);
   ok('F. ...and the shift never moves an instant CLOSER to the window edge',
     worse === 0, `${worse} moved the wrong way (30,022 before the inverted-interval fix)`);
+
+  // ── F2. THE PULL MUST STOP AT codeRotateMs, NOT codeValidityMs ─────────
+  // Found on a REAL Twitch broadcast: a code sitting at its window's own
+  // start got pulled (by the window-edge guard above) to issuedAt+4029ms —
+  // inside codeValidityMs (5000ms, the OCR ACCEPTANCE tolerance) but past
+  // codeRotateMs (4000ms, the SERVER-ENFORCED floor on how long a code stays
+  // current: currentOrRotate() only issues a new one once
+  // `now - last.issuedAt >= codeRotateMs`). The frame at that instant had
+  // already rotated to the NEXT code. All ten samples of that broadcast
+  // missed the same way; the whole session paid nothing.
+  //
+  // Reproduces the exact shape: a code at the window's own start, long
+  // enough that codeValidityMs alone would let the pull reach past
+  // codeRotateMs, with a guard large enough to want to.
+  const edgeWin = {
+    startedAt: 1_700_000_000_000, endsAt: 1_700_000_030_000,
+    clipId: 'C', playbackId: 'P',
+    codes: [{ code: 'X', issuedAt: 1_700_000_000_000, expiresAt: 1_700_000_005_000 }],
+  };
+  const edgePick = sampleInstantsForWindow(edgeWin, 1, 4029)[0];
+  const rotateFloor = edgeWin.codes[0].issuedAt + bountyConfig.codeRotateMs;
+  ok('F2. a code at the window edge is never pulled past its codeRotateMs floor',
+    edgePick.ts <= rotateFloor,
+    `ts=${edgePick.ts}, rotate floor=${rotateFloor}, over by ${edgePick.ts - rotateFloor}ms`);
+  // And the REAL numbers from the broadcast that found this: reconstructed
+  // directly, not simplified, so a regression here reproduces the actual
+  // incident rather than a stylised version of it.
+  const real = { startedAt: 1787801028086, endsAt: 1787801058111, clipId: 'REHEARSAL1', playbackId: 'P',
+    codes: [{ code: '76-4KVR', issuedAt: 1787801028086, expiresAt: 1787801033086 }] };
+  const realPick = sampleInstantsForWindow(real, 1, 4029)[0];
+  ok('F2. the ACTUAL Twitch incident: the sample stays before the real rotation',
+    realPick.ts <= real.codes[0].issuedAt + bountyConfig.codeRotateMs,
+    `ts=${realPick.ts}, would have been 1787801032115 before this fix`);
 }
 
 // ── H. recordVerification ROUND-TRIPS detectionRate + timeline* ─────────

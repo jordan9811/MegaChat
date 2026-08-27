@@ -130,6 +130,26 @@ export class MockCodeChecker extends CodeChecker {
  * keeps the sample count, the evidentiary weight and the arithmetic identical,
  * and only asks for a frame at a moment we can actually land on.
  *
+ * TWO DIFFERENT BOUNDARIES, NOT ONE — found on a real Twitch broadcast whose
+ * badge genuinely rotates the instant `codeRotateMs` (4000ms) elapses, NOT
+ * at the more generous `codeValidityMs` (5000ms) this function used to pull
+ * toward. `currentOrRotate()` in bounty-watermark.js only ISSUES a new code
+ * once `now - last.issuedAt >= codeRotateMs`, so codeRotateMs is a genuine
+ * server-enforced floor on how long a code stays current — but the window-
+ * edge pull below was landing samples up to `codeValidityMs` into a code,
+ * a full second past where the badge had already rotated on screen. Measured
+ * directly on the real VOD: a sample pulled to issuedAt+4029ms decoded the
+ * NEXT code, not the one it was sampling for; all ten samples of the run
+ * missed the same way, and the whole broadcast paid nothing.
+ *
+ *   codeValidityMs — how long a DECODE still counts as correct (generous,
+ *                    tolerance for a late-arriving frame). Governs the FINAL
+ *                    clamp, so a shifted instant is never scored invalid.
+ *   codeRotateMs   — how long the badge is GUARANTEED to still show THIS
+ *                    code (a hard floor, not a tolerance). Governs where the
+ *                    window-edge pull is allowed to land, with a safety
+ *                    margin so normal seek imprecision can't cross it either.
+ *
  * The clamp never leaves the code's own validity: if the window is too tight
  * for the residual to fit, mid-code is still the best instant available and is
  * used unchanged. A residual that wide is a calibration problem, and the
@@ -146,8 +166,18 @@ export function sampleInstantsForWindow(win, perClip, residualMs = 0) {
   for (let i = 0; i < usable.length && picks.length < perClip; i += step) {
     const c = usable[i];
     const from = c.issuedAt;
+    // ACCEPTANCE bound — what the final result must stay inside of, so a
+    // scored sample is never disqualified by this function's own choice.
     const to = Math.min(c.expiresAt, c.issuedAt + bountyConfig.codeValidityMs);
     const mid = Math.floor((from + to) / 2);
+    // TARGETING bound — where it is actually safe to PULL toward. Tighter
+    // than `to` on purpose: codeRotateMs is the real, server-enforced floor,
+    // and calibrationResidualMarginMs (already the margin constant used for
+    // the analogous calibration-search slack) is reserved so ordinary seek
+    // imprecision can't cross it either. Never wider than the acceptance
+    // bound, and never inverted for a code shorter than the margin allows.
+    const targetTo = Math.max(from, Math.min(to,
+      from + Math.max(0, bountyConfig.codeRotateMs - bountyConfig.calibrationResidualMarginMs)));
     // Pull toward the middle of the clip, but never outside THIS code's
     // validity — a shifted instant that no longer has a valid code would be
     // dropped by the caller, which is the denominator change this avoids.
@@ -162,7 +192,7 @@ export function sampleInstantsForWindow(win, perClip, residualMs = 0) {
     // clamp with the guard dropped — always at least as good as no shift.
     const lo = safeFrom <= safeTo ? safeFrom : win.startedAt;
     const hi = safeFrom <= safeTo ? safeTo : win.endsAt;
-    const ts = Math.min(Math.max(mid, Math.min(lo, to)), Math.max(hi, from));
+    const ts = Math.min(Math.max(mid, Math.min(lo, targetTo)), Math.max(hi, from));
     picks.push({
       ts: Math.min(Math.max(ts, from), to),
       clipId: win.clipId, playbackId: win.playbackId,
