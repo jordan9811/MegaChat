@@ -3,6 +3,15 @@ node_modules/
 .env.*
 !.env.example
 *.log
+# The live bounty store: pledges, claims, air sessions, verifications and
+# payouts. Same class of runtime state as its neighbours here, but it was
+# missing from this list, so an empty skeleton created by importing
+# bounty-store.js without DATA_DIR set got committed by accident. Committing it
+# from a real deployment would put payout records into git history.
+data/bounty.json
+data/bounty-evidence.jsonl
+data/bounty-ledger.jsonl
+data/bounty-captures/
 data/rooms.json
 data/identities.json
 tools/
