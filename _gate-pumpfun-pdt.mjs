@@ -401,8 +401,19 @@ try {
   const extHits = segments.filter((s) => s.ext).reduce((a, s) => a + (s.hits || 0), 0);
   ok('D. ...having downloaded exactly ONE segment of the append-only history',
     extHits === 1, `${extHits} segment fetch(es) across ${segments.filter((s) => s.ext).length} listed`);
-  ok('D. ...and the source reports its wall clock for the calibration bypass',
-    src.wallClockSkew()?.skewMs === 0, JSON.stringify(src.wallClockSkew()));
+  // NO BYPASS, AND THE ORDERING IS THE POINT. This asserted
+  // `wallClockSkew()?.skewMs === 0` — and passed only because it ran AFTER a
+  // getFrames call had populated _segments. Production asks the opposite way
+  // round: calibrateTimeline consults wallClockSkew() BEFORE any frame is
+  // grabbed, when _segments is still null, so the bypass could never fire and
+  // `calibratable: false` sent pump.fun to a fallback holding a TWITCH VOD
+  // constant. A gate whose ordering differs from production's proves nothing
+  // about production.
+  ok('D. the source is CALIBRATABLE, so a Twitch constant can never be its seek',
+    src.calibratable === true, `calibratable=${src.calibratable}`);
+  ok('D. ...and it never claims a solved timeline, even fully warmed',
+    src.wallClockSkew() === null,
+    'PDT anchors the seek; the broadcast delay on top of it is still measured');
 
   // DISCOVERY IS SOLVED — a coin page or a bare mint now resolves to a real
   // playlist through livestream-api.pump.fun, so the old blanket refusal is

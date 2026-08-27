@@ -472,19 +472,39 @@ export class PumpFunFrameSource extends FrameSource {
     // .m3u8. See pumpfun-api.js for the measurement behind that.
     this.mint = mint;
     this.fetchImpl = fetchImpl;
-    this.calibratable = false; // wallClockSkew supersedes probing entirely
+    /**
+     * CALIBRATED, like every other seeking source. This read `false` with the
+     * comment "wallClockSkew supersedes probing entirely" — the same bypass
+     * that was deleted from CaptureFrameSource after it cost three real Kick
+     * broadcasts, left behind here because that fix was applied to one source
+     * and not to its sibling.
+     *
+     * It failed worse here than it did there. wallClockSkew() cannot answer
+     * until `_segments` is populated, and `_segments` is only populated by
+     * loadPlaylist() inside getFrames() — but calibrateTimeline consults
+     * wallClockSkew() BEFORE any frame is grabbed. So it always returned null,
+     * `calibratable: false` sent it to the fallback, and the fallback hands
+     * back vodTimelineSkewMs: a constant measured on TWITCH VODs, injected as
+     * pump.fun's seek offset. Every sample then lands 16s from where the code
+     * was, verifiedClips is 0, and the verdict is FAIL — which names no review
+     * cause, so the streamer is paid zero and no human is told.
+     */
+    this.calibratable = true;
     this._segments = null;     // parsed once per verification
   }
 
+  /**
+   * NULL ON PURPOSE — a PDT stamp is an ANCHOR, not an answer.
+   *
+   * This returned {skewMs: 0}. PROGRAM-DATE-TIME records when a segment was
+   * PACKAGED, and the overlay rendered its code one broadcast delay earlier,
+   * so a code issued at T lands in a segment stamped T + D. Measured at 12.1s
+   * on Kick. Keeping PDT as the seek anchor is a real gain — it removes the
+   * frozenAt/duration estimate error — but D still has to be measured, which
+   * is what `calibratable: true` above now allows.
+   */
   wallClockSkew() {
-    // Only claim the bypass once the playlist has actually shown its stamps.
-    if (!this._segments?.length) return null;
-    if (!this._segments.every((x) => Number.isFinite(x.pdtMs))) return null;
-    return {
-      skewMs: 0,
-      residualMs: 4_000,
-      detail: `PROGRAM-DATE-TIME on all ${this._segments.length} listed segment(s)`,
-    };
+    return null;
   }
 
   async loadPlaylist() {
@@ -500,7 +520,10 @@ export class PumpFunFrameSource extends FrameSource {
           'pump.fun verification needs the coin mint (or a clips.pump.fun playlist URL)');
       }
       const { getStreamByMint } = await import('./pumpfun-api.js');
-      const info = await getStreamByMint(mint, this.log);
+      // getStreamByMint's second parameter is an OPTIONS object, `{ log }`.
+      // Passing the logger itself destructured to `this.log.log`, so every
+      // 'could not ask' warning from that module was silently dropped.
+      const info = await getStreamByMint(mint, { log: this.log });
       if (!info) {
         throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE,
           `pump.fun livestream api could not be asked about ${String(mint).slice(0, 12)}…`);
