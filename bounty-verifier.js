@@ -135,7 +135,7 @@ export class MockCodeChecker extends CodeChecker {
  * used unchanged. A residual that wide is a calibration problem, and the
  * calibration states are where it belongs — not smuggled in here.
  */
-function sampleInstantsForWindow(win, perClip, residualMs = 0) {
+export function sampleInstantsForWindow(win, perClip, residualMs = 0) {
   const usable = win.codes.filter((c) => c.expiresAt > c.issuedAt);
   if (usable.length === 0) return [];
   const guard = Math.max(0, Number(residualMs) || 0);
@@ -151,7 +151,18 @@ function sampleInstantsForWindow(win, perClip, residualMs = 0) {
     // Pull toward the middle of the clip, but never outside THIS code's
     // validity — a shifted instant that no longer has a valid code would be
     // dropped by the caller, which is the denominator change this avoids.
-    const ts = Math.min(Math.max(mid, Math.min(safeFrom, to)), Math.max(safeTo, from));
+    //
+    // AN INVERTED SAFE INTERVAL MEANS THE GUARD DOES NOT FIT, NOT THAT THERE
+    // IS NOTHING TO DO. When the residual is at least half the window,
+    // safeFrom runs past safeTo and the expression below starts pulling toward
+    // an EDGE. Two property-test rounds over generated windows pinned this
+    // down: giving up and returning mid-code fixed 30,022 wrong-way cases and
+    // left 10,115, because mid-code can itself sit OUTSIDE the window while a
+    // guardless clamp would have pulled it in. So the fallback is the same
+    // clamp with the guard dropped — always at least as good as no shift.
+    const lo = safeFrom <= safeTo ? safeFrom : win.startedAt;
+    const hi = safeFrom <= safeTo ? safeTo : win.endsAt;
+    const ts = Math.min(Math.max(mid, Math.min(lo, to)), Math.max(hi, from));
     picks.push({
       ts: Math.min(Math.max(ts, from), to),
       clipId: win.clipId, playbackId: win.playbackId,

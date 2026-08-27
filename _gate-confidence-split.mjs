@@ -217,5 +217,74 @@ ok('E. the detection floor is above the broken-timeline fixture (0.50)',
 ok('E. ...and below what a broadcast proven honest measured (0.6154)',
   bountyConfig.minDetectionRate < 0.6154, `floor=${bountyConfig.minDetectionRate}`);
 
+// ── F. THE SAMPLE-INSTANT CLAMP, PROPERTY-TESTED ─────────────────────────
+// sampleInstantsForWindow shifts each instant away from the window edge by the
+// calibration residual. detectionRate's DENOMINATOR is checks.length, so if a
+// shift could push an instant outside its code's validity the caller would
+// drop that sample and the denominator would silently shrink — letting a gated
+// measurement choose its own denominator, which is a fraud surface.
+//
+// This calls the SHIPPED function, not a copy. A gate that re-implements the
+// logic it tests proves only that the author can write the same expression
+// twice, and the first version of this test did exactly that.
+//
+// It found a real bug. When the residual is at least half the window, safeFrom
+// runs past safeTo, the "safe" interval INVERTS, and every pull-toward-middle
+// expression starts pulling toward an EDGE instead: 30,022 of 200,000
+// generated cases moved the sample closer to the boundary than mid-code
+// already was — the exact opposite of the change's purpose.
+{
+  const { sampleInstantsForWindow } = await import('./bounty-verifier.js');
+  let seed = 20260827;                    // deterministic, so a failure repeats
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const ri = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
+  // Positive = inside the window by that much; negative = outside by that much.
+  // Written longhand: a min-of-two-differences version reported a point 1994ms
+  // OUTSIDE the window as 50869ms deep inside it.
+  const depth = (t, w) => {
+    if (t < w.startedAt) return -(w.startedAt - t);
+    if (t > w.endsAt) return -(t - w.endsAt);
+    return Math.min(t - w.startedAt, w.endsAt - t);
+  };
+  const validSpans = (w) => w.codes
+    .filter((c) => c.expiresAt > c.issuedAt)
+    .map((c) => [c.issuedAt, Math.min(c.expiresAt, c.issuedAt + bountyConfig.codeValidityMs)]);
+
+  let escaped = 0, worse = 0, countChanged = 0, instants = 0;
+  for (let i = 0; i < 20_000; i += 1) {
+    const startedAt = ri(1_600_000_000_000, 1_800_000_000_000);
+    const durMs = ri(1_000, 120_000);
+    const codes = [];
+    for (let k = 0; k < ri(1, 6); k += 1) {
+      const issuedAt = startedAt + ri(-10_000, durMs + 10_000);
+      codes.push({ code: `C${k}`, issuedAt, expiresAt: issuedAt + ri(1, 20_000) });
+    }
+    const win = { startedAt, endsAt: startedAt + durMs, codes, clipId: 'C', playbackId: 'P' };
+    const perClip = ri(1, 6);
+    const guard = ri(0, 60_000);
+    const shifted = sampleInstantsForWindow(win, perClip, guard);
+    const baseline = sampleInstantsForWindow(win, perClip, 0);
+
+    // The residual must never change HOW MANY samples a window yields.
+    if (shifted.length !== baseline.length) countChanged += 1;
+
+    const spans = validSpans(win);
+    for (let j = 0; j < shifted.length; j += 1) {
+      instants += 1;
+      const t = shifted[j].ts;
+      // Containment, rather than re-deriving which code index this pick came
+      // from: if no valid code covers the instant, the caller drops it.
+      if (!Number.isFinite(t) || !spans.some(([a, b]) => t >= a && t <= b)) escaped += 1;
+      if (baseline[j] && depth(t, win) < depth(baseline[j].ts, win) - 1) worse += 1;
+    }
+  }
+  ok('F. a shifted instant is ALWAYS covered by a valid code (denominator integrity)',
+    escaped === 0, `${escaped} escapes across ${instants} instants`);
+  ok('F. ...and the residual never changes how many samples a window yields',
+    countChanged === 0, `${countChanged} windows changed count`);
+  ok('F. ...and the shift never moves an instant CLOSER to the window edge',
+    worse === 0, `${worse} moved the wrong way (30,022 before the inverted-interval fix)`);
+}
+
 console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);
