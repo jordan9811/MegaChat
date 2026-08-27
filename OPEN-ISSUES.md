@@ -1145,6 +1145,26 @@ Measured, real encoders, 720p: corpus 100%, Twitch 4/5, Kick 5/5 (was 0/5).
   — altering a payment-critical tolerance on statistical reasoning without
   measurement is what produced three of this run's bugs. Now measurable:
   `timelineSpreadMs` and `timelineResidualMs` persist on every record.
+- **R4a. pump.fun ingest is a LIVEKIT INGRESS and appears SESSION-SCOPED.**
+  The URL is `rtmps://pump-prod-<id>.rtmp.livekit.cloud/x` + key. Pushing to it
+  after the operator's own stream had ended failed at the TLS layer —
+  `IO error: -10053` (WSAECONNABORTED) and *"The specified session has been
+  invalidated for some reason."* The same credentials had worked minutes
+  earlier while the operator was live. NOT PROVEN, but the leading explanation
+  is that pump.fun provisions a LiveKit ingress when the creator clicks "go
+  live" and tears it down when the stream ends — unlike Twitch and Kick, where
+  a stream key is persistent and reusable indefinitely. If so, **unattended
+  broadcasting is not possible on pump.fun**: someone must mint an ingress and
+  the run has to happen inside that window, or `--skip-push` must be used with
+  the operator live. Confirm by capturing a fresh key immediately before a run.
+- **R4b. pump.fun reports `isLive: true` for a stream publishing NOTHING.**
+  RESOLVED in code, filed here because it is a platform fact worth knowing.
+  The aborted push above still flipped `isLive` true within seconds, with no
+  media directory and no derivable playlist — the flag tracks INGRESS STATE,
+  not content. `liveLookerFor` now narrows it to `live && !!playlistUrl` at the
+  single point that knows the quirk, because `captureBroadcastObservation`
+  records the flag as viewer-sample evidence and stream context gates payout.
+  Gate E4 covers both directions.
 - **R4. pump.fun is blocked on ingest only.** Discovery is SOLVED —
   `livestream-api.pump.fun/livestream?mintId=<mint>` returns live status,
   viewers, start, creator wallet and the derivable HLS master, unauthenticated.
