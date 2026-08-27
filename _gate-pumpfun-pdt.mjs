@@ -56,6 +56,17 @@ import path from 'path';
 import puppeteer from 'puppeteer-core';
 import { startGateServer } from './_gate-helpers.mjs';
 
+/**
+ * A pump.fun identity is a SOLANA MINT, so the fixture is one. This gate used
+ * a friendly name ('pfstreamer'), which stopped resolving the moment
+ * bounty-store learned that a pumpfun handle is 32-44 characters of
+ * case-sensitive base58 -- the gate caught that regression itself, which is
+ * the whole reason it is worth exercising the real identity shape here rather
+ * than a convenient stand-in. Synthetic, and deliberately not a real coin; no
+ * network is touched either way (the API base points at a stub).
+ */
+const PF_MINT = 'zzzGATEMintForTestingNotAGenuineCoinAddrpump';
+
 let pass = 0, fail = 0;
 const ok = (n, c, x = '') => {
   if (c) { pass++; console.log(`  PASS  ${n}${x ? ' — ' + x : ''}`); }
@@ -191,7 +202,7 @@ try {
   // ── C. end-to-end: capture + freeze + verify off ONE clip, zero grabs ───
   srv = await startGateServer({
     port: APP_PORT, label: 'pumpfun-pdt',
-    bountyAuth: { handles: ['pumpfun:pfstreamer'] },
+    bountyAuth: { handles: [`pumpfun:${PF_MINT}`] },
     env: {
       BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
       TWITCH_CLIENT_ID: '', TWITCH_CLIENT_SECRET: '', KICK_CLIENT_ID: '', KICK_CLIENT_SECRET: '',
@@ -222,7 +233,7 @@ try {
   published = segments.length;
 
   const pl = await post('/api/bounty/pledge', {
-    targets: [{ platform: 'pumpfun', handle: 'pfstreamer' }],
+    targets: [{ platform: 'pumpfun', handle: PF_MINT }],
     contributor: '0xpf', amount: '40', expiresInMs: 86_400_000,
   });
   await fetch(`${APP}${pl.body.uploadUrl}?durationS=8`, {
@@ -230,11 +241,11 @@ try {
     body: Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(2048, 5)]),
   });
   const claim = await post('/api/bounty/claim',
-    { platform: 'pumpfun', handle: 'pfstreamer', claimant: 'pf' }, 'pumpfun:pfstreamer');
+    { platform: 'pumpfun', handle: PF_MINT, claimant: 'pf' }, `pumpfun:${PF_MINT}`);
   const air = await post('/api/bounty/air-session', {
     claimId: claim.body.claim.id, platform: 'pumpfun', roomId: 'pfroom',
     watchUrl: `http://localhost:${HLS}/live.m3u8`,
-  }, 'pumpfun:pfstreamer');
+  }, `pumpfun:${PF_MINT}`);
   const airId = air.body.airSession.id;
   ok('C. a pumpfun air session opens with the playlist as its watch URL',
     air.status === 200, `HTTP ${air.status}`);
@@ -314,8 +325,8 @@ try {
     && segments.slice(0, backlog).every((x) => (x.hits || 0) <= 1),
     `deep=${deepHits} tail=${tailHits}, no refetches`);
 
-  await post(`/api/bounty/air-session/${airId}/end`, {}, 'pumpfun:pfstreamer');
-  const v = await post(`/api/bounty/air-session/${airId}/verify`, { mode: 'real' }, 'pumpfun:pfstreamer');
+  await post(`/api/bounty/air-session/${airId}/end`, {}, `pumpfun:${PF_MINT}`);
+  const v = await post(`/api/bounty/air-session/${airId}/verify`, { mode: 'real' }, `pumpfun:${PF_MINT}`);
   // ONE clip can no longer verify, and that is now the CORRECT outcome rather
   // than a regression. Calibration needs calibrationMinPoints (3) agreeing
   // points and gets one probe target per playback window, so a single-clip
@@ -378,7 +389,7 @@ try {
     watchUrl: `http://localhost:${HLS}${masterPath}`, log: { warn() {} },
   });
   const want = extBase + 21_000; // 21s into the clock
-  const frames = await src.getFrames('pumpfun', 'pfstreamer', [{ ts: want }], { skewMs: 0 });
+  const frames = await src.getFrames('pumpfun', PF_MINT, [{ ts: want }], { skewMs: 0 });
   const raw = path.join(WORK, 'ext-check.gray');
   ff(['-i', frames[0].ref, '-vf', 'crop=64:64:128:28,format=gray', '-f', 'rawvideo', raw], 'check');
   const bytes = readFileSync(raw);
@@ -413,6 +424,99 @@ try {
   ok('D. a mint-less watch URL is a TYPED refusal naming what is missing',
     refusal?.state === 'API_UNAVAILABLE' && /mint/i.test(refusal?.detail || ''),
     `${refusal?.state}: ${String(refusal?.detail).slice(0, 60)}`);
+
+  // ── E. IDENTITY AND STATUS SHAPES, all three found by broadcasting ──────
+  // None of these live in the capture or verification logic. They are
+  // assumptions about what a handle IS and how "offline" ARRIVES, and each
+  // one silently produced a wrong answer rather than an error.
+
+  // E1. Offline is an EMPTY 200 -- not a 404, not isLive:false. Calling
+  // .json() on it throws, which used to collapse "nobody is streaming" into
+  // "we could not reach the API". Those must stay different facts: a payout
+  // path reading null as offline would treat an outage as proof of absence.
+  const shapeSrv = http.createServer((req, res) => {
+    if (/empty/.test(req.url)) { res.writeHead(200); return res.end(); }
+    if (/garbage/.test(req.url)) { res.writeHead(200); return res.end('<html>nope'); }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      mintId: 'MINT', isLive: true, numParticipants: 3, streamStartTimestamp: 1,
+      thumbnail: 'https://clips.pump.fun/MINT/77_20260827_004632/thumb.jpg',
+      creatorAddress: 'CREATOR', id: 77,
+    }));
+  });
+  await new Promise((r) => shapeSrv.listen(0, r));
+  const shapePort = shapeSrv.address().port;
+  const { getStreamByMint } = await import('./pumpfun-api.js');
+  const askAt = async (pathish) => {
+    process.env.PUMPFUN_API_BASE = `http://127.0.0.1:${shapePort}/${pathish}`;
+    return getStreamByMint('MINT', { log: { warn() {} } });
+  };
+  try {
+    const empty = await askAt('empty');
+    ok('E1. an EMPTY 200 body means OFFLINE, not "could not ask"',
+      empty !== null && empty.live === false,
+      empty === null ? 'returned null — the bug' : `live=${empty.live}`);
+    ok('E1. ...and offline carries no stale stream details',
+      empty?.playlistUrl === null && empty?.streamId === null && empty?.viewerCount === 0);
+    const garbage = await askAt('garbage');
+    ok('E1. a NON-empty body we cannot parse is null — a shape change, not an answer',
+      garbage === null, JSON.stringify(garbage));
+    const good = await askAt('ok');
+    ok('E1. ...and a real payload still parses, playlist derived from thumbnail',
+      good?.live === true && /master_playlist_20260827_004632\.m3u8$/.test(good?.playlistUrl || ''),
+      good?.playlistUrl);
+  } finally {
+    delete process.env.PUMPFUN_API_BASE;
+    await new Promise((r) => shapeSrv.close(r));
+  }
+
+  // E2. A pump.fun identity is a 44-char CASE-SENSITIVE base58 mint. The
+  // store lowercased every handle and capped at 40, so the key came back null
+  // and the pledge 400'd -- and reserveHandle lowercased the STORED handle
+  // too, leaving no route back to the real address.
+  const bstore = await import('./bounty-store.js');
+  const MINT58 = 'GnBQjwQibzB9zFPHEGEhoiASon7JfaRADxQe6C64pump';
+  ok('E2. a 44-char mint produces a key at all (was null: over the 40 cap)',
+    bstore.handleKey('pumpfun', MINT58) === `pumpfun:${MINT58}`);
+  ok('E2. ...with its CASE INTACT — lowercasing base58 destroys the address',
+    bstore.handleKey('pumpfun', MINT58).endsWith(MINT58));
+  ok('E2. ...so two casings are two DIFFERENT coins, never one pool',
+    bstore.handleKey('pumpfun', MINT58) !== bstore.handleKey('pumpfun', MINT58.toLowerCase()));
+  ok('E2. ...and a non-base58 string is refused (0, O, I, l are excluded)',
+    bstore.handleKey('pumpfun', '0'.repeat(40)) === null
+    && bstore.handleKey('pumpfun', 'abc') === null);
+  // The username rule is CORRECT and must not have moved: Foo and foo are one
+  // streamer and must share one pool.
+  ok('E2. usernames still case-fold, still cap at 40, still strip a leading @',
+    bstore.handleKey('twitch', 'JordanDotFun') === 'twitch:jordandotfun'
+    && bstore.handleKey('kick', '@jordandotfun') === 'kick:jordandotfun'
+    && bstore.handleKey('twitch', 'a'.repeat(41)) === null
+    && bstore.handleKey('twitch', 'a'.repeat(40)) === 'twitch:' + 'a'.repeat(40));
+  const rec = bstore.reserveHandle({ platform: 'pumpfun', handle: MINT58, ttlMs: 864e5 });
+  ok('E2. the STORED handle round-trips to the real mint',
+    rec.handle === MINT58, rec.handle);
+
+  // E3. Auth used to re-implement the store's case rule (login.toLowerCase()
+  // vs the key's handle half). The moment the store learned mints are
+  // case-sensitive the two disagreed and the GENUINE OWNER got a 403 on their
+  // own air session. One function must decide what sameness means.
+  //
+  // THE END-TO-END PROOF IS SECTION C, not a unit test here: that section's
+  // air-session call goes through the real authorize() middleware with a mint
+  // handle, and a 200 is only reachable if identityOwnsHandle said yes. Faking
+  // a sealed identity cookie in-process would test a weaker thing less well.
+  // What is asserted here is the property that made them drift — that auth
+  // derives sameness from the store rather than re-deriving it.
+  const authSrc = readFileSync('./bounty-auth.js', 'utf8');
+  ok('E3. auth no longer re-implements the case rule with toLowerCase()',
+    !/login\.toLowerCase\(\)\s*===\s*handle/.test(authSrc),
+    'the duplicated rule is gone');
+  ok('E3. ...it normalises through the store, so one function owns sameness',
+    /store\.handleKey\(platform,\s*login\)\s*===\s*handleKey/.test(authSrc));
+  // And the two sides genuinely agree on a mint, which is what drifted.
+  ok('E3. store and auth agree on a case-sensitive mint',
+    bstore.handleKey('pumpfun', PF_MINT) === `pumpfun:${PF_MINT}`
+    && bstore.handleKey('pumpfun', PF_MINT.toLowerCase()) !== `pumpfun:${PF_MINT}`);
 } finally {
   if (browser) await browser.close();
   if (srv) srv.kill();
