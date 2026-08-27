@@ -1,0 +1,2 @@
+file 'shotA-couch-yank-v1.mp4'
+file 'shotB-inside-stream-v1.mp4'

@@ -1260,6 +1260,33 @@ constant it complained about was protecting that path, not breaking it). The
 refutation pass is what made the other eleven trustworthy. A review that only
 generates findings generates confident wrong ones.
 
+### From the "golden loop" retest (2026-08-27), Kick run #5
+
+FIXED: the field-loss regression on `recordVerification` came back (see the
+commit "bounty-store: the field-loss regression came back, caught by a live
+Kick retest"). Now backed by a round-trip gate (`_gate-confidence-split.mjs`
+section H) that was proven, not assumed, to catch it — run against the broken
+code it fails 5/5.
+
+NEW EVIDENCE for R1 (calibration residual near codeValidityMs), not a new
+issue: this run's calibration came back DISAGREEMENT, not MEASURED. Five
+estimates: 6.9s, 15.3s, 19.4s, 6.9s, 15.4s. The median clusters {15.3, 15.4}
+as inliers (2 points, need 3); {6.9, 6.9} sit ~8.4s away — almost exactly TWO
+code rotations (`codeRotateMs` x 2 = 8.0s), the signature of a probe decoding
+a neighbouring rotation's code near a boundary. 19.4s missed the inlier
+tolerance by 100ms. This is the majority-cluster safety mechanism working
+AS DESIGNED — it correctly refused to call the timeline measured and opened a
+review rather than risk a bad payout — but it is the SECOND real broadcast
+(after run #4's tight residual margin) suggesting Kick calibration sits close
+to a reliability boundary. Worth tracking as an operational question (how
+often does an honest Kick streamer get routed to manual review?) — not a
+correctness bug, and not something to guess a fix for on two data points.
+
+Otherwise CONFIRMED GOOD on a fresh broadcast, against every payment-path
+commit made tonight after run #4: result PASS, verifiedClips 5/5, confidence
+0.857 (matches the 0.843 offline replay within real-capture variance),
+self-capture froze 5/5 windows.
+
 ### Spend
 
 Zero LiveKit minutes (neither rehearsal harness references LiveKit or sets
