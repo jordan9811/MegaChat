@@ -1183,6 +1183,34 @@ Measured, real encoders, 720p: corpus 100%, Twitch 4/5, Kick 5/5 (was 0/5).
 - **R8. obs-websocket untested against real OBS** — needs the operator present
   with OBS running and the harness run with `--skip-push`.
 
+### Found by a full-suite sweep, NOT caused by this run
+
+- **T1. `_gate-theme` is RED: dark mode renders a WHITE background.**
+  `GATE FAIL (3)` — `dark/landing`, `dark/dashboard` and `dark/join` all
+  measure background luminance 1.00, i.e. pure white, where dark is expected.
+  Light mode passes and text contrast passes; it is specifically the dark
+  background that is not applying.
+  NOT FROM THIS RUN: no CSS or theme file changed in the 18 hours of this
+  session, and only one commit in the whole reviewed range touched `web/` at
+  all (`0e6071b`, earlier work). The gate was last edited by `5202c93`
+  ("part 4: light mode fix"), so dark mode broke sometime after that and
+  nothing surfaced it.
+  Clearing `web/.next` (the known stale-Turbopack-cache remedy for this repo)
+  does NOT fix it, so it is not a cache artifact. Left unfixed deliberately —
+  it is a front-end bug well outside a broadcast-testing run, and it deserves
+  its own look rather than a late-night guess at someone else's CSS.
+
+- **T2. The gate suite has no single runnable entry point, and that hid T1.**
+  Gates report in at least four different formats — `RESULT: N pass, M fail`,
+  a bare `GATE PASS`, `GATE FAIL (n)`, `PART B GATE FAILED (n)`, and
+  `Phase 2 token gate PASSED` — so any grep-based sweep silently misclassifies
+  a large fraction. A sweep of all 55 gates classified only 28. Several others
+  crashed with `ECONNRESET` / `fetch failed` purely from running server-starting
+  gates back to back, and pass individually (`_gate-self-capture` 22/0,
+  `_gate-run-b-pipeline` 12/0 on retry), so a sweep also needs isolation or
+  retry to be trustworthy. Until both are fixed, "the suite is green" is a
+  claim nobody can actually check in one command.
+
 ### Spend
 
 Zero LiveKit minutes (neither rehearsal harness references LiveKit or sets

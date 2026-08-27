@@ -498,9 +498,6 @@ export function recordVerification({
   airSessionId, checker, evidenceRef, result, confidence, verifiedMinutes,
   verifiedClips = 0, verifiedClipSeconds = 0,
   belowQualityFloorClips = 0, smallestBadgePx = null, samplingDensity = null,
-  detectionRate = null,
-  timelineSkewMs = null, timelineState = null, timelineSpreadMs = null,
-  timelineResidualMs = null, timelineFellBack = null,
 }) {
   const store = load();
   const rec = {
@@ -527,19 +524,6 @@ export function recordVerification({
     // explain its own outcome. It was dropped here silently the moment it was
     // added, because this destructure is a fixed whitelist and a field absent
     // from it fails by simply not appearing.
-    detectionRate,
-    // HOW THE TIMELINE WAS ESTABLISHED. The verifier has always passed these
-    // five and this whitelist has always dropped them, so a payout computed
-    // from a MEASURED seek carried no trace of the measurement — and one that
-    // fell back to the documented constant was indistinguishable from it. That
-    // difference is exactly what a reviewer needs when a streamer disputes a
-    // short payment, and it is what tells us whether a bad run was a bad
-    // broadcast or a bad calibration.
-    timelineSkewMs,
-    timelineState,
-    timelineSpreadMs,
-    timelineResidualMs,
-    timelineFellBack,
     checkedAt: Date.now(),
   };
   store.verifications[rec.id] = rec;
