@@ -324,5 +324,61 @@ ok('E. ...and below what a broadcast proven honest measured (0.6154)',
     worse === 0, `${worse} moved the wrong way (30,022 before the inverted-interval fix)`);
 }
 
+// ── H. recordVerification ROUND-TRIPS detectionRate + timeline* ─────────
+// This is the field-loss bug repeating: bounty-store.recordVerification's
+// destructure is a FIXED WHITELIST, and a field absent from it fails by
+// simply not appearing — no error, no warning, just a persisted record that
+// cannot explain its own outcome.
+//
+// It happened TWICE. First silently, for months, on five timeline fields.
+// Fixed once. Then a LATER commit whose message claimed to touch only
+// OPEN-ISSUES.md deleted the fix again, unreviewed, and it stayed deleted
+// until a fresh live Kick broadcast verified PASS at confidence 0.857 and
+// then paid nothing — a calibration DISAGREEMENT had opened a review, and
+// the persisted record carried none of the evidence that would explain why.
+//
+// This gate exists so the THIRD time is loud. It calls the shipped function
+// directly — no HTTP, no server — so there is nowhere for a silent drop to
+// hide.
+{
+  const store = await import('./bounty-store.js');
+  const rec = store.recordVerification({
+    airSessionId: 'gate-h-session', checker: 'GateH', evidenceRef: null,
+    result: 'PASS', confidence: 0.857, verifiedMinutes: 2.5,
+    verifiedClips: 5, verifiedClipSeconds: 150,
+    detectionRate: 0.769,
+    timelineSkewMs: 6569, timelineState: 'MEASURED', timelineSpreadMs: 2521,
+    timelineResidualMs: 6521, timelineFellBack: false,
+  });
+  ok('H. detectionRate survives the round-trip',
+    rec.detectionRate === 0.769, `got ${rec.detectionRate}`);
+  ok('H. timelineState survives the round-trip',
+    rec.timelineState === 'MEASURED', `got ${rec.timelineState}`);
+  ok('H. timelineSkewMs, Spread, Residual, FellBack all survive',
+    rec.timelineSkewMs === 6569 && rec.timelineSpreadMs === 2521
+    && rec.timelineResidualMs === 6521 && rec.timelineFellBack === false,
+    JSON.stringify({
+      s: rec.timelineSkewMs, sp: rec.timelineSpreadMs,
+      r: rec.timelineResidualMs, f: rec.timelineFellBack,
+    }));
+  // The failure mode is a field going missing from the OBJECT, which
+  // `=== undefined` catches even when a lazier truthiness check would not
+  // (false and 0 are legitimate values here, not absence).
+  ok('H. none of the six fields is simply ABSENT from the record',
+    ['detectionRate', 'timelineSkewMs', 'timelineState', 'timelineSpreadMs',
+      'timelineResidualMs', 'timelineFellBack'].every((k) => rec[k] !== undefined
+      && Object.prototype.hasOwnProperty.call(rec, k)),
+    JSON.stringify(Object.keys(rec)));
+  // And a caller that omits them entirely must not crash — they are
+  // optional evidence, not a required contract (fixture-driven gates never
+  // supply them).
+  const bare = store.recordVerification({
+    airSessionId: 'gate-h-bare', checker: 'GateH', evidenceRef: null,
+    result: 'FAIL', confidence: 0, verifiedMinutes: 0,
+  });
+  ok('H. omitting the fields entirely does not throw, and they default to null',
+    bare.detectionRate === null && bare.timelineState === null);
+}
+
 console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

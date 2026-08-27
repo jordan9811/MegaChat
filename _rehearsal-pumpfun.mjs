@@ -254,7 +254,7 @@ try {
     // is the ONLY path on a platform whose ingest key dies with the session,
     // so it has to be genuinely usable rather than nominally supported.
     const overlayUrl = `${APP}/overlay?room=pfrehearsal&bounty=${encodeURIComponent(airId)}`;
-    BROKEN1
+    console.log(''); console.log('='.repeat(72));
     console.log('  ADD THIS AS A BROWSER SOURCE IN OBS, THEN GO LIVE:');
     console.log('');
     console.log('    ' + overlayUrl);

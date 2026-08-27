@@ -498,6 +498,9 @@ export function recordVerification({
   airSessionId, checker, evidenceRef, result, confidence, verifiedMinutes,
   verifiedClips = 0, verifiedClipSeconds = 0,
   belowQualityFloorClips = 0, smallestBadgePx = null, samplingDensity = null,
+  detectionRate = null,
+  timelineSkewMs = null, timelineState = null, timelineSpreadMs = null,
+  timelineResidualMs = null, timelineFellBack = null,
 }) {
   const store = load();
   const rec = {
@@ -524,6 +527,24 @@ export function recordVerification({
     // explain its own outcome. It was dropped here silently the moment it was
     // added, because this destructure is a fixed whitelist and a field absent
     // from it fails by simply not appearing.
+    //
+    // RESTORED 2026-08-27 after a SECOND silent drop. This block existed,
+    // committed, proven — and then a LATER commit (b4638ff, whose message
+    // claimed to touch only OPEN-ISSUES.md) deleted it without that diff ever
+    // being reviewed. Caught by a fresh live Kick broadcast that verified PASS
+    // with confidence 0.857 and then showed release(stub): 0 of 25 — a
+    // MEASURED calibration DISAGREEMENT had opened a review, and the
+    // verification record carried none of the timeline evidence that would
+    // explain why to a reviewer, because this exact code was gone again. Gate
+    // coverage (_gate-record-flow.mjs section on round-tripping these fields)
+    // now exists specifically so a future silent drop fails loudly instead of
+    // waiting for someone to notice a payout that didn't happen.
+    detectionRate,
+    timelineSkewMs,
+    timelineState,
+    timelineSpreadMs,
+    timelineResidualMs,
+    timelineFellBack,
     checkedAt: Date.now(),
   };
   store.verifications[rec.id] = rec;
