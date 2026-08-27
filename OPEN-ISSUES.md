@@ -1287,6 +1287,79 @@ commit made tonight after run #4: result PASS, verifiedClips 5/5, confidence
 0.857 (matches the 0.843 offline replay within real-capture variance),
 self-capture froze 5/5 windows.
 
+### From the "golden loop" retest, Twitch run #2 (2026-08-27) -- NOT GOLDEN YET
+
+A fresh Twitch broadcast (VOD 2857568019), the first real test of the
+confidence/detectionRate split and sample clamp on this platform: **FAIL**,
+verifiedClips 0, confidence 0. Nine of ten samples read a real, legible 28px
+badge that matched no expected code -- the signature of a genuine seek
+problem, not noise. Diagnosed by pulling real frames off the actual VOD at a
+spread of offsets and reading them directly (fine-grained sweeps, then
+visually confirmed the rendered badge text), not by theorizing.
+
+**T5a. FIXED — the clamp pulled past the real rotation floor.** See the commit
+"verifier: the sample clamp pulled past the real rotation floor, not just the
+window edge". `sampleInstantsForWindow` was pulling window-edge samples up to
+`codeValidityMs` (5000ms, OCR acceptance tolerance) into a code, but
+`currentOrRotate()` only guarantees a code stays current for `codeRotateMs`
+(4000ms) -- a full second tighter. Fixed: the pull is now capped at
+`codeRotateMs - calibrationResidualMarginMs`; `codeValidityMs` still governs
+final acceptance. Validated against the real VOD offline: every FIRST code of
+a window now decodes correctly (3/3, was 0/3).
+
+**T5b. NOT FIXED — every SECOND code of a window still misses (3/3).** This is
+NOT the same bug and is NOT a targeting-margin problem: no window-edge pulling
+even occurs for these samples (mid-code already sits comfortably inside the
+window, untouched by any clamp), yet the decode still misses. Concrete
+evidence, window1 of this run:
+
+  - c1 (76-4KVR, issuedAt=T+0, nominal validity [T+0, T+5000])
+  - c2 (76-6END, issuedAt=T+18986, nominal validity [T+18986, T+23986])
+
+Sweeping the REAL VOD (skewMs=25480, independently measured and confirmed
+correct for this window by 3 cleanly-matching calibration probes) shows:
+
+  - 76-4KVR genuinely on screen from  ~T+0    to ~T+3750..4000  (close to
+    codeRotateMs, consistent with T5a's fix)
+  - 76-6END genuinely on screen from ~T+4000  to at least T+18000 (14+
+    real seconds -- HELD ON SCREEN LONG PAST its own 5000ms nominal
+    validity, starting nearly 15 SECONDS BEFORE its own recorded issuedAt)
+  - the NEXT window's own first code is already showing by T+20000, roughly
+    10 seconds before that window's recorded startedAt
+
+So the badge visually rotates to c2 almost immediately after c1's real
+window closes (~T+4000), but the SERVER does not record c2 as issued until
+T+18986 -- a ~15-second gap between when a code is REALLY on screen and when
+its `issuedAt` timestamp says it was issued. c2's own nominal midpoint
+(T+21486) lands in territory the real broadcast has ALREADY moved past (the
+next window's own content).
+
+The likely mechanism, not yet confirmed by reading the actual code: the
+overlay's own client-side polling of `currentOrRotate()` may not be
+frequent, so once a code rotates client-side, the SERVER-recorded `issuedAt`
+(stamped when the server call happens to land) can trail the true on-screen
+change by however long the client waited to poll again. `codeRotateMs` is a
+floor on how SOON the server will hand back a fresh code, not a promise
+about when the overlay actually asks. **This was not chased further tonight
+because the actual mechanism lives in the overlay's own client-side
+rendering/polling code, which was not read this session** -- confirming it
+needs reading that code, not another guess at the server-side timing
+constants.
+
+**T5c. Kick likely carries the same T5b defect, silently.** Kick's own
+run #5 (same night) measured detectionRate 0.615 (8/13, 5 misses) -- a
+similar-shaped loss to what T5b would produce -- but still verified 5/5
+because Kick's windows sample enough codes that even a lost second-code
+miss per window still leaves `clipHits > 0` from the first code alone.
+Worth re-examining once T5b's real cause is understood: the loss may be
+larger than it looks precisely because it never causes an outright
+platform failure to force it into view.
+
+**Not golden**: Twitch verification, on the code as it stands, will still
+fail or under-detect on any window whose SECOND-code sample is the one that
+mattered. T5a is shipped, tested, and validated for real; T5b is real,
+evidenced, and open.
+
 ### Spend
 
 Zero LiveKit minutes (neither rehearsal harness references LiveKit or sets
