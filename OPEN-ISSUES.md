@@ -1117,6 +1117,23 @@ Measured, real encoders, 720p: corpus 100%, Twitch 4/5, Kick 5/5 (was 0/5).
   residual, but this does NOT fix it and was not claimed to: with the residual
   above the validity there is nowhere safe to shift to. HIGHEST-VALUE remaining
   work on the verification path.
+
+  **Possible reframing, n=1, do not act on it without more samples.** The
+  spread (2521) came out almost exactly `validity/2` (2500). If that holds
+  across broadcasts it means the measured points already agree to within ONE
+  quantization unit — the spread would be at its floor rather than loose, and
+  the residual would be structurally
+
+      validity/2 + validity/2 + margin  ~=  codeValidityMs + margin
+
+  i.e. GUARANTEED to exceed codeValidityMs, for every session, by construction.
+  That would make "tighten the calibration" the wrong lever entirely; the real
+  ones would be `codeValidityMs` itself (shorter codes are harder to catch, so
+  this trades against detection) or giving each probe sub-code resolution so a
+  point's estimate is no longer quantized to its whole validity window.
+  ONE sample is not evidence for a structural claim — collect
+  `timelineSpreadMs` across several real broadcasts first. It is recorded on
+  every verification now.
 - **R2. `minDetectionRate` is 0.55 on a 0.05 margin either side.** It sits
   between a knowingly-broken 4s-residual fixture (0.50) and a broadcast proven
   honest (0.6154) — only 0.115 apart, because of R1. Raise it only from a
