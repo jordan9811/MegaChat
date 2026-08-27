@@ -1029,11 +1029,37 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   // ── Air sessions + watermark ─────────────────────────────────────────────
   guarded.post('/api/bounty/air-session', (req, res) => {
     try {
-      const { claimId, roomId, platform, watchUrl } = req.body || {};
+      const { claimId, roomId, platform: declaredPlatform, watchUrl } = req.body || {};
       const claim = store.getClaim(claimId);
       if (!claim) return res.status(404).json({ error: 'No such claim' });
       if (claim.verificationState !== 'VERIFIED') {
         return res.status(403).json({ error: 'Claim identity is not verified' });
+      }
+      /**
+       * THE PLATFORM COMES FROM THE CLAIM, NEVER FROM THE REQUEST BODY.
+       *
+       * This used to be `req.body.platform`, taken verbatim, and the STREAMER
+       * policy on this route only proves the caller owns the CLAIM — nothing
+       * compared the declared platform to it. So a streamer holding a genuine
+       * twitch:honest claim could open a session declaring platform 'x' with a
+       * watchUrl they control: captureSourceUrl matches neither the twitch nor
+       * the kick branch, falls through to session.watchUrl, and self-capture
+       * records THEIR chosen stream. Every badge then reads at full size off a
+       * throwaway feed while twitch.tv/honest airs nothing.
+       *
+       * The comment above captureSourceUrl defends this by saying the
+       * client-supplied URL is trusted "only on platforms with no channel
+       * page... and those are not claimable yet". That defence expired when
+       * more platforms became claimable, and nothing re-checked it. Deriving
+       * the platform from handleKey closes it structurally: the only platform
+       * a session can run on is the one the OAuth claim actually proved.
+       */
+      const platform = String(claim.handleKey || '').split(':')[0] || null;
+      if (declaredPlatform && declaredPlatform !== platform) {
+        return res.status(400).json({
+          error: `This claim is for ${platform}, not ${declaredPlatform}`,
+          reason: 'platform_mismatch',
+        });
       }
       // The watch URL is REQUIRED for YouTube: live status is per-video, so
       // without it the whole session would be unobservable and every playback
@@ -1318,6 +1344,20 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         causes.push(`stream quality below the verifier floor on ${v.belowQualityFloorClips} clip(s)`
           + ` (smallest badge ${v.attempt?.smallestBadgePx ?? '?'}px vs ${bountyConfig.minCodePixelHeight}px floor)`
           + ' — reads landed but marginal; do not let the shortfall look like normal partial verification');
+      }
+      if (v.result === 'FAIL_TOO_SMALL') {
+        // WE SAW THE BADGE AND COULD NOT READ IT. That is a stream-setup
+        // problem with an obvious remedy, not a fraud signal, and it must
+        // reach a person: this verdict pays zero by construction
+        // (verifiedClips is 0), so with no cause named it was a silent
+        // denial. It was only ever reachable at all through
+        // belowQualityFloorClips happening to fire alongside it — a second,
+        // independent signal — and for one revision it did not even do that,
+        // because the quality median filtered on `counted` and so excluded
+        // every too-small read from the metric meant to notice them.
+        causes.push(`badge found but below the ${bountyConfig.minCodePixelHeight}px floor on every `
+          + `sampled frame (smallest ${v.attempt?.smallestBadgePx ?? '?'}px) — the overlay is `
+          + 'scaled down in the scene; this is a setup fix, not a failed claim');
       }
       if (v.result === 'SOURCE_UNAVAILABLE') {
         // "We could not look" — a human decides whether to retry later or

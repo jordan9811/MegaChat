@@ -382,7 +382,16 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
     // makes a clip sampled [4.1, 4.1, 28] median to 4.1, trip the floor, and
     // tell an honest streamer their badge was 4.1px against a 12px minimum.
     // That is an accusation built from frames containing no badge.
-    const reads = clipSamples.filter((c) => c.counted);
+    //
+    // `found`, NOT `counted`. This filtered on `counted` for one revision, and
+    // `counted` is `found && legible` — so it excluded exactly the samples
+    // this block exists to notice. A badge that WAS read and was merely too
+    // small is a real measurement of a real badge, and it is the entire
+    // quality signal. With `counted`, a broadcast whose badge was legibly
+    // located but below the floor in EVERY sample left `reads` empty,
+    // medianPx 0, and `belowQualityFloor` false (it requires medianPx > 0) —
+    // no quality flag raised, from the one scenario the flag is for.
+    const reads = clipSamples.filter((c) => c.found);
     const marginal = reads.filter((c) =>
       c.pixelHeight > 0
       && c.pixelHeight < bountyConfig.minCodePixelHeight * bountyConfig.qualityWarnRatio).length;

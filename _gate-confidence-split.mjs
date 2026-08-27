@@ -217,6 +217,44 @@ ok('E. the detection floor is above the broken-timeline fixture (0.50)',
 ok('E. ...and below what a broadcast proven honest measured (0.6154)',
   bountyConfig.minDetectionRate < 0.6154, `floor=${bountyConfig.minDetectionRate}`);
 
+// ── G. A TOO-SMALL BADGE MUST STILL REACH A HUMAN ────────────────────────
+// The quality median filtered on `counted` for one revision, and `counted` is
+// `found && legible` — so it excluded exactly the samples it exists to notice.
+// A broadcast whose badge was located in every frame but sat below the floor
+// left `reads` empty, medianPx 0, and belowQualityFloor FALSE (it requires
+// medianPx > 0). Result: FAIL_TOO_SMALL, which names no review cause of its
+// own, so the session paid zero with nobody looking — the project's worst
+// failure mode, introduced while fixing a different instance of it.
+{
+  const smallChecker = new (class extends CodeChecker {
+    async findCode(_f, expected) {
+      // FOUND, and legibly located — just rendered too small to accept.
+      return { found: true, confidence: 0.9, pixelHeight: 6, text: expected[0] };
+    }
+  })();
+  const small = await run(smallChecker);
+  ok('G. an all-too-small broadcast is FAIL_TOO_SMALL, not a bare FAIL',
+    small.result === 'FAIL_TOO_SMALL', `result=${small.result}`);
+  ok('G. ...and the quality median MEASURES the too-small reads (was 0)',
+    small.clipVerdicts.every((c) => c.medianPixelHeight === 6),
+    JSON.stringify(small.clipVerdicts.map((c) => c.medianPixelHeight)));
+  ok('G. ...so belowQualityFloor fires, which is what carries it to a reviewer',
+    small.belowQualityFloorClips === CLIPS.length,
+    `${small.belowQualityFloorClips} of ${CLIPS.length} clip(s)`);
+  ok('G. ...and the smallest badge is reported honestly, not as 0 or absent',
+    small.attempt?.smallestBadgePx === 6, `smallestBadgePx=${small.attempt?.smallestBadgePx}`);
+  // A miss must STILL be excluded — the 4.1px junk problem this replaced.
+  const junk = await run(new (class extends CodeChecker {
+    async findCode() { return { found: false, confidence: 0.2, pixelHeight: 4.1 }; }
+  })());
+  ok('G. ...while a MISS is still excluded from the quality median',
+    junk.clipVerdicts.every((c) => c.medianPixelHeight === 0),
+    JSON.stringify(junk.clipVerdicts.map((c) => c.medianPixelHeight)));
+  ok('G. ...and a session with no reads at all is FAIL, never accused of a tiny badge',
+    junk.result === 'FAIL' && junk.belowQualityFloorClips === 0,
+    `result=${junk.result} belowFloor=${junk.belowQualityFloorClips}`);
+}
+
 // ── F. THE SAMPLE-INSTANT CLAMP, PROPERTY-TESTED ─────────────────────────
 // sampleInstantsForWindow shifts each instant away from the window edge by the
 // calibration residual. detectionRate's DENOMINATOR is checks.length, so if a
