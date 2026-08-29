@@ -272,9 +272,33 @@
       <p><b>What this removes:</b> typing a name that already exists, inventing a link that was already reserved for you, choosing between features while thirty unrelated controls are on screen, and pricing a product you didn’t turn on.</p>
     </div>
 
+    <h3 style="margin:34px 0 6px;font-size:19px;font-weight:700">Two doors, one at a time</h3>
+    <p class="sec-intro" style="margin-bottom:18px"><b>The signed-in flow is the product</b> — this is a consumer app, and it should be built, polished and tested as the path essentially everyone takes. The no-account path stays because it already exists and some people want it, but it is deliberately the quieter door: one line above the fold, <em>“Don’t want to sign in? Set up manually →”</em>, that swaps the whole form for the manual onboarding rather than stacking both on one page. Build the first door properly; keep the second one working.</p>
+
+    <div class="callout">
+      <p><b>This is the duplicate-password bug from the audit, at its root.</b> Both doors render simultaneously today — the unlock card and the create card each carry a field labelled “Room password”, meaning two different things. Showing one path at a time makes that impossible rather than merely fixing it.</p>
+    </div>
+
+    <div class="grp" style="margin-top:20px">
+      <div class="grp-h"><h3>What the manual path needs that the signed-in one doesn’t</h3><span class="when">Secondary flow</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Step</th><th>Signed in</th><th>Manual</th></tr>
+        <tr><td class="p">Identity</td><td class="note">OAuth — provider, username, handle all resolved</td><td class="next">Room password becomes the only credential — required, not optional</td></tr>
+        <tr><td class="p">Room name</td><td class="note">Prefilled from the platform</td><td class="next">Typed</td></tr>
+        <tr><td class="p">Link</td><td class="note">Pre-claimed at signup from the username</td><td class="next">Chosen by hand, with the availability check doing real work here</td></tr>
+        <tr><td class="p">Platform</td><td class="note">Adopted from the linked account</td><td class="next">Channel name typed in — <span class="flag-w">today an invalid one is nulled silently</span></td></tr>
+        <tr><td class="p">Getting back in</td><td class="note">Just sign in</td><td class="next"><span class="new">Room ID + password — the only recovery path.</span> Lose it and the room is unreachable, so this needs a real “save these” moment, not a toast</td></tr>
+      </table></div>
+    </div>
+
+    <p class="sec-intro" style="margin-top:18px">The existing unlock card belongs here too: it’s how a returning no-account streamer gets back to their room, which makes it part of this door rather than furniture on the main one. And auto-live is worth calling out as a genuine reason to sign in — following your stream needs a linked account, so the manual path can offer everything except that.</p>
+
     <div class="callout">
       <p><b>Everything below this line renders only while managing a room.</b> That follows the rule already written in <code>DESIGN.md</code> — a card whose empty state says “do the thing you haven’t done yet” shouldn’t be mounted yet. Seven tabs, each one a coherent job, none of them longer than a screen.</p>
     </div>
+
+    <h3 style="margin:34px 0 6px;font-size:19px;font-weight:700">Advanced opens a ribbon, not a drawer</h3>
+    <p class="sec-intro" style="margin-bottom:0">The single “Advanced — fine-tuning” disclosure holding twenty controls is the worst structure on the page: it isn’t hierarchy, it’s a junk drawer with a lid. Replace it with a compact horizontal tab bar in the Office-ribbon sense — a row of named groups, one open at a time, each holding a small set of related controls at a density you can scan rather than scroll. That kills 4.7 screens of scrolling outright: nothing is ever hidden by depth, only by which tab is showing, and every tab is one screen or less. It fits the settled visual system too — letterspaced caps and hard edges are already the app’s vocabulary, so the tab strip reads as chrome rather than decoration.</p>
   </section>
 
   <section>
