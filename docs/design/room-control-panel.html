@@ -302,6 +302,67 @@
   </section>
 
   <section>
+    <h2>One editor, three places</h2>
+    <p class="sec-intro">The ribbon isn’t a manage-time screen — it’s a component with three save targets. Same tabs, same controls, different destination.</p>
+
+    <div class="grp">
+      <div class="grp-h"><h3>Where it opens</h3><span class="when">Same component throughout</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Context</th><th>Reached from</th><th>Saves to</th></tr>
+        <tr><td class="next">Before the room exists</td><td class="note">“Advanced” on the create form — optional, for people who want to set things up before going live rather than after</td><td class="note">The draft the room is created from</td></tr>
+        <tr><td class="next">While managing</td><td class="note">Room settings</td><td class="note">The live room, autosaved</td></tr>
+        <tr><td class="next">From your profile</td><td class="note">Account → Defaults</td><td class="note">Account defaults — every future room starts here</td></tr>
+      </table></div>
+    </div>
+
+    <div class="callout">
+      <p><b>The third one is already half-built.</b> <code>GET/PUT /api/account/defaults</code> exists, <code>saveDefaultsFromDraft</code> strips name and handle and saves everything else, and the dashboard already has a Defaults tab. What it lacks is an editor: today it can only snapshot whatever is currently typed into the create form (“Save current create-form as my defaults”) and list the result read-only. So this needs no new API and no new storage — it needs the ribbon pointed at a different save target. The draft shape and the defaults shape are already the same object.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Say it in English</h2>
+    <p class="sec-intro">The field names below are the code’s, kept for traceability. None of them should ever reach a streamer. <code>passkeyTickSeconds</code> is not a thing a person says.</p>
+
+    <div class="grp">
+      <div class="grp-h"><h3>Proposed labels</h3><span class="when">What the UI says</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Field</th><th>Label today</th><th>Should say</th></tr>
+        <tr><td class="p">joinStream.enabled</td><td class="now">Join Stream</td><td class="next">Open mic</td></tr>
+        <tr><td class="p">passkeyTickPrice</td><td class="now">Price per second</td><td class="next">Open mic rate — cost per second on camera</td></tr>
+        <tr><td class="p">passkeyTickSeconds</td><td class="now">Charge interval</td><td class="next">Bill every…</td></tr>
+        <tr><td class="p">maxSession</td><td class="now">Max spend / viewer</td><td class="next">Most a viewer can spend</td></tr>
+        <tr><td class="p">maxSeats</td><td class="now">Max seats</td><td class="next">People on camera at once</td></tr>
+        <tr><td class="p">letters.price</td><td class="now">Flat price</td><td class="next">Price per MegaChat</td></tr>
+        <tr><td class="p">letters.maxSeconds</td><td class="now">Max length</td><td class="next">Longest clip</td></tr>
+        <tr><td class="p">letters.moderation</td><td class="now">Moderation: auto / approve</td><td class="next">Before it airs: Play it / I approve each one</td></tr>
+        <tr><td class="p">letters.aiStrictness</td><td class="now">AI review strictness: severe / borderline</td><td class="next">AI filter: Block anything questionable / Only clear violations</td></tr>
+        <tr><td class="p">letters.autoRefundOnReject</td><td class="now">Auto-refund on reject</td><td class="next">Refund clips I reject</td></tr>
+        <tr><td class="p">letters.minSeconds</td><td class="now">—</td><td class="next">Shortest clip we allow (fixed)</td></tr>
+        <tr><td class="p">gates.minWatchSeconds</td><td class="now">Min watch time</td><td class="next">Watch time before they can join in</td></tr>
+        <tr><td class="p">joinStream.gatesSameAsMegaChat</td><td class="now">Same gates as MegaChats</td><td class="next">Use the same rules as MegaChats</td></tr>
+        <tr><td class="p">unlisted</td><td class="now">Unlisted (opt out of browse…)</td><td class="next">Hide from Browse — direct link still works</td></tr>
+        <tr><td class="p">payoutAddress</td><td class="now">Payout wallet</td><td class="next">Where your money goes</td></tr>
+        <tr><td class="p">paymentTokenAddress</td><td class="now">Payment token</td><td class="next">Paid in</td></tr>
+        <tr><td class="p">stingerSounds</td><td class="now">Stinger sounds on the overlay — paired SFX for every entrance/exit</td><td class="next">Entrance &amp; exit sounds</td></tr>
+        <tr><td class="p">transport</td><td class="now">Transport</td><td class="next">Video connection — or hide it; it is automatic</td></tr>
+        <tr><td class="p">lazyConnectScope</td><td class="now"><span class="flag">no label, no control</span></td><td class="next">Keep the camera connected: Only when someone’s on / All broadcast</td></tr>
+        <tr><td class="p">rewards.enabled</td><td class="now">Rewards / drops</td><td class="next">Pay viewers to watch</td></tr>
+        <tr><td class="p">rewards.earnInterval</td><td class="now">Interval</td><td class="next">Pay them every…</td></tr>
+        <tr><td class="p">rewards.earnAmount</td><td class="now">Amount</td><td class="next">Each payout</td></tr>
+        <tr><td class="p">rewards.earnCap</td><td class="now">Cap</td><td class="next">Most one viewer can earn</td></tr>
+        <tr><td class="p">rewards.rewardType</td><td class="now">Reward type</td><td class="next">Pay in</td></tr>
+        <tr><td class="p">twitchAuto</td><td class="now">—</td><td class="next">Use my linked Twitch account</td></tr>
+      </table></div>
+    </div>
+
+    <div class="callout">
+      <p><b>“Open mic” is your word and it’s the right one.</b> “Join Stream” describes the mechanism; open mic describes the thing a person is choosing. Worth making it the product name everywhere — the create fork, the settings tab, the browse card — not just a label on one checkbox.</p>
+      <p style="margin-top:10px"><b>And two labels are actively wrong today.</b> The legacy prepaid pair still on the form is called <em>“Charge amount”</em> and <em>“Interval”</em> — sitting directly beside “Charge interval”, which is a different field entirely, while none of the three says what it charges for. They are the <code>tickPrice</code>/<code>tickSeconds</code> path that no longer meters anything. Deleting them removes two of the five confusable money fields outright.</p>
+    </div>
+  </section>
+
+  <section>
     <h2>The parameters, grouped as tabs</h2>
     <p class="sec-intro">Every field a streamer can set, what it does, the control it has now, and the control it should have. Ranges are the real server-side clamps where they exist — and where the server has no bound at all, that’s called out, because then the interface is the only thing standing between a streamer and a broken room.</p>
 
