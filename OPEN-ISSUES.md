@@ -1538,3 +1538,22 @@ and it should not be lost in a chat log. Worth a deliberate look at what
 pump.fun's native version does and does not do (payouts to the guest? bounty
 clips? verification of what aired?) before assuming the overlap is fatal or
 irrelevant.
+
+**T9 addendum — what pump.fun's native version does NOT do.** Three
+differentiators, all load-bearing and all already built here:
+
+  - NOT CROSS-PLATFORM. It is a pump.fun feature for pump.fun streams. The
+    whole point of this verification work is that one mechanic pays out on
+    Twitch, Kick, Rumble, YouTube and X too.
+  - NO PRE-RECORDED CLIP. Their join request puts a live person on stage.
+    MegaChat's unit is a fan's RECORDED clip, submitted and paid for in
+    advance -- a different product, not a worse version of the same one.
+  - NO PAY-BY-SECOND. Confirmed in bounty-escrow.js:704 --
+    releaseRatePerClip * clips + releaseRatePerClipSecond * verifiedClipSeconds.
+    Today's real pump.fun broadcast released 6.25 on that formula. Their
+    feature has no payment rail at all.
+
+So the overlap is the surface (a viewer appears on a stream), not the
+mechanic (a fan pays to have a specific recorded clip aired, and the streamer
+is paid per verified second it was actually on screen). Keeping T9 filed as a
+positioning fact worth knowing, not as a threat to the thesis.
