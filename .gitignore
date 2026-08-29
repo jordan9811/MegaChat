@@ -35,3 +35,6 @@ pumpfun-probe.png
 
 # Scratch files from interactive sessions — never part of the repo.
 _tmp-*
+
+# Go-signal file for --wait-for-go rehearsals; never part of the repo.
+_GO
