@@ -213,7 +213,41 @@ export async function startCapture(airSessionId, {
     try {
       const res = await fetchImpl(state.hlsUrl, { signal: AbortSignal.timeout(8000) });
       if (!res.ok) throw new Error(`playlist ${res.status}`);
-      const { segments } = parseMediaPlaylist(await res.text(), state.hlsUrl);
+      const body = await res.text();
+      /**
+       * A MASTER PLAYLIST IS NOT A MEDIA PLAYLIST, and parsing one as the
+       * other fails SILENTLY in the worst possible way.
+       *
+       * pump.fun's derived URL is a master. Parsed as media, its three
+       * `#EXT-X-STREAM-INF` variant URLs look like three "segments" carrying
+       * no duration and no PROGRAM-DATE-TIME — so capture buffered the
+       * PLAYLIST FILES as if they were video and froze 1.0MB / 0ms / no PDT
+       * off three bogus entries. Measured on the real stream: master parses
+       * to 3 segments with 0 PDT, the variant to 3300 segments with 3300 PDT.
+       *
+       * Losing PDT is the expensive part: it is the seek anchor, so a capture
+       * without it forces calibration to measure blind — the same class of
+       * failure as the PDT-bypass bug that cost three Kick broadcasts.
+       *
+       * Resolve once, then stay on the variant. Highest bandwidth first: more
+       * pixels is strictly better for reading a badge, and the buffer is
+       * bounded by time rather than size.
+       */
+      if (/#EXT-X-STREAM-INF/.test(body)) {
+        const lines = body.split(String.fromCharCode(10)).map((l) => l.trim());
+        let best = null;
+        for (let i = 0; i < lines.length; i += 1) {
+          if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
+          const bw = Number(/BANDWIDTH=(\d+)/.exec(lines[i])?.[1] || 0);
+          const uri = lines.slice(i + 1).find((l) => l && !l.startsWith('#'));
+          if (uri && (!best || bw > best.bw)) best = { bw, uri };
+        }
+        if (!best) throw new Error('master playlist lists no variant');
+        state.hlsUrl = new URL(best.uri, state.hlsUrl).toString();
+        log.log?.(`[capture] master playlist → variant @${Math.round(best.bw / 1000)}kbps`);
+        return; // next poll reads the variant; nothing is lost but one tick
+      }
+      const { segments } = parseMediaPlaylist(body, state.hlsUrl);
       // START AT THE LIVE EDGE. Everything older than the window is evicted on
       // arrival, so fetching it buys nothing — and on an append-only playlist
       // it is the difference between a few hundred kB and a few gigabytes.
