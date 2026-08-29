@@ -1415,3 +1415,28 @@ The last option is probably right, and it belongs with T5b (both are about a
 Zero LiveKit minutes (neither rehearsal harness references LiveKit or sets
 `LIVEKIT_URL`). $0 external — Twitch/Kick/Rumble ingest is free and no pump.fun
 test coin was created.
+
+### T7. The setup helper's expiry is indistinguishable from a broken overlay (2026-08-29)
+
+`_setup-overlay.mjs --minutes N` exits when its window closes, taking its
+server with it. The overlay then renders nothing — which is EXACTLY what a
+misconfigured browser source looks like. During pump.fun setup the operator
+refreshed OBS, saw the badge appear, and reported it visible; by the time the
+stream was checked the helper had hit its 35-minute limit and died, so the
+badge had vanished and the evidence pointed at an OBS problem that did not
+exist. Roughly twenty minutes went into diagnosing a working configuration.
+
+Cheap fixes, none implemented yet:
+  - print a loud countdown ("helper stops in 5 minutes") and a final line
+    saying the badge is ABOUT to disappear and why
+  - on exit, leave the server up for a grace period, or exit only on an
+    explicit interrupt rather than a timer
+  - have the overlay itself render a visible "server unreachable" state
+    instead of silently blanking, so a dead backend never looks like a
+    misconfigured source
+
+The third is the real fix and applies to production too: a streamer whose
+MegaChat backend becomes unreachable mid-broadcast currently sees the badge
+quietly disappear, with no way to tell that from having set the overlay up
+wrong. Related to T5b and T6 — all three are cases where a zero, a blank, or
+a silence fails to say WHICH failure it is.
