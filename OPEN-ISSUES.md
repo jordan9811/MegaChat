@@ -1557,3 +1557,43 @@ So the overlap is the surface (a viewer appears on a stream), not the
 mechanic (a fan pays to have a specific recorded clip aired, and the streamer
 is paid per verified second it was actually on screen). Keeping T9 filed as a
 positioning fact worth knowing, not as a threat to the thesis.
+
+### ROOT CAUSE FOUND: the overlay polled every 15s while codes rotate every 4s (2026-08-29)
+
+Fixed in "overlay: the poll interval captured a placeholder and froze at 15s".
+
+    let rotateMs = 60000;                            // placeholder
+    poll();                                          // async, has not returned
+    setInterval(poll, Math.max(5000, rotateMs / 4)); // reads 60000 -> 15000ms
+
+setInterval captured the placeholder before the first poll returned, so the
+overlay asked for a new code every 15 SECONDS while the server rotated every
+4. Every code sat on screen ~4x longer than the system believed. A second bug
+sat on top: the max(5000, ...) floor is slower than a 4s rotation even once
+re-armed.
+
+WHY IT BROKE VERIFICATION RATHER THAN JUST LOOKING STALE. Calibration
+estimates the broadcast delay by seeing which code is on screen and comparing
+against that code's NOMINAL midpoint. A code held 4x too long makes an on-time
+stream look ~10s delayed. Measured on a real pump.fun broadcast:
+
+    codes issued 17s apart      (codeRotateMs = 4s)
+    calibration -> skew 10366ms (true offset near zero)
+    every sample seeked ~10s wide, found a REAL badge at 28px carrying the
+    WRONG code, and the broadcast verified 0/9
+
+MEASURED IN A BROWSER, hashing the badge canvas once a second for 40s:
+~15s per code before, 5.7s after, against a 4s server rotation.
+
+THIS LIKELY SUBSUMES SEVERAL OPEN ITEMS -- to be confirmed, not assumed:
+  T5b  Twitch "every SECOND code in a window misses". Exactly what a 15s hold
+       produces: the first code of a window is still displayed when the second
+       code's sample instant arrives.
+  R1   calibration residual exceeding codeValidityMs. The residual is inflated
+       by the same phantom delay.
+  P3   pump.fun detectionRate 0.778 with early samples reading px 0.
+
+NOT YET VALIDATED END TO END. The saved captures cannot prove it: they were
+recorded BY the buggy overlay and physically contain codes held ~15s. Only a
+fresh broadcast with a refreshed overlay page can confirm it, which is running
+now.
