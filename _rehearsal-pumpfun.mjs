@@ -260,7 +260,11 @@ try {
     // URL, which lives on a localhost port this harness picked. --skip-push
     // is the ONLY path on a platform whose ingest key dies with the session,
     // so it has to be genuinely usable rather than nominally supported.
-    const overlayUrl = `${APP}/overlay?room=pfrehearsal&bounty=${encodeURIComponent(airId)}`;
+    // THE STABLE FORM, deliberately. ?bountyRoom follows whatever session is
+    // open in the room, so this URL is pasted into OBS once and works for
+    // every future run. The by-id form rots the moment a run restarts, which
+    // wasted three real broadcasts and looked like a capture bug each time.
+    const overlayUrl = `${APP}/overlay?bountyRoom=pfrehearsal`;
     console.log(''); console.log('='.repeat(72));
     console.log('  ADD THIS AS A BROWSER SOURCE IN OBS, THEN GO LIVE:');
     console.log('');
@@ -409,7 +413,7 @@ try {
         + ' probably pointed at an OLD session. Update the browser source URL to:'
         : '  Nothing was on screen at all. The overlay is not rendering — check the browser'
         + ' source URL, that it is not hidden, and that it is above your other sources:');
-      log(`  ${APP}/overlay?room=pfrehearsal&bounty=${airId}`);
+      log(`  ${APP}/overlay?bountyRoom=pfrehearsal`);
       log('');
       log('Stopping rather than burning your broadcast on a run that cannot pass.');
       await cleanup();

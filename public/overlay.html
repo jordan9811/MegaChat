@@ -930,8 +930,33 @@
     // running a local timer, so a client whose clock is wrong (or edited)
     // cannot mint or extend its own codes.
     (function bountyWatermark() {
-      const airSessionId = new URLSearchParams(location.search).get('bounty');
-      if (!airSessionId) return; // normal room — renders exactly as before
+      const params = new URLSearchParams(location.search);
+      /**
+       * TWO WAYS IN, AND THE STABLE ONE IS PREFERRED.
+       *
+       *   ?bounty=<airSessionId>  pins ONE session. Correct for the one-click
+       *                           OBS flow, which re-adds the browser source
+       *                           each stream and always has a fresh id.
+       *   ?bountyRoom=<roomId>    follows whatever session is OPEN in that
+       *                           room. The URL never changes, so a browser
+       *                           source added BY HAND keeps working on every
+       *                           future stream.
+       *
+       * The by-id form silently rots for hand-configured sources: the id is
+       * dead on the next stream, the overlay renders nothing, verification
+       * reports zero, and the streamer is told their broadcast carried no
+       * badge. That happened three times in one testing session and read as a
+       * capture bug every time.
+       */
+      const airSessionId = params.get('bounty');
+      const bountyRoom = params.get('bountyRoom');
+      if (!airSessionId && !bountyRoom) return; // normal room — renders exactly as before
+      // Resolved from the room response; needed for the /badge and
+      // /overlay-env reports, which are still addressed by session id.
+      let resolvedSessionId = airSessionId;
+      const codeUrl = () => (airSessionId
+        ? `/api/bounty/air-session/${encodeURIComponent(airSessionId)}/code`
+        : `/api/bounty/room/${encodeURIComponent(bountyRoom)}/code`);
 
       const badge = document.getElementById('bounty-badge');
       const codeEl = document.getElementById('bounty-code');
@@ -968,7 +993,8 @@
         if (reportedTooSmall === tooSmall) return; // only on change
         reportedTooSmall = tooSmall;
         try {
-          await fetch(`/api/bounty/air-session/${encodeURIComponent(airSessionId)}/badge`, {
+          if (!resolvedSessionId) return;
+          await fetch(`/api/bounty/air-session/${encodeURIComponent(resolvedSessionId)}/badge`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tooSmall, detail }),
@@ -1014,7 +1040,8 @@
         if (key === lastEnvKey) return;
         lastEnvKey = key;
         try {
-          await fetch(`/api/bounty/air-session/${encodeURIComponent(airSessionId)}/overlay-env`, {
+          if (!resolvedSessionId) return;
+          await fetch(`/api/bounty/air-session/${encodeURIComponent(resolvedSessionId)}/overlay-env`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ width: w, height: h, visibilityState: vis, at: Date.now() }),
@@ -1028,10 +1055,14 @@
       async function poll() {
         void reportEnv();
         try {
-          const res = await fetch(`/api/bounty/air-session/${encodeURIComponent(airSessionId)}/code`);
+          const res = await fetch(codeUrl());
           if (!res.ok) { badge.classList.remove('show'); return; }
           const data = await res.json();
           if (data.rotateMs) rotateMs = data.rotateMs;
+          // In room mode the session id is discovered here, and it CHANGES
+          // between streams — which is the entire point. Badge and env
+          // reports follow it automatically.
+          if (data.airSessionId) resolvedSessionId = data.airSessionId;
 
           if (!data.code) {
             // No code exists right now. Either the badge is flagged, or —

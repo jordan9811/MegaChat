@@ -96,6 +96,11 @@ export const ROUTE_POLICY = {
 
   // ── Capability: the overlay, which cannot hold a session ────────────────
   'GET /api/bounty/air-session/:id/code': { tier: TIER.CAPABILITY },
+  // The same code addressed by ROOM, so an overlay URL survives across
+  // sessions. Same tier by the same reasoning: it returns exactly what the
+  // by-id route returns to anyone holding the id, and the room IS the scope
+  // the overlay already runs in.
+  'GET /api/bounty/room/:roomId/code': { tier: TIER.CAPABILITY },
   'POST /api/bounty/air-session/:id/badge': { tier: TIER.CAPABILITY },
   /**
    * The overlay describing its own render environment. CAPABILITY like the

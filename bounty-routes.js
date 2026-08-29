@@ -1153,6 +1153,57 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     } catch (e) { fail(res, e); }
   });
 
+  /**
+   * THE SAME CODE, ADDRESSED BY ROOM — so an overlay URL can be STABLE.
+   *
+   * /air-session/:id/code needs the session id, so the overlay URL changes
+   * every session. In production the one-click OBS flow re-adds the browser
+   * source each time and hides that; anyone who sets the source up BY HAND
+   * gets a dead overlay on their next stream, renders nothing, verifies zero,
+   * and is told their broadcast had no badge on it. That failure happened
+   * three times in one testing session and each time it looked like a capture
+   * bug rather than a stale URL.
+   *
+   * Resolving by ROOM makes the address permanent: /overlay?room=<id> works
+   * for every future session in that room, so the browser source is pasted
+   * once and never touched again.
+   *
+   * Same CAPABILITY tier as the by-id route, and deliberately no more
+   * revealing: it returns the current code for whatever session is OPEN in
+   * that room, which is exactly what the by-id route returns to anyone
+   * holding the id. Rooms are already the unit the overlay is scoped to.
+   */
+  guarded.get('/api/bounty/room/:roomId/code', (req, res) => {
+    try {
+      const roomId = String(req.params.roomId || '');
+      // Newest OPEN session for this room. A room can accumulate closed
+      // sessions across streams; only a live one can be earning.
+      const open = store.listAirSessions
+        ? store.listAirSessions().filter((s) => s.roomId === roomId && s.status === 'OPEN')
+        : [];
+      const s = open.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+      if (!s) {
+        // NOT an error: between streams there is legitimately no session, and
+        // the overlay must render nothing rather than break.
+        return res.json({
+          code: null, expiresAt: null, rotateMs: bountyConfig.codeRotateMs,
+          badgeTooSmall: false, status: 'NO_OPEN_SESSION', airSessionId: null,
+        });
+      }
+      const rec = watermark.currentOrRotate(s.id);
+      res.json({
+        code: rec ? rec.code : null,
+        expiresAt: rec ? rec.expiresAt : null,
+        rotateMs: bountyConfig.codeRotateMs,
+        badgeTooSmall: !!s.badgeTooSmall,
+        status: s.status,
+        // So the overlay can report env/badge against the right session
+        // without the operator ever pasting an id.
+        airSessionId: s.id,
+      });
+    } catch (e) { fail(res, e); }
+  });
+
   /** Overlay self-reports badge legibility. See the trust note in bounty-watermark.js. */
   guarded.post('/api/bounty/air-session/:id/badge', (req, res) => {
     try {
