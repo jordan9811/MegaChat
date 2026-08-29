@@ -318,8 +318,69 @@ try {
     process.exit(3);
   }
 
+  /**
+   * THE WARMUP HOLDS A BADGE ON SCREEN, and that is not decoration.
+   *
+   * An OBS browser source loses its JavaScript context when its server goes
+   * away, and does NOT recover on its own — it stays blank until a human hits
+   * Refresh. Every relaunch of this harness starts a fresh server, so every
+   * relaunch silently broke the operator's overlay and the next canary
+   * reported "the badge is not on your broadcast" about a scene that had been
+   * correct minutes earlier. Six runs went that way.
+   *
+   * Airing a clip through the warmup means the badge is visible from the
+   * moment this server is up, on the SAME server that will run the test. The
+   * operator gets one refresh point, early, with minutes of slack — and the
+   * server never restarts under them again.
+   */
+  /**
+   * HOLD UNTIL THE OPERATOR IS ACTUALLY READY, not until a timer expires.
+   *
+   * Every launch of this harness starts a NEW server, which kills the OBS
+   * browser source that was pointed at the old one -- and an OBS browser
+   * source does not recover on its own (measured: server restored and left
+   * serving for 90s, badge never returned). So the operator refreshes,
+   * then the next run restarts the server and silently breaks it again.
+   * That race ate six real broadcasts, and asking them to time the refresh
+   * against a 4-minute warmup was never going to be reliable.
+   *
+   * With --wait-for-go the badge is held indefinitely on THIS server while
+   * the operator refreshes and confirms it is visible. The run starts only
+   * when the go-file appears, so the server never restarts underneath them.
+   */
+  if (has('wait-for-go')) {
+    const goFile = arg('go-file', '_GO');
+    log(`WAITING FOR GO: holding a badge on screen until ${goFile} exists.`);
+    log('  Refresh your OBS browser source now and confirm the badge appears.');
+    let n = 0;
+    while (!existsSync(goFile)) {
+      n += 1;
+      const id = `PF_HOLD${n}`;
+      await post('/api/bounty/admin/playback',
+        { airSessionId: airId, clipId: id, durationS: 110 });
+      const until = Date.now() + 110_000;
+      while (Date.now() < until && !existsSync(goFile)) await sleep(3_000);
+      await post('/api/bounty/admin/playback/end', { airSessionId: airId, clipId: id });
+    }
+    log('GO received — starting the run on this same server.');
+  }
   log(`holding ${WARMUP_S}s to clear the stream-context warmup…`);
-  await sleep((WARMUP_S + 5) * 1000);
+  log('  a badge is on screen for this whole warmup — if it is NOT in your OBS,');
+  log('  hit Refresh on the browser source NOW; there is time.');
+  {
+    const setupDeadline = Date.now() + WARMUP_S * 1000;
+    let n = 0;
+    while (Date.now() < setupDeadline) {
+      n += 1;
+      const id = `PF_SETUP${n}`;
+      await post('/api/bounty/admin/playback',
+        { airSessionId: airId, clipId: id, durationS: 110 });
+      const until = Math.min(setupDeadline, Date.now() + 110_000);
+      while (Date.now() < until) await sleep(5_000);
+      await post('/api/bounty/admin/playback/end', { airSessionId: airId, clipId: id });
+    }
+  }
+  await sleep(5_000);
 
   /**
    * ── CANARY CLIP: PROVE THE OVERLAY IS ON THE REAL STREAM ────────────────
