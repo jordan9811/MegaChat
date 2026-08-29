@@ -1,3 +1,4 @@
+import { Barlow, Barlow_Condensed } from 'next/font/google'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter, contactUrl } from '@/components/site-footer'
 import { RoomProvider } from '@/components/room-provider'
@@ -9,10 +10,19 @@ export const metadata = {
   description: 'Tune pricing, share links, watch viewers roll onto camera.',
 }
 
+// The create-room surface wears the app skin (same as the room board), so the
+// dashboard carries those faces for it.
+const barlow = Barlow({ subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-barlow' })
+const barlowCondensed = Barlow_Condensed({
+  subsets: ['latin'],
+  weight: ['600', '700'],
+  variable: '--font-barlow-c',
+})
+
 export default function DashboardPage() {
   const contactHref = contactUrl()
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className={`min-h-screen bg-background text-foreground ${barlow.variable} ${barlowCondensed.variable}`}>
       <SiteHeader />
 
       {/* Calm, usable dashboard */}

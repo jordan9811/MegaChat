@@ -119,7 +119,10 @@ const DEFAULT_DRAFT: ConfigDraft = {
   mcMinWatch: '0',
   mcFollowersOnly: false,
   mcSubsOnly: false,
-  joinStreamEnabled: true,
+  // Open mic is OPT-IN on a new room. MegaChats need nothing from the
+  // streamer once configured; live camera seats put a stranger on the
+  // broadcast, which is a bigger ask to have switched on by default.
+  joinStreamEnabled: false,
   jsGatesSame: true,
   jsMinWatch: '0',
   jsFollowersOnly: false,

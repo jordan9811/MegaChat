@@ -1,0 +1,162 @@
+/* Create a room (feat/ui-overhaul) — scoped under .mc-create.
+   Wears the app/Booth skin: near-black, Barlow, one warm accent. The room
+   board and this page are the same product surface, so they match each other
+   rather than the marketing site. */
+
+.mc-create {
+  --mcc-bg: #08080a;
+  --mcc-panel: #101014;
+  --mcc-sunk: #0b0b0e;
+  --mcc-fg: #f2f2f4;
+  --mcc-muted: #b9c1c8;
+  --mcc-dim: #9aa4ad;
+  --mcc-faint: #8f99a2;
+  --mcc-rule: #23232a;
+  --mcc-rule-2: #33333c;
+  --mcc-accent: #ff4d3d;
+  --mcc-live: #43e0a8;
+  --mcc-warn: #ffd23d;
+  background: var(--mcc-bg);
+  color: var(--mcc-fg);
+  font-family: var(--font-barlow), system-ui, sans-serif;
+}
+
+.mc-create .bc {
+  font-family: var(--font-barlow-c), var(--font-barlow), sans-serif;
+}
+
+/* Field labels are regular Barlow, not condensed — condensed reads techy and
+   hurt legibility at label size. Condensed is chrome only. */
+.mc-create .lbl {
+  font-weight: 700;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mcc-dim);
+}
+
+.mc-create .hint {
+  font-size: 12px;
+  color: var(--mcc-faint);
+  line-height: 1.5;
+}
+
+.mc-create input[type='text'],
+.mc-create input[type='password'],
+.mc-create input[type='number'] {
+  background: var(--mcc-sunk);
+  border: 1px solid var(--mcc-rule-2);
+  color: var(--mcc-fg);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 7px 10px;
+  outline: none;
+}
+.mc-create input:focus-visible,
+.mc-create button:focus-visible,
+.mc-create [tabindex]:focus-visible {
+  outline: 2px solid var(--mcc-fg);
+  outline-offset: 2px;
+}
+.mc-create input::placeholder {
+  color: #6d7780;
+}
+
+/* segmented control */
+.mc-create .seg {
+  display: inline-flex;
+  border: 1px solid var(--mcc-rule-2);
+  align-self: flex-start;
+}
+.mc-create .seg > button {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--mcc-rule-2);
+  color: var(--mcc-dim);
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.mc-create .seg > button:first-child {
+  border-left: 0;
+}
+.mc-create .seg > button[aria-pressed='true'] {
+  background: var(--mcc-fg);
+  color: #08080a;
+  font-weight: 700;
+}
+
+/* stepper */
+.mc-create .stepbtn {
+  border: 1px solid var(--mcc-rule-2);
+  background: transparent;
+  width: 26px;
+  height: 26px;
+  color: var(--mcc-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mc-create .stepbtn:hover:not(:disabled) {
+  color: var(--mcc-fg);
+  border-color: var(--mcc-fg);
+}
+.mc-create .stepbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* the KEY rail — a decision made up front, repeated in its advanced group */
+.mc-create .keyrow {
+  border-left: 3px solid var(--mcc-accent);
+  padding-left: 11px;
+}
+
+.mc-create .stepnum {
+  font-family: var(--font-barlow-c), sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #08080a;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.mc-create .infodot {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid #6d7780;
+  background: transparent;
+  color: var(--mcc-muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.mc-create .tabchip {
+  font-family: var(--font-barlow-c), sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 8px 15px;
+  border: 1px solid var(--mcc-rule-2);
+  background: transparent;
+  color: var(--mcc-muted);
+  cursor: pointer;
+}
+.mc-create .tabchip[aria-selected='true'] {
+  background: var(--mcc-fg);
+  border-color: var(--mcc-fg);
+  color: #08080a;
+}
