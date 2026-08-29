@@ -270,7 +270,38 @@ export function CreateRoom() {
   const micPerMin = money(parseFloat(draft.passkeyTickPrice) * 60)
 
   return (
-    <div className="mc-create dark grid grid-cols-1 gap-0 border border-[var(--mcc-rule)] lg:grid-cols-[1.5fr_1fr]">
+    <div className="mc-create dark min-h-screen">
+      {/* the only chrome: one thin bar, same as the room board */}
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1a1a1f] px-5 py-3">
+        <span className="flex flex-wrap items-baseline gap-3.5">
+          <a href="/app" className="bc text-[18px] font-bold tracking-[0.1em] text-[var(--mcc-fg)]">
+            MEGACHAT
+          </a>
+          <span className="bc text-[12px] font-semibold tracking-[0.14em] text-[var(--mcc-dim)]">
+            NEW ROOM
+          </span>
+        </span>
+        <span className="text-[12px] text-[var(--mcc-faint)]">
+          {hasIdentity ? (
+            <>
+              Signed in as{' '}
+              <span className="font-semibold text-[var(--mcc-fg)]">
+                {identityHandle || 'your account'}
+              </span>
+            </>
+          ) : (
+            <>
+              Have an account?{' '}
+              <a href="/dashboard?signin=1" className="text-[var(--mcc-muted)] underline underline-offset-[3px]">
+                Sign in
+              </a>{' '}
+              — we&apos;ll fill most of this in for you
+            </>
+          )}
+        </span>
+      </header>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr]">
       {/* ─────────── LEFT: the decisions ─────────── */}
       <div className="flex min-w-0 flex-col gap-4 border-b border-[var(--mcc-rule)] p-5 lg:border-b-0 lg:border-r">
         {/* identity — one dense line, no action button up here */}
@@ -1035,6 +1066,7 @@ export function CreateRoom() {
           Sample room art. Everything else here is your live configuration — if a number looks
           wrong, it will look wrong to viewers too.
         </span>
+      </div>
       </div>
     </div>
   )
