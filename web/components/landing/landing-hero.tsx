@@ -146,10 +146,6 @@ export function LandingHero() {
       </div>
 
       <div className="absolute inset-x-6 bottom-10 z-10 flex max-w-[880px] flex-col gap-5 md:inset-x-16 md:bottom-14">
-        <div className="mcl-r1 flex items-center gap-2.5 text-[12px] tracking-[0.24em] text-[var(--mcl-mint)]">
-          <span className="inline-block size-[7px] rounded-full bg-[var(--mcl-live)]" aria-hidden="true" />
-          FREE TO WATCH · PAY TO APPEAR ON CAMERA
-        </div>
         <h1 className="flex flex-col font-[800] leading-[0.98] tracking-[-0.01em] text-[44px] md:text-[72px]">
           <span className="mcl-r2">SKIP THE CHAT.</span>
           <span className="mcl-r3 flex flex-col gap-3">

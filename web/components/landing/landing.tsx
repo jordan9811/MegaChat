@@ -174,7 +174,7 @@ export function Landing({
               No rooms on the board right now — the next one could be yours.
             </p>
             <Link
-              href="/dashboard"
+              href="/dashboard?new=1"
               className="bg-[var(--mcl-mint)] px-6 py-3 text-[12.5px] font-[800] tracking-[0.14em] text-[var(--mcl-mint-ink)]"
             >
               OPEN A ROOM
@@ -321,7 +321,7 @@ export function Landing({
         </p>
         <div className="flex flex-wrap items-center justify-center gap-4">
           <Link
-            href="/dashboard"
+            href="/dashboard?new=1"
             className="bg-[var(--mcl-mint)] px-8 py-4 text-[14px] font-[800] tracking-[0.14em] text-[var(--mcl-mint-ink)] transition-opacity hover:opacity-90"
           >
             CREATE A ROOM
@@ -334,7 +334,7 @@ export function Landing({
           </Link>
         </div>
         <p className="text-[12px] tracking-[0.18em] text-[var(--mcl-faint)]">
-          FREE TO WATCH · BOUNTIES SETTLE IN USDC
+          BOUNTIES SETTLE IN USDC
         </p>
       </section>
 

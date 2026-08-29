@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { Barlow, Barlow_Condensed } from 'next/font/google'
 import { contactUrl } from '@/components/site-footer'
 import { RoomProvider } from '@/components/room-provider'
@@ -22,9 +23,13 @@ export default function DashboardPage() {
     <div className={`${barlow.variable} ${barlowCondensed.variable}`}>
       {/* The shell picks its own chrome: creating is a full page of its own,
           managing keeps the header/tabs/footer control room. */}
-      <RoomProvider>
-        <DashboardShell contactHref={contactUrl()} />
-      </RoomProvider>
+      {/* Suspense: the shell reads ?new=1 to force the create page, and
+          useSearchParams needs a boundary on a statically rendered route. */}
+      <Suspense fallback={null}>
+        <RoomProvider>
+          <DashboardShell contactHref={contactUrl()} />
+        </RoomProvider>
+      </Suspense>
     </div>
   )
 }

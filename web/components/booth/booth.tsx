@@ -212,7 +212,7 @@ function PoolTile({ pool }: { pool: BountyPool }) {
 function InviteTile() {
   return (
     <Link
-      href="/dashboard"
+      href="/dashboard?new=1"
       className="flex min-h-[150px] flex-col items-center justify-center gap-2.5 border border-dashed border-[rgba(242,242,244,0.3)] px-4 text-center transition-colors hover:border-[var(--mcb-accent)] md:min-h-0"
     >
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--mcb-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -345,7 +345,7 @@ export function Booth({
             HOW IT WORKS
           </Link>
           <Link
-            href="/dashboard"
+            href="/dashboard?new=1"
             className="bg-[#f2f2f4] px-3.5 py-[7px] font-[700] text-[#08080a]"
           >
             SIGN IN
@@ -368,7 +368,7 @@ export function Booth({
                 THE FIRST TILE ON THIS WALL IS YOURS.
               </span>
               <Link
-                href="/dashboard"
+                href="/dashboard?new=1"
                 className="mc-bc mt-1 bg-[var(--mcb-accent)] px-5 py-2.5 text-[12px] font-[700] tracking-[0.14em] text-[#08080a]"
               >
                 OPEN A ROOM
@@ -404,7 +404,7 @@ export function Booth({
             {/* Featured room, at a sane size. A quiet night should not hand
                 one room the whole viewport — that reads as an empty page,
                 not a big room. */}
-            <div className="grid grid-cols-1 gap-1.5 md:h-[460px] md:grid-cols-[1.62fr_1fr]">
+            <div className="grid grid-cols-1 gap-1.5 md:h-[340px] md:grid-cols-[1.35fr_1fr]">
               {heroRoom ? <RoomTile room={heroRoom} hero /> : null}
               <div className="flex flex-col gap-1.5">
                 {sideRooms.map((room) => (

@@ -12,6 +12,8 @@
 // It is a control room you return to, and those tabs are how you reach
 // Account and Defaults.
 
+import { useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useRoom } from '@/components/room-provider'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
@@ -20,7 +22,16 @@ import { DashboardRooms } from '@/components/dashboard-rooms'
 import { CreateRoom } from '@/components/create-room/create-room'
 
 export function DashboardShell({ contactHref }: { contactHref: string }) {
-  const { mode } = useRoom()
+  const { mode, switchRoom } = useRoom()
+  const params = useSearchParams()
+
+  // "Open a room" has to reach the create page even for someone who already
+  // owns one — without this it resumes their existing room and looks like
+  // the link is broken.
+  const wantsNew = params.get('new') === '1'
+  useEffect(() => {
+    if (wantsNew && mode === 'managing') switchRoom()
+  }, [wantsNew, mode, switchRoom])
 
   if (mode !== 'managing') return <CreateRoom />
 
