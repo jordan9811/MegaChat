@@ -58,7 +58,7 @@ function StateChip({ room }: { room: PublicRoomCard }) {
   const label = full ? 'FULL' : onAir ? 'ON AIR' : 'OPEN'
   return (
     <span
-      className="mc-bc absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.16em]"
+      className="mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.16em]"
       style={{ color }}
     >
       <span className="inline-block size-1.5 rounded-full" style={{ background: color }} aria-hidden="true" />
@@ -74,7 +74,7 @@ function RoomTile({ room, hero = false }: { room: PublicRoomCard; hero?: boolean
   // ~2-minute cache-bust bucket, same as the directory's Twitch preview
   const bust = Math.floor(Date.now() / 120000)
   return (
-    <Link
+    <a
       href={roomHref(room)}
       className={`group relative block overflow-hidden mc-mesh-${mesh} min-h-0`}
     >
@@ -127,7 +127,7 @@ function RoomTile({ room, hero = false }: { room: PublicRoomCard; hero?: boolean
           {full ? 'JOIN QUEUE' : 'TAKE A SEAT'}
         </span>
       </span>
-    </Link>
+    </a>
   )
 }
 
@@ -142,7 +142,7 @@ function PoolTile({ pool }: { pool: BountyPool }) {
             'linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)',
         }}
       />
-      <span className="mc-bc absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.16em] text-[var(--mcb-off)]">
+      <span className="mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.16em] text-[var(--mcb-off)]">
         <span className="inline-block size-1.5 rounded-full bg-[var(--mcb-off)]" aria-hidden="true" />
         OFF AIR · BOUNTY OPEN
       </span>
@@ -278,15 +278,17 @@ export function Booth({
         <nav className="mc-bc flex items-center gap-5 text-[12px] tracking-[0.14em] text-[var(--mcb-dim)]">
           <button
             type="button"
+            aria-pressed={filter === 'all'}
             onClick={() => setFilter('all')}
-            className={filter === 'all' ? 'text-[var(--mcb-fg)]' : 'hover:text-white'}
+            className={`py-3 ${filter === 'all' ? 'text-[var(--mcb-fg)] underline underline-offset-4' : 'hover:text-white'}`}
           >
             ALL
           </button>
           <button
             type="button"
+            aria-pressed={filter === 'onair'}
             onClick={() => setFilter('onair')}
-            className={filter === 'onair' ? 'text-[var(--mcb-fg)]' : 'hover:text-white'}
+            className={`py-3 ${filter === 'onair' ? 'text-[var(--mcb-fg)] underline underline-offset-4' : 'hover:text-white'}`}
           >
             ON AIR
           </button>
@@ -307,6 +309,9 @@ export function Booth({
 
       {/* the wall */}
       <main className="min-h-0 grow px-3 pb-0">
+        <h1 className="sr-only">
+          MegaChat rooms — {onAirCount} on air, {rooms.length} on the board
+        </h1>
         {visible.length === 0 ? (
           <div className="grid h-full grid-cols-1 gap-1.5 md:grid-cols-[1.62fr_1fr]">
             <div className="flex flex-col items-center justify-center gap-4 border border-dashed border-[rgba(242,242,244,0.3)] px-6 text-center">
@@ -366,11 +371,11 @@ export function Booth({
 
       {/* bounty rail */}
       <footer className="flex h-[72px] shrink-0 items-center gap-5 border-t border-[var(--mcb-hairline)] px-4">
-        <span className="mc-bc text-[12px] font-[700] leading-[1.25] tracking-[0.16em] text-[var(--mcb-dim)]">
+        <h2 className="mc-bc text-[12px] font-[700] leading-[1.25] tracking-[0.16em] text-[var(--mcb-dim)]">
           HELD FOR
           <br />
           STREAMERS
-        </span>
+        </h2>
         <div className="flex min-w-0 grow items-stretch gap-2 overflow-hidden">
           {topPools.length === 0 ? (
             <Link
@@ -380,7 +385,7 @@ export function Booth({
               START A POOL FOR ANY STREAMER →
             </Link>
           ) : (
-            topPools.slice(0, 4).map((pool) => (
+            topPools.slice(0, 3).map((pool) => (
               <Link
                 key={pool.handleKey}
                 href={poolHref(pool)}
@@ -389,11 +394,11 @@ export function Booth({
                 <span className="mc-bc truncate text-[16px] font-[600] leading-[1.1]">
                   {pool.handle ?? pool.handleKey}
                 </span>
-                <span className="mt-0.5 flex items-baseline gap-2">
-                  <span className="text-[13px] font-[600] text-[var(--mcb-accent)]">
+                <span className="mt-0.5 flex min-w-0 items-baseline gap-2">
+                  <span className="shrink-0 text-[13px] font-[600] text-[var(--mcb-accent)]">
                     {pool.remaining.toFixed(2)}
                   </span>
-                  <span className="mc-bc text-[11px] font-[500] tracking-[0.12em] text-[var(--mcb-dim)]">
+                  <span className="mc-bc truncate text-[11px] font-[500] tracking-[0.12em] text-[var(--mcb-dim)]">
                     {pool.contributionCount} BACKER{pool.contributionCount === 1 ? '' : 'S'}
                   </span>
                 </span>

@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 // Contact points at an X/Twitter URL read from CONTACT_URL at request time
 // (landing is force-dynamic), so it can change without a code edit.
 const NAV_LINKS = [
-  { label: 'Browse rooms', href: '/#browse' },
+  { label: 'Browse rooms', href: '/app' },
   { label: 'Bounties', href: '/bounty' },
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'How it works', href: '/how-it-works' },

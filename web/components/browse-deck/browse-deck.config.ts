@@ -67,7 +67,7 @@ export const deckConfig = {
 
   grid: {
     heading: 'Top live rooms',
-    viewAllHref: '/#browse',
+    viewAllHref: '/app',
   },
 }
 

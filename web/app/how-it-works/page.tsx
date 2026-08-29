@@ -499,7 +499,7 @@ export default function HowItWorksPage() {
               </p>
               <div className="flex flex-wrap gap-3">
                 <a
-                  href="/#browse"
+                  href="/app"
                   className="glow-magenta rounded-full bg-primary px-6 py-3 text-sm font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:scale-[1.03]"
                 >
                   Browse rooms

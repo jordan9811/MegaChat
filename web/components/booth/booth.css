@@ -21,6 +21,18 @@
   font-family: var(--font-barlow-c), var(--font-barlow), sans-serif;
 }
 
+/* Same reason as the landing: the themed focus ring is invisible here. */
+.mc-booth :is(a, button, [tabindex]):focus-visible {
+  outline: 2px solid var(--mcb-fg);
+  outline-offset: 2px;
+}
+
+/* Status text sits over live thumbnails whose top edge carries no scrim. */
+.mc-chip-plate {
+  background: rgba(8, 8, 10, 0.62);
+  padding: 3px 8px;
+}
+
 /* abstract camera-feed placeholders (no photos in the app, by decision) */
 .mc-mesh-0 {
   background: radial-gradient(120% 90% at 22% 18%, #24404f 0%, #141c22 62%);

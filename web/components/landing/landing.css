@@ -6,14 +6,24 @@
   --mcl-bg: #04070a;
   --mcl-fg: #edf2f4;
   --mcl-muted: #b9c2c6;
-  --mcl-dim: #7d878c;
-  --mcl-faint: #576065;
+  --mcl-dim: #949ea3;
+  /* was #576065 (3.1:1) and #7d878c (4.2:1) — both under AA on this
+     near-black ground, and they carry real label text, not decoration. */
+  --mcl-faint: #8b969b;
   --mcl-hairline: rgba(255, 255, 255, 0.1);
   --mcl-mint: #8fd8e4;
   --mcl-mint-ink: #04140f;
   --mcl-live: #43e0a8;
   background: var(--mcl-bg);
   color: var(--mcl-fg);
+}
+
+/* The global focus ring is tuned for the themed pages and washes out to
+   ~2.2:1 on this ground; give both dark scopes their own visible ring. */
+.mc-landing :is(a, button, [tabindex]):focus-visible {
+  outline: 2px solid var(--mcl-mint);
+  outline-offset: 3px;
+  border-radius: 2px;
 }
 
 @keyframes mcl-rise {

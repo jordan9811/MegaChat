@@ -13,7 +13,15 @@ export function ReturningVisitorRedirect() {
   useEffect(() => {
     if (params.get('stay')) return
     try {
-      if (window.localStorage.getItem('mc-entered') === '1') router.replace('/app')
+      if (window.localStorage.getItem('mc-entered') !== '1') return
+      // Only fast-track a FRESH arrival. Without this, pressing Back from
+      // /app lands on / and is immediately replaced back to /app — the Back
+      // button stops working on the site's main path.
+      const nav = performance.getEntriesByType('navigation')[0] as
+        | PerformanceNavigationTiming
+        | undefined
+      if (nav && nav.type === 'back_forward') return
+      router.replace('/app')
     } catch {
       // storage blocked — first-visit behavior is the right fallback
     }
@@ -27,18 +35,39 @@ export function ReturningVisitorRedirect() {
 export function LandingHero() {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [ended, setEnded] = useState(false)
+  const [playing, setPlaying] = useState(false)
+  // Someone who asked their OS for less motion should not be handed a
+  // 10-second autoplaying film; they get the poster and an explicit play.
+  const [reduced, setReduced] = useState(false)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    setReduced(mq.matches)
+    if (mq.matches) {
+      const v = videoRef.current
+      if (v) {
+        v.pause()
+        v.currentTime = 0
+      }
+    }
+  }, [])
 
   const replay = useCallback(() => {
     const v = videoRef.current
     if (v) {
-      try {
-        v.currentTime = 0
-        void v.play()
-      } catch {
-        /* ignore */
-      }
+      v.currentTime = 0
+      // play() reports failure through its promise, not a throw — a bare
+      // try/catch would let the rejection escape as an unhandled error.
+      void v.play().catch(() => setPlaying(false))
     }
     setEnded(false)
+  }, [])
+
+  const toggle = useCallback(() => {
+    const v = videoRef.current
+    if (!v) return
+    if (v.paused) void v.play().catch(() => setPlaying(false))
+    else v.pause()
   }, [])
 
   return (
@@ -56,7 +85,13 @@ export function LandingHero() {
         muted
         playsInline
         preload="auto"
-        onEnded={() => setEnded(true)}
+        aria-label="The MegaChat launch film: a viewer is pulled off his couch and into the stream"
+        onEnded={() => {
+          setEnded(true)
+          setPlaying(false)
+        }}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
         className="absolute inset-0 size-full object-cover"
       />
       <div
@@ -73,18 +108,42 @@ export function LandingHero() {
         }}
       />
 
-      <button
-        type="button"
-        onClick={replay}
-        title="Replay the film"
-        aria-label="Replay the film"
-        className="absolute bottom-6 right-6 z-10 grid size-11 place-items-center rounded-full border border-white/30 bg-[#04070a]/50 text-[var(--mcl-fg)] transition-colors hover:border-white/60"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <polyline points="1 4 1 10 7 10" />
-          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-        </svg>
-      </button>
+      <div className="absolute bottom-6 right-6 z-10 flex items-center gap-2">
+        {/* pause exists whenever the film is running: an autoplaying video
+            with no stop control is a WCAG 2.2.2 failure */}
+        {playing ? (
+          <button
+            type="button"
+            onClick={toggle}
+            title="Pause the film"
+            aria-label="Pause the film"
+            className="grid size-11 place-items-center rounded-full border border-white/30 bg-[#04070a]/50 text-[var(--mcl-fg)] transition-colors hover:border-white/60"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="9" y1="4" x2="9" y2="20" />
+              <line x1="15" y1="4" x2="15" y2="20" />
+            </svg>
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={replay}
+          title={ended || !playing ? 'Play the film' : 'Replay the film'}
+          aria-label={ended || !playing ? 'Play the film' : 'Replay the film'}
+          className="grid size-11 place-items-center rounded-full border border-white/30 bg-[#04070a]/50 text-[var(--mcl-fg)] transition-colors hover:border-white/60"
+        >
+          {reduced && !playing && !ended ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="6 3 20 12 6 21 6 3" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="1 4 1 10 7 10" />
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+            </svg>
+          )}
+        </button>
+      </div>
 
       <div className="absolute inset-x-6 bottom-10 z-10 flex max-w-[880px] flex-col gap-5 md:inset-x-16 md:bottom-14">
         <div className="mcl-r1 flex items-center gap-2.5 text-[12px] tracking-[0.24em] text-[var(--mcl-mint)]">

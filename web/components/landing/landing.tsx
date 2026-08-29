@@ -104,7 +104,7 @@ export function Landing({
         <Link href="/?stay=1" className="text-[15px] font-[800] tracking-[0.3em] text-[var(--mcl-fg)]">
           MEGACHAT
         </Link>
-        <nav className="flex items-center gap-5 text-[12px] tracking-[0.18em] text-[var(--mcl-muted)] md:gap-8">
+        <nav aria-label="Primary" className="flex items-center gap-5 text-[12px] tracking-[0.18em] text-[var(--mcl-muted)] md:gap-8">
           <Link href="/app" className="hidden hover:text-white sm:inline">
             ROOMS
           </Link>
@@ -126,6 +126,7 @@ export function Landing({
       {/* film hero */}
       <LandingHero />
 
+      <main>
       {/* stat row — true product facts, not vanity metrics */}
       <section className="grid grid-cols-2 border-b border-[var(--mcl-hairline)] lg:grid-cols-4">
         {STATS.map((s, i) => (
@@ -192,7 +193,7 @@ export function Landing({
               const onAir = room.live > 0 || room.twitchLive
               const full = room.live >= room.maxSeats
               return (
-                <Link
+                <a
                   key={room.id}
                   href={roomHref(room)}
                   className="grid grid-cols-[2fr_1fr_1fr] items-center gap-5 border-b border-[var(--mcl-hairline)] py-5 text-[15px] transition-colors hover:bg-white/[0.03] md:grid-cols-[2fr_1fr_1.2fr_1fr_1fr]"
@@ -220,7 +221,7 @@ export function Landing({
                       </span>
                     )}
                   </span>
-                </Link>
+                </a>
               )
             })}
           </div>
@@ -337,10 +338,12 @@ export function Landing({
         </p>
       </section>
 
+      </main>
+
       {/* footer */}
       <footer className="flex flex-col items-center justify-between gap-4 border-t border-[var(--mcl-hairline)] px-6 py-7 text-[12px] tracking-[0.14em] text-[var(--mcl-faint)] md:flex-row md:px-16">
         <span className="tracking-[0.3em] text-[var(--mcl-dim)]">MEGACHAT</span>
-        <nav className="flex flex-wrap items-center justify-center gap-5 md:gap-7">
+        <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-5 md:gap-7">
           <Link href="/app" className="hover:text-white">
             Rooms
           </Link>

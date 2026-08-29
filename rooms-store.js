@@ -315,6 +315,12 @@ const RESERVED_HANDLES = new Set([
   'api', 'join', 'dashboard', 'overlay', 'r', 'auth', 'roadmap', 'index',
   'admin', 'www', 'assets', 'static', 'login', 'how-it-works', 'next',
   '_next', 'public', 'favicon', 'icon', 'robots', 'sitemap',
+  // the landing/app split: /app is the room board and /legacy the previous
+  // front end. Both are plain lowercase, so neither the dash-or-dot rule nor
+  // anything else stops a handle from shadowing them — /:handle is matched
+  // BEFORE the Next fallthrough, so claiming one would make the page
+  // unreachable. 'bounty' had the same gap.
+  'app', 'legacy', 'bounty',
   // plausible future routes — cheap to reserve now, painful to reclaim later
   'about', 'blog', 'browse', 'careers', 'channel', 'contact', 'docs',
   'explore', 'faq', 'help', 'home', 'jobs', 'legal', 'live', 'logout',
