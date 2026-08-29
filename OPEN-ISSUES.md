@@ -1440,3 +1440,40 @@ MegaChat backend becomes unreachable mid-broadcast currently sees the badge
 quietly disappear, with no way to tell that from having set the overlay up
 wrong. Related to T5b and T6 — all three are cases where a zero, a blank, or
 a silence fails to say WHICH failure it is.
+
+### pump.fun PROVEN on a real broadcast (2026-08-29) — with three caveats
+
+First successful pump.fun run, after six setup failures (none of them in the
+video pipeline). Full path confirmed end to end: overlay -> OBS -> pump.fun
+ingest -> public HLS -> our capture -> OCR decode -> escrow release.
+
+    canary        FOUND CF-UE3G at 28px, broadcast delay ~10s
+    result        PARTIAL
+    verifiedClips 7
+    confidence    0.937   (highest of any platform: Twitch 4/5, Kick 0.857)
+    detectionRate 0.778
+    stream ctx    OK
+    release(stub) 6.25 of 25   <- FIRST non-zero release on a real broadcast
+
+This is also the first real-broadcast exercise of the confidence/detectionRate
+split all the way through to money moving.
+
+**P1. verifiedClips counts SETUP clips.** 7 verified for a 5-clip run: the
+canary clip and the warmup badge-holder clips carry valid codes and are aired
+inside the session, so they verify like any other. Not false — they really did
+air — but it inflates the payout unit, and payouts are per verified clip. The
+warmup/canary clips need a marker that excludes them from verifiedClips and
+from the release computation, without excluding them from the evidence log.
+
+**P2. Self-capture STILL did not run, so the two columns are the same
+capture.** 0/5 windows froze, so both "self-capture" and "external" ran the
+external path and reported identical numbers. The yt-dlp coin-page fix is
+committed but this server was started before it applied. pump.fun remains the
+only platform that CAN compare two independent captures of one broadcast, and
+that comparison has still never actually happened. Re-run to get it.
+
+**P3. detectionRate 0.778 with the first two samples at px 0.** Consistent
+with the measured ~10s broadcast delay putting the earliest sampled instants
+before the badge reached the public stream. Same family as T5b/R1 — the
+sampler does not yet account for a platform's real delay when choosing WHERE
+in the window to sample.
