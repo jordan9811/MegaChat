@@ -277,12 +277,46 @@ export async function calibrateTimeline({
     };
   }
 
-  // The acceptance window is now DERIVED, not guessed: what a measured seek
-  // actually leaves behind is the per-point quantization (±validity/2, because
-  // any instant inside a code's window is indistinguishable) plus whatever the
-  // points disagree by, plus a small margin. This replaces the old flat
-  // tolerance, which was wide enough to hide the very error it absorbed.
-  const residualMs = Math.round(validity / 2) + spreadMs + config.calibrationResidualMarginMs;
+  // THE ACCEPTANCE WINDOW IS THE UNCERTAINTY OF THE MEDIAN, not the sum of
+  // every uncertainty in sight.
+  //
+  // This was `validity/2 + spread + margin`, which DOUBLE-COUNTS. A single
+  // probe can only place the skew within +/-validity/2, because any instant
+  // inside a code's window looks identical. So when several probes disagree,
+  // most of that spread IS that same quantization showing up again -- adding
+  // both treats one error source as two.
+  //
+  // It also ignored that we keep the MEDIAN of N inliers, whose uncertainty
+  // falls with sqrt(N) rather than staying at one point's.
+  //
+  // MEASURED on real broadcasts (2026-08-29, after the overlay poll fix):
+  //   Kick    validity/2 2500 + spread 2970 + 1500 = 6970
+  //   Twitch  validity/2 2500 + spread 1927 + 1500 = 5927
+  // Both EXCEED codeValidityMs (5000), which is the R1 defect: the accepted-
+  // code window then spans more than one rotation, so a badge from an
+  // adjacent rotation satisfies a sample. That is weaker evidence than the
+  // design intends, and it is why sampleInstantsForWindow could never shift
+  // an instant clear of a window edge.
+  //
+  // NARROWING IS THE SAFE DIRECTION. A tighter window accepts FEWER codes,
+  // so it cannot admit a cheater it previously refused; the risk is the
+  // opposite one, rejecting honest samples, which is why this is validated
+  // against real captures rather than reasoned about.
+  const inlierN = Math.max(1, inlierEstimates.length);
+  const medianUncertaintyMs = Math.round(
+    (Math.round(validity / 2) + Math.round(spreadMs / 2)) / Math.sqrt(inlierN),
+  );
+  // NO codeRotateMs FLOOR. The first cut floored this at one code rotation,
+  // reasoning that anything tighter would fail honest samples on seek jitter.
+  // codeRotateMs is a POLICY KNOB, not a physical limit: _gate-vod-calibration
+  // deliberately sets it to 600000 (one code per clip), and the floor then
+  // produced a TEN MINUTE acceptance window -- far worse than the flat 20s
+  // constant this whole derivation replaced.
+  //
+  // The margin already supplies the floor that was actually wanted: it is
+  // 1500ms, matching the +/-1.5s seek tolerance frame-sources documents, and
+  // it is added rather than maxed, so the window can never collapse below it.
+  const residualMs = medianUncertaintyMs + config.calibrationResidualMarginMs;
 
   if (outliers.length) {
     log.warn?.(`[calibration] discarded ${outliers.length} outlying point(s) `
