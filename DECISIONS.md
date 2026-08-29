@@ -458,3 +458,19 @@ reason than "the API is expensive".
 - **_gate-phase5-oauth.mjs deleted, not repaired** — it gated deleted UI and
   crashed; _gate-privy-auth.mjs gates what exists. A gate that crashes trains
   the suite output to be ignored. Undo: n/a (process).
+- **"Self-capture" is a TIMING variant of capture-from-broadcast, not a weaker
+  class of evidence** — a planning pass defined it as "the overlay records
+  itself", which would rank it below external capture as self-attested. It is
+  not: bounty-capture.js startCapture fetches the PLATFORM'S OWN live HLS
+  playlist into a rolling buffer, server-side. The streamer's machine is not
+  involved and cannot influence it. Live-buffer capture and VOD capture read
+  the same public broadcast; they differ only in WHEN. Ranking them as
+  primary/fallback by trust is wrong — they are equally independent. What
+  differs is AVAILABILITY: Twitch VODs are streamer-disableable, Kick has no
+  VOD discovery at all, so the live buffer is the only variant present on every
+  platform. It is preferred because it is always available, not because it is
+  better proof. The genuinely weak signal is SELF-REPORTED (OVERLAY_ENV and
+  badge reports — the overlay describing itself), which never decides a payout
+  and earns its keep only as a cross-check that can contradict a stronger
+  witness and force review. Undo: n/a (taxonomy — carrying the wrong definition
+  causes a strong signal to be distrusted).
