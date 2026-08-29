@@ -13,6 +13,8 @@ Open the HTML files directly in a browser — they are self-contained, no build 
 - **Landing / app direction canvas** — the Round 1 → Round 2 design decision record
   (landing directions, the picked Landing V1, and Booth as the app page):
   https://claude.ai/code/artifact/33a1b197-8bdb-4bcc-8e59-d5aed118f3c6
+- **Create-room mocks** — three interactive directions (Stack, Ribbon, Split preview):
+  https://claude.ai/code/artifact/70b4e2d6-296b-42a1-8389-2668f2c8e0b0
 - **Design rules** — [`../../DESIGN.md`](../../DESIGN.md) (lifecycle gating, spacing,
   uppercase budget, glow budget). Still authoritative for behavior; its neon-noir
   visual language was retired in the overhaul.
