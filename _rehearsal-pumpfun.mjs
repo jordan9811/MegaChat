@@ -317,6 +317,79 @@ try {
   log(`holding ${WARMUP_S}s to clear the stream-context warmup…`);
   await sleep((WARMUP_S + 5) * 1000);
 
+  /**
+   * ── CANARY CLIP: PROVE THE OVERLAY IS ON THE REAL STREAM ────────────────
+   *
+   * Air ONE throwaway clip and go look for its badge in the actual broadcast
+   * before committing to the full run. Costs ~40s; the run it replaces costs
+   * 14 minutes of the operator's live broadcast and returns a guaranteed
+   * zero.
+   *
+   * WHY THIS EXISTS. A pump.fun run verified 0/5 with SOURCE_UNAVAILABLE on
+   * both paths, and the frames turned out to be COMPLETELY BLACK — the
+   * operator's browser source was still pointed at a PREVIOUS session whose
+   * server had been killed, so the overlay had nothing to poll and rendered
+   * nothing at all. Every server-side signal looked perfect: codes issued and
+   * rotating, playlist published, media confirmed. Nothing in the pipeline
+   * can tell "the overlay is not in the scene" apart from "capture is
+   * broken" — except looking at the picture.
+   *
+   * THE CANARY MUST BE ITS OWN CLIP, not a peek at a real one: a real clip
+   * consumed by a failed check is a clip that cannot be re-aired for the
+   * actual run, and its codes are already burned.
+   */
+  {
+    log('canary: airing one throwaway clip to prove the overlay is really on the stream…');
+    const canary = await must('canary playback', post('/api/bounty/admin/playback',
+      { airSessionId: airId, clipId: 'PF_CANARY', durationS: 20 }));
+    const canaryCode = canary.body.code?.code;
+    log(`canary: code ${canaryCode} on air — waiting for it to reach the public stream`);
+    await sleep(20_000);
+    await post('/api/bounty/admin/playback/end', { airSessionId: airId, clipId: 'PF_CANARY' });
+    // Let the segment carrying it get packaged and published.
+    await sleep(25_000);
+
+    const { PumpFunFrameSource } = await import('./frame-sources.js');
+    const { OcrFrameChecker } = await import('./ocr-frame-checker.js');
+    const probeSrc = new PumpFunFrameSource({ log: { warn() {}, log() {} }, mint: MINT });
+    const probeChecker = new OcrFrameChecker({ log: { warn() {}, log() {} } });
+    // Read the store on disk: there is no GET route for a whole air session
+    // (only /code), and the harness owns dataDir anyway.
+    const storeNow = JSON.parse(readFileSync(`${dataDir}/bounty.json`, 'utf8'));
+    const sess = Object.values(storeNow.airSessions || {}).find((x) => x.id === airId);
+    const cwin = (sess?.playbackWindows || []).find((w) => w.clipId === 'PF_CANARY');
+    let seen = false; let sawAnything = false;
+    if (cwin?.codes?.length) {
+      // Sample every code the canary issued — one of them will have been on
+      // screen when a published segment was captured.
+      for (const c of cwin.codes) {
+        const ts = Math.floor((c.issuedAt + c.expiresAt) / 2);
+        try {
+          const fr = await probeSrc.getFrames('pumpfun', MINT, [{ ts, clipId: 'PF_CANARY', playbackId: cwin.playbackId }]);
+          if (!fr?.[0]) continue;
+          const res = await probeChecker.findCode(fr[0], cwin.codes.map((x) => x.code));
+          if (Number(res.pixelHeight) > 0) sawAnything = true;
+          if (res.found) { seen = true; log(`canary: FOUND ${res.text || res.code} on the live stream at ${res.pixelHeight}px`); break; }
+        } catch { /* try the next code */ }
+      }
+    }
+    if (!seen) {
+      log('');
+      log('CANARY FAILED — the badge is NOT visible on your broadcast.');
+      log(sawAnything
+        ? '  Something was decoded but it was not this session\'s code, so the overlay is'
+        + ' probably pointed at an OLD session. Update the browser source URL to:'
+        : '  Nothing was on screen at all. The overlay is not rendering — check the browser'
+        + ' source URL, that it is not hidden, and that it is above your other sources:');
+      log(`  ${APP}/overlay?room=pfrehearsal&bounty=${airId}`);
+      log('');
+      log('Stopping rather than burning your broadcast on a run that cannot pass.');
+      await cleanup();
+      process.exit(4);
+    }
+    log('canary: PASSED — the overlay is live on the real stream. Starting the real clips.');
+  }
+
   // ── air the clips ───────────────────────────────────────────────────────
   for (let i = 1; i <= CLIPS; i++) {
     const play = await post('/api/bounty/admin/playback',
