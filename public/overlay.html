@@ -1109,8 +1109,38 @@
         .catch(() => {})
         .finally(() => {
           poll();
-          // Poll faster than rotation so a new code appears promptly.
-          setInterval(poll, Math.max(5000, rotateMs / 4));
+          /**
+           * RE-ARM ONCE THE REAL ROTATION RATE IS KNOWN.
+           *
+           * This read rotateMs at setInterval time -- before the first
+           * poll() had returned -- so it captured the 60000 PLACEHOLDER and
+           * locked a 15-SECOND interval forever, while the server rotates
+           * codes every codeRotateMs (4000). Every code sat on screen ~15s
+           * instead of ~4s.
+           *
+           * NOT COSMETIC. Timeline calibration estimates the broadcast
+           * delay from which code is on screen versus that code NOMINAL
+           * midpoint. A code held 4x too long makes an on-time stream look
+           * ~10s delayed. Measured on a real pump.fun broadcast: two codes
+           * issued 17s apart (should be 4s), calibration reported skew
+           * 10366ms on a stream whose true offset was near zero, every
+           * sample then seeked ~10s wide and found a real badge at 28px
+           * carrying the WRONG code, and the broadcast verified 0/9. Same
+           * signature as the Twitch second-code misses filed as T5b.
+           *
+           * The floor was wrong too: max(5000, ...) polls slower than a 4s
+           * rotation even when re-armed. Poll faster than rotation.
+           */
+          let pollTimer = null;
+          let armedFor = null;
+          const armPolling = () => {
+            if (armedFor === rotateMs) return;
+            armedFor = rotateMs;
+            if (pollTimer) clearInterval(pollTimer);
+            const every = Math.max(750, Math.min(rotateMs, Math.round(rotateMs / 4)));
+            pollTimer = setInterval(() => { void poll(); armPolling(); }, every);
+          };
+          armPolling();
           window.addEventListener('resize', () => {
             requestAnimationFrame(() => {
               const s = checkSize();
