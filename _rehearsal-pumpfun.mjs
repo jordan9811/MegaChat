@@ -360,17 +360,45 @@ try {
     const cwin = (sess?.playbackWindows || []).find((w) => w.clipId === 'PF_CANARY');
     let seen = false; let sawAnything = false;
     if (cwin?.codes?.length) {
-      // Sample every code the canary issued — one of them will have been on
-      // screen when a published segment was captured.
+      /**
+       * SWEEP THE BROADCAST DELAY — DO NOT ASSUME IT IS ZERO.
+       *
+       * The first version of this sampled each code at its own issue time and
+       * declared the overlay missing. It was wrong, and it was wrong in the
+       * project's most expensive way: it told an operator whose setup was
+       * PERFECT that their stream had no badge on it.
+       *
+       * PROGRAM-DATE-TIME marks when a segment was PACKAGED; the overlay
+       * rendered the code one broadcast delay earlier. Sampling at issue time
+       * therefore lands D seconds BEFORE the clip started — on black. Measured
+       * on this stream: the badge is present at D = 10-20s and invisible at
+       * D = 0-5s. That is the same mistake as the PDT-anchor bug that cost
+       * three Kick broadcasts, reproduced in the very check written to stop
+       * broadcasts being wasted.
+       *
+       * Verification proper MEASURES this delay through calibration. A canary
+       * cannot: it has one clip and no budget for a probe ladder. So it sweeps
+       * a generous range and asks only the binary question it exists to
+       * answer — is the badge on the stream AT ALL?
+       */
+      const SWEEP_MS = [0, 5_000, 10_000, 15_000, 20_000, 25_000, 30_000, 40_000];
+      outer:
       for (const c of cwin.codes) {
-        const ts = Math.floor((c.issuedAt + c.expiresAt) / 2);
-        try {
-          const fr = await probeSrc.getFrames('pumpfun', MINT, [{ ts, clipId: 'PF_CANARY', playbackId: cwin.playbackId }]);
-          if (!fr?.[0]) continue;
-          const res = await probeChecker.findCode(fr[0], cwin.codes.map((x) => x.code));
-          if (Number(res.pixelHeight) > 0) sawAnything = true;
-          if (res.found) { seen = true; log(`canary: FOUND ${res.text || res.code} on the live stream at ${res.pixelHeight}px`); break; }
-        } catch { /* try the next code */ }
+        for (const d of SWEEP_MS) {
+          const ts = Math.floor((c.issuedAt + c.expiresAt) / 2) + d;
+          try {
+            const fr = await probeSrc.getFrames('pumpfun', MINT, [{ ts, clipId: 'PF_CANARY', playbackId: cwin.playbackId }]);
+            if (!fr?.[0]) continue;
+            const res = await probeChecker.findCode(fr[0], cwin.codes.map((x) => x.code));
+            if (Number(res.pixelHeight) > 0) sawAnything = true;
+            if (res.found) {
+              seen = true;
+              log(`canary: FOUND ${res.text || res.code} on the live stream at ${res.pixelHeight}px `
+                + `(broadcast delay ~${d / 1000}s)`);
+              break outer;
+            }
+          } catch { /* try the next offset */ }
+        }
       }
     }
     if (!seen) {
