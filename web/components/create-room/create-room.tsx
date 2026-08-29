@@ -272,7 +272,8 @@ export function CreateRoom() {
   return (
     <div className="mc-create dark min-h-screen">
       {/* the only chrome: one thin bar, same as the room board */}
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1a1a1f] px-5 py-3">
+      <header className="border-b border-[#1a1a1f]">
+        <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-center justify-between gap-3 px-5 py-3">
         <span className="flex flex-wrap items-baseline gap-3.5">
           <a href="/app" className="bc text-[18px] font-bold tracking-[0.1em] text-[var(--mcc-fg)]">
             MEGACHAT
@@ -299,9 +300,13 @@ export function CreateRoom() {
             </>
           )}
         </span>
+        </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr]">
+      {/* Capped and centred: a form stretched across a wide monitor is
+          harder to scan, not easier. The room board is full-bleed because
+          it is a wall of video; this is a form. */}
+      <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 lg:grid-cols-[1.5fr_1fr]">
       {/* ─────────── LEFT: the decisions ─────────── */}
       <div className="flex min-w-0 flex-col gap-4 border-b border-[var(--mcc-rule)] p-5 lg:border-b-0 lg:border-r">
         {/* identity — one dense line, no action button up here */}
@@ -313,7 +318,7 @@ export function CreateRoom() {
             placeholder="Name your room"
             aria-label="Room name"
             onChange={(e) => updateDraft({ name: e.target.value })}
-            className="min-w-[220px] grow"
+            className="min-w-[220px] max-w-[420px] grow"
           />
           <span className="flex items-center gap-1 text-[13px] text-[var(--mcc-dim)]">
             megachat.fun/
@@ -941,7 +946,7 @@ export function CreateRoom() {
       </div>
 
       {/* ─────────── RIGHT: what viewers get ─────────── */}
-      <div className="flex min-w-0 flex-col gap-3 bg-[var(--mcc-sunk)] p-5">
+      <div className="flex min-w-0 flex-col gap-3 self-start bg-[var(--mcc-sunk)] p-5 lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto">
         <span className="text-[15px] font-bold text-[#d7dde2]">
           What viewers will see{' '}
           <span className="text-[12.5px] font-normal text-[var(--mcc-faint)]">

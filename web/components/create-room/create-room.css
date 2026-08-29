@@ -3,6 +3,26 @@
    board and this page are the same product surface, so they match each other
    rather than the marketing site. */
 
+/* The site paints a magenta neon scrollbar on the document itself, so
+   scoping the app skin to .mc-create isn't enough — the pink rail survives
+   next to a near-black page. :has lets this page own the document chrome
+   for as long as it is the thing on screen. */
+html:has(.mc-create) {
+  color-scheme: dark;
+}
+/* html itself owns the page scrollbar, and the site's rule is `*` — which
+   matches html but not `html *`. Both selectors are needed. */
+html:has(.mc-create),
+html:has(.mc-create) * {
+  scrollbar-color: #3a3a44 transparent;
+}
+html:has(.mc-create) ::-webkit-scrollbar-thumb {
+  background-color: #3a3a44;
+}
+html:has(.mc-create) ::-webkit-scrollbar-thumb:hover {
+  background-color: #55555f;
+}
+
 .mc-create {
   --mcc-bg: #08080a;
   --mcc-panel: #101014;
