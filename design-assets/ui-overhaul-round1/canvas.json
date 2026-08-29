@@ -1,0 +1,127 @@
+{
+  "pages": [
+    { "id": "final", "name": "Landing V1" },
+    { "id": "round2", "name": "Round 2 — App main page" },
+    { "id": "page-2", "name": "Round 1.5 — B × the references" },
+    { "id": "page-1", "name": "Round 1 — Four directions" }
+  ],
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1280, "h": 3480, "title": "Landing V1", "page": "final", "is_interactive": true },
+    { "file": "Booth.dc.html", "x": 0, "y": 0, "w": 1280, "h": 900, "title": "Booth — the app", "page": "round2" },
+    { "file": "BoothDay1.dc.html", "x": 1420, "y": 0, "w": 1280, "h": 900, "title": "Booth — day one", "page": "round2" },
+    { "file": "Prestige.dc.html", "x": 1420, "y": 0, "w": 1280, "h": 1960, "title": "B · Prestige Broadcast", "page": "page-1" },
+    { "file": "Impact.dc.html", "x": 0, "y": 2560, "w": 1280, "h": 2200, "title": "C · Impact Comic", "page": "page-1" },
+    { "file": "Signal.dc.html", "x": 1420, "y": 2560, "w": 1280, "h": 2080, "title": "D · Signal Grid", "page": "page-1" },
+    { "file": "HyperCut.dc.html", "x": 0, "y": 0, "w": 1280, "h": 2220, "title": "B1 · Hyperliquid cut", "page": "page-2" },
+    { "file": "EbisuCut.dc.html", "x": 1420, "y": 0, "w": 1280, "h": 2240, "title": "B2 · Ebisu cut", "page": "page-2" },
+    { "file": "FomoCut.dc.html", "x": 0, "y": 2660, "w": 1280, "h": 2140, "title": "B3 · Fomo cut", "page": "page-2" },
+    { "file": "FantasyCut.dc.html", "x": 1420, "y": 2660, "w": 1280, "h": 2200, "title": "B4 · Fantasy cut", "page": "page-2" }
+  ],
+  "annotations": [
+    {
+      "id": "round2-brief",
+      "x": 0,
+      "y": -280,
+      "w": 980,
+      "page": "round2",
+      "text": "ROUND 2 — THE APP: BOOTH, AS PICKED. The original board from the first canvas, untouched — Barlow Condensed, 48px of chrome, abstract camera-feed tiles (no film footage anywhere in the app; the film's job ends at the landing page), lower-thirds, bounty rail. The accent chip above the frame is live — try the four colors. Right board is the same design reflowed to a day-one reality: one live room at full size, real bounties, and an OPEN A ROOM tile instead of dead placeholders. All room/pool data is sample."
+    },
+    {
+      "id": "note-booth",
+      "x": 0,
+      "y": 950,
+      "w": 620,
+      "page": "round2",
+      "text": "BOOTH — THE APP. Verbatim port of the board you chose: the product is the interface, everything on screen is a room. This is what ENTER MEGACHAT on the landing routes into, same tab. The landing keeps its own skin (Archivo/mint) — marketing page and terminal looking different is the hyperliquid pattern, not a bug."
+    },
+    {
+      "id": "note-booth-day1",
+      "x": 1420,
+      "y": 950,
+      "w": 620,
+      "page": "round2",
+      "text": "BOOTH — DAY ONE. Same language (type, chrome, mesh feeds, accent, rail), reflowed to what's actually live early on: one room at hero scale beats six half-dead tiles. The dashed OPEN A ROOM tile is the empty state doing sales work. If this board holds up, Booth survives the cold start you flagged when we banked it."
+    },
+    {
+      "id": "final-brief",
+      "x": 1400,
+      "y": 60,
+      "w": 560,
+      "page": "final",
+      "text": "LANDING V1 — the picked mix: B1's engineering skin (Archivo caps, mint accent, hard edges) carrying B3's content (the four feature rows, \"a chat app for people who'd rather be on TV\") plus the full reference-style scroll: stat row, live-rooms table, bounty board, how-a-seat-works.\n\nThe hero plays the REAL launch film once (compressed preview cut), holds its final frame with a soft dim, and the small circle bottom-right replays it. Headline reveals staged, with a sweep under BE THE STREAM.\n\nStill open: final film's Shot B re-roll will replace the hero video; wordmark/logo placement (currently type-only, B1-style); real room/bounty data at launch."
+    },
+    {
+      "id": "round15-brief",
+      "x": 0,
+      "y": -280,
+      "w": 980,
+      "page": "page-2",
+      "text": "ROUND 1.5 — B'S STRUCTURE, REBUILT ON THE REFERENCE SET. Every board keeps what won in B (full-bleed film hero, quiet chrome, dark ground, editorial restraint) and swaps the serif for a voice pulled from one reference: hyperliquid's engineering caps, ebisu's marquee-and-cards, fomo's heavy lowercase, fantasy.top's board-as-centerpiece. VERDICT: B1 took the style, B3 took the content — merged into Landing V1 (first page)."
+    },
+    {
+      "id": "note-hyper",
+      "x": 0,
+      "y": 2290,
+      "w": 620,
+      "page": "page-2",
+      "text": "B1 · HYPERLIQUID CUT — engineering luxury: letterspaced caps nav, hard-edged mint CTA, a big-number mechanics row (all true product facts, no invented totals), and a live-rooms table styled like a price board.\nWhy: the most credible-with-money read; the table IS the product demo.\nTradeoff: coldest of the four — personality rides almost entirely on the film.\nVERDICT: winner — style."
+    },
+    {
+      "id": "note-ebisu",
+      "x": 1420,
+      "y": 2310,
+      "w": 620,
+      "page": "page-2",
+      "text": "B2 · EBISU CUT — the on-brand one: gradient marquee strip up top, the M-mark in the nav, rounded film hero card, four mechanic cards (their Borrow/Leverage/Earn/Stake pattern), bounty strip, sticker lockup at the close.\nWhy: brand kit fully deployed inside a proven crypto-landing skeleton.\nTradeoff: busiest of the four — the most elements competing with the film."
+    },
+    {
+      "id": "note-fomo",
+      "x": 0,
+      "y": 4870,
+      "w": 620,
+      "page": "page-2",
+      "text": "B3 · FOMO CUT — heavy lowercase statement voice (\"where fans become the show.\"), caps-kicker feature rows, dual pill CTAs, gradient spent on the headline's last two words.\nWhy: the most fun-digital register; reads consumer-social, not fintech.\nTradeoff: lowercase-everything is a whole personality — it commits the brand to casual forever.\nVERDICT: winner — content (feature rows + closing statement, folded into Landing V1)."
+    },
+    {
+      "id": "note-fantasy",
+      "x": 1420,
+      "y": 4930,
+      "w": 620,
+      "page": "page-2",
+      "text": "B4 · FANTASY CUT — the board is the centerpiece: bounty leaderboard with rank/pool/pledges/claim, gold accent, three role cards (fan / streamer / backer).\nWhy: game energy without comic chrome; gives the money mechanic top billing.\nTradeoff: leads with bounties over seats — a bet that the leaderboard, not the camera, is the hook."
+    },
+    {
+      "id": "round1-brief",
+      "x": 0,
+      "y": -280,
+      "w": 980,
+      "page": "page-1",
+      "text": "ROUND 1 — THE LANDING PAGE, FOUR WAYS (record). B won on structure; A (Sticker Bomb) and D read vibe-coded, C hides the video. A's board was retired when its slot became the Landing V1 build — its brand-at-full-volume idea lives on in the asset kit. Round 1.5 refined B against the reference set; the merge lives on the Landing V1 page."
+    },
+    {
+      "id": "note-prestige",
+      "x": 1420,
+      "y": 2030,
+      "w": 620,
+      "page": "page-1",
+      "text": "B · PRESTIGE BROADCAST — the film IS the identity. Full-bleed still, one cyan accent, zero logo images.\nWhy: the most premium read; nothing competes with the video.\nTradeoff: the serif voice read uppity/pretentious — structure won, type lost.\nVERDICT: winning structure, refined in Round 1.5."
+    },
+    {
+      "id": "note-impact",
+      "x": 0,
+      "y": 4830,
+      "w": 620,
+      "page": "page-1",
+      "text": "C · IMPACT COMIC — the cracked MEGA as the site's whole voice: halftone paper, hard shadows, the film retold as a three-panel strip.\nWhy: unforgettable, meme-native, real merch energy.\nTradeoff: buries the video; comic chrome is a hard register to trust with money.\nVERDICT: cut for the landing — the smash graphics stay in the kit for stream-overlay moments."
+    },
+    {
+      "id": "note-signal",
+      "x": 1420,
+      "y": 4710,
+      "w": 620,
+      "page": "page-1",
+      "text": "D · SIGNAL GRID — the grown-up bridge: monochrome discipline, gradient spent only on the primary CTA.\nWhy: ages best, extends into app UI most directly.\nTradeoff: safest = least memorable.\nVERDICT: cut (read as vibe-coded)."
+    }
+  ],
+  "launch": { "view": "canvas", "page": "round2" }
+}

@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;700;800;900&display=swap">
+  <style>
+    body { margin: 0; background: #0c0a10; }
+    a { color: #f27bb4; text-decoration: none; }
+    a:hover { color: #ffffff; }
+  </style>
+</helmet>
+<div style="width: 1280px; min-height: 2060px; background: #0c0a10; color: #f4f1f7; font-family: Gabarito, system-ui, sans-serif;">
+
+  <!-- full-bleed film hero -->
+  <div style="position: relative; width: 1280px; height: 820px; overflow: hidden;">
+    <img src="frameA.jpg" alt="A fan on his couch, lit by the stream he is about to join" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;">
+    <div style="position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(12,10,16,0.6) 0%, rgba(12,10,16,0.06) 30%, rgba(12,10,16,0.1) 52%, rgba(12,10,16,0.95) 100%);"></div>
+
+    <!-- nav -->
+    <div style="position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 28px 64px;">
+      <span style="font-weight: 900; font-size: 22px; letter-spacing: -0.01em;">megachat</span>
+      <div style="display: flex; align-items: center; gap: 30px; font-size: 14.5px; font-weight: 500; color: #c6c0d0;">
+        <a href="#">rooms</a>
+        <a href="#">bounties</a>
+        <a href="#">how it works</a>
+        <span style="background: #f4f1f7; color: #14111c; font-weight: 700; padding: 10px 24px; border-radius: 999px;">start watching</span>
+      </div>
+    </div>
+
+    <!-- hero copy -->
+    <div style="position: absolute; left: 64px; right: 64px; bottom: 56px; display: flex; flex-direction: column; gap: 18px; max-width: 780px;">
+      <div style="font-weight: 900; font-size: 68px; line-height: 0.98; letter-spacing: -0.02em;">
+        where fans<br>become <span style="background: linear-gradient(100deg, #9b6bff, #f0246f); -webkit-background-clip: text; background-clip: text; color: transparent;">the show.</span>
+      </div>
+      <div style="font-size: 17.5px; line-height: 1.55; font-weight: 500; color: #c6c0d0; max-width: 520px;">
+        From lurking on the couch to live on the broadcast in one tap. Seats billed by the second — famous for exactly as long as you pay to be.
+      </div>
+      <div style="display: flex; align-items: center; gap: 14px; margin-top: 6px;">
+        <span style="background: linear-gradient(100deg, #7b3ff2, #f0246f); color: #ffffff; font-weight: 700; font-size: 16px; padding: 15px 32px; border-radius: 999px;">create a room</span>
+        <span style="border: 1.5px solid rgba(255,255,255,0.3); color: #f4f1f7; font-weight: 700; font-size: 16px; padding: 14px 30px; border-radius: 999px;">browse rooms</span>
+      </div>
+      <div style="font-size: 13px; font-weight: 500; color: #8d8699;">watching is free. no account until you take a seat.</div>
+    </div>
+  </div>
+
+  <!-- caps-kicker feature rows -->
+  <div style="padding: 76px 64px 40px 64px; display: flex; flex-direction: column; gap: 6px;">
+    <div style="font-weight: 900; font-size: 34px; letter-spacing: -0.01em; margin-bottom: 22px;">the only chat that pays you back in air time</div>
+    <div style="display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 32px; padding: 26px 0; border-top: 1.5px solid rgba(255,255,255,0.1); align-items: baseline;">
+      <span style="font-size: 13px; font-weight: 800; letter-spacing: 0.22em; color: #9b6bff;">SEATS</span>
+      <span style="font-size: 16.5px; font-weight: 500; line-height: 1.55; color: #c6c0d0;">Four camera slots per room, right on the broadcast. When they're full, a queue forms — being visible is the whole point.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 32px; padding: 26px 0; border-top: 1.5px solid rgba(255,255,255,0.1); align-items: baseline;">
+      <span style="font-size: 13px; font-weight: 800; letter-spacing: 0.22em; color: #c05ce0;">THE METER</span>
+      <span style="font-size: 16.5px; font-weight: 500; line-height: 1.55; color: #c6c0d0;">Streamers set a per-second rate. It runs while your camera is live and stops the instant you leave. No subscriptions, no minimums.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 32px; padding: 26px 0; border-top: 1.5px solid rgba(255,255,255,0.1); align-items: baseline;">
+      <span style="font-size: 13px; font-weight: 800; letter-spacing: 0.22em; color: #f0246f;">BOUNTIES</span>
+      <span style="font-size: 16.5px; font-weight: 500; line-height: 1.55; color: #c6c0d0;">Want a streamer who isn't here? Stack USDC on their name with everyone else who wants them. First verified broadcast takes the pool.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 32px; padding: 26px 0; border-top: 1.5px solid rgba(255,255,255,0.1); border-bottom: 1.5px solid rgba(255,255,255,0.1); align-items: baseline;">
+      <span style="font-size: 13px; font-weight: 800; letter-spacing: 0.22em; color: #8fd8e4;">NO WALL</span>
+      <span style="font-size: 16.5px; font-weight: 500; line-height: 1.55; color: #c6c0d0;">Every room is watchable without an account. Sign-up starts at the moment you want on camera, not a second before.</span>
+    </div>
+  </div>
+
+  <!-- big statement + dual CTA -->
+  <div style="padding: 88px 64px 84px 64px; display: flex; flex-direction: column; align-items: center; gap: 24px;">
+    <div style="font-weight: 900; font-size: 46px; letter-spacing: -0.015em; text-align: center; line-height: 1.05; max-width: 800px;">
+      a chat app for people<br>who'd rather be on tv
+    </div>
+    <div style="display: flex; align-items: center; gap: 14px;">
+      <span style="background: linear-gradient(100deg, #7b3ff2, #f0246f); color: #ffffff; font-weight: 700; font-size: 16px; padding: 15px 32px; border-radius: 999px;">create a room</span>
+      <span style="border: 1.5px solid rgba(255,255,255,0.3); font-weight: 700; font-size: 16px; padding: 14px 30px; border-radius: 999px;">browse rooms</span>
+    </div>
+    <span style="font-size: 13px; font-weight: 500; color: #8d8699;">live on twitch and kick · bounties settle in USDC</span>
+  </div>
+
+  <!-- footer -->
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 26px 64px 42px 64px; border-top: 1.5px solid rgba(255,255,255,0.08); font-size: 13.5px; font-weight: 500; color: #8d8699;">
+    <span style="font-weight: 900; font-size: 17px; color: #f4f1f7;">megachat</span>
+    <div style="display: flex; gap: 26px;">
+      <span>rooms</span><span>bounties</span><span>docs</span><span>terms</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

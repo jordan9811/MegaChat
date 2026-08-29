@@ -1360,6 +1360,56 @@ fail or under-detect on any window whose SECOND-code sample is the one that
 mattered. T5a is shipped, tested, and validated for real; T5b is real,
 evidenced, and open.
 
+### T6. pump.fun's "hollow live" fix is INSUFFICIENT — it publishes a real placeholder video (2026-08-29)
+
+R4b/E4 narrowed pump.fun's live flag to `live && !!playlistUrl`, on the finding
+that `isLive` flips true on ingress creation before any frame arrives. MEASURED
+TODAY: that is not enough. With an ingress open and NO encoder connected,
+pump.fun serves a **complete, reachable HLS playlist carrying a real video** —
+its own placeholder screen (the OBS logo over a blue gradient with a
+camera-disabled icon). So:
+
+    live: true          <- ingress open
+    playlistUrl: set    <- real playlist
+    playlist reachable  <- real segments, real frames
+    viewerCount: 2      <- and it accrues viewers
+
+...for a stream broadcasting nothing but a stock image. Every signal we
+currently gate on says "genuinely broadcasting". Confirmed by pulling a live
+frame and LOOKING at it, which is the only check that caught it.
+
+CONSEQUENCE: a session can open against a placeholder, air its whole clip
+schedule, self-capture placeholder frames, and verify 0/5 — indistinguishable
+from a capture bug. It cost a real streamer's session today: the operator had
+gone live in the pump.fun studio without pointing OBS at the ingest, every
+API signal read healthy, and I asserted "your OBS settings are already
+correct" on the strength of those signals. They were not.
+
+WHY THIS IS HARD TO FIX PROPERLY, and why nothing was changed today: there is
+no API field distinguishing "placeholder" from "real content". The honest
+signals are all in the pixels — a static frame that never changes, or a
+literal match against pump.fun's placeholder image. Both are heuristics, and a
+heuristic that wrongly decides a real broadcast is a placeholder would refuse
+to pay someone who did the work, which is the failure mode this project
+weights heaviest. Options worth considering, none implemented:
+
+  - Sample two frames a few seconds apart at session open; if they are
+    byte-identical (or near-identical by a cheap perceptual hash), the stream
+    is almost certainly static. Cheap, but a genuinely static scene (a
+    "starting soon" card) would trip it — so it should ROUTE TO REVIEW, never
+    auto-fail.
+  - Keep a reference hash of the known placeholder and match against it.
+    Precise, but brittle: pump.fun changes the asset and it silently stops
+    working, which is the same class of failure as the PDT assumption.
+  - Do nothing at session open, and instead make the 0/5 REPORT
+    distinguishable: if no sampled frame in the entire session ever contained
+    a badge AND the frames are static, say "your stream appears to be showing
+    a placeholder" rather than "verification failed". Cheapest, and it fails
+    in the safe direction.
+
+The last option is probably right, and it belongs with T5b (both are about a
+0/5 that does not explain itself). Filed, not guessed at.
+
 ### Spend
 
 Zero LiveKit minutes (neither rehearsal harness references LiveKit or sets

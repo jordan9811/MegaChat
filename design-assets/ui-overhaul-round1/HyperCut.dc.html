@@ -1,0 +1,124 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700;800&display=swap">
+  <style>
+    body { margin: 0; background: #04070a; }
+    a { color: #8fd8e4; text-decoration: none; }
+    a:hover { color: #ffffff; }
+  </style>
+</helmet>
+<div style="width: 1280px; min-height: 2140px; background: #04070a; color: #edf2f4; font-family: Archivo, system-ui, sans-serif;">
+
+  <!-- full-bleed film hero -->
+  <div style="position: relative; width: 1280px; height: 800px; overflow: hidden;">
+    <img src="frameA.jpg" alt="A fan on his couch, lit by the stream he is about to join" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;">
+    <div style="position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(4,7,10,0.66) 0%, rgba(4,7,10,0.06) 32%, rgba(4,7,10,0.1) 55%, rgba(4,7,10,0.94) 100%);"></div>
+
+    <!-- nav -->
+    <div style="position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 26px 64px;">
+      <span style="font-weight: 800; font-size: 16px; letter-spacing: 0.3em;">MEGACHAT</span>
+      <div style="display: flex; align-items: center; gap: 34px; font-size: 12.5px; letter-spacing: 0.18em; color: #b9c2c6;">
+        <a href="#">ROOMS</a>
+        <a href="#">BOUNTIES</a>
+        <a href="#">DOCS</a>
+        <span style="border: 1px solid rgba(143,216,228,0.5); color: #8fd8e4; padding: 10px 24px; letter-spacing: 0.18em; font-weight: 700;">ENTER APP</span>
+      </div>
+    </div>
+
+    <!-- hero copy -->
+    <div style="position: absolute; left: 64px; right: 64px; bottom: 54px; display: flex; flex-direction: column; gap: 20px; max-width: 860px;">
+      <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; letter-spacing: 0.24em; color: #8fd8e4;">
+        <span style="width: 7px; height: 7px; border-radius: 50%; background: #43e0a8; display: inline-block;"></span>
+        LIVE ON TWITCH AND KICK
+      </div>
+      <div style="font-weight: 800; font-size: 62px; line-height: 1.0; letter-spacing: -0.01em;">
+        THE SEAT BESIDE<br>THE STREAMER<br>IS FOR SALE.
+      </div>
+      <div style="font-size: 17px; line-height: 1.6; color: #b9c2c6; max-width: 540px;">
+        MegaChat sells camera slots on live broadcasts, billed by the second. Watch anything free — pay only while you're on air.
+      </div>
+      <div style="display: flex; align-items: center; gap: 22px; margin-top: 6px;">
+        <span style="background: #8fd8e4; color: #04140f; font-weight: 800; font-size: 14px; letter-spacing: 0.14em; padding: 16px 34px;">ENTER MEGACHAT</span>
+        <span style="display: flex; align-items: center; gap: 9px; font-size: 13px; letter-spacing: 0.14em; color: #b9c2c6;">
+          WATCH THE FILM
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- big stat row -->
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid rgba(255,255,255,0.1);">
+    <div style="padding: 44px 40px; border-right: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; gap: 8px;">
+      <span style="font-weight: 800; font-size: 54px; line-height: 1;">4</span>
+      <span style="font-size: 11.5px; letter-spacing: 0.2em; color: #7d878c;">SEATS PER ROOM</span>
+    </div>
+    <div style="padding: 44px 40px; border-right: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; gap: 8px;">
+      <span style="font-weight: 800; font-size: 54px; line-height: 1;">1s</span>
+      <span style="font-size: 11.5px; letter-spacing: 0.2em; color: #7d878c;">BILLING GRANULARITY</span>
+    </div>
+    <div style="padding: 44px 40px; border-right: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; gap: 8px;">
+      <span style="font-weight: 800; font-size: 54px; line-height: 1;">0</span>
+      <span style="font-size: 11.5px; letter-spacing: 0.2em; color: #7d878c;">LOGINS TO WATCH</span>
+    </div>
+    <div style="padding: 44px 40px; display: flex; flex-direction: column; gap: 8px;">
+      <span style="font-weight: 800; font-size: 54px; line-height: 1;">USDC</span>
+      <span style="font-size: 11.5px; letter-spacing: 0.2em; color: #7d878c;">BOUNTIES IN ESCROW</span>
+    </div>
+  </div>
+
+  <!-- live rooms table -->
+  <div style="padding: 64px 64px 72px 64px; display: flex; flex-direction: column; gap: 22px;">
+    <div style="display: flex; align-items: baseline; justify-content: space-between;">
+      <span style="font-weight: 800; font-size: 26px; letter-spacing: 0.02em;">ON THE BOARD</span>
+      <span style="font-size: 10.5px; letter-spacing: 0.2em; color: #576065;">SAMPLE ROWS — THE APP SHOWS LIVE ROOMS</span>
+    </div>
+    <div style="display: flex; flex-direction: column; border-top: 1px solid rgba(255,255,255,0.14);">
+      <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 20px; padding: 12px 0; font-size: 10.5px; letter-spacing: 0.2em; color: #576065; border-bottom: 1px solid rgba(255,255,255,0.08);">
+        <span>ROOM</span><span>PLATFORM</span><span>SEATS</span><span>RATE</span><span style="text-align: right;">STATUS</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 20px; padding: 20px 0; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 15px;">
+        <span style="font-weight: 700;">nullpointer</span><span style="color: #b9c2c6;">Twitch</span><span style="color: #b9c2c6;">3 of 4</span><span style="color: #8fd8e4; font-weight: 700;">$0.12/s</span>
+        <span style="display: flex; justify-content: flex-end;"><span style="display: flex; align-items: center; gap: 7px; color: #43e0a8; font-size: 11.5px; letter-spacing: 0.16em; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #43e0a8; display: inline-block;"></span>ON AIR</span></span>
+      </div>
+      <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 20px; padding: 20px 0; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 15px;">
+        <span style="font-weight: 700;">kilowatt</span><span style="color: #b9c2c6;">Kick</span><span style="color: #b9c2c6;">1 of 4</span><span style="color: #8fd8e4; font-weight: 700;">$0.08/s</span>
+        <span style="display: flex; justify-content: flex-end;"><span style="display: flex; align-items: center; gap: 7px; color: #43e0a8; font-size: 11.5px; letter-spacing: 0.16em; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #43e0a8; display: inline-block;"></span>ON AIR</span></span>
+      </div>
+      <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 20px; padding: 20px 0; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 15px;">
+        <span style="font-weight: 700;">pinerun</span><span style="color: #b9c2c6;">Twitch</span><span style="color: #b9c2c6;">Full · 2 waiting</span><span style="color: #8fd8e4; font-weight: 700;">$0.20/s</span>
+        <span style="display: flex; justify-content: flex-end;"><span style="color: #ffd23d; font-size: 11.5px; letter-spacing: 0.16em; font-weight: 700;">QUEUE</span></span>
+      </div>
+      <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 20px; padding: 20px 0; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 15px;">
+        <span style="font-weight: 700;">saltbrick</span><span style="color: #b9c2c6;">Twitch</span><span style="color: #576065;">—</span><span style="color: #b9c2c6; font-weight: 700;">412.00 USDC</span>
+        <span style="display: flex; justify-content: flex-end;"><span style="color: #f0246f; font-size: 11.5px; letter-spacing: 0.16em; font-weight: 700;">BOUNTY OPEN</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- statement + CTA -->
+  <div style="padding: 40px 64px 88px 64px; display: flex; flex-direction: column; align-items: center; gap: 24px; border-top: 1px solid rgba(255,255,255,0.1);">
+    <div style="font-weight: 800; font-size: 40px; letter-spacing: 0.01em; text-align: center; line-height: 1.12; max-width: 760px; margin-top: 44px;">
+      WATCHING IS FREE.<br>BEING WATCHED COSTS BY THE SECOND.
+    </div>
+    <span style="background: #8fd8e4; color: #04140f; font-weight: 800; font-size: 14px; letter-spacing: 0.14em; padding: 16px 36px;">ENTER MEGACHAT</span>
+  </div>
+
+  <!-- footer -->
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 26px 64px 42px 64px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 12px; letter-spacing: 0.14em; color: #576065;">
+    <span style="letter-spacing: 0.3em; color: #7d878c;">MEGACHAT</span>
+    <div style="display: flex; gap: 28px;">
+      <span>ROOMS</span><span>BOUNTIES</span><span>DOCS</span><span>TERMS</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

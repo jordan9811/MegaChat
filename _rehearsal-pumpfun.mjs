@@ -172,6 +172,13 @@ const dataDir = process.env.REHEARSAL_DATA_DIR || mkdtempSync(path.join(tmpdir()
 const srv = await startGateServer({
   port: PORT, dataDir, label: 'pumpfun-rehearsal',
   bountyAuth: { handles: [`pumpfun:${MINT}`] },
+  // NEXT'S COLD PREPARE OUTLASTS THE DEFAULT 45s PROBE ON THIS MACHINE.
+  // The server mounts every route and then sits in Next's prepare() while the
+  // harness gives up and kills it — the failure reads as "never became ready"
+  // with a fully healthy server log above it, which is maximally confusing.
+  // A rehearsal is not a gate: the operator is LIVE and waiting while this
+  // boots, so paying an extra two minutes once beats losing their broadcast.
+  readyTimeoutMs: 180_000,
   env: {
     BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '0', KEEP_ORPHAN_ROOMS: 'true',
     BOUNTY_STREAM_WARMUP_MS: String(WARMUP_S * 1000),
