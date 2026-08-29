@@ -82,6 +82,55 @@ html:has(.mc-create) ::-webkit-scrollbar-thumb:hover {
   color: #6d7780;
 }
 
+/* The room name and the link read as values you already have, not as empty
+   fields to fill in — but one click still puts a cursor in them. */
+.mc-create .inline-edit {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dashed transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: text;
+}
+.mc-create .inline-edit:hover {
+  border-bottom-color: var(--mcc-rule-2);
+}
+
+/* The handle is the room's address, and green is how the mock said so.
+   Written as input.handle on purpose: the base rule above is (0,2,1) and a
+   Tailwind arbitrary class is (0,1,0), so a utility class here loses. */
+.mc-create .handle,
+.mc-create input[type='text'].handle {
+  color: var(--mcc-live);
+}
+
+/* A rate you can type into, wearing the same skin as the value it replaced. */
+.mc-create .ratefield {
+  min-width: 86px;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mc-create .ratefield > input {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  /* wide enough for the 0.000001 floor without leaving a gap after $ */
+  width: 8ch;
+  font: inherit;
+  color: var(--mcc-fg);
+  text-align: left;
+}
+.mc-create .ratefield:focus-within {
+  outline: 2px solid var(--mcc-fg);
+  outline-offset: 3px;
+}
+.mc-create .ratefield > input:focus-visible {
+  outline: none;
+}
+
 /* segmented control */
 .mc-create .seg {
   display: inline-flex;

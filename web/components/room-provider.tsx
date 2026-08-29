@@ -87,6 +87,14 @@ export type ConfigDraft = {
 }
 
 // Defaults mirror the legacy dashboard form (backed by env defaults server-side).
+// A handle is a URL segment, not a display name. The server charset is
+// /^[a-z0-9_]{3,20}$/ (rooms-store.js sanitizeHandle), so a display name it
+// cannot express prefills nothing rather than prefilling something broken.
+const toHandle = (raw?: string | null) => {
+  const h = String(raw ?? '').trim().replace(/^@/, '').toLowerCase()
+  return /^[a-z0-9_]{3,20}$/.test(h) ? h : ''
+}
+
 const DEFAULT_DRAFT: ConfigDraft = {
   name: '',
   handle: '',
@@ -304,6 +312,37 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const roomIdRef = useRef<string | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipNextAutosaveRef = useRef(true)
+  // Same reason as identityHandleRef: read the latest value from a stable
+  // callback without making that callback change identity every render.
+  const accountDefaultsRef = useRef<Record<string, unknown> | null>(null)
+  accountDefaultsRef.current = accountDefaults
+  const linkedTwitchRef = useRef<string | null>(null)
+  linkedTwitchRef.current = linkedTwitch
+
+  // A NEW room starts from stock defaults plus the prefills that are facts
+  // about the account. It must NEVER inherit the room you were just
+  // managing — that was showing an existing room's toggles on a create form
+  // and reading as "the defaults are wrong".
+  const freshDraft = useCallback((): ConfigDraft => {
+    const base: ConfigDraft = { ...DEFAULT_DRAFT }
+    const saved = accountDefaultsRef.current
+    if (saved) {
+      for (const [k, v] of Object.entries(saved)) {
+        if (k === 'name' || k === 'handle') continue
+        if (k in base && typeof v === typeof base[k as keyof ConfigDraft]) {
+          ;(base as Record<string, unknown>)[k] = v
+        }
+      }
+    }
+    // Account facts run AFTER the saved sweep so a linked Twitch account
+    // beats a stale saved channel, and twitchAuto === false stays an opt-out.
+    const h = toHandle(identityHandleRef.current)
+    if (h) base.handle = h
+    if (linkedTwitchRef.current && base.twitchAuto !== false) {
+      base.twitchChannel = linkedTwitchRef.current
+    }
+    return base
+  }, [])
 
   useEffect(() => {
     getPublicConfig()
@@ -325,7 +364,11 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     const applyName = (name?: string | null) => {
       if (!name) return
       setIdentityHandle(name)
-      setDraft((d) => (d.handle ? d : { ...d, handle: name }))
+      const h = toHandle(name)
+      // Never seed a handle into a room being managed, never overwrite one
+      // the streamer has already typed, and never seed an invalid one.
+      if (!h || roomIdRef.current || draftTouchedRef.current) return
+      setDraft((d) => (d.handle ? d : { ...d, handle: h }))
     }
     fetch('/api/auth/me')
       .then((r) => r.json())
@@ -435,7 +478,10 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     setSeats([])
     setJoinUrl(null)
     setOverlayUrl(null)
-  }, [])
+    // Start the create form from defaults, not from the room just closed.
+    draftTouchedRef.current = false
+    setDraft(freshDraft())
+  }, [freshDraft])
 
   const refresh = useCallback(async () => {
     const roomId = roomIdRef.current

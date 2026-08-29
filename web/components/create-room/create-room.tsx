@@ -6,7 +6,7 @@
 // docs/design/room-control-panel.html. The short version:
 //
 //   1 · What runs in your room   three feature cards, check to expand
-//   2 · Fine-tune it             optional, grouped tabs; key choices repeat
+//   2 · Advanced settings        optional, grouped tabs; key choices repeat
 //   3 · Open it                  the two set-once switches, then CREATE
 //
 // Rules this page exists to fix, all from the audit of the old form:
@@ -14,12 +14,15 @@
 //     rate x length, which is exactly how the server already derives it when
 //     letters.price is null — we just store the product explicitly so clips
 //     can carry their own rate, independent of the open-mic rate.
-//   · No free-text numbers. Every value is a stepper or a segmented control
-//     with the server's real bounds; the old form let a typo in one field
-//     500 the room's join page.
+//   · Rates are steppers you can also type into. The preset rungs are the
+//     sensible prices, not a validity set — the server stores whatever
+//     string it is handed — so typing a number between or above them is
+//     legal. What the old form got wrong was leaving a raw box that could
+//     hold '' or 'abc' and 500 the join page; every typed value here is
+//     parsed and floored before it is committed.
 //   · Nothing renders as a working control unless it works.
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRoom } from '@/components/room-provider'
 import { ApiError } from '@/lib/api'
 import './create-room.css'
@@ -38,6 +41,16 @@ const money = (v: string | number) => {
   return `$${parseFloat(n.toFixed(6))}`
 }
 
+// Below this the atomic-unit conversion truncates to zero, which would turn
+// a paid room free without saying so.
+const MIN_RATE = 0.000001
+
+function safeRate(raw: string, fallback: string): string {
+  const n = parseFloat(raw)
+  if (!Number.isFinite(n) || n <= 0) return fallback
+  return String(parseFloat(Math.max(MIN_RATE, n).toFixed(6)))
+}
+
 function Stepper({
   values,
   value,
@@ -51,32 +64,131 @@ function Stepper({
   suffix?: string
   label: string
 }) {
-  const i = Math.max(0, values.indexOf(value))
+  // `values` are the rungs the buttons walk, not a set of legal prices — the
+  // server stores whatever string it is given, so a typed number between or
+  // above the rungs is a real choice and is kept as typed.
+  const [typing, setTyping] = useState<string | null>(null)
+  // A finite base for the arithmetic: an incoming '' (from a stale saved
+  // default) would otherwise make '+' commit the string 'NaN'.
+  const parsed = parseFloat(value)
+  const good = Number.isFinite(parsed) && parsed > 0 ? value : values[1]
+  const n = parseFloat(good)
+  const rungs = useMemo(() => values.map((v) => parseFloat(v)).sort((a, b) => a - b), [values])
+
+  const commit = (raw: string) => {
+    setTyping(null)
+    const next = safeRate(raw, good)
+    if (next !== value) onChange(next)
+  }
+  const lower = () => {
+    const below = [...rungs].reverse().find((r) => r < n - 1e-12)
+    commit(String(below ?? Math.max(MIN_RATE, n / 2)))
+  }
+  const raise = () => {
+    const above = rungs.find((r) => r > n + 1e-12)
+    // There is no server ceiling, so the top rung is not the end of the
+    // road — keep climbing by the last gap instead of going dead.
+    const gap = rungs[rungs.length - 1] - rungs[rungs.length - 2]
+    commit(String(above ?? n + gap))
+  }
+
   return (
     <span className="flex items-center gap-2">
-      <button
-        type="button"
-        className="stepbtn"
-        aria-label={`Lower ${label}`}
-        disabled={i <= 0}
-        onClick={() => onChange(values[Math.max(0, i - 1)])}
-      >
+      <button type="button" className="stepbtn" aria-label={`Lower ${label}`} onClick={lower}>
         &#8722;
       </button>
-      <span className="min-w-[86px] text-center text-[15px] font-semibold tabular-nums">
-        {money(value)}
+      <span className="ratefield flex items-baseline justify-center">
+        <span aria-hidden="true">$</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          aria-label={label}
+          value={typing ?? String(parseFloat(good))}
+          onChange={(e) => {
+            const v = e.target.value
+            // Bans a leading '-', an 'e', and anything else that would parse
+            // to a negative or exponential price.
+            if (/^\d*\.?\d{0,6}$/.test(v)) setTyping(v)
+          }}
+          onFocus={(e) => e.currentTarget.select()}
+          onBlur={(e) => commit(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur()
+            if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              raise()
+            }
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              lower()
+            }
+          }}
+        />
         {suffix ? <span className="text-[12px] text-[var(--mcc-dim)]">{suffix}</span> : null}
       </span>
-      <button
-        type="button"
-        className="stepbtn"
-        aria-label={`Raise ${label}`}
-        disabled={i >= values.length - 1}
-        onClick={() => onChange(values[Math.min(values.length - 1, i + 1)])}
-      >
+      <button type="button" className="stepbtn" aria-label={`Raise ${label}`} onClick={raise}>
         +
       </button>
     </span>
+  )
+}
+
+// The room name and its link are prefilled facts, not empty boxes waiting to
+// be filled in. They render as text — the handle in the live green — and
+// become an input on click, so changing one is still a single click away.
+function InlineText({
+  value,
+  onChange,
+  placeholder,
+  label,
+  sanitize,
+  maxLength,
+  textClass,
+  inputClass,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder: string
+  label: string
+  sanitize?: (v: string) => string
+  maxLength?: number
+  textClass?: string
+  inputClass?: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const ref = useRef<HTMLInputElement | null>(null)
+  useEffect(() => {
+    if (editing) ref.current?.select()
+  }, [editing])
+
+  if (editing) {
+    return (
+      <input
+        ref={ref}
+        type="text"
+        value={value}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        aria-label={label}
+        onChange={(e) => onChange(sanitize ? sanitize(e.target.value) : e.target.value)}
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur()
+        }}
+        className={inputClass}
+        autoFocus
+      />
+    )
+  }
+  return (
+    <button
+      type="button"
+      className={`inline-edit ${textClass ?? ''}`}
+      aria-label={`${label} — click to change`}
+      onClick={() => setEditing(true)}
+    >
+      {value || <span className="text-[var(--mcc-faint)]">{placeholder}</span>}
+    </button>
   )
 }
 
@@ -184,7 +296,10 @@ export function CreateRoom() {
   const { draft, updateDraft, create, hasIdentity, identityHandle, saveDefaultsFromDraft } = useRoom()
   const [tab, setTab] = useState<Tab>('mega')
   const [modInfo, setModInfo] = useState(false)
-  const [saveDefault, setSaveDefault] = useState(true)
+  // Off unless asked for. On by default, every room you opened silently
+  // rewrote your account defaults, so the next create form came up wearing
+  // the last room's settings instead of the real defaults.
+  const [saveDefault, setSaveDefault] = useState(false)
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -195,21 +310,14 @@ export function CreateRoom() {
   // MegaChats are priced per second of clip. The stored field is a flat price,
   // so the per-second rate is that price divided by the clip length — and
   // setting a rate stores rate x length. Same number, honest unit.
+  // This used to snap to the nearest preset, because the old stepper needed
+  // an index into MEGA_RATES to have a position. The stepper now holds any
+  // value, and the snap actively destroyed typed ones — $0.0037 came back
+  // as $0.005. Report the real per-second rate instead.
   const megaRate = useMemo(() => {
     const flat = parseFloat(draft.lettersPrice)
     if (Number.isFinite(flat) && flat > 0) {
-      const per = flat / Math.max(1, clipSeconds)
-      // snap to the nearest offered rate so the stepper has a position
-      let best = MEGA_RATES[1] as string
-      let bestGap = Infinity
-      for (const r of MEGA_RATES) {
-        const gap = Math.abs(parseFloat(r) - per)
-        if (gap < bestGap) {
-          bestGap = gap
-          best = r
-        }
-      }
-      return best
+      return String(parseFloat((flat / Math.max(1, clipSeconds)).toFixed(6)))
     }
     return MEGA_RATES[1] as string
   }, [draft.lettersPrice, clipSeconds])
@@ -309,24 +417,25 @@ export function CreateRoom() {
       <div className="flex min-w-0 flex-col gap-4 border-b border-[var(--mcc-rule)] p-5 lg:border-b-0 lg:border-r">
         {/* identity — one dense line, no action button up here */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--mcc-rule)] pb-4">
-          <input
-            type="text"
+          <InlineText
             value={draft.name}
-            maxLength={64}
+            onChange={(v) => updateDraft({ name: v })}
             placeholder="Name your room"
-            aria-label="Room name"
-            onChange={(e) => updateDraft({ name: e.target.value })}
-            className="min-w-[220px] max-w-[420px] grow"
+            label="Room name"
+            maxLength={64}
+            textClass="text-[15px] font-semibold"
+            inputClass="min-w-[220px] max-w-[420px] grow"
           />
-          <span className="flex items-center gap-1 text-[13px] text-[var(--mcc-dim)]">
+          <span className="whitespace-nowrap text-[12.5px] text-[var(--mcc-dim)]">
             megachat.fun/
-            <input
-              type="text"
+            <InlineText
               value={draft.handle}
+              onChange={(v) => updateDraft({ handle: v })}
+              sanitize={(v) => v.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20)}
               placeholder={identityHandle || 'yourname'}
-              aria-label="Your link"
-              onChange={(e) => updateDraft({ handle: e.target.value.toLowerCase() })}
-              className="w-[130px]"
+              label="Your link"
+              textClass="handle font-semibold"
+              inputClass="handle w-[150px]"
             />
           </span>
           <span className="ml-auto flex items-center gap-2">
@@ -426,7 +535,7 @@ export function CreateRoom() {
                   onClick={() => setTab('mega')}
                   className="self-start border-0 bg-transparent p-0 text-left text-[12.5px] text-[var(--mcc-accent)]"
                 >
-                  Set strictness and refunds in Fine-tune &#8594; MegaChats
+                  Set strictness and refunds in Advanced settings &#8594; MegaChats
                 </button>
               </div>
             ) : null}
@@ -531,11 +640,11 @@ export function CreateRoom() {
           </div>
         </FeatureCard>
 
-        {/* ── 2 · fine-tune ── */}
+        {/* ── 2 · advanced settings ── */}
         <div className="mt-3 flex items-center gap-2.5 border-t border-[var(--mcc-rule)] pt-4">
           <span className="stepnum" style={{ background: 'var(--mcc-dim)' }}>2</span>
           <span className="text-[15px] font-bold text-[#d7dde2]">
-            Fine-tune it{' '}
+            Advanced settings{' '}
             <span className="text-[13px] font-normal text-[var(--mcc-faint)]">
               — optional, good defaults are already in
             </span>
