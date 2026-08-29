@@ -962,6 +962,9 @@
       const codeEl = document.getElementById('bounty-code');
       let reportedTooSmall = null; // null = nothing reported yet
       let rotateMs = 60000;
+      let consecutiveFailures = 0;
+      // ~30s of failed polls at the post-fix cadence before reloading.
+      const FAILURES_BEFORE_RELOAD = 30;
 
       /**
        * EARLY WARNING ONLY — this is not enforcement, and must not be
@@ -1058,6 +1061,7 @@
           const res = await fetch(codeUrl());
           if (!res.ok) { badge.classList.remove('show'); return; }
           const data = await res.json();
+          consecutiveFailures = 0;
           if (data.rotateMs) rotateMs = data.rotateMs;
           // In room mode the session id is discovered here, and it CHANGES
           // between streams — which is the entire point. Badge and env
@@ -1098,8 +1102,30 @@
             void report(size.tooSmall, size);
           });
         } catch {
-          /* server unreachable — keep the last code on screen rather than
-             blanking the broadcast; the next poll recovers. */
+          /**
+           * A BLIP IS FORGIVEN. A SUSTAINED OUTAGE RELOADS THE PAGE.
+           *
+           * Keeping the last code on screen through a hiccup is right: a
+           * one-poll failure should not blank a live broadcast. But this
+           * used to swallow EVERY failure forever, and an OBS browser
+           * source whose backend goes away does not come back on its own.
+           * MEASURED: server restarted and left serving codes for 90s, the
+           * badge never returned; only a manual Refresh in OBS recovered
+           * it.
+           *
+           * In production that is a deploy silently killing every live
+           * streamer overlay. They keep broadcasting, earn nothing, and
+           * have no way to tell that from having set it up wrong.
+           *
+           * So: tolerate a short outage, then reload. Reloading cannot make
+           * things worse -- the page is already rendering nothing -- and it
+           * is the only action available from inside a page whose fetches
+           * have stopped working.
+           */
+          consecutiveFailures += 1;
+          if (consecutiveFailures >= FAILURES_BEFORE_RELOAD) {
+            try { location.reload(); } catch { /* nothing else to try */ }
+          }
         }
       }
 
