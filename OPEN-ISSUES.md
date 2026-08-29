@@ -1489,7 +1489,13 @@ streamer:
            off, past their retention window, or who deleted the VOD,
            yields NO_VOD_COVERING_TS. External capture is then IMPOSSIBLE
            and self-capture is the only path that can ever work.
-  KICK     no VOD discovery API at all -> self-capture MANDATORY.
+  KICK     HAS VODs (kick.com/<slug>/videos) and yt-dlp extracts from a
+           direct VOD URL. What is missing is DISCOVERY: the official API
+           (api.kick.com/public/v1) has no VOD listing and 404s, and
+           finding which VOD covers a timestamp needs the unofficial,
+           Cloudflare-guarded v2 API. So VOD capture works with an
+           operator-supplied URL + start time, and self-capture is the only
+           AUTOMATIC path -- not the only path.
   PUMP.FUN not a VOD: the LIVE playlist is append-only (MEDIA-SEQUENCE:0,
            825 segments retained across ~27 minutes), so we seek backwards
            through the live stream itself. Nobody can switch that off --
@@ -1624,3 +1630,23 @@ anchor are different clocks, and calibration measured each with a tight spread
 TWITCH SELF-CAPTURE WAS NEVER EXERCISED BEFORE TODAY. It matters most here of
 all platforms: Twitch VODs are streamer-disableable, so self-capture is the
 only path for those users, and it was entirely unproven until now.
+
+### Terminology correction: "Kick has no VOD" is FALSE and was written twice
+
+frame-sources.js states it correctly and always has: Kick VOD pages exist at
+kick.com/<slug>/videos, yt-dlp extracts from a direct VOD URL, and only
+automatic DISCOVERY is unavailable (official API 404s; discovery needs the
+Cloudflare-guarded unofficial v2 API).
+
+Every summary that shortened this to "Kick has no VOD" was wrong, including
+two in this session's status charts. The operator corrected it both times.
+
+The distinction is not pedantic. "No VOD" implies a Kick streamer can only
+ever be verified live, which would make self-capture load-bearing in a way it
+is not. The truth is narrower: VOD capture on Kick needs a URL from the
+streamer, so it cannot run UNATTENDED -- but it is available as a retry, and
+that is a materially better position than having no archive at all.
+
+Correct one-line form, for reuse:
+  Kick: VOD exists, discovery does not. Self-capture is the only automatic
+  path; VOD capture works with an operator-supplied URL.
