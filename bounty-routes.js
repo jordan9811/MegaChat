@@ -342,6 +342,17 @@ async function startSessionCapture(session, { log = console } = {}) {
       //
       // Retrying is the whole fix: the session is open, the streamer is on
       // their way live, and the only question is how long to keep looking.
+      //
+      // SKIPPED ENTIRELY IF A PLATFORM BRANCH ABOVE ALREADY RESOLVED ONE.
+      // Without this guard the pump.fun branch set hlsUrl and then fell
+      // straight into this loop, which called the extractor on the COIN PAGE
+      // ("ERROR: Unsupported URL"), threw, and was swallowed by the outer
+      // catch as "could not start capture". The URL was resolved correctly and
+      // discarded one line later, so two real broadcasts reported
+      // self-capture froze 0/5 with the fix apparently in place.
+      if (hlsUrl) {
+        log.log?.(`[capture] ${session.platform} resolved its own playlist — skipping extractor`);
+      } else {
       const deadline = Date.now() + bountyConfig.captureStartRetryMs;
       let attempt = 0;
       for (;;) {
@@ -372,6 +383,7 @@ async function startSessionCapture(session, { log = console } = {}) {
             + `(retrying every ${Math.round(bountyConfig.captureStartRetryEveryMs / 1000)}s)`);
         }
         await new Promise((r) => setTimeout(r, bountyConfig.captureStartRetryEveryMs));
+      }
       }
     }
     await capture.startCapture(session.id, {
