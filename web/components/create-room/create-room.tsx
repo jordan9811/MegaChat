@@ -7,7 +7,7 @@
 //
 //   1 · What runs in your room   three feature cards, check to expand
 //   2 · Advanced settings        optional, grouped tabs; key choices repeat
-//   3 · Open it                  the two set-once switches, then CREATE
+//   then the password and CREATE — no third heading; it is just the end
 //
 // Rules this page exists to fix, all from the audit of the old form:
 //   · Everything is priced PER SECOND, MegaChats included. A MegaChat costs
@@ -293,7 +293,16 @@ function FeatureCard({
 type Tab = 'mega' | 'mic' | 'drops' | 'access' | 'money' | 'stream'
 
 export function CreateRoom() {
-  const { draft, updateDraft, create, hasIdentity, identityHandle, saveDefaultsFromDraft } = useRoom()
+  const {
+    draft,
+    updateDraft,
+    create,
+    hasIdentity,
+    identityHandle,
+    saveDefaultsFromDraft,
+    myRooms,
+    openOwnedRoom,
+  } = useRoom()
   const [tab, setTab] = useState<Tab>('mega')
   const [modInfo, setModInfo] = useState(false)
   // Off unless asked for. On by default, every room you opened silently
@@ -374,6 +383,13 @@ export function CreateRoom() {
 
   const canCreate = hasIdentity || password.trim().length >= 4
 
+  // Only when the clash is with a room this account owns — a handle held by
+  // someone else is not a room we can offer to open.
+  const clashingRoom = useMemo(
+    () => (error ? myRooms.find((r) => r.handle && r.handle === draft.handle) : undefined),
+    [error, myRooms, draft.handle],
+  )
+
   const clip = money(parseFloat(megaRate) * clipSeconds)
   const micPerMin = money(parseFloat(draft.passkeyTickPrice) * 60)
 
@@ -401,8 +417,7 @@ export function CreateRoom() {
               Have an account?{' '}
               <a href="/dashboard?signin=1" className="text-[var(--mcc-muted)] underline underline-offset-[3px]">
                 Sign in
-              </a>{' '}
-              — we&apos;ll fill most of this in for you
+              </a>
             </>
           )}
         </span>
@@ -456,14 +471,13 @@ export function CreateRoom() {
         <div className="flex items-center gap-2.5">
           <span className="stepnum" style={{ background: 'var(--mcc-accent)' }}>1</span>
           <span className="text-[15px] font-bold">What runs in your room</span>
-          <span className="hint">click a card to switch it on or off</span>
         </div>
 
         <FeatureCard
           on={draft.lettersEnabled}
           onToggle={() => updateDraft({ lettersEnabled: !draft.lettersEnabled })}
           title="MegaChats"
-          blurb="fans pay per second of clip, it plays on stream by itself"
+          blurb="fans pay per second of clip, airs itself"
         >
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-end gap-6">
@@ -478,7 +492,7 @@ export function CreateRoom() {
                     suffix="/s"
                   />
                   <span className="hint">
-                    {clipSeconds}s clip = {clip}
+                    {clipSeconds}s = {clip}
                   </span>
                 </span>
               ) : null}
@@ -506,8 +520,8 @@ export function CreateRoom() {
                 />
                 <span className="hint">
                   {draft.lettersModeration === 'auto'
-                    ? 'Clips air once the filter clears them'
-                    : 'Nothing airs until you approve it'}
+                    ? 'Airs once the filter clears'
+                    : 'Nothing airs until you approve'}
                 </span>
               </span>
               <span className="flex flex-col gap-1.5">
@@ -522,13 +536,9 @@ export function CreateRoom() {
             </div>
             {modInfo ? (
               <div className="flex flex-col gap-1.5 border border-[var(--mcc-rule-2)] bg-[var(--mcc-sunk)] px-3 py-2.5">
-                <span className="text-[12.5px] font-semibold text-[#d7dde2]">
-                  It isn&apos;t only these two.
-                </span>
                 <span className="text-[12.5px] leading-relaxed text-[var(--mcc-muted)]">
-                  An AI filter runs on <em>every</em> clip either way — you choose how strict, and
-                  whether a rejected clip refunds automatically. &ldquo;AI, then me&rdquo; adds your
-                  own pass on top, so clips wait for you and nothing airs while you&apos;re away.
+                  An AI filter runs on <em>every</em> clip either way. &ldquo;AI, then me&rdquo; adds
+                  your own pass on top, so nothing airs while you&apos;re away.
                 </span>
                 <button
                   type="button"
@@ -546,7 +556,7 @@ export function CreateRoom() {
           on={draft.joinStreamEnabled}
           onToggle={() => updateDraft({ joinStreamEnabled: !draft.joinStreamEnabled })}
           title="Open mic"
-          blurb="viewers take live camera seats beside you, billed per second"
+          blurb="viewers take camera seats beside you, billed per second"
           offLabel="OPT IN"
         >
           <div className="flex flex-wrap items-end gap-6">
@@ -560,7 +570,7 @@ export function CreateRoom() {
                   onChange={(v) => updateDraft({ passkeyTickPrice: v })}
                   suffix="/s"
                 />
-                <span className="hint">{micPerMin} a minute on camera</span>
+                <span className="hint">{micPerMin} a minute</span>
               </span>
             ) : null}
             <span className="flex flex-col gap-1.5">
@@ -592,7 +602,7 @@ export function CreateRoom() {
           on={draft.rewardsEnabled}
           onToggle={() => updateDraft({ rewardsEnabled: !draft.rewardsEnabled })}
           title="Drops &amp; rewards"
-          blurb="pay people to watch, or hand them credit toward MegaChats to drive engagement"
+          blurb="pay people to watch, or credit toward MegaChats"
         >
           <div className="flex flex-wrap items-end gap-6">
             <span className="flex flex-col gap-1.5">
@@ -616,7 +626,7 @@ export function CreateRoom() {
               />
               <span className="hint">
                 {draft.rewardsType === 'points'
-                  ? 'Spendable here only — drives engagement'
+                  ? 'Spendable here only'
                   : 'Real money, theirs to keep'}
               </span>
             </span>
@@ -643,24 +653,10 @@ export function CreateRoom() {
         {/* ── 2 · advanced settings ── */}
         <div className="mt-3 flex items-center gap-2.5 border-t border-[var(--mcc-rule)] pt-4">
           <span className="stepnum" style={{ background: 'var(--mcc-dim)' }}>2</span>
-          <span className="text-[15px] font-bold text-[#d7dde2]">
-            Advanced settings{' '}
-            <span className="text-[13px] font-normal text-[var(--mcc-faint)]">
-              — optional, good defaults are already in
-            </span>
-          </span>
+          <span className="text-[15px] font-bold text-[#d7dde2]">Advanced settings</span>
         </div>
 
         <div className="flex flex-col gap-3 border border-[var(--mcc-rule)] bg-[var(--mcc-sunk)] p-4">
-          <span className="hint">
-            Your key choices from above reappear first in each group, marked{' '}
-            {/* JSX drops a leading space that starts a multi-line text chunk,
-                so this one has to be explicit — it read "Key ·— same" without it. */}
-            <span className="font-bold text-[var(--mcc-accent)]">Key ·</span>{' '}
-            — same control, same value, either place. This is the editor you&apos;ll use on the
-            live room too.
-          </span>
-
           <div role="tablist" aria-label="Settings groups" className="flex flex-wrap gap-1.5">
             {([
               ['mega', 'MegaChats'],
@@ -734,7 +730,7 @@ export function CreateRoom() {
                   <span className="flex flex-col gap-1.5">
                     <span className="lbl">Shortest clip</span>
                     <span className="text-[14px] font-semibold text-[var(--mcc-dim)]">3s — fixed</span>
-                    <span className="hint">set by the verifier&apos;s sampling floor</span>
+                    <span className="hint">verifier sampling floor</span>
                   </span>
                 </div>
               </div>
@@ -786,7 +782,6 @@ export function CreateRoom() {
                   <span className="flex flex-col gap-1.5">
                     <span className="lbl">Video connection</span>
                     <span className="text-[14px] font-semibold">Automatic</span>
-                    <span className="hint">best available transport</span>
                   </span>
                 </div>
               </div>
@@ -855,11 +850,6 @@ export function CreateRoom() {
                       { v: '600', l: '10m' },
                     ]}
                   />
-                  <span className="hint">
-                    {draft.mcMinWatch === '0'
-                      ? 'anyone can join in right away'
-                      : 'filters drive-bys'}
-                  </span>
                 </span>
                 <span className="flex flex-col gap-1.5">
                   <span className="lbl">Hide from Browse</span>
@@ -877,7 +867,6 @@ export function CreateRoom() {
                 <span className="flex flex-col gap-1.5">
                   <span className="lbl">Followers only</span>
                   <span className="text-[14px] font-semibold text-[var(--mcc-faint)]">Soon</span>
-                  <span className="hint">needs the platform link to verify</span>
                 </span>
               </div>
             ) : null}
@@ -938,48 +927,17 @@ export function CreateRoom() {
                   <span className="text-[14px] font-semibold text-[var(--mcc-dim)]">
                     Ready after you open the room
                   </span>
-                  <span className="hint">one-click OBS setup comes next</span>
                 </span>
               </div>
             ) : null}
           </div>
         </div>
 
-        {/* ── 3 · open it ── */}
-        <div className="mt-3 flex items-center gap-2.5 border-t border-[var(--mcc-rule)] pt-4">
-          <span className="stepnum" style={{ background: 'var(--mcc-accent)' }}>3</span>
-          <span className="text-[15px] font-bold">Open it</span>
-          <span className="hint">two things worth setting once</span>
-        </div>
+        {/* No third section heading: what is left is the save-defaults
+            switch, the password, and the button. That is the end of the
+            form, not a step worth announcing. */}
+        <div className="mt-3 border-t border-[var(--mcc-rule)] pt-4" />
 
-        {/* set-once 1 — the auto-live loop isn't wired yet, so this states
-            that plainly rather than rendering a switch that does nothing. */}
-        <div className="border border-[var(--mcc-rule)] bg-[var(--mcc-sunk)]">
-          <div className="flex items-center gap-3 px-3.5 py-3">
-            <span
-              aria-hidden="true"
-              className="relative h-[18px] w-[34px] shrink-0 border border-[var(--mcc-rule-2)]"
-            >
-              <span className="absolute left-[1px] top-[1px] size-[14px] bg-[var(--mcc-faint)]" />
-            </span>
-            <span className="min-w-0 grow">
-              <span className="text-[15px] font-bold text-[var(--mcc-dim)]">Follow my stream</span>{' '}
-              <span className="text-[12.5px] text-[var(--mcc-faint)]">
-                — the room would open and close with your broadcast
-              </span>
-            </span>
-            <span className="bc shrink-0 text-[11.5px] font-bold tracking-[0.08em] text-[var(--mcc-warn)]">SOON</span>
-          </div>
-          <div className="border-t border-[var(--mcc-rule)] py-2.5 pl-[59px] pr-3.5">
-            <span className="hint">
-              Going live on Twitch would open your room, and ending the stream would close it —
-              cameras cut, the clip queue clears, every unused balance refunds. The switch lands
-              once that loop is wired; until then you open and close the room yourself.
-            </span>
-          </div>
-        </div>
-
-        {/* set-once 2 */}
         <button
           type="button"
           aria-pressed={saveDefault}
@@ -1009,7 +967,7 @@ export function CreateRoom() {
             <span className="block text-[12px] text-[var(--mcc-faint)]">
               {hasIdentity
                 ? 'Every room you open later starts here. Change them anytime in your profile.'
-                : 'Sign in to keep defaults — they follow your account, not this browser.'}
+                : 'Sign in to keep defaults.'}
             </span>
           </span>
         </button>
@@ -1025,16 +983,25 @@ export function CreateRoom() {
               onChange={(e) => setPassword(e.target.value)}
               className="max-w-[280px]"
             />
-            <span className="hint">
-              Without an account this password is the only way back into your room — save it
-              somewhere safe.
-            </span>
+            <span className="hint">The only way back into your room — save it somewhere safe.</span>
           </div>
         ) : null}
 
+        {/* A handle points at one room. If it is already pointing at one of
+            yours, the useful move is to go manage that room — not to read a
+            409 and work out what to do about it. */}
         {error ? (
-          <p role="alert" className="text-[13px] text-[var(--mcc-accent)]">
-            {error}
+          <p role="alert" className="flex flex-wrap items-center gap-3 text-[13px] text-[var(--mcc-accent)]">
+            {clashingRoom ? `That link already points at ${clashingRoom.name || 'your other room'}.` : error}
+            {clashingRoom ? (
+              <button
+                type="button"
+                onClick={() => void openOwnedRoom(clashingRoom.id)}
+                className="border border-[var(--mcc-accent)] px-3 py-1.5 text-[12.5px] font-bold text-[var(--mcc-accent)]"
+              >
+                Manage that room
+              </button>
+            ) : null}
           </p>
         ) : null}
 
@@ -1047,23 +1014,14 @@ export function CreateRoom() {
           >
             {busy ? 'Opening…' : 'Create room'}
           </button>
-          <span className="hint">
-            Overlay link and OBS setup come next.
-            <br />
-            Nothing charges anyone until you go live.
-          </span>
+          <span className="hint">Nothing charges anyone until you go live.</span>
         </div>
       </div>
 
       {/* ─────────── RIGHT: what viewers get ─────────── */}
       <div className="min-w-0 bg-[var(--mcc-sunk)]">
         <div className="flex flex-col gap-3 p-5 lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto">
-        <span className="text-[15px] font-bold text-[#d7dde2]">
-          What viewers will see{' '}
-          <span className="text-[12.5px] font-normal text-[var(--mcc-faint)]">
-            — updates as you choose
-          </span>
-        </span>
+        <span className="text-[15px] font-bold text-[#d7dde2]">Preview</span>
 
         {/* the room tile, as it lands on the board */}
         <div
@@ -1118,7 +1076,7 @@ export function CreateRoom() {
 
         {/* the join card */}
         <div className="flex flex-col gap-2.5 border border-[var(--mcc-rule)] bg-[var(--mcc-panel)] px-4 py-3.5">
-          <span className="lbl">The join card</span>
+          <span className="lbl">Join card</span>
           {draft.lettersEnabled ? (
             <span className="flex items-baseline justify-between border-b border-[#1a1a1f] pb-2">
               <span className="text-[13px] text-[var(--mcc-muted)]">A MegaChat</span>
@@ -1178,10 +1136,7 @@ export function CreateRoom() {
           ) : null}
         </div>
 
-        <span className="hint">
-          Sample room art. Everything else here is your live configuration — if a number looks
-          wrong, it will look wrong to viewers too.
-        </span>
+        <span className="hint">Sample art — every number is your live configuration.</span>
         </div>
       </div>
       </div>

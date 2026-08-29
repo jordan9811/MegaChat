@@ -318,6 +318,23 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   accountDefaultsRef.current = accountDefaults
   const linkedTwitchRef = useRef<string | null>(null)
   linkedTwitchRef.current = linkedTwitch
+  const myRoomsRef = useRef<MyRoomCard[]>([])
+  myRoomsRef.current = myRooms
+
+  // A handle points at exactly one room. Prefilling the one your existing
+  // room already uses walked you into a 409 you did not ask for, so take
+  // the next free variant instead — the same shape the server suggests.
+  const seedHandle = useCallback(() => {
+    const h = toHandle(identityHandleRef.current)
+    if (!h) return ''
+    const taken = new Set(myRoomsRef.current.map((r) => r.handle).filter(Boolean))
+    if (!taken.has(h)) return h
+    for (let i = 2; i < 10; i++) {
+      const alt = `${h.slice(0, 17)}_${i}`
+      if (!taken.has(alt)) return alt
+    }
+    return ''
+  }, [])
 
   // A NEW room starts from stock defaults plus the prefills that are facts
   // about the account. It must NEVER inherit the room you were just
@@ -336,13 +353,13 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     }
     // Account facts run AFTER the saved sweep so a linked Twitch account
     // beats a stale saved channel, and twitchAuto === false stays an opt-out.
-    const h = toHandle(identityHandleRef.current)
+    const h = seedHandle()
     if (h) base.handle = h
     if (linkedTwitchRef.current && base.twitchAuto !== false) {
       base.twitchChannel = linkedTwitchRef.current
     }
     return base
-  }, [])
+  }, [seedHandle])
 
   useEffect(() => {
     getPublicConfig()
@@ -364,10 +381,11 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     const applyName = (name?: string | null) => {
       if (!name) return
       setIdentityHandle(name)
-      const h = toHandle(name)
       // Never seed a handle into a room being managed, never overwrite one
-      // the streamer has already typed, and never seed an invalid one.
-      if (!h || roomIdRef.current || draftTouchedRef.current) return
+      // the streamer has already typed, and never seed one that would 409.
+      if (roomIdRef.current || draftTouchedRef.current) return
+      const h = seedHandle()
+      if (!h) return
       setDraft((d) => (d.handle ? d : { ...d, handle: h }))
     }
     fetch('/api/auth/me')
@@ -388,9 +406,18 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       listMyRooms()
         .then((d) => {
           setMyRooms(d.rooms)
+          myRoomsRef.current = d.rooms
           if (!autoOpenedRef.current && d.rooms.length > 0 && !roomIdRef.current) {
             autoOpenedRef.current = true
             void openOwnedRoom(d.rooms[0].id).catch(() => {})
+            return
+          }
+          // ?new=1 calls switchRoom before this list arrives, so the handle
+          // was seeded without knowing which ones are already spoken for.
+          // Re-seed now that we know, unless the streamer has typed one.
+          if (!roomIdRef.current && !draftTouchedRef.current) {
+            const h = seedHandle()
+            setDraft((prev) => (prev.handle === h ? prev : { ...prev, handle: h }))
           }
         })
         .catch(() => {})
