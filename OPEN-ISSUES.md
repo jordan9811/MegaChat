@@ -1597,3 +1597,30 @@ NOT YET VALIDATED END TO END. The saved captures cannot prove it: they were
 recorded BY the buggy overlay and physically contain codes held ~15s. Only a
 fresh broadcast with a refreshed overlay page can confirm it, which is running
 now.
+
+### TWITCH PROVEN ON BOTH CAPTURE METHODS, AND THEY AGREE (2026-08-29)
+
+First run after the overlay polling fix, driven unattended (ffmpeg push +
+puppeteer overlay, no OBS involved -- so it exercises the fix cleanly with no
+cached page or refresh timing to get wrong).
+
+    VOD capture   PASS 5/5  confidence 0.881  detectionRate 1.0
+                  timeline MEASURED skew 14910ms spread 1927ms
+    Self-capture  PASS 5/5  confidence 0.886  detectionRate 0.9
+                  timeline MEASURED skew  9972ms spread 1935ms
+    release(stub) 6.25 of 25
+
+THE POLLING FIX IS VALIDATED. detectionRate 1.0 on the VOD path, with all ten
+samples reading 28px and ZERO misses. Every prior run had scattered 0-height
+samples: Twitch 4/5 before, Kick 0.615, pump.fun 0.667-0.778. The 15s-vs-4s
+poll was costing samples on every platform, not just breaking pump.fun.
+
+FIRST REAL CROSS-CHECK. Two independent recordings of ONE broadcast, verified
+separately, agreeing on 5/5 with confidence within 0.005. The differing skew
+is correct rather than a discrepancy: the VOD timeline and the capture's PDT
+anchor are different clocks, and calibration measured each with a tight spread
+(~1.9s both).
+
+TWITCH SELF-CAPTURE WAS NEVER EXERCISED BEFORE TODAY. It matters most here of
+all platforms: Twitch VODs are streamer-disableable, so self-capture is the
+only path for those users, and it was entirely unproven until now.
