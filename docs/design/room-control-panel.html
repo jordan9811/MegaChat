@@ -255,13 +255,17 @@
     <h2>The proposed split</h2>
     <p class="sec-intro">The page fails mostly because it asks a stranger to make thirty decisions before they have a room. Creating and running are different jobs, and only one of them is urgent.</p>
 
-    <div class="eyebrow" style="margin-bottom:10px">Create — four decisions, one screen</div>
+    <div class="eyebrow" style="margin-bottom:10px">Create — sign in first, then three decisions</div>
     <ol class="flow">
-      <li><b>Name the room</b><span>Free text, 64 characters, with a counter — the server truncates silently today.</span></li>
-      <li><b>Claim the link</b><span><span class="mono">megachat.fun/yourname</span> — 3–20 characters, with a live availability check. Needs a new endpoint; none exists, so the only way to learn a name is taken is to submit and read the 409.</span></li>
-      <li><b>Free or paid</b><span>A real fork, not a checkbox buried among others. Paid reveals exactly one field: the per-second rate.</span></li>
-      <li><b>Create room</b><span>Everything else takes a sane default and moves to settings.</span></li>
+      <li><b>Sign in</b><span>Twitch, Kick, X, Google, email or passkey — before anything else, because it answers most of the form. <code>auth.js</code> already resolves <code>provider</code>, <code>username</code> and <code>handle</code>, and its own header states the intent: “platform username as the MegaChat handle (collision → editable).” A signed-in streamer has already told us who they are; asking them to type it again is the mistake.</span></li>
+      <li><b>Confirm what we already know</b><span>Room name and link arrive <em>prefilled, not blank</em> — name from the platform display name (or the live stream title when they’re already broadcasting), link from the handle claimed at signup. Both stay editable, and the link shows availability. Someone who isn’t live yet can leave the name alone and fix it later; nothing here should block on being on air.</span></li>
+      <li><b>Pick what runs in the room</b><span>The one genuinely new question: <b>open-mic stage</b> (viewers take camera seats), <b>MegaChats only</b> (they record clips that play once), or both. This is the fork that decides which settings even exist afterwards — today it’s two checkboxes floating among thirty controls.</span></li>
+      <li><b>Free or paid</b><span>A real fork. Paid reveals exactly one field: the per-second rate. Everything else takes a default and moves to settings.</span></li>
     </ol>
+
+    <div class="callout">
+      <p><b>What this removes:</b> typing a name that already exists, inventing a link that was already reserved for you, and choosing between features while thirty unrelated controls are on screen. What’s left is one question the platform can’t answer for you — what kind of room this is — and one that decides whether money moves.</p>
+    </div>
 
     <div class="callout">
       <p><b>Everything below this line renders only while managing a room.</b> That follows the rule already written in <code>DESIGN.md</code> — a card whose empty state says “do the thing you haven’t done yet” shouldn’t be mounted yet. Seven tabs, each one a coherent job, none of them longer than a screen.</p>
@@ -369,12 +373,48 @@
   </section>
 
   <section>
+    <h2>Set it once, then forget it</h2>
+    <p class="sec-intro">The goal: a streamer configures the room and drops the overlay into OBS one time. After that, going live on Twitch or Kick opens their MegaChat room automatically, and ending the stream closes it. No dashboard visit, ever again.</p>
+
+    <div class="callout">
+      <p><b>This is mostly a wiring job, not a build.</b> Both halves already exist and are already good — what’s missing is the loop between them, and the rules for when not to trust it.</p>
+    </div>
+
+    <div class="grp">
+      <div class="grp-h"><h3>What already exists</h3><span class="when">Verified in the source</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Piece</th><th>Where</th><th>State</th></tr>
+        <tr><td class="p">Twitch live status</td><td class="note"><code>twitch-api.js</code> — <code>getStreamByLogin()</code></td><td class="note">Real Helix API. Returns <span class="mono">{live, viewerCount, startedAt}</span> — and critically returns <code>null</code> for <em>“couldn’t ask”</em> rather than pretending offline</td></tr>
+        <tr><td class="p">Kick live status</td><td class="note"><code>kick-api.js</code> — <code>getChannelBySlug()</code></td><td class="note">Same shape, and already defends against Kick shipping the live flag under three different names across API revisions</td></tr>
+        <tr><td class="p">Cheap live probe</td><td class="note"><code>server.js</code> — <code>twitchLiveCached()</code></td><td class="note">Thumbnail-CDN redirect trick, no credentials, 90s TTL, stale-while-revalidate. Powers the browse cards today</td></tr>
+        <tr><td class="p">The room switch</td><td class="note"><code>rooms-store.js</code> — <code>setRoomActive()</code></td><td class="note">Already the single toggle behind start/stop</td></tr>
+        <tr><td class="p">Platform link</td><td class="note"><code>twitchChannel</code>, <code>twitchAuto</code></td><td class="note">Room already stores the channel and an auto-adopt flag</td></tr>
+        <tr><td class="p">Idle cost</td><td class="note"><code>lazyConnectScope: 'seat'</code></td><td class="note">An open room with nobody on camera costs nothing — which is what makes leaving rooms armed viable at all</td></tr>
+      </table></div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-h"><h3>What has to be built</h3><span class="when">The gap</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Piece</th><th>Approach</th><th>Note</th></tr>
+        <tr><td class="p">The loop</td><td class="next">Twitch EventSub webhooks; polling for Kick</td><td class="note">Twitch pushes <span class="mono">stream.online</span> / <span class="mono">stream.offline</span> — instant and free, needs a public callback (Railway already is one) plus subscription management. Kick has no equivalent, so it polls</td></tr>
+        <tr><td class="p">Never-close-on-doubt</td><td class="next">Treat <code>null</code> as “unknown”, never “offline”</td><td class="note">The APIs already draw this distinction. A room must never close because an API call timed out — that would kick paying viewers off camera over a network blip</td></tr>
+        <tr><td class="p">Hysteresis</td><td class="next">Open fast, close slow</td><td class="note">Streams drop and reconnect constantly. Open on the first live signal; require offline to persist (a few minutes) before closing</td></tr>
+        <tr><td class="p">The end-of-stream rule</td><td class="next"><span class="flag-w">Undecided — see below</span></td><td class="note">What happens to someone mid-session, on camera and paying, when the broadcast ends</td></tr>
+        <tr><td class="p">Arm / disarm control</td><td class="next">One toggle in room settings</td><td class="note">“Follow my stream: open this room whenever I go live on Twitch.” The whole feature is one switch and one linked channel</td></tr>
+      </table></div>
+    </div>
+  </section>
+
+  <section>
     <h2>Decide these before building</h2>
     <ul class="plain">
       <li><b>Who invents the bounds?</b> Only three settings have real server limits — seats 1–3, clip length ≤30, watch gate ≤24h. Every price and interval is unbounded server-side. The numbers we put in the steppers are inventions, and they become the product’s de-facto rules.</li>
       <li><b>Does the form fix the server, or work around it?</b> Bounds are applied on read, so the UI can display a value the server will quietly override. Mirroring the clamps into the controls is the honest fix; validating on write in <code>dashboard-routes.js</code> is the real one.</li>
       <li><b>Two names, one meaning.</b> Pinned co-hosts count toward the MegaChat playback slot check but not the seat cap. A room with one seat and one pinned co-host takes paying joiners forever and never plays another clip. Any UI that explains seat capacity will be wrong until that’s reconciled.</li>
       <li><b>Spam floor for bounty claims</b> — your ask, now written up in <code>OPEN-ISSUES.md</code> with the insertion points. It needs one decision first: a pledge can name up to three streamers, so does the floor mean “clears the highest of them” or “rejects only the ones it misses”?</li>
+      <li><b>When the broadcast ends, what happens to the person on camera?</b> The auto-close feature can’t ship without an answer. Three options, and they’re genuinely different products: cut everyone immediately and refund the unused balance; let the current sessions run to their natural end and stop admitting new ones; or leave the room open a fixed grace period in case the stream is coming right back. The meter already refunds unused balance on leave, so none of these is hard — they just have to be chosen.</li>
+      <li><b>Does an auto-opened room announce itself?</b> A room that opens silently is invisible; one that posts to chat every time is a nuisance. Related: an auto-opened room appears in the public browse directory the moment it opens, which is either the point or a surprise.</li>
     </ul>
   </section>
 
