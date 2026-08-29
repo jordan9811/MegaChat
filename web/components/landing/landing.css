@@ -1,0 +1,64 @@
+/* Landing (feat/ui-overhaul) — scoped under .mc-landing. The page commits to
+   its own dark look (Landing V1 system: Archivo caps, mint accent, near-black)
+   independent of the site theme toggle, join-page style. */
+
+.mc-landing {
+  --mcl-bg: #04070a;
+  --mcl-fg: #edf2f4;
+  --mcl-muted: #b9c2c6;
+  --mcl-dim: #7d878c;
+  --mcl-faint: #576065;
+  --mcl-hairline: rgba(255, 255, 255, 0.1);
+  --mcl-mint: #8fd8e4;
+  --mcl-mint-ink: #04140f;
+  --mcl-live: #43e0a8;
+  background: var(--mcl-bg);
+  color: var(--mcl-fg);
+}
+
+@keyframes mcl-rise {
+  from {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mcl-sweep {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.mcl-r1 {
+  animation: mcl-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) 150ms backwards;
+}
+.mcl-r2 {
+  animation: mcl-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) 340ms backwards;
+}
+.mcl-r3 {
+  animation: mcl-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) 540ms backwards;
+}
+.mcl-r4 {
+  animation: mcl-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) 760ms backwards;
+}
+.mcl-sweep {
+  transform-origin: left;
+  animation: mcl-sweep 900ms cubic-bezier(0.2, 0.7, 0.2, 1) 1100ms backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mcl-r1,
+  .mcl-r2,
+  .mcl-r3,
+  .mcl-r4,
+  .mcl-sweep {
+    animation: none;
+  }
+}

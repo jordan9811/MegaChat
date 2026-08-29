@@ -1,0 +1,42 @@
+/* Booth (feat/ui-overhaul) — the app main page. Scoped under .mc-booth.
+   Original Booth board language: near-black, Barlow Condensed chrome,
+   abstract mesh placeholder feeds, one accent. */
+
+.mc-booth {
+  --mcb-bg: #08080a;
+  --mcb-fg: #f2f2f4;
+  --mcb-muted: #a3a3ad;
+  --mcb-dim: #7b7b85;
+  --mcb-off: #b9b9c2;
+  --mcb-hairline: #1a1a1f;
+  --mcb-accent: #ff4d3d;
+  --mcb-live: #43e0a8;
+  --mcb-queue: #ffd23d;
+  background: var(--mcb-bg);
+  color: var(--mcb-fg);
+  font-family: var(--font-barlow), system-ui, sans-serif;
+}
+
+.mc-bc {
+  font-family: var(--font-barlow-c), var(--font-barlow), sans-serif;
+}
+
+/* abstract camera-feed placeholders (no photos in the app, by decision) */
+.mc-mesh-0 {
+  background: radial-gradient(120% 90% at 22% 18%, #24404f 0%, #141c22 62%);
+}
+.mc-mesh-1 {
+  background: radial-gradient(120% 90% at 76% 20%, #4a2b34 0%, #21181c 64%);
+}
+.mc-mesh-2 {
+  background: radial-gradient(120% 90% at 34% 74%, #26402f 0%, #161f1a 62%);
+}
+.mc-mesh-3 {
+  background: radial-gradient(120% 90% at 62% 26%, #363050 0%, #1c1a24 64%);
+}
+.mc-mesh-4 {
+  background: radial-gradient(120% 90% at 26% 30%, #2c2a26 0%, #181818 64%);
+}
+.mc-mesh-5 {
+  background: radial-gradient(120% 90% at 70% 68%, #29343a 0%, #171a1c 64%);
+}
