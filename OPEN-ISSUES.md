@@ -1515,3 +1515,26 @@ result said so. Worth measuring: does pump.fun's playlist outlive the
 broadcast? If not, pump.fun external verification only works during or
 shortly after the stream, which is a different product than "verify
 later".
+
+### T9. pump.fun ships NATIVE co-streaming with viewer join requests (2026-08-29)
+
+Observed on a real pump.fun test stream: a viewer ("ComfyL") requested to join
+the broadcast and pump.fun surfaced a native yes/no approval prompt, alongside
+its own Clip button, mic/cam controls and a record control.
+
+CONFIRMED NOT OURS. The codebase contains no "wants to join", "request to
+join", "join request" or "raise hand" string anywhere. Our co-host machinery
+uses different wording and has no join-approval prompt or Clip button. This is
+pump.fun's own feature.
+
+WHY IT MATTERS: this overlaps directly with MegaChat's core mechanic. pump.fun
+already has viewer-initiated co-streaming, approval, and clipping built into
+the platform, for free, with no OBS setup. Anything MegaChat offers a pump.fun
+streamer has to be worth more than a feature they already have natively.
+
+NOT a technical blocker and nothing here needs changing. Filed because it is a
+product/positioning fact discovered by accident during verification testing,
+and it should not be lost in a chat log. Worth a deliberate look at what
+pump.fun's native version does and does not do (payouts to the guest? bounty
+clips? verification of what aired?) before assuming the overlap is fatal or
+irrelevant.
