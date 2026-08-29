@@ -719,3 +719,55 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   better gated — three real sessions, real badges, real decoder — but the stub
   live stream is still a stub. The four bugs above are exactly the kind that a
   stub hides and a real broadcast finds.
+
+## Bounty: a streamer price floor to filter spam MegaChats (BACKLOG, 2026-08-29)
+
+**Ask (owner):** a streamer claiming a bounty should be able to set a minimum
+price so fans can't spam cheap clips. Worked example: the default lets a fan
+buy a 30-second MegaChat for $1; a streamer should be able to say "10/second
+minimum" and price that out.
+
+**Today there is no such control anywhere in the bounty flow.** The only
+claim-time input is a free-text payout account (`web/components/bounty/
+claim-flow.tsx:103-111`), and the only amount check in the whole system is a
+positivity test — `bounty-escrow.js:182`, `if (!(parseFloat(amount) > 0))`.
+`escrow.contribute()` (`bounty-escrow.js:136-149`, reachable via
+`POST /api/bounty/contribute`) validates the amount **not at all**. Every
+other bounty threshold (`minClipSeconds`, `clipsPerHandleMax`, …) is a
+process-env global in `bounty-claim.config.js`, never per-streamer.
+
+**Where it goes when we build it:**
+- *State:* add the floor to the `ReservedHandle` record (`bounty-store.js:145-154`);
+  it is keyed `platform:handle`, survives the claim, and is already read on the
+  pledge path. `updateReservedHandle` (`:160-167`) is a generic patcher, so it
+  needs no change.
+- *Enforcement:* BOTH `pledge()` (`bounty-escrow.js:182`, where the positivity
+  check already lives — the per-target loop at `:189-193` already resolves each
+  ReservedHandle) AND `contribute()` (`:136-149`). Covering only the first
+  leaves `/api/bounty/contribute` as an open bypass.
+- *Route:* prefer a new `guarded.post('/api/bounty/settings')` over folding it
+  into the claim body, so it stays editable later. HARD REQUIREMENT: add the
+  matching entry to `ROUTE_POLICY` in `bounty-auth.js:80-95` — `policyFor`
+  throws on unlisted paths (`:238-245`) and `_gate-bounty-auth.mjs` diffs the
+  table, so the route cannot register without it.
+- *Bounds:* default + ceiling in `bounty-claim.config.js:91-103` (a streamer
+  setting a 10,000 floor is a self-inflicted denial of their own pool). The
+  per-handle VALUE rides on `pool-view` / `program` payloads
+  (`bounty-routes.js:507-546`), typed on `PoolView`/`ProgramPool`
+  (`web/lib/bounty-api.ts:183-196`) — not on `bountyClientConfig()`.
+- *UI:* claim-time field under the payout input (`claim-flow.tsx:103-111`);
+  ongoing edit next to `ApprovalQueue` (`streamer-page.tsx:173`); and — required
+  by the project's own disclose-before-pay rule (`record-flow.tsx:9-16`) — the
+  floor must be surfaced on the fan's amount input (`record-flow.tsx:246-250`),
+  its client check (`:160`), and the multi-target chips (`:278-306`).
+
+**Design decision to make first:** a pledge can name up to `pledgeMaxTargets`
+(3) streamers, and the fan adds targets AFTER typing the amount. So a floor is
+either "must clear the highest floor among all targets" or "reject only the
+targets it misses" — the latter conflicts with the one-escrow-one-anchor model
+at `bounty-escrow.js:195-201`. Pick one before writing code.
+
+**Related, found while looking:** the approval queue is a post-hoc moderation
+review (approve / "not for me" / "breaks the rules"), which fires *after* the
+fan has already paid. A price floor is the pre-payment filter that queue
+cannot be.

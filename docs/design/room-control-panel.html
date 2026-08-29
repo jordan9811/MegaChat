@@ -1,0 +1,385 @@
+<title>Room Control Panel</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  :root {
+    --ink: #0d1114;
+    --ink-2: #3d474d;
+    --ink-3: #67747b;
+    --rule: #d8dfe2;
+    --rule-soft: #e9eef0;
+    --ground: #f4f7f8;
+    --panel: #ffffff;
+    --panel-2: #eef3f5;
+    --mint: #17798d;
+    --mint-ink: #0a3a45;
+    --danger: #c4123f;
+    --warn: #9a6a00;
+    --ok: #10715a;
+    --shadow: 0 1px 2px rgba(13,17,20,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #edf2f4;
+      --ink-2: #b3bfc4;
+      --ink-3: #7d8b91;
+      --rule: #222c31;
+      --rule-soft: #171f23;
+      --ground: #04070a;
+      --panel: #0a1014;
+      --panel-2: #101a1f;
+      --mint: #8fd8e4;
+      --mint-ink: #04140f;
+      --danger: #ff6b8a;
+      --warn: #ffd23d;
+      --ok: #43e0a8;
+      --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #edf2f4;
+    --ink-2: #b3bfc4;
+    --ink-3: #7d8b91;
+    --rule: #222c31;
+    --rule-soft: #171f23;
+    --ground: #04070a;
+    --panel: #0a1014;
+    --panel-2: #101a1f;
+    --mint: #8fd8e4;
+    --mint-ink: #04140f;
+    --danger: #ff6b8a;
+    --warn: #ffd23d;
+    --ok: #43e0a8;
+    --shadow: none;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: Archivo, system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 96px; }
+
+  .eyebrow {
+    font-family: 'Barlow Condensed', Archivo, sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  header.masthead { padding: 64px 0 40px; border-bottom: 2px solid var(--ink); }
+  h1 {
+    font-size: clamp(34px, 5.5vw, 56px);
+    font-weight: 800;
+    letter-spacing: -.02em;
+    line-height: 1.02;
+    margin: 14px 0 18px;
+    text-wrap: balance;
+  }
+  .lede { font-size: 18px; color: var(--ink-2); max-width: 62ch; margin: 0; }
+
+  .verdict {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 36px 0 0;
+  }
+  .vc { background: var(--panel); padding: 18px 20px; }
+  .vc .n {
+    font-size: 34px; font-weight: 800; line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+  }
+  .vc .l {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 12px;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3);
+    margin-top: 8px; display: block;
+  }
+  .vc.bad .n { color: var(--danger); }
+
+  h2 {
+    font-size: 26px; font-weight: 800; letter-spacing: -.01em;
+    margin: 0 0 6px; text-wrap: balance;
+  }
+  section { padding-top: 56px; }
+  .sec-intro { color: var(--ink-2); max-width: 68ch; margin: 0 0 26px; }
+
+  /* findings */
+  .find { border: 1px solid var(--rule); background: var(--panel); margin-bottom: 12px; box-shadow: var(--shadow); }
+  .find-h {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    padding: 14px 18px; border-left: 4px solid var(--ink-3);
+  }
+  .find.crit .find-h { border-left-color: var(--danger); }
+  .find.high .find-h { border-left-color: var(--warn); }
+  .find.med .find-h { border-left-color: var(--ink-3); }
+  .sev {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700;
+    letter-spacing: .14em; text-transform: uppercase; padding: 3px 8px;
+    border: 1px solid currentColor; white-space: nowrap;
+  }
+  .find.crit .sev { color: var(--danger); }
+  .find.high .sev { color: var(--warn); }
+  .find.med .sev { color: var(--ink-3); }
+  .find-t { font-weight: 700; font-size: 16.5px; flex: 1 1 300px; }
+  .find-b { padding: 0 18px 16px 22px; color: var(--ink-2); font-size: 15px; }
+  code, .mono {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: .88em;
+    background: var(--panel-2);
+    padding: 1px 5px;
+    color: var(--ink);
+  }
+
+  /* param groups */
+  .grp { border: 1px solid var(--rule); background: var(--panel); margin-bottom: 22px; box-shadow: var(--shadow); }
+  .grp-h {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+    padding: 14px 18px; background: var(--panel-2); border-bottom: 1px solid var(--rule);
+    flex-wrap: wrap;
+  }
+  .grp-h h3 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: .01em; }
+  .grp-h .when {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 12px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .tbl-scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; }
+  th {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 600;
+    letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3);
+    text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  td { padding: 11px 14px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; font-size: 14.5px; }
+  tr:last-child td { border-bottom: 0; }
+  td.p { font-family: 'IBM Plex Mono', monospace; font-size: 13px; white-space: nowrap; color: var(--ink); }
+  td.now { color: var(--ink-3); font-size: 13.5px; }
+  td.next { font-weight: 600; }
+  td.note { color: var(--ink-2); font-size: 13.5px; }
+  .flag { color: var(--danger); font-weight: 700; }
+  .flag-w { color: var(--warn); font-weight: 700; }
+  .new { color: var(--ok); font-weight: 700; }
+
+  /* flow steps */
+  ol.flow { list-style: none; counter-reset: s; padding: 0; margin: 0; display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  ol.flow li { counter-increment: s; background: var(--panel); padding: 16px 20px 16px 58px; position: relative; }
+  ol.flow li::before {
+    content: counter(s, decimal-leading-zero);
+    position: absolute; left: 18px; top: 16px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--mint); font-weight: 500;
+  }
+  ol.flow b { display: block; font-size: 16px; }
+  ol.flow span { color: var(--ink-2); font-size: 14.5px; }
+
+  .callout {
+    border-left: 4px solid var(--mint); background: var(--panel);
+    padding: 16px 20px; margin: 22px 0; border-top: 1px solid var(--rule);
+    border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  }
+  .callout p { margin: 0; color: var(--ink-2); }
+  .callout b { color: var(--ink); }
+
+  ul.plain { padding-left: 20px; color: var(--ink-2); }
+  ul.plain li { margin-bottom: 9px; }
+  ul.plain b { color: var(--ink); }
+
+  footer { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 13.5px; }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">MegaChat · create-room rebuild</div>
+    <h1>Every knob a streamer can turn</h1>
+    <p class="lede">A full inventory of the room configuration surface, an audit of why the current page fails, and a proposed split between creating a room and running one.</p>
+
+    <div class="verdict">
+      <div class="vc bad"><div class="n">30</div><span class="l">controls at once</span></div>
+      <div class="vc bad"><div class="n">4.7</div><span class="l">screens of scroll</span></div>
+      <div class="vc bad"><div class="n">0</div><span class="l">of 8 numbers bounded</span></div>
+      <div class="vc"><div class="n">20</div><span class="l">hidden in one blob</span></div>
+      <div class="vc"><div class="n">33</div><span class="l">patchable fields</span></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>What the audit found</h2>
+    <p class="sec-intro">Measured in the browser against the running dashboard, then traced into the server. The layout problems are the ones you can see; the dangerous ones are underneath.</p>
+
+    <div class="find crit">
+      <div class="find-h"><span class="sev">Critical</span><span class="find-t">A typo in “Max spend / viewer” takes the room’s join page down</span></div>
+      <div class="find-b">It’s a free-text field. Nothing validates it on the way in — <code>dashboard-routes.js</code> checks only tokens and the payout address, and <code>rooms-store.js</code> does a bare <code>String()</code>. So <code>"2 usd"</code> persists happily, and then <code>toAtomic</code> throws inside <code>roomAtomics</code>, which <code>/api/config</code> calls unguarded. The room stops loading for every viewer.</div>
+    </div>
+
+    <div class="find crit">
+      <div class="find-h"><span class="sev">Critical</span><span class="find-t">Choosing “Points” rewards silently pays nobody, forever</span></div>
+      <div class="find-b">Points force <code>decimals: 0</code>, but the default drop amount is <code>0.1</code>. <code>toAtomic('0.1', 0)</code> truncates to <code>0</code>, and the credit function returns early on any zero amount. No error, no warning, no log the streamer can see — the card keeps displaying “0.1 USDC per drop” exactly as it would if it were working.</div>
+    </div>
+
+    <div class="find high">
+      <div class="find-h"><span class="sev">High</span><span class="find-t">The most expensive setting in the product has no control at all</span></div>
+      <div class="find-b"><code>lazyConnectScope</code> decides whether LiveKit connects per-seat or for the whole broadcast — the difference the handoff doc puts at roughly 7,200 LiveKit minutes a month. It exists in the store and the server reads it. There is not one reference to it anywhere in <code>web/</code>. The only way to set it is hand-editing <code>rooms.json</code>.</div>
+    </div>
+
+    <div class="find high">
+      <div class="find-h"><span class="sev">High</span><span class="find-t">Saving one nested setting wipes its siblings</span></div>
+      <div class="find-b"><code>updateRoom</code> shallow-merges <code>config</code>, so a patch containing just <code>letters.enabled</code> destroys every other <code>letters</code> field — they silently revert to defaults on the next read. Any partial edit has to send the complete nested object.</div>
+    </div>
+
+    <div class="find high">
+      <div class="find-h"><span class="sev">High</span><span class="find-t">What you save is not what you get</span></div>
+      <div class="find-b">Bounds are applied when the room is <em>read</em>, not when it’s written. Send <code>maxSeconds: 60</code> and the server answers <code>200 OK</code> — while the effective value is 30. The form has to reconcile against the response instead of trusting its own state, and today it doesn’t.</div>
+    </div>
+
+    <div class="find med">
+      <div class="find-h"><span class="sev">Layout</span><span class="find-t">Thirty controls, no hierarchy, five money fields that don’t say what they price</span></div>
+      <div class="find-b">Everything past the first screen sits inside a single disclosure called “Advanced — fine-tuning” holding 20 of the 30 controls. Two different fields are both labelled “Room password.” Five numeric fields — Price per second, Flat price, Charge amount, Charge interval, Interval — are visually identical and belong to three different subsystems. And <code>maxSeats</code>, whose only legal values are 1, 2 and 3, is a text box.</div>
+    </div>
+
+    <div class="find med">
+      <div class="find-h"><span class="sev">Honesty</span><span class="find-t">Controls that pretend to work</span></div>
+      <div class="find-b">“Followers only” and “Subscribers only” render as live, clickable checkboxes. They are stored and completely inert — nothing reads them until platform verification ships. The reward token hint still says “Arc Testnet”; the chain has been Tempo for a while. Neither is a bug the streamer can see, which is the problem.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The proposed split</h2>
+    <p class="sec-intro">The page fails mostly because it asks a stranger to make thirty decisions before they have a room. Creating and running are different jobs, and only one of them is urgent.</p>
+
+    <div class="eyebrow" style="margin-bottom:10px">Create — four decisions, one screen</div>
+    <ol class="flow">
+      <li><b>Name the room</b><span>Free text, 64 characters, with a counter — the server truncates silently today.</span></li>
+      <li><b>Claim the link</b><span><span class="mono">megachat.fun/yourname</span> — 3–20 characters, with a live availability check. Needs a new endpoint; none exists, so the only way to learn a name is taken is to submit and read the 409.</span></li>
+      <li><b>Free or paid</b><span>A real fork, not a checkbox buried among others. Paid reveals exactly one field: the per-second rate.</span></li>
+      <li><b>Create room</b><span>Everything else takes a sane default and moves to settings.</span></li>
+    </ol>
+
+    <div class="callout">
+      <p><b>Everything below this line renders only while managing a room.</b> That follows the rule already written in <code>DESIGN.md</code> — a card whose empty state says “do the thing you haven’t done yet” shouldn’t be mounted yet. Seven tabs, each one a coherent job, none of them longer than a screen.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The parameters, grouped as tabs</h2>
+    <p class="sec-intro">Every field a streamer can set, what it does, the control it has now, and the control it should have. Ranges are the real server-side clamps where they exist — and where the server has no bound at all, that’s called out, because then the interface is the only thing standing between a streamer and a broken room.</p>
+
+    <div class="grp">
+      <div class="grp-h"><h3>Identity &amp; link</h3><span class="when">Create</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Field</th><th>Now</th><th>Should be</th><th>Range / note</th></tr>
+        <tr><td class="p">name</td><td class="now">text</td><td class="next">Text + counter</td><td class="note">≤64, silently truncated today</td></tr>
+        <tr><td class="p">handle</td><td class="now">text</td><td class="next">Text + live availability</td><td class="note">3–20 <span class="mono">[a-z0-9_]</span>, 56 reserved names. <span class="flag">No availability endpoint exists.</span> A reserved name returns the <em>format</em> error, so the UI can’t say why</td></tr>
+        <tr><td class="p">password</td><td class="now">password ×2</td><td class="next">One field, hidden when signed in</td><td class="note">≥4 chars. Two fields share this label today</td></tr>
+        <tr><td class="p">unlisted</td><td class="now">checkbox</td><td class="next">Toggle</td><td class="note">Off = listed in browse</td></tr>
+      </table></div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-h"><h3>Money</h3><span class="when">Create (rate only) · Manage</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Field</th><th>Now</th><th>Should be</th><th>Range / note</th></tr>
+        <tr><td class="p">Free room</td><td class="now">checkbox</td><td class="next">Segmented: Free / Paid</td><td class="note">Writes rate <span class="mono">0</span>. The best-designed control on the page — deliberately explicit, not inferred from an empty price</td></tr>
+        <tr><td class="p">passkeyTickPrice</td><td class="now">text</td><td class="next">Currency stepper + live preview</td><td class="note"><span class="flag">No server bound.</span> Drives the seat meter <em>and</em> the auto MegaChat price — show both: “≈ $0.60/min · clip auto-price $0.01”</td></tr>
+        <tr><td class="p">passkeyTickSeconds</td><td class="now">text, buried</td><td class="next">Segmented 1s / 5s / 10s</td><td class="note"><span class="flag">No server bound.</span> Sits in a different section from the price it modifies</td></tr>
+        <tr><td class="p">maxSession</td><td class="now">text</td><td class="next">Number stepper</td><td class="note"><span class="flag">No server bound — a typo 500s the join page.</span> Min = one tick</td></tr>
+        <tr><td class="p">paymentTokenAddress</td><td class="now">select + text</td><td class="next">Select: USDC / custom</td><td class="note">Validated on-chain; symbol and decimals are read back and overwrite whatever was sent</td></tr>
+        <tr><td class="p">payoutAddress</td><td class="now">text</td><td class="next">Address field, echo on blur</td><td class="note"><span class="mono">0x…40</span>. Empty = platform wallet settles</td></tr>
+        <tr><td class="p">tickPrice / tickSeconds</td><td class="now">text ×2</td><td class="next">Remove from the UI</td><td class="note">Legacy prepaid path; the passkey fields are what actually meter</td></tr>
+      </table></div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-h"><h3>Camera seats</h3><span class="when">Manage</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Field</th><th>Now</th><th>Should be</th><th>Range / note</th></tr>
+        <tr><td class="p">joinStream.enabled</td><td class="now">selectable card</td><td class="next">Keep</td><td class="note">Already good</td></tr>
+        <tr><td class="p">maxSeats</td><td class="now">text</td><td class="next">Segmented 1 / 2 / 3</td><td class="note">Clamped 1–3 in four places. Three legal values in a text box. Also caps MegaChat playback — say so</td></tr>
+        <tr><td class="p">lazyConnectScope</td><td class="now"><span class="flag">nothing</span></td><td class="next"><span class="new">New — two radio cards</span></td><td class="note">“Connect only when someone’s on camera (cheapest)” vs “Stay connected all broadcast.” The highest-cost setting in the system</td></tr>
+        <tr><td class="p">transport</td><td class="now">select</td><td class="next">Keep</td><td class="note">Only <span class="mono">vdo</span> is sticky; LiveKit means “don’t pin me” and degrades if env keys vanish</td></tr>
+        <tr><td class="p">stingerSounds</td><td class="now">checkbox</td><td class="next">Toggle</td><td class="note">Master SFX mute. Viewers pick their own stingers; the streamer can’t restrict which</td></tr>
+      </table></div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-h"><h3>MegaChats</h3><span class="when">Manage</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Field</th><th>Now</th><th>Should be</th><th>Range / note</th></tr>
+        <tr><td class="p">letters.enabled</td><td class="now">selectable card</td><td class="next">Keep</td><td class="note">—</td></tr>
+        <tr><td class="p">letters.maxSeconds</td><td class="now">text</td><td class="next">Slider</td><td class="note">Clamped min–30. Raising the floor silently pushes this up</td></tr>
+        <tr><td class="p">letters.price</td><td class="now">text</td><td class="next">Prefilled from rate, unless overridden</td><td class="note">Empty = derived as rate × length. Only a <em>string</em> is kept — sending a number silently discards it</td></tr>
+        <tr><td class="p">letters.moderation</td><td class="now">select</td><td class="next">Segmented: Auto / Approve</td><td class="note">Two values</td></tr>
+        <tr><td class="p">letters.aiStrictness</td><td class="now">select</td><td class="next">Segmented + capability note</td><td class="note">Inert without a server moderation key — currently renders as fully functional</td></tr>
+        <tr><td class="p">letters.autoRefundOnReject</td><td class="now">checkbox</td><td class="next">Toggle</td><td class="note">Default on</td></tr>
+        <tr><td class="p">letters.minSeconds</td><td class="now">—</td><td class="next">Read-only line</td><td class="note">Server-owned, derived from the bounty verifier’s sampling floor</td></tr>
+      </table></div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-h"><h3>Access gates</h3><span class="when">Manage</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Field</th><th>Now</th><th>Should be</th><th>Range / note</th></tr>
+        <tr><td class="p">gates.minWatchSeconds</td><td class="now">text</td><td class="next">Presets + custom</td><td class="note">0–86400. The only gate actually enforced today</td></tr>
+        <tr><td class="p">gates.followersOnly</td><td class="now">live checkbox</td><td class="next">Disabled + “soon”</td><td class="note"><span class="flag-w">Stored and inert.</span> Looks functional</td></tr>
+        <tr><td class="p">gates.subsOnly</td><td class="now">live checkbox</td><td class="next">Disabled + “soon”</td><td class="note"><span class="flag-w">Stored and inert</span></td></tr>
+        <tr><td class="p">joinStream.gatesSameAsMegaChat</td><td class="now">checkbox</td><td class="next">Toggle that reveals overrides</td><td class="note">On by default; hides the second gate set until turned off</td></tr>
+      </table></div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-h"><h3>Rewards &amp; drops</h3><span class="when">Manage</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Field</th><th>Now</th><th>Should be</th><th>Range / note</th></tr>
+        <tr><td class="p">rewards.enabled</td><td class="now">toggle</td><td class="next">Keep — collapses when off</td><td class="note">Already the right pattern</td></tr>
+        <tr><td class="p">rewards.earnInterval</td><td class="now">text</td><td class="next">Presets 30s / 1m / 5m / 15m</td><td class="note"><span class="flag">No clamp — a negative value makes a 1 Hz payout loop.</span> Min 10, integers</td></tr>
+        <tr><td class="p">rewards.earnAmount</td><td class="now">text</td><td class="next">Currency + cost preview</td><td class="note">Nothing tells the streamer what this costs per viewer-hour, which is the only question this card answers</td></tr>
+        <tr><td class="p">rewards.earnCap</td><td class="now">text</td><td class="next">Currency</td><td class="note">Per-viewer ceiling; final drop is partial</td></tr>
+        <tr><td class="p">rewards.rewardType</td><td class="now">select</td><td class="next">Select + integer switch</td><td class="note"><span class="flag">Points + a fractional amount silently pays nobody.</span> Picking Points must rewrite the amount fields to integers</td></tr>
+        <tr><td class="p">rewards.rewardTokenAddress</td><td class="now">text</td><td class="next">Address, echo symbol back</td><td class="note">The server already reads symbol and decimals on save and the UI throws them away. Hint says “Arc Testnet” — stale</td></tr>
+        <tr><td class="p">—</td><td class="now">—</td><td class="next"><span class="new">New — payout status row</span></td><td class="note">“Live” vs “simulated (no pool wallet).” Identical UI today either way. Balances are in-memory and vanish on every deploy</td></tr>
+      </table></div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-h"><h3>Integrations</h3><span class="when">Manage</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Field</th><th>Now</th><th>Should be</th><th>Range / note</th></tr>
+        <tr><td class="p">twitchChannel</td><td class="now">text</td><td class="next">Text + validation</td><td class="note">3–25 <span class="mono">[a-z0-9_]</span>. <span class="flag-w">Invalid input is nulled silently</span> with no error</td></tr>
+        <tr><td class="p">twitchAuto</td><td class="now">checkbox</td><td class="next">Toggle</td><td class="note">Adopts the owner’s linked account</td></tr>
+      </table></div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-h"><h3>Live controls</h3><span class="when">Manage only — not settings</span></div>
+      <div class="tbl-scroll"><table>
+        <tr><th>Control</th><th>Now</th><th>Should be</th><th>Note</th></tr>
+        <tr><td class="p">active</td><td class="now">button</td><td class="next">Start / stop</td><td class="note">Room lifecycle, not configuration</td></tr>
+        <tr><td class="p">kick · pin</td><td class="now">row buttons</td><td class="next">Keep</td><td class="note">Pinning makes a free co-host and pauses their meter</td></tr>
+        <tr><td class="p">clip queue</td><td class="now">queue card</td><td class="next">Keep</td><td class="note">Approve / reject / play now</td></tr>
+      </table></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Decide these before building</h2>
+    <ul class="plain">
+      <li><b>Who invents the bounds?</b> Only three settings have real server limits — seats 1–3, clip length ≤30, watch gate ≤24h. Every price and interval is unbounded server-side. The numbers we put in the steppers are inventions, and they become the product’s de-facto rules.</li>
+      <li><b>Does the form fix the server, or work around it?</b> Bounds are applied on read, so the UI can display a value the server will quietly override. Mirroring the clamps into the controls is the honest fix; validating on write in <code>dashboard-routes.js</code> is the real one.</li>
+      <li><b>Two names, one meaning.</b> Pinned co-hosts count toward the MegaChat playback slot check but not the seat cap. A room with one seat and one pinned co-host takes paying joiners forever and never plays another clip. Any UI that explains seat capacity will be wrong until that’s reconciled.</li>
+      <li><b>Spam floor for bounty claims</b> — your ask, now written up in <code>OPEN-ISSUES.md</code> with the insertion points. It needs one decision first: a pledge can name up to three streamers, so does the floor mean “clears the highest of them” or “rejects only the ones it misses”?</li>
+    </ul>
+  </section>
+
+  <footer>
+    Measured against the running dashboard on <span class="mono">feat/ui-overhaul</span> and traced through <span class="mono">rooms-store.js</span>, <span class="mono">dashboard-routes.js</span>, <span class="mono">letters.js</span>, <span class="mono">rewards.js</span> and <span class="mono">bounty-escrow.js</span>. Server-side bounds quoted are the real clamps; “no server bound” means exactly that.
+  </footer>
+
+</div>
