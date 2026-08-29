@@ -43,6 +43,7 @@ const ok = (n, c, x = '') => {
 };
 
 const { startGateServer } = await import('./_gate-helpers.mjs');
+const { bountyConfig } = await import('./bounty-claim.config.js');
 const srv = await startGateServer({
   port: PORT, dataDir: mkdtempSync(path.join(tmpdir(), 'mc-ovlroom-')),
   label: 'overlay-room', bountyAuth: { handles: [`kick:${HANDLE}`] },
@@ -148,6 +149,55 @@ try {
   const idShown = await byIdPage.evaluate(() => document.getElementById('bounty-badge')?.classList.contains('show'));
   ok('D. the one-click ?bounty=<id> form is untouched', idShown === true);
   await byIdPage.close();
+
+  // ── F. THE BADGE MUST ROTATE AT THE SERVER'S RATE ──────────────────────
+  // setInterval was created BEFORE the first poll returned, so it captured
+  // the 60000 placeholder and locked a 15-SECOND cadence against a 4-second
+  // server rotation. Every code sat on screen ~4x too long.
+  //
+  // That is not a cosmetic staleness bug. Timeline calibration estimates the
+  // broadcast delay from which code is visible versus that code's NOMINAL
+  // midpoint, so a code held 4x too long makes an on-time stream look ~10s
+  // delayed. On a real pump.fun broadcast it produced skew 10366ms on a
+  // stream whose true offset was near zero, and every sample then found a
+  // REAL badge at 28px carrying the WRONG code: 0/9 verified.
+  //
+  // Measured by hashing the matrix canvas once a second, because the code
+  // renders to a canvas and leaves textContent empty — the same trap that
+  // made an earlier version of this gate pass on a blank overlay.
+  {
+    const rotatePage = await browser.newPage();
+    await rotatePage.setViewport({ width: 1280, height: 720 });
+    await rotatePage.goto(`${APP}/overlay?bountyRoom=${ROOM}`,
+      { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await new Promise((r) => setTimeout(r, 3_000));
+    const SECONDS = 24;
+    const hashes = [];
+    for (let i = 0; i < SECONDS; i += 1) {
+      await new Promise((r) => setTimeout(r, 1_000));
+      const h = await rotatePage.evaluate(() => {
+        const c = document.getElementById('bounty-matrix');
+        if (!c) return null;
+        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+        let x = 0;
+        for (let k = 0; k < d.length; k += 97) x = (x * 31 + d[k]) >>> 0;
+        return x;
+      }).catch(() => null);
+      if (h != null) hashes.push(h);
+    }
+    const distinct = new Set(hashes).size;
+    const perCode = distinct > 0 ? SECONDS / distinct : Infinity;
+    const rotateS = bountyConfig.codeRotateMs / 1000;
+    // Generous ceiling: sampling granularity and network jitter both widen
+    // the observed figure. The bug being caught was 4x, not 2x.
+    ok('F. the badge rotates near the server rate, not 4x slower',
+      perCode <= rotateS * 2.5,
+      `${distinct} distinct code(s) in ${SECONDS}s = ${perCode.toFixed(1)}s per code, `
+      + `server rotates every ${rotateS}s (was ~15s before the placeholder fix)`);
+    ok('F. ...and it rotates at all (a frozen badge proves nothing)',
+      distinct > 1, `${distinct} distinct code(s)`);
+    await rotatePage.close();
+  }
 
   // ── E. a plain room overlay renders NO badge at all ────────────────────
   // The bounty surface must stay entirely inert for an ordinary room.
