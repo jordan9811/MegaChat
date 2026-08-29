@@ -260,11 +260,16 @@
       <li><b>Sign in</b><span>Twitch, Kick, X, Google, email or passkey — before anything else, because it answers most of the form. <code>auth.js</code> already resolves <code>provider</code>, <code>username</code> and <code>handle</code>, and its own header states the intent: “platform username as the MegaChat handle (collision → editable).” A signed-in streamer has already told us who they are; asking them to type it again is the mistake.</span></li>
       <li><b>Confirm what we already know</b><span>Room name and link arrive <em>prefilled, not blank</em> — name from the platform display name (or the live stream title when they’re already broadcasting), link from the handle claimed at signup. Both stay editable, and the link shows availability. Someone who isn’t live yet can leave the name alone and fix it later; nothing here should block on being on air.</span></li>
       <li><b>Pick what runs in the room</b><span>The one genuinely new question: <b>open-mic stage</b> (viewers take camera seats), <b>MegaChats only</b> (they record clips that play once), or both. This is the fork that decides which settings even exist afterwards — today it’s two checkboxes floating among thirty controls.</span></li>
-      <li><b>Free or paid</b><span>A real fork. Paid reveals exactly one field: the per-second rate. Everything else takes a default and moves to settings.</span></li>
+      <li><b>Free or paid — and the price fields follow what you picked</b><span>Free is one switch and the step ends. Paid shows <em>only</em> the prices that apply to the features checked above: MegaChats alone asks for a flat price per clip; open mic asks for a per-second rate. Turn on both and the clip price arrives pre-computed from the rate, shown as a live figure they can accept or type over.</span></li>
     </ol>
 
     <div class="callout">
-      <p><b>What this removes:</b> typing a name that already exists, inventing a link that was already reserved for you, and choosing between features while thirty unrelated controls are on screen. What’s left is one question the platform can’t answer for you — what kind of room this is — and one that decides whether money moves.</p>
+      <p><b>Two prices, revealed only when they’re real.</b> Today a single field called “Price per second” silently sets both — its own hint admits it (“Drives Join Stream metering AND the auto MegaChat price”), so a streamer who only wants clips still has to reason about a per-second rate that exists purely to compute one. The data model is already better than the form: <code>letters.price</code> is a nullable override, and <code>null</code> means “derive from the rate.” Setting it explicitly is a supported, first-class state — separate pricing needs no schema change, only a form that stops pretending there’s one number.</p>
+      <p style="margin-top:10px">That also makes <b>free seats + paid clips</b> expressible, which it currently isn’t in practice: rate <code>0</code> with an explicit clip price is kept and used, because the zero-rate shortcut only applies to the derived path.</p>
+    </div>
+
+    <div class="callout">
+      <p><b>What this removes:</b> typing a name that already exists, inventing a link that was already reserved for you, choosing between features while thirty unrelated controls are on screen, and pricing a product you didn’t turn on.</p>
     </div>
 
     <div class="callout">
@@ -292,7 +297,7 @@
       <div class="tbl-scroll"><table>
         <tr><th>Field</th><th>Now</th><th>Should be</th><th>Range / note</th></tr>
         <tr><td class="p">Free room</td><td class="now">checkbox</td><td class="next">Segmented: Free / Paid</td><td class="note">Writes rate <span class="mono">0</span>. The best-designed control on the page — deliberately explicit, not inferred from an empty price</td></tr>
-        <tr><td class="p">passkeyTickPrice</td><td class="now">text</td><td class="next">Currency stepper + live preview</td><td class="note"><span class="flag">No server bound.</span> Drives the seat meter <em>and</em> the auto MegaChat price — show both: “≈ $0.60/min · clip auto-price $0.01”</td></tr>
+        <tr><td class="p">passkeyTickPrice</td><td class="now">text</td><td class="next">Currency stepper + live preview — <span class="new">open-mic only</span></td><td class="note"><span class="flag">No server bound.</span> Now labelled as the open-mic rate and shown only when open mic is on. Preview both figures it produces: “≈ $0.60/min · clip auto-price $0.01”</td></tr>
         <tr><td class="p">passkeyTickSeconds</td><td class="now">text, buried</td><td class="next">Segmented 1s / 5s / 10s</td><td class="note"><span class="flag">No server bound.</span> Sits in a different section from the price it modifies</td></tr>
         <tr><td class="p">maxSession</td><td class="now">text</td><td class="next">Number stepper</td><td class="note"><span class="flag">No server bound — a typo 500s the join page.</span> Min = one tick</td></tr>
         <tr><td class="p">paymentTokenAddress</td><td class="now">select + text</td><td class="next">Select: USDC / custom</td><td class="note">Validated on-chain; symbol and decimals are read back and overwrite whatever was sent</td></tr>
@@ -319,7 +324,7 @@
         <tr><th>Field</th><th>Now</th><th>Should be</th><th>Range / note</th></tr>
         <tr><td class="p">letters.enabled</td><td class="now">selectable card</td><td class="next">Keep</td><td class="note">—</td></tr>
         <tr><td class="p">letters.maxSeconds</td><td class="now">text</td><td class="next">Slider</td><td class="note">Clamped min–30. Raising the floor silently pushes this up</td></tr>
-        <tr><td class="p">letters.price</td><td class="now">text</td><td class="next">Prefilled from rate, unless overridden</td><td class="note">Empty = derived as rate × length. Only a <em>string</em> is kept — sending a number silently discards it</td></tr>
+        <tr><td class="p">letters.price</td><td class="now">text, buried</td><td class="next">Promoted — the MegaChat price, set at create</td><td class="note">The separate-fee lever. Explicit = its own price; empty = derived as rate × length. MegaChats-only rooms set this and never see a per-second rate. Only a <em>string</em> is kept — sending a number silently discards it</td></tr>
         <tr><td class="p">letters.moderation</td><td class="now">select</td><td class="next">Segmented: Auto / Approve</td><td class="note">Two values</td></tr>
         <tr><td class="p">letters.aiStrictness</td><td class="now">select</td><td class="next">Segmented + capability note</td><td class="note">Inert without a server moderation key — currently renders as fully functional</td></tr>
         <tr><td class="p">letters.autoRefundOnReject</td><td class="now">checkbox</td><td class="next">Toggle</td><td class="note">Default on</td></tr>
@@ -400,7 +405,7 @@
         <tr><td class="p">The loop</td><td class="next">Twitch EventSub webhooks; polling for Kick</td><td class="note">Twitch pushes <span class="mono">stream.online</span> / <span class="mono">stream.offline</span> — instant and free, needs a public callback (Railway already is one) plus subscription management. Kick has no equivalent, so it polls</td></tr>
         <tr><td class="p">Never-close-on-doubt</td><td class="next">Treat <code>null</code> as “unknown”, never “offline”</td><td class="note">The APIs already draw this distinction. A room must never close because an API call timed out — that would kick paying viewers off camera over a network blip</td></tr>
         <tr><td class="p">Hysteresis</td><td class="next">Open fast, close slow</td><td class="note">Streams drop and reconnect constantly. Open on the first live signal; require offline to persist (a few minutes) before closing</td></tr>
-        <tr><td class="p">The end-of-stream rule</td><td class="next"><span class="flag-w">Undecided — see below</span></td><td class="note">What happens to someone mid-session, on camera and paying, when the broadcast ends</td></tr>
+        <tr><td class="p">The end-of-stream rule</td><td class="next"><span class="new">Decided — hard stop</span></td><td class="note">No broadcast, no point in a MegaChat. Cut the clip queue, drop every camera, refund all unused balance. The meter already refunds on leave, so this is the existing leave path fired for everyone at once</td></tr>
         <tr><td class="p">Arm / disarm control</td><td class="next">One toggle in room settings</td><td class="note">“Follow my stream: open this room whenever I go live on Twitch.” The whole feature is one switch and one linked channel</td></tr>
       </table></div>
     </div>
@@ -413,8 +418,8 @@
       <li><b>Does the form fix the server, or work around it?</b> Bounds are applied on read, so the UI can display a value the server will quietly override. Mirroring the clamps into the controls is the honest fix; validating on write in <code>dashboard-routes.js</code> is the real one.</li>
       <li><b>Two names, one meaning.</b> Pinned co-hosts count toward the MegaChat playback slot check but not the seat cap. A room with one seat and one pinned co-host takes paying joiners forever and never plays another clip. Any UI that explains seat capacity will be wrong until that’s reconciled.</li>
       <li><b>Spam floor for bounty claims</b> — your ask, now written up in <code>OPEN-ISSUES.md</code> with the insertion points. It needs one decision first: a pledge can name up to three streamers, so does the floor mean “clears the highest of them” or “rejects only the ones it misses”?</li>
-      <li><b>When the broadcast ends, what happens to the person on camera?</b> The auto-close feature can’t ship without an answer. Three options, and they’re genuinely different products: cut everyone immediately and refund the unused balance; let the current sessions run to their natural end and stop admitting new ones; or leave the room open a fixed grace period in case the stream is coming right back. The meter already refunds unused balance on leave, so none of these is hard — they just have to be chosen.</li>
       <li><b>Does an auto-opened room announce itself?</b> A room that opens silently is invisible; one that posts to chat every time is a nuisance. Related: an auto-opened room appears in the public browse directory the moment it opens, which is either the point or a surprise.</li>
+      <li><b>One consequence of the hard stop worth naming:</b> closing the room cancels the clip queue, so a fan whose MegaChat was paid for and queued but never played gets refunded rather than aired. That’s the right call — it just means the refund path has to cover queued-but-unplayed clips, not only live camera sessions.</li>
     </ul>
   </section>
 
