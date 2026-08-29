@@ -282,6 +282,55 @@ async function startSessionCapture(session, { log = console } = {}) {
         log.warn?.(`[capture] no channel page or watch URL for ${session.platform} session ${session.id} — self-capture skipped`);
         return;
       }
+      /**
+       * PUMP.FUN HAS NO PAGE AN EXTRACTOR UNDERSTANDS, and handing it one is
+       * why self-capture never ran there. captureSourceUrl falls through to
+       * the watch URL, which for pump.fun is the COIN PAGE — and
+       * `yt-dlp -g https://pump.fun/coin/<mint>` answers, verbatim,
+       * "ERROR: Unsupported URL". The resolve loop below then treats that as a
+       * hard failure (it is not the "channel offline" shape it retries on), so
+       * every pump.fun session skipped self-capture and silently fell back to
+       * external capture alone.
+       *
+       * We do not need an extractor here at all. getStreamByMint returns the
+       * stream's own directory and playlistFromThumbnail derives the HLS
+       * master from it — a direct .m3u8 the recorder reads without yt-dlp.
+       * Deriving it is also STRICTLY MORE TRUSTWORTHY than resolving a page:
+       * the mint is the claimed identity itself, so there is no client-
+       * supplied address in the path at all.
+       *
+       * Kept inside the retry loop's spirit: at session open the streamer is
+       * usually not live yet, so a missing playlist here is the expected
+       * state, not an error — fall through to the loop, which waits.
+       */
+      if (session.platform === 'pumpfun') {
+        const { extractPumpFunMint } = await import('./frame-sources.js');
+        const { getStreamByMint } = await import('./pumpfun-api.js');
+        const mint = extractPumpFunMint(session.watchUrl);
+        if (!mint) {
+          log.warn?.(`[capture] pumpfun session ${session.id} carries no mint — self-capture skipped`);
+          return;
+        }
+        const deadlinePf = Date.now() + bountyConfig.captureStartRetryMs;
+        for (;;) {
+          const fresh = store.getAirSession(session.id);
+          if (!fresh || fresh.status !== 'OPEN') {
+            log.log?.(`[capture] session ${session.id} closed before pump.fun published — capture not started`);
+            return;
+          }
+          const info = await getStreamByMint(mint, { log });
+          // `live` alone is not enough and never was: pump.fun serves a real
+          // placeholder video on an open ingress with no encoder attached.
+          // A published playlist is the earliest honest signal we have.
+          if (info?.playlistUrl) { hlsUrl = info.playlistUrl; break; }
+          if (Date.now() > deadlinePf) {
+            log.warn?.(`[capture] pump.fun ${String(mint).slice(0, 8)}… published no playlist within `
+              + `${Math.round(bountyConfig.captureStartRetryMs / 60_000)}m of session open — capture not started`);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, bountyConfig.captureStartRetryEveryMs));
+        }
+      }
       // RESOLVE WITH RETRIES, because the normal order puts this call before
       // the streamer goes live: they claim their handle, open the air session,
       // and only then hit Go Live. At session open the channel is offline and
