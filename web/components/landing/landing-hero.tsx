@@ -2,16 +2,18 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 
 // Returning visitors skip the pitch: /app sets mc-entered on mount, and the
 // next bare visit to / forwards straight into the app (hyperliquid-style).
 // Any link that deliberately returns to the landing carries ?stay=1.
 export function ReturningVisitorRedirect() {
   const router = useRouter()
-  const params = useSearchParams()
   useEffect(() => {
-    if (params.get('stay')) return
+    // Read the address bar, not useSearchParams: inside a Suspense boundary
+    // that hook is empty on the first client pass, so ?stay=1 was missed and
+    // the wordmark link back to the landing bounced straight to /app again.
+    if (new URLSearchParams(window.location.search).has('stay')) return
     try {
       if (window.localStorage.getItem('mc-entered') !== '1') return
       // Only fast-track a FRESH arrival. Without this, pressing Back from
@@ -25,7 +27,7 @@ export function ReturningVisitorRedirect() {
     } catch {
       // storage blocked — first-visit behavior is the right fallback
     }
-  }, [params, router])
+  }, [router])
   return null
 }
 
@@ -146,7 +148,7 @@ export function LandingHero() {
       </div>
 
       <div className="absolute inset-x-6 bottom-10 z-10 flex max-w-[880px] flex-col gap-5 md:inset-x-16 md:bottom-14">
-        <h1 className="flex flex-col font-[800] leading-[0.98] tracking-[-0.01em] text-[44px] md:text-[72px]">
+        <h1 className="mcl-display flex flex-col font-[800] leading-[0.98] tracking-[-0.01em] text-[44px] md:text-[72px]">
           <span className="mcl-r2">SKIP THE CHAT.</span>
           <span className="mcl-r3 flex flex-col gap-3">
             BE THE STREAM.
@@ -159,16 +161,16 @@ export function LandingHero() {
         <div className="mcl-r4 flex flex-wrap items-center gap-5 pt-1">
           <Link
             href="/app"
-            className="bg-[var(--mcl-mint)] px-8 py-4 text-[14px] font-[800] tracking-[0.14em] text-[var(--mcl-mint-ink)] transition-opacity hover:opacity-90"
+            className="bg-[var(--mcl-mint)] px-8 py-4 text-[15px] font-[800] text-[var(--mcl-mint-ink)] transition-opacity hover:opacity-90"
           >
-            ENTER MEGACHAT
+            Enter MegaChat
           </Link>
           <button
             type="button"
             onClick={replay}
-            className="flex items-center gap-2.5 text-[13px] tracking-[0.14em] text-[var(--mcl-muted)] transition-colors hover:text-white"
+            className="flex items-center gap-2.5 text-[14px] font-[500] text-[var(--mcl-muted)] transition-colors hover:text-white"
           >
-            WATCH THE FILM
+            Watch the film
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <polygon points="6 3 20 12 6 21 6 3" />
             </svg>

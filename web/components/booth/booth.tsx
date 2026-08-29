@@ -11,10 +11,10 @@ const POOL_POLL_MS = 30000
 
 const WAYS_IN = [
   {
-    title: 'MEGACHATS',
+    title: 'MegaChats',
     color: '#9b6bff',
     body: 'Record a clip, pay for the seconds it runs, and it plays on the broadcast by itself.',
-    cta: 'FIND A ROOM',
+    cta: 'Find a room',
     href: '/how-it-works',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -23,10 +23,10 @@ const WAYS_IN = [
     ),
   },
   {
-    title: 'OPEN MIC',
+    title: 'Open mic',
     color: '#43e0a8',
     body: 'Buy a live camera seat beside the streamer. Billed by the second, only while you are on air.',
-    cta: 'SEE WHO IS OPEN',
+    cta: 'See who is open',
     href: '/how-it-works',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -37,10 +37,10 @@ const WAYS_IN = [
     ),
   },
   {
-    title: 'BOUNTIES',
+    title: 'Bounties',
     color: '#ff4d3d',
     body: 'Want someone who is not here? Stack USDC on their name until they show up and claim it.',
-    cta: 'PUT MONEY ON A NAME',
+    cta: 'Put money on a name',
     href: '/bounty',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -76,6 +76,10 @@ function poolHref(pool: BountyPool): string {
     : '/bounty'
 }
 
+function platformLabel(p: string): string {
+  return p.charAt(0).toUpperCase() + p.slice(1)
+}
+
 function twitchChannel(room: PublicRoomCard): string | null {
   const c = room.twitchChannel?.trim().replace(/^@/, '').toLowerCase()
   return c && room.twitchLive ? c : null
@@ -83,7 +87,7 @@ function twitchChannel(room: PublicRoomCard): string | null {
 
 function RateChip({ room }: { room: PublicRoomCard }) {
   return (
-    <span className="mc-bc absolute right-2.5 top-2 bg-[rgba(8,8,10,0.55)] px-2 py-1 text-[13px] font-[600] tracking-[0.06em] text-[var(--mcb-fg)]">
+    <span className="mc-bc absolute right-2.5 top-2 bg-[rgba(8,8,10,0.55)] px-2 py-1 text-[13px] font-[600] text-[var(--mcb-fg)]">
       <span className="adv-only">
         {room.passkeyTickPrice} {room.paymentTokenSymbol}
       </span>
@@ -100,7 +104,7 @@ function StateChip({ room }: { room: PublicRoomCard }) {
   const label = full ? 'FULL' : onAir ? 'ON AIR' : 'OPEN'
   return (
     <span
-      className="mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.16em]"
+      className="mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em]"
       style={{ color }}
     >
       <span className="inline-block size-1.5 rounded-full" style={{ background: color }} aria-hidden="true" />
@@ -155,18 +159,18 @@ function RoomTile({ room, hero = false }: { room: PublicRoomCard; hero?: boolean
           >
             {room.name}
           </span>
-          <span className="mc-bc mt-0.5 block text-[11px] font-[500] tracking-[0.14em] text-[var(--mcb-muted)]">
-            {room.live} OF {room.maxSeats} ON CAMERA
-            {room.waiting > 0 ? ` · ${room.waiting} WAITING` : ''}
-            {room.twitchChannel ? ' · TWITCH' : ''}
-            {room.rewardsEnabled ? ' · DROPS' : ''}
+          <span className="mt-0.5 block text-[12px] font-[500] text-[var(--mcb-muted)]">
+            {room.live} of {room.maxSeats} on camera
+            {room.waiting > 0 ? ` · ${room.waiting} waiting` : ''}
+            {room.twitchChannel ? ' · Twitch' : ''}
+            {room.rewardsEnabled ? ' · Drops' : ''}
           </span>
         </span>
         <span
-          className="mc-bc whitespace-nowrap px-3 py-2 text-[11px] font-[700] tracking-[0.14em] text-[#08080a] transition-transform group-hover:-translate-y-0.5"
+          className="whitespace-nowrap px-3 py-2 text-[12.5px] font-[700] text-[#08080a] transition-transform group-hover:-translate-y-0.5"
           style={{ background: full ? 'var(--mcb-queue)' : '#f2f2f4' }}
         >
-          {full ? 'JOIN QUEUE' : 'TAKE A SEAT'}
+          {full ? 'Join queue' : 'Take a seat'}
         </span>
       </span>
     </a>
@@ -184,25 +188,25 @@ function PoolTile({ pool }: { pool: BountyPool }) {
             'linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)',
         }}
       />
-      <span className="mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.16em] text-[var(--mcb-off)]">
+      <span className="mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]">
         <span className="inline-block size-1.5 rounded-full bg-[var(--mcb-off)]" aria-hidden="true" />
-        OFF AIR · BOUNTY OPEN
+        OFF AIR <span className="font-[500] tracking-[0]">· bounty open</span>
       </span>
       <span className="absolute inset-x-3 bottom-2.5 flex items-end justify-between gap-2.5">
         <span className="min-w-0">
           <span className="mc-bc block truncate text-[24px] font-[700] leading-[1.05]">
             {pool.handle ?? pool.handleKey}
           </span>
-          <span className="mc-bc mt-0.5 flex items-baseline gap-2 text-[11px] font-[500] tracking-[0.14em] text-[var(--mcb-muted)]">
+          <span className="mt-0.5 flex items-baseline gap-2 text-[12px] font-[500] text-[var(--mcb-muted)]">
             <span className="text-[14px] font-[600] text-[var(--mcb-queue)]">
               {pool.remaining.toFixed(2)} USDC
             </span>
-            {pool.contributionCount} BACKER{pool.contributionCount === 1 ? '' : 'S'}
-            {pool.platform ? ` · ${pool.platform.toUpperCase()}` : ''}
+            {pool.contributionCount} backer{pool.contributionCount === 1 ? '' : 's'}
+            {pool.platform ? ` · ${platformLabel(pool.platform)}` : ''}
           </span>
         </span>
-        <span className="mc-bc whitespace-nowrap bg-[var(--mcb-accent)] px-3.5 py-2 text-[11px] font-[700] tracking-[0.14em] text-[#08080a] transition-transform group-hover:-translate-y-0.5">
-          CLAIM
+        <span className="whitespace-nowrap bg-[var(--mcb-accent)] px-3.5 py-2 text-[12.5px] font-[700] text-[#08080a] transition-transform group-hover:-translate-y-0.5">
+          Claim
         </span>
       </span>
     </Link>
@@ -219,13 +223,11 @@ function InviteTile() {
         <line x1="12" y1="5" x2="12" y2="19" />
         <line x1="5" y1="12" x2="19" y2="12" />
       </svg>
-      <span className="mc-bc text-[15px] font-[700] tracking-[0.16em] text-[var(--mcb-accent)]">
-        OPEN A ROOM
-      </span>
-      <span className="mc-bc text-[12px] font-[500] leading-[1.5] tracking-[0.1em] text-[var(--mcb-dim)]">
-        YOUR STREAM / YOUR SEATS / YOUR RATE
+      <span className="text-[16px] font-[700] text-[var(--mcb-accent)]">Open a room</span>
+      <span className="text-[12.5px] font-[500] leading-[1.5] text-[var(--mcb-dim)]">
+        Your stream, your seats, your rate.
         <br />
-        THE NEXT TILE ON THIS WALL IS YOURS
+        The next tile on this wall is yours.
       </span>
     </Link>
   )
@@ -316,19 +318,19 @@ export function Booth({
           <Link href="/?stay=1" className="mc-bc text-[19px] font-[700] tracking-[0.1em]">
             MEGACHAT
           </Link>
-          <span className="mc-bc flex items-center gap-1.5 text-[12px] font-[600] tracking-[0.16em] text-[var(--mcb-accent)]">
+          <span className="flex items-center gap-1.5 text-[13px] font-[600] text-[var(--mcb-accent)]">
             <span className="inline-block size-1.5 rounded-full bg-[var(--mcb-accent)]" aria-hidden="true" />
-            {onAirCount} ROOM{onAirCount === 1 ? '' : 'S'} ON AIR
+            {onAirCount} room{onAirCount === 1 ? '' : 's'} on air
           </span>
         </div>
-        <nav className="mc-bc flex items-center gap-5 text-[12px] tracking-[0.14em] text-[var(--mcb-dim)]">
+        <nav className="flex items-center gap-5 text-[13px] font-[500] text-[var(--mcb-dim)]">
           <button
             type="button"
             aria-pressed={filter === 'all'}
             onClick={() => setFilter('all')}
             className={`py-3 ${filter === 'all' ? 'text-[var(--mcb-fg)] underline underline-offset-4' : 'hover:text-white'}`}
           >
-            ALL
+            All
           </button>
           <button
             type="button"
@@ -336,19 +338,19 @@ export function Booth({
             onClick={() => setFilter('onair')}
             className={`py-3 ${filter === 'onair' ? 'text-[var(--mcb-fg)] underline underline-offset-4' : 'hover:text-white'}`}
           >
-            ON AIR
+            On air
           </button>
           <Link href="/bounty" className="hidden hover:text-white sm:inline">
-            BOUNTIES
+            Bounties
           </Link>
           <Link href="/how-it-works" className="hidden hover:text-white md:inline">
-            HOW IT WORKS
+            How it works
           </Link>
           <Link
             href="/dashboard?new=1"
             className="bg-[#f2f2f4] px-3.5 py-[7px] font-[700] text-[#08080a]"
           >
-            SIGN IN
+            Sign in
           </Link>
         </nav>
       </header>
@@ -361,17 +363,17 @@ export function Booth({
         {visible.length === 0 ? (
           <div className="grid h-full grid-cols-1 gap-1.5 md:grid-cols-[1.62fr_1fr]">
             <div className="flex flex-col items-center justify-center gap-4 border border-dashed border-[rgba(242,242,244,0.3)] px-6 text-center">
-              <span className="mc-bc text-[13px] font-[600] tracking-[0.2em] text-[var(--mcb-dim)]">
-                {filter === 'onair' ? 'NOTHING ON AIR RIGHT NOW' : 'NO ROOMS ON THE BOARD YET'}
+              <span className="text-[13px] font-[600] text-[var(--mcb-dim)]">
+                {filter === 'onair' ? 'Nothing on air right now' : 'No rooms on the board yet'}
               </span>
-              <span className="mc-bc max-w-[420px] text-[26px] font-[700] leading-[1.15] tracking-[0.02em]">
-                THE FIRST TILE ON THIS WALL IS YOURS.
+              <span className="max-w-[440px] text-[28px] font-[700] leading-[1.15] tracking-[-0.01em]">
+                The first tile on this wall is yours.
               </span>
               <Link
                 href="/dashboard?new=1"
-                className="mc-bc mt-1 bg-[var(--mcb-accent)] px-5 py-2.5 text-[12px] font-[700] tracking-[0.14em] text-[#08080a]"
+                className="mt-1 bg-[var(--mcb-accent)] px-5 py-2.5 text-[13.5px] font-[700] text-[#08080a]"
               >
-                OPEN A ROOM
+                Open a room
               </Link>
             </div>
             <div className="hidden min-h-0 flex-col gap-1.5 md:flex">
@@ -389,9 +391,9 @@ export function Booth({
             {visible.length > 6 ? (
               <Link
                 href="/legacy#browse"
-                className="mc-bc flex items-center justify-center border border-dashed border-[rgba(242,242,244,0.3)] text-[13px] font-[700] tracking-[0.16em] text-[var(--mcb-dim)] hover:text-white"
+                className="flex items-center justify-center border border-dashed border-[rgba(242,242,244,0.3)] text-[14px] font-[700] text-[var(--mcb-dim)] hover:text-white"
               >
-                +{visible.length - 5} MORE ROOMS
+                +{visible.length - 5} more rooms
               </Link>
             ) : visible[5] ? (
               <RoomTile room={visible[5]} />
@@ -406,7 +408,7 @@ export function Booth({
                 not a big room. */}
             <div className="grid grid-cols-1 gap-1.5 md:h-[340px] md:grid-cols-[1.35fr_1fr]">
               {heroRoom ? <RoomTile room={heroRoom} hero /> : null}
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5 md:[&>*]:min-h-0 md:[&>*]:grow md:[&>*]:basis-0">
                 {sideRooms.map((room) => (
                   <RoomTile key={room.id} room={room} />
                 ))}
@@ -420,8 +422,8 @@ export function Booth({
             {/* Always true, whatever is live — the page explains itself
                 instead of relying on a full board to look alive. */}
             <section className="flex flex-col gap-3">
-              <h2 className="mc-bc text-[13px] font-[700] tracking-[0.2em] text-[var(--mcb-dim)]">
-                HOW YOU GET ON A STREAM
+              <h2 className="text-[18px] font-[700] tracking-[-0.01em] text-[var(--mcb-fg)]">
+                How you get on a stream
               </h2>
               <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
                 {WAYS_IN.map((w) => (
@@ -433,15 +435,13 @@ export function Booth({
                   >
                     <span className="flex items-center gap-2.5">
                       <span style={{ color: w.color }}>{w.icon}</span>
-                      <span className="mc-bc text-[16px] font-[700] tracking-[0.06em]">
-                        {w.title}
-                      </span>
+                      <span className="text-[17px] font-[700] tracking-[-0.01em]">{w.title}</span>
                     </span>
                     <span className="text-[13px] leading-[1.5] text-[var(--mcb-muted)]">
                       {w.body}
                     </span>
                     <span
-                      className="mc-bc mt-auto pt-1 text-[11px] font-[700] tracking-[0.14em]"
+                      className="mt-auto pt-1 text-[12.5px] font-[700]"
                       style={{ color: w.color }}
                     >
                       {w.cta} &#8594;
@@ -455,14 +455,14 @@ export function Booth({
                 rail — off-air names with money on them are content too. */}
             <section className="flex flex-col gap-3">
               <span className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="mc-bc text-[13px] font-[700] tracking-[0.2em] text-[var(--mcb-dim)]">
-                  MONEY WAITING ON A NAME
+                <h2 className="text-[18px] font-[700] tracking-[-0.01em] text-[var(--mcb-fg)]">
+                  Money waiting on a name
                 </h2>
                 <Link
                   href="/bounty"
-                  className="mc-bc text-[11px] tracking-[0.16em] text-[var(--mcb-dim)] hover:text-white"
+                  className="text-[13px] font-[500] text-[var(--mcb-dim)] hover:text-white"
                 >
-                  THE BOUNTY BOARD &#8594;
+                  The bounty board &#8594;
                 </Link>
               </span>
               {topPools.length > 0 ? (
@@ -476,16 +476,16 @@ export function Booth({
                   href="/bounty"
                   className="flex flex-col items-start gap-2 border border-dashed border-[rgba(242,242,244,0.22)] px-5 py-5 transition-colors hover:border-[var(--mcb-accent)]"
                 >
-                  <span className="mc-bc text-[15px] font-[700] tracking-[0.06em]">
-                    NOBODY HAS A POOL OPEN YET
+                  <span className="text-[17px] font-[700] tracking-[-0.01em]">
+                    Nobody has a pool open yet
                   </span>
                   <span className="max-w-[62ch] text-[13px] leading-[1.55] text-[var(--mcb-muted)]">
                     Pick any streamer who isn&#39;t here and put money on their name. Everyone
                     who wants them adds to it, and the first verified broadcast takes the pool
                     &#8212; proof is read straight off the stream.
                   </span>
-                  <span className="mc-bc pt-1 text-[11px] font-[700] tracking-[0.14em] text-[var(--mcb-accent)]">
-                    START A POOL &#8594;
+                  <span className="pt-1 text-[12.5px] font-[700] text-[var(--mcb-accent)]">
+                    Start a pool &#8594;
                   </span>
                 </Link>
               )}
@@ -496,18 +496,18 @@ export function Booth({
 
       {/* bounty rail */}
       <footer className="flex h-[72px] shrink-0 items-center gap-5 border-t border-[var(--mcb-hairline)] px-4">
-        <h2 className="mc-bc text-[12px] font-[700] leading-[1.25] tracking-[0.16em] text-[var(--mcb-dim)]">
-          HELD FOR
+        <h2 className="text-[13.5px] font-[700] leading-[1.25] text-[var(--mcb-dim)]">
+          Held for
           <br />
-          STREAMERS
+          streamers
         </h2>
         <div className="flex min-w-0 grow items-stretch gap-2 overflow-hidden">
           {topPools.length === 0 ? (
             <Link
               href="/bounty"
-              className="mc-bc flex grow items-center justify-center border border-dashed border-[rgba(255,255,255,0.18)] px-3 text-[11px] tracking-[0.16em] text-[var(--mcb-dim)] hover:text-white"
+              className="flex grow items-center justify-center border border-dashed border-[rgba(255,255,255,0.18)] px-3 text-[13px] font-[500] text-[var(--mcb-dim)] hover:text-white"
             >
-              START A POOL FOR ANY STREAMER →
+              Start a pool for any streamer →
             </Link>
           ) : (
             topPools.slice(0, 3).map((pool) => (
@@ -516,30 +516,30 @@ export function Booth({
                 href={poolHref(pool)}
                 className="flex min-w-0 grow flex-col justify-center border-l-2 border-[var(--mcb-accent)] bg-[#101014] px-3 py-2 transition-colors hover:bg-[#16161c]"
               >
-                <span className="mc-bc truncate text-[16px] font-[600] leading-[1.1]">
+                <span className="truncate text-[16px] font-[600] leading-[1.1]">
                   {pool.handle ?? pool.handleKey}
                 </span>
                 <span className="mt-0.5 flex min-w-0 items-baseline gap-2">
                   <span className="shrink-0 text-[13px] font-[600] text-[var(--mcb-accent)]">
                     {pool.remaining.toFixed(2)}
                   </span>
-                  <span className="mc-bc truncate text-[11px] font-[500] tracking-[0.12em] text-[var(--mcb-dim)]">
-                    {pool.contributionCount} BACKER{pool.contributionCount === 1 ? '' : 'S'}
+                  <span className="truncate text-[12px] font-[500] text-[var(--mcb-dim)]">
+                    {pool.contributionCount} backer{pool.contributionCount === 1 ? '' : 's'}
                   </span>
                 </span>
               </Link>
             ))
           )}
         </div>
-        <span className="mc-bc hidden items-center gap-2 text-[11px] font-[600] leading-[1.3] tracking-[0.13em] text-[var(--mcb-muted)] lg:flex">
+        <span className="hidden items-center gap-2 text-[12px] font-[500] leading-[1.35] text-[var(--mcb-muted)] lg:flex">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--mcb-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z" />
             <path d="m9 12 2 2 4-4" />
           </svg>
           <span>
-            READ BACK OFF
+            Read back off
             <br />
-            THE BROADCAST
+            the broadcast
           </span>
         </span>
       </footer>

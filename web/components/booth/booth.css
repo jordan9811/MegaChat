@@ -1,6 +1,6 @@
 /* Booth (feat/ui-overhaul) — the app main page. Scoped under .mc-booth.
-   Original Booth board language: near-black, Barlow Condensed chrome,
-   abstract mesh placeholder feeds, one accent. */
+   Original Booth board language: near-black, one accent, abstract mesh
+   placeholder feeds. Type is the site face (Jakarta) via --font-ui. */
 
 .mc-booth {
   --mcb-bg: #08080a;
@@ -14,11 +14,16 @@
   --mcb-queue: #ffd23d;
   background: var(--mcb-bg);
   color: var(--mcb-fg);
-  font-family: var(--font-barlow), system-ui, sans-serif;
+  font-family: var(--font-ui), system-ui, sans-serif;
 }
 
+/* Was a condensed face. Condensed narrows letterforms to buy space and
+   pays for it in legibility — worth it on a broadcast overlay, not on a
+   page you read. Kept as a hook for chrome (wordmark, badges) with the
+   tracking pulled back to something a word survives. */
 .mc-bc {
-  font-family: var(--font-barlow-c), var(--font-barlow), sans-serif;
+  font-family: var(--font-ui), system-ui, sans-serif;
+  letter-spacing: 0.04em;
 }
 
 /* Same reason as the landing: the themed focus ring is invisible here. */

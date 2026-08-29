@@ -1,12 +1,19 @@
 import Link from 'next/link'
 import { Suspense } from 'react'
-import { Archivo } from 'next/font/google'
+import { Archivo, Plus_Jakarta_Sans } from 'next/font/google'
 import type { PublicRoomCard } from '@/lib/api'
 import type { BountyPool } from '@/lib/bounty-api'
 import { LandingHero, ReturningVisitorRedirect } from './landing-hero'
 import './landing.css'
 
-const archivo = Archivo({ subsets: ['latin'], weight: ['400', '500', '700', '800'] })
+// Jakarta runs the page; Archivo is kept for the hero headline alone,
+// where its density is the reason the line lands.
+const ui = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  variable: '--font-ui',
+})
+const display = Archivo({ subsets: ['latin'], weight: ['800'], variable: '--font-display' })
 
 function roomHref(room: PublicRoomCard): string {
   return room.handle ? `/${room.handle}` : `/join?room=${encodeURIComponent(room.id)}`
@@ -57,10 +64,10 @@ const FEATURES = [
 ]
 
 const STATS = [
-  { big: '1s', label: 'BILLED PER SECOND' },
-  { big: '3+1', label: 'PAID SEATS + FREE CO-HOST' },
-  { big: '0', label: 'LOGINS TO WATCH' },
-  { big: '100%', label: 'UNUSED BALANCE REFUNDED' },
+  { big: '1s', label: 'Billed per second' },
+  { big: '3+1', label: 'Paid seats + free co-host' },
+  { big: '0', label: 'Logins to watch' },
+  { big: '100%', label: 'Unused balance refunded' },
 ]
 
 const STEPS = [
@@ -94,31 +101,31 @@ export function Landing({
   const boardPools = [...pools].sort((a, b) => b.remaining - a.remaining).slice(0, 3)
 
   return (
-    <div className={`mc-landing dark min-h-screen ${archivo.className}`}>
+    <div className={`mc-landing dark min-h-screen ${ui.variable} ${display.variable}`}>
       <Suspense fallback={null}>
         <ReturningVisitorRedirect />
       </Suspense>
 
       {/* nav */}
       <header className="flex h-[72px] items-center justify-between px-6 md:px-16">
-        <Link href="/?stay=1" className="text-[15px] font-[800] tracking-[0.3em] text-[var(--mcl-fg)]">
+        <Link href="/?stay=1" className="text-[15px] font-[800] tracking-[0.2em] text-[var(--mcl-fg)]">
           MEGACHAT
         </Link>
-        <nav aria-label="Primary" className="flex items-center gap-5 text-[12px] tracking-[0.18em] text-[var(--mcl-muted)] md:gap-8">
+        <nav aria-label="Primary" className="flex items-center gap-5 text-[13.5px] font-[500] text-[var(--mcl-muted)] md:gap-8">
           <Link href="/app" className="hidden hover:text-white sm:inline">
-            ROOMS
+            Rooms
           </Link>
           <Link href="/bounty" className="hidden hover:text-white sm:inline">
-            BOUNTIES
+            Bounties
           </Link>
           <Link href="/how-it-works" className="hidden hover:text-white md:inline">
-            HOW IT WORKS
+            How it works
           </Link>
           <Link
             href="/app"
-            className="border border-[rgba(143,216,228,0.5)] px-5 py-2.5 font-[700] tracking-[0.18em] text-[var(--mcl-mint)] transition-colors hover:border-[var(--mcl-mint)]"
+            className="border border-[rgba(143,216,228,0.5)] px-5 py-2.5 font-[700] text-[var(--mcl-mint)] transition-colors hover:border-[var(--mcl-mint)]"
           >
-            ENTER APP
+            Enter app
           </Link>
         </nav>
       </header>
@@ -135,7 +142,7 @@ export function Landing({
             className={`flex flex-col gap-2 px-8 py-9 md:px-10 ${i < 3 ? 'lg:border-r lg:border-[var(--mcl-hairline)]' : ''} ${i % 2 === 0 ? 'border-r border-[var(--mcl-hairline)] lg:border-r' : ''} ${i < 2 ? 'border-b border-[var(--mcl-hairline)] lg:border-b-0' : ''}`}
           >
             <span className="text-[44px] font-[800] leading-none md:text-[54px]">{s.big}</span>
-            <span className="text-[11px] tracking-[0.2em] text-[var(--mcl-dim)]">{s.label}</span>
+            <span className="text-[12.5px] text-[var(--mcl-dim)]">{s.label}</span>
           </div>
         ))}
       </section>
@@ -151,7 +158,7 @@ export function Landing({
               key={f.kicker}
               className={`grid grid-cols-1 items-baseline gap-2 border-t border-[rgba(255,255,255,0.12)] py-6 md:grid-cols-[220px_minmax(0,1fr)] md:gap-8 ${i === FEATURES.length - 1 ? 'border-b border-[rgba(255,255,255,0.12)]' : ''}`}
             >
-              <span className="text-[12.5px] font-[800] tracking-[0.22em]" style={{ color: f.color }}>
+              <span className="text-[12.5px] font-[800] tracking-[0.12em]" style={{ color: f.color }}>
                 {f.kicker}
               </span>
               <p className="text-[15px] leading-relaxed text-[var(--mcl-muted)] md:text-[15.5px]">{f.body}</p>
@@ -164,9 +171,7 @@ export function Landing({
       <section className="px-6 pb-16 pt-6 md:px-16">
         <div className="mb-5 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-[22px] font-[800] tracking-[0.02em] md:text-[26px]">ON THE BOARD</h2>
-          <span className="text-[10.5px] tracking-[0.2em] text-[var(--mcl-faint)]">
-            LIVE FROM THE DIRECTORY
-          </span>
+          <span className="text-[12.5px] text-[var(--mcl-faint)]">Live from the directory</span>
         </div>
         {boardRooms.length === 0 ? (
           <div className="flex flex-col items-start gap-4 border border-dashed border-[rgba(255,255,255,0.18)] px-7 py-9">
@@ -175,14 +180,14 @@ export function Landing({
             </p>
             <Link
               href="/dashboard?new=1"
-              className="bg-[var(--mcl-mint)] px-6 py-3 text-[12.5px] font-[800] tracking-[0.14em] text-[var(--mcl-mint-ink)]"
+              className="bg-[var(--mcl-mint)] px-6 py-3 text-[14px] font-[800] text-[var(--mcl-mint-ink)]"
             >
-              OPEN A ROOM
+              Open a room
             </Link>
           </div>
         ) : (
           <div className="flex flex-col border-t border-[rgba(255,255,255,0.14)]">
-            <div className="grid grid-cols-[2fr_1fr_1fr] gap-5 border-b border-[var(--mcl-hairline)] py-3 text-[10.5px] tracking-[0.2em] text-[var(--mcl-faint)] md:grid-cols-[2fr_1fr_1.2fr_1fr_1fr]">
+            <div className="grid grid-cols-[2fr_1fr_1fr] gap-5 border-b border-[var(--mcl-hairline)] py-3 text-[11px] font-[600] tracking-[0.1em] text-[var(--mcl-faint)] md:grid-cols-[2fr_1fr_1.2fr_1fr_1fr]">
               <span>ROOM</span>
               <span className="hidden md:inline">PLATFORM</span>
               <span className="hidden md:inline">ON CAMERA</span>
@@ -209,14 +214,14 @@ export function Landing({
                   <Rate room={room} />
                   <span className="flex justify-end">
                     {full ? (
-                      <span className="text-[11.5px] font-[700] tracking-[0.16em] text-[#ffd23d]">QUEUE</span>
+                      <span className="text-[11.5px] font-[700] tracking-[0.08em] text-[#ffd23d]">QUEUE</span>
                     ) : onAir ? (
-                      <span className="flex items-center gap-1.5 text-[11.5px] font-[700] tracking-[0.16em] text-[var(--mcl-live)]">
+                      <span className="flex items-center gap-1.5 text-[11.5px] font-[700] tracking-[0.08em] text-[var(--mcl-live)]">
                         <span className="inline-block size-1.5 rounded-full bg-[var(--mcl-live)]" aria-hidden="true" />
                         ON AIR
                       </span>
                     ) : (
-                      <span className="text-[11.5px] font-[700] tracking-[0.16em] text-[var(--mcl-dim)]">
+                      <span className="text-[11.5px] font-[700] tracking-[0.08em] text-[var(--mcl-dim)]">
                         OPEN SEATS
                       </span>
                     )}
@@ -232,8 +237,8 @@ export function Landing({
       <section className="px-6 pb-16 pt-2 md:px-16">
         <div className="mb-5 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-[22px] font-[800] tracking-[0.02em] md:text-[26px]">HELD FOR STREAMERS</h2>
-          <Link href="/bounty" className="text-[10.5px] tracking-[0.2em] text-[var(--mcl-faint)] hover:text-white">
-            THE BOUNTY BOARD →
+          <Link href="/bounty" className="text-[12.5px] text-[var(--mcl-faint)] hover:text-white">
+            The bounty board →
           </Link>
         </div>
         {boardPools.length === 0 ? (
@@ -244,9 +249,9 @@ export function Landing({
             </p>
             <Link
               href="/bounty"
-              className="border border-[rgba(255,255,255,0.25)] px-6 py-3 text-[12.5px] font-[800] tracking-[0.14em] text-[var(--mcl-fg)] hover:border-white/60"
+              className="border border-[rgba(255,255,255,0.25)] px-6 py-3 text-[14px] font-[800] text-[var(--mcl-fg)] hover:border-white/60"
             >
-              START A POOL
+              Start a pool
             </Link>
           </div>
         ) : (
@@ -264,7 +269,7 @@ export function Landing({
                   <span className="truncate font-[700]">
                     {pool.handle ?? pool.handleKey}
                     {pool.platform ? (
-                      <span className="ml-2 text-[11px] uppercase tracking-[0.14em] text-[var(--mcl-dim)]">
+                      <span className="ml-2 text-[11px] uppercase tracking-[0.08em] text-[var(--mcl-dim)]">
                         {pool.platform}
                       </span>
                     ) : null}
@@ -290,9 +295,9 @@ export function Landing({
           <h2 className="text-[22px] font-[800] tracking-[0.02em] md:text-[26px]">HOW A SEAT WORKS</h2>
           <Link
             href="/how-it-works"
-            className="text-[10.5px] tracking-[0.2em] text-[var(--mcl-faint)] hover:text-white"
+            className="text-[12.5px] text-[var(--mcl-faint)] hover:text-white"
           >
-            FULL WALKTHROUGH + FAQ →
+            Full walkthrough + FAQ →
           </Link>
         </div>
         <div className="flex flex-col">
@@ -316,33 +321,31 @@ export function Landing({
         <h2 className="max-w-[820px] text-center text-[32px] font-[800] leading-[1.08] tracking-[-0.01em] md:text-[44px]">
           A chat app for people who&apos;d rather be on TV.
         </h2>
-        <p className="text-[12px] tracking-[0.18em] text-[var(--mcl-faint)]">
+        <p className="text-[12px] tracking-[0.12em] text-[var(--mcl-faint)]">
           CALL-IN SHOW + FACETIME + SUPERCHAT = MEGACHAT
         </p>
         <div className="flex flex-wrap items-center justify-center gap-4">
           <Link
             href="/dashboard?new=1"
-            className="bg-[var(--mcl-mint)] px-8 py-4 text-[14px] font-[800] tracking-[0.14em] text-[var(--mcl-mint-ink)] transition-opacity hover:opacity-90"
+            className="bg-[var(--mcl-mint)] px-8 py-4 text-[15px] font-[800] text-[var(--mcl-mint-ink)] transition-opacity hover:opacity-90"
           >
-            CREATE A ROOM
+            Create a room
           </Link>
           <Link
             href="/app"
-            className="border border-[rgba(255,255,255,0.25)] px-8 py-[15px] text-[14px] font-[800] tracking-[0.14em] text-[var(--mcl-fg)] transition-colors hover:border-white/60"
+            className="border border-[rgba(255,255,255,0.25)] px-8 py-[15px] text-[15px] font-[800] text-[var(--mcl-fg)] transition-colors hover:border-white/60"
           >
-            BROWSE ROOMS
+            Browse rooms
           </Link>
         </div>
-        <p className="text-[12px] tracking-[0.18em] text-[var(--mcl-faint)]">
-          BOUNTIES SETTLE IN USDC
-        </p>
+        <p className="text-[12.5px] text-[var(--mcl-faint)]">Bounties settle in USDC</p>
       </section>
 
       </main>
 
       {/* footer */}
-      <footer className="flex flex-col items-center justify-between gap-4 border-t border-[var(--mcl-hairline)] px-6 py-7 text-[12px] tracking-[0.14em] text-[var(--mcl-faint)] md:flex-row md:px-16">
-        <span className="tracking-[0.3em] text-[var(--mcl-dim)]">MEGACHAT</span>
+      <footer className="flex flex-col items-center justify-between gap-4 border-t border-[var(--mcl-hairline)] px-6 py-7 text-[13px] text-[var(--mcl-faint)] md:flex-row md:px-16">
+        <span className="tracking-[0.2em] text-[var(--mcl-dim)]">MEGACHAT</span>
         <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-5 md:gap-7">
           <Link href="/app" className="hover:text-white">
             Rooms

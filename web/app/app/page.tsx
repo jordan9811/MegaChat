@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Barlow, Barlow_Condensed } from 'next/font/google'
+import { Plus_Jakarta_Sans } from 'next/font/google'
 import { Booth } from '@/components/booth/booth'
 import { loadBountyPools, loadInitialRooms } from '@/lib/rooms-server'
 
@@ -10,17 +10,18 @@ export const metadata: Metadata = {
   description: 'Every room on the board. Take a camera seat, billed by the second.',
 }
 
-const barlow = Barlow({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-barlow' })
-const barlowCondensed = Barlow_Condensed({
+// One UI face across the app. Archivo stays on the landing hero only —
+// that is a poster using a display face, not a second system.
+const ui = Plus_Jakarta_Sans({
   subsets: ['latin'],
-  weight: ['500', '600', '700'],
-  variable: '--font-barlow-c',
+  weight: ['400', '500', '600', '700', '800'],
+  variable: '--font-ui',
 })
 
 export default async function Page() {
   const [rooms, pools] = await Promise.all([loadInitialRooms(), loadBountyPools()])
   return (
-    <div className={`${barlow.variable} ${barlowCondensed.variable}`}>
+    <div className={`${ui.variable}`}>
       <Booth initialRooms={rooms} initialPools={pools} />
     </div>
   )

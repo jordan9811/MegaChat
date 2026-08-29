@@ -16,6 +16,12 @@
   --mcl-live: #43e0a8;
   background: var(--mcl-bg);
   color: var(--mcl-fg);
+  font-family: var(--font-ui), system-ui, sans-serif;
+}
+
+/* the one place a display face is worth a second family */
+.mcl-display {
+  font-family: var(--font-display), var(--font-ui), system-ui, sans-serif;
 }
 
 /* The global focus ring is tuned for the themed pages and washes out to

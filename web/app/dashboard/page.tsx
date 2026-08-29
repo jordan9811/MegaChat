@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { Barlow, Barlow_Condensed } from 'next/font/google'
+import { Plus_Jakarta_Sans } from 'next/font/google'
 import { contactUrl } from '@/components/site-footer'
 import { RoomProvider } from '@/components/room-provider'
 import { DashboardShell } from '@/components/dashboard-shell'
@@ -9,18 +9,16 @@ export const metadata = {
   description: 'Tune pricing, share links, watch viewers roll onto camera.',
 }
 
-// The create surface wears the app skin (same as the room board), so the
-// dashboard carries those faces for it.
-const barlow = Barlow({ subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-barlow' })
-const barlowCondensed = Barlow_Condensed({
+// The create surface wears the app skin, same face as the room board.
+const ui = Plus_Jakarta_Sans({
   subsets: ['latin'],
-  weight: ['600', '700'],
-  variable: '--font-barlow-c',
+  weight: ['400', '500', '600', '700', '800'],
+  variable: '--font-ui',
 })
 
 export default function DashboardPage() {
   return (
-    <div className={`${barlow.variable} ${barlowCondensed.variable}`}>
+    <div className={`${ui.variable}`}>
       {/* The shell picks its own chrome: creating is a full page of its own,
           managing keeps the header/tabs/footer control room. */}
       {/* Suspense: the shell reads ?new=1 to force the create page, and

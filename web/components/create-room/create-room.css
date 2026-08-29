@@ -1,5 +1,5 @@
 /* Create a room (feat/ui-overhaul) — scoped under .mc-create.
-   Wears the app/Booth skin: near-black, Barlow, one warm accent. The room
+   Wears the app/Booth skin: near-black, one warm accent. The room
    board and this page are the same product surface, so they match each other
    rather than the marketing site. */
 
@@ -38,20 +38,20 @@ html:has(.mc-create) ::-webkit-scrollbar-thumb:hover {
   --mcc-warn: #ffd23d;
   background: var(--mcc-bg);
   color: var(--mcc-fg);
-  font-family: var(--font-barlow), system-ui, sans-serif;
+  font-family: var(--font-ui), system-ui, sans-serif;
 }
 
 .mc-create .bc {
-  font-family: var(--font-barlow-c), var(--font-barlow), sans-serif;
+  font-family: var(--font-ui), system-ui, sans-serif;
+  letter-spacing: 0.04em;
 }
 
-/* Field labels are regular Barlow, not condensed — condensed reads techy and
-   hurt legibility at label size. Condensed is chrome only. */
+/* Sentence case, normal tracking. Caps strip the word shapes the eye
+   reads by — fine on a chip, hostile on a label scanned forty times. */
 .mc-create .lbl {
-  font-weight: 700;
-  font-size: 11.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: 0;
   color: var(--mcc-dim);
 }
 
@@ -134,7 +134,7 @@ html:has(.mc-create) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mc-create .stepnum {
-  font-family: var(--font-barlow-c), sans-serif;
+  font-family: var(--font-ui), sans-serif;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -165,10 +165,10 @@ html:has(.mc-create) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mc-create .tabchip {
-  font-family: var(--font-barlow-c), sans-serif;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-family: var(--font-ui), sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
   padding: 8px 15px;
   border: 1px solid var(--mcc-rule-2);
   background: transparent;

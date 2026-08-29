@@ -165,7 +165,7 @@ function FeatureCard({
           </span>
         </span>
         <span
-          className="bc shrink-0 text-[11px] tracking-[0.14em]"
+          className="bc shrink-0 text-[11.5px] font-bold tracking-[0.08em]"
           style={{ color: on ? 'var(--mcc-live)' : '#7f8992' }}
         >
           {on ? 'ON' : offLabel}
@@ -278,9 +278,7 @@ export function CreateRoom() {
           <a href="/app" className="bc text-[18px] font-bold tracking-[0.1em] text-[var(--mcc-fg)]">
             MEGACHAT
           </a>
-          <span className="bc text-[12px] font-semibold tracking-[0.14em] text-[var(--mcc-dim)]">
-            NEW ROOM
-          </span>
+          <span className="text-[13px] font-semibold text-[var(--mcc-dim)]">New room</span>
         </span>
         <span className="text-[12px] text-[var(--mcc-faint)]">
           {hasIdentity ? (
@@ -547,18 +545,21 @@ export function CreateRoom() {
         <div className="flex flex-col gap-3 border border-[var(--mcc-rule)] bg-[var(--mcc-sunk)] p-4">
           <span className="hint">
             Your key choices from above reappear first in each group, marked{' '}
-            <span className="font-bold text-[var(--mcc-accent)]">KEY</span> — same control, same
-            value, either place. This is the editor you&apos;ll use on the live room too.
+            {/* JSX drops a leading space that starts a multi-line text chunk,
+                so this one has to be explicit — it read "Key ·— same" without it. */}
+            <span className="font-bold text-[var(--mcc-accent)]">Key ·</span>{' '}
+            — same control, same value, either place. This is the editor you&apos;ll use on the
+            live room too.
           </span>
 
           <div role="tablist" aria-label="Settings groups" className="flex flex-wrap gap-1.5">
             {([
-              ['mega', 'MEGACHATS'],
-              ['mic', 'OPEN MIC'],
-              ['drops', 'DROPS'],
-              ['access', 'WHO GETS IN'],
-              ['money', 'MONEY'],
-              ['stream', 'STREAM'],
+              ['mega', 'MegaChats'],
+              ['mic', 'Open mic'],
+              ['drops', 'Drops'],
+              ['access', 'Who gets in'],
+              ['money', 'Money'],
+              ['stream', 'Stream'],
             ] as const).map(([id, label]) => (
               <button
                 key={id}
@@ -858,7 +859,7 @@ export function CreateRoom() {
                 — the room would open and close with your broadcast
               </span>
             </span>
-            <span className="bc shrink-0 text-[11px] tracking-[0.14em] text-[var(--mcc-warn)]">SOON</span>
+            <span className="bc shrink-0 text-[11.5px] font-bold tracking-[0.08em] text-[var(--mcc-warn)]">SOON</span>
           </div>
           <div className="border-t border-[var(--mcc-rule)] py-2.5 pl-[59px] pr-3.5">
             <span className="hint">
@@ -933,9 +934,9 @@ export function CreateRoom() {
             type="button"
             disabled={busy || !canCreate}
             onClick={() => void onCreate()}
-            className="bc bg-[var(--mcc-accent)] px-11 py-4 text-[16px] font-bold tracking-[0.14em] text-[#08080a] disabled:opacity-50"
+            className="bg-[var(--mcc-accent)] px-11 py-4 text-[16.5px] font-bold text-[#08080a] disabled:opacity-50"
           >
-            {busy ? 'OPENING…' : 'CREATE ROOM'}
+            {busy ? 'Opening…' : 'Create room'}
           </button>
           <span className="hint">
             Overlay link and OBS setup come next.
@@ -946,7 +947,8 @@ export function CreateRoom() {
       </div>
 
       {/* ─────────── RIGHT: what viewers get ─────────── */}
-      <div className="flex min-w-0 flex-col gap-3 self-start bg-[var(--mcc-sunk)] p-5 lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto">
+      <div className="min-w-0 bg-[var(--mcc-sunk)]">
+        <div className="flex flex-col gap-3 p-5 lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto">
         <span className="text-[15px] font-bold text-[#d7dde2]">
           What viewers will see{' '}
           <span className="text-[12.5px] font-normal text-[var(--mcc-faint)]">
@@ -972,7 +974,7 @@ export function CreateRoom() {
                 'linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)',
             }}
           />
-          <span className="bc absolute left-3 top-2.5 flex items-center gap-1.5 bg-[rgba(8,8,10,0.62)] px-2 py-0.5 text-[11px] font-bold tracking-[0.16em] text-[var(--mcc-live)]">
+          <span className="bc absolute left-3 top-2.5 flex items-center gap-1.5 bg-[rgba(8,8,10,0.62)] px-2 py-0.5 text-[11px] font-bold tracking-[0.08em] text-[var(--mcc-live)]">
             <span aria-hidden="true" className="inline-block size-1.5 rounded-full bg-[var(--mcc-live)]" />
             ON AIR
           </span>
@@ -987,20 +989,20 @@ export function CreateRoom() {
           )}
           <span className="absolute inset-x-3 bottom-2.5 flex items-end justify-between gap-2.5">
             <span className="min-w-0">
-              <span className="bc block truncate text-[21px] font-bold leading-[1.05]">
+              <span className="block truncate text-[22px] font-bold leading-[1.05] tracking-[-0.01em]">
                 {draft.name.trim() || 'Your room'}
               </span>
-              <span className="bc mt-0.5 block text-[10.5px] font-medium tracking-[0.14em] text-[var(--mcc-muted)]">
+              <span className="mt-0.5 block text-[12px] font-medium text-[var(--mcc-muted)]">
                 {draft.joinStreamEnabled
-                  ? `0 OF ${draft.maxSeats} ON CAMERA`
+                  ? `0 of ${draft.maxSeats} on camera`
                   : draft.lettersEnabled
-                    ? 'MEGACHATS OPEN'
-                    : 'WATCH ONLY'}
-                {draft.rewardsEnabled ? ' · DROPS' : ''}
+                    ? 'MegaChats open'
+                    : 'Watch only'}
+                {draft.rewardsEnabled ? ' · Drops' : ''}
               </span>
             </span>
-            <span className="bc whitespace-nowrap bg-[#f2f2f4] px-3 py-1.5 text-[10.5px] font-bold tracking-[0.14em] text-[#08080a]">
-              {draft.joinStreamEnabled ? 'TAKE A SEAT' : draft.lettersEnabled ? 'SEND A MEGACHAT' : 'WATCH'}
+            <span className="whitespace-nowrap bg-[#f2f2f4] px-3 py-1.5 text-[12.5px] font-bold text-[#08080a]">
+              {draft.joinStreamEnabled ? 'Take a seat' : draft.lettersEnabled ? 'Send a MegaChat' : 'Watch'}
             </span>
           </span>
         </div>
@@ -1071,6 +1073,7 @@ export function CreateRoom() {
           Sample room art. Everything else here is your live configuration — if a number looks
           wrong, it will look wrong to viewers too.
         </span>
+        </div>
       </div>
       </div>
     </div>
