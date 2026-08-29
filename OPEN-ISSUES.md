@@ -1477,3 +1477,41 @@ with the measured ~10s broadcast delay putting the earliest sampled instants
 before the badge reached the public stream. Same family as T5b/R1 — the
 sampler does not yet account for a platform's real delay when choosing WHERE
 in the window to sample.
+
+### T8. External capture is not dependable, and the two "externals" are different things
+
+Raised by the operator, confirmed in code. "External capture" means two
+materially different mechanisms, and one of them is disableable by the
+streamer:
+
+  TWITCH   a genuine VOD ARCHIVE (frame-sources.js:158,
+           /videos?user_id=..&type=archive). A streamer with VODs turned
+           off, past their retention window, or who deleted the VOD,
+           yields NO_VOD_COVERING_TS. External capture is then IMPOSSIBLE
+           and self-capture is the only path that can ever work.
+  KICK     no VOD discovery API at all -> self-capture MANDATORY.
+  PUMP.FUN not a VOD: the LIVE playlist is append-only (MEDIA-SEQUENCE:0,
+           825 segments retained across ~27 minutes), so we seek backwards
+           through the live stream itself. Nobody can switch that off --
+           but whether it SURVIVES THE STREAM ENDING is unmeasured, and
+           verification runs after the fact.
+  RUMBLE   no VOD discovery; needs an operator-supplied URL.
+
+CONSEQUENCE: external capture cannot be treated as a dependable fallback.
+It is platform-dependent, streamer-disableable on Twitch, and of unknown
+durability on pump.fun. The code already makes SELF-CAPTURE PRIMARY
+(bounty-routes.js, "SELF-CAPTURE FIRST"), which is correct -- but
+self-capture is currently PROVEN ON ONE PLATFORM OF FOUR:
+
+    Kick      PROVEN   5/5 windows frozen, 85.8MB
+    Twitch    UNPROVEN every Twitch verification to date used the VOD path
+    pump.fun  UNPROVEN was structurally broken (yt-dlp handed a coin page);
+                       fixed, under test now
+    Rumble    UNPROVEN blocked on a live slot
+
+Today's pump.fun success ran ENTIRELY on external capture -- i.e. the
+fallback carried a run while the primary was broken, and nothing in the
+result said so. Worth measuring: does pump.fun's playlist outlive the
+broadcast? If not, pump.fun external verification only works during or
+shortly after the stream, which is a different product than "verify
+later".
