@@ -1846,3 +1846,50 @@ WHAT WOULD SETTLE IT: log the discarded probes and the surviving cluster size
 on every calibration, so a MEASURED verdict built from 3 of 5 points is
 distinguishable after the fact from one built from 5 of 5. Right now the
 discard count only appears in the review reason of a run that already failed.
+
+### BOTH READ PATHS PROVEN ON TWITCH AND PUMP.FUN (2026-08-30)
+
+The first runs after the dead-recorder fixes, and the first genuine
+capture-vs-external cross-checks this project has produced. `frameOrigin` now
+comes from the server, so neither column can be mislabelled by a harness.
+
+TWITCH -- unattended, own RTMP push, no operator present:
+    our recording  frameOrigin=capture   PASS 5/5  conf 0.874  det 1.000
+                   px: 28 x10, every sample read
+    their replay   frameOrigin=external  PASS 5/5  conf 0.863
+                   px: 4.1 then 28 x9
+    5 capture files, 5 DISTINCT md5s -- the ring never stalled
+    release(stub) 6.25 of 25
+
+  THIS SETTLES THE MORNING'S RETRACTION. Twitch self-capture had never been
+  exercised: run-b named a sourceMode on every verification, and 'live'/'vod'
+  both force the external path, so no run could produce a capture verdict. With
+  the no-sourceMode verification added it works on the first attempt, at the
+  cleanest detection rate of any platform. The earlier audit claim that the
+  harness "structurally cannot" capture because it opens the air session before
+  the push was ALSO wrong, and is now disproven empirically as well as by the
+  Kick counter-example.
+
+PUMP.FUN -- operator broadcasting from OBS:
+    our recording  frameOrigin=capture   PARTIAL 6 clips  conf 0.900  det 0.857
+                   px: 28 28 28 27.7 28 28 28 -- a badge in every sample
+    their replay   frameOrigin=external  PARTIAL 6 clips  conf 0.900  det 1.000
+                   px: 28 28 0 27.7 28 28 28
+    9 capture files, 9 DISTINCT md5s -- no stall, against 8-identical last run
+    release(stub) 6.25 of 25
+
+  THE TWO DETECTION RATES DIFFER FOR DIFFERENT REASONS, which is the point of
+  reporting them apart. External's 0-height sample was UNREADABLE (a gap on
+  pump.fun's side) and is excluded from the denominator, so it reads 1.000
+  rather than being scored as an absent badge -- under the old arithmetic that
+  single sample would have reported 0.857 and dragged an honest broadcast
+  toward the release gate. Capture's 0.857 is a REAL near-miss: a badge visible
+  at 28px carrying a code outside the accepted window, correctly held against
+  the session. Our failure and the streamer's are no longer the same number.
+
+  Broadcast delay measured ~5s this run against ~10s last run, on the same
+  stream and encoder -- consistent with the earlier figure having been inflated
+  by the overlay holding each code ~15s against a 4s rotation.
+
+STILL PARTIAL, NOT PASS: 6 of 7 scored windows verified, and 2 of those 7 are
+scaffolding (canary + setup). The verifiedClips inflation is unfixed.
