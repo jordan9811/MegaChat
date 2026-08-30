@@ -1711,3 +1711,138 @@ that is a materially better position than having no archive at all.
 Correct one-line form, for reuse:
   Kick: VOD exists, discovery does not. Self-capture is the only automatic
   path; VOD capture works with an operator-supplied URL.
+
+### A DEAD RECORDER WAS SCORED AS AN ABSENT BADGE (2026-08-29, FIXED)
+
+The most expensive defect found so far, because it was silent, confident, and
+pointed at the wrong party. Found on a real pump.fun broadcast; the capture
+files are kept and _gate-stale-capture.mjs runs against them.
+
+WHAT HAPPENED. Five clips aired with the badge legible at 28px -- the canary
+read code C6-GHQY off the PUBLIC stream, so the overlay was demonstrably on
+the broadcast. The rolling buffer ingested cleanly for thirty minutes, then
+stopped dead at 22:03:21. Every freeze after that wrote THE SAME stale minute
+of media under a new playback name:
+
+    md5 1a59ef1f319d7b3e3584422430be134b, 1,814,388 bytes, x8
+      PF1 PF2 PF3 PF4 PF5 PF_CANARY PF_HOLD16 PF_SETUP1
+    firstPdtMs 22:02:21.705 on all eight, spanMs 60000
+    overlap between each real clip's window and its own capture: 0 ms
+
+EVERYTHING WE PRINTED SAID IT WORKED. "self-capture froze 23/5 window(s) --
+41.0MB", "PROGRAM-DATE-TIME present on 23/23". Both are PRESENCE checks:
+_rehearsal-pumpfun.mjs counts Number.isFinite(firstPdtMs) and warns only if
+frozen.length < CLIPS. Eight identical files satisfy both. The operator was
+told self-capture was proven on pump.fun. It was not.
+
+  THE COUNTER PROVES NOTHING, ON ANY PLATFORM. What proved Kick was that its
+  verification PASSED 5/5 reading correct ROTATING codes -- stale media cannot
+  produce the right code at the right instant. Read a passing verification as
+  the proof; never the freeze count.
+
+THE ACCUSATION. frame-sources.js computed `dur` and used it only in the
+estimate branch; NEITHER branch bounded the seek from above. A seek 195s into
+a 60s file makes ffmpeg exit 0, print nothing, and write NO output file --
+and grabFrame checked only the exit code, so it returned a path to a file that
+was not there. The checker then failed to decode it and returned
+`{found: false, error: 'frame_unreadable'}`, whose own comment said to "let the
+hit-rate math treat it as a miss". `frame_unreadable` was SET in exactly one
+place and READ NOWHERE. Replayed against the real files with calibration
+forced good: FAIL 0/5. Our outage, recorded as "the streamer had no badge",
+paying zero.
+
+LIKELY TRIGGER, NOT PROVEN: pump.fun rotates its media directory mid-broadcast
+-- observed TWICE in this one stream, ~33-53 min apart, the second with no
+operator present. bounty-capture.js pins state.hlsUrl at start and only ever
+rewrites master -> variant, so after a rotation it polls a dead address
+forever. Segment fetch failures were a bare `continue` and state.errors reset
+to 0 regardless, so a total outage logged nothing. The competing candidate (a
+RollingBuffer high-water latch on renumbering) fits equally well and cannot be
+separated from the artifacts, because _gate-helpers.mjs collects server stdout
+into a string surfaced only on startup failure -- every [capture] line from
+this broadcast was discarded.
+
+  NOT the operator's machine sleeping. The recorder ran clean for the entire
+  thirty minutes the operator was away (holds 1-15, all distinct media) and
+  died at the rotation seam. In production the recorder runs on Railway, not
+  the streamer's PC, so machine sleep is not a production failure mode at all
+  -- but directory rotation is, and it is server-side.
+
+FIXED:
+  - frame-sources.js grabFrame: exit 0 is not proof of a frame; assert the
+    output file exists.
+  - frame-sources.js: new SOURCE_STATES.CAPTURE_GAP. An instant our recording
+    does not reach is reported PER-SAMPLE as unreadable, never as a throw --
+    windows recorded before a stall are still evidence and must survive.
+  - frame-sources.js PumpFunFrameSource: same, for the archive path. One
+    aged-out instant used to abort the whole session at grab 0 of 36, before a
+    single real clip was sampled.
+  - bounty-verifier.js: an unreadable sample is held against OUR source, not
+    the streamer. Excluded from the detectionRate denominator (a release gate),
+    counted separately, and if NOTHING was readable the verdict is
+    SOURCE_UNAVAILABLE -> review, never FAIL -> zero.
+  - bounty-capture.js: count failed segment fetches, log a stall loudly,
+    re-derive the media URL when the ring stops growing, and stamp `stale` on
+    any freeze taken from a stalled ring instead of writing a false coverage
+    row into the append-only evidence chain.
+  - _rehearsal-pumpfun.mjs: --wait-for-go held the badge by opening a playback
+    window every 110s ON THE SCORED SESSION, so a half-hour hold added SIXTEEN
+    PF_HOLD windows that aired to a dead overlay. The hold session is now
+    ENDED at GO and a fresh one opened, so the scored run starts with zero
+    windows. One session open at a time keeps ?bountyRoom unambiguous.
+
+THE FIRST VERSION OF THIS FIX WAS WORSE THAN THE BUG, and _gate-vod-calibration
+caught it: 15/15 -> 7/8. Making grabFrame throw is right, but only the capture
+and pump.fun sources were taught to absorb it per-sample; Twitch, Kick, YouTube
+and Rumble still let it propagate. CALIBRATION EXISTS TO TRY HYPOTHESES, several
+of which are wrong by design, so a probe seeking past the end of a VOD went from
+"this hypothesis scored nothing" to "abort the whole verification" -- a
+deterministic dead session on every platform, invisible until the next real
+broadcast. All nine grabFrame call sites now funnel through frameOrUnreadable().
+
+  The general rule, worth keeping: a per-sample failure must stay per-sample.
+  Every place this system turned one bad sample into a session-wide verdict has
+  produced a wrong answer -- the external abort at grab 0 of 36, and this.
+
+STILL OPEN: verifiedClips counts the canary and setup windows (7 for a 5-clip
+run), which inflates the payout unit. Nothing anywhere excludes scaffolding
+windows from scoring.
+
+### Calibration once swallowed an injected DISAGREEMENT (2026-08-29, UNREPRODUCED)
+
+Observed ONCE, in a full gate sweep. _gate-vod-calibration section 3 injects a
+bimodal timeline -- half the clips at 16s, the rest shifted +12s -- and asserts
+the verdict is DISAGREEMENT rather than a single averaged offset. That run
+reported instead:
+
+    MEASURED spread=1ms
+    "2 outlying probe(s) discarded around a 3-point cluster"
+    ambiguous: 3 clip(s) matched at read confidence 0.895, detection rate 0.5
+
+i.e. outlier rejection discarded the entire shifted group and returned a
+CONFIDENT, tight offset for a timeline no single offset explains.
+
+NOT REPRODUCED in five attempts: 3x standalone, 1x under four busy cores, 1x
+run immediately after _gate-pumpfun-pdt to mimic the sweep sequence. All five
+returned 15/15 with DISAGREEMENT spread≈12000ms. Both conditions predicted to
+trigger it (CPU pressure, sweep ordering) failed to.
+
+NOT DEMONSTRABLY CAUSED by the frameOrUnreadable work landing alongside it.
+That change is behaviour-neutral for calibration probes: an unreadable frame
+reaches codeChecker.findCode, whose decode failure is caught and returned as
+{found:false}, and bounty-timeline-calibration.js:195 `if (!res?.found)
+continue` skips it -- the same outcome the pre-change code reached via a
+phantom file path. Verified by reading, not assumed.
+
+WHY IT IS FILED ANYWAY, rather than dismissed as test flake: the failure mode
+is the expensive one. If enough probes come back empty, the surviving points
+cluster tightly and calibration reports MEASURED with a 1ms spread on a
+timeline that is genuinely inconsistent. Nothing downstream can tell that from
+a real measurement, and DISAGREEMENT exists precisely to send this case to a
+human instead of paying against a seek that cannot be trusted. It is the same
+shape as every other defect found today: confidence the system has not earned.
+
+WHAT WOULD SETTLE IT: log the discarded probes and the surviving cluster size
+on every calibration, so a MEASURED verdict built from 3 of 5 points is
+distinguishable after the fact from one built from 5 of 5. Right now the
+discard count only appears in the review reason of a run that already failed.

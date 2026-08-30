@@ -388,6 +388,17 @@ async function startSessionCapture(session, { log = console } = {}) {
     }
     await capture.startCapture(session.id, {
       hlsUrl, platform: session.platform, handle, log,
+      // SURVIVE A MID-BROADCAST STORAGE ROTATION. The recorder pins one media
+      // URL for the life of the session; pump.fun rotates its media directory
+      // on its own schedule (twice in one observed broadcast, with no operator
+      // action), after which that URL answers nothing and the ring silently
+      // stops growing while still reporting healthy freezes. Handing the
+      // recorder a way back to the same page it resolved from is what turns a
+      // terminal stall into one missed poll.
+      reresolve: async () => {
+        const { resolveMediaUrl } = await import('./frame-sources.js');
+        return resolveMediaUrl(captureSourceUrl(session, handle), { log });
+      },
     });
     log.log?.(`[capture] recording started for ${session.platform}:${handle}`);
   } catch (e) {

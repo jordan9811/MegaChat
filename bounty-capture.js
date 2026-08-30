@@ -193,6 +193,10 @@ export class RollingBuffer {
  */
 export async function startCapture(airSessionId, {
   hlsUrl, platform, handle, log = console, fetchImpl = fetch,
+  // Optional: re-derive the media URL from the channel/watch page. Called only
+  // when the ring stalls, so a platform that rotates its storage mid-broadcast
+  // (pump.fun does, unprompted) does not silently end the recording.
+  reresolve = null,
 } = {}) {
   if (!bountyConfig.selfCaptureEnabled) return null;
   if (active.has(airSessionId)) return active.get(airSessionId);
@@ -205,6 +209,10 @@ export async function startCapture(airSessionId, {
     pollTimer: null,
     errors: 0,
     startedAt: Date.now(),
+    // Freshness bookkeeping: when the ring last actually grew, and how many
+    // consecutive polls have added nothing.
+    lastAdvanceAt: Date.now(),
+    noAdvancePolls: 0,
   };
   active.set(airSessionId, state);
 
@@ -257,15 +265,70 @@ export async function startCapture(airSessionId, {
         log.log?.(`[capture] playlist lists ${segments.length} segments; starting at the `
           + `live edge with the last ${fresh.length}`);
       }
+      let added = 0;
+      let segFailures = 0;
       for (const seg of fresh) {
         if (state.stopped) return;
         if (state.buffer.has(seg.seq)) continue;
         const r = await fetchImpl(seg.uri, { signal: AbortSignal.timeout(8000) });
-        if (!r.ok) continue;
+        // A FAILED SEGMENT IS NOT A NO-OP. This was a bare `continue`, so a
+        // total segment outage — every fetch 403ing while the playlist itself
+        // still answers 200 — advanced nothing, logged nothing, and reset
+        // state.errors to 0 on the way out. The recorder looked healthy while
+        // capturing air.
+        if (!r.ok) { segFailures += 1; continue; }
         const bytes = Buffer.from(await r.arrayBuffer());
         state.buffer.push({ ...seg, bytes, fetchedAt: Date.now() });
+        added += 1;
       }
       state.errors = 0;
+
+      /**
+       * A STALLED RING IS THE FAILURE THIS WHOLE FILE EXISTS TO PREVENT, AND
+       * IT USED TO BE THE ONE FAILURE IT COULD NOT SEE.
+       *
+       * Measured on a real pump.fun broadcast: the ring ingested cleanly for
+       * thirty minutes, then stopped dead at 22:03:21 while every later freeze
+       * happily wrote the SAME stale minute of media under a new playback name
+       * — eight byte-identical files, each emitting a coverage assertion into
+       * the append-only evidence chain. Nothing logged. The rehearsal reported
+       * "froze 23/23, PDT on 23/23" and the operator was told self-capture
+       * worked.
+       *
+       * The trigger was almost certainly pump.fun rotating its media directory
+       * (observed twice in that broadcast, ~33-53 min apart, unprompted). We
+       * pin state.hlsUrl at start and only ever rewrite master → variant, so
+       * after a rotation we keep asking a dead address forever.
+       */
+      if (added > 0) {
+        state.lastAdvanceAt = Date.now();
+        state.noAdvancePolls = 0;
+      } else if (fresh.length) {
+        state.noAdvancePolls = (state.noAdvancePolls || 0) + 1;
+        const stalledMs = Date.now() - (state.lastAdvanceAt || state.startedAt || Date.now());
+        if (state.noAdvancePolls === 3 || state.noAdvancePolls % 20 === 0) {
+          log.warn?.(`[capture] ${airSessionId} STALLED: no new segment in `
+            + `${state.noAdvancePolls} poll(s) / ${Math.round(stalledMs / 1000)}s`
+            + `${segFailures ? `, ${segFailures} segment fetch(es) failing` : ''}. `
+            + 'Everything frozen from here would be stale media.');
+        }
+        // Re-derive the address before assuming the broadcast ended. This is
+        // what makes a mid-stream directory rotation survivable instead of
+        // silently terminal.
+        if (typeof reresolve === 'function' && state.noAdvancePolls === 3) {
+          try {
+            const fresh2 = await reresolve();
+            if (fresh2 && fresh2 !== state.hlsUrl) {
+              log.warn?.(`[capture] ${airSessionId} re-derived a NEW media URL after a `
+                + 'stall — the platform rotated storage mid-broadcast');
+              state.hlsUrl = fresh2;
+              state.noAdvancePolls = 0;
+            }
+          } catch (e) {
+            log.warn?.(`[capture] ${airSessionId} re-resolve failed: ${e.message}`);
+          }
+        }
+      }
     } catch (e) {
       // A capture that dies silently is worse than one that never ran: the
       // streamer would be verified against nothing and told nothing.
@@ -300,6 +363,29 @@ export function freezeWindow(airSessionId, { playbackId, clipId, log = console }
     log.warn?.(`[capture] nothing buffered for ${airSessionId} at freeze time`);
     return null;
   }
+  /**
+   * IS THE BUFFER STILL ALIVE, OR JUST NON-EMPTY?
+   *
+   * The only precondition here was `segments.length` — "we have bytes" — which
+   * a dead ring satisfies forever, because the last segments it ever fetched
+   * stay in it. That is how eight playbacks were frozen onto byte-identical
+   * media and eight coverage assertions were written into an append-only
+   * evidence chain that is supposed to be trustworthy. A false evidence row is
+   * worse than a missing one.
+   *
+   * The freeze still happens: partial evidence beats none, and the verifier
+   * now treats an uncoverable instant as OUR failure rather than the
+   * streamer's. But it is recorded as stale, loudly, so nothing downstream can
+   * mistake it for a live recording of this playback.
+   */
+  const stalledMs = Date.now() - (state.lastAdvanceAt || state.startedAt || Date.now());
+  const stale = stalledMs > bountyConfig.captureWindowMs;
+  if (stale) {
+    log.warn?.(`[capture] ${airSessionId} freezing ${playbackId || clipId} from a STALLED `
+      + `ring — no new media for ${Math.round(stalledMs / 1000)}s (window is `
+      + `${Math.round(bountyConfig.captureWindowMs / 1000)}s). This capture cannot cover `
+      + 'the playback it is named after.');
+  }
   ensureDir();
   const file = path.join(CAPTURE_DIR, `${airSessionId}__${playbackId || clipId || 'window'}.ts`);
   const bytes = state.buffer.concat();
@@ -315,6 +401,12 @@ export function freezeWindow(airSessionId, { playbackId, clipId, log = console }
     // one: the capture's media t=0 in WALL CLOCK, exact. Null on platforms
     // that do not stamp (Twitch, Kick) — calibration measures those instead.
     firstPdtMs: Number.isFinite(first?.pdtMs) ? first.pdtMs : null,
+    // TRAVELS WITH THE EVIDENCE. `stale` says this media predates the playback
+    // it is named after; `stalledMs` says by how far. Recorded on the row
+    // itself because the row is what a reviewer and a payout will read later,
+    // long after the log line has scrolled away.
+    stale,
+    stalledMs: Math.round(stalledMs),
   };
   // Evidence, same append-only treatment as the clip index and the ledger:
   // a payout computed FROM this capture must be able to point at it.

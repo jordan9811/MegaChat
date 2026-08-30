@@ -316,6 +316,13 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
   if (timelineNeedsReview) log.warn?.(`[verifier] ${describeCalibration(calibration)}`);
   const seekOpts = { skewMs: calibration.skewMs };
 
+  // OUR failures, tallied apart from the streamer's. `readable` counts samples
+  // we actually got a frame for; `unreadable` counts the ones our own source
+  // could not supply. Only the first kind may be held against a payout.
+  let readable = 0;
+  let unreadable = 0;
+  const unreadableStates = {};
+
   for (const win of windows) {
     const instants = sampleInstantsForWindow(win, perClip, calibration.residualMs);
     let frames;
@@ -371,7 +378,50 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
         .map((c) => c.code);
       if (expected.length === 0) continue;
 
+      /**
+       * "WE COULD NOT LOOK" IS NOT "THE BADGE WAS NOT THERE".
+       *
+       * That principle already governed whole-session failures — a deleted VOD
+       * returns SOURCE_UNAVAILABLE rather than FAIL — but it did not govern a
+       * SINGLE sample. A frame we could not read reached findCode, which
+       * returns `{found: false, error: 'frame_unreadable'}`, and its own
+       * comment says to "let the hit-rate math treat it as a miss". So our
+       * failure was scored against the streamer.
+       *
+       * That is exactly how a stalled recorder produces FAIL 0/5 on a
+       * broadcast whose badge was legible at 28px throughout: every seek lands
+       * past the end of stale media, ffmpeg writes nothing, and five clips of
+       * honest work are recorded as an absent badge and paid zero.
+       *
+       * An unreadable sample is now held against OUR source, not the streamer:
+       * it is excluded from clipChecks (so it cannot dilute detectionRate) and
+       * counted separately. If NOTHING anywhere was readable the aggregate
+       * below reports SOURCE_UNAVAILABLE — the honest verdict, and the one
+       * that routes to review instead of to a zero payout.
+       */
+      if (frame.unreadable) {
+        unreadable += 1;
+        unreadableStates[frame.unreadable] = (unreadableStates[frame.unreadable] || 0) + 1;
+        checks.push({
+          ts: frame.ts, ref: null, clipId: win.clipId, playbackId: win.playbackId,
+          found: false, confidence: 0, pixelHeight: 0, legible: false, counted: false,
+          unreadable: frame.unreadable, unreadableDetail: frame.unreadableDetail || null,
+        });
+        continue;
+      }
       const res = await cc.findCode(frame, expected);
+      if (res?.error === 'frame_unreadable') {
+        // The file existed but would not decode — same category, same rule.
+        unreadable += 1;
+        unreadableStates.FRAME_UNREADABLE = (unreadableStates.FRAME_UNREADABLE || 0) + 1;
+        checks.push({
+          ts: frame.ts, ref: frame.ref, clipId: win.clipId, playbackId: win.playbackId,
+          found: false, confidence: 0, pixelHeight: 0, legible: false, counted: false,
+          unreadable: 'FRAME_UNREADABLE', unreadableDetail: 'frame did not decode',
+        });
+        continue;
+      }
+      readable += 1;
       const px = Number(res.pixelHeight ?? res.bbox?.h ?? 0);
       // Legibility enforcement: found but unreadably small is NOT a pass.
       const legible = px >= bountyConfig.minCodePixelHeight;
@@ -444,6 +494,33 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
     }
   }
 
+  /**
+   * NOTHING READABLE ANYWHERE IS OUR OUTAGE, NOT A FAILED BROADCAST.
+   *
+   * Per-sample unreadability keeps a partial failure from discarding the
+   * windows that survived. The other end of that rule lives here: if not one
+   * sample in the whole session could be read, there is no evidence either
+   * way, and the only honest verdict is the one that says so. Scoring it as
+   * FAIL would take a broadcast we never managed to look at and record it as
+   * a streamer who did not display the badge — with a zero payout attached.
+   *
+   * SOURCE_UNAVAILABLE routes to review, exactly as a deleted VOD does.
+   */
+  if (readable === 0 && unreadable > 0) {
+    const dominant = Object.entries(unreadableStates)
+      .sort((a, b) => b[1] - a[1])[0];
+    log.warn?.(`[verifier] session ${airSessionId}: ${unreadable} sample(s) unreadable, `
+      + `0 readable — reporting SOURCE_UNAVAILABLE rather than scoring our own `
+      + `outage against the streamer (${dominant[0]} x${dominant[1]})`);
+    return {
+      airSessionId, result: 'SOURCE_UNAVAILABLE', sourceState: dominant[0],
+      sourceDetail: `${unreadable} sample(s) unreadable, none readable`,
+      confidence: 0, verifiedClips: 0, verifiedClipSeconds: 0,
+      detectionRate: 0, checks, clipVerdicts: [],
+      unreadableSamples: unreadable, readableSamples: 0,
+    };
+  }
+
   // Unit is the verified PLAYBACK, not the distinct clip: airing the same
   // clip twice is two pieces of evidence and pays twice, provided each airing
   // is separately evidenced by its own code set.
@@ -489,7 +566,19 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
   const avgConfidence = readSamples.length
     ? readSamples.reduce((a, c) => a + (c.confidence || 0), 0) / readSamples.length
     : 0;
-  const detectionRate = checks.length ? readSamples.length / checks.length : 0;
+  /**
+   * DENOMINATOR IS SAMPLES WE COULD ACTUALLY READ.
+   *
+   * detectionRate is a release gate in its own right, so every sample in the
+   * denominator is a sample that can cost the streamer money. Samples our own
+   * source failed to supply must not sit there: a recorder that dies half way
+   * through would otherwise halve the detection rate of a broadcast that was
+   * carrying the badge perfectly, and push a genuine PASS down to AMBIGUOUS
+   * or below the release gate. The unreadable count is reported separately so
+   * the shortfall stays visible rather than being quietly forgiven.
+   */
+  const attempted = checks.filter((c) => !c.unreadable);
+  const detectionRate = attempted.length ? readSamples.length / attempted.length : 0;
   const hitRate = clipVerdicts.length ? verifiedClips / clipVerdicts.length : 0;
 
   let result;
@@ -533,6 +622,14 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
     verifiedClips, verifiedClipSeconds,
     verifiedMinutes: +(verifiedClipSeconds / 60).toFixed(3),
     hitRate, attempt, checks, clipVerdicts,
+    // OUR SHORTFALL, VISIBLE. A partially-dead source no longer drags the
+    // score down, so without these two numbers it would vanish entirely and a
+    // half-blind verification would read exactly like a clean one. A reviewer
+    // seeing readableSamples well under the sampling density is looking at our
+    // problem, not the streamer's.
+    readableSamples: readable,
+    unreadableSamples: unreadable,
+    unreadableStates: Object.keys(unreadableStates).length ? unreadableStates : null,
     // Aggregates the release path and the review queue both read.
     belowQualityFloorClips: clipVerdicts.filter((c) => c.belowQualityFloor).length,
     samplingDensity: perClip,

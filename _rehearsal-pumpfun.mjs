@@ -216,7 +216,9 @@ try {
     claimId: claim.body.claim.id, platform: 'pumpfun', roomId: 'pfrehearsal',
     watchUrl: `https://pump.fun/coin/${MINT}`,
   }, `pumpfun:${MINT}`));
-  const airId = air.body.airSession.id;
+  // REASSIGNED at GO in --wait-for-go: the hold session is discarded and a
+  // fresh one opened, so the scored run starts with zero windows.
+  let airId = air.body.airSession.id;
   log(`air session ${airId} for pumpfun:${MINT.slice(0, 8)}… — self-capture starts with it`);
 
   // ── the broadcast ───────────────────────────────────────────────────────
@@ -225,7 +227,7 @@ try {
   });
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 720 });
-  await page.goto(`${APP}/overlay?room=pfrehearsal&bounty=${encodeURIComponent(airId)}`,
+  await page.goto(`${APP}/overlay?room=pfrehearsal&bountyRoom=pfrehearsal`,
     { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.evaluate(() => { document.body.style.background = '#00ff00'; });
 
@@ -348,10 +350,32 @@ try {
    * the operator refreshes and confirms it is visible. The run starts only
    * when the go-file appears, so the server never restarts underneath them.
    */
+  /**
+   * HOLD ON A THROWAWAY SESSION — the hold must not be part of what is scored.
+   *
+   * This held the badge by opening a playback window every 110s on the REAL
+   * air session. A hold of half an hour therefore put SIXTEEN PF_HOLD windows
+   * into the session that was about to be verified, and every one of them
+   * aired while the operator was still away and the overlay was showing
+   * nothing. They are not near-misses; they are windows where no badge existed
+   * to find, and nothing anywhere excludes them.
+   *
+   * Measured on the 2026-08-29 broadcast: 23 windows in a 5-clip run, so
+   * verifiedClips and hitRate were both computed against 18 windows of
+   * scaffolding. It also cost wall-clock — verification sampled all 23 — and
+   * it is what the run's "23/5 frozen" line was counting.
+   *
+   * A second air session in the same room is the fix, because ?bountyRoom
+   * follows whichever session is OPEN: the overlay tracks the hold session,
+   * then tracks the real one when the hold ends. The URL never changes and the
+   * operator never re-refreshes. The hold session is ended before the real run
+   * begins, so only one is ever open and its recorder is stopped with it.
+   */
   if (has('wait-for-go')) {
     const goFile = arg('go-file', '_GO');
     log(`WAITING FOR GO: holding a badge on screen until ${goFile} exists.`);
     log('  Refresh your OBS browser source now and confirm the badge appears.');
+    log(`  holding on session ${airId.slice(0, 8)}… — it is DISCARDED at GO, not scored`);
     let n = 0;
     while (!existsSync(goFile)) {
       n += 1;
@@ -362,7 +386,19 @@ try {
       while (Date.now() < until && !existsSync(goFile)) await sleep(3_000);
       await post('/api/bounty/admin/playback/end', { airSessionId: airId, clipId: id });
     }
-    log('GO received — starting the run on this same server.');
+    // SWAP, rather than run a second session alongside. Two sessions open in
+    // one room makes ?bountyRoom ambiguous — it follows whichever is OPEN — so
+    // the hold session is ENDED (which also stops its recorder) before the
+    // scored one is created. Exactly one is ever open, the overlay URL never
+    // changes, and the operator never refreshes again.
+    await post(`/api/bounty/air-session/${airId}/end`, {}, `pumpfun:${MINT}`);
+    const runAir = await must('run air-session', post('/api/bounty/air-session', {
+      claimId: claim.body.claim.id, platform: 'pumpfun', roomId: 'pfrehearsal',
+      watchUrl: `https://pump.fun/coin/${MINT}`,
+    }, `pumpfun:${MINT}`));
+    airId = runAir.body.airSession.id;
+    log(`GO received after ${n} hold window(s) — those are discarded with the hold `
+      + `session. Scored run is ${airId.slice(0, 8)}…, starting clean with 0 windows.`);
   }
   log(`holding ${WARMUP_S}s to clear the stream-context warmup…`);
   log('  a badge is on screen for this whole warmup — if it is NOT in your OBS,');
