@@ -1604,7 +1604,59 @@ recorded BY the buggy overlay and physically contain codes held ~15s. Only a
 fresh broadcast with a refreshed overlay page can confirm it, which is running
 now.
 
-### TWITCH PROVEN ON BOTH CAPTURE METHODS, AND THEY AGREE (2026-08-29)
+### RETRACTED -- the "self-capture" row below was NOT self-capture (2026-08-29)
+
+READ THIS BEFORE THE SECTION IT PRECEDES. The heading and the two closing
+paragraphs of the next section are WRONG and are kept only so the error stays
+legible.
+
+_rehearsal-run-b.mjs never ASKS for self-capture, and never reports it:
+  - its only two verifications pass sourceMode 'live' (:291) and 'vod' (:317),
+    and bounty-routes.js:1341 sets preferCapture only when sourceMode is
+    ABSENT -- 'live', 'vod' and 'files' all force the external path. So no
+    verdict it produces can be a capture verdict, whatever the buffer holds;
+  - grep for freeze/froze/self-capture in that file returns NOTHING -- it has
+    no freeze step and prints no freeze status, unlike _rehearsal-kick.mjs
+    which prints "self-capture froze 5/5 window(s) -- 85.8MB".
+
+NOT ESTABLISHED, and asserted here in a first draft on an earlier audit's
+say-so: that run-b's air-session-before-push ordering (:213 vs :230) leaves
+startSessionCapture looking at an offline channel so capture never starts.
+_rehearsal-kick.mjs has the SAME ordering (air session :197, push :215) and
+froze 5/5, because capture polls and retries until the playlist appears. The
+ordering is therefore not the problem, and the audit's reasoning does not
+survive contact with the Kick run.
+
+WHAT IS ACTUALLY UNKNOWN: whether Twitch self-capture works. It may well work
+and simply never have been read. What is CERTAIN is that no run has ever
+reported it, so it cannot be claimed either way.
+
+So both Twitch numbers came from external frames. The differing skews
+(14910 vs 9972) are the VOD timeline versus the LIVE-edge timeline, which is
+what "two independent reads" actually meant here -- not capture versus
+external. The 0.886 / detectionRate 0.9 figures appear in NO run output and
+NOWHERE in the repo; they could not be traced to a reproducible run, and the
+most likely origin is a hand-run verify with sourceMode 'live' recorded under
+the wrong label.
+
+WHAT IS ACTUALLY EVIDENCED FOR TWITCH: VOD PASS 5/5 confidence 0.881
+detectionRate 1.0, release 6.25 of 25. That row stands.
+
+WHAT IS NOT: Twitch self-capture remains UNPROVEN. That is the opposite of
+what the retracted paragraph claims, and it is the more expensive direction to
+be wrong in -- Twitch VODs are streamer-disableable, so self-capture is the
+only path for those users. Kick is the ONLY platform where self-capture is
+proven end to end ("froze 5/5 window(s) -- 85.8MB", PASS 5/5 at 0.896, with
+no sourceMode passed so preferCapture was genuinely true).
+
+HOW THIS GOT WRITTEN: nothing in the pipeline reported which frames a verdict
+had read. `frameOrigin` was computed at bounty-routes.js:1346 and passed to
+evaluateConfidence, but never returned to the caller, so a harness could label
+a column anything and no output contradicted it. It is now in the verify
+response, and the pump.fun harness prints it per column and refuses to print a
+cross-check claim unless the two origins actually differ.
+
+### TWITCH PROVEN ON BOTH CAPTURE METHODS, AND THEY AGREE (2026-08-29) [RETRACTED -- see above]
 
 First run after the overlay polling fix, driven unattended (ffmpeg push +
 puppeteer overlay, no OBS involved -- so it exercises the fix cleanly with no
@@ -1626,10 +1678,19 @@ separately, agreeing on 5/5 with confidence within 0.005. The differing skew
 is correct rather than a discrepancy: the VOD timeline and the capture's PDT
 anchor are different clocks, and calibration measured each with a tight spread
 (~1.9s both).
+  ^ WRONG on the label, right on the substance. These were two external reads
+    (VOD archive and live edge), not a recording-vs-external cross-check. They
+    are still two independent reads of the public broadcast -- the streamer's
+    machine is not involved in either -- so the agreement is real evidence,
+    just not evidence that self-capture works.
 
 TWITCH SELF-CAPTURE WAS NEVER EXERCISED BEFORE TODAY. It matters most here of
 all platforms: Twitch VODs are streamer-disableable, so self-capture is the
 only path for those users, and it was entirely unproven until now.
+  ^ RETRACTED. The first sentence is true; the last clause is false. It was
+    not exercised today either, and remains unproven. Proving it needs a
+    harness that starts the push BEFORE opening the air session and then
+    verifies with NO sourceMode -- i.e. the _rehearsal-kick.mjs shape.
 
 ### Terminology correction: "Kick has no VOD" is FALSE and was written twice
 

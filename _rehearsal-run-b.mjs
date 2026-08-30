@@ -298,7 +298,20 @@ try {
       }));
     }
     await sleep(30_000);
-    await post('/api/bounty/admin/playback/end', { airSessionId: airId, clipId: `REHEARSAL${i + 1}` });
+    const end = await post('/api/bounty/admin/playback/end',
+      { airSessionId: airId, clipId: `REHEARSAL${i + 1}` });
+    // REPORT WHETHER SELF-CAPTURE ACTUALLY RAN. This harness discarded the
+    // playback/end response entirely, so a run could not say whether the
+    // rolling buffer had frozen anything — and because every verification
+    // below names a sourceMode (which forces the external path), nothing
+    // downstream would reveal it either. A Twitch "self-capture PASS 0.886"
+    // was reported to the operator on that silence; it was an external read.
+    // Freezing is SCHEDULED, not synchronous — see the same note in
+    // _rehearsal-kick.mjs — so `freeze.scheduled` is what to print here.
+    const fz = end.body.freeze;
+    log(`playback ${i + 1} ended — ${fz?.scheduled
+      ? `capture freeze scheduled in ${(fz.inMs / 1000).toFixed(0)}s (${fz.playbackId})`
+      : 'capture NOT FROZEN (self-capture did not run)'}`);
   }
 
   // Keep the broadcast up to the requested length so the VOD is substantial.
@@ -321,12 +334,33 @@ try {
   }
 
   // ── 6. the receipts ───────────────────────────────────────────────────────
+  // ── 5b. THE SELF-CAPTURE READ, which this harness never made ────────────
+  // Omitting sourceMode is the ONLY way to reach the capture path:
+  // bounty-routes.js:1341 sets preferCapture only when sourceMode is absent,
+  // so 'live' and 'vod' both read external frames. Every Twitch number this
+  // harness had ever produced was therefore external, including one reported
+  // as "self-capture". frameOrigin is printed rather than assumed.
+  const selfV = await post(`/api/bounty/air-session/${airId}/verify`, { mode: 'real' });
+  const selfResult = selfV.body.verification;
+
   console.log('\n════ REHEARSAL RESULT ════');
+  console.log('self-capture     :', JSON.stringify({
+    frameOrigin: selfV.body.frameOrigin ?? 'unknown',
+    result: selfResult?.result, verifiedClips: selfResult?.verifiedClips,
+    confidence: selfResult?.confidence, detectionRate: selfResult?.detectionRate,
+    pixelHeights: (selfResult?.checks || []).map((c) => c.pixelHeight),
+  }, null, 2));
   console.log('VOD verification :', JSON.stringify({
+    frameOrigin: vodResult ? 'external' : null,
     result: vodResult?.result, verifiedClips: vodResult?.verifiedClips,
     confidence: vodResult?.confidence,
     pixelHeights: (vodResult?.checks || []).map((c) => c.pixelHeight),
   }, null, 2));
+  if (selfV.body.frameOrigin !== 'capture') {
+    console.log('\nNOT a self-capture result: the verifier read '
+      + `${selfV.body.frameOrigin || 'unknown'} frames because the rolling buffer `
+      + 'held nothing for these windows. Twitch self-capture remains unproven.');
+  }
   const pool = await get(`/api/bounty/pool-view?platform=twitch&handle=${HANDLE}`);
   console.log('release (stub)   :', pool.body.view?.releasedContributor, 'of', pool.body.view?.totalContributed);
   const sess = await get('/api/bounty/admin/sessions');

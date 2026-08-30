@@ -524,8 +524,9 @@ try {
   }
 
   // ── verify BOTH WAYS: the whole point of running this on pump.fun ───────
-  const show = (label, ver) => {
+  const show = (label, ver, origin) => {
     console.log(`${label} :`, JSON.stringify({
+      frameOrigin: origin ?? 'unknown',
       result: ver.result, verifiedClips: ver.verifiedClips,
       confidence: ver.confidence, detectionRate: ver.detectionRate,
       sourceState: ver.sourceState ?? null,
@@ -534,19 +535,36 @@ try {
     }, null, 2));
   };
 
+  // The second opinion MUST name a sourceMode. `preferCapture: false` reads as
+  // "use the other source" and does nothing at all: the route decides from
+  // `req.body.sourceMode` alone (bounty-routes.js), so this asked the same
+  // question twice and printed the identical answer in two columns under the
+  // caption "two independent captures". `sourceMode: 'vod'` is what actually
+  // forces the archive read — the same thing the Rumble harness does.
   const vSelf = await post(`/api/bounty/air-session/${airId}/verify`,
     { mode: 'real' }, `pumpfun:${MINT}`);
   const vExt = await post(`/api/bounty/air-session/${airId}/verify`,
-    { mode: 'real', preferCapture: false }, `pumpfun:${MINT}`);
+    { mode: 'real', sourceMode: 'vod' }, `pumpfun:${MINT}`);
 
   console.log('\n════ PUMP.FUN REHEARSAL RESULT ════');
-  show('self-capture ', vSelf.body.verification || {});
-  show('external     ', vExt.body.verification || {});
+  show('self-capture ', vSelf.body.verification || {}, vSelf.body.frameOrigin);
+  show('external     ', vExt.body.verification || {}, vExt.body.frameOrigin);
   console.log('stream ctx   :', JSON.stringify(vSelf.body.streamContext?.summary ?? null));
   const pool = await get(`/api/bounty/pool-view?platform=pumpfun&handle=${MINT}`);
   console.log('release(stub):', pool.body.view?.releasedContributor, 'of', pool.body.view?.totalContributed);
-  console.log('\nTwo independent captures of ONE broadcast. A disagreement between them '
-    + 'is worth more than either number alone — report it before the totals.');
+  // Only claim a cross-check if the two columns genuinely came from different
+  // frames. Printing this unconditionally is how a duplicated verification got
+  // reported as corroborating evidence.
+  const oSelf = vSelf.body.frameOrigin;
+  const oExt = vExt.body.frameOrigin;
+  if (oSelf && oExt && oSelf !== oExt) {
+    console.log(`\nTwo independent reads of ONE broadcast (${oSelf} vs ${oExt}). A disagreement `
+      + 'between them is worth more than either number alone — report it before the totals.');
+  } else {
+    console.log(`\nNOT a cross-check: both columns read ${oSelf || 'unknown'} frames`
+      + `${oSelf === 'external' ? ' (self-capture froze nothing to read)' : ''}. `
+      + 'These two numbers corroborate nothing — they are one result printed twice.');
+  }
   console.log('Compare against the corpus and the other real encoders: corpus 720p 100%, '
     + 'Twitch 4/5, Kick 5/5 (after the PDT-anchor fix).');
 } catch (e) {

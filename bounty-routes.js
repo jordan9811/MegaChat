@@ -1538,6 +1538,16 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       });
       res.json({
         ok: true, verification: v, release: out, review,
+        // WHICH FRAMES THIS VERDICT READ: 'capture' (our own recording of the
+        // public live HLS) or 'external' (the platform's playlist head or its
+        // archive, read after the fact). Returned because a caller cannot
+        // otherwise tell, and one that guesses will eventually guess wrong:
+        // the pump.fun harness asked for a second opinion with a field this
+        // route does not read (`preferCapture`), got the SAME verification
+        // twice, and captioned the pair "two independent captures of ONE
+        // broadcast". Reporting the origin the server actually used is the
+        // only thing that makes a cross-check claim checkable.
+        frameOrigin,
         // What tier this landed in and WHY. Surfaced to the streamer, not just
         // to admin: "we could not confirm your overlay was on screen, so a
         // person is looking" is a thing someone can act on. Silence is not.
