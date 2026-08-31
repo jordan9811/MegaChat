@@ -1,9 +1,8 @@
 import Link from 'next/link'
-import { Suspense } from 'react'
 import { Archivo, Plus_Jakarta_Sans } from 'next/font/google'
 import type { PublicRoomCard } from '@/lib/api'
 import type { BountyPool } from '@/lib/bounty-api'
-import { LandingHero, ReturningVisitorRedirect } from './landing-hero'
+import { LandingHero } from './landing-hero'
 import './landing.css'
 
 // Jakarta runs the page; Archivo is kept for the hero headline alone,
@@ -102,10 +101,6 @@ export function Landing({
 
   return (
     <div className={`mc-landing dark min-h-screen ${ui.variable} ${display.variable}`}>
-      <Suspense fallback={null}>
-        <ReturningVisitorRedirect />
-      </Suspense>
-
       {/* nav */}
       <header className="flex h-[72px] items-center justify-between px-6 md:px-16">
         <Link href="/?stay=1" className="text-[15px] font-[800] tracking-[0.2em] text-[var(--mcl-fg)]">

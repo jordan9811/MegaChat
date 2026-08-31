@@ -2,34 +2,14 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 
-// Returning visitors skip the pitch: /app sets mc-entered on mount, and the
-// next bare visit to / forwards straight into the app (hyperliquid-style).
-// Any link that deliberately returns to the landing carries ?stay=1.
-export function ReturningVisitorRedirect() {
-  const router = useRouter()
-  useEffect(() => {
-    // Read the address bar, not useSearchParams: inside a Suspense boundary
-    // that hook is empty on the first client pass, so ?stay=1 was missed and
-    // the wordmark link back to the landing bounced straight to /app again.
-    if (new URLSearchParams(window.location.search).has('stay')) return
-    try {
-      if (window.localStorage.getItem('mc-entered') !== '1') return
-      // Only fast-track a FRESH arrival. Without this, pressing Back from
-      // /app lands on / and is immediately replaced back to /app — the Back
-      // button stops working on the site's main path.
-      const nav = performance.getEntriesByType('navigation')[0] as
-        | PerformanceNavigationTiming
-        | undefined
-      if (nav && nav.type === 'back_forward') return
-      router.replace('/app')
-    } catch {
-      // storage blocked — first-visit behavior is the right fallback
-    }
-  }, [router])
-  return null
-}
+// megachat.fun IS the landing page. There used to be a returning-visitor
+// bypass here that forwarded anyone with the mc-entered flag straight to
+// /app — which meant that once you had opened the app even once, you could
+// never see the front door again without knowing to add ?stay=1. A marketing
+// page you cannot reach is not a marketing page. The flag is still written
+// on /app, so a scoped version of this (same session only, say) is a small
+// change if it is ever wanted.
 
 // The film hero: plays the launch film once, holds its final frame under a
 // soft dim, and offers a subtle replay control. The poster frame sits

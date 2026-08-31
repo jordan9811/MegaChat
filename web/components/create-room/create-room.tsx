@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRoom } from '@/components/room-provider'
 import { ApiError } from '@/lib/api'
+import { AccountChip } from '@/components/account-chip'
 import './create-room.css'
 
 // Server bounds, mirrored from rooms-store.js so the control cannot express
@@ -404,23 +405,9 @@ export function CreateRoom() {
           </a>
           <span className="text-[13px] font-semibold text-[var(--mcc-dim)]">New room</span>
         </span>
-        <span className="text-[12px] text-[var(--mcc-faint)]">
-          {hasIdentity ? (
-            <>
-              Signed in as{' '}
-              <span className="font-semibold text-[var(--mcc-fg)]">
-                {identityHandle || 'your account'}
-              </span>
-            </>
-          ) : (
-            <>
-              Have an account?{' '}
-              <a href="/dashboard?signin=1" className="text-[var(--mcc-muted)] underline underline-offset-[3px]">
-                Sign in
-              </a>
-            </>
-          )}
-        </span>
+        {/* Was "Signed in as x" / a link to ?signin=1, which nothing reads.
+            The chip is the real control: sign in, see your balance, sign out. */}
+        <AccountChip accent="var(--mcc-accent)" />
         </div>
       </header>
 

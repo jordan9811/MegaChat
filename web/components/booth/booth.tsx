@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { listPublicRooms, type PublicRoomCard } from '@/lib/api'
 import { listBountyPools, type BountyPool } from '@/lib/bounty-api'
+import { AccountChip } from '@/components/account-chip'
 import './booth.css'
 
 const ROOM_POLL_MS = 5000
@@ -346,12 +347,7 @@ export function Booth({
           <Link href="/how-it-works" className="hidden hover:text-white md:inline">
             How it works
           </Link>
-          <Link
-            href="/dashboard?new=1"
-            className="bg-[#f2f2f4] px-3.5 py-[7px] font-[700] text-[#08080a]"
-          >
-            Sign in
-          </Link>
+          <AccountChip />
         </nav>
       </header>
 
