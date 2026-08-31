@@ -386,19 +386,8 @@ try {
       while (Date.now() < until && !existsSync(goFile)) await sleep(3_000);
       await post('/api/bounty/admin/playback/end', { airSessionId: airId, clipId: id });
     }
-    // SWAP, rather than run a second session alongside. Two sessions open in
-    // one room makes ?bountyRoom ambiguous — it follows whichever is OPEN — so
-    // the hold session is ENDED (which also stops its recorder) before the
-    // scored one is created. Exactly one is ever open, the overlay URL never
-    // changes, and the operator never refreshes again.
-    await post(`/api/bounty/air-session/${airId}/end`, {}, `pumpfun:${MINT}`);
-    const runAir = await must('run air-session', post('/api/bounty/air-session', {
-      claimId: claim.body.claim.id, platform: 'pumpfun', roomId: 'pfrehearsal',
-      watchUrl: `https://pump.fun/coin/${MINT}`,
-    }, `pumpfun:${MINT}`));
-    airId = runAir.body.airSession.id;
-    log(`GO received after ${n} hold window(s) — those are discarded with the hold `
-      + `session. Scored run is ${airId.slice(0, 8)}…, starting clean with 0 windows.`);
+    log(`GO received after ${n} hold window(s) — all on the setup session, which is `
+      + 'discarded before the first scored clip.');
   }
   log(`holding ${WARMUP_S}s to clear the stream-context warmup…`);
   log('  a badge is on screen for this whole warmup — if it is NOT in your OBS,');
@@ -517,6 +506,45 @@ try {
       process.exit(4);
     }
     log('canary: PASSED — the overlay is live on the real stream. Starting the real clips.');
+  }
+
+  /**
+   * ── SWAP TO A CLEAN SCORED SESSION ──────────────────────────────────────
+   *
+   * Everything above this line is scaffolding: hold windows while waiting for
+   * the operator, setup windows through the warmup, and the canary. All of it
+   * is opened through /api/bounty/admin/playback, which is the SAME route a
+   * real clip play uses, so all of it lands in playbackWindows and all of it
+   * is scored. A 5-clip run reported verifiedClips 7, and a long hold reported
+   * 23 windows for 5 clips.
+   *
+   * THAT INFLATION IS PURELY THIS HARNESS. In production pushPlaybackWindow
+   * has exactly one caller (bounty-watermark.js) behind the admin-gated
+   * playback route, so every window IS a real clip play and counting them all
+   * is correct. Fixing it in the verifier would mean teaching the scorer to
+   * ignore certain clipIds — inventing a production concept to paper over a
+   * test artifact, and a fraud surface at that.
+   *
+   * The swap sits AFTER the canary rather than at GO so the canary's own
+   * window is discarded too. Safe for stream context, which measures
+   * broadcastStartedAt + warmupMs against each PLAYBACK's start
+   * (bounty-stream-context.js:98-100) — not session age, so a session created
+   * this late is not penalised.
+   */
+  {
+    const scaffold = airId;
+    await post(`/api/bounty/air-session/${scaffold}/end`, {}, `pumpfun:${MINT}`);
+    const runAir = await must('scored air-session', post('/api/bounty/air-session', {
+      claimId: claim.body.claim.id, platform: 'pumpfun', roomId: 'pfrehearsal',
+      watchUrl: `https://pump.fun/coin/${MINT}`,
+    }, `pumpfun:${MINT}`));
+    airId = runAir.body.airSession.id;
+    log(`setup session ${scaffold.slice(0, 8)}… discarded (hold + warmup + canary). `
+      + `Scored session ${airId.slice(0, 8)}… starts with 0 windows, so verifiedClips `
+      + `counts the ${CLIPS} real clips and nothing else.`);
+    // The recorder restarts with the new session and needs media before the
+    // first clip ends, or every freeze is empty.
+    await sleep(20_000);
   }
 
   // ── air the clips ───────────────────────────────────────────────────────
