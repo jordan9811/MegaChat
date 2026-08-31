@@ -381,10 +381,10 @@ export function Landing({
       {/* statement */}
       <section className="flex flex-col items-center gap-6 px-6 pb-20 pt-10 md:px-16">
         <h2 className="max-w-[820px] text-center text-[40px] font-[800] leading-[1.05] tracking-[-0.02em] md:text-[64px]">
-          You&apos;re more than a username.
+          Parasocial is a design flaw.
         </h2>
-        <p className="text-[12px] tracking-[0.12em] text-[var(--mcl-faint)]">
-          CALL-IN SHOW + FACETIME + SUPERCHAT = MEGACHAT
+        <p className="max-w-[560px] text-center text-[15.5px] text-[var(--mcl-muted)]">
+          400 hours watched. Zero seconds seen.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-4">
           <Link
