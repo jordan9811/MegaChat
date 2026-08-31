@@ -124,7 +124,7 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
             </button>
           )}
 
-          <a href="/dashboard?section=account" role="menuitem" className="block px-2.5 py-2 text-[13px] text-white hover:bg-white/10">
+          <a href="/account" role="menuitem" className="block px-2.5 py-2 text-[13px] text-white hover:bg-white/10">
             Account
           </a>
           <a href="/dashboard" role="menuitem" className="block px-2.5 py-2 text-[13px] text-white hover:bg-white/10">

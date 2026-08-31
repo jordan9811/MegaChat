@@ -1,14 +1,91 @@
-/* Join-page state styles. The ported script (lib/join-page.ts) toggles the
-   same classes the legacy page used (.show, .success, .error, .live, .addr);
-   these rules give them the MegaChat design-system look. Elements whose
-   className the script overwrites entirely (#message, #camStatus) are styled
-   here rather than with Tailwind utilities. */
+/* Join-page state styles, scoped under .mc-join. The ported script
+   (lib/join-page.ts) toggles the same classes the legacy page used (.show,
+   .success, .error, .live, .addr); these rules give them the app skin.
+   Elements whose className the script overwrites entirely (#message,
+   #camStatus) are styled here rather than with Tailwind utilities. */
+
+/* The site paints a magenta neon scrollbar on the document itself, so
+   scoping the app skin to .mc-join isn't enough — the pink rail survives
+   next to a near-black page. :has lets this page own the document chrome
+   for as long as it is the thing on screen. */
+html:has(.mc-join) {
+  color-scheme: dark;
+}
+/* html itself owns the page scrollbar, and the site's rule is `*` — which
+   matches html but not `html *`. Both selectors are needed. */
+html:has(.mc-join),
+html:has(.mc-join) * {
+  scrollbar-color: #3a3a44 transparent;
+}
+html:has(.mc-join) ::-webkit-scrollbar-thumb {
+  background-color: #3a3a44;
+}
+html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
+  background-color: #55555f;
+}
+
+.mc-join {
+  --mcj-bg: #08080a;
+  --mcj-panel: #101014;
+  --mcj-sunk: #0b0b0e;
+  --mcj-fg: #f2f2f4;
+  --mcj-muted: #b9c1c8;
+  --mcj-dim: #9aa4ad;
+  --mcj-faint: #8f99a2;
+  --mcj-hairline: #1a1a1f;
+  --mcj-rule: #23232a;
+  --mcj-rule-2: #33333c;
+  --mcj-accent: #ff4d3d;
+  --mcj-live: #43e0a8;
+  --mcj-warn: #ffd23d;
+  background: var(--mcj-bg);
+  color: var(--mcj-fg);
+  font-family: var(--font-ui), system-ui, sans-serif;
+}
+
+.mc-join .bc {
+  font-family: var(--font-ui), system-ui, sans-serif;
+  letter-spacing: 0.04em;
+}
+
+/* Sentence case, normal tracking — same labels as the create page. */
+.mc-join .lbl {
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: 0;
+  color: var(--mcj-dim);
+}
+
+.mc-join .hint {
+  font-size: 12px;
+  color: var(--mcj-faint);
+  line-height: 1.5;
+}
+
+/* The themed focus ring is invisible against near-black. */
+.mc-join :is(a, button, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--mcj-fg);
+  outline-offset: 2px;
+}
+
+.mc-join input[type='text'] {
+  background: var(--mcj-sunk);
+  border: 1px solid var(--mcj-rule-2);
+  color: var(--mcj-fg);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  outline: none;
+}
+.mc-join input::placeholder {
+  color: #6d7780;
+}
 
 /* Wallet address / inline link chips injected via innerHTML */
 .join-shell .addr {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: var(--neon-cyan);
+  color: var(--mcj-live);
   word-break: break-all;
 }
 a.addr {
@@ -26,10 +103,8 @@ a.addr {
   position: relative;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border-radius: 0.9rem;
-  border: 1px solid var(--border);
-  background: oklch(0.14 0.02 300);
-  box-shadow: 0 0 32px oklch(0.68 0.27 340 / 0.1);
+  border: 1px solid var(--mcj-rule);
+  background: #000;
 }
 .stream-preview-mount,
 .stream-preview-mount iframe {
@@ -47,14 +122,14 @@ a.addr {
   flex-wrap: wrap;
 }
 .stream-preview-label {
-  font-size: 0.72rem;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--muted-foreground);
+  color: var(--mcj-faint);
 }
 .stream-preview-drops {
-  font-size: 0.75rem;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--neon-lime);
+  color: var(--mcj-live);
 }
 
 /* ── Letter mode ─────────────────────────────────────────────────────────── */
@@ -67,8 +142,7 @@ a.addr {
   position: relative;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border-radius: 0.9rem;
-  border: 1px solid color-mix(in oklab, var(--neon-cyan) 45%, transparent);
+  border: 1px solid var(--mcj-rule-2);
   background: #000;
 }
 .letter-frame video {
@@ -86,42 +160,37 @@ a.addr {
 
 /* LiveKit connection-quality dot (joiner's own link health, subtle). */
 .lk-quality {
-  width: 0.55rem;
-  height: 0.55rem;
+  width: 6px;
+  height: 6px;
   margin-left: auto;
   border-radius: 9999px;
-  background: var(--neon-lime);
-  box-shadow: 0 0 8px var(--neon-lime);
+  background: var(--mcj-live);
 }
 .lk-quality[data-q='poor'] {
-  background: oklch(0.8 0.16 75);
-  box-shadow: 0 0 8px oklch(0.8 0.16 75);
+  background: var(--mcj-warn);
 }
 .lk-quality[data-q='lost'] {
-  background: oklch(0.63 0.24 25);
-  box-shadow: 0 0 8px oklch(0.63 0.24 25);
+  background: var(--mcj-accent);
   animation: hostLivePulse 1.2s ease-in-out infinite;
 }
 
 /* True-live host feed — same frame, unmistakably LIVE. */
 .host-live-frame {
-  border-color: color-mix(in oklab, var(--neon-lime) 55%, transparent);
-  box-shadow: 0 0 36px oklch(0.87 0.24 130 / 0.18);
+  border-color: rgba(67, 224, 168, 0.55);
 }
 .host-live-label {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--neon-lime);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mcj-live);
 }
 .host-live-dot {
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 6px;
+  height: 6px;
   border-radius: 9999px;
-  background: var(--neon-lime);
-  box-shadow: 0 0 10px var(--neon-lime);
+  background: var(--mcj-live);
   animation: hostLivePulse 1.6s ease-in-out infinite;
 }
 @keyframes hostLivePulse {
@@ -139,9 +208,8 @@ a.addr {
   vertical-align: baseline;
   margin: 0;
   padding: 0.05rem 0.4rem;
-  border-radius: 0.4rem;
-  border: 1px solid color-mix(in oklab, var(--neon-cyan) 35%, transparent);
-  background: color-mix(in oklab, var(--neon-cyan) 8%, transparent);
+  border: 1px solid var(--mcj-rule-2);
+  background: var(--mcj-sunk);
   font: inherit;
   line-height: 1.2;
   cursor: pointer;
@@ -150,12 +218,7 @@ a.addr {
     background-color 0.15s;
 }
 .addr-copy:hover {
-  border-color: color-mix(in oklab, var(--neon-cyan) 60%, transparent);
-  background: color-mix(in oklab, var(--neon-cyan) 16%, transparent);
-}
-.addr-copy:focus-visible {
-  outline: 2px solid var(--neon-cyan);
-  outline-offset: 2px;
+  border-color: var(--mcj-fg);
 }
 .addr-copy .addr {
   word-break: normal;
@@ -163,46 +226,42 @@ a.addr {
 .addr-copy-icon {
   font-size: 0.72rem;
   line-height: 1;
-  color: var(--neon-cyan);
+  color: var(--mcj-dim);
 }
 .addr-copy.copied {
-  border-color: color-mix(in oklab, var(--neon-lime) 60%, transparent);
-  background: color-mix(in oklab, var(--neon-lime) 14%, transparent);
+  border-color: rgba(67, 224, 168, 0.6);
 }
 .addr-copy.copied .addr,
 .addr-copy.copied .addr-copy-icon {
-  color: var(--neon-lime);
+  color: var(--mcj-live);
 }
 
 /* Status / result message under the join button */
 .join-message {
   display: none;
-  margin-top: 1rem;
-  border-radius: 0.75rem;
-  border: 1px solid var(--border);
-  padding: 0.75rem 1rem;
-  font-size: 0.875rem;
+  border: 1px solid var(--mcj-rule);
+  border-left-width: 3px;
+  padding: 0.7rem 0.9rem;
+  font-size: 13.5px;
   line-height: 1.5;
-  color: var(--foreground);
-  background: color-mix(in oklab, var(--input) 40%, transparent);
+  color: var(--mcj-muted);
+  background: var(--mcj-sunk);
 }
 .join-message.show {
   display: block;
 }
 .join-message.success {
-  border-color: color-mix(in oklab, var(--neon-lime) 45%, transparent);
-  box-shadow: 0 0 18px color-mix(in oklab, var(--neon-lime) 12%, transparent);
+  border-left-color: var(--mcj-live);
 }
 .join-message.error {
-  border-color: color-mix(in oklab, var(--neon-magenta) 55%, transparent);
-  color: var(--neon-magenta);
+  border-left-color: var(--mcj-accent);
+  color: var(--mcj-accent);
 }
 /* Advisory, not a failure — e.g. the streamer's overlay isn't open, so a paid
    camera might not land on their broadcast. Amber so it reads as "check this"
    rather than "something broke". */
 .join-message.warning {
-  border-color: color-mix(in oklab, var(--neon-amber) 55%, transparent);
-  box-shadow: 0 0 18px color-mix(in oklab, var(--neon-amber) 10%, transparent);
+  border-left-color: var(--mcj-warn);
 }
 
 /* Balance / live meter — hidden until the script reveals it */
@@ -232,46 +291,43 @@ a.addr {
 
 /* Camera status pill — script overwrites className with cam-status [live|error] */
 .cam-status {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.75rem;
-  border-radius: 9999px;
-  border: 1px solid var(--border);
-  background: color-mix(in oklab, var(--input) 40%, transparent);
-  padding: 0.25rem 0.75rem;
-  font-size: 0.75rem;
+  border: 1px solid var(--mcj-rule);
+  background: var(--mcj-sunk);
+  padding: 0.35rem 0.7rem;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--muted-foreground);
+  color: var(--mcj-dim);
 }
 .cam-status .dot {
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 6px;
+  height: 6px;
   border-radius: 9999px;
-  background: var(--muted-foreground);
+  background: var(--mcj-dim);
 }
 .cam-status.live {
-  color: var(--neon-lime);
-  border-color: color-mix(in oklab, var(--neon-lime) 50%, transparent);
+  color: var(--mcj-live);
+  border-color: rgba(67, 224, 168, 0.45);
 }
 .cam-status.live .dot {
-  background: var(--neon-lime);
-  animation: neon-pulse 2.4s ease-in-out infinite;
+  background: var(--mcj-live);
+  animation: hostLivePulse 1.6s ease-in-out infinite;
 }
 .cam-status.error {
-  color: var(--neon-magenta);
-  border-color: color-mix(in oklab, var(--neon-magenta) 55%, transparent);
+  color: var(--mcj-accent);
+  border-color: rgba(255, 77, 61, 0.5);
 }
 .cam-status.error .dot {
-  background: var(--neon-magenta);
+  background: var(--mcj-accent);
 }
 
 /* vdo.ninja publisher frame + hidden self-view detector */
 .cam-frame {
   position: relative; /* children must never escape the frame */
   overflow: hidden;
-  border-radius: 0.75rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--mcj-rule);
   background: black;
 }
 /* LiveKit self-view — same footprint as the vdo iframe it replaces. */
@@ -307,32 +363,30 @@ a.addr {
    made the option list white-on-near-white. Solid popover colors + an
    explicit dark color-scheme fix readability everywhere. */
 .stinger-select {
-  height: 2.5rem;
+  height: 36px;
   width: 100%;
   appearance: none;
   color-scheme: dark;
-  border-radius: 0.5rem;
-  border: 1px solid color-mix(in oklab, var(--neon-magenta) 35%, transparent);
-  background-color: oklch(0.19 0.05 303);
-  color: oklch(0.97 0.01 320);
-  padding: 0 2.2rem 0 0.75rem;
-  font-size: 0.875rem;
-  font-weight: 600;
+  border: 1px solid var(--mcj-rule-2);
+  background-color: var(--mcj-sunk);
+  color: var(--mcj-fg);
+  padding: 0 2.2rem 0 0.7rem;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0;
   cursor: pointer;
-  /* neon chevron */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23f22bbb' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%239aa4ad' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 0.75rem center;
+  background-position: right 0.7rem center;
   transition: border-color 0.15s;
 }
-.stinger-select:hover,
-.stinger-select:focus-visible {
-  border-color: color-mix(in oklab, var(--neon-magenta) 70%, transparent);
-  outline: none;
+.stinger-select:hover {
+  border-color: var(--mcj-fg);
 }
 .stinger-select option {
-  background-color: oklch(0.19 0.05 303);
-  color: oklch(0.97 0.01 320);
+  background-color: #101014;
+  color: #f2f2f4;
 }
 
 /* Mock camera square — 16:9 stage the stinger animations play on. This is a
@@ -341,35 +395,30 @@ a.addr {
   display: flex;
   justify-content: center;
   padding: 0.9rem;
-  border-radius: 0.75rem;
-  border: 1px dashed color-mix(in oklab, var(--neon-cyan) 30%, transparent);
+  border: 1px dashed var(--mcj-rule-2);
   background:
-    linear-gradient(oklch(0.7 0.12 320 / 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.7 0.12 320 / 0.05) 1px, transparent 1px),
-    oklch(0.13 0.04 305);
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    #0b0b0e;
   background-size: 21px 21px, 21px 21px, auto;
 }
 .sp-tile {
   position: relative;
   width: 240px;
   aspect-ratio: 16 / 9;
-  border-radius: 10px;
   overflow: hidden;
-  border: 1px solid color-mix(in oklab, var(--neon-magenta) 45%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in oklab, var(--neon-cyan) 16%, transparent),
-    0 6px 22px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--mcj-rule-2);
   will-change: clip-path, transform, opacity, filter;
 }
+/* The same abstract mesh the room board uses for a camera feed — this tile is
+   a mock, never the real camera. */
 .sp-cam {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background:
-    radial-gradient(80% 90% at 50% 15%, oklch(0.38 0.12 300) 0%, oklch(0.22 0.06 290) 70%),
-    oklch(0.22 0.06 290);
+  background: radial-gradient(120% 90% at 22% 18%, #24404f 0%, #141c22 62%);
 }
 /* head + shoulders silhouette — universal "camera feed" shorthand */
 .sp-avatar {
@@ -377,7 +426,7 @@ a.addr {
   width: 46%;
   height: 34%;
   border-radius: 50% 50% 0 0;
-  background: oklch(0.12 0.03 300);
+  background: rgba(8, 8, 10, 0.7);
 }
 .sp-avatar::before {
   content: '';
@@ -388,19 +437,17 @@ a.addr {
   width: 52%;
   height: 130%;
   border-radius: 50%;
-  background: oklch(0.12 0.03 300);
+  background: rgba(8, 8, 10, 0.7);
 }
 .sp-label {
   position: absolute;
   bottom: 6px;
   left: 6px;
-  background: rgba(10, 7, 18, 0.78);
-  color: #f4f2fa;
-  padding: 3px 8px 3px 10px;
-  border-radius: 4px;
-  border-left: 3px solid var(--neon-magenta);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%);
-  font-family: var(--font-heading);
+  background: rgba(8, 8, 10, 0.72);
+  color: var(--mcj-fg);
+  padding: 3px 8px 3px 9px;
+  border-left: 3px solid var(--mcj-accent);
+  font-family: var(--font-ui), system-ui, sans-serif;
   font-weight: 700;
   font-size: 10px;
   letter-spacing: 0.06em;
@@ -640,39 +687,24 @@ html[data-ui='simple'] .join-shell #connectBtn { display: none !important; }
 html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
 .addr-details summary {
   cursor: pointer;
-  color: var(--neon-cyan);
+  color: var(--mcj-dim);
   font-weight: 600;
 }
 .addr-details { margin-top: 0.25rem; }
 
 
-/* ── Join Stream: the XXL dopamine mode ──
-   MegaChat is the hero (magenta primary); this is the LOUD extra — electric
-   cyan→lime gradient with a breathing neon halo. Disabled states calm down
-   so the button can still carry the busy/live labels legibly. */
+/* ── Join Stream ──
+   The seat is the purchase this page exists for, so it takes the one warm
+   accent — flat, square, no halo. The label morphs through the whole
+   session (join → cancel → go live → leave), so the type must stay legible
+   in the disabled states too. */
 .dopamine-btn {
-  background: linear-gradient(135deg, oklch(0.78 0.15 210), oklch(0.86 0.2 130));
-  color: oklch(0.16 0.03 300);
-  border: 1px solid oklch(0.88 0.2 128 / 0.7);
-  animation: dopamine-pulse 2.2s ease-in-out infinite;
-  text-shadow: 0 1px 0 oklch(1 0 0 / 0.25);
+  background: var(--mcj-accent);
+  color: #08080a;
+  letter-spacing: 0;
 }
 .dopamine-btn:disabled {
-  animation: none;
-  opacity: 0.65;
-  box-shadow: 0 0 12px oklch(0.85 0.2 128 / 0.2);
-}
-@keyframes dopamine-pulse {
-  0%, 100% {
-    box-shadow:
-      0 0 16px oklch(0.86 0.2 130 / 0.35),
-      0 0 44px oklch(0.78 0.15 210 / 0.18);
-  }
-  50% {
-    box-shadow:
-      0 0 26px oklch(0.86 0.2 130 / 0.6),
-      0 0 72px oklch(0.78 0.15 210 / 0.4);
-  }
+  opacity: 0.55;
 }
 
 /* ── Human-readable tx errors (polish item 1) ─────────────────────────────
@@ -685,7 +717,7 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
 }
 .tx-details summary {
   cursor: pointer;
-  color: var(--muted-foreground);
+  color: var(--mcj-faint);
   text-decoration: underline dotted;
   user-select: none;
 }
@@ -698,10 +730,9 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
   white-space: pre-wrap;
   word-break: break-all;
   padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: color-mix(in oklab, var(--background) 82%, transparent);
-  color: var(--muted-foreground);
+  border: 1px solid var(--mcj-rule);
+  background: var(--mcj-sunk);
+  color: var(--mcj-faint);
   font-family: var(--font-geist-mono, monospace);
   font-size: 0.72rem;
   line-height: 1.45;
@@ -709,16 +740,12 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
 .tx-addfunds {
   display: inline-block;
   margin-left: 6px;
-  padding: 4px 12px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in oklab, var(--neon-lime) 55%, transparent);
-  background: color-mix(in oklab, var(--neon-lime) 12%, transparent);
-  color: var(--neon-lime);
+  padding: 5px 12px;
+  border: 0;
+  background: var(--mcj-fg);
+  color: #08080a;
+  font-family: inherit;
   font-weight: 700;
-  font-size: 0.8rem;
+  font-size: 12.5px;
   cursor: pointer;
-  transition: transform 0.12s;
-}
-.tx-addfunds:hover {
-  transform: scale(1.04);
 }

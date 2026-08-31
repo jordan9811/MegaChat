@@ -1,0 +1,152 @@
+/* Account (feat/ui-overhaul) — scoped under .mc-account.
+   Same skin as the room board and the create page: near-black ground, one
+   warm accent, square corners, hairline rules. This is the app, so it wears
+   the app's face rather than the marketing theme. */
+
+/* The site paints a magenta neon scrollbar on the document itself, so
+   scoping the app skin to .mc-account isn't enough — the pink rail survives
+   next to a near-black page. :has lets this page own the document chrome
+   for as long as it is the thing on screen. */
+html:has(.mc-account) {
+  color-scheme: dark;
+}
+/* html itself owns the page scrollbar, and the site's rule is `*` — which
+   matches html but not `html *`. Both selectors are needed. */
+html:has(.mc-account),
+html:has(.mc-account) * {
+  scrollbar-color: #3a3a44 transparent;
+}
+html:has(.mc-account) ::-webkit-scrollbar-thumb {
+  background-color: #3a3a44;
+}
+html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
+  background-color: #55555f;
+}
+
+.mc-account {
+  --mcc-bg: #08080a;
+  --mcc-panel: #101014;
+  --mcc-sunk: #0b0b0e;
+  --mcc-fg: #f2f2f4;
+  --mcc-muted: #b9c1c8;
+  --mcc-dim: #9aa4ad;
+  --mcc-faint: #8f99a2;
+  --mcc-rule: #23232a;
+  --mcc-rule-2: #33333c;
+  --mcc-accent: #ff4d3d;
+  --mcc-live: #43e0a8;
+  --mcc-warn: #ffd23d;
+  background: var(--mcc-bg);
+  color: var(--mcc-fg);
+  font-family: var(--font-ui), system-ui, sans-serif;
+}
+
+.mc-account .bc {
+  font-family: var(--font-ui), system-ui, sans-serif;
+  letter-spacing: 0.04em;
+}
+
+/* Sentence case, normal tracking. Caps strip the word shapes the eye
+   reads by — fine on a status pip, hostile on a label scanned forty times. */
+.mc-account .lbl {
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: 0;
+  color: var(--mcc-dim);
+}
+
+.mc-account .hint {
+  font-size: 12px;
+  color: var(--mcc-faint);
+  line-height: 1.5;
+}
+
+/* The two places caps survive: a one-word status pip and a column head. */
+.mc-account .pip {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mc-account .colhead {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mcc-faint);
+}
+
+/* The themed focus ring is invisible on this ground. */
+.mc-account :is(a, button, [tabindex]):focus-visible {
+  outline: 2px solid var(--mcc-fg);
+  outline-offset: 2px;
+}
+
+/* Section heads — the ledger rules do the dividing, so these stay quiet. */
+.mc-account .sect {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+/* Ledger row: label left, value right, hairline above. Same shape the
+   landing page uses for HOW A SEAT WORKS. */
+.mc-account .row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--mcc-rule);
+  padding: 10px 0;
+}
+.mc-account .row:last-child {
+  border-bottom: 1px solid var(--mcc-rule);
+}
+.mc-account .val {
+  font-weight: 600;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.mc-account .btn {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  padding: 9px 18px;
+  border: 0;
+  background: var(--mcc-accent);
+  color: #08080a;
+  cursor: pointer;
+}
+.mc-account .btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.mc-account .btn-ghost {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  padding: 8px 15px;
+  border: 1px solid var(--mcc-rule-2);
+  background: transparent;
+  color: var(--mcc-muted);
+  cursor: pointer;
+}
+.mc-account .btn-ghost:hover:not(:disabled) {
+  color: var(--mcc-fg);
+  border-color: var(--mcc-fg);
+}
+.mc-account .btn-ghost:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The handle is the room's address, and green is how the mock said so. */
+.mc-account .handle {
+  color: var(--mcc-live);
+}

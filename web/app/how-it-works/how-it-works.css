@@ -1,0 +1,95 @@
+/* How it works (feat/ui-overhaul) — scoped under .mc-how.
+   Wears the app skin: near-black ground, one warm accent, square corners,
+   hairline rules. This page explains the product, so it matches the room
+   board and Create a room rather than the marketing site. */
+
+/* The site paints a magenta neon scrollbar on the document itself, so
+   scoping the skin to .mc-how isn't enough — the pink rail would survive
+   next to a near-black page. :has lets this page own the document chrome
+   for as long as it is the thing on screen. */
+html:has(.mc-how) {
+  color-scheme: dark;
+}
+/* html itself owns the page scrollbar, and the site's rule is `*` — which
+   matches html but not `html *`. Both selectors are needed. */
+html:has(.mc-how),
+html:has(.mc-how) * {
+  scrollbar-color: #3a3a44 transparent;
+}
+html:has(.mc-how) ::-webkit-scrollbar-thumb {
+  background-color: #3a3a44;
+}
+html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
+  background-color: #55555f;
+}
+
+/* Same token NAMES as create-room on purpose — one app palette, declared by
+   whichever scope is on screen. Nothing here reads the legacy theme. */
+.mc-how {
+  --mcc-bg: #08080a;
+  --mcc-panel: #101014;
+  --mcc-fg: #f2f2f4;
+  --mcc-muted: #b9c1c8;
+  --mcc-dim: #9aa4ad;
+  --mcc-faint: #8f99a2;
+  --mcc-rule: #23232a;
+  --mcc-rule-2: #33333c;
+  --mcc-accent: #ff4d3d;
+  --mcc-live: #43e0a8;
+  --mcc-warn: #ffd23d;
+  background: var(--mcc-bg);
+  color: var(--mcc-fg);
+  font-family: var(--font-ui), system-ui, sans-serif;
+}
+
+/* chrome face — the wordmark and nothing else */
+.mc-how .bc {
+  font-family: var(--font-ui), system-ui, sans-serif;
+  letter-spacing: 0.04em;
+}
+
+/* The global focus ring is tuned for the themed pages and washes out on this
+   ground; give the scope its own visible ring. */
+.mc-how :is(a, button, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--mcc-fg);
+  outline-offset: 2px;
+}
+
+/* Section label. Sentence case, normal tracking — caps strip the word shapes
+   the eye reads by. */
+.mc-how .lbl {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--mcc-dim);
+}
+
+/* ledger numeral — the step's only ornament */
+.mc-how .num {
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--mcc-accent);
+}
+
+/* FAQ rows are rules, not cards. The marker is a + that turns into an ×. */
+.mc-how summary {
+  cursor: pointer;
+  list-style: none;
+}
+.mc-how summary::-webkit-details-marker {
+  display: none;
+}
+.mc-how .mark {
+  color: var(--mcc-accent);
+  transition: transform 140ms ease;
+}
+.mc-how details[open] .mark {
+  transform: rotate(45deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-how .mark {
+    transition: none;
+  }
+}

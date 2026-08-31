@@ -12,7 +12,7 @@ a cat's name, a robot reading a donation aloud. Avoid pitch-deck vocabulary —
 
 ## Live now
 
-- **Landing closer:** `Parasocial is a design flaw.` / `400 hours watched. Zero seconds seen.`
+- **Landing closer:** `Parasocial is a design flaw.` / `You're more than a username.`
 - **Landing hero:** `Skip the chat. Be the stream.`
 
 ## Banked — approved, unused
@@ -23,7 +23,7 @@ Ranked roughly by how much the user liked them.
 - Stop simping. Start interacting.
 - You're not part of a community. You're part of analytics.
 - You just paid a robot $5 to read your name out loud.
-- You're more than a username.
+- 400 hours watched. Zero seconds seen. *(rejected)*
 - You know his cat's name. He doesn't know you exist.
 - You've typed 10,000 messages. He's read four.
 - Everyone has a camera. Chat still wants 200 characters.

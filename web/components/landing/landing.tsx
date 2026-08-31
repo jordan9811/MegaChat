@@ -384,7 +384,7 @@ export function Landing({
           Parasocial is a design flaw.
         </h2>
         <p className="max-w-[560px] text-center text-[15.5px] text-[var(--mcl-muted)]">
-          400 hours watched. Zero seconds seen.
+          You&apos;re more than a username.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-4">
           <Link
