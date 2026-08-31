@@ -92,25 +92,44 @@ const PLATFORMS: { name: string; path?: string }[] = [
   },
 ]
 
-// The capsule stands in for pump.fun until we have their real vector.
+// Icon-only at ~2x, sitting at low opacity so the row reads as texture over
+// the page rather than a panel of five logos demanding attention. It lifts
+// to full on hover.
 function PlatformMark({ p }: { p: { name: string; path?: string } }) {
+  const cls =
+    'shrink-0 opacity-45 transition-opacity duration-200 hover:opacity-100'
+  // pump.fun: the capsule, at the same optical size as the icon marks. The
+  // split is painted in the page ground rather than cut out, which is fine
+  // because this strip sits straight on --mcl-bg with nothing behind it.
+  if (!p.path) {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        className={`${cls} size-[38px] text-[var(--mcl-fg)] md:size-[46px]`}
+        fill="currentColor"
+        role="img"
+        aria-label={p.name}
+      >
+        <title>{p.name}</title>
+        <g transform="rotate(-45 12 12)">
+          {/* rotating a rect shrinks its footprint to (w+h)·cos45, so the
+              geometry is oversized here to match the other marks optically */}
+          <rect x="0.5" y="7.25" width="23" height="9.5" rx="4.75" />
+          <rect x="11.3" y="7.25" width="1.4" height="9.5" fill="var(--mcl-bg)" />
+        </g>
+      </svg>
+    )
+  }
   return (
     <svg
       viewBox="0 0 24 24"
-      width="26"
-      height="26"
+      className={`${cls} size-[38px] text-[var(--mcl-fg)] md:size-[46px]`}
       fill="currentColor"
       role="img"
       aria-label={p.name}
     >
-      {p.path ? (
-        <path d={p.path} />
-      ) : (
-        <g transform="rotate(-45 12 12)">
-          <rect x="3.5" y="8.5" width="17" height="7" rx="3.5" />
-          <rect x="11.4" y="8.5" width="1.2" height="7" fill="#04070a" />
-        </g>
-      )}
+      <title>{p.name}</title>
+      <path d={p.path} />
     </svg>
   )
 }
@@ -175,18 +194,16 @@ export function Landing({
       <LandingHero />
 
       <main>
-      {/* Works-with band. Replaced a row of product stats (1s / 3+1 / 0 /
-          100%) that restated things the hero and the tables already say. */}
-      <section className="flex flex-wrap items-center justify-center gap-x-10 gap-y-6 border-b border-[var(--mcl-hairline)] px-6 py-9 md:gap-x-14 md:px-16">
-        <span className="text-[12.5px] font-[600] text-[var(--mcl-faint)]">Compatible with</span>
-        <span className="flex flex-wrap items-center justify-center gap-x-9 gap-y-5 text-[var(--mcl-muted)] md:gap-x-12">
-          {PLATFORMS.map((p) => (
-            <span key={p.name} className="flex items-center gap-2.5" title={p.name}>
-              <PlatformMark p={p} />
-              <span className="text-[14.5px] font-[600]">{p.name}</span>
-            </span>
-          ))}
+      {/* Works-with band. No panel, no fill — the marks sit straight on the
+          page at low opacity so the strip reads as a watermark under the
+          hero rather than a logo wall. */}
+      <section className="flex flex-wrap items-center gap-x-10 gap-y-7 border-b border-[var(--mcl-hairline)] px-6 py-10 md:gap-x-14 md:px-16">
+        <span className="text-[10.5px] font-[700] uppercase tracking-[0.2em] text-[var(--mcl-faint)]">
+          Compatible with
         </span>
+        {PLATFORMS.map((p) => (
+          <PlatformMark key={p.name} p={p} />
+        ))}
       </section>
 
       {/* how a seat works — moved up from the bottom of the page: it is what
@@ -364,7 +381,7 @@ export function Landing({
       {/* statement */}
       <section className="flex flex-col items-center gap-6 px-6 pb-20 pt-10 md:px-16">
         <h2 className="max-w-[820px] text-center text-[40px] font-[800] leading-[1.05] tracking-[-0.02em] md:text-[64px]">
-          Stop being a username.
+          You&apos;re more than a username.
         </h2>
         <p className="text-[12px] tracking-[0.12em] text-[var(--mcl-faint)]">
           CALL-IN SHOW + FACETIME + SUPERCHAT = MEGACHAT
