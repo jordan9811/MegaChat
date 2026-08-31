@@ -363,8 +363,8 @@ export function Landing({
 
       {/* statement */}
       <section className="flex flex-col items-center gap-6 px-6 pb-20 pt-10 md:px-16">
-        <h2 className="max-w-[820px] text-center text-[32px] font-[800] leading-[1.08] tracking-[-0.01em] md:text-[44px]">
-          A chat app for people who&apos;d rather be on TV.
+        <h2 className="max-w-[820px] text-center text-[40px] font-[800] leading-[1.05] tracking-[-0.02em] md:text-[64px]">
+          Stop being a username.
         </h2>
         <p className="text-[12px] tracking-[0.12em] text-[var(--mcl-faint)]">
           CALL-IN SHOW + FACETIME + SUPERCHAT = MEGACHAT
