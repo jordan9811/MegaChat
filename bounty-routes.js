@@ -296,6 +296,41 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
 
   log.warn('[bounty] BOUNTY_CLAIM ON — escrow is a LEDGER ONLY. Settlement is stubbed; no funds move.');
 
+  /**
+   * DEMO BOARD. Runs once, on the first boot that finds no pools at all, so
+   * the board is populated without anyone holding an admin key.
+   *
+   * These go through the SAME escrow path a fan pledge takes — the point is
+   * that nothing about this board is special, and it behaves identically when
+   * real money arrives. Every row carries the `seed:` contributor prefix, so
+   * POST /api/bounty/admin/seed-clear removes all of it in one call.
+   *
+   * ⚠ Run that clear before settlement goes live. Run B replays ledger rows,
+   * and a seeded row surviving into the replay pays out money nobody put in.
+   */
+  const DEMO_TARGETS = [
+    { platform: 'twitch', handle: 'threadguy' },
+    { platform: 'kick', handle: 'chessbrah' },
+    { platform: 'x', handle: 'martinshkreli' },
+    { platform: 'x', handle: 'rasmr' },
+    { platform: 'pumpfun', handle: 'GnBQjwQibzB9zFPHEGEhoiASon7JfaRADxQe6C64pump' },
+  ];
+  try {
+    if (store.listReservedHandles().length === 0) {
+      for (const t of DEMO_TARGETS) {
+        escrow.pledge({ targets: [t], contributor: 'seed:demo', amount: '100', actor: 'admin', displayName: 'Seeded' });
+      }
+      // One pot every name competes for. This is what draws the hatched half
+      // of the bar and makes realValue and displayedTotal honestly disagree.
+      // Capped to whatever pledgeMaxTargets allows, so it never throws.
+      const contested = DEMO_TARGETS.slice(0, bountyConfig.pledgeMaxTargets);
+      escrow.pledge({ targets: contested, contributor: 'seed:demo-contested', amount: '100', actor: 'admin', displayName: 'Seeded' });
+      log.warn(`[bounty] demo board seeded — ${DEMO_TARGETS.length} pools, contested across ${contested.length}. NOT REAL MONEY; clear before settlement.`);
+    }
+  } catch (e) {
+    log.warn(`[bounty] demo seed skipped: ${e.message}`);
+  }
+
   // Protect reserved handles from being claimed as ordinary room handles.
   // Registered only while the flag is on (see rooms-store.setHandleGuard).
   import('./rooms-store.js').then(({ setHandleGuard }) => {
