@@ -45,7 +45,13 @@ const ERROR_TTL_MS = 60 * 1000;
 /** Bounded so a stream of junk handles cannot grow this without limit. */
 const MAX_ENTRIES = 1000;
 /** How long a single leaderboard render will wait on cold lookups. */
-const DEFAULT_BUDGET_MS = 1500;
+// Twitch answers a whole board in ONE batched call (~300ms). Kick has no
+// batch endpoint and needs two sequential hops per channel (~400ms each), so
+// a cold board of Kick names genuinely needs more than 1500ms — measured, a
+// mixed cold batch landed at 1509ms and every Kick row got cut to a monogram.
+// The cost is paid once: misses keep resolving in the background and the
+// cache is warm for 6h, so this only ever lengthens a cold first render.
+const DEFAULT_BUDGET_MS = 2500;
 /** Kick has no batch endpoint, so cap the fan-out instead. */
 const KICK_CONCURRENCY = 4;
 /** Helix caps `login` at 100 per call. */
