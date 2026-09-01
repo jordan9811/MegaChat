@@ -88,7 +88,14 @@ export async function getProfilePictureBySlug(slug, { log = console } = {}) {
     // someone else's face on this streamer's pool. Refuse it.
     if (!row || Number(row.user_id) !== Number(id)) return { url: null };
     const url = typeof row.profile_picture === 'string' ? row.profile_picture.trim() : '';
-    return { url: /^https:\/\//.test(url) ? url : null };
+    // A streamer who never set a picture gets Kick's own placeholder
+    // (kick.com/img/default-profile-pictures/default-avatar-N.webp). That is
+    // an answer, but it is not a face — served as-is it puts a grey stranger
+    // from Kick's asset folder on the pool. Treat it as "no picture" so the
+    // caller falls through to our monogram, which is at least keyed to the
+    // handle and wears our own skin.
+    const isPlaceholder = /\/default-profile-pictures\//.test(url);
+    return { url: /^https:\/\//.test(url) && !isPlaceholder ? url : null };
   } catch (e) {
     log.warn(`[kick-api] profile picture lookup failed for ${slug}: ${e.message}`);
     return null; // "could not ask", never "no picture"
