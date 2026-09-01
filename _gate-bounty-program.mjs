@@ -65,7 +65,12 @@ const srv = await startGateServer({
     // Expiry must be testable inside a gate run.
     BOUNTY_PLEDGE_MIN_EXPIRY_MS: '500',
     // Point the shared moderation pipeline at the in-gate mock.
-    MODERATION_API_KEY: 'mock-key', MODERATION_API_BASE: 'http://localhost:3998/v1' },
+    MODERATION_API_KEY: 'mock-key', MODERATION_API_BASE: 'http://localhost:3998/v1',
+    // Keep the gate hermetic. /api/bounty/program now resolves avatars, and
+    // the fixture handles below are not real channels — with credentials
+    // present this gate would fire live Helix/Kick lookups for names that do
+    // not exist. Blank ids make platform-avatars return null without a call.
+    TWITCH_CLIENT_ID: '', KICK_CLIENT_ID: '' },
 });
 const app = srv.child;
 

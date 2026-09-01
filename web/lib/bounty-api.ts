@@ -192,6 +192,10 @@ export type ProgramPool = PoolView & {
   claimed: boolean
   promotional: boolean
   clipsWaiting: number
+  /** Profile photo, server-fetched and cached. null means no image API for
+   *  that platform (X, Rumble) or the fetch failed — the leaderboard draws a
+   *  monogram in the same slot rather than a broken frame. */
+  avatarUrl: string | null
 }
 
 export function getProgram() {

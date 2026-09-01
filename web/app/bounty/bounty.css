@@ -1,0 +1,236 @@
+/* Bounty leaderboard (feat/ui-overhaul) — scoped under .mc-bounty.
+   Same skin as the room board, the create page and /account: near-black
+   ground, one warm accent, square corners, hairline rules. Green is money
+   that is locked to one name; yellow is money several names are racing for,
+   and the two are never blended into one number. */
+
+/* The site paints a magenta neon scrollbar on the document itself, so
+   scoping the app skin to .mc-bounty isn't enough — the pink rail survives
+   next to a near-black page. :has lets this page own the document chrome
+   for as long as it is the thing on screen. */
+html:has(.mc-bounty) {
+  color-scheme: dark;
+}
+/* html itself owns the page scrollbar, and the site's rule is `*` — which
+   matches html but not `html *`. Both selectors are needed. */
+html:has(.mc-bounty),
+html:has(.mc-bounty) * {
+  scrollbar-color: #3a3a44 transparent;
+}
+html:has(.mc-bounty) ::-webkit-scrollbar-thumb {
+  background-color: #3a3a44;
+}
+html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
+  background-color: #55555f;
+}
+
+.mc-bounty {
+  --mcc-bg: #08080a;
+  --mcc-panel: #101014;
+  --mcc-sunk: #0b0b0e;
+  --mcc-fg: #f2f2f4;
+  --mcc-muted: #b9c1c8;
+  --mcc-dim: #9aa4ad;
+  --mcc-faint: #8f99a2;
+  --mcc-off: #b9b9c2;
+  --mcc-ghost: #7b7b85;
+  --mcc-hairline: #1a1a1f;
+  --mcc-rule: #23232a;
+  --mcc-rule-2: #33333c;
+  --mcc-accent: #ff4d3d;
+  --mcc-live: #43e0a8;
+  --mcc-warn: #ffd23d;
+  background: var(--mcc-bg);
+  color: var(--mcc-fg);
+  font-family: var(--font-ui), system-ui, sans-serif;
+}
+
+.mc-bounty .bc {
+  font-family: var(--font-ui), system-ui, sans-serif;
+  letter-spacing: 0.04em;
+}
+
+.mc-bounty .hint {
+  font-size: 12px;
+  color: var(--mcc-faint);
+  line-height: 1.5;
+}
+
+/* The two places caps survive: a one/two-word status pip and a column head. */
+.mc-bounty .colhead {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mcc-faint);
+}
+
+.mc-bounty .pip {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The themed focus ring is invisible on this ground. */
+.mc-bounty :is(a, button, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--mcc-fg);
+  outline-offset: 2px;
+}
+
+/* ── THE STACKED BAR ──────────────────────────────────────────────────────
+   One row of money, split by who can still take it. Solid green is locked
+   to this name alone; the hatch is pledged to rivals as well, so it may
+   never arrive. A blended headline hides exactly that. */
+.mc-bounty .track {
+  display: flex;
+  height: 8px;
+  background: var(--mcc-rule);
+}
+.mc-bounty .track-locked {
+  background: var(--mcc-live);
+}
+.mc-bounty .hatch {
+  background-image: repeating-linear-gradient(135deg, #ffd23d 0 4px, #6b5a18 4px 8px);
+}
+
+/* ── AVATAR FALLBACK ──────────────────────────────────────────────────────
+   Same six meshes the room tiles use (booth.css), redeclared here because
+   this route never loads the booth chunk. Keyed off the handle, so a name
+   always gets the same colour. */
+.mc-bounty .mc-mesh-0 {
+  background: radial-gradient(120% 90% at 22% 18%, #24404f 0%, #141c22 62%);
+}
+.mc-bounty .mc-mesh-1 {
+  background: radial-gradient(120% 90% at 76% 20%, #4a2b34 0%, #21181c 64%);
+}
+.mc-bounty .mc-mesh-2 {
+  background: radial-gradient(120% 90% at 34% 74%, #26402f 0%, #161f1a 62%);
+}
+.mc-bounty .mc-mesh-3 {
+  background: radial-gradient(120% 90% at 62% 26%, #363050 0%, #1c1a24 64%);
+}
+.mc-bounty .mc-mesh-4 {
+  background: radial-gradient(120% 90% at 26% 30%, #2c2a26 0%, #181818 64%);
+}
+.mc-bounty .mc-mesh-5 {
+  background: radial-gradient(120% 90% at 70% 68%, #29343a 0%, #171a1c 64%);
+}
+
+/* ── THE LEADERBOARD GRID ─────────────────────────────────────────────────
+   Five columns on a wide screen, exactly as drawn. Narrow, the bar and the
+   two actions drop under the name rather than crushing five columns into a
+   phone — the bar is the point of the row and must stay readable. */
+.mc-bounty .lb-head {
+  display: none;
+}
+
+.mc-bounty .lb-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  column-gap: 14px;
+  row-gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--mcc-hairline);
+  padding: 16px 0;
+}
+.mc-bounty .lb-row > .lb-bar,
+.mc-bounty .lb-row > .lb-status,
+.mc-bounty .lb-row > .lb-cta {
+  grid-column: 2;
+}
+.mc-bounty .lb-cta {
+  justify-self: start;
+}
+
+/* Claimed: the money is gone and the row is history, not an offer. */
+.mc-bounty .lb-row.is-claimed {
+  opacity: 0.55;
+}
+
+@media (min-width: 940px) {
+  .mc-bounty .lb-head,
+  .mc-bounty .lb-row {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1.5fr) minmax(0, 2fr) 200px 150px;
+    column-gap: 24px;
+    row-gap: 0;
+    align-items: center;
+  }
+  .mc-bounty .lb-head {
+    border-bottom: 1px solid var(--mcc-hairline);
+    padding: 0 0 10px 0;
+  }
+  .mc-bounty .lb-row {
+    padding: 18px 0;
+  }
+  .mc-bounty .lb-row > .lb-bar,
+  .mc-bounty .lb-row > .lb-status,
+  .mc-bounty .lb-row > .lb-cta {
+    grid-column: auto;
+  }
+  .mc-bounty .lb-cta {
+    justify-self: stretch;
+  }
+}
+
+/* ── ACTIONS ──────────────────────────────────────────────────────────────*/
+.mc-bounty .rowcta {
+  display: block;
+  background: var(--mcc-accent);
+  color: #08080a;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 14px;
+  text-align: center;
+}
+.mc-bounty .rowcta:hover {
+  background: #ff6f61;
+}
+
+.mc-bounty .rowcta-ghost {
+  display: block;
+  border: 1px solid var(--mcc-rule-2);
+  color: var(--mcc-muted);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 14px;
+  text-align: center;
+}
+.mc-bounty .rowcta-ghost:hover {
+  color: var(--mcc-fg);
+  border-color: var(--mcc-fg);
+}
+
+.mc-bounty .btn {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  padding: 12px 22px;
+  border: 0;
+  background: var(--mcc-accent);
+  color: #08080a;
+  cursor: pointer;
+}
+.mc-bounty .btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Handle entry for a streamer nobody has named yet. */
+.mc-bounty .field {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--mcc-fg);
+  background: var(--mcc-bg);
+  border: 1px solid var(--mcc-rule-2);
+  padding: 11px 12px;
+}
+.mc-bounty .field::placeholder {
+  color: var(--mcc-ghost);
+}
+.mc-bounty select.field {
+  cursor: pointer;
+}

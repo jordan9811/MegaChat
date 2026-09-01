@@ -20,6 +20,7 @@ import { moderateMedia, moderationConfigured } from './moderation.js';
 import * as evidence from './bounty-evidence.js';
 import { twitchApiConfigured, getStreamByLogin } from './twitch-api.js';
 import { kickApiConfigured, getChannelBySlug } from './kick-api.js';
+import { resolveAvatars, avatarKey } from './platform-avatars.js';
 import { readIdentityFromRequest } from './auth.js';
 import settlement from './bounty-settlement.js';
 import { policyFor, authorize, TIER } from './bounty-auth.js';
@@ -521,7 +522,11 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
    * requirement that rehypothecated money is never presented as bigger than
    * it is.
    */
-  guarded.get('/api/bounty/program', (_req, res) => {
+  guarded.get('/api/bounty/program', async (_req, res) => {
+    // Express 4 does not catch a rejected handler promise, so an async body
+    // without this wrapper answers NOTHING on a throw and hangs the page.
+    // Same shape as every other async route in this file.
+    try {
     const views = store.listReservedHandles().map((r) => ({
       ...escrow.poolView(r.key),
       seeded: !!r.seeded,
@@ -534,8 +539,18 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       .sort((a, b) => (b.guaranteed + b.contestedTotal) - (a.guaranteed + a.contestedTotal));
     const realValue = views.reduce((a, v) => a + v.totalContributed, 0);
     const displayedTotal = views.reduce((a, v) => a + v.guaranteed + v.contestedTotal, 0);
+    // Faces for streamers who never signed up — public profile images read
+    // with OUR app credentials, resolved concurrently behind a deadline and a
+    // cache. `avatarUrl: null` means "render the monogram", and every failure
+    // mode lands there: unsupported platform, no such channel, platform down,
+    // cold cache that missed the budget. Decoration must never be able to
+    // fail the money page, so it also cannot throw.
+    let avatars = new Map();
+    try {
+      avatars = await resolveAvatars(views.map((v) => ({ platform: v.platform, handle: v.handle })));
+    } catch { /* rule 1 in platform-avatars.js — belt as well as braces */ }
     res.json({
-      pools: views,
+      pools: views.map((v) => ({ ...v, avatarUrl: avatars.get(avatarKey(v.platform, v.handle)) ?? null })),
       currency: bountyConfig.currency,
       totals: {
         realValue: +realValue.toFixed(6),
@@ -543,6 +558,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         note: 'displayedTotal counts a contested pledge once per target; realValue counts each escrow once',
       },
     });
+    } catch (e) { fail(res, e); }
   });
 
   /**

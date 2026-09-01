@@ -40,6 +40,62 @@ async function appToken() {
 }
 
 /**
+ * Public profile picture for a channel, WITHOUT the streamer's credentials.
+ *
+ * SHAPE CONFIRMED BY REAL CALLS (2026-09-01), not guessed from docs:
+ *   GET /public/v1/channels?slug=xqc  → { data: [{ broadcaster_user_id: 676,
+ *       slug, channel_description, banner_picture, stream{…}, category{…} }] }
+ *   THE CHANNELS ROW CARRIES NO PROFILE PICTURE. `banner_picture` is the
+ *   channel banner and `stream.thumbnail` is a live-stream still; neither is
+ *   a face, and substituting one would look like a bug, not a fallback.
+ *   GET /public/v1/users?id=676       → { data: [{ user_id, name, email,
+ *       profile_picture }] }
+ * So it takes two hops: slug → broadcaster_user_id → profile_picture.
+ * Verified on xqc/trainwreckstv/adinross that the users row echoes the id we
+ * asked for (not the token owner), that an unknown slug is HTTP 200 with an
+ * EMPTY data array, and that `email` comes back empty under an app token.
+ * NOTE `?id[]=676` returns zero rows — the working spelling is `?id=`.
+ *
+ * Only the picture is read out of that row. The users response also carries
+ * an email field and the channels response carries stream credentials; both
+ * stay inside this function and are never returned, cached, or logged.
+ *
+ * @returns {Promise<{url: string|null}|null>}
+ *   null            — we could not ask (unconfigured, HTTP error, timeout).
+ *   { url: null }   — we asked: no such channel, or no picture set.
+ *   { url: string } — found.
+ *   The distinction is the caller's whole caching policy, so it is a shape
+ *   rather than a bare null.
+ */
+export async function getProfilePictureBySlug(slug, { log = console } = {}) {
+  if (!kickApiConfigured() || !slug) return null;
+  try {
+    const token = await appToken();
+    const headers = { Authorization: `Bearer ${token}` };
+    const cr = await fetch(
+      `${API_BASE()}/channels?slug=${encodeURIComponent(String(slug).toLowerCase())}`,
+      { headers, signal: AbortSignal.timeout(10_000) },
+    );
+    if (!cr.ok) throw new Error(`kick channels ${cr.status}`);
+    const id = (await cr.json()).data?.[0]?.broadcaster_user_id;
+    if (!id) return { url: null }; // asked and answered: no such channel
+    const ur = await fetch(`${API_BASE()}/users?id=${encodeURIComponent(id)}`, {
+      headers, signal: AbortSignal.timeout(10_000),
+    });
+    if (!ur.ok) throw new Error(`kick users ${ur.status}`);
+    const row = (await ur.json()).data?.[0];
+    // Defend the id echo: if Kick ever answers with a different user, that is
+    // someone else's face on this streamer's pool. Refuse it.
+    if (!row || Number(row.user_id) !== Number(id)) return { url: null };
+    const url = typeof row.profile_picture === 'string' ? row.profile_picture.trim() : '';
+    return { url: /^https:\/\//.test(url) ? url : null };
+  } catch (e) {
+    log.warn(`[kick-api] profile picture lookup failed for ${slug}: ${e.message}`);
+    return null; // "could not ask", never "no picture"
+  }
+}
+
+/**
  * Live status + concurrent viewers in one call — Kick's channels endpoint
  * returns both on the embedded `stream` object.
  *

@@ -50,6 +50,41 @@ export async function helix(pathAndQuery) {
 }
 
 /**
+ * Public profile images for up to 100 logins in ONE Helix call.
+ *
+ * WE DO NOT NEED THE STREAMER'S CREDENTIALS. `/helix/users` is public data
+ * read with OUR app token, so a bountied channel that has never heard of us
+ * still has a face on the leaderboard.
+ *
+ * The batching is the point: a leaderboard of 40 pools is one request, not
+ * 40. Helix caps `login` at 100 per call — callers chunk.
+ *
+ * @returns {Promise<Map<string,string>|null>} login (lowercased) → image URL.
+ *   null means "we could not ask" (unconfigured, HTTP error, timeout). A login
+ *   ABSENT from a non-null map is a genuine miss — no such channel — and the
+ *   two must not be conflated: one is worth retrying in a minute, the other
+ *   is worth remembering for hours.
+ */
+export async function getProfileImagesByLogin(logins, { log = console } = {}) {
+  if (!twitchApiConfigured()) return null;
+  const list = [...new Set(
+    (logins || []).map((l) => String(l || '').trim().replace(/^@/, '').toLowerCase()).filter(Boolean),
+  )].slice(0, 100);
+  if (!list.length) return new Map();
+  try {
+    const j = await helix(`/users?${list.map((l) => `login=${encodeURIComponent(l)}`).join('&')}`);
+    const out = new Map();
+    for (const u of j.data || []) {
+      if (u?.login && u.profile_image_url) out.set(String(u.login).toLowerCase(), u.profile_image_url);
+    }
+    return out;
+  } catch (e) {
+    log.warn(`[twitch-api] profile image lookup failed (${list.length} logins): ${e.message}`);
+    return null; // "could not ask", never "no such channel"
+  }
+}
+
+/**
  * @returns {Promise<{live: boolean, viewerCount: number|null, startedAt: string|null}|null>}
  *   null when unconfigured or the API could not be asked.
  */

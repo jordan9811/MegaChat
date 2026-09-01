@@ -23,3 +23,6 @@ corpus/
 # moment in time, not source. Re-run the probe rather than reading a stale one.
 pumpfun-probe.json
 pumpfun-probe.png
+
+# runtime pledge ledger — live state, same as the other data/ stores
+data/bounty.json
