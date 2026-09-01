@@ -14,6 +14,7 @@ a cat's name, a robot reading a donation aloud. Avoid pitch-deck vocabulary —
 
 - **Landing closer:** `Parasocial is a design flaw.` / `You're more than a username.`
 - **Landing hero:** `Skip the chat. Be the stream.`
+- **Bounty page:** `Your favorite streamer doesn't even know you.` / `Be more than a username.`
 
 ## Banked — approved, unused
 
@@ -40,6 +41,11 @@ Ranked roughly by how much the user liked them.
 - `CALL-IN SHOW + FACETIME + SUPERCHAT = MEGACHAT` — the most formulaic line
   on the page; replaced by the closer's subline.
 - `Stop being a username.` — shipped briefly, superseded.
+- `Money waiting on a name` — the bounty headline. Long, and it described the
+  mechanic instead of the reason anyone would care.
+- The bounty page's preview-build disclosure — removed at the user's call:
+  the page does not launch until settlement is real, so a line about funds not
+  moving describes a state that will not exist when anyone sees it.
 
 ## Planned use: the bounty page
 

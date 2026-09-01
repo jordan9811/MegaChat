@@ -452,7 +452,7 @@ export function Booth({
             <section className="flex flex-col gap-3">
               <span className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="text-[18px] font-[700] tracking-[-0.01em] text-[var(--mcb-fg)]">
-                  Money waiting on a name
+                  Bounties
                 </h2>
                 <Link
                   href="/bounty"

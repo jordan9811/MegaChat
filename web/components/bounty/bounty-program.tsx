@@ -20,7 +20,7 @@ import { getBountyConfig, getProgram, type BountyClientConfig, type ProgramPool 
 
 // From docs/design/copy-bank.md — the bounty page is the one surface where
 // "demand more" is literally what the product does.
-const DEMAND_LINE = 'Record a MegaChat, put money on it, and tell your favourite streamer to come claim it.'
+const DEMAND_LINE = 'Record a MegaChat, put money on it, and tell your favorite streamer to come claim it.'
 
 // Mirrors sanitizeHandle in rooms-store.js — the only shape /<handle> serves.
 const ROOM_HANDLE = /^[a-z0-9_]{3,20}$/
@@ -334,7 +334,9 @@ export function BountyProgram() {
           <div className="h-40 animate-pulse bg-white/5" aria-hidden="true" />
         ) : !config || !config.enabled ? (
           <div className="border border-[var(--mcc-rule)] bg-[var(--mcc-sunk)] px-6 py-12 text-center">
-            <h1 className="text-[26px] font-[800] tracking-[-0.02em]">Money waiting on a name</h1>
+            <h1 className="text-[26px] font-[800] tracking-[-0.02em]">
+              Your favorite streamer doesn&rsquo;t even know you.
+            </h1>
             <p className="mx-auto mt-2 max-w-[440px] text-[14px] leading-[1.5] text-[var(--mcc-muted)]">
               Not open yet. Soon, recorded MegaChats will stack up against streamers who
               aren&rsquo;t here, and pay out when they claim their handle and play them on stream.
@@ -344,15 +346,11 @@ export function BountyProgram() {
           <>
             <div className="flex flex-wrap items-end justify-between gap-8">
               <div className="flex max-w-[620px] flex-col gap-2.5">
-                {/* copy bank — the register this page is written in */}
-                <span className="text-[12.5px] font-[600] text-[var(--mcc-accent)]">
-                  You&rsquo;re not part of a community. You&rsquo;re part of analytics.
-                </span>
                 <h1 className="text-[32px] leading-[1.05] font-[800] tracking-[-0.02em] md:text-[40px]">
-                  Money waiting on a name
+                  Your favorite streamer doesn&rsquo;t even know you.
                 </h1>
-                <p className="text-[15px] leading-[1.5] text-[var(--mcc-muted)]">
-                  Put money on a streamer who isn&rsquo;t here. The first verified broadcast takes the pool.
+                <p className="text-[17px] font-[600] leading-[1.4] text-[var(--mcc-muted)]">
+                  Be more than a username.
                 </p>
               </div>
 
@@ -379,11 +377,6 @@ export function BountyProgram() {
                 </div>
               ) : null}
             </div>
-
-            <p className="hint max-w-[620px]">
-              Preview build — escrow is tracked as a ledger and settlement isn&rsquo;t connected, so no
-              real funds move yet.
-            </p>
 
             <div className="flex flex-col">
               <div className="lb-head">
