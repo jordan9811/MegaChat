@@ -115,11 +115,25 @@ export function _resetCache() {
  * reserved against them; what they can't do is take a matching MegaChat room
  * handle. That mismatch is logged in OPEN-ISSUES.md rather than papered over.
  */
+/**
+ * Platforms whose identifier is CASE-SENSITIVE. A pump.fun target is a Solana
+ * mint — base58, where `G` and `g` are different characters — so lowercasing
+ * it does not normalise the address, it destroys it, and the lowered form
+ * cannot be converted back to verify against the chain. Twitch, Kick and X
+ * handles are genuinely case-insensitive and keep the old behaviour.
+ */
+const CASE_SENSITIVE_PLATFORMS = new Set(['pumpfun']);
+
 export function handleKey(platform, handle) {
   const p = String(platform || '').trim().toLowerCase();
-  const h = String(handle || '').trim().replace(/^@/, '').toLowerCase();
+  const raw = String(handle || '').trim().replace(/^@/, '');
+  const h = CASE_SENSITIVE_PLATFORMS.has(p) ? raw : raw.toLowerCase();
   if (!p || !h) return null;
-  if (!/^[a-z0-9_.-]{1,40}$/.test(h)) return null;
+  // 48, not 40: a pump.fun target is a Solana mint address, which is base58
+  // and 43-44 characters. At 40 every mint failed handleKey, so a pump.fun
+  // pool could be reserved by other paths but never pledged against — the
+  // one platform whose identifier is an address was silently unbountyable.
+  if (!/^[a-zA-Z0-9_.-]{1,48}$/.test(h)) return null;
   return `${p}:${h}`;
 }
 
@@ -145,7 +159,11 @@ export function reserveHandle({ platform, handle, reservedBy = null, ttlMs }) {
   const rec = {
     key,
     platform: String(platform).toLowerCase(),
-    handle: String(handle).replace(/^@/, '').toLowerCase(),
+    // Same rule as handleKey: a case-sensitive platform keeps its casing, or
+    // the stored handle stops being the thing it identifies.
+    handle: CASE_SENSITIVE_PLATFORMS.has(String(platform).trim().toLowerCase())
+      ? String(handle).trim().replace(/^@/, '')
+      : String(handle).replace(/^@/, '').toLowerCase(),
     claimStatus: 'ACCUMULATING',
     claimedBy: null,
     reservedBy,

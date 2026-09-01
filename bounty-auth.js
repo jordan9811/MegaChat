@@ -110,6 +110,8 @@ export const ROUTE_POLICY = {
   'POST /api/bounty/admin/playback/end': { tier: TIER.ADMIN },
   'POST /api/bounty/admin/sweep-pledges': { tier: TIER.ADMIN },
   'POST /api/bounty/admin/seed': { tier: TIER.ADMIN },
+  'POST /api/bounty/admin/seed-pledge': { tier: TIER.ADMIN },
+  'POST /api/bounty/admin/seed-clear': { tier: TIER.ADMIN },
   'GET /api/bounty/admin/sessions': { tier: TIER.ADMIN },
   'POST /api/bounty/admin/override': { tier: TIER.ADMIN },
   'GET /api/bounty/admin/reviews': { tier: TIER.ADMIN },

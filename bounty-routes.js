@@ -750,6 +750,63 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     } catch (e) { fail(res, e); }
   });
 
+  /**
+   * DEMO SEED — pledges that look and behave exactly like real ones, so the
+   * board can be shown to people before settlement exists.
+   *
+   * They go through the SAME escrow path as a fan pledge, deliberately: the
+   * point is that nothing special happens on this board, and when real money
+   * arrives it behaves identically. The one difference is the contributor
+   * key, which is prefixed `seed:` — that prefix is the entire reason this is
+   * reversible. Without it, "take the fake ones out" means reading the ledger
+   * row by row.
+   *
+   * Run B replays settlement off ledger rows. A seeded row that survived into
+   * that replay would be a real payout of money nobody ever put in, so
+   * /admin/seed-clear exists next to this and must be run before settlement
+   * goes live.
+   */
+  guarded.post('/api/bounty/admin/seed-pledge', (req, res) => {
+    try {
+      const { targets, amount, expiresInMs, label } = req.body || {};
+      if (!Array.isArray(targets) || !targets.length) {
+        return res.status(400).json({ error: 'targets[] required' });
+      }
+      const out = escrow.pledge({
+        targets,
+        contributor: `seed:${String(label || 'demo').slice(0, 32)}`,
+        amount,
+        expiresInMs,
+        actor: 'admin',
+        displayName: label ? String(label).slice(0, 64) : 'Seeded',
+      });
+      log.warn(`[bounty] SEEDED pledge ${out.pledge.id} — ${amount} across ${targets.length} target(s). Not real money.`);
+      res.json({ ok: true, seeded: true, pledge: out.pledge, contribution: out.contribution });
+    } catch (e) { fail(res, e); }
+  });
+
+  /** Remove every seeded pledge. Run this before real money exists. */
+  guarded.post('/api/bounty/admin/seed-clear', (req, res) => {
+    try {
+      const seeded = store.listPledges({ status: 'OPEN' })
+        .filter((p) => String(p.contributor || '').startsWith('seed:'));
+      const cleared = [];
+      for (const p of seeded) {
+        store.updatePledge(p.id, { status: 'EXPIRED' });
+        const c = store.getContribution(p.contributionId);
+        if (c && c.status === 'HELD') {
+          escrow.refund({
+            handleKey: c.handleKey, reason: 'PLEDGE_EXPIRED', actor: 'admin',
+            contributionIds: [c.id], reference: p.id, settlement,
+          });
+        }
+        cleared.push({ pledgeId: p.id, amount: p.amount });
+      }
+      log.warn(`[bounty] seed-clear removed ${cleared.length} seeded pledge(s)`);
+      res.json({ ok: true, cleared: cleared.length, pledges: cleared });
+    } catch (e) { fail(res, e); }
+  });
+
   const pledgeSweeper = setInterval(() => {
     try {
       const swept = escrow.sweepExpiredPledges({ settlement });
