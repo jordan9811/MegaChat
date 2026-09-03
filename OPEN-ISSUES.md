@@ -1893,3 +1893,60 @@ PUMP.FUN -- operator broadcasting from OBS:
 
 STILL PARTIAL, NOT PASS: 6 of 7 scored windows verified, and 2 of those 7 are
 scaffolding (canary + setup). The verifiedClips inflation is unfixed.
+
+### YOUTUBE SELF-CAPTURE PROVEN, AFTER TWO REAL BUGS (2026-09-03)
+
+First real YouTube broadcast, jordanyeakley523's channel. Two unrelated bugs
+stood between here and a verified result; both fixed and proven against the
+same preserved broadcast.
+
+BUG 1 -- yt-dlp's default YouTube extraction is silently broken on this host
+(missing JS-challenge-solver component). Every call returned an opaque "We're
+experiencing technical difficulties" matching NONE of resolveMediaUrl's
+classifiers, so a real broken broadcast and this tooling gap would have looked
+identical. Fixed with `--extractor-args youtube:player_client=android`, which
+skips that requirement entirely -- namespaced per-extractor by yt-dlp itself,
+inert for every non-YouTube URL the same shared resolver handles.
+
+BUG 2 -- bounty-timeline-calibration.js's probe formula (`estimateMs: ts + s -
+mid`) silently assumed skew moves the seek LATER as it grows. True everywhere
+except CaptureFrameSource's no-PDT estimate branch, where skew is subtracted
+inside `back` which is then subtracted from `dur` -- skew moves the seek
+EARLIER there. YouTube does not stamp PROGRAM-DATE-TIME on live HLS, so this
+was the FIRST real broadcast on any platform to exercise that branch; every
+other platform's calibration had a PDT anchor or a different, already-proven
+path. Calibration reported confident MEASURED (5/5 agreeing, spread 962ms,
+skewMs=3937) -- self-consistent, and wrong: every real sample missed its code
+by 26-38s despite a legible 28px badge on 8/10 samples (a timing miss, not an
+absent badge).
+
+  THE COUNTER PROVES NOTHING, AGAIN. Same lesson as pump.fun's stale-capture
+  finding: calibration's own CONFIDENCE (tight spread, MEASURED state) was not
+  proof of correctness. Only a passing verification -- or here, a direct
+  frame-by-frame sweep of the actual capture file -- proves anything.
+
+  A frame-sources.js-side sign flip was considered and rejected: it requires
+  skew=-30466ms for the known-good point, outside calibration's ladder search
+  range [0, 48000]ms -- the same unreachable-negative-skew trap already
+  documented for Kick's PDT branch. Fixed in calibration.js instead:
+  CaptureFrameSource.skewSign(target) reports which shape applies per-target,
+  consulted the same duck-typed way wallClockSkew() already is. Every other
+  source (no skewSign method) is byte-identical to before the fix.
+
+RESULT, same preserved broadcast, no new stream:
+    before:  FAIL 0/5   confidence 0      detectionRate 0
+    after:   PASS 5/5   confidence 0.866  detectionRate 1.000
+             timelineSkewMs 31063 -- matches the independently hand-derived
+             30466-31642ms range within 3%
+
+Swept 7 gates covering every platform's calibration/capture path: 140
+assertions, 0 failures.
+
+NOT RELATED TO EITHER BUG: a live-stream copyright interruption notice arrived
+mid-session on the synthetic testsrc2+sine test signal (no real media pushed).
+YouTube's own wording confirms this is the automated live-interruption system,
+not a channel strike -- "automatically re-enabled" once flagged content stops.
+Root cause unconfirmed (no visibility into Content ID matching internals); a
+sustained pure sine tone is a plausible false-positive source. Future harness
+runs should use `anullsrc` (silence) instead -- zero fingerprint surface, and
+audio was never needed for badge verification.
