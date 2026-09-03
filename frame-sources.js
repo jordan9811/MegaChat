@@ -79,8 +79,22 @@ function haveTool(cmd, args = ['--version']) {
  */
 export function resolveMediaUrl(pageUrl, { log = console } = {}) {
   if (haveTool('yt-dlp')) {
-    const r = spawnSync('yt-dlp', ['--no-warnings', '-g', '-f', 'best[height<=1080]/best', pageUrl],
-      { encoding: 'utf8', timeout: 60000 });
+    const r = spawnSync('yt-dlp', [
+      '--no-warnings', '-g', '-f', 'best[height<=1080]/best',
+      // YOUTUBE'S DEFAULT EXTRACTION PATH NEEDS A JS CHALLENGE SOLVER THIS
+      // HOST DOES NOT HAVE INSTALLED. Without it, yt-dlp's default player
+      // client returns an opaque "We're experiencing technical difficulties"
+      // — matching none of the classifiers below, so it fell through to a
+      // generic EXTRACTION_FAILED that looked like a broken broadcast rather
+      // than a tooling gap. The 'android' client skips that requirement
+      // entirely and was confirmed working against a real live YouTube
+      // broadcast. This flag is namespaced per-extractor by yt-dlp itself
+      // (`KEY:ARGS`), so it is inert for every non-YouTube URL this same
+      // function resolves — safe to pass unconditionally rather than
+      // branching on platform.
+      '--extractor-args', 'youtube:player_client=android',
+      pageUrl,
+    ], { encoding: 'utf8', timeout: 60000 });
     if (r.status === 0 && r.stdout.trim()) return r.stdout.trim().split('\n')[0];
     const err = String(r.stderr || '');
     // The extractor's own words go into the detail. Classifying the failure and
@@ -853,6 +867,40 @@ export class CaptureFrameSource extends FrameSource {
    */
   wallClockSkew() {
     return null;
+  }
+
+  /**
+   * WHICH DIRECTION DOES SKEW MOVE THE SEEK, FOR THIS TARGET'S CAPTURE?
+   *
+   * getFrames has two branches with OPPOSITE relationships to `skew`:
+   *   PDT branch:      offsetS = (ts + skew - firstPdtMs) / 1000        — increases with skew
+   *   estimate branch: offsetS = dur - (encodeAnchor - ts + skew)/1000  — DECREASES with skew
+   * (skew is subtracted inside `back`, which is then subtracted from `dur`.)
+   *
+   * bounty-timeline-calibration.js's probe formula, `estimateMs: ts + s - mid`,
+   * silently assumes the first shape everywhere. That is correct for the PDT
+   * branch and for every other source's own seek formula (all share the same
+   * increasing shape — Twitch, Kick VOD, YouTube VOD, Rumble VOD, pump.fun).
+   * It is WRONG for this source's estimate branch, which a real YouTube
+   * broadcast exercised for the first time: calibration reported a confident,
+   * tightly-agreeing MEASURED state (5/5 points, spread 962ms) built from a
+   * formula solving for the wrong unknown, and every real sample landed
+   * ~26-38s from the code that was actually on screen — a badge legible at
+   * 28px on 8/10 samples, all reading the WRONG code, verdict FAIL 0/5.
+   *
+   * Verified directly: sweeping real seek offsets against the actual frozen
+   * capture found every real code exactly where expected (16-18s: 6F-WG6X,
+   * 20-22s: 6F-UGGH, ...), proving the recorder, badge and decoder were never
+   * the problem — only the sign consumed by calibration's formula was wrong,
+   * and only for a target whose capture lacks firstPdtMs.
+   *
+   * Consulted the same way wallClockSkew() already is: an optional method,
+   * checked with typeof so every other source (which does not implement it)
+   * is completely unaffected.
+   */
+  skewSign(target) {
+    const cap = this.pick(target?.ts, target?.playbackId);
+    return Number.isFinite(cap?.firstPdtMs) ? 1 : -1;
   }
 
   async getFrames(platform, handle, timestamps, opts = {}) {

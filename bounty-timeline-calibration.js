@@ -199,8 +199,25 @@ export async function calibrateTimeline({
       points.push({
         ts: target.ts, probeSkewMs: s, code: hit.code, clipId: hit.clipId,
         issuedAt: hit.issuedAt,
-        // Δ estimate: ts + s - midpoint(code on screen).
-        estimateMs: Math.round(target.ts + s - mid),
+        /**
+         * Δ estimate: ts + s - midpoint(code on screen) — CORRECT ONLY WHEN
+         * seeking with a LARGER skew moves the read LATER into the media.
+         * CaptureFrameSource's no-PDT estimate branch is the opposite: skew
+         * is subtracted inside `back`, which is then subtracted from `dur`,
+         * so a larger skew seeks EARLIER. Solving the increasing-shape
+         * formula against a decreasing-shape source found a self-consistent
+         * but wrong number — a real YouTube broadcast measured "MEASURED,
+         * 5/5 agreeing, spread 962ms" while every real sample missed its
+         * code by 26-38s. See CaptureFrameSource.skewSign's comment in
+         * frame-sources.js for the full derivation and the direct-sweep
+         * proof. Every other source (no skewSign method) is byte-identical
+         * to before this change.
+         */
+        estimateMs: Math.round(
+          (typeof frameSource.skewSign === 'function' && frameSource.skewSign(target) < 0)
+            ? (s + (mid - target.ts))
+            : (target.ts + s - mid),
+        ),
       });
       lastGood = s;
       break; // this probe is measured; move to the next one
