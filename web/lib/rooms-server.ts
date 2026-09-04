@@ -1,5 +1,6 @@
 import type { PublicRoomCard } from '@/lib/api'
 import type { BountyPool } from '@/lib/bounty-api'
+import { withBountyExamples } from '@/lib/bounty-examples'
 
 // Server-side data loaders shared by the landing page (/), the app page
 // (/app) and the legacy home (/legacy). All of them are force-dynamic server
@@ -37,7 +38,7 @@ export async function loadBountyPools(): Promise<BountyPool[]> {
     // 404 is the expected shape of "BOUNTY_CLAIM is off" — not worth a warning.
     if (!res.ok) return []
     const data = (await res.json()) as { pools?: BountyPool[] }
-    return (data.pools ?? []).filter((p) => p.remaining > 0)
+    return withBountyExamples(data.pools ?? []).filter((p) => p.remaining > 0)
   } catch {
     return []
   }

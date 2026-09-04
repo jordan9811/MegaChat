@@ -1,20 +1,43 @@
-/* Booth (feat/ui-overhaul) — the app main page. Scoped under .mc-booth.
-   Original Booth board language: near-black, one accent, abstract mesh
-   placeholder feeds. Type is the site face (Jakarta) via --font-ui. */
+/* Booth app board. Keep the compact wall layout, but bring its surfaces and
+   status language into the Broadcast OS system used by the rest of the app. */
 
 .mc-booth {
-  --mcb-bg: #08080a;
-  --mcb-fg: #f2f2f4;
-  --mcb-muted: #a3a3ad;
-  --mcb-dim: #7b7b85;
-  --mcb-off: #b9b9c2;
-  --mcb-hairline: #1a1a1f;
-  --mcb-accent: #ff4d3d;
-  --mcb-live: #43e0a8;
-  --mcb-queue: #ffd23d;
-  background: var(--mcb-bg);
+  --mcb-bg: #060c14;
+  --mcb-panel: #0b1622;
+  --mcb-panel-up: #102031;
+  --mcb-fg: #f1f6fb;
+  --mcb-muted: #a8bac9;
+  --mcb-dim: #8299ac;
+  --mcb-off: #b8c7d3;
+  --mcb-hairline: rgba(135, 188, 226, 0.16);
+  --mcb-accent: #82d8f2;
+  --mcb-live: #57e7b9;
+  --mcb-queue: #f8d66b;
+  background-color: var(--mcb-bg);
+  background-image:
+    radial-gradient(circle at 12% 0%, rgba(77, 170, 226, 0.11), transparent 31rem),
+    linear-gradient(rgba(101, 171, 214, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(101, 171, 214, 0.025) 1px, transparent 1px);
+  background-size: auto, 42px 42px, 42px 42px;
   color: var(--mcb-fg);
   font-family: var(--font-ui), system-ui, sans-serif;
+}
+
+html:has(.mc-booth),
+html:has(.mc-booth) * {
+  scrollbar-color: #315979 transparent;
+}
+
+body:has(.mc-booth) {
+  background: #060c14;
+}
+
+html:has(.mc-booth) ::-webkit-scrollbar-thumb {
+  background: #315979;
+}
+
+html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
+  background: #4c7898;
 }
 
 /* Was a condensed face. Condensed narrows letterforms to buy space and
@@ -34,26 +57,26 @@
 
 /* Status text sits over live thumbnails whose top edge carries no scrim. */
 .mc-chip-plate {
-  background: rgba(8, 8, 10, 0.62);
+  background: rgba(4, 10, 17, 0.72);
   padding: 3px 8px;
 }
 
 /* abstract camera-feed placeholders (no photos in the app, by decision) */
 .mc-mesh-0 {
-  background: radial-gradient(120% 90% at 22% 18%, #24404f 0%, #141c22 62%);
+  background: radial-gradient(120% 90% at 22% 18%, #245374 0%, #0d1b29 62%);
 }
 .mc-mesh-1 {
-  background: radial-gradient(120% 90% at 76% 20%, #4a2b34 0%, #21181c 64%);
+  background: radial-gradient(120% 90% at 76% 20%, #5a4130 0%, #201912 64%);
 }
 .mc-mesh-2 {
-  background: radial-gradient(120% 90% at 34% 74%, #26402f 0%, #161f1a 62%);
+  background: radial-gradient(120% 90% at 34% 74%, #245542 0%, #0d211b 62%);
 }
 .mc-mesh-3 {
-  background: radial-gradient(120% 90% at 62% 26%, #363050 0%, #1c1a24 64%);
+  background: radial-gradient(120% 90% at 62% 26%, #31506b 0%, #101c29 64%);
 }
 .mc-mesh-4 {
-  background: radial-gradient(120% 90% at 26% 30%, #2c2a26 0%, #181818 64%);
+  background: radial-gradient(120% 90% at 26% 30%, #594c25 0%, #211d10 64%);
 }
 .mc-mesh-5 {
-  background: radial-gradient(120% 90% at 70% 68%, #29343a 0%, #171a1c 64%);
+  background: radial-gradient(120% 90% at 70% 68%, #294d60 0%, #0e1b24 64%);
 }

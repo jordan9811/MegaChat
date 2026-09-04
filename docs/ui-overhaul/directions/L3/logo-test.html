@@ -1,0 +1,106 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Archivo:wght@800&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-0:#0b0a12;--bg-1:#12111c;--bg-2:#191827;--bg-3:#211f33;
+  --text-1:#f4f3fa;--text-2:#b9b8c9;--text-3:#8d8ca3;--text-4:#5d5c73;
+  --primary:#6fadf5;--primary-300:#a6cdff;--primary-700:#3f83cf;--primary-ink:#06111f;
+  --secondary:#ffd94d;--secondary-300:#ffe98f;--secondary-700:#d4ab1a;--secondary-ink:#1c1500;
+  --success:#5ef0a5;--danger:#ff6b80;
+  --brand-violet:#6c22f0;--brand-magenta:#ff2a7c;--brand-chrome:#c4c3ca;
+  --brand-gradient:linear-gradient(180deg,#6c22f0 0%,#b01fc0 52%,#ff2a7c 100%);
+  --data-total:#6fadf5;--data-locked:#5ef0a5;--data-contested:#ffd94d;--data-gone:#ff6b80;
+  --hairline:rgba(244,243,250,.08);--rule:rgba(244,243,250,.12);--rule-strong:rgba(244,243,250,.2);
+  --glow-live:0 0 0 1px rgba(94,240,165,.35),0 0 24px rgba(94,240,165,.22);
+  --glow-primary:0 0 0 3px rgba(111,173,245,.28);
+  --glow-money:0 0 20px rgba(255,217,77,.28);
+  --glow-brand:0 0 40px rgba(255,42,124,.35),0 0 80px rgba(108,34,240,.25);
+  --r-1:4px;--r-2:8px;--r-3:12px;--r-4:20px;--r-pill:999px;
+  --font-ui:'Plus Jakarta Sans',system-ui,sans-serif;--font-display:'Archivo',var(--font-ui);--font-mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg-0);color:var(--text-1);font-family:var(--font-ui);font-size:14.5px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.nav{display:flex;align-items:center;justify-content:space-between;height:64px;padding:0 24px;border-bottom:1px solid var(--hairline)}
+.nav .l{display:flex;align-items:center;gap:20px}
+.nav img{height:44px;width:auto;display:block}
+.nav .links{display:flex;gap:22px;font-size:13.5px;font-weight:600;color:var(--text-2)}
+.nav .links span.on{color:var(--text-1)}
+.pip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:4px 9px;border-radius:var(--r-pill);background:var(--bg-2)}
+.pip i{width:6px;height:6px;border-radius:50%;display:inline-block;background:currentColor}
+.pip.live{color:var(--success);box-shadow:var(--glow-live)}
+.btn{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px;padding:9px 16px;border-radius:var(--r-2);border:1px solid transparent}
+.btn.primary{background:var(--primary);color:var(--primary-ink)}
+.btn.ghost{border-color:var(--rule-strong);color:var(--text-1)}
+.btn.money{background:var(--secondary);color:var(--secondary-ink);box-shadow:var(--glow-money);font-family:var(--font-mono)}
+.row{display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:20px 24px;border-bottom:1px solid var(--hairline)}
+.lab{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);width:100%}
+.card{background:var(--bg-1);border:1px solid var(--hairline);border-radius:var(--r-3);padding:16px;min-width:260px;flex:1}
+.card h3{margin:0 0 6px;font-size:17px;font-weight:700;letter-spacing:-.01em}
+.card p{margin:0;color:var(--text-2);font-size:13px}
+.meter{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:28px;font-weight:700;color:var(--secondary);line-height:1}
+.meter small{font-family:var(--font-ui);font-size:12px;color:var(--text-3);font-weight:600;margin-left:6px}
+.landed{display:inline-flex;align-items:center;gap:10px;padding:10px 16px;border-radius:var(--r-3);background:var(--bg-1);border:1px solid rgba(255,42,124,.45);box-shadow:var(--glow-brand)}
+.landed b{font-family:var(--font-display);font-size:22px;letter-spacing:-.02em;background:var(--brand-gradient);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1}
+.landed span{color:var(--text-2);font-size:13px}
+.track{display:flex;height:8px;border-radius:var(--r-1);overflow:hidden;background:rgba(111,173,245,.14);outline:1px solid rgba(111,173,245,.28);width:100%}
+.track .locked{background:var(--data-locked)}
+.track .contested{background:repeating-linear-gradient(135deg,#ffd94d 0 4px,rgba(255,217,77,.35) 4px 8px)}
+.track .gone{background:var(--data-gone);opacity:.7}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--text-2)}
+.legend i{display:inline-block;width:18px;height:8px;border-radius:2px;vertical-align:middle;margin-right:6px}
+.sw{display:flex;flex-direction:column;gap:6px;font-size:11.5px;color:var(--text-3);font-family:var(--font-mono)}
+.sw b{display:block;width:64px;height:40px;border-radius:var(--r-2)}
+.hero{padding:28px 24px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--hairline)}
+.hero h1{font-family:var(--font-display);font-size:44px;line-height:1;letter-spacing:-.03em;margin:0}
+.hero .ul{width:96px;height:3px;background:var(--primary);border-radius:2px}
+.hero p{margin:0;color:var(--text-2);font-size:15px;max-width:520px}
+.phone{background:var(--bg-1);border:1px solid var(--rule);border-radius:var(--r-4);padding:14px;width:300px;display:flex;flex-direction:column;gap:10px}
+.phone .vid{aspect-ratio:9/12;background:radial-gradient(120% 90% at 30% 20%,#1c2b4a 0%,#0e1020 60%);border-radius:0;position:relative;overflow:hidden}
+.phone .vid .pip{position:absolute;left:10px;top:10px}
+.phone .rec{display:flex;align-items:center;justify-content:center;gap:10px;padding:12px;border-radius:var(--r-3);background:var(--primary);color:var(--primary-ink);font-weight:800;font-size:15px}
+.phone .rec i{width:14px;height:14px;border-radius:50%;background:var(--danger);box-shadow:0 0 0 3px rgba(255,107,128,.3)}
+.before{background:#08080a;padding:14px 24px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-top:1px dashed var(--rule)}
+.before .b1{background:#ff4d3d;color:#08080a;font-weight:700;font-size:13px;padding:9px 14px}
+.before .b2{color:#ff4d3d;font-weight:700;font-size:13px}
+.before img{height:44px}
+.icon-test{display:flex;gap:14px;align-items:center}
+.icon-test img{height:44px;width:44px;object-fit:cover}
+@media (max-width:720px){.nav .links{display:none}.hero h1{font-size:34px}.card{min-width:0;flex-basis:100%}}
+</style></head><body>
+<header class="nav">
+  <div class="l"><img src="file:///C:/Users/jorda/OneDrive/Documents/video-stream/design-assets/branding/wordmark-stacked-bubble-dark.jpg" alt="MegaChat" id="logo"><span class="pip live"><i></i>3 rooms on air</span></div>
+  <div class="l"><nav class="links"><span class="on">Rooms</span><span>Bounties</span><span>How it works</span></nav><a class="btn primary">Enter app</a></div>
+</header>
+<section class="hero">
+  <h1>Skip the chat.<br>Be the stream.</h1><div class="ul"></div>
+  <p>Camera seats on live broadcasts, billed by the second. Watch free, pay only while you are on air.</p>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px"><a class="btn primary">Enter MegaChat</a><a class="btn ghost">Watch the film</a></div>
+</section>
+<section class="row"><span class="lab">The moment / money / live</span>
+  <span class="landed"><b>MEGA CHAT</b><span>from couch_goblin / 10s / $0.10</span></span>
+  <span class="meter">0.001<small>USDC / s</small></span>
+  <a class="btn money">$0.42 running</a>
+  <span class="pip live"><i></i>On air</span>
+  <span class="pip" style="color:var(--secondary)"><i></i>Queue / 2 waiting</span>
+  <span class="pip" style="color:var(--text-2)"><i></i>Open seats</span>
+  <span class="pip" style="color:var(--danger)"><i></i>Declined</span>
+</section>
+<section class="row"><span class="lab">Bounty stacked bar: total / locked / contested / paid out</span>
+  <div class="card"><h3>threadguy <span style="color:var(--text-3);font-weight:600;font-size:12px">/ Twitch / 2 backers</span></h3>
+    <div class="track"><span class="locked" style="width:46%"></span><span class="contested" style="width:38%"></span><span class="gone" style="width:8%"></span></div>
+    <p style="margin-top:8px"><b style="color:var(--data-total);font-family:var(--font-mono)">220 USDC</b> total / <b style="color:var(--data-locked);font-family:var(--font-mono)">100</b> locked / <b style="color:var(--data-contested);font-family:var(--font-mono)">+100</b> contested against 4 / <b style="color:var(--data-gone);font-family:var(--font-mono)">20</b> paid out</p>
+  </div>
+  <div class="legend"><span><i style="background:#6fadf5;opacity:.35;outline:1px solid #6fadf5"></i>Total (track)</span><span><i style="background:#5ef0a5"></i>Locked to this name</span><span><i style="background:repeating-linear-gradient(135deg,#ffd94d 0 4px,rgba(255,217,77,.35) 4px 8px)"></i>Also pledged to rivals</span><span><i style="background:#ff6b80;opacity:.7"></i>Paid out / gone</span></div>
+</section>
+<section class="row"><span class="lab">Join room: phone-native</span>
+  <div class="phone"><div class="vid"><span class="pip live"><i></i>Live</span></div><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="meter" style="font-size:22px">0.001<small>/ s</small></span><span style="font-size:12px;color:var(--text-3)">cap $2, refunds unused</span></div><div class="rec"><i></i>Record a MegaChat</div></div>
+  <div class="card"><h3>Create room</h3><p>Sentence-case labels, 4px grid, one primary per view.</p><div style="display:flex;gap:8px;margin-top:12px"><span style="flex:1;background:var(--bg-2);border:1px solid var(--rule);border-radius:var(--r-1);padding:8px 10px;color:var(--text-3)">megachat.fun/yourname</span><a class="btn primary">Create</a></div></div>
+</section>
+<section class="row"><span class="lab">Roles</span>
+  <div class="sw"><b style="background:var(--bg-0);border:1px solid var(--rule)"></b>bg-0 #0b0a12</div><div class="sw"><b style="background:var(--bg-1)"></b>bg-1 #12111c</div><div class="sw"><b style="background:var(--bg-2)"></b>bg-2 #191827</div><div class="sw"><b style="background:var(--bg-3)"></b>bg-3 #211f33</div>
+  <div class="sw"><b style="background:var(--primary)"></b>primary #6fadf5</div><div class="sw"><b style="background:var(--secondary)"></b>secondary #ffd94d</div><div class="sw"><b style="background:var(--success)"></b>success #5ef0a5</div><div class="sw"><b style="background:var(--danger)"></b>danger #ff6b80</div><div class="sw"><b style="background:var(--brand-gradient)"></b>brand</div><div class="sw"><b style="background:var(--brand-chrome)"></b>chrome #c4c3ca</div>
+</section>
+<section class="row"><span class="lab">Icon variant seam test (JPG ground #0f1219 vs page #0b0a12)</span><div class="icon-test"><img src="file:///C:/Users/jorda/OneDrive/Documents/video-stream/design-assets/branding/m-icon-bubble-dark.jpg" id="icon" alt=""><span style="color:var(--text-2);font-size:13px">If a box shows around the M, the icon asset needs re-exporting on #0b0a12 or as PNG with alpha.</span></div></section>
+<section class="before"><span class="lab" style="color:#7b7b85">Before: current skin #08080a + #ff4d3d</span><img src="file:///C:/Users/jorda/OneDrive/Documents/video-stream/design-assets/branding/wordmark-stacked-bubble-dark.jpg" alt=""><span class="b1">Take a seat</span><span class="b2">200.00 USDC</span><span style="color:#43e0a8;font-size:12px;font-weight:700">ON AIR</span><span style="color:#ffd23d;font-size:12px;font-weight:700">QUEUE</span></section>
+</body></html>

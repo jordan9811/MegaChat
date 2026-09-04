@@ -1,0 +1,76 @@
+{
+  "pages": [
+    {
+      "id": "landing",
+      "perfMobile": 62,
+      "perfDesktop": 96,
+      "a11y": 100,
+      "bestPractices": 77,
+      "axeCritical": 0,
+      "axeSerious": 0
+    },
+    {
+      "id": "app",
+      "perfMobile": 60,
+      "perfDesktop": 92,
+      "a11y": 100,
+      "bestPractices": 77,
+      "axeCritical": 0,
+      "axeSerious": 0
+    },
+    {
+      "id": "create-room",
+      "perfMobile": 64,
+      "perfDesktop": 92,
+      "a11y": 98,
+      "bestPractices": 73,
+      "axeCritical": 0,
+      "axeSerious": 0
+    },
+    {
+      "id": "bounty",
+      "perfMobile": 63,
+      "perfDesktop": 84,
+      "a11y": 100,
+      "bestPractices": 77,
+      "axeCritical": 0,
+      "axeSerious": 0
+    },
+    {
+      "id": "account",
+      "perfMobile": 62,
+      "perfDesktop": 92,
+      "a11y": 100,
+      "bestPractices": 77,
+      "axeCritical": 0,
+      "axeSerious": 0
+    },
+    {
+      "id": "how-it-works",
+      "perfMobile": 58,
+      "perfDesktop": 99,
+      "a11y": 100,
+      "bestPractices": 77,
+      "axeCritical": 0,
+      "axeSerious": 1
+    },
+    {
+      "id": "join",
+      "perfMobile": 47,
+      "perfDesktop": 96,
+      "a11y": 98,
+      "bestPractices": 77,
+      "axeCritical": 0,
+      "axeSerious": 0
+    },
+    {
+      "id": "roadmap",
+      "perfMobile": 63,
+      "perfDesktop": 90,
+      "a11y": 94,
+      "bestPractices": 77,
+      "axeCritical": 0,
+      "axeSerious": 1
+    }
+  ]
+}

@@ -1,0 +1,867 @@
+{
+  "page": "create-room",
+  "requestedUrl": "https://megachat.fun/dashboard?new=1",
+  "finalUrl": "https://megachat.fun/dashboard?new=1",
+  "viewport": {
+    "name": "390",
+    "width": 390,
+    "height": 844,
+    "isMobile": true,
+    "hasTouch": true,
+    "deviceScaleFactor": 3
+  },
+  "navErr": null,
+  "timestamp": "2026-09-02T17:16:33.559Z",
+  "axeVersion": "4.13.0",
+  "byImpact": {
+    "critical": 0,
+    "serious": 0,
+    "moderate": 3,
+    "minor": 0
+  },
+  "violations": [
+    {
+      "id": "landmark-one-main",
+      "impact": "moderate",
+      "tags": [
+        "cat.semantics",
+        "best-practice"
+      ],
+      "description": "Ensure the document has a main landmark",
+      "help": "Document should have one main landmark",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/landmark-one-main?application=playwright",
+      "nodes": [
+        {
+          "any": [],
+          "all": [
+            {
+              "id": "page-has-main",
+              "data": null,
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Document does not have a main landmark"
+            }
+          ],
+          "none": [],
+          "impact": "moderate",
+          "html": "<html lang=\"en\" class=\"inter_fe8b9d92-module__LINzvG__variable space_grotesk_44a0d8b8-module__tGMMGq__variable geist_mono_8d43a2aa-module__8Li5zG__variable pacifico_80d331d0-module__7hp5gG__variable dark\" data-ui=\"advanced\" style=\"color-scheme: dark;\">",
+          "target": [
+            "html"
+          ],
+          "failureSummary": "Fix all of the following:\n  Document does not have a main landmark"
+        }
+      ]
+    },
+    {
+      "id": "page-has-heading-one",
+      "impact": "moderate",
+      "tags": [
+        "cat.semantics",
+        "best-practice"
+      ],
+      "description": "Ensure that the page, or at least one of its frames contains a level-one heading",
+      "help": "Page should contain a level-one heading",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/page-has-heading-one?application=playwright",
+      "nodes": [
+        {
+          "any": [],
+          "all": [
+            {
+              "id": "page-has-heading-one",
+              "data": null,
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Page must have a level-one heading"
+            }
+          ],
+          "none": [],
+          "impact": "moderate",
+          "html": "<html lang=\"en\" class=\"inter_fe8b9d92-module__LINzvG__variable space_grotesk_44a0d8b8-module__tGMMGq__variable geist_mono_8d43a2aa-module__8Li5zG__variable pacifico_80d331d0-module__7hp5gG__variable dark\" data-ui=\"advanced\" style=\"color-scheme: dark;\">",
+          "target": [
+            "html"
+          ],
+          "failureSummary": "Fix all of the following:\n  Page must have a level-one heading"
+        }
+      ]
+    },
+    {
+      "id": "region",
+      "impact": "moderate",
+      "tags": [
+        "cat.keyboard",
+        "best-practice",
+        "RGAAv4",
+        "RGAA-9.2.1"
+      ],
+      "description": "Ensure all page content is contained by landmarks",
+      "help": "All page content should be contained by landmarks",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/region?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"whitespace-nowrap text-[12.5px] text-[var(--mcc-dim)]\">megachat.fun/<button type=\"button\" class=\"inline-edit handle font-semibold\" aria-label=\"Your link — click to change\"><span class=\"text-[var(--mcc-faint)]\">yourname</span></button></span>",
+          "target": [
+            ".whitespace-nowrap.text-\\[var\\(--mcc-dim\\)\\].text-\\[12\\.5px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"ml-auto flex items-center gap-2\"><span class=\"lbl\">Charging</span><span class=\"seg\" role=\"group\" aria-label=\"Free or paid\"><button type=\"button\" aria-pressed=\"true\">Paid</button><button type=\"button\" aria-pressed=\"false\">Free</button></span></span>",
+          "target": [
+            ".ml-auto"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<div class=\"flex items-center gap-2.5\"><span class=\"stepnum\" style=\"background: var(--mcc-accent);\">1</span><span class=\"text-[15px] font-bold\">What runs in your room</span></div>",
+          "target": [
+            ".gap-2\\.5.items-center:nth-child(2)"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"lbl\">MegaChat rate</span>",
+          "target": [
+            ".gap-3.flex-col > .gap-6.items-end.flex-wrap > .gap-1\\.5.flex-col.flex:nth-child(1) > .lbl"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<input inputmode=\"decimal\" aria-label=\"MegaChat rate\" type=\"text\" value=\"0.001\">",
+          "target": [
+            ".gap-3.flex-col > .gap-6.items-end.flex-wrap > .gap-1\\.5.flex-col.flex:nth-child(1) > .gap-2.items-center.flex > .ratefield.items-baseline.justify-center > input[inputmode=\"decimal\"][aria-label=\"MegaChat rate\"][type=\"text\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"text-[12px] text-[var(--mcc-dim)]\">/s</span>",
+          "target": [
+            ".gap-3.flex-col > .gap-6.items-end.flex-wrap > .gap-1\\.5.flex-col.flex:nth-child(1) > .gap-2.items-center.flex > .ratefield.items-baseline.justify-center > .text-\\[12px\\].text-\\[var\\(--mcc-dim\\)\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"hint\">10s = $0.01</span>",
+          "target": [
+            ".gap-1\\.5.flex-col.flex:nth-child(1) > .hint"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"flex flex-col gap-1.5\">",
+          "target": [
+            ".gap-3.flex-col > .gap-6.items-end.flex-wrap > .gap-1\\.5.flex-col.flex:nth-child(2)"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"flex flex-col gap-1.5\">",
+          "target": [
+            ".gap-6.items-end.flex-wrap > .gap-1\\.5.flex-col.flex:nth-child(3)"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<div class=\"mt-3 flex items-center gap-2.5 border-t border-[var(--mcc-rule)] pt-4\"><span class=\"stepnum\" style=\"background: var(--mcc-dim);\">2</span><span class=\"text-[15px] font-bold text-[#d7dde2]\">Advanced settings</span></div>",
+          "target": [
+            ".mt-3.pt-4.border-t:nth-child(6)"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<div role=\"tablist\" aria-label=\"Settings groups\" class=\"flex flex-wrap gap-1.5\">",
+          "target": [
+            "div[role=\"tablist\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"lbl\" style=\"color: var(--mcc-accent);\">Key · rate</span>",
+          "target": [
+            ".keyrow > .gap-1\\.5.flex-col.flex:nth-child(1) > .lbl"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<input inputmode=\"decimal\" aria-label=\"MegaChat rate\" type=\"text\" value=\"0.001\">",
+          "target": [
+            ".keyrow > .gap-1\\.5.flex-col.flex:nth-child(1) > .gap-2.items-center.flex > .ratefield.items-baseline.justify-center > input[inputmode=\"decimal\"][aria-label=\"MegaChat rate\"][type=\"text\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"text-[12px] text-[var(--mcc-dim)]\">/s</span>",
+          "target": [
+            ".keyrow > .gap-1\\.5.flex-col.flex:nth-child(1) > .gap-2.items-center.flex > .ratefield.items-baseline.justify-center > .text-\\[12px\\].text-\\[var\\(--mcc-dim\\)\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"flex flex-col gap-1.5\">",
+          "target": [
+            ".keyrow > .gap-1\\.5.flex-col.flex:nth-child(2)"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<div class=\"grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3\">",
+          "target": [
+            ".sm\\:grid-cols-2"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<div class=\"flex flex-col gap-1.5\"><span class=\"lbl\">Room password</span><input placeholder=\"At least 4 characters\" aria-label=\"Room password\" class=\"max-w-[280px]\" type=\"password\" value=\"\"><span class=\"hint\">The only way back into your room — save it somewhere safe.</span></div>",
+          "target": [
+            ".lg\\:border-b-0 > .gap-1\\.5.flex-col"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"hint\">Nothing charges anyone until you go live.</span>",
+          "target": [
+            ".gap-4.flex-wrap.items-center > .hint"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"text-[15px] font-bold text-[#d7dde2]\">Preview</span>",
+          "target": [
+            ".lg\\:sticky > .text-\\[\\#d7dde2\\].text-\\[15px\\].font-bold"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"bc absolute left-3 top-2.5 flex items-center gap-1.5 bg-[rgba(8,8,10,0.62)] px-2 py-0.5 text-[11px] font-bold tracking-[0.08em] text-[var(--mcc-live)]\"><span aria-hidden=\"true\" class=\"inline-block size-1.5 rounded-full bg-[var(--mcc-live)]\"></span>ON AIR</span>",
+          "target": [
+            ".left-3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"bc absolute right-2.5 top-2 bg-[rgba(8,8,10,0.55)] px-2 py-1 text-[12.5px] font-semibold\">$0.001/s</span>",
+          "target": [
+            ".right-2\\.5"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"absolute inset-x-3 bottom-2.5 flex items-end justify-between gap-2.5\">",
+          "target": [
+            ".inset-x-3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<div class=\"flex flex-col gap-2.5 border border-[var(--mcc-rule)] bg-[var(--mcc-panel)] px-4 py-3.5\">",
+          "target": [
+            ".px-4"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<span class=\"hint\">Sample art — every number is your live configuration.</span>",
+          "target": [
+            ".lg\\:sticky > .hint"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        }
+      ]
+    }
+  ],
+  "incomplete": [
+    {
+      "id": "bypass",
+      "impact": "serious",
+      "tags": [
+        "cat.keyboard",
+        "wcag2a",
+        "wcag241",
+        "section508",
+        "section508.22.o",
+        "TTv5",
+        "TT9.a",
+        "EN-301-549",
+        "EN-9.2.4.1",
+        "RGAAv4",
+        "RGAA-12.7.1"
+      ],
+      "description": "Ensure each page has at least one mechanism for a user to bypass navigation and jump straight to the content",
+      "help": "Page must have means to bypass repeated blocks",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/bypass?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "internal-link-present",
+              "data": null,
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "No valid skip link found"
+            },
+            {
+              "id": "header-present",
+              "data": null,
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Page does not have a heading"
+            },
+            {
+              "id": "landmark",
+              "data": null,
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Page does not have a landmark region"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<html lang=\"en\" class=\"inter_fe8b9d92-module__LINzvG__variable space_grotesk_44a0d8b8-module__tGMMGq__variable geist_mono_8d43a2aa-module__8Li5zG__variable pacifico_80d331d0-module__7hp5gG__variable dark\" data-ui=\"advanced\" style=\"color-scheme: dark;\">",
+          "target": [
+            "html"
+          ],
+          "failureSummary": "Fix any of the following:\n  No valid skip link found\n  Page does not have a heading\n  Page does not have a landmark region"
+        }
+      ]
+    },
+    {
+      "id": "color-contrast",
+      "impact": "serious",
+      "tags": [
+        "cat.color",
+        "wcag2aa",
+        "wcag143",
+        "TTv5",
+        "TT13.c",
+        "EN-301-549",
+        "EN-9.1.4.3",
+        "ACT",
+        "RGAAv4",
+        "RGAA-3.2.1"
+      ],
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element content contains only non-text characters"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<button type=\"button\" class=\"stepbtn\" aria-label=\"Lower MegaChat rate\">−</button>",
+          "target": [
+            ".gap-3.flex-col > .gap-6.items-end.flex-wrap > .gap-1\\.5.flex-col.flex:nth-child(1) > .gap-2.items-center.flex > .stepbtn[aria-label=\"Lower MegaChat rate\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element content contains only non-text characters"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "messageKey": "nonBmp"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element content contains only non-text characters"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<button type=\"button\" class=\"stepbtn\" aria-label=\"Lower MegaChat rate\">−</button>",
+          "target": [
+            ".keyrow > .gap-1\\.5.flex-col.flex:nth-child(1) > .gap-2.items-center.flex > .stepbtn[aria-label=\"Lower MegaChat rate\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element content contains only non-text characters"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"bc absolute left-3 top-2.5 flex items-center gap-1.5 bg-[rgba(8,8,10,0.62)] px-2 py-0.5 text-[11px] font-bold tracking-[0.08em] text-[var(--mcc-live)]\"><span aria-hidden=\"true\" class=\"inline-block size-1.5 rounded-full bg-[var(--mcc-live)]\"></span>ON AIR</span>",
+                  "target": [
+                    ".left-3"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background: linear-gradient(to top, rgba(8, 8, 10, 0.92) 0%, rgba(8, 8, 10, 0.28) 34%, rgba(8, 8, 10, 0) 62%);\"></span>",
+                  "target": [
+                    ".inset-0"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"bc absolute left-3 top-2.5 flex items-center gap-1.5 bg-[rgba(8,8,10,0.62)] px-2 py-0.5 text-[11px] font-bold tracking-[0.08em] text-[var(--mcc-live)]\"><span aria-hidden=\"true\" class=\"inline-block size-1.5 rounded-full bg-[var(--mcc-live)]\"></span>ON AIR</span>",
+          "target": [
+            ".left-3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.4pt (12.5px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"bc absolute right-2.5 top-2 bg-[rgba(8,8,10,0.55)] px-2 py-1 text-[12.5px] font-semibold\">$0.001/s</span>",
+                  "target": [
+                    ".right-2\\.5"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background: linear-gradient(to top, rgba(8, 8, 10, 0.92) 0%, rgba(8, 8, 10, 0.28) 34%, rgba(8, 8, 10, 0) 62%);\"></span>",
+                  "target": [
+                    ".inset-0"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"bc absolute right-2.5 top-2 bg-[rgba(8,8,10,0.55)] px-2 py-1 text-[12.5px] font-semibold\">$0.001/s</span>",
+          "target": [
+            ".right-2\\.5"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "16.5pt (22px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "3:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background: linear-gradient(to top, rgba(8, 8, 10, 0.92) 0%, rgba(8, 8, 10, 0.28) 34%, rgba(8, 8, 10, 0) 62%);\"></span>",
+                  "target": [
+                    ".inset-0"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"block truncate text-[22px] font-bold leading-[1.05] tracking-[-0.01em]\">Your room</span>",
+          "target": [
+            ".truncate"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.0pt (12px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background: linear-gradient(to top, rgba(8, 8, 10, 0.92) 0%, rgba(8, 8, 10, 0.28) 34%, rgba(8, 8, 10, 0) 62%);\"></span>",
+                  "target": [
+                    ".inset-0"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mt-0.5 block text-[12px] font-medium text-[var(--mcc-muted)]\">MegaChats open</span>",
+          "target": [
+            ".mt-0\\.5"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        }
+      ]
+    }
+  ]
+}

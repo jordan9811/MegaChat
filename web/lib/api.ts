@@ -189,16 +189,33 @@ export type PublicRoomCard = {
    *  serves a gray placeholder for offline channels, so gate on this. */
   twitchLive: boolean
   createdAt: string
+  letters?: Pick<LettersConfig, 'enabled' | 'price' | 'maxSeconds'>
+  joinStream?: Pick<JoinStreamConfig, 'enabled'>
+  isDemo?: boolean
 }
 
 /** Active, listed rooms sorted hottest first (live count, then waiting). */
-export function listPublicRooms() {
-  return request<{ rooms: PublicRoomCard[] }>('/api/rooms/public')
+const browseConfigCache = new Map<string, { at: number; config: Partial<PublicRoomCard> }>()
+export async function listPublicRooms() {
+  const data = await request<{ rooms: PublicRoomCard[] }>('/api/rooms/public')
+  const rooms = await Promise.all(data.rooms.map(async (room) => {
+    const cached = browseConfigCache.get(room.id)
+    if (cached && Date.now() - cached.at < 30_000) return { ...room, ...cached.config }
+    try {
+      const config = await request<Partial<PublicRoomCard>>(`/api/config?room=${encodeURIComponent(room.id)}`)
+      const capabilities = { letters: config.letters, joinStream: config.joinStream, isDemo: config.isDemo }
+      browseConfigCache.set(room.id, { at: Date.now(), config: capabilities })
+      return { ...room, ...capabilities }
+    } catch { return room }
+  }))
+  return { rooms }
 }
 
 /** Public room + chain config (also exposes the real Arc USDC address). */
 export function getPublicConfig(room = 'default') {
   return request<{
+    roomId?: string
+    roomName?: string
     usdcAddress: string
     paymentTokenSymbol: string
     livekitConfigured?: boolean

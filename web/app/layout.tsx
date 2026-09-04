@@ -1,21 +1,13 @@
 // NOTE: @vercel/analytics was removed — the app deploys on Railway, so the
 // injected /_vercel/insights/script.js could only ever 404 on every page.
 import type { Metadata, Viewport } from 'next'
-import { Inter, Space_Grotesk, Geist_Mono, Pacifico } from 'next/font/google'
+import { Plus_Jakarta_Sans, Pacifico } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
 import { TempoWalletProvider } from '@/components/providers/tempo-wallet'
 import './globals.css'
+import './product.css'
 
-const inter = Inter({ variable: '--font-inter', subsets: ['latin'] })
-const spaceGrotesk = Space_Grotesk({
-  variable: '--font-space-grotesk',
-  subsets: ['latin'],
-  weight: ['500', '600', '700'],
-})
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-})
+const ui = Plus_Jakarta_Sans({ variable: '--font-ui', subsets: ['latin'], weight: ['400', '500', '600', '700', '800'] })
 // Brush-script graffiti face for the hero tagline — Pacifico is thick and
 // smooth like the brand reference (Kaushan read too thin/gritty).
 const graffiti = Pacifico({
@@ -26,7 +18,7 @@ const graffiti = Pacifico({
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ||
-  'https://megachat-production.up.railway.app'
+  'https://megachat.fun'
 const SITE_TITLE = 'MegaChat — Skip the chat. Be the stream.'
 const SITE_DESC =
   'Viewers pay per-second in USDC to put their camera on your live broadcast. One-tap passkey to go live, unused balance refunds automatically. Turn chat into content.'
@@ -91,7 +83,8 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${inter.variable} ${spaceGrotesk.variable} ${geistMono.variable} ${graffiti.variable}`}
+      className={`${ui.variable} ${graffiti.variable}`}
+      data-scroll-behavior="smooth"
     >
       <body className="bg-background font-sans antialiased">
         {/* Simple/Advanced presentation mode — applied before paint. */}

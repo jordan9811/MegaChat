@@ -1,0 +1,76 @@
+[
+  {
+    "tag": "A",
+    "text": "MEGACHAT",
+    "href": "/app",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Sign in",
+    "href": null,
+    "type": "button",
+    "disabled": false,
+    "vis": true
+  },
+  {
+    "tag": "A",
+    "text": "Put money on it",
+    "href": "/bounty/s/twitch/threadguy",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "A",
+    "text": "Put money on it",
+    "href": "/bounty/s/kick/chessbrah",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "A",
+    "text": "Put money on it",
+    "href": "/bounty/s/x/martinshkreli",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "A",
+    "text": "Put money on it",
+    "href": "/bounty/s/x/rasmr",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "A",
+    "text": "Put money on it",
+    "href": "/bounty/s/pumpfun/GnBQjwQibzB9zFPHEGEhoiASon7JfaRADxQe6C64pump",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "SELECT",
+    "text": "Twitch\nKick\nX\nRumble\nYouTube\npump.fun",
+    "href": null,
+    "type": null,
+    "disabled": false,
+    "vis": true
+  },
+  {
+    "tag": "INPUT",
+    "text": "their handle",
+    "href": null,
+    "type": null,
+    "disabled": false,
+    "vis": true
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Start a pool",
+    "href": null,
+    "type": "submit",
+    "disabled": true,
+    "vis": true
+  }
+]

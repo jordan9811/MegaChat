@@ -1,0 +1,315 @@
+{
+  "page": "landing",
+  "requestedUrl": "https://megachat.fun/?stay=1",
+  "finalUrl": "https://megachat.fun/?stay=1",
+  "viewport": {
+    "name": "390",
+    "width": 390,
+    "height": 844,
+    "isMobile": true,
+    "hasTouch": true,
+    "deviceScaleFactor": 3
+  },
+  "navErr": null,
+  "timestamp": "2026-09-02T17:16:14.118Z",
+  "axeVersion": "4.13.0",
+  "byImpact": {
+    "critical": 0,
+    "serious": 0,
+    "moderate": 1,
+    "minor": 0
+  },
+  "violations": [
+    {
+      "id": "region",
+      "impact": "moderate",
+      "tags": [
+        "cat.keyboard",
+        "best-practice",
+        "RGAAv4",
+        "RGAA-9.2.1"
+      ],
+      "description": "Ensure all page content is contained by landmarks",
+      "help": "All page content should be contained by landmarks",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/region?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<video src=\"/launch-film.mp4\" poster=\"/launch-film-poster.jpg\" autoplay=\"\" muted=\"\" playsinline=\"\" preload=\"auto\" aria-label=\"The MegaChat launch film: a viewer is pulled off his couch and into the stream\" class=\"absolute inset-0 size-full object-cover\"></video>",
+          "target": [
+            "video"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<h1 class=\"mcl-display flex flex-col font-[800] leading-[0.98] tracking-[-0.01em] text-[44px] md:text-[72px]\">",
+          "target": [
+            "h1"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<p class=\"mcl-r4 text-[16px] leading-relaxed text-[var(--mcl-muted)] md:text-[17px]\">Camera seats on live broadcasts, billed by the second.</p>",
+          "target": [
+            ".text-\\[16px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        },
+        {
+          "any": [
+            {
+              "id": "region",
+              "data": {
+                "isIframe": false
+              },
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Some page content is not contained by landmarks"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<a class=\"bg-[var(--mcl-mint)] px-8 py-4 text-[15px] font-[800] text-[var(--mcl-mint-ink)] transition-opacity hover:opacity-90\" href=\"/app\">Enter MegaChat</a>",
+          "target": [
+            ".pt-1 > .text-\\[var\\(--mcl-mint-ink\\)\\].hover\\:opacity-90.bg-\\[var\\(--mcl-mint\\)\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        }
+      ]
+    }
+  ],
+  "incomplete": [
+    {
+      "id": "color-contrast",
+      "impact": "serious",
+      "tags": [
+        "cat.color",
+        "wcag2aa",
+        "wcag143",
+        "TTv5",
+        "TT13.c",
+        "EN-301-549",
+        "EN-9.1.4.3",
+        "ACT",
+        "RGAAv4",
+        "RGAA-3.2.1"
+      ],
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "33.0pt (44px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "3:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div aria-hidden=\"true\" class=\"pointer-events-none absolute inset-0\" style=\"background:linear-gradient(to bottom, rgba(4,7,10,0.66) 0%, rgba(4,7,10,0.06) 32%, rgba(4,7,10,0.1) 55%, rgba(4,7,10,0.94) 100%)\"></div>",
+                  "target": [
+                    ".pointer-events-none.inset-0.absolute:nth-child(4)"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mcl-r2\">SKIP THE CHAT.</span>",
+          "target": [
+            ".mcl-r2"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "33.0pt (44px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "3:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div aria-hidden=\"true\" class=\"pointer-events-none absolute inset-0\" style=\"background:linear-gradient(to bottom, rgba(4,7,10,0.66) 0%, rgba(4,7,10,0.06) 32%, rgba(4,7,10,0.1) 55%, rgba(4,7,10,0.94) 100%)\"></div>",
+                  "target": [
+                    ".pointer-events-none.inset-0.absolute:nth-child(4)"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mcl-r3 flex flex-col gap-3\">BE THE STREAM.<span class=\"mcl-sweep block h-1.5 w-[180px] bg-[var(--mcl-mint)] md:w-[240px]\" aria-hidden=\"true\"></span></span>",
+          "target": [
+            ".mcl-r3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "12.0pt (16px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div aria-hidden=\"true\" class=\"pointer-events-none absolute inset-0\" style=\"background:linear-gradient(to bottom, rgba(4,7,10,0.66) 0%, rgba(4,7,10,0.06) 32%, rgba(4,7,10,0.1) 55%, rgba(4,7,10,0.94) 100%)\"></div>",
+                  "target": [
+                    ".pointer-events-none.inset-0.absolute:nth-child(4)"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p class=\"mcl-r4 text-[16px] leading-relaxed text-[var(--mcl-muted)] md:text-[17px]\">Camera seats on live broadcasts, billed by the second.</p>",
+          "target": [
+            ".text-\\[16px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscured",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<button type=\"button\" title=\"Pause the film\" aria-label=\"Pause the film\" class=\"grid size-11 place-items-center rounded-full border border-white/30 bg-[#04070a]/50 text-[var(--mcl-fg)] transition-colors hover:border-white/60\">",
+                  "target": [
+                    "button[title=\"Pause the film\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it's partially obscured by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<button type=\"button\" class=\"flex items-center gap-2.5 text-[14px] font-[500] text-[var(--mcl-muted)] transition-colors hover:text-white\">",
+          "target": [
+            ".gap-2\\.5"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element"
+        }
+      ]
+    },
+    {
+      "id": "video-caption",
+      "impact": "critical",
+      "tags": [
+        "cat.text-alternatives",
+        "wcag2a",
+        "wcag122",
+        "section508",
+        "section508.22.a",
+        "TTv5",
+        "TT17.a",
+        "EN-301-549",
+        "EN-9.1.2.2",
+        "RGAAv4",
+        "RGAA-4.3.1"
+      ],
+      "description": "Ensure <video> elements have captions",
+      "help": "<video> elements must have captions",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/video-caption?application=playwright",
+      "nodes": [
+        {
+          "any": [],
+          "all": [],
+          "none": [
+            {
+              "id": "caption",
+              "data": null,
+              "relatedNodes": [],
+              "impact": "critical",
+              "message": "Check that captions are available for the element"
+            }
+          ],
+          "impact": "critical",
+          "html": "<video src=\"/launch-film.mp4\" poster=\"/launch-film-poster.jpg\" autoplay=\"\" muted=\"\" playsinline=\"\" preload=\"auto\" aria-label=\"The MegaChat launch film: a viewer is pulled off his couch and into the stream\" class=\"absolute inset-0 size-full object-cover\"></video>",
+          "target": [
+            "video"
+          ],
+          "failureSummary": "Fix all of the following:\n  Check that captions are available for the element"
+        }
+      ]
+    }
+  ]
+}

@@ -1,8 +1,8 @@
-import { SiteHeader } from '@/components/site-header'
-import { SiteFooter, contactUrl } from '@/components/site-footer'
+import { ProductShell } from '@/components/product-shell'
 import { StreamerBountyPage } from '@/components/bounty/streamer-page'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Streamer bounty - MegaChat' }
 
 export default async function StreamerBounty({
   params,
@@ -10,14 +10,9 @@ export default async function StreamerBounty({
   params: Promise<{ platform: string; handle: string }>
 }) {
   const { platform, handle } = await params
-  const contactHref = contactUrl()
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <SiteHeader />
-      <main className="mx-auto max-w-4xl px-6 py-12 md:py-16">
+    <ProductShell title="Bounty">
         <StreamerBountyPage platform={decodeURIComponent(platform)} handle={decodeURIComponent(handle)} />
-      </main>
-      <SiteFooter contactHref={contactHref} />
-    </div>
+    </ProductShell>
   )
 }

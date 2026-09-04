@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { shortAddr, useAccount } from '@/lib/use-account'
+import { formatDollars } from '@/lib/display-format'
 
 export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
   const [open, setOpen] = useState(false)
@@ -23,6 +24,7 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
     signedIn,
     chipLabel,
     openSignIn,
+    authError,
     connectBalance,
     connectingBalance,
     signOut,
@@ -49,6 +51,7 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
 
   if (!signedIn) {
     return (
+      <div className="relative">
       <button
         type="button"
         onClick={openSignIn}
@@ -59,6 +62,8 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
       >
         {wallet.modalOpen ? 'Opening…' : 'Sign in'}
       </button>
+      {authError && <p role="alert" className="absolute right-0 top-full z-50 mt-2 w-72 border border-[#536878] bg-[#11243a] p-3 text-left text-[13px] leading-normal text-[#f1f6fb]">{authError}</p>}
+      </div>
     )
   }
 
@@ -101,7 +106,7 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
               <span className="flex items-baseline justify-between text-[12.5px]">
                 <span className="text-[#9aa4ad]">Balance</span>
                 <span className="font-[700] tabular-nums text-white">
-                  {balance == null ? '…' : `${balance} USDC`}
+                  {balance == null ? '…' : formatDollars(balance)}
                 </span>
               </span>
               <span
@@ -123,6 +128,7 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
               {connectingBalance ? 'Connecting…' : 'Connect balance'}
             </button>
           )}
+          {authError && <p role="alert" className="px-2.5 py-2 text-[13px] text-[#ffbbb3]">{authError}</p>}
 
           <a href="/account" role="menuitem" className="block px-2.5 py-2 text-[13px] text-white hover:bg-white/10">
             Account

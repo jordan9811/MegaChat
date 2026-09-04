@@ -75,7 +75,7 @@ export function MegaChatSettings() {
   const tokenSymbol = room?.paymentTokenSymbol || token
   // Simple mode: USDC is dollar-pegged, so amounts read as $ 1:1 and the
   // per-second price IS the price per credit. Presentation only.
-  const amountAffix = simple ? '$' : tokenSymbol
+  const amountAffix = draft.tokenPreset === 'custom' ? tokenSymbol : '$'
 
   async function handleCreate() {
     setError(null)
@@ -342,10 +342,10 @@ export function MegaChatSettings() {
                 managing && !draft.handle
                   ? 'This room has a temporary link — type a name here (or use the Claim button in the links panel below) to make it permanent.'
                   : identityHandle && draft.handle === identityHandle
-                    ? `Prefilled from your sign-in. It's also your permanent link: megachat.xyz/${identityHandle} (and /${identityHandle}/overlay for OBS). Change it any time — letters, numbers, underscore.`
+                    ? `Prefilled from your sign-in. Your link is megachat.fun/${identityHandle}. Change it any time: letters, numbers, underscore.`
                     : identityHandle
-                      ? `Your reserved name is @${identityHandle}. This is your display name and your permanent link, e.g. megachat.xyz/${draft.handle || 'your_name'}. Letters, numbers, underscore.`
-                      : 'Your display name, and your permanent link: megachat.xyz/your_name (viewers) and /your_name/overlay (OBS). Leave it empty for a temporary link you can set later. Letters, numbers, underscore.'
+                      ? `Your reserved name is @${identityHandle}. Your room link is megachat.fun/${draft.handle || 'your_name'}. Letters, numbers, underscore.`
+                      : 'Your room link: megachat.fun/your_name. Use letters, numbers, or underscore. Leave empty for a temporary link.'
               }
               className="sm:col-span-2"
             >
@@ -557,7 +557,7 @@ export function MegaChatSettings() {
           <details className="group border-t border-border/70 px-5 py-4 sm:px-6">
             <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
               <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
-              <span className="adv-only">Advanced — fine-tuning (good defaults preset)</span>
+              <span className="adv-only">Advanced settings</span>
               <span className="simple-only">More settings</span>
             </summary>
 

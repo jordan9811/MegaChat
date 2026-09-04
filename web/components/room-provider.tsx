@@ -41,6 +41,7 @@ import {
   type RoomConfigPatch,
 } from '@/lib/api'
 import { backendWsUrl } from '@/lib/backend'
+import { guestName } from '@/lib/display-format'
 
 // Tempo mainnet USDC.e — fallback only; the real value is re-read from
 // /api/config on mount.
@@ -138,6 +139,8 @@ const DEFAULT_DRAFT: ConfigDraft = {
 }
 
 type RoomContextValue = {
+  saveState: 'saved' | 'saving' | 'error'
+  saveError: string | null
   mode: 'create' | 'managing'
   room: Room | null
   seats: Seat[]
@@ -287,6 +290,9 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
 }
 
 export function RoomProvider({ children }: { children: ReactNode }) {
+  const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const saveVersion = useRef(0)
   const [mode, setMode] = useState<'create' | 'managing'>('create')
   const [room, setRoom] = useState<Room | null>(null)
   const [seats, setSeats] = useState<Seat[]>([])
@@ -307,6 +313,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const draftTouchedRef = useRef(false)
   // Auto-open your room once per page load (see loadMine).
   const autoOpenedRef = useRef(false)
+  const guestHandleRef = useRef('')
 
   const passwordRef = useRef('')
   const roomIdRef = useRef<string | null>(null)
@@ -325,8 +332,8 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   // room already uses walked you into a 409 you did not ask for, so take
   // the next free variant instead — the same shape the server suggests.
   const seedHandle = useCallback(() => {
-    const h = toHandle(identityHandleRef.current)
-    if (!h) return ''
+    if (!guestHandleRef.current) guestHandleRef.current = guestName().toLowerCase()
+    const h = toHandle(identityHandleRef.current) || guestHandleRef.current
     const taken = new Set(myRoomsRef.current.map((r) => r.handle).filter(Boolean))
     if (!taken.has(h)) return h
     for (let i = 2; i < 10; i++) {
@@ -362,6 +369,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   }, [seedHandle])
 
   useEffect(() => {
+    setDraft((d) => d.handle ? d : { ...d, handle: seedHandle() })
     getPublicConfig()
       .then((cfg) => {
         if (cfg.usdcAddress) setUsdcAddress(cfg.usdcAddress)
@@ -380,13 +388,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     // signed-in streamer.
     const applyName = (name?: string | null) => {
       if (!name) return
+      identityHandleRef.current = name
       setIdentityHandle(name)
       // Never seed a handle into a room being managed, never overwrite one
       // the streamer has already typed, and never seed one that would 409.
       if (roomIdRef.current || draftTouchedRef.current) return
       const h = seedHandle()
       if (!h) return
-      setDraft((d) => (d.handle ? d : { ...d, handle: h }))
+      setDraft((d) => ({ ...d, handle: h }))
     }
     fetch('/api/auth/me')
       .then((r) => r.json())
@@ -407,9 +416,11 @@ export function RoomProvider({ children }: { children: ReactNode }) {
         .then((d) => {
           setMyRooms(d.rooms)
           myRoomsRef.current = d.rooms
-          if (!autoOpenedRef.current && d.rooms.length > 0 && !roomIdRef.current) {
+          const params = new URLSearchParams(window.location.search)
+          if (params.get('new') !== '1' && !autoOpenedRef.current && d.rooms.length > 0 && !roomIdRef.current) {
             autoOpenedRef.current = true
-            void openOwnedRoom(d.rooms[0].id).catch(() => {})
+            const selected = d.rooms.find((r) => r.id === params.get('room')) || d.rooms[0]
+            void openOwnedRoom(selected.id).catch(() => {})
             return
           }
           // ?new=1 calls switchRoom before this list arrives, so the handle
@@ -507,6 +518,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     setOverlayUrl(null)
     // Start the create form from defaults, not from the room just closed.
     draftTouchedRef.current = false
+    if (!identityHandleRef.current) guestHandleRef.current = ''
     setDraft(freshDraft())
   }, [freshDraft])
 
@@ -529,11 +541,16 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       passwordRef.current = password
       roomIdRef.current = r.id
       skipNextAutosaveRef.current = true
+      setSaveState('saved')
+      setSaveError(null)
       setRoom(r)
       setDraft(roomToDraft(r, usdcAddress))
       setJoinUrl(join)
       setOverlayUrl(overlay)
+      try { localStorage.setItem('mc-last-room', JSON.stringify({ id: r.id, name: r.name, handle: r.handle })) } catch { /* password is never persisted */ }
+      window.history.replaceState(null, '', `/dashboard?room=${encodeURIComponent(r.id)}`)
       setMode('managing')
+      requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
       void refresh()
     },
     [usdcAddress, refresh],
@@ -610,8 +627,15 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     // Mid-edit guard: a backspaced-to-empty (or garbled) price is INVALID,
     // not "free" — never autosave it over a live room's real price. '0' is
     // legit (the Free room switch writes it explicitly).
+    const version = ++saveVersion.current
     const p = draft.passkeyTickPrice.trim()
-    if (p === '' || !isFinite(parseFloat(p)) || parseFloat(p) < 0) return
+    if (p === '' || !isFinite(Number(p)) || Number(p) < 0) {
+      setSaveState('error')
+      setSaveError('Enter a valid rate. Your last saved settings are unchanged.')
+      return
+    }
+    setSaveState('saving')
+    setSaveError(null)
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
       const roomId = roomIdRef.current
@@ -622,9 +646,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
           handle: draft.handle.trim() || null,
           config: draftToConfig(draft, usdcAddress),
         })
-        setRoom(data.room)
+        if (roomIdRef.current === roomId && saveVersion.current === version) {
+          setRoom(data.room)
+          setSaveState('saved')
+        }
       } catch (err) {
+        if (roomIdRef.current !== roomId || saveVersion.current !== version) return
         if (err instanceof ApiError && err.status === 401) switchRoom()
+        else { setSaveState('error'); setSaveError(err instanceof Error ? err.message : 'Changes could not save. Edit the field to retry.') }
       }
     }, 900)
     return () => {
@@ -766,6 +795,8 @@ export function RoomProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<RoomContextValue>(
     () => ({
+      saveState,
+      saveError,
       mode,
       room,
       seats,
@@ -793,7 +824,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       lettersAdmin,
       hostToken,
     }),
-    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
+    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

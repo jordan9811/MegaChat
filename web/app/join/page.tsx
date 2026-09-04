@@ -20,21 +20,28 @@ export const metadata: Metadata = {
 export default function JoinPage() {
   return (
     <div className={`${ui.variable} mc-join dark min-h-screen`}>
-      {/* the only chrome: one thin bar, same as the room board */}
-      <header className="border-b border-[#1a1a1f]">
-        <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-center justify-between gap-3 px-5 py-3">
-          <span className="flex flex-wrap items-baseline gap-3.5">
+      <header className="mcj-product-header">
+        <div>
+          <span className="mcj-product-brand">
             <a
               href="/app"
               aria-label="MegaChat home"
-              className="bc text-[18px] font-bold tracking-[0.1em] text-[var(--mcj-fg)]"
+              className="bc"
             >
               MEGACHAT
             </a>
-            <span className="text-[13px] font-semibold text-[var(--mcj-dim)]">Join on camera</span>
+            <i aria-hidden="true" />
+            <span>Join room</span>
           </span>
-          {/* Identity + balance + sign out, the same control the board uses. */}
-          <AccountChip accent="var(--mcj-accent)" />
+          <nav aria-label="Product navigation">
+            <a href="/app">Rooms</a>
+            <a href="/bounty">Bounties</a>
+            <a href="/how-it-works">How it works</a>
+          </nav>
+          <span className="mcj-product-actions">
+            <a href="/dashboard?new=1">Create room</a>
+            <AccountChip accent="var(--mcj-accent)" />
+          </span>
         </div>
       </header>
       <JoinClient />

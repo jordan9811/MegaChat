@@ -14,6 +14,8 @@ import {
   type BountyPool, type BountyClientConfig,
 } from '@/lib/bounty-api'
 import { ObsOneClick } from '@/components/obs/obs-oneclick'
+import { formatDollars } from '@/lib/display-format'
+import { useAccount } from '@/lib/use-account'
 
 type Stage = 'idle' | 'claiming' | 'setup' | 'live' | 'error'
 
@@ -21,11 +23,14 @@ export function ClaimFlow({
   pool,
   config,
   onClose,
+  canClaim = true,
 }: {
   pool: BountyPool
   config: BountyClientConfig
   onClose: () => void
+  canClaim?: boolean
 }) {
+  const { identity, wallet, signedIn, openSignIn, authError } = useAccount()
   const [stage, setStage] = useState<Stage>('idle')
   const [claimant, setClaimant] = useState('')
   const [claimId, setClaimId] = useState<string | null>(null)
@@ -34,6 +39,7 @@ export function ClaimFlow({
   const [status, setStatus] = useState<Awaited<ReturnType<typeof getClaim>> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  useEffect(() => { setClaimant((current) => current || wallet.address || identity?.handle || '') }, [wallet.address, identity?.handle])
 
   const refresh = useCallback(async (id: string) => {
     try { setStatus(await getClaim(id)) } catch { /* transient */ }
@@ -47,13 +53,20 @@ export function ClaimFlow({
   }, [claimId, stage, refresh])
 
   async function doClaim() {
+    if (!canClaim) { setError('No bounty has been created for this name yet. Display examples cannot be claimed.'); return }
+    if (!pool.platform || !pool.handle) { setError('The streamer could not be identified. Return to Bounties and reopen this page.'); return }
+    if (!signedIn) { openSignIn(); return }
     if (!claimant.trim()) { setError('Enter the wallet or account that should receive the bounty'); return }
     setStage('claiming'); setError(null)
     try {
-      const r = await startClaim(pool.platform || '', pool.handle || '', claimant.trim())
-      setClaimId(r.claim.id)
-      if (!r.identity.approved) { setError('Identity check did not approve this claim.'); setStage('error'); return }
-      const s = await startAirSession(r.claim.id, pool.platform || '')
+      let id = claimId
+      if (!id) {
+        const r = await startClaim(pool.platform, pool.handle, claimant.trim())
+        if (!r.identity.approved) { setError('Identity check did not approve this claim.'); setStage('error'); return }
+        id = r.claim.id
+        setClaimId(id)
+      }
+      const s = await startAirSession(id, pool.platform)
       setAirSessionId(s.airSession.id)
       setOverlayUrl(`${window.location.origin}/overlay?bounty=${encodeURIComponent(s.airSession.id)}`)
       setStage('setup')
@@ -84,7 +97,7 @@ export function ClaimFlow({
           <p className="mt-0.5 text-sm text-muted-foreground">
             {pool.contributionCount} MegaChat{pool.contributionCount === 1 ? '' : 's'} waiting ·{' '}
             <span className="font-semibold text-foreground">
-              {pool.remaining.toLocaleString()} {config.currency}
+              {formatDollars(pool.remaining)}
             </span>{' '}
             in the pool
           </p>
@@ -92,6 +105,7 @@ export function ClaimFlow({
         <button
           type="button"
           onClick={onClose}
+          disabled={stage === 'claiming'}
           className="shrink-0 text-sm text-muted-foreground underline-offset-2 hover:underline"
         >
           Close
@@ -115,14 +129,15 @@ export function ClaimFlow({
             It auto-approves and is recorded as <code>STUBBED_APPROVAL</code>. Connecting a real
             platform account comes next — nothing here moves real funds.
           </p>
-          {error ? <p className="mt-2 text-sm text-[var(--neon-magenta)]">{error}</p> : null}
+          {!canClaim && <p className="mt-3 text-sm text-muted-foreground">This is an unfunded example. Create a real bounty before claiming; the setup preview is available here.</p>}
+          {error || authError ? <p role="alert" className="mt-2 text-sm text-[#ffbbb3]">{error || authError}</p> : null}
           <button
             type="button"
-            disabled={stage === 'claiming'}
+            disabled={stage === 'claiming' || !canClaim}
             onClick={doClaim}
             className="mt-3 rounded-full bg-[var(--neon-lime)] px-5 py-2.5 text-sm font-bold text-black transition-transform hover:scale-[1.02] disabled:opacity-60"
           >
-            {stage === 'claiming' ? 'Checking…' : 'Claim this handle'}
+            {stage === 'claiming' ? 'Checking…' : !canClaim ? 'No funded bounty to claim' : !signedIn ? 'Sign in to claim' : 'Claim this handle'}
           </button>
         </div>
       ) : null}
@@ -269,10 +284,10 @@ export function ClaimFlow({
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Released</p>
               <p className="mt-0.5 font-heading text-lg font-bold text-[var(--neon-lime)] tabular">
-                {released.toLocaleString()}
+                {formatDollars(released)}
               </p>
               {match > 0 ? (
-                <p className="text-[10px] text-muted-foreground tabular">+{match.toLocaleString()} match</p>
+                <p className="text-[10px] text-muted-foreground tabular">+{formatDollars(match)} match</p>
               ) : null}
             </div>
             <div>
@@ -280,7 +295,7 @@ export function ClaimFlow({
                 <Clock className="size-3" /> Remaining
               </p>
               <p className="mt-0.5 font-heading text-lg font-bold text-foreground tabular">
-                {(status?.pool.remaining ?? pool.remaining).toLocaleString()}
+                {formatDollars(status?.pool.remaining ?? pool.remaining)}
               </p>
             </div>
           </div>

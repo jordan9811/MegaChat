@@ -12,48 +12,49 @@
 // It is a control room you return to, and those tabs are how you reach
 // Account and Defaults.
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRoom } from '@/components/room-provider'
-import { SiteHeader } from '@/components/site-header'
-import { SiteFooter } from '@/components/site-footer'
+import { ProductShell } from '@/components/product-shell'
 import { DashboardSections } from '@/components/dashboard-sections'
 import { DashboardRooms } from '@/components/dashboard-rooms'
 import { CreateRoom } from '@/components/create-room/create-room'
 
 export function DashboardShell({ contactHref }: { contactHref: string }) {
-  const { mode, switchRoom } = useRoom()
+  const { mode, room, switchRoom, saveState, saveError } = useRoom()
   const params = useSearchParams()
+  const handledNew = useRef(false)
 
   // "Open a room" has to reach the create page even for someone who already
   // owns one — without this it resumes their existing room and looks like
   // the link is broken.
   const wantsNew = params.get('new') === '1'
   useEffect(() => {
-    if (wantsNew && mode === 'managing') switchRoom()
+    if (wantsNew && !handledNew.current) {
+      handledNew.current = true
+      if (mode === 'managing') switchRoom()
+    }
   }, [wantsNew, mode, switchRoom])
 
   if (mode !== 'managing') return <CreateRoom />
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <SiteHeader />
-
-      <main id="dashboard" className="mx-auto max-w-6xl scroll-mt-20 px-6 py-14 md:py-20">
+    <ProductShell title="Manage room">
+      <section id="dashboard" className="scroll-mt-20">
         <div className="reveal mb-8 flex flex-col gap-1">
           <span className="text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]">
             Streamer dashboard
           </span>
-          <h2 className="font-heading text-3xl font-bold text-foreground">Your room</h2>
+          <h1 className="font-heading text-3xl font-bold text-foreground">{room?.name || 'Your room'}</h1>
+          <p role="status" className="text-sm text-muted-foreground">{saveState === 'saving' ? 'Saving changes...' : saveState === 'error' ? 'Changes not saved' : 'All changes saved'}</p>
+          {saveError && <p role="alert" className="text-sm text-[#ffbbb3]">{saveError}</p>}
           <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
             Share your links, watch viewers roll onto camera, and tune anything you set up.
           </p>
         </div>
 
         <DashboardSections rooms={<DashboardRooms />} />
-      </main>
-
-      <SiteFooter contactHref={contactHref} />
-    </div>
+      </section>
+    </ProductShell>
   )
 }

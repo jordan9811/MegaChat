@@ -8,12 +8,13 @@
 // start disagreeing about whether you are signed in. So the state lives here
 // and the components are only presentation.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type Identity = { provider: string; username: string; handle: string } | null
 
 export type WalletState = {
   configured: boolean
+  ready: boolean
   authenticated: boolean
   address: string | null
   displayName: string | null
@@ -22,6 +23,7 @@ export type WalletState = {
 
 const EMPTY_WALLET: WalletState = {
   configured: false,
+  ready: false,
   authenticated: false,
   address: null,
   displayName: null,
@@ -32,6 +34,7 @@ function readWallet(): WalletState {
   const MW = typeof window !== 'undefined' ? window.MegaWallet : undefined
   return {
     configured: !!MW?.configured,
+    ready: !!MW?.ready,
     authenticated: !!MW?.authenticated,
     address: MW?.address ?? null,
     displayName: MW?.displayName ?? null,
@@ -47,6 +50,9 @@ export function useAccount(menuOpen = false) {
   const [wallet, setWallet] = useState<WalletState>(EMPTY_WALLET)
   const [balance, setBalance] = useState<string | null>(null)
   const [connectingBalance, setConnectingBalance] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
+  const signInTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (signInTimer.current) clearTimeout(signInTimer.current) }, [])
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -101,8 +107,16 @@ export function useAccount(menuOpen = false) {
   // chip on success, and dismissing the modal flips modalOpen back to false —
   // nothing hangs waiting on a promise that never settles.
   const openSignIn = useCallback(() => {
-    if (!window.MegaWallet?.configured) return
+    setAuthError(null)
+    if (!window.MegaWallet?.configured) { setAuthError('Sign-in is unavailable on this server.'); return }
+    if (!window.MegaWallet.ready) { setAuthError('Sign-in is still loading. Wait a moment, then retry.'); return }
     window.MegaWallet.openLogin()
+    if (signInTimer.current) clearTimeout(signInTimer.current)
+    signInTimer.current = setTimeout(() => {
+      if (!window.MegaWallet?.modalOpen && !window.MegaWallet?.authenticated) {
+        setAuthError('Sign-in could not open on this address. Refresh and retry. Your work is still here.')
+      }
+    }, 2500)
   }, [])
 
   // Signed in (has an identity) but the embedded wallet is missing.
@@ -110,10 +124,11 @@ export function useAccount(menuOpen = false) {
   const connectBalance = useCallback(async () => {
     if (!window.MegaWallet?.configured || connectingBalance) return
     setConnectingBalance(true)
+    setAuthError(null)
     try {
       await window.MegaWallet.connect()
-    } catch {
-      /* cancelled/failed — state unchanged */
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : 'Balance could not connect. Retry when ready.')
     } finally {
       setConnectingBalance(false)
     }
@@ -147,6 +162,7 @@ export function useAccount(menuOpen = false) {
     signedIn,
     chipLabel,
     openSignIn,
+    authError,
     connectBalance,
     connectingBalance,
     signOut,

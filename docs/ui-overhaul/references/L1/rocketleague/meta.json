@@ -1,0 +1,149 @@
+{
+  "site": "rocketleague",
+  "url": "https://www.rocketleague.com/en",
+  "captured": "2026-09-02T17:27:14.941Z",
+  "shots": {
+    "landing-390": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\rocketleague\\landing-390.png",
+    "landing-768": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\rocketleague\\landing-768.png",
+    "landing-1440": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\rocketleague\\landing-1440.png",
+    "landing-1440-full": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\rocketleague\\landing-1440-full.png",
+    "app-1440": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\rocketleague\\app-1440.png",
+    "app2-1440": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\rocketleague\\app2-1440.png"
+  },
+  "hero": {
+    "title": "Rocket League ®",
+    "url": "https://www.rocketleague.com/?lang=en",
+    "top": [
+      {
+        "tag": "span",
+        "fs": 32,
+        "y": 781,
+        "t": "News",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 20,
+        "y": 441,
+        "t": "New Era. New Engine. This is Rocket League.",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 20,
+        "y": 489,
+        "t": "Hit the Pitch for the World Cup in Rocket League Season 23!",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 20,
+        "y": 493,
+        "t": "Watch Trailer",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 20,
+        "y": 572,
+        "t": "LEARN MORE",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 20,
+        "y": 572,
+        "t": "Watch Trailer",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 20,
+        "y": 1097,
+        "t": "Rocket League World Championship Community Bundle & LTE",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 20,
+        "y": 1097,
+        "t": "Rocket League Patch Notes v2.72",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 20,
+        "y": 1097,
+        "t": "Rocket League Patch Notes v2.70: Season 23 Live",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 20,
+        "y": 1097,
+        "t": "Hit the Pitch for the World Cup in Rocket League Season 23!",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 20,
+        "y": 1097,
+        "t": "Karmine Corp clinch the win for a home crowd at the Rocket League Paris Major",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 20,
+        "y": 1097,
+        "t": "A New Era of Team Vitality Enters the 2026 Rocket League Paris Major",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 12,
+        "y": 1081,
+        "t": "Aug 28, 2026",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 12,
+        "y": 1081,
+        "t": "Aug 04, 2026",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 12,
+        "y": 1081,
+        "t": "Jun 09, 2026",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 12,
+        "y": 1081,
+        "t": "Jun 05, 2026",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 12,
+        "y": 1081,
+        "t": "May 24, 2026",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 12,
+        "y": 1081,
+        "t": "May 21, 2026",
+        "href": ""
+      }
+    ]
+  },
+  "appUrl": "https://www.epicgames.com/id/login?lang=en&response_type=code&client_id=xyza7891S3TB8BWASuQTL0hHlcByBe6q&redirect_uri=https%3A%2F%2Fwww.rocketleague.com%2Fsignin%2Fcallback%3Flang%3Den&state=dYgy4s9uj51NcgSHprNUfuhZEu1NX1P8B6BvkBl-nxs&code_challenge_method=S256&code_challenge=QKwC2946Y87wXVqFcgL1gBvxnBeKf1ehpRC1CX9tPkg&scope=basic_profile%20openid",
+  "appTitle": "Sign in to Your Epic Games account | Epic Games",
+  "app2Url": "https://www.rocketleague.com/play",
+  "app2Title": "Rocket League ® - Official Site"
+}

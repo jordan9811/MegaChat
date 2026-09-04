@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { listPublicRooms, type PublicRoomCard } from '@/lib/api'
 import { listBountyPools, type BountyPool } from '@/lib/bounty-api'
 import { AccountChip } from '@/components/account-chip'
+import { formatDollars } from '@/lib/display-format'
+import { roomPresentation } from '@/lib/room-browse'
 import './booth.css'
 
 const ROOM_POLL_MS = 5000
@@ -13,9 +15,9 @@ const POOL_POLL_MS = 30000
 const WAYS_IN = [
   {
     title: 'MegaChats',
-    color: '#9b6bff',
+    color: '#82d8f2',
     body: 'Record a clip, pay for the seconds it runs, and it plays on the broadcast by itself.',
-    cta: 'Find a room',
+    cta: 'How MegaChats work',
     href: '/how-it-works',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -25,9 +27,9 @@ const WAYS_IN = [
   },
   {
     title: 'Open mic',
-    color: '#43e0a8',
+    color: '#57e7b9',
     body: 'Buy a live camera seat beside the streamer. Billed by the second, only while you are on air.',
-    cta: 'See who is open',
+    cta: 'How live seats work',
     href: '/how-it-works',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -39,9 +41,9 @@ const WAYS_IN = [
   },
   {
     title: 'Bounties',
-    color: '#ff4d3d',
-    body: 'Want someone who is not here? Stack USDC on their name until they show up and claim it.',
-    cta: 'Put money on a name',
+    color: '#f8d66b',
+    body: 'Create a bounty for someone who is not here. They claim it by going live.',
+    cta: 'Browse bounties',
     href: '/bounty',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -53,12 +55,12 @@ const WAYS_IN = [
 ]
 
 const FIGURE_TINTS = [
-  'rgba(96,164,190,0.5)',
-  'rgba(206,120,140,0.44)',
-  'rgba(112,186,138,0.42)',
-  'rgba(150,138,216,0.42)',
-  'rgba(190,170,120,0.28)',
-  'rgba(110,150,170,0.34)',
+  'rgba(91,190,238,0.46)',
+  'rgba(244,184,99,0.38)',
+  'rgba(87,231,185,0.36)',
+  'rgba(112,189,235,0.38)',
+  'rgba(248,214,107,0.3)',
+  'rgba(102,189,224,0.34)',
 ]
 
 function meshIndex(id: string): number {
@@ -88,21 +90,15 @@ function twitchChannel(room: PublicRoomCard): string | null {
 
 function RateChip({ room }: { room: PublicRoomCard }) {
   return (
-    <span className="mc-bc absolute right-2.5 top-2 bg-[rgba(8,8,10,0.55)] px-2 py-1 text-[13px] font-[600] text-[var(--mcb-fg)]">
-      <span className="adv-only">
-        {room.passkeyTickPrice} {room.paymentTokenSymbol}
-      </span>
-      <span className="simple-only">${room.passkeyTickPrice}</span>
-      <span> / {room.passkeyTickSeconds}s</span>
+    <span className="mc-bc absolute right-2.5 top-2 bg-[rgba(4,10,17,0.66)] px-2 py-1 text-[13px] font-[600] text-[var(--mcb-fg)]">
+      {roomPresentation(room).rate}
     </span>
   )
 }
 
 function StateChip({ room }: { room: PublicRoomCard }) {
-  const full = room.live >= room.maxSeats
-  const onAir = room.live > 0 || room.twitchLive
+  const { full, onAir, state: label } = roomPresentation(room)
   const color = full ? 'var(--mcb-queue)' : onAir ? 'var(--mcb-live)' : 'var(--mcb-off)'
-  const label = full ? 'FULL' : onAir ? 'ON AIR' : 'OPEN'
   return (
     <span
       className="mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em]"
@@ -117,13 +113,14 @@ function StateChip({ room }: { room: PublicRoomCard }) {
 function RoomTile({ room, hero = false }: { room: PublicRoomCard; hero?: boolean }) {
   const mesh = meshIndex(room.id)
   const channel = twitchChannel(room)
-  const full = room.live >= room.maxSeats
+  const presentation = roomPresentation(room)
+  const full = presentation.full
   // ~2-minute cache-bust bucket, same as the directory's Twitch preview
   const bust = Math.floor(Date.now() / 120000)
   return (
     <a
       href={roomHref(room)}
-      className={`group relative block overflow-hidden mc-mesh-${mesh} min-h-[200px] md:min-h-0`}
+      className={`mc-room-tile group relative block overflow-hidden mc-mesh-${mesh} min-h-[220px]`}
     >
       {channel ? (
         <img
@@ -148,7 +145,7 @@ function RoomTile({ room, hero = false }: { room: PublicRoomCard; hero?: boolean
         className="absolute inset-0"
         style={{
           background:
-            'linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)',
+            'linear-gradient(to top, rgba(4,10,17,0.94) 0%, rgba(4,10,17,0.3) 38%, rgba(4,10,17,0) 66%)',
         }}
       />
       <StateChip room={room} />
@@ -161,17 +158,15 @@ function RoomTile({ room, hero = false }: { room: PublicRoomCard; hero?: boolean
             {room.name}
           </span>
           <span className="mt-0.5 block text-[12px] font-[500] text-[var(--mcb-muted)]">
-            {room.live} of {room.maxSeats} on camera
-            {room.waiting > 0 ? ` · ${room.waiting} waiting` : ''}
-            {room.twitchChannel ? ' · Twitch' : ''}
-            {room.rewardsEnabled ? ' · Drops' : ''}
+            {presentation.capabilities}
+            {room.live > 0 ? ` · ${room.live} on camera` : ''}
           </span>
         </span>
         <span
-          className="whitespace-nowrap px-3 py-2 text-[12.5px] font-[700] text-[#08080a] transition-transform group-hover:-translate-y-0.5"
-          style={{ background: full ? 'var(--mcb-queue)' : '#f2f2f4' }}
+          className="whitespace-nowrap px-3 py-2 text-[12.5px] font-[700] text-[#061019] transition-transform group-hover:-translate-y-0.5"
+          style={{ background: full ? 'var(--mcb-queue)' : 'var(--mcb-accent)' }}
         >
-          {full ? 'Join queue' : 'Take a seat'}
+          {presentation.action}
         </span>
       </span>
     </a>
@@ -180,18 +175,18 @@ function RoomTile({ room, hero = false }: { room: PublicRoomCard; hero?: boolean
 
 function PoolTile({ pool }: { pool: BountyPool }) {
   return (
-    <Link href={poolHref(pool)} className="group relative block min-h-[150px] overflow-hidden mc-mesh-4 md:min-h-0">
+    <Link href={poolHref(pool)} className="group relative block min-h-[180px] overflow-hidden mc-mesh-4">
       <span
         aria-hidden="true"
         className="absolute inset-0"
         style={{
           background:
-            'linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)',
+            'linear-gradient(to top, rgba(4,10,17,0.94) 0%, rgba(4,10,17,0.3) 40%, rgba(4,10,17,0) 68%)',
         }}
       />
       <span className="mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]">
         <span className="inline-block size-1.5 rounded-full bg-[var(--mcb-off)]" aria-hidden="true" />
-        OFF AIR <span className="font-[500] tracking-[0]">· bounty open</span>
+        Bounty <span className="font-[500] tracking-[0]">· {pool.displayOnly ? 'example' : pool.status === 'CLAIMED' ? 'claimed' : 'view pool'}</span>
       </span>
       <span className="absolute inset-x-3 bottom-2.5 flex items-end justify-between gap-2.5">
         <span className="min-w-0">
@@ -200,14 +195,14 @@ function PoolTile({ pool }: { pool: BountyPool }) {
           </span>
           <span className="mt-0.5 flex items-baseline gap-2 text-[12px] font-[500] text-[var(--mcb-muted)]">
             <span className="text-[14px] font-[600] text-[var(--mcb-queue)]">
-              {pool.remaining.toFixed(2)} USDC
+              {formatDollars(pool.remaining)}
             </span>
             {pool.contributionCount} backer{pool.contributionCount === 1 ? '' : 's'}
             {pool.platform ? ` · ${platformLabel(pool.platform)}` : ''}
           </span>
         </span>
-        <span className="whitespace-nowrap bg-[var(--mcb-accent)] px-3.5 py-2 text-[12.5px] font-[700] text-[#08080a] transition-transform group-hover:-translate-y-0.5">
-          Claim
+        <span className="whitespace-nowrap bg-[var(--mcb-queue)] px-3.5 py-2 text-[12.5px] font-[700] text-[#061019] transition-transform group-hover:-translate-y-0.5">
+          View bounty
         </span>
       </span>
     </Link>
@@ -244,6 +239,7 @@ export function Booth({
   const [rooms, setRooms] = useState<PublicRoomCard[]>(initialRooms)
   const [pools, setPools] = useState<BountyPool[]>(initialPools)
   const [filter, setFilter] = useState<'all' | 'onair'>('all')
+  const [showAll, setShowAll] = useState(false)
 
   // Entering the app marks the visitor as returning — the landing page
   // forwards them straight back here next time (?stay=1 opts out).
@@ -265,6 +261,7 @@ export function Booth({
         /* keep last good data */
       }
     }
+    void tick()
     const t = setInterval(tick, ROOM_POLL_MS)
     return () => {
       alive = false
@@ -308,19 +305,15 @@ export function Booth({
   const sidePools = topPools.slice(0, Math.max(0, 3 - 1 - sideRooms.length))
 
   return (
-    <div
-      className={`mc-booth dark flex flex-col ${
-        wall ? 'h-dvh min-h-[640px] overflow-hidden' : 'min-h-dvh'
-      }`}
-    >
+    <div className="mc-booth dark flex min-h-dvh flex-col">
       {/* chrome: one bar */}
       <header className="flex h-12 shrink-0 items-center justify-between px-4">
         <div className="flex items-center gap-5">
           <Link href="/?stay=1" className="mc-bc text-[19px] font-[700] tracking-[0.1em]">
             MEGACHAT
           </Link>
-          <span className="flex items-center gap-1.5 text-[13px] font-[600] text-[var(--mcb-accent)]">
-            <span className="inline-block size-1.5 rounded-full bg-[var(--mcb-accent)]" aria-hidden="true" />
+          <span className="flex items-center gap-1.5 text-[13px] font-[600] text-[var(--mcb-live)]">
+            <span className="inline-block size-1.5 rounded-full bg-[var(--mcb-live)]" aria-hidden="true" />
             {onAirCount} room{onAirCount === 1 ? '' : 's'} on air
           </span>
         </div>
@@ -344,15 +337,19 @@ export function Booth({
           <Link href="/bounty" className="hidden hover:text-white sm:inline">
             Bounties
           </Link>
+          <a href="/demo" className="hover:text-white">Try demo</a>
           <Link href="/how-it-works" className="hidden hover:text-white md:inline">
             How it works
+          </Link>
+          <Link href="/dashboard?new=1" className="border border-[var(--mcb-accent)] px-3 py-2 font-[700] text-[var(--mcb-accent)] hover:bg-[rgba(130,216,242,0.1)]">
+            Create room
           </Link>
           <AccountChip />
         </nav>
       </header>
 
       {/* the wall */}
-      <main className={`px-3 ${wall ? 'min-h-0 grow pb-0' : 'pb-6'}`}>
+      <main className="grow px-3 pb-6">
         <h1 className="sr-only">
           MegaChat rooms — {onAirCount} on air, {rooms.length} on the board
         </h1>
@@ -362,12 +359,10 @@ export function Booth({
               <span className="text-[13px] font-[600] text-[var(--mcb-dim)]">
                 {filter === 'onair' ? 'Nothing on air right now' : 'No rooms on the board yet'}
               </span>
-              <span className="max-w-[440px] text-[28px] font-[700] leading-[1.15] tracking-[-0.01em]">
-                The first tile on this wall is yours.
-              </span>
+              <a href="/demo" className="text-[20px] font-semibold text-[var(--mcb-accent)]">Try the demo room</a>
               <Link
                 href="/dashboard?new=1"
-                className="mt-1 bg-[var(--mcb-accent)] px-5 py-2.5 text-[13.5px] font-[700] text-[#08080a]"
+                className="mt-1 bg-[var(--mcb-accent)] px-5 py-2.5 text-[13.5px] font-[700] text-[#061019]"
               >
                 Open a room
               </Link>
@@ -380,22 +375,11 @@ export function Booth({
             </div>
           </div>
         ) : wall ? (
-          <div className="grid h-full grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-3 xl:grid-rows-2">
-            {visible.slice(0, 5).map((room) => (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {(showAll ? visible : visible.slice(0, 6)).map((room) => (
               <RoomTile key={room.id} room={room} />
             ))}
-            {visible.length > 6 ? (
-              <Link
-                href="/legacy#browse"
-                className="flex items-center justify-center border border-dashed border-[rgba(242,242,244,0.3)] text-[14px] font-[700] text-[var(--mcb-dim)] hover:text-white"
-              >
-                +{visible.length - 5} more rooms
-              </Link>
-            ) : visible[5] ? (
-              <RoomTile room={visible[5]} />
-            ) : (
-              <InviteTile />
-            )}
+            {visible.length > 6 && <button type="button" onClick={() => setShowAll(!showAll)} className="col-span-full min-h-12 border border-[var(--mcb-hairline)] text-[14px] text-[var(--mcb-accent)]">{showAll ? 'Show fewer rooms' : `Show all ${visible.length} rooms`}</button>}
           </div>
         ) : (
           <div className="flex flex-col gap-7">
@@ -426,7 +410,7 @@ export function Booth({
                   <Link
                     key={w.title}
                     href={w.href}
-                    className="group flex flex-col gap-2 border-l-2 bg-[#0d0d11] px-4 py-4 transition-colors hover:bg-[#13131a]"
+                    className="group flex flex-col gap-2 border-l-2 bg-[#0b1622] px-4 py-4 transition-colors hover:bg-[#102131]"
                     style={{ borderLeftColor: w.color }}
                   >
                     <span className="flex items-center gap-2.5">
@@ -473,12 +457,11 @@ export function Booth({
                   className="flex flex-col items-start gap-2 border border-dashed border-[rgba(242,242,244,0.22)] px-5 py-5 transition-colors hover:border-[var(--mcb-accent)]"
                 >
                   <span className="text-[17px] font-[700] tracking-[-0.01em]">
-                    Nobody has a pool open yet
+                    No active bounties
                   </span>
                   <span className="max-w-[62ch] text-[13px] leading-[1.55] text-[var(--mcb-muted)]">
-                    Pick any streamer who isn&#39;t here and put money on their name. Everyone
-                    who wants them adds to it, and the first verified broadcast takes the pool
-                    &#8212; proof is read straight off the stream.
+                    Choose any streamer who isn&#39;t here. Backers can add to the bounty, and the
+                    first verified broadcast claims it &#8212; proof is read straight off the stream.
                   </span>
                   <span className="pt-1 text-[12.5px] font-[700] text-[var(--mcb-accent)]">
                     Start a pool &#8594;
@@ -493,9 +476,7 @@ export function Booth({
       {/* bounty rail */}
       <footer className="flex h-[72px] shrink-0 items-center gap-5 border-t border-[var(--mcb-hairline)] px-4">
         <h2 className="text-[13.5px] font-[700] leading-[1.25] text-[var(--mcb-dim)]">
-          Held for
-          <br />
-          streamers
+          Bounties
         </h2>
         <div className="flex min-w-0 grow items-stretch gap-2 overflow-hidden">
           {topPools.length === 0 ? (
@@ -510,17 +491,17 @@ export function Booth({
               <Link
                 key={pool.handleKey}
                 href={poolHref(pool)}
-                className="flex min-w-0 grow flex-col justify-center border-l-2 border-[var(--mcb-accent)] bg-[#101014] px-3 py-2 transition-colors hover:bg-[#16161c]"
+                className="flex min-w-0 grow flex-col justify-center border-l-2 border-[var(--mcb-queue)] bg-[#0b1622] px-3 py-2 transition-colors hover:bg-[#102131]"
               >
                 <span className="truncate text-[16px] font-[600] leading-[1.1]">
                   {pool.handle ?? pool.handleKey}
                 </span>
                 <span className="mt-0.5 flex min-w-0 items-baseline gap-2">
-                  <span className="shrink-0 text-[13px] font-[600] text-[var(--mcb-accent)]">
-                    {pool.remaining.toFixed(2)}
+                  <span className="shrink-0 text-[13px] font-[600] text-[var(--mcb-queue)]">
+                    {formatDollars(pool.remaining)}
                   </span>
                   <span className="truncate text-[12px] font-[500] text-[var(--mcb-dim)]">
-                    {pool.contributionCount} backer{pool.contributionCount === 1 ? '' : 's'}
+                    {pool.displayOnly ? 'Example, not funded' : `${pool.contributionCount} backer${pool.contributionCount === 1 ? '' : 's'}`}
                   </span>
                 </span>
               </Link>

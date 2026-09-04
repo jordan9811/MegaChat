@@ -1,0 +1,139 @@
+{
+  "page": "bounty",
+  "requestedUrl": "https://megachat.fun/bounty",
+  "finalUrl": "https://megachat.fun/bounty",
+  "viewport": {
+    "name": "1440",
+    "width": 1440,
+    "height": 900
+  },
+  "navErr": null,
+  "timestamp": "2026-09-02T17:16:38.272Z",
+  "axeVersion": "4.13.0",
+  "byImpact": {
+    "critical": 0,
+    "serious": 0,
+    "moderate": 0,
+    "minor": 0
+  },
+  "violations": [],
+  "incomplete": [
+    {
+      "id": "color-contrast",
+      "impact": "serious",
+      "tags": [
+        "cat.color",
+        "wcag2aa",
+        "wcag143",
+        "TTv5",
+        "TT13.c",
+        "EN-301-549",
+        "EN-9.1.4.3",
+        "ACT",
+        "RGAAv4",
+        "RGAA-3.2.1"
+      ],
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "13.5pt (18px)",
+                "fontWeight": "bold",
+                "messageKey": "shortTextContent",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"mc-mesh-1 flex size-[46px] items-center justify-center text-[18px] font-[800] text-[rgba(242,242,244,0.72)]\">M</span>",
+                  "target": [
+                    ".mc-mesh-1"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element content is too short to determine if it is actual text content"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span aria-hidden=\"true\" class=\"mc-mesh-1 flex size-[46px] items-center justify-center text-[18px] font-[800] text-[rgba(242,242,244,0.72)]\">M</span>",
+          "target": [
+            ".mc-mesh-1"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "13.5pt (18px)",
+                "fontWeight": "bold",
+                "messageKey": "shortTextContent",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"mc-mesh-3 flex size-[46px] items-center justify-center text-[18px] font-[800] text-[rgba(242,242,244,0.72)]\">R</span>",
+                  "target": [
+                    ".mc-mesh-3"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element content is too short to determine if it is actual text content"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span aria-hidden=\"true\" class=\"mc-mesh-3 flex size-[46px] items-center justify-center text-[18px] font-[800] text-[rgba(242,242,244,0.72)]\">R</span>",
+          "target": [
+            ".mc-mesh-3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "13.5pt (18px)",
+                "fontWeight": "bold",
+                "messageKey": "shortTextContent",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"mc-mesh-2 flex size-[46px] items-center justify-center text-[18px] font-[800] text-[rgba(242,242,244,0.72)]\">G</span>",
+                  "target": [
+                    ".mc-mesh-2"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element content is too short to determine if it is actual text content"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span aria-hidden=\"true\" class=\"mc-mesh-2 flex size-[46px] items-center justify-center text-[18px] font-[800] text-[rgba(242,242,244,0.72)]\">G</span>",
+          "target": [
+            ".mc-mesh-2"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content"
+        }
+      ]
+    }
+  ]
+}

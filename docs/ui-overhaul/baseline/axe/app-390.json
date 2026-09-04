@@ -1,0 +1,1278 @@
+{
+  "page": "app",
+  "requestedUrl": "https://megachat.fun/app",
+  "finalUrl": "https://megachat.fun/app",
+  "viewport": {
+    "name": "390",
+    "width": 390,
+    "height": 844,
+    "isMobile": true,
+    "hasTouch": true,
+    "deviceScaleFactor": 3
+  },
+  "navErr": null,
+  "timestamp": "2026-09-02T17:16:23.975Z",
+  "axeVersion": "4.13.0",
+  "byImpact": {
+    "critical": 0,
+    "serious": 0,
+    "moderate": 0,
+    "minor": 0
+  },
+  "violations": [],
+  "incomplete": [
+    {
+      "id": "color-contrast",
+      "impact": "serious",
+      "tags": [
+        "cat.color",
+        "wcag2aa",
+        "wcag143",
+        "TTv5",
+        "TT13.c",
+        "EN-301-549",
+        "EN-9.1.4.3",
+        "ACT",
+        "RGAAv4",
+        "RGAA-3.2.1"
+      ],
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em]\" style=\"color:var(--mcb-off)\"><span class=\"inline-block size-1.5 rounded-full\" style=\"background:var(--mcb-off)\" aria-hidden=\"true\"></span>OPEN</span>",
+                  "target": [
+                    ".mc-mesh-5 > .mc-chip-plate.left-3.top-2\\.5"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)\"></span>",
+                  "target": [
+                    ".mc-mesh-5 > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em]\" style=\"color:var(--mcb-off)\"><span class=\"inline-block size-1.5 rounded-full\" style=\"background:var(--mcb-off)\" aria-hidden=\"true\"></span>OPEN</span>",
+          "target": [
+            ".mc-mesh-5 > .mc-chip-plate.left-3.top-2\\.5"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.8pt (13px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc absolute right-2.5 top-2 bg-[rgba(8,8,10,0.55)] px-2 py-1 text-[13px] font-[600] text-[var(--mcb-fg)]\"><span class=\"adv-only\">0<!-- --> <!-- -->USDC.e</span><span class=\"simple-only\">$<!-- -->0</span><span> / <!-- -->1<!-- -->s</span></span>",
+                  "target": [
+                    ".mc-mesh-5 > .right-2\\.5.top-2.bg-\\[rgba\\(8\\,8\\,10\\,0\\.55\\)\\]"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)\"></span>",
+                  "target": [
+                    ".mc-mesh-5 > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"adv-only\">0<!-- --> <!-- -->USDC.e</span>",
+          "target": [
+            ".mc-mesh-5 > .right-2\\.5.top-2.bg-\\[rgba\\(8\\,8\\,10\\,0\\.55\\)\\] > .adv-only"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.8pt (13px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc absolute right-2.5 top-2 bg-[rgba(8,8,10,0.55)] px-2 py-1 text-[13px] font-[600] text-[var(--mcb-fg)]\"><span class=\"adv-only\">0<!-- --> <!-- -->USDC.e</span><span class=\"simple-only\">$<!-- -->0</span><span> / <!-- -->1<!-- -->s</span></span>",
+                  "target": [
+                    ".mc-mesh-5 > .right-2\\.5.top-2.bg-\\[rgba\\(8\\,8\\,10\\,0\\.55\\)\\]"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)\"></span>",
+                  "target": [
+                    ".mc-mesh-5 > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span> / <!-- -->1<!-- -->s</span>",
+          "target": [
+            ".mc-mesh-5 > .right-2\\.5.top-2.bg-\\[rgba\\(8\\,8\\,10\\,0\\.55\\)\\] > span:nth-child(3)"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "25.5pt (34px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "3:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)\"></span>",
+                  "target": [
+                    ".mc-mesh-5 > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc block truncate font-[700] leading-[1.05] tracking-[0.01em] text-[34px]\">HERRRRRO KRISTOPHER</span>",
+          "target": [
+            ".text-\\[34px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.0pt (12px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscuring",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it partially overlaps other elements"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mt-0.5 block text-[12px] font-[500] text-[var(--mcb-muted)]\">0<!-- --> of <!-- -->3<!-- --> on camera<!-- --> · Twitch<!-- --> · Drops</span>",
+          "target": [
+            ".mc-mesh-5 > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .mt-0\\.5.text-\\[12px\\].text-\\[var\\(--mcb-muted\\)\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em]\" style=\"color:var(--mcb-off)\"><span class=\"inline-block size-1.5 rounded-full\" style=\"background:var(--mcb-off)\" aria-hidden=\"true\"></span>OPEN</span>",
+                  "target": [
+                    ".mc-mesh-2 > .mc-chip-plate.left-3.top-2\\.5"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)\"></span>",
+                  "target": [
+                    ".mc-mesh-2 > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em]\" style=\"color:var(--mcb-off)\"><span class=\"inline-block size-1.5 rounded-full\" style=\"background:var(--mcb-off)\" aria-hidden=\"true\"></span>OPEN</span>",
+          "target": [
+            ".mc-mesh-2 > .mc-chip-plate.left-3.top-2\\.5"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.8pt (13px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscuring",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it partially overlaps other elements"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"adv-only\">0.001<!-- --> <!-- -->USDC.e</span>",
+          "target": [
+            ".mc-mesh-2 > .right-2\\.5.top-2.bg-\\[rgba\\(8\\,8\\,10\\,0\\.55\\)\\] > .adv-only"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.8pt (13px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc absolute right-2.5 top-2 bg-[rgba(8,8,10,0.55)] px-2 py-1 text-[13px] font-[600] text-[var(--mcb-fg)]\"><span class=\"adv-only\">0.001<!-- --> <!-- -->USDC.e</span><span class=\"simple-only\">$<!-- -->0.001</span><span> / <!-- -->1<!-- -->s</span></span>",
+                  "target": [
+                    ".mc-mesh-2 > .right-2\\.5.top-2.bg-\\[rgba\\(8\\,8\\,10\\,0\\.55\\)\\]"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)\"></span>",
+                  "target": [
+                    ".mc-mesh-2 > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span> / <!-- -->1<!-- -->s</span>",
+          "target": [
+            ".mc-mesh-2 > .right-2\\.5.top-2.bg-\\[rgba\\(8\\,8\\,10\\,0\\.55\\)\\] > span:nth-child(3)"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "18.0pt (24px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "3:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)\"></span>",
+                  "target": [
+                    ".mc-mesh-2 > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc block truncate font-[700] leading-[1.05] tracking-[0.01em] text-[24px]\">MegaChat Demo — try everything for pennies</span>",
+          "target": [
+            ".mc-mesh-2 > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .tracking-\\[0\\.01em\\].text-\\[24px\\].leading-\\[1\\.05\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.0pt (12px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscuring",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it partially overlaps other elements"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mt-0.5 block text-[12px] font-[500] text-[var(--mcb-muted)]\">0<!-- --> of <!-- -->3<!-- --> on camera<!-- --> · Drops</span>",
+          "target": [
+            ".mc-mesh-2 > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .mt-0\\.5.text-\\[12px\\].text-\\[var\\(--mcb-muted\\)\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em]\" style=\"color:var(--mcb-off)\"><span class=\"inline-block size-1.5 rounded-full\" style=\"background:var(--mcb-off)\" aria-hidden=\"true\"></span>OPEN</span>",
+                  "target": [
+                    ".mc-mesh-3 > .mc-chip-plate.left-3.top-2\\.5"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)\"></span>",
+                  "target": [
+                    ".mc-mesh-3 > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em]\" style=\"color:var(--mcb-off)\"><span class=\"inline-block size-1.5 rounded-full\" style=\"background:var(--mcb-off)\" aria-hidden=\"true\"></span>OPEN</span>",
+          "target": [
+            ".mc-mesh-3 > .mc-chip-plate.left-3.top-2\\.5"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.8pt (13px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscuring",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it partially overlaps other elements"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"adv-only\">0.001<!-- --> <!-- -->USDC.e</span>",
+          "target": [
+            ".mc-mesh-3 > .right-2\\.5.top-2.bg-\\[rgba\\(8\\,8\\,10\\,0\\.55\\)\\] > .adv-only"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.8pt (13px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc absolute right-2.5 top-2 bg-[rgba(8,8,10,0.55)] px-2 py-1 text-[13px] font-[600] text-[var(--mcb-fg)]\"><span class=\"adv-only\">0.001<!-- --> <!-- -->USDC.e</span><span class=\"simple-only\">$<!-- -->0.001</span><span> / <!-- -->1<!-- -->s</span></span>",
+                  "target": [
+                    ".mc-mesh-3 > .right-2\\.5.top-2.bg-\\[rgba\\(8\\,8\\,10\\,0\\.55\\)\\]"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)\"></span>",
+                  "target": [
+                    ".mc-mesh-3 > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span> / <!-- -->1<!-- -->s</span>",
+          "target": [
+            ".mc-mesh-3 > .right-2\\.5.top-2.bg-\\[rgba\\(8\\,8\\,10\\,0\\.55\\)\\] > span:nth-child(3)"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "18.0pt (24px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "3:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)\"></span>",
+                  "target": [
+                    ".mc-mesh-3 > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc block truncate font-[700] leading-[1.05] tracking-[0.01em] text-[24px]\">Default Room</span>",
+          "target": [
+            ".mc-mesh-3 > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .tracking-\\[0\\.01em\\].text-\\[24px\\].leading-\\[1\\.05\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.0pt (12px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 34%, rgba(8,8,10,0) 62%)\"></span>",
+                  "target": [
+                    ".mc-mesh-3 > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mt-0.5 block text-[12px] font-[500] text-[var(--mcb-muted)]\">0<!-- --> of <!-- -->3<!-- --> on camera</span>",
+          "target": [
+            ".mc-mesh-3 > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .mt-0\\.5.text-\\[12px\\].text-\\[var\\(--mcb-muted\\)\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "12.0pt (16px)",
+                "fontWeight": "bold",
+                "messageKey": "bgOverlap",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it is overlapped by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"text-[16px] font-[700] text-[var(--mcb-accent)]\">Open a room</span>",
+          "target": [
+            ".text-\\[16px\\].text-\\[var\\(--mcb-accent\\)\\].font-\\[700\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.4pt (12.5px)",
+                "fontWeight": "normal",
+                "messageKey": "bgOverlap",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it is overlapped by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"text-[12.5px] font-[500] leading-[1.5] text-[var(--mcb-dim)]\">Your stream, your seats, your rate.<br>The next tile on this wall is yours.</span>",
+          "target": [
+            ".leading-\\[1\\.5\\].text-\\[var\\(--mcb-dim\\)\\].text-\\[12\\.5px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]\">",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"threadguy\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"threadguy\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]\">",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"threadguy\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]\">",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"threadguy\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"threadguy\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"font-[500] tracking-[0]\">· bounty open</span>",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"threadguy\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3 > .tracking-\\[0\\].font-\\[500\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "18.0pt (24px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "3:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"threadguy\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc block truncate text-[24px] font-[700] leading-[1.05]\">threadguy</span>",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"threadguy\"] > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .text-\\[24px\\].leading-\\[1\\.05\\].truncate"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.0pt (12px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"threadguy\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mt-0.5 flex items-baseline gap-2 text-[12px] font-[500] text-[var(--mcb-muted)]\"><span class=\"text-[14px] font-[600] text-[var(--mcb-queue)]\">200.00<!-- --> USDC</span>2<!-- --> backer<!-- -->s<!-- --> · Twitch</span>",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"threadguy\"] > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .items-baseline.mt-0\\.5.text-\\[12px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"threadguy\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"text-[14px] font-[600] text-[var(--mcb-queue)]\">200.00<!-- --> USDC</span>",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"threadguy\"] > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .items-baseline.mt-0\\.5.text-\\[12px\\] > .text-\\[14px\\].text-\\[var\\(--mcb-queue\\)\\].font-\\[600\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]\">",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"chessbrah\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"chessbrah\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]\">",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"chessbrah\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]\">",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"chessbrah\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"chessbrah\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"font-[500] tracking-[0]\">· bounty open</span>",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"chessbrah\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3 > .tracking-\\[0\\].font-\\[500\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "18.0pt (24px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "3:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"chessbrah\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc block truncate text-[24px] font-[700] leading-[1.05]\">chessbrah</span>",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"chessbrah\"] > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .text-\\[24px\\].leading-\\[1\\.05\\].truncate"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.0pt (12px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"chessbrah\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mt-0.5 flex items-baseline gap-2 text-[12px] font-[500] text-[var(--mcb-muted)]\"><span class=\"text-[14px] font-[600] text-[var(--mcb-queue)]\">100.00<!-- --> USDC</span>1<!-- --> backer<!-- --> · Kick</span>",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"chessbrah\"] > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .items-baseline.mt-0\\.5.text-\\[12px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"chessbrah\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"text-[14px] font-[600] text-[var(--mcb-queue)]\">100.00<!-- --> USDC</span>",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"chessbrah\"] > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .items-baseline.mt-0\\.5.text-\\[12px\\] > .text-\\[14px\\].text-\\[var\\(--mcb-queue\\)\\].font-\\[600\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]\">",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"martinshkreli\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"martinshkreli\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]\">",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"martinshkreli\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]\">",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"martinshkreli\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"martinshkreli\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"font-[500] tracking-[0]\">· bounty open</span>",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"martinshkreli\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3 > .tracking-\\[0\\].font-\\[500\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "18.0pt (24px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "3:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"martinshkreli\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc block truncate text-[24px] font-[700] leading-[1.05]\">martinshkreli</span>",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"martinshkreli\"] > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .text-\\[24px\\].leading-\\[1\\.05\\].truncate"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.0pt (12px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"martinshkreli\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mt-0.5 flex items-baseline gap-2 text-[12px] font-[500] text-[var(--mcb-muted)]\"><span class=\"text-[14px] font-[600] text-[var(--mcb-queue)]\">100.00<!-- --> USDC</span>1<!-- --> backer<!-- --> · X</span>",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"martinshkreli\"] > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .items-baseline.mt-0\\.5.text-\\[12px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    ".mc-mesh-4.min-h-\\[150px\\][href$=\"martinshkreli\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"text-[14px] font-[600] text-[var(--mcb-queue)]\">100.00<!-- --> USDC</span>",
+          "target": [
+            ".mc-mesh-4.min-h-\\[150px\\][href$=\"martinshkreli\"] > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .items-baseline.mt-0\\.5.text-\\[12px\\] > .text-\\[14px\\].text-\\[var\\(--mcb-queue\\)\\].font-\\[600\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]\">",
+                  "target": [
+                    "a[href$=\"rasmr\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    "a[href$=\"rasmr\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]\">",
+          "target": [
+            "a[href$=\"rasmr\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]\">",
+                  "target": [
+                    "a[href$=\"rasmr\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3"
+                  ]
+                },
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    "a[href$=\"rasmr\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"font-[500] tracking-[0]\">· bounty open</span>",
+          "target": [
+            "a[href$=\"rasmr\"] > .text-\\[var\\(--mcb-off\\)\\].mc-chip-plate.left-3 > .tracking-\\[0\\].font-\\[500\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "18.0pt (24px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "3:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    "a[href$=\"rasmr\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mc-bc block truncate text-[24px] font-[700] leading-[1.05]\">rasmr</span>",
+          "target": [
+            "a[href$=\"rasmr\"] > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .text-\\[24px\\].leading-\\[1\\.05\\].truncate"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.0pt (12px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    "a[href$=\"rasmr\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"mt-0.5 flex items-baseline gap-2 text-[12px] font-[500] text-[var(--mcb-muted)]\"><span class=\"text-[14px] font-[600] text-[var(--mcb-queue)]\">100.00<!-- --> USDC</span>1<!-- --> backer<!-- --> · X</span>",
+          "target": [
+            "a[href$=\"rasmr\"] > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .items-baseline.mt-0\\.5.text-\\[12px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span aria-hidden=\"true\" class=\"absolute inset-0\" style=\"background:linear-gradient(to top, rgba(8,8,10,0.92) 0%, rgba(8,8,10,0.28) 40%, rgba(8,8,10,0) 66%)\"></span>",
+                  "target": [
+                    "a[href$=\"rasmr\"] > .inset-0.absolute[aria-hidden=\"true\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"text-[14px] font-[600] text-[var(--mcb-queue)]\">100.00<!-- --> USDC</span>",
+          "target": [
+            "a[href$=\"rasmr\"] > .inset-x-3.bottom-2\\.5.items-end > .min-w-0 > .items-baseline.mt-0\\.5.text-\\[12px\\] > .text-\\[14px\\].text-\\[var\\(--mcb-queue\\)\\].font-\\[600\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        }
+      ]
+    }
+  ]
+}

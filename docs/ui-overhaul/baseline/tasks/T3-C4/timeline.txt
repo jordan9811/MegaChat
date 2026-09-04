@@ -1,0 +1,11 @@
+1.8s  landing painted: https://megachat.fun/?stay=1
+3.9s  screenshot 01 (fold, before click 1)
+4.2s  click 1: nav "Bounties" -> url committed https://megachat.fun/bounty
+5.0s  board rows visible (1006 ms after click)
+13.0s  read board row 01 + legend + header twice
+15.2s  click 2: streamer name "threadguy" (cursor=auto) -> NO NAVIGATION
+16.2s  hover "Put money on it" href=/bounty/s/twitch/threadguy
+18.0s  click 3: "Put money on it" -> https://megachat.fun/bounty/s/twitch/threadguy (tiles visible 1789 ms after click)
+22.0s  tiles read: guaranteed=true contested=true backers=true
+TOTAL_SECONDS 22.0
+CLICKS 3

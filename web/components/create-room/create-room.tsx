@@ -23,9 +23,24 @@
 //   · Nothing renders as a working control unless it works.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { LucideIcon } from 'lucide-react'
+import {
+  ChevronRight,
+  CircleDollarSign,
+  Gift,
+  LockKeyhole,
+  MessageSquareText,
+  Radio,
+  Settings2,
+  ShieldCheck,
+  Users,
+  Video,
+} from 'lucide-react'
 import { useRoom } from '@/components/room-provider'
 import { ApiError } from '@/lib/api'
 import { AccountChip } from '@/components/account-chip'
+import { RoomRecovery } from '@/components/room-recovery'
+import { formatDollars } from '@/lib/display-format'
 import './create-room.css'
 
 // Server bounds, mirrored from rooms-store.js so the control cannot express
@@ -36,11 +51,7 @@ const MEGA_RATES = ['0.0005', '0.001', '0.002', '0.005', '0.01'] as const
 const MIC_RATES = ['0.001', '0.005', '0.01', '0.02', '0.05'] as const
 const SPEND_CAPS = ['1', '2', '5', '10'] as const
 
-const money = (v: string | number) => {
-  const n = typeof v === 'number' ? v : parseFloat(v)
-  if (!Number.isFinite(n)) return '$0'
-  return `$${parseFloat(n.toFixed(6))}`
-}
+const money = formatDollars
 
 // Below this the atomic-unit conversion truncates to zero, which would turn
 // a paid room free without saying so.
@@ -221,77 +232,61 @@ function Seg<T extends string | number>({
 }
 
 function FeatureCard({
+  icon: Icon,
   on,
   onToggle,
   title,
   blurb,
   offLabel = 'OFF',
+  accent,
   children,
 }: {
+  icon: LucideIcon
   on: boolean
   onToggle: () => void
   title: string
   blurb: string
   offLabel?: string
+  accent: 'primary' | 'live' | 'money'
   children?: React.ReactNode
 }) {
   return (
-    <div
-      className="border"
-      style={{
-        borderColor: on ? 'var(--mcc-accent)' : '#2f2f36',
-        background: on ? 'var(--mcc-panel)' : 'var(--mcc-sunk)',
-      }}
-    >
+    <section className="mcc-module" data-enabled={on} data-accent={accent}>
       <button
         type="button"
         aria-pressed={on}
         onClick={onToggle}
-        className="flex w-full cursor-pointer items-center gap-3 border-0 bg-transparent px-3.5 py-3 text-left"
+        className="mcc-module-head"
       >
-        <span
-          aria-hidden="true"
-          className="flex size-[17px] shrink-0 items-center justify-center border-2"
-          style={{
-            borderColor: on ? 'var(--mcc-accent)' : '#2f2f36',
-            background: on ? 'var(--mcc-accent)' : 'transparent',
-          }}
-        >
-          {on ? (
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#08080a" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          ) : null}
+        <span className="mcc-module-icon" aria-hidden="true">
+          <Icon size={18} strokeWidth={2} />
         </span>
-        <span className="min-w-0 grow">
-          <span
-            className="text-[15.5px] font-bold"
-            style={{ color: on ? 'var(--mcc-fg)' : 'var(--mcc-dim)' }}
-          >
-            {title}
-          </span>{' '}
-          <span
-            className="text-[12.5px]"
-            style={{ color: on ? 'var(--mcc-muted)' : '#7f8992' }}
-          >
-            — {blurb}
-          </span>
+        <span className="mcc-module-copy">
+          <strong>{title}</strong>
+          <span>{blurb}</span>
         </span>
-        <span
-          className="bc shrink-0 text-[11.5px] font-bold tracking-[0.08em]"
-          style={{ color: on ? 'var(--mcc-live)' : '#7f8992' }}
-        >
-          {on ? 'ON' : offLabel}
+        <span className="mcc-switch" aria-hidden="true">
+          <span>{on ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : null}</span>
+          {on ? 'On' : offLabel}
         </span>
       </button>
       {on && children ? (
-        <div className="border-t border-[var(--mcc-rule)] py-3 pl-[46px] pr-3.5">{children}</div>
+        <div className="mcc-module-body">{children}</div>
       ) : null}
-    </div>
+    </section>
   )
 }
 
 type Tab = 'mega' | 'mic' | 'drops' | 'access' | 'money' | 'stream'
+
+const ADVANCED_TABS: Array<{ id: Tab; label: string; heading: string; icon: LucideIcon }> = [
+  { id: 'mega', label: 'MegaChats', heading: 'Clip controls', icon: MessageSquareText },
+  { id: 'mic', label: 'Open mic', heading: 'Live seat controls', icon: Video },
+  { id: 'drops', label: 'Drops', heading: 'Reward controls', icon: Gift },
+  { id: 'access', label: 'Who gets in', heading: 'Access controls', icon: Users },
+  { id: 'money', label: 'Money', heading: 'Payment controls', icon: CircleDollarSign },
+  { id: 'stream', label: 'Stream', heading: 'Stream controls', icon: Radio },
+]
 
 export function CreateRoom() {
   const {
@@ -393,55 +388,53 @@ export function CreateRoom() {
 
   const clip = money(parseFloat(megaRate) * clipSeconds)
   const micPerMin = money(parseFloat(draft.passkeyTickPrice) * 60)
+  const activeAdvanced = ADVANCED_TABS.find((item) => item.id === tab) ?? ADVANCED_TABS[0]
 
   return (
     <div className="mc-create dark min-h-screen">
-      {/* the only chrome: one thin bar, same as the room board */}
-      <header className="border-b border-[#1a1a1f]">
-        <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-center justify-between gap-3 px-5 py-3">
-        <span className="flex flex-wrap items-baseline gap-3.5">
-          <a href="/app" className="bc text-[18px] font-bold tracking-[0.1em] text-[var(--mcc-fg)]">
-            MEGACHAT
-          </a>
-          <span className="text-[13px] font-semibold text-[var(--mcc-dim)]">New room</span>
-        </span>
-        {/* Was "Signed in as x" / a link to ?signin=1, which nothing reads.
-            The chip is the real control: sign in, see your balance, sign out. */}
-        <AccountChip accent="var(--mcc-accent)" />
+      <header className="mcc-header">
+        <div className="mcc-header-inner">
+          <span className="mcc-brand-lockup">
+            <a href="/?stay=1" className="mcc-brand">MEGACHAT</a>
+            <span className="mcc-header-divider" />
+            <span className="mcc-page-title">New room</span>
+          </span>
+          <nav className="mcc-progress" aria-label="Product navigation"><a href="/app">Rooms</a><a href="/bounty">Bounties</a><a href="/how-it-works">How it works</a></nav>
+          <AccountChip accent="var(--mcc-accent)" />
         </div>
       </header>
 
-      {/* Capped and centred: a form stretched across a wide monitor is
-          harder to scan, not easier. The room board is full-bleed because
-          it is a wall of video; this is a form. */}
-      <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 lg:grid-cols-[1.5fr_1fr]">
-      {/* ─────────── LEFT: the decisions ─────────── */}
-      <div className="flex min-w-0 flex-col gap-4 border-b border-[var(--mcc-rule)] p-5 lg:border-b-0 lg:border-r">
-        {/* identity — one dense line, no action button up here */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--mcc-rule)] pb-4">
+      <main className="mcc-shell">
+        <RoomRecovery />
+        <section className="mcc-identity" aria-label="Room identity">
+          <div className="mcc-identity-field">
+            <span>Room name</span>
           <InlineText
             value={draft.name}
             onChange={(v) => updateDraft({ name: v })}
             placeholder="Name your room"
             label="Room name"
             maxLength={64}
-            textClass="text-[15px] font-semibold"
-            inputClass="min-w-[220px] max-w-[420px] grow"
+              textClass="mcc-identity-value"
+              inputClass="mcc-identity-input"
           />
-          <span className="whitespace-nowrap text-[12.5px] text-[var(--mcc-dim)]">
-            megachat.fun/
+          </div>
+          <div className="mcc-identity-field">
+            <span>Your room link</span>
+            <span className="mcc-identity-url">megachat.fun/
             <InlineText
               value={draft.handle}
               onChange={(v) => updateDraft({ handle: v })}
               sanitize={(v) => v.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20)}
               placeholder={identityHandle || 'yourname'}
               label="Your link"
-              textClass="handle font-semibold"
-              inputClass="handle w-[150px]"
+                textClass="handle mcc-handle-value"
+                inputClass="handle mcc-handle-input"
             />
           </span>
-          <span className="ml-auto flex items-center gap-2">
-            <span className="lbl">Charging</span>
+          </div>
+          <div className="mcc-charging">
+            <span>Charging</span>
             <Seg
               label="Free or paid"
               value={free ? 'free' : 'paid'}
@@ -451,20 +444,27 @@ export function CreateRoom() {
                 { v: 'free', l: 'Free' },
               ]}
             />
-          </span>
-        </div>
+          </div>
+        </section>
 
-        {/* ── 1 · what runs ── */}
-        <div className="flex items-center gap-2.5">
-          <span className="stepnum" style={{ background: 'var(--mcc-accent)' }}>1</span>
-          <span className="text-[15px] font-bold">What runs in your room</span>
-        </div>
+        <div className="mcc-workspace">
+          <div className="mcc-form">
+            <section className="mcc-form-section">
+
+              <div className="mcc-section-title">
+                <span className="stepnum">01</span>
+                <div><h1>What runs in your room</h1><p>Start with MegaChats. Add live seats or rewards only when you need them.</p></div>
+              </div>
+
+              <div className="mcc-modules">
 
         <FeatureCard
+          icon={MessageSquareText}
           on={draft.lettersEnabled}
           onToggle={() => updateDraft({ lettersEnabled: !draft.lettersEnabled })}
           title="MegaChats"
           blurb="fans pay per second of clip, airs itself"
+          accent="primary"
         >
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-end gap-6">
@@ -540,11 +540,13 @@ export function CreateRoom() {
         </FeatureCard>
 
         <FeatureCard
+          icon={Video}
           on={draft.joinStreamEnabled}
           onToggle={() => updateDraft({ joinStreamEnabled: !draft.joinStreamEnabled })}
           title="Open mic"
           blurb="viewers take camera seats beside you, billed per second"
           offLabel="OPT IN"
+          accent="live"
         >
           <div className="flex flex-wrap items-end gap-6">
             {!free ? (
@@ -586,10 +588,12 @@ export function CreateRoom() {
         </FeatureCard>
 
         <FeatureCard
+          icon={Gift}
           on={draft.rewardsEnabled}
           onToggle={() => updateDraft({ rewardsEnabled: !draft.rewardsEnabled })}
           title="Drops &amp; rewards"
           blurb="pay people to watch, or credit toward MegaChats"
+          accent="money"
         >
           <div className="flex flex-wrap items-end gap-6">
             <span className="flex flex-col gap-1.5">
@@ -637,36 +641,60 @@ export function CreateRoom() {
           </div>
         </FeatureCard>
 
-        {/* ── 2 · advanced settings ── */}
-        <div className="mt-3 flex items-center gap-2.5 border-t border-[var(--mcc-rule)] pt-4">
-          <span className="stepnum" style={{ background: 'var(--mcc-dim)' }}>2</span>
-          <span className="text-[15px] font-bold text-[#d7dde2]">Advanced settings</span>
-        </div>
+              </div>
+            </section>
 
-        <div className="flex flex-col gap-3 border border-[var(--mcc-rule)] bg-[var(--mcc-sunk)] p-4">
-          <div role="tablist" aria-label="Settings groups" className="flex flex-wrap gap-1.5">
-            {([
-              ['mega', 'MegaChats'],
-              ['mic', 'Open mic'],
-              ['drops', 'Drops'],
-              ['access', 'Who gets in'],
-              ['money', 'Money'],
-              ['stream', 'Stream'],
-            ] as const).map(([id, label]) => (
+        {/* ── 2 · advanced settings ── */}
+            <section className="mcc-form-section mcc-advanced-section">
+              <div className="mcc-section-title">
+                <span className="stepnum">02</span>
+                <div>
+                  <h2>Advanced settings</h2>
+                  <p>Rates, screening, access, money, and stream behavior.</p>
+                </div>
+              </div>
+
+              <div className="mcc-advanced-shell">
+                <div role="tablist" aria-label="Settings groups" aria-orientation="vertical" className="mcc-advanced-nav">
+                  {ADVANCED_TABS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 type="button"
                 role="tab"
+                id={`mcc-tab-${id}`}
+                aria-controls="mcc-advanced-panel"
+                tabIndex={tab === id ? 0 : -1}
                 aria-selected={tab === id}
                 className="tabchip"
                 onClick={() => setTab(id)}
+                onKeyDown={(event) => {
+                  const index = ADVANCED_TABS.findIndex((item) => item.id === id)
+                  const next = event.key === 'Home' ? 0 : event.key === 'End' ? ADVANCED_TABS.length - 1
+                    : ['ArrowDown', 'ArrowRight'].includes(event.key) ? (index + 1) % ADVANCED_TABS.length
+                    : ['ArrowUp', 'ArrowLeft'].includes(event.key) ? (index + ADVANCED_TABS.length - 1) % ADVANCED_TABS.length : -1
+                  if (next < 0) return
+                  event.preventDefault()
+                  const target = ADVANCED_TABS[next].id
+                  setTab(target)
+                  document.getElementById(`mcc-tab-${target}`)?.focus()
+                }}
               >
-                {label}
+                <Icon size={16} strokeWidth={2} aria-hidden="true" />
+                <span>{label}</span>
+                <ChevronRight size={14} aria-hidden="true" />
               </button>
             ))}
-          </div>
+                </div>
 
-          <div className="border border-[var(--mcc-rule)] bg-[var(--mcc-panel)] p-4">
+                <div className="mcc-advanced-panel" id="mcc-advanced-panel" role="tabpanel" aria-labelledby={`mcc-tab-${tab}`} tabIndex={0}>
+                  <div className="mcc-advanced-head">
+                    <div>
+                      <span>Advanced / {activeAdvanced.label}</span>
+                      <h3>{activeAdvanced.heading}</h3>
+                    </div>
+                    <Settings2 size={19} strokeWidth={1.8} aria-hidden="true" />
+                  </div>
+                  <div className="mcc-advanced-content">
             {tab === 'mega' ? (
               <div className="flex flex-col gap-4">
                 {!free ? (
@@ -917,19 +945,21 @@ export function CreateRoom() {
                 </span>
               </div>
             ) : null}
-          </div>
-        </div>
+                  </div>
+                </div>
+              </div>
+            </section>
 
         {/* No third section heading: what is left is the save-defaults
             switch, the password, and the button. That is the end of the
             form, not a step worth announcing. */}
-        <div className="mt-3 border-t border-[var(--mcc-rule)] pt-4" />
+            <footer className="mcc-submit">
 
         <button
           type="button"
           aria-pressed={saveDefault}
           onClick={() => setSaveDefault((v) => !v)}
-          className="flex cursor-pointer items-center gap-3 border px-3.5 py-3 text-left"
+          className="mcc-defaults"
           style={{
             borderColor: saveDefault ? 'rgba(67,224,168,0.35)' : 'var(--mcc-rule)',
             background: saveDefault ? 'rgba(67,224,168,0.04)' : 'var(--mcc-sunk)',
@@ -960,16 +990,18 @@ export function CreateRoom() {
         </button>
 
         {!hasIdentity ? (
-          <div className="flex flex-col gap-1.5">
+          <div className="mcc-password">
             <span className="lbl">Room password</span>
-            <input
-              type="password"
-              value={password}
-              placeholder="At least 4 characters"
-              aria-label="Room password"
-              onChange={(e) => setPassword(e.target.value)}
-              className="max-w-[280px]"
-            />
+            <span className="mcc-password-field">
+              <LockKeyhole size={16} aria-hidden="true" />
+              <input
+                type="password"
+                value={password}
+                placeholder="At least 4 characters"
+                aria-label="Room password"
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </span>
             <span className="hint">The only way back into your room — save it somewhere safe.</span>
           </div>
         ) : null}
@@ -992,33 +1024,38 @@ export function CreateRoom() {
           </p>
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="mcc-submit-action">
           <button
             type="button"
             disabled={busy || !canCreate}
             onClick={() => void onCreate()}
-            className="bg-[var(--mcc-accent)] px-11 py-4 text-[16.5px] font-bold text-[#08080a] disabled:opacity-50"
+            className="mcc-primary-action"
           >
-            {busy ? 'Opening…' : 'Create room'}
+            <span>{busy ? 'Opening…' : 'Create room'}</span>
+            <ChevronRight size={18} aria-hidden="true" />
           </button>
-          <span className="hint">Nothing charges anyone until you go live.</span>
+          <span className="hint">Creating opens your room. Connect OBS to play clips on stream.</span>
         </div>
+            </footer>
       </div>
 
       {/* ─────────── RIGHT: what viewers get ─────────── */}
-      <div className="min-w-0 bg-[var(--mcc-sunk)]">
-        <div className="flex flex-col gap-3 p-5 lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto">
-        <span className="text-[15px] font-bold text-[#d7dde2]">Preview</span>
+      <aside className="mcc-preview">
+        <div className="mcc-preview-inner">
+          <div className="mcc-preview-head">
+            <div><span>Room preview</span><strong>What viewers see</strong></div>
+            <span className="mcc-live-state">Not broadcasting</span>
+          </div>
 
         {/* the room tile, as it lands on the board */}
         <div
-          className="relative aspect-video overflow-hidden"
-          style={{ background: 'radial-gradient(120% 90% at 22% 18%, #24404f 0%, #141c22 62%)' }}
+          className="mcc-preview-stage relative aspect-video overflow-hidden"
+          style={{ background: 'radial-gradient(120% 90% at 22% 18%, #275675 0%, #10253a 55%, #09131f 100%)' }}
         >
           <span
             aria-hidden="true"
             className="absolute left-1/2 top-[58%] size-[150px] -translate-x-1/2 rounded-full blur-[26px]"
-            style={{ background: 'rgba(96,164,190,0.5)' }}
+            style={{ background: 'rgba(99,186,255,0.34)' }}
           />
           <span
             aria-hidden="true"
@@ -1030,7 +1067,7 @@ export function CreateRoom() {
           />
           <span className="bc absolute left-3 top-2.5 flex items-center gap-1.5 bg-[rgba(8,8,10,0.62)] px-2 py-0.5 text-[11px] font-bold tracking-[0.08em] text-[var(--mcc-live)]">
             <span aria-hidden="true" className="inline-block size-1.5 rounded-full bg-[var(--mcc-live)]" />
-            ON AIR
+            PREVIEW
           </span>
           {!free ? (
             <span className="bc absolute right-2.5 top-2 bg-[rgba(8,8,10,0.55)] px-2 py-1 text-[12.5px] font-semibold">
@@ -1062,7 +1099,7 @@ export function CreateRoom() {
         </div>
 
         {/* the join card */}
-        <div className="flex flex-col gap-2.5 border border-[var(--mcc-rule)] bg-[var(--mcc-panel)] px-4 py-3.5">
+        <div className="mcc-preview-ledger flex flex-col gap-2.5">
           <span className="lbl">Join card</span>
           {draft.lettersEnabled ? (
             <span className="flex items-baseline justify-between border-b border-[#1a1a1f] pb-2">
@@ -1123,10 +1160,11 @@ export function CreateRoom() {
           ) : null}
         </div>
 
-        <span className="hint">Sample art — every number is your live configuration.</span>
+        <span className="mcc-preview-note"><ShieldCheck size={14} aria-hidden="true" /> Every number reflects your live configuration.</span>
         </div>
+      </aside>
       </div>
-      </div>
+    </main>
     </div>
   )
 }

@@ -1,0 +1,163 @@
+{
+  "site": "marvelrivals",
+  "url": "https://www.marvelrivals.com/",
+  "captured": "2026-09-02T17:27:52.734Z",
+  "shots": {
+    "landing-390": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\marvelrivals\\landing-390.png",
+    "landing-768": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\marvelrivals\\landing-768.png",
+    "landing-1440": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\marvelrivals\\landing-1440.png",
+    "landing-1440-full": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\marvelrivals\\landing-1440-full.png",
+    "app-1440": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\marvelrivals\\app-1440.png",
+    "app2-1440": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\marvelrivals\\app2-1440.png"
+  },
+  "hero": {
+    "title": "Marvel Rivals - The Super Hero Team-based PVP Shooter",
+    "url": "https://www.marvelrivals.com/",
+    "top": [
+      {
+        "tag": "span",
+        "fs": 27,
+        "y": 10,
+        "t": "DOWNLOAD",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 24,
+        "y": 549,
+        "t": "PLAY NOW",
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "fs": 18,
+        "y": 0,
+        "t": "NEWS",
+        "href": "https://www.marvelrivals.com/news/"
+      },
+      {
+        "tag": "a",
+        "fs": 18,
+        "y": 0,
+        "t": "GAME INFO",
+        "href": "javascript:;"
+      },
+      {
+        "tag": "a",
+        "fs": 18,
+        "y": 0,
+        "t": "HERO",
+        "href": "javascript:;"
+      },
+      {
+        "tag": "a",
+        "fs": 18,
+        "y": 0,
+        "t": "EVENT",
+        "href": "javascript:;"
+      },
+      {
+        "tag": "a",
+        "fs": 18,
+        "y": 0,
+        "t": "MEDIA",
+        "href": "https://www.marvelrivals.com/media/"
+      },
+      {
+        "tag": "a",
+        "fs": 18,
+        "y": 0,
+        "t": "PARTNERS",
+        "href": "javascript:;"
+      },
+      {
+        "tag": "a",
+        "fs": 18,
+        "y": 0,
+        "t": "ESPORTS",
+        "href": "https://www.marvelrivalsesports.com/"
+      },
+      {
+        "tag": "span",
+        "fs": 17,
+        "y": -91,
+        "t": "GAME FEATURES",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 17,
+        "y": -91,
+        "t": "HEROES",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 17,
+        "y": -91,
+        "t": "TWITCH DROPS",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 17,
+        "y": -55,
+        "t": "SEASON STORY",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 17,
+        "y": -55,
+        "t": "TEAM-UP",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 17,
+        "y": -55,
+        "t": "COLLEGE PERKS",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 17,
+        "y": -19,
+        "t": "FAQ",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 17,
+        "y": -19,
+        "t": "HERO HOT LIST",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 17,
+        "y": -19,
+        "t": "EVENTS",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 17,
+        "y": 17,
+        "t": "MAPS",
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "fs": 15,
+        "y": 15,
+        "t": "LOG IN",
+        "href": "javascript:;"
+      }
+    ]
+  },
+  "appUrl": "https://www.marvelrivals.com/",
+  "appTitle": "Marvel Rivals - The Super Hero Team-based PVP Shooter",
+  "app2Url": "https://www.marvelrivals.com/",
+  "app2Title": "Marvel Rivals - The Super Hero Team-based PVP Shooter"
+}

@@ -1,0 +1,84 @@
+{
+  "title": "Tickets for Music Events, Concerts, and Festivals · Shotgun",
+  "h1": [
+    {
+      "t": "GRAB YOUR TICKET, MAKE MEMORIES",
+      "top": 105,
+      "h": 84,
+      "vis": true
+    }
+  ],
+  "h2": [
+    {
+      "t": "POPULAR EVENTS IN UNITED STATES",
+      "top": 668,
+      "h": 68,
+      "vis": true
+    }
+  ],
+  "p": [
+    {
+      "t": "Download Shotgun to find the best parties in town.",
+      "top": 197,
+      "h": 48,
+      "vis": true
+    },
+    {
+      "t": "Zap Outdoorz 2026",
+      "top": 973,
+      "h": 23,
+      "vis": true
+    },
+    {
+      "t": "Twisted Festival",
+      "top": 1285,
+      "h": 23,
+      "vis": true
+    },
+    {
+      "t": "Queen Out At The Café: Petal Supply, Beverly Chills+",
+      "top": 1629,
+      "h": 45,
+      "vis": true
+    }
+  ],
+  "ctas": [
+    {
+      "t": "EXPLORE",
+      "top": 12,
+      "h": 40,
+      "vis": true
+    },
+    {
+      "t": "App Store",
+      "top": 269,
+      "h": 40,
+      "vis": true
+    },
+    {
+      "t": "Play Store",
+      "top": 325,
+      "h": 40,
+      "vis": true
+    },
+    {
+      "t": "UNITED STATES",
+      "top": 696,
+      "h": 40,
+      "vis": true
+    },
+    {
+      "t": "Zap Outdoorz 2026 Camp Tall Timbers Sep 4 – 7 $120.75",
+      "top": 768,
+      "h": 280,
+      "vis": true
+    },
+    {
+      "t": "MORE EVENTS IN UNITED STATES",
+      "top": 1792,
+      "h": 40,
+      "vis": true
+    }
+  ],
+  "url": "https://shotgun.live/en"
+}

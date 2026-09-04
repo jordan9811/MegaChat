@@ -1,0 +1,300 @@
+{
+  "site": "betr",
+  "url": "https://www.betr.app/",
+  "captured": "2026-09-02T17:26:46.407Z",
+  "shots": {
+    "landing-390": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\betr\\landing-390.png",
+    "landing-768": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\betr\\landing-768.png",
+    "landing-1440": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\betr\\landing-1440.png",
+    "landing-1440-full": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\betr\\landing-1440-full.png",
+    "app-1440": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\betr\\app-1440.png"
+  },
+  "hero": {
+    "title": "Betr | Fantasy, Social Sportsbook, and Social Casino",
+    "url": "https://www.betr.app/",
+    "top": [
+      {
+        "tag": "span",
+        "fs": 88,
+        "y": 267,
+        "t": "No Sweat",
+        "href": ""
+      },
+      {
+        "tag": "div",
+        "fs": 88,
+        "y": 292,
+        "t": "Entries Up to $200",
+        "href": ""
+      },
+      {
+        "tag": "div",
+        "fs": 20,
+        "y": 582,
+        "t": "Get your No Sweat entries and join players who’ve already been paid out",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 20,
+        "y": 584,
+        "t": "over $1B on Betr.",
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "fs": 18,
+        "y": 646,
+        "t": "Claim Offer",
+        "href": "https://engagebetr.onelink.me/auSX/j1mpk14b"
+      },
+      {
+        "tag": "div",
+        "fs": 18,
+        "y": 662,
+        "t": "Learn more",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "Payouts",
+        "href": ""
+      },
+      {
+        "tag": "span",
+        "fs": 16,
+        "y": 17,
+        "t": "PAID OUT on Betr",
+        "href": ""
+      }
+    ]
+  },
+  "appUrl": "https://picks.betr.app/Splash?redirectPath=%2F",
+  "appTitle": "Betr"
+}

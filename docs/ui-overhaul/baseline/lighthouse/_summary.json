@@ -1,0 +1,162 @@
+[
+  {
+    "page": "landing",
+    "form": "desktop",
+    "finalUrl": "https://megachat.fun/?stay=1",
+    "perf": 96,
+    "a11y": 100,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "13"
+  },
+  {
+    "page": "landing",
+    "form": "mobile",
+    "finalUrl": "https://megachat.fun/?stay=1",
+    "perf": 62,
+    "a11y": 100,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "13"
+  },
+  {
+    "page": "app",
+    "form": "desktop",
+    "finalUrl": "https://megachat.fun/app",
+    "perf": 92,
+    "a11y": 100,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "14"
+  },
+  {
+    "page": "app",
+    "form": "mobile",
+    "finalUrl": "https://megachat.fun/app",
+    "perf": 60,
+    "a11y": 100,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "16"
+  },
+  {
+    "page": "create-room",
+    "form": "desktop",
+    "finalUrl": "https://megachat.fun/dashboard?new=1",
+    "perf": 92,
+    "a11y": 98,
+    "bp": 73,
+    "runtimeError": null,
+    "secs": "16"
+  },
+  {
+    "page": "create-room",
+    "form": "mobile",
+    "finalUrl": "https://megachat.fun/dashboard?new=1",
+    "perf": 64,
+    "a11y": 98,
+    "bp": 73,
+    "runtimeError": null,
+    "secs": "14"
+  },
+  {
+    "page": "bounty",
+    "form": "desktop",
+    "finalUrl": "https://megachat.fun/bounty",
+    "perf": 84,
+    "a11y": 100,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "16"
+  },
+  {
+    "page": "bounty",
+    "form": "mobile",
+    "finalUrl": "https://megachat.fun/bounty",
+    "perf": 63,
+    "a11y": 100,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "15"
+  },
+  {
+    "page": "account",
+    "form": "desktop",
+    "finalUrl": "https://megachat.fun/account",
+    "perf": 92,
+    "a11y": 100,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "14"
+  },
+  {
+    "page": "account",
+    "form": "mobile",
+    "finalUrl": "https://megachat.fun/account",
+    "perf": 62,
+    "a11y": 100,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "14"
+  },
+  {
+    "page": "how-it-works",
+    "form": "desktop",
+    "finalUrl": "https://megachat.fun/how-it-works",
+    "perf": 99,
+    "a11y": 100,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "14"
+  },
+  {
+    "page": "how-it-works",
+    "form": "mobile",
+    "finalUrl": "https://megachat.fun/how-it-works",
+    "perf": 58,
+    "a11y": 100,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "15"
+  },
+  {
+    "page": "join",
+    "form": "desktop",
+    "finalUrl": "https://megachat.fun/demo",
+    "perf": 96,
+    "a11y": 98,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "12"
+  },
+  {
+    "page": "join",
+    "form": "mobile",
+    "finalUrl": "https://megachat.fun/demo",
+    "perf": 47,
+    "a11y": 98,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "15"
+  },
+  {
+    "page": "roadmap",
+    "form": "desktop",
+    "finalUrl": "https://megachat.fun/roadmap",
+    "perf": 90,
+    "a11y": 94,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "14"
+  },
+  {
+    "page": "roadmap",
+    "form": "mobile",
+    "finalUrl": "https://megachat.fun/roadmap",
+    "perf": 63,
+    "a11y": 94,
+    "bp": 77,
+    "runtimeError": null,
+    "secs": "15"
+  }
+]

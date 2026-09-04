@@ -21,6 +21,7 @@ import {
   type LinkedAccount,
 } from '@/lib/api'
 import { shortAddr, useAccount } from '@/lib/use-account'
+import { formatDollars } from '@/lib/display-format'
 
 const PROVIDER_LABEL: Record<string, string> = {
   twitch: 'Twitch',
@@ -45,11 +46,11 @@ function defaultsSummary(d: Record<string, unknown>): [string, string][] {
   const s = (k: string) => (typeof d[k] === 'string' ? (d[k] as string) : null)
   const b = (k: string) => (typeof d[k] === 'boolean' ? (d[k] as boolean) : null)
   const price = s('passkeyTickPrice')
-  if (price != null) rows.push(['Price / second', price === '0' ? 'Free room' : `${price} USDC`])
+  if (price != null) rows.push(['Price / second', price === '0' ? 'Free room' : formatDollars(Number(price) / (Number(s('passkeyTickSeconds')) || 1))])
   const secs = s('passkeyTickSeconds')
   if (secs != null && secs !== '1') rows.push(['Charge interval', `${secs}s`])
   const cap = s('maxSession')
-  if (cap != null) rows.push(['Session cap', `${cap} USDC`])
+  if (cap != null) rows.push(['Session cap', formatDollars(cap)])
   const t = s('transport')
   if (t != null) rows.push(['Transport', t === 'livekit' ? 'LiveKit (default)' : 'vdo.ninja'])
   const mc = b('lettersEnabled')
@@ -71,6 +72,7 @@ export function AccountPage() {
     balance,
     signedIn,
     openSignIn,
+    authError,
     connectBalance,
     connectingBalance,
     signOut,
@@ -83,6 +85,7 @@ export function AccountPage() {
   const [note, setNote] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [origin, setOrigin] = useState('')
+  const [section, setSection] = useState<'overview' | 'defaults' | 'connections'>('overview')
 
   useEffect(() => setOrigin(window.location.origin), [])
 
@@ -130,16 +133,22 @@ export function AccountPage() {
 
   return (
     <div className="mc-account dark min-h-screen">
-      {/* the only chrome: one thin bar, same as the room board */}
-      <header className="border-b border-[#1a1a1f]">
-        <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-center justify-between gap-3 px-5 py-3">
-          <span className="flex flex-wrap items-baseline gap-3.5">
-            <a href="/app" className="bc text-[18px] font-bold tracking-[0.1em] text-[var(--mcc-fg)]">
-              MEGACHAT
-            </a>
-            <span className="text-[13px] font-semibold text-[var(--mcc-dim)]">Account</span>
+      <header className="mcc-product-header">
+        <div>
+          <span className="mcc-product-brand">
+            <a href="/?stay=1" className="bc">MEGACHAT</a>
+            <i aria-hidden="true" />
+            <span>Account</span>
           </span>
-          <AccountChip accent="var(--mcc-accent)" />
+          <nav aria-label="Product navigation">
+            <a href="/app">Rooms</a>
+            <a href="/bounty">Bounties</a>
+            <a href="/how-it-works">How it works</a>
+          </nav>
+          <span className="mcc-product-actions">
+            <a href="/dashboard?new=1">Create room</a>
+            <AccountChip accent="var(--mcc-accent)" />
+          </span>
         </div>
       </header>
 
@@ -148,8 +157,9 @@ export function AccountPage() {
           <p className="hint">Loading…</p>
         </div>
       ) : !signedIn ? (
-        <main className="mx-auto w-full max-w-[1400px] px-5 py-8">
-          <div className="flex max-w-[620px] flex-col items-start gap-4 border border-dashed border-[var(--mcc-rule-2)] px-7 py-9">
+        <main className="mcc-signed-out mx-auto w-full max-w-[1400px] px-5 py-12">
+          <div>
+            <span className="mcc-coordinate">Identity / private</span>
             <h1 className="text-[26px] font-bold leading-[1.15]">Sign in to see your account</h1>
             <p className="hint">
               Your handle, the sign-ins linked to it, your balance and your saved room defaults
@@ -168,224 +178,151 @@ export function AccountPage() {
             >
               {wallet.modalOpen ? 'Opening…' : 'Sign in'}
             </button>
+            {authError && <p role="alert" className="hint">{authError}</p>}
           </div>
         </main>
       ) : (
-        <main className="mx-auto grid w-full max-w-[1400px] grid-cols-1 lg:grid-cols-[1.5fr_1fr]">
-          {/* ─────────── LEFT: who you are ─────────── */}
-          <div className="flex min-w-0 flex-col gap-8 border-b border-[var(--mcc-rule)] p-5 lg:border-b-0 lg:border-r">
-            <section className="flex flex-col gap-3">
-              {identity ? (
-                <>
-                  <span className="flex flex-wrap items-baseline gap-3">
-                    <h1 className="handle text-[28px] font-bold leading-none">
-                      @{identity.handle}
-                    </h1>
-                    <span className="pip text-[var(--mcc-dim)]">PERMANENT</span>
-                  </span>
-                  <p className="hint max-w-[560px]">
-                    Your handle is your room link. It is claimed once, at sign-in, and never
-                    changes.
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2 border border-[var(--mcc-rule-2)] bg-[var(--mcc-sunk)] px-3 py-2">
-                    <span className="lbl">Link</span>
-                    <code className="min-w-0 flex-1 truncate text-[13px] text-[var(--mcc-muted)]">
-                      {roomLink || `/${identity.handle}`}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={() => void copyLink()}
-                      aria-label="Copy your room link"
-                      className="btn-ghost"
-                    >
-                      {copied ? 'Copied' : 'Copy'}
-                    </button>
-                    {/* /<handle> is an Express route, not a Next page */}
-                    <a href={`/${identity.handle}`} className="btn-ghost">
-                      Open
+        <main className="mcc-account-shell">
+          <section className="mcc-identity-hero">
+            <div>
+              <span className="mcc-coordinate">Identity / permanent</span>
+              <h1>{identity ? `@${identity.handle}` : 'Wallet only'}</h1>
+              <p>{identity
+                ? 'Your handle is your room link everywhere MegaChat appears.'
+                : 'Add a sign-in to claim a permanent handle and room link.'}</p>
+            </div>
+            {identity ? (
+              <div className="mcc-room-link">
+                <span>{roomLink || `/${identity.handle}`}</span>
+                <button type="button" onClick={() => void copyLink()} aria-label="Copy your room link">
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+                <a href={`/${identity.handle}`}>Open</a>
+              </div>
+            ) : (
+              <button type="button" className="btn" onClick={openSignIn}>Add a sign-in</button>
+            )}
+          </section>
+
+          <div className="mcc-account-layout">
+            <nav className="mcc-section-nav" aria-label="Account sections">
+              <div>
+                <span>Account</span>
+                <button type="button" aria-current={section === 'overview' ? 'page' : undefined} onClick={() => setSection('overview')}>Overview</button>
+                <button type="button" aria-current={section === 'defaults' ? 'page' : undefined} onClick={() => setSection('defaults')}>Room defaults</button>
+                <button type="button" aria-current={section === 'connections' ? 'page' : undefined} onClick={() => setSection('connections')}>Connections</button>
+              </div>
+              <div className="mcc-nav-links">
+                <span>Go to</span>
+                <a href="/dashboard">Your room</a>
+                <a href="/dashboard?new=1">Open a new room</a>
+                <a href="/app">Room board</a>
+              </div>
+              <button type="button" className="mcc-signout" onClick={() => void signOut()}>Sign out</button>
+            </nav>
+
+            <section className="mcc-account-work">
+              {section === 'overview' ? (
+                <div className="mcc-overview-grid">
+                  <section className="mcc-balance-zone">
+                    <span className="mcc-coordinate">Available balance</span>
+                    <strong>
+                      {balance == null ? '…' : <><b>$</b>{balance}</>}
+                    </strong>
+                    <p>{wallet.address ? shortAddr(wallet.address) : 'No balance connected'}</p>
+                    {!wallet.address ? (
+                      <button
+                        type="button"
+                        onClick={() => void connectBalance()}
+                        disabled={!wallet.configured || connectingBalance}
+                      >
+                        {connectingBalance ? 'Connecting…' : 'Connect balance'}
+                      </button>
+                    ) : <a href="/app">Use balance in a room</a>}
+                  </section>
+
+                  <section className="mcc-room-zone">
+                    <span className="mcc-coordinate">Your room address</span>
+                    <strong>{identity ? `/${identity.handle}` : 'Unclaimed'}</strong>
+                    <p>{identity ? 'Permanent, shareable, and ready whenever you go live.' : 'Link a sign-in to claim it.'}</p>
+                    <a href={identity ? '/dashboard' : '#connections'} onClick={identity ? undefined : () => setSection('connections')}>
+                      {identity ? 'Open dashboard' : 'View connections'}
                     </a>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <h1 className="text-[26px] font-bold leading-none">Wallet only</h1>
-                  <p className="hint max-w-[560px]">
-                    This session is a wallet with no handle yet. Sign in with Twitch, X, Google,
-                    email or a passkey to claim one — the handle becomes your permanent room link.
-                  </p>
-                </>
-              )}
-            </section>
+                  </section>
 
-            {identity ? (
-              <section className="flex flex-col gap-3">
-                <h2 className="sect">Linked sign-ins</h2>
-                {accounts == null ? (
-                  <p className="hint">Loading…</p>
-                ) : accounts.length === 0 ? (
-                  <p className="hint">
-                    Nothing linked yet — sign-ins you add through the login modal appear here.
-                  </p>
-                ) : (
-                  <ul id="linked-accounts" className="flex flex-col">
-                    <li className="flex items-baseline justify-between gap-4 pb-1.5">
-                      <span className="colhead">PROVIDER</span>
-                      <span className="colhead">ACCOUNT</span>
-                    </li>
-                    {accounts.map((a, i) => (
-                      <li key={`${a.type}-${i}`} className="row">
-                        <span className="text-[13.5px] font-semibold">{providerLabel(a.type)}</span>
-                        <span className="val min-w-0 truncate text-[var(--mcc-muted)]">
-                          {a.name || '—'}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            ) : null}
-
-            {identity ? (
-              <section className="flex flex-col gap-3">
-                <h2 className="sect">Default room settings</h2>
-                <p className="hint max-w-[560px]">
-                  New rooms start from these instead of blank. They are saved from the create
-                  form, and they follow your account rather than this browser.
-                </p>
-                {!defaultsLoaded ? (
-                  <p className="hint">Loading…</p>
-                ) : rows.length > 0 ? (
-                  <ul id="defaults-summary" className="flex flex-col">
-                    {rows.map(([k, v]) => (
-                      <li key={k} className="row">
-                        <span className="lbl">{k}</span>
-                        <span className="val">{v}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : defaults ? (
-                  // keeps the id present whenever defaults exist, matching the
-                  // legacy panel — anything anchoring on it stays valid
-                  <p id="defaults-summary" className="hint">
-                    Defaults are saved, but none of them differ from stock.
-                  </p>
-                ) : (
-                  <p className="hint">
-                    No defaults saved yet — every new room starts from the stock settings.
-                  </p>
-                )}
-                <div className="flex flex-wrap items-center gap-2">
-                  <a href="/dashboard?new=1" className="btn-ghost">
-                    Open the create form
-                  </a>
-                  {defaults ? (
-                    <button
-                      type="button"
-                      id="clear-defaults"
-                      disabled={busy}
-                      onClick={() => void clearDefaults()}
-                      className="btn-ghost"
-                    >
-                      {busy ? 'Clearing…' : 'Clear defaults'}
+                  <section className="mcc-overview-status">
+                    <header><span>Account status</span><small>Live data</small></header>
+                    <button type="button" onClick={() => setSection('connections')}>
+                      <span><b>Linked sign-ins</b><small>{accounts == null ? 'Loading…' : `${accounts.length} connected`}</small></span>
+                      <strong>View</strong>
                     </button>
-                  ) : null}
+                    <button type="button" onClick={() => setSection('defaults')}>
+                      <span><b>Room defaults</b><small>{!defaultsLoaded ? 'Loading…' : defaults ? `${rows.length} saved values` : 'Stock settings'}</small></span>
+                      <strong>View</strong>
+                    </button>
+                  </section>
                 </div>
-                {note ? <p className="hint">{note}</p> : null}
-              </section>
-            ) : null}
-          </div>
+              ) : null}
 
-          {/* ─────────── RIGHT: money and the way out ─────────── */}
-          <aside className="flex min-w-0 flex-col gap-8 p-5">
-            <section className="flex flex-col gap-3">
-              <h2 className="sect">Balance</h2>
-              {wallet.address ? (
-                <>
-                  <div className="border border-[var(--mcc-rule-2)] bg-[var(--mcc-sunk)] px-4 py-3">
-                    <span className="flex items-baseline justify-between gap-3">
-                      <span className="lbl">Available</span>
-                      <span className="text-[19px] font-bold tabular-nums">
-                        {balance == null ? (
-                          '…'
-                        ) : (
-                          <>
-                            <span className="adv-only">{balance} USDC</span>
-                            <span className="simple-only">${balance}</span>
-                          </>
-                        )}
-                      </span>
-                    </span>
-                    <span
-                      className="mt-1 block text-[11px] text-[var(--mcc-faint)]"
-                      title={wallet.address}
-                    >
-                      {shortAddr(wallet.address)}
-                    </span>
+              {section === 'defaults' ? (
+                <section className="mcc-settings-zone">
+                  <header>
+                    <div><span className="mcc-coordinate">Room defaults</span><h2>Start every room ready.</h2><p>These values load into Create Room and can still be changed per stream.</p></div>
+                    <a href="/dashboard?new=1" className="btn-ghost">Open full setup</a>
+                  </header>
+                  {!identity ? (
+                    <p className="hint">Add a sign-in before saving account-level room defaults.</p>
+                  ) : !defaultsLoaded ? (
+                    <p className="hint">Loading…</p>
+                  ) : rows.length > 0 ? (
+                    <ul id="defaults-summary" className="mcc-setting-rows">
+                      {rows.map(([k, v]) => <li key={k}><span>{k}</span><strong>{v}</strong></li>)}
+                    </ul>
+                  ) : defaults ? (
+                    <p id="defaults-summary" className="hint">Defaults are saved, but none differ from stock.</p>
+                  ) : (
+                    <p className="hint">No defaults saved yet. New rooms use the stock settings.</p>
+                  )}
+                  <div className="mcc-settings-actions">
+                    <a href="/dashboard?new=1" className="btn">Edit defaults</a>
+                    {defaults ? (
+                      <button type="button" id="clear-defaults" disabled={busy} onClick={() => void clearDefaults()} className="btn-ghost">
+                        {busy ? 'Clearing…' : 'Clear defaults'}
+                      </button>
+                    ) : null}
                   </div>
-                  <p className="hint">
-                    Seats bill against this by the second. Whatever you do not use comes back.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="hint">
-                    No wallet connected — connect one to take a seat or send a MegaChat.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => void connectBalance()}
-                    disabled={!wallet.configured || connectingBalance}
-                    title={
-                      wallet.configured
-                        ? 'Connect the wallet that pays for seats'
-                        : 'Wallet service not configured on this server'
-                    }
-                    className="btn-ghost self-start"
-                  >
-                    {connectingBalance ? 'Connecting…' : 'Connect balance'}
-                  </button>
-                </>
-              )}
-            </section>
+                  {note ? <p className="hint">{note}</p> : null}
+                </section>
+              ) : null}
 
-            <section className="flex flex-col gap-3">
-              <h2 className="sect">Elsewhere</h2>
-              <ul className="flex flex-col">
-                <li className="row">
-                  <a href="/dashboard" className="text-[13.5px] font-semibold hover:underline">
-                    Your room
-                  </a>
-                  <span className="val text-[var(--mcc-faint)]">Dashboard</span>
-                </li>
-                <li className="row">
-                  <a href="/dashboard?new=1" className="text-[13.5px] font-semibold hover:underline">
-                    Open a new room
-                  </a>
-                  <span className="val text-[var(--mcc-faint)]">Create</span>
-                </li>
-                <li className="row">
-                  <a href="/app" className="text-[13.5px] font-semibold hover:underline">
-                    Room board
-                  </a>
-                  <span className="val text-[var(--mcc-faint)]">Browse</span>
-                </li>
-              </ul>
+              {section === 'connections' ? (
+                <section className="mcc-connections-zone" id="connections">
+                  <header><span className="mcc-coordinate">Linked sign-ins</span><h2>One identity, multiple ways back in.</h2><p>Every provider below resolves to this same MegaChat account.</p></header>
+                  {!identity ? (
+                    <div className="mcc-empty-connection"><p>Wallet-only session. Add Google, email, passkey, Twitch, X, or another supported sign-in.</p><button type="button" className="btn" onClick={openSignIn}>Add a sign-in</button></div>
+                  ) : accounts == null ? (
+                    <p className="hint">Loading…</p>
+                  ) : accounts.length === 0 ? (
+                    <div className="mcc-empty-connection"><p>No linked providers returned for this identity.</p><button type="button" className="btn-ghost" onClick={openSignIn}>Open sign in</button></div>
+                  ) : (
+                    <ul id="linked-accounts" className="mcc-connections-list">
+                      {accounts.map((a, i) => (
+                        <li key={`${a.type}-${i}`}>
+                          <span className="mcc-provider">{providerLabel(a.type).charAt(0)}</span>
+                          <span><strong>{providerLabel(a.type)}</strong><small>{a.name || 'Connected account'}</small></span>
+                          <b>Connected</b>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="mcc-wallet-line">
+                    <span><strong>Payment balance</strong><small>{wallet.address ? shortAddr(wallet.address) : 'Not connected'}</small></span>
+                    {!wallet.address ? <button type="button" className="btn-ghost" onClick={() => void connectBalance()} disabled={!wallet.configured || connectingBalance}>Connect</button> : <b>Connected</b>}
+                  </div>
+                </section>
+              ) : null}
             </section>
-
-            <section className="flex flex-col gap-3">
-              <h2 className="sect">Session</h2>
-              <p className="hint">
-                Signs out of both halves — the site cookie and the wallet session.
-              </p>
-              <button
-                type="button"
-                onClick={() => void signOut()}
-                className="btn-ghost self-start"
-              >
-                Sign out
-              </button>
-            </section>
-          </aside>
+          </div>
         </main>
       )}
     </div>

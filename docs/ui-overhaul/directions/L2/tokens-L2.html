@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MegaChat tokens — L2 (polished tech company)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* ───────────────────────────── TOKENS (L2) ───────────────────────────── */
+:root {
+  /* surfaces — violet-tinted neutrals, OKLCH hue 285, chroma ≤ 0.015 */
+  --bg-0: #0B0B10;  /* canvas */
+  --bg-1: #13131A;  /* panel */
+  --bg-2: #1C1C23;  /* raised: cards, inputs at rest, chips */
+  --bg-3: #27272F;  /* hover / track / overlay ground */
+  --scrim: rgba(11, 11, 16, 0.72);
+
+  /* text */
+  --fg-1: #F3F3F7;  /* 17.9:1 */
+  --fg-2: #BDBDC5;  /* 10.6:1 */
+  --fg-3: #92919A;  /* 6.4:1 — hints, meta, column heads */
+  --fg-4: #63626B;  /* 3.3:1 — placeholder + disabled ONLY, never copy */
+
+  /* primary — Chargers powder blue, the action colour */
+  --primary: #7FC5FF;
+  --primary-hover: #98D3FF;
+  --primary-pressed: #69B3F0;
+  --primary-ink: #061A30;
+  --primary-subtle: rgba(127, 197, 255, 0.12);
+  --primary-border: rgba(127, 197, 255, 0.45);
+
+  /* secondary — Chargers gold: attention, queue, contested money */
+  --gold: #FFD63E;
+  --gold-hover: #FFE161;
+  --gold-ink: #301D00;
+  --gold-subtle: rgba(255, 214, 62, 0.12);
+
+  /* brand — sampled from the logo, used for identity moments only */
+  --brand-violet: #6A1FF4;
+  --brand-magenta: #FF1C82;
+  --brand-gradient: linear-gradient(135deg, #6A1FF4 0%, #B21DBE 50%, #FF1C82 100%);
+  --brand-violet-text: #BAA4FF;   /* 9.3:1 — the only violet allowed as text */
+  --brand-magenta-text: #FF7CBD;  /* 8.4:1 */
+  --brand-glow: rgba(140, 60, 255, 0.35);
+
+  /* semantic */
+  --success: #5BE9AC;  --success-ink: #002112;  --success-subtle: rgba(91, 233, 172, 0.12);
+  --live: #5BE9AC;
+  --warn: #FFD63E;     --warn-ink: #301D00;     --warn-subtle: rgba(255, 214, 62, 0.12);
+  --danger: #FF7C84;   --danger-ink: #290B0D;   --danger-subtle: rgba(255, 124, 132, 0.12);
+  --info: #7FC5FF;
+
+  /* data — bounty stacked bars + generic series */
+  --data-guaranteed: #5BE9AC;
+  --data-restaked: #FFD63E;
+  --data-restaked-hatch: repeating-linear-gradient(135deg, #FFD63E 0 3px, rgba(255, 214, 62, 0.22) 3px 6px);
+  --data-released: #CEB6FC;
+  --data-4: #FF9E84;
+  --data-5: #7FC5FF;
+  --data-track: #27272F;
+
+  /* hairlines */
+  --line-1: rgba(255, 255, 255, 0.08);  /* rest      ≈ #1E1E23 on bg-0 */
+  --line-2: rgba(255, 255, 255, 0.14);  /* hover     ≈ #2D2D32 */
+  --line-3: rgba(255, 255, 255, 0.24);  /* strong    ≈ #414146 */
+  --inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  /* shadow / glow */
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --glow-primary: 0 0 0 1px rgba(127, 197, 255, 0.4), 0 8px 24px rgba(127, 197, 255, 0.18);
+  --ring: 0 0 0 3px rgba(127, 197, 255, 0.4);
+
+  /* radius */
+  --r-1: 4px;   /* checkbox, tag, hatch caps */
+  --r-2: 6px;   /* button, input, chip, segment */
+  --r-3: 8px;   /* card, panel, popover, table container */
+  --r-4: 12px;  /* modal, sheet, room tile, toast */
+  --r-pill: 999px;
+
+  /* spacing (4px base) */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px;
+  --s-8: 32px; --s-10: 40px; --s-12: 48px; --s-16: 64px; --s-24: 96px;
+
+  /* type */
+  --font-ui: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* motion */
+  --dur-1: 120ms; --dur-2: 180ms; --dur-3: 240ms; --dur-4: 320ms; --dur-reveal: 600ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ───────────────────────────── base ───────────────────────────── */
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body { margin: 0; background: var(--bg-0); color: var(--fg-1); font-family: var(--font-ui); font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration: none; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 var(--s-6); }
+@media (min-width: 768px) { .wrap { padding: 0 var(--s-10); } }
+@media (min-width: 1200px) { .wrap { padding: 0 var(--s-16); } }
+section { padding: var(--s-10) 0; border-bottom: 1px solid var(--line-1); }
+.kicker { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3); margin: 0 0 var(--s-2); }
+h2.sec { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; margin: 0 0 var(--s-6); }
+.note { font-size: 13px; color: var(--fg-3); max-width: 64ch; margin: 0 0 var(--s-5); }
+.mono { font-family: var(--font-mono); font-size: 12px; color: var(--fg-3); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ───────────────────────────── nav strip ───────────────────────────── */
+.nav { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); height: 64px; border-bottom: 1px solid var(--line-1); background: var(--bg-0); padding: 0 var(--s-6); }
+@media (min-width: 768px) { .nav { padding: 0 var(--s-10); } }
+@media (min-width: 1200px) { .nav { padding: 0 var(--s-16); } }
+.nav .logo { height: 46px; width: auto; display: block; }
+.nav .icon { height: 32px; width: auto; display: block; }
+@media (max-width: 767px) {
+  .nav .logo { height: 40px; }
+  .nav .onair, .crumb .url, .chip .unit { display: none; }
+}
+.nav .links { display: none; gap: var(--s-6); font-size: 14px; font-weight: 500; color: var(--fg-2); }
+@media (min-width: 768px) { .nav .links { display: flex; } }
+.nav .links a { transition: color var(--dur-1) var(--ease-out); }
+.nav .links a:hover { color: var(--fg-1); }
+.nav .links a.on { color: var(--fg-1); }
+.nav .right { display: flex; align-items: center; gap: var(--s-2); }
+.nav2 { background: var(--bg-1); height: 56px; }
+.crumb { display: flex; align-items: center; gap: var(--s-3); font-size: 14px; color: var(--fg-3); }
+.crumb b { color: var(--fg-1); font-weight: 600; }
+.chip { display: inline-flex; align-items: center; gap: var(--s-2); height: 32px; padding: 0 var(--s-3) 0 var(--s-1); border: 1px solid var(--line-2); border-radius: var(--r-pill); font-size: 13px; font-weight: 600; background: var(--bg-2); }
+.chip .av { width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(120% 90% at 30% 20%, #3b5f78 0%, #1c2a33 70%); }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 0 rgba(91,233,172,.5); animation: pulse 2s var(--ease-inout) infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(91,233,172,.5); } 70% { box-shadow: 0 0 0 6px rgba(91,233,172,0); } 100% { box-shadow: 0 0 0 0 rgba(91,233,172,0); } }
+.onair { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--live); }
+.mega-word { font-weight: 800; font-size: 28px; letter-spacing: -0.02em; background: var(--brand-gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* ───────────────────────────── buttons ───────────────────────────── */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2); height: 36px; padding: 0 var(--s-4); border-radius: var(--r-2); border: 1px solid transparent; font: 600 14px/1 var(--font-ui); cursor: pointer; white-space: nowrap; transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), box-shadow var(--dur-2) var(--ease-out), transform var(--dur-1) var(--ease-out); }
+.btn:active { transform: translateY(1px); }
+.btn.sm { height: 32px; padding: 0 var(--s-3); font-size: 13px; }
+.btn.lg { height: 44px; padding: 0 var(--s-5); font-size: 15px; border-radius: var(--r-3); }
+.btn.primary { background: var(--primary); color: var(--primary-ink); }
+.btn.primary:hover { background: var(--primary-hover); box-shadow: var(--glow-primary); }
+.btn.primary:active { background: var(--primary-pressed); }
+.btn.gold { background: var(--gold); color: var(--gold-ink); }
+.btn.gold:hover { background: var(--gold-hover); }
+.btn.ghost { background: transparent; border-color: var(--line-2); color: var(--fg-1); }
+.btn.ghost:hover { border-color: var(--line-3); background: rgba(255,255,255,0.03); }
+.btn.quiet { background: var(--bg-2); color: var(--fg-1); box-shadow: var(--inset-top); }
+.btn.quiet:hover { background: var(--bg-3); }
+.btn.danger { background: transparent; border-color: rgba(255,124,132,.45); color: var(--danger); }
+.btn.danger:hover { background: var(--danger-subtle); }
+.btn:disabled, .btn.disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.focus { box-shadow: var(--ring); }
+.row { display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: center; }
+.col { display: flex; flex-direction: column; gap: var(--s-3); }
+
+/* ───────────────────────────── forms ───────────────────────────── */
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.lbl { font-size: 13px; font-weight: 600; color: var(--fg-2); }
+.hint { font-size: 12.5px; color: var(--fg-3); line-height: 1.45; }
+.hint.err { color: var(--danger); }
+.input { display: flex; align-items: center; height: 36px; padding: 0 var(--s-3); background: var(--bg-2); border: 1px solid var(--line-1); border-radius: var(--r-2); font: 500 14px var(--font-ui); color: var(--fg-1); box-shadow: var(--inset-top); transition: border-color var(--dur-1) var(--ease-out), box-shadow var(--dur-2) var(--ease-out); }
+.input .ph { color: var(--fg-4); }
+.input .unit { margin-left: auto; color: var(--fg-3); font-size: 12.5px; }
+.input:hover { border-color: var(--line-2); }
+.input.focus { border-color: var(--primary); box-shadow: var(--ring); }
+.input.error { border-color: var(--danger); }
+.input.mono { font-family: var(--font-mono); font-size: 13px; color: var(--fg-1); }
+.seg { display: inline-flex; padding: 3px; background: var(--bg-2); border: 1px solid var(--line-1); border-radius: var(--r-2); gap: 2px; }
+.seg > span { padding: 5px 12px; border-radius: 4px; font-size: 13px; font-weight: 500; color: var(--fg-3); cursor: pointer; transition: color var(--dur-1) var(--ease-out), background-color var(--dur-2) var(--ease-out); }
+.seg > span.on { background: var(--bg-3); color: var(--fg-1); font-weight: 600; box-shadow: var(--inset-top); }
+.stepper { display: inline-flex; align-items: stretch; height: 36px; border: 1px solid var(--line-1); border-radius: var(--r-2); background: var(--bg-2); overflow: hidden; }
+.stepper > span { display: flex; align-items: center; padding: 0 var(--s-3); }
+.stepper > .k { color: var(--fg-3); cursor: pointer; border-right: 1px solid var(--line-1); }
+.stepper > .k:last-child { border-right: 0; border-left: 1px solid var(--line-1); }
+.stepper > .v { font-weight: 600; font-variant-numeric: tabular-nums; }
+.stepper > .v small { color: var(--fg-3); font-weight: 500; margin-left: 4px; }
+.check { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 500; }
+.check .box { width: 18px; height: 18px; border-radius: var(--r-1); border: 1.5px solid var(--line-3); background: var(--bg-2); display: inline-flex; align-items: center; justify-content: center; }
+.check .box.on { background: var(--primary); border-color: var(--primary); }
+.toggle { width: 36px; height: 20px; border-radius: var(--r-pill); background: var(--bg-3); position: relative; border: 1px solid var(--line-1); }
+.toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--fg-2); transition: transform var(--dur-2) var(--ease-out); }
+.toggle.on { background: var(--primary); border-color: var(--primary); }
+.toggle.on::after { background: var(--primary-ink); transform: translateX(16px); }
+
+/* ───────────────────────────── cards ───────────────────────────── */
+.card { background: var(--bg-1); border: 1px solid var(--line-1); border-radius: var(--r-3); padding: var(--s-4); box-shadow: var(--inset-top); }
+.card.raised { background: var(--bg-2); }
+.card.selected { border-color: var(--primary-border); background: linear-gradient(var(--primary-subtle), var(--primary-subtle)), var(--bg-1); }
+.card h4 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.card p { margin: 4px 0 0; font-size: 13px; color: var(--fg-3); line-height: 1.5; }
+.stat { display: flex; flex-direction: column; gap: 2px; }
+.stat .k { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3); }
+.stat .v { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat .v small { font-size: 13px; font-weight: 600; color: var(--fg-3); letter-spacing: 0; }
+.stat .m { font-size: 12.5px; color: var(--fg-3); }
+.pip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.pip i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.tag { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--r-1); font-size: 12px; font-weight: 600; background: var(--bg-2); border: 1px solid var(--line-1); color: var(--fg-2); }
+.tag.blue { background: var(--primary-subtle); border-color: var(--primary-border); color: var(--primary); }
+.tag.gold { background: var(--gold-subtle); border-color: rgba(255,214,62,.4); color: var(--gold); }
+.tag.green { background: var(--success-subtle); border-color: rgba(91,233,172,.4); color: var(--success); }
+.toast { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r-4); box-shadow: var(--shadow-float); font-size: 14px; max-width: 420px; }
+.toast .ok { width: 20px; height: 20px; border-radius: 50%; background: var(--success); color: var(--success-ink); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex: none; }
+.banner { display: flex; gap: var(--s-3); padding: var(--s-3) var(--s-4); border-radius: var(--r-3); font-size: 13.5px; border: 1px solid; }
+.banner.danger { background: var(--danger-subtle); border-color: rgba(255,124,132,.35); color: var(--fg-1); }
+.banner.danger b { color: var(--danger); }
+.banner.warn { background: var(--warn-subtle); border-color: rgba(255,214,62,.3); }
+.banner.warn b { color: var(--gold); }
+
+/* ───────────────────────────── bounty rows ───────────────────────────── */
+.lb { border: 1px solid var(--line-1); border-radius: var(--r-3); background: var(--bg-1); overflow: hidden; }
+.lb-head, .lb-row { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: var(--s-3); align-items: center; padding: var(--s-4); border-bottom: 1px solid var(--line-1); }
+.lb-head { display: none; }
+.lb-row:last-child { border-bottom: 0; }
+.lb-row:hover { background: rgba(255,255,255,0.02); }
+.lb-row > .bar, .lb-row > .st, .lb-row > .cta { grid-column: 2; }
+@media (min-width: 940px) {
+  .lb-head, .lb-row { grid-template-columns: 36px minmax(0, 1.4fr) minmax(0, 2fr) 120px 150px; gap: var(--s-6); }
+  .lb-head { display: grid; padding: var(--s-3) var(--s-4); }
+  .lb-row > .bar, .lb-row > .st, .lb-row > .cta { grid-column: auto; }
+}
+.colhead { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-3); }
+.rank { font-size: 15px; font-weight: 700; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.rank.top { color: var(--fg-1); }  /* top ranks lift to fg-1; gold is reserved for money in play */
+.who { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.av { width: 40px; height: 40px; border-radius: var(--r-3); flex: none; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; color: rgba(243,243,247,.8); }
+.m0 { background: radial-gradient(120% 90% at 22% 18%, #24404f 0%, #141c22 62%); }
+.m1 { background: radial-gradient(120% 90% at 76% 20%, #4a2b34 0%, #21181c 64%); }
+.m3 { background: radial-gradient(120% 90% at 62% 26%, #363050 0%, #1c1a24 64%); }
+.who .n { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.who .m { font-size: 12.5px; color: var(--fg-3); }
+.track { display: flex; height: 8px; border-radius: var(--r-1); background: var(--data-track); overflow: hidden; }
+.track .g { background: var(--data-guaranteed); }
+.track .r { background: var(--data-restaked-hatch); }
+.track .p { background: var(--data-released); }
+.figs { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.figs .t { font-size: 15px; font-weight: 700; }
+.figs .t small { font-size: 12px; color: var(--fg-3); font-weight: 600; }
+.figs .g { font-size: 13px; color: var(--data-guaranteed); font-weight: 600; }
+.figs .r { font-size: 13px; color: var(--data-restaked); font-weight: 600; }
+.figs .p { font-size: 13px; color: var(--data-released); font-weight: 600; }
+.figs .m { font-size: 12px; color: var(--fg-3); }
+.legend { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-5); font-size: 12.5px; color: var(--fg-2); margin-top: var(--s-3); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { width: 22px; height: 8px; border-radius: 2px; display: inline-block; }
+
+/* ───────────────────────────── palette ───────────────────────────── */
+.pal { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: var(--s-3); margin-bottom: var(--s-6); }
+.sw { border: 1px solid var(--line-1); border-radius: var(--r-3); overflow: hidden; background: var(--bg-1); }
+.sw .c { height: 56px; }
+.sw .t { padding: 8px 10px; font-size: 12px; line-height: 1.35; }
+.sw .t b { display: block; font-weight: 600; color: var(--fg-1); }
+.sw .t span { font-family: var(--font-mono); color: var(--fg-3); font-size: 11.5px; }
+.sw .t em { font-style: normal; color: var(--fg-3); }
+h3.grp { font-size: 13px; font-weight: 600; color: var(--fg-2); margin: var(--s-5) 0 var(--s-3); }
+
+/* ───────────────────────────── type ───────────────────────────── */
+.ty { display: grid; grid-template-columns: 1fr; gap: var(--s-4); }
+.ty .l { display: grid; grid-template-columns: 1fr; gap: 4px; padding-bottom: var(--s-4); border-bottom: 1px solid var(--line-1); }
+@media (min-width: 768px) { .ty .l { grid-template-columns: 220px 1fr; gap: var(--s-6); align-items: baseline; } }
+.ty .l .mono { padding-top: 6px; }
+.d1 { font-size: 48px; font-weight: 800; line-height: 1.05; letter-spacing: -0.03em; }
+.d2 { font-size: 40px; font-weight: 800; line-height: 1.08; letter-spacing: -0.03em; }
+.h1 { font-size: 32px; font-weight: 700; line-height: 1.15; letter-spacing: -0.025em; }
+.h2 { font-size: 24px; font-weight: 700; line-height: 1.25; letter-spacing: -0.02em; }
+.h3 { font-size: 20px; font-weight: 700; line-height: 1.3; letter-spacing: -0.015em; }
+.h4 { font-size: 17px; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em; }
+.b-lg { font-size: 16px; font-weight: 400; line-height: 1.55; }
+.b { font-size: 15px; font-weight: 400; line-height: 1.5; }
+.b-sm { font-size: 14px; font-weight: 400; line-height: 1.5; }
+.ui { font-size: 13px; font-weight: 500; line-height: 1.4; }
+.cap { font-size: 12px; font-weight: 500; line-height: 1.4; color: var(--fg-3); }
+.mic { font-size: 11px; font-weight: 600; line-height: 1.3; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3); }
+@media (max-width: 767px) { .d1 { font-size: 36px; } .d2 { font-size: 32px; } .h1 { font-size: 28px; } }
+
+/* ───────────────────────────── misc ───────────────────────────── */
+.rad { display: flex; flex-wrap: wrap; gap: var(--s-4); }
+.rad div { width: 72px; height: 56px; background: var(--bg-2); border: 1px solid var(--line-2); display: flex; align-items: flex-end; justify-content: center; font-size: 11px; color: var(--fg-3); padding-bottom: 6px; }
+.sp { display: flex; align-items: flex-end; gap: var(--s-2); flex-wrap: wrap; }
+.sp div { background: var(--primary-subtle); border: 1px solid var(--primary-border); border-radius: 2px; font-size: 10px; color: var(--primary); display: flex; align-items: center; justify-content: center; }
+table.ct { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.ct th, table.ct td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line-1); }
+table.ct th { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); font-weight: 600; }
+table.ct td.n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.pass { color: var(--success); font-weight: 600; } .warnc { color: var(--gold); font-weight: 600; } .fail { color: var(--danger); font-weight: 600; }
+.grid2 { display: grid; grid-template-columns: 1fr; gap: var(--s-4); }
+@media (min-width: 768px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+.grid3 { display: grid; grid-template-columns: 1fr; gap: var(--s-3); }
+@media (min-width: 768px) { .grid3 { grid-template-columns: 1fr 1fr 1fr; } }
+.tile { position: relative; border-radius: var(--r-4); overflow: hidden; min-height: 180px; background: radial-gradient(120% 90% at 22% 18%, #24404f 0%, #141c22 62%); border: 1px solid var(--line-1); }
+.tile .sc { position: absolute; inset: 0; background: linear-gradient(to top, rgba(11,11,16,.92) 0%, rgba(11,11,16,.25) 40%, rgba(11,11,16,0) 65%); }
+.tile .tl { position: absolute; left: 12px; top: 10px; }
+.tile .tr { position: absolute; right: 10px; top: 8px; }
+.tile .bt { position: absolute; left: 14px; right: 12px; bottom: 12px; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.tile .nm { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.05; }
+.tile .mt { font-size: 12.5px; color: var(--fg-2); margin-top: 3px; }
+.plate { background: rgba(11,11,16,.62); padding: 4px 8px; border-radius: var(--r-1); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════ LOGO TEST ═══════════════════════ -->
+<div id="logo-test">
+  <header class="nav">
+    <a href="#"><img class="logo" src="logo-badge.png" alt="MegaChat"></a>
+    <nav class="links"><a class="on" href="#">Rooms</a><a href="#">Bounties</a><a href="#">How it works</a></nav>
+    <div class="right">
+      <span class="onair"><i class="live-dot"></i> 3 on air</span>
+      <a class="btn ghost" href="#">Sign in</a>
+      <a class="btn primary" href="#">Enter app</a>
+    </div>
+  </header>
+  <header class="nav nav2">
+    <div class="crumb"><img class="icon" src="logo-icon.png" alt=""><b>New room</b><span class="url">·</span><span class="url">megachat.fun/yourname</span></div>
+    <div class="right">
+      <span class="chip"><span class="av"></span><span class="num">$12.40</span><span class="unit" style="color:var(--fg-3);font-weight:500">USDC</span></span>
+      <a class="btn primary" href="#">Create room</a>
+    </div>
+  </header>
+  <div class="wrap" style="padding-top:20px;padding-bottom:20px;display:flex;flex-wrap:wrap;gap:24px;align-items:center;border-bottom:1px solid var(--line-1)">
+    <span class="mega-word">MEGA</span>
+    <span class="tag blue">primary #7FC5FF</span>
+    <span class="tag gold">gold #FFD63E</span>
+    <span class="tag green">success #5BE9AC</span>
+    <span class="tag" style="color:var(--danger);border-color:rgba(255,124,132,.4);background:var(--danger-subtle)">danger #FF7C84</span>
+    <span class="tag" style="color:var(--brand-violet-text)">violet-text #BAA4FF</span>
+    <span class="tag" style="color:var(--brand-magenta-text)">magenta-text #FF7CBD</span>
+    <span class="tag" style="color:var(--data-released)">released #CEB6FC</span>
+    <span class="mono" style="margin-left:auto">bg-0 #0B0B10 · logo ground #0B0A12</span>
+  </div>
+</div>
+
+<div class="wrap">
+
+<!-- ═══════════════════════ PALETTE ═══════════════════════ -->
+<section>
+  <p class="kicker">Colour roles</p>
+  <h2 class="sec">One action colour, one attention colour, the logo kept for identity</h2>
+  <p class="note">Black stays the base but the neutrals carry a violet tint (OKLCH hue 285, chroma ≤ 0.015) so panels read as indigo-black rather than dead grey. Powder blue is the only colour a button ever wears. Gold is money in play. The violet→magenta gradient is the logo's, and text never wears it.</p>
+
+  <h3 class="grp">Surfaces</h3>
+  <div class="pal" id="pal-surf"></div>
+  <h3 class="grp">Text tiers</h3>
+  <div class="pal" id="pal-text"></div>
+  <h3 class="grp">Primary — Chargers powder blue</h3>
+  <div class="pal" id="pal-primary"></div>
+  <h3 class="grp">Secondary — Chargers gold</h3>
+  <div class="pal" id="pal-gold"></div>
+  <h3 class="grp">Brand — from the logo</h3>
+  <div class="pal" id="pal-brand"></div>
+  <h3 class="grp">Semantic</h3>
+  <div class="pal" id="pal-sem"></div>
+  <h3 class="grp">Data — bounty bars first, generic series second</h3>
+  <div class="pal" id="pal-data"></div>
+</section>
+
+<!-- ═══════════════════════ BOUNTY BARS ═══════════════════════ -->
+<section>
+  <p class="kicker">Data · the stacked bar</p>
+  <h2 class="sec">Guaranteed, restaked, released — three hues, three lightnesses, one pattern</h2>
+  <p class="note">Solid green is locked to this name. Gold hatch is money also pledged to rivals, so it may never arrive; the hatch is the redundancy for anyone who cannot split green from gold. Lavender is what has already paid out. The bar's total is the track length and the bold number; the segments are never summed into a blended headline.</p>
+  <div class="lb">
+    <div class="lb-head"><span class="colhead">#</span><span class="colhead">Streamer</span><span class="colhead">Pledged</span><span class="colhead">Status</span><span></span></div>
+    <div class="lb-row">
+      <span class="rank top">01</span>
+      <div class="who"><span class="av m0">T</span><span style="min-width:0"><span class="n">threadguy</span><br><span class="m">2 backers · Twitch</span></span></div>
+      <div class="bar">
+        <div class="track"><span class="g" style="width:50%"></span><span class="r" style="width:50%"></span></div>
+        <div class="figs"><span class="t">200 <small>USDC</small></span><span class="g">100 guaranteed</span><span class="r">+100 restaked</span><span class="m">against 4 others</span></div>
+      </div>
+      <span class="st"><span class="pip" style="color:var(--fg-2)"><i></i>Unclaimed</span></span>
+      <span class="cta"><a class="btn primary sm" href="#">Put money on it</a></span>
+    </div>
+    <div class="lb-row">
+      <span class="rank top">02</span>
+      <div class="who"><span class="av m1">C</span><span style="min-width:0"><span class="n">chessbrah</span><br><span class="m">1 backer · Kick</span></span></div>
+      <div class="bar">
+        <div class="track"><span class="g" style="width:82%"></span><span class="r" style="width:18%"></span></div>
+        <div class="figs"><span class="t">122 <small>USDC</small></span><span class="g">100 guaranteed</span><span class="r">+22 restaked</span><span class="m">against 1 other</span></div>
+      </div>
+      <span class="st"><span class="pip" style="color:var(--gold)"><i></i>Seeded</span></span>
+      <span class="cta"><a class="btn primary sm" href="#">Put money on it</a></span>
+    </div>
+    <div class="lb-row" style="opacity:.7">
+      <span class="rank">03</span>
+      <div class="who"><span class="av m3">R</span><span style="min-width:0"><span class="n">rasmr</span><br><span class="m">6 backers · X</span></span></div>
+      <div class="bar">
+        <div class="track"><span class="p" style="width:64%"></span><span class="g" style="width:36%"></span></div>
+        <div class="figs"><span class="t">340 <small>USDC</small></span><span class="p">218 paid out</span><span class="g">122 guaranteed</span><span class="m">claimed 2 days ago</span></div>
+      </div>
+      <span class="st"><span class="pip" style="color:var(--success)"><i></i>Claimed</span></span>
+      <span class="cta"><a class="btn ghost sm" href="#">Watch the room</a></span>
+    </div>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--data-guaranteed)"></i>Guaranteed — locked to this name</span>
+    <span><i style="background:var(--data-restaked-hatch)"></i>Restaked — also pledged to rivals</span>
+    <span><i style="background:var(--data-released)"></i>Released — already paid out</span>
+    <span><i style="background:var(--data-track)"></i>Track — the total</span>
+  </div>
+</section>
+
+<!-- ═══════════════════════ COMPONENTS ═══════════════════════ -->
+<section>
+  <p class="kicker">Components</p>
+  <h2 class="sec">Every input engineered the same way</h2>
+  <div class="grid2">
+    <div class="col">
+      <h3 class="grp" style="margin-top:0">Buttons — one primary per view</h3>
+      <div class="row"><a class="btn primary">Take a seat</a><a class="btn gold">Join queue</a><a class="btn ghost">Browse rooms</a><a class="btn quiet">Cancel</a><a class="btn danger">End session</a><a class="btn primary disabled">Create room</a></div>
+      <div class="row"><a class="btn primary sm">Small</a><a class="btn primary">Medium</a><a class="btn primary lg">Large · Enter MegaChat</a><a class="btn primary focus">Focused</a></div>
+      <h3 class="grp">Status pips + tags</h3>
+      <div class="row">
+        <span class="pip" style="color:var(--live)"><i class="live-dot"></i>On air</span>
+        <span class="pip" style="color:var(--gold)"><i></i>Queue</span>
+        <span class="pip" style="color:var(--fg-2)"><i></i>Open</span>
+        <span class="pip" style="color:var(--fg-4)"><i></i>Ended</span>
+        <span class="tag">Twitch</span><span class="tag blue">0.001 USDC / s</span><span class="tag gold">3 waiting</span><span class="tag green">Drops</span>
+      </div>
+      <h3 class="grp">Feedback</h3>
+      <div class="toast"><span class="ok">✓</span><span><b style="font-weight:600">MegaChat sent.</b> <span style="color:var(--fg-2)">Airs after the filter clears — 0.01 USDC held.</span></span></div>
+      <div class="banner danger"><b>Not enough USDC.</b><span style="color:var(--fg-2)">You need 0.05 to hold a 10s clip. Top up or shorten the clip.</span></div>
+      <div class="banner warn"><b>Contested.</b><span style="color:var(--fg-2)">100 USDC of this pool is also pledged to 4 other names.</span></div>
+    </div>
+    <div class="col">
+      <h3 class="grp" style="margin-top:0">Fields</h3>
+      <div class="field"><span class="lbl">Room name</span><div class="input">HERRRRRO KRISTOPHER</div><span class="hint">Shown on the board and the overlay.</span></div>
+      <div class="field"><span class="lbl">Your link</span><div class="input focus mono">megachat.fun/<span style="color:var(--fg-1)">kristopher</span></div><span class="hint">Lowercase, numbers and underscores. 3–20 characters.</span></div>
+      <div class="field"><span class="lbl">Room password</span><div class="input error"><span class="ph">At least 4 characters</span></div><span class="hint err">Too short — this is the only way back into your room.</span></div>
+      <div class="row" style="gap:20px">
+        <div class="field"><span class="lbl">Open mic rate</span><div class="stepper"><span class="k">−</span><span class="v">$0.005<small>/s</small></span><span class="k">+</span></div><span class="hint">$0.30 a minute</span></div>
+        <div class="field"><span class="lbl">Who screens clips</span><div class="seg"><span class="on">AI only</span><span>AI, then me</span></div><span class="hint">Airs once the filter clears</span></div>
+        <div class="field"><span class="lbl">Longest clip</span><div class="seg"><span>5s</span><span class="on">10s</span><span>15s</span><span>20s</span><span>30s</span></div></div>
+      </div>
+      <div class="row" style="gap:24px"><span class="check"><span class="box on"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#061A30" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>Save as my defaults</span><span class="check"><span class="box"></span>Refund clips I reject</span><span class="check"><span class="toggle on"></span>Open mic</span><span class="check"><span class="toggle"></span>Drops</span></div>
+      <h3 class="grp">Cards</h3>
+      <div class="card selected"><div class="row" style="justify-content:space-between"><h4>MegaChats <span style="font-weight:500;color:var(--fg-3)">— fans pay per second of clip, airs itself</span></h4><span class="pip" style="color:var(--success)">On</span></div></div>
+      <div class="card"><div class="row" style="justify-content:space-between"><h4 style="color:var(--fg-2)">Open mic <span style="font-weight:500;color:var(--fg-3)">— viewers take camera seats beside you</span></h4><span class="pip" style="color:var(--fg-3)">Opt in</span></div></div>
+      <div class="card raised" style="display:flex;gap:40px;flex-wrap:wrap"><div class="stat"><span class="k">In escrow</span><span class="v">600 <small>USDC</small></span><span class="m">real, counted once</span></div><div class="stat"><span class="k">Across pools</span><span class="v" style="color:var(--gold)">1,000 <small>USDC</small></span><span class="m">contested, counted per name</span></div></div>
+    </div>
+  </div>
+  <h3 class="grp">Room tile (Booth) — token alignment only</h3>
+  <div class="grid3">
+    <div class="tile"><div class="sc"></div><span class="tl pip plate" style="color:var(--live)"><i class="live-dot"></i>On air</span><span class="tr plate">0.001 USDC / 1s</span><div class="bt"><div><div class="nm">HERRRRRO KRISTOPHER</div><div class="mt">2 of 3 on camera · Twitch · Drops</div></div><a class="btn primary sm">Take a seat</a></div></div>
+    <div class="tile" style="background:radial-gradient(120% 90% at 76% 20%, #4a2b34 0%, #21181c 64%)"><div class="sc"></div><span class="tl pip plate" style="color:var(--gold)"><i></i>Full</span><span class="tr plate">0.005 USDC / 1s</span><div class="bt"><div><div class="nm">chessbrah</div><div class="mt">3 of 3 on camera · 4 waiting</div></div><a class="btn gold sm">Join queue</a></div></div>
+    <div class="tile" style="background:var(--bg-1);border-style:dashed;border-color:var(--line-2)"><div class="bt" style="inset:0;align-items:center;justify-content:center;flex-direction:column;gap:6px;text-align:center"><div style="color:var(--primary);font-size:24px;line-height:1">+</div><div class="nm" style="font-size:16px;color:var(--primary)">Open a room</div><div class="mt" style="color:var(--fg-3)">Your stream, your seats, your rate.</div></div></div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ TYPE ═══════════════════════ -->
+<section>
+  <p class="kicker">Type scale</p>
+  <h2 class="sec">Plus Jakarta Sans, one family, twelve steps</h2>
+  <div class="ty">
+    <div class="l"><span class="mono">display-1 · 48/1.05 · 800 · −0.03em</span><span class="d1">Skip the chat. Be the stream.</span></div>
+    <div class="l"><span class="mono">display-2 · 40/1.08 · 800 · −0.03em</span><span class="d2">Parasocial is a design flaw.</span></div>
+    <div class="l"><span class="mono">h1 · 32/1.15 · 700 · −0.025em</span><span class="h1">Your favorite streamer doesn't even know you.</span></div>
+    <div class="l"><span class="mono">h2 · 24/1.25 · 700 · −0.02em</span><span class="h2">How a seat works</span></div>
+    <div class="l"><span class="mono">h3 · 20/1.3 · 700 · −0.015em</span><span class="h3">What runs in your room</span></div>
+    <div class="l"><span class="mono">h4 · 17/1.35 · 600 · −0.01em</span><span class="h4">MegaChats — fans pay per second of clip</span></div>
+    <div class="l"><span class="mono">body-lg · 16/1.55 · 400</span><span class="b-lg">Streamers set a per-second rate. It runs while your camera is live and stops the instant you leave.</span></div>
+    <div class="l"><span class="mono">body · 15/1.5 · 400</span><span class="b">Claim a paid camera seat at the streamer's per-second rate. Billing starts when your camera goes live.</span></div>
+    <div class="l"><span class="mono">body-sm · 14/1.5 · 400</span><span class="b-sm">Every unspent cent refunds straight back to your wallet.</span></div>
+    <div class="l"><span class="mono">ui · 13/1.4 · 500</span><span class="ui">Sign in · Bounties · How it works</span></div>
+    <div class="l"><span class="mono">caption · 12/1.4 · 500</span><span class="cap">Sample art — every number is your live configuration.</span></div>
+    <div class="l"><span class="mono">micro · 11/1.3 · 600 · +0.08em · caps</span><span class="mic">In escrow · Streamer · Pledged</span></div>
+    <div class="l"><span class="mono">mono · 13/1.4 · Geist Mono</span><span class="mono" style="font-size:13px;color:var(--fg-1)">0x3fA1…9c2E · 0.001 USDC/s · megachat.fun/kristopher</span></div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ RADIUS / SPACE ═══════════════════════ -->
+<section>
+  <p class="kicker">Radius · spacing</p>
+  <h2 class="sec">Four radii, never bubbly</h2>
+  <div class="rad"><div style="border-radius:4px">r-1 · 4</div><div style="border-radius:6px">r-2 · 6</div><div style="border-radius:8px">r-3 · 8</div><div style="border-radius:12px">r-4 · 12</div><div style="border-radius:999px;width:96px">pill</div></div>
+  <h3 class="grp">Spacing (4px base)</h3>
+  <div class="sp"><div style="width:4px;height:4px"></div><div style="width:8px;height:8px"></div><div style="width:12px;height:12px"></div><div style="width:16px;height:16px">4</div><div style="width:20px;height:20px">5</div><div style="width:24px;height:24px">6</div><div style="width:32px;height:32px">8</div><div style="width:40px;height:40px">10</div><div style="width:48px;height:48px">12</div><div style="width:64px;height:64px">16</div><div style="width:96px;height:96px">24</div></div>
+</section>
+
+<!-- ═══════════════════════ CONTRAST ═══════════════════════ -->
+<section style="border-bottom:0">
+  <p class="kicker">Contrast audit</p>
+  <h2 class="sec">Computed in the browser, not asserted</h2>
+  <div style="overflow-x:auto"><table class="ct" id="ct"><thead><tr><th>Pair</th><th>Fg</th><th>Bg</th><th>Ratio</th><th>AA text</th><th>AA large / UI</th></tr></thead><tbody></tbody></table></div>
+</section>
+
+</div>
+
+<script>
+const T = {
+  surf: [['bg-0 canvas','#0B0B10'],['bg-1 panel','#13131A'],['bg-2 raised','#1C1C23'],['bg-3 hover/track','#27272F'],['line-1 (8% white)','#1E1E23'],['line-2 (14% white)','#2D2D32'],['line-3 (24% white)','#414146']],
+  text: [['fg-1','#F3F3F7'],['fg-2','#BDBDC5'],['fg-3','#92919A'],['fg-4 placeholder','#63626B']],
+  primary: [['primary','#7FC5FF'],['primary-hover','#98D3FF'],['primary-pressed','#69B3F0'],['primary-ink','#061A30'],['primary-subtle 12%','rgba(127,197,255,.12)'],['primary-border 45%','rgba(127,197,255,.45)']],
+  gold: [['gold','#FFD63E'],['gold-hover','#FFE161'],['gold-ink','#301D00'],['gold-subtle 12%','rgba(255,214,62,.12)']],
+  brand: [['brand-violet','#6A1FF4'],['brand-magenta','#FF1C82'],['brand-gradient','linear-gradient(135deg,#6A1FF4,#B21DBE 50%,#FF1C82)'],['brand-violet-text','#BAA4FF'],['brand-magenta-text','#FF7CBD'],['brand-glow 35%','rgba(140,60,255,.35)']],
+  sem: [['success / live','#5BE9AC'],['success-ink','#002112'],['warn (= gold)','#FFD63E'],['danger','#FF7C84'],['danger-ink','#290B0D'],['info (= primary)','#7FC5FF']],
+  data: [['guaranteed','#5BE9AC'],['restaked (hatch)','repeating-linear-gradient(135deg,#FFD63E 0 3px,rgba(255,214,62,.22) 3px 6px)'],['released','#CEB6FC'],['data-4','#FF9E84'],['data-5','#7FC5FF'],['track','#27272F']],
+};
+function lum(hex){const c=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255).map(v=>v<=0.03928?v/12.92:((v+0.055)/1.055)**2.4);return .2126*c[0]+.7152*c[1]+.0722*c[2];}
+function cr(a,b){const l1=lum(a),l2=lum(b);return (Math.max(l1,l2)+.05)/(Math.min(l1,l2)+.05);}
+for (const [k,list] of Object.entries(T)) {
+  const el=document.getElementById('pal-'+k); if(!el) continue;
+  el.innerHTML=list.map(([n,v])=>{const hex=/^#/.test(v)?v:null;const c=hex?cr(hex,'#0B0B10').toFixed(1)+':1 on bg-0':'';return `<div class="sw"><div class="c" style="background:${v}"></div><div class="t"><b>${n}</b><span>${hex||'—'}</span>${c?`<br><em>${c}</em>`:''}</div></div>`;}).join('');
+}
+const pairs=[['fg-1 on bg-0','#F3F3F7','#0B0B10'],['fg-2 on bg-0','#BDBDC5','#0B0B10'],['fg-3 on bg-0','#92919A','#0B0B10'],['fg-3 on bg-2','#92919A','#1C1C23'],['fg-4 on bg-2 (placeholder)','#63626B','#1C1C23'],['primary on bg-0','#7FC5FF','#0B0B10'],['primary-ink on primary','#061A30','#7FC5FF'],['gold on bg-0','#FFD63E','#0B0B10'],['gold-ink on gold','#301D00','#FFD63E'],['success on bg-0','#5BE9AC','#0B0B10'],['success-ink on success','#002112','#5BE9AC'],['danger on bg-0','#FF7C84','#0B0B10'],['danger-ink on danger','#290B0D','#FF7C84'],['brand-violet-text on bg-0','#BAA4FF','#0B0B10'],['brand-magenta-text on bg-0','#FF7CBD','#0B0B10'],['brand-violet (raw) on bg-0','#6A1FF4','#0B0B10'],['released on bg-1','#CEB6FC','#13131A'],['line-3 on bg-0 (UI border)','#414146','#0B0B10'],['bg-1 vs bg-0','#13131A','#0B0B10']];
+document.querySelector('#ct tbody').innerHTML=pairs.map(([n,f,b])=>{const r=cr(f,b);const aa=r>=4.5?'<span class=pass>pass</span>':'<span class=fail>fail</span>';const lg=r>=3?'<span class=pass>pass</span>':'<span class=fail>fail</span>';return `<tr><td>${n}</td><td class=n>${f}</td><td class=n>${b}</td><td class=n>${r.toFixed(2)}</td><td>${aa}</td><td>${lg}</td></tr>`;}).join('');
+</script>
+</body>
+</html>

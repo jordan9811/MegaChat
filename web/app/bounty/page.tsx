@@ -16,7 +16,7 @@ const ui = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: 'Bounties — MegaChat',
   description:
-    'Your favorite streamer doesn’t even know you. Put money on their name and make them show up.',
+    'Your favorite streamer doesn’t even know you. Create a bounty they can claim by going live.',
 }
 
 export default function BountyPage() {

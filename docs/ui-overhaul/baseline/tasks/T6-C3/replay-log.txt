@@ -1,0 +1,195 @@
+6.0s  shot 01-account-signin-wall.png  https://megachat.fun/account
+6.0s  CLICK #1 Sign in (account card) [main button:has-text("Sign in"), button:has-text("Sign in") >> nth=1]
+7.6s  shot 02-account-privy-modal-DEAD-END-1.png  https://megachat.fun/account
+9.6s  CLICK #2 close Privy [[aria-label="close modal"]]
+10.5s  shot 03-account-modal-closed.png  https://megachat.fun/account
+10.5s  CLICK #3 MEGACHAT logo [a[href="/app"]]
+16.2s  shot 04-app-room-wall.png  https://megachat.fun/app
+16.2s  CONFUSION: no "Open a room" tile on the wall, no Dashboard link in header — scanning
+23.4s  shot 05-app-wall-scrolled-no-open-a-room.png  https://megachat.fun/app
+23.4s  CLICK #4 How it works (only streamer-ish link left) [a[href="/how-it-works"]]
+27.5s  shot 06-how-it-works-top.png  https://megachat.fun/how-it-works
+30.1s  shot 07-how-it-works-bottom-start-a-room.png  https://megachat.fun/how-it-works
+30.1s  CLICK #5 Start a room [a:has-text("Start a room")]
+37.3s  shot 08-create-room-form-top.png  https://megachat.fun/dashboard
+39.9s  shot 09-create-room-form-bottom.png  https://megachat.fun/dashboard
+39.9s  CLICK #6 Save this setup as my defaults toggle [button:has-text("Save this setup as my defaults")]
+42.5s  shot 10-save-defaults-toggled-no-prompt.png  https://megachat.fun/dashboard
+42.5s  after toggle: {"ls":["mc-entered"],"sub":"Save this setup as my defaults\nSign in to keep defaults."}
+44.0s  CLICK #7 Sign in (header, create room) [button:has-text("Sign in")]
+45.7s  shot 11-create-room-privy-modal-DEAD-END-2.png  https://megachat.fun/dashboard
+47.7s  CLICK #8 close Privy [[aria-label="close modal"]]
+48.6s  shot 12-create-room-modal-closed.png  https://megachat.fun/dashboard
+48.6s  CLICK #9 Name your room [button:has-text("Name your room")]
+51.2s  shot 13-room-named.png  https://megachat.fun/dashboard
+51.2s  CLICK #10 Room password field [input[type=password]]
+53.5s  shot 14-form-filled-before-create.png  https://megachat.fun/dashboard
+53.5s  pre-create state: {"url":"https://megachat.fun/dashboard","name":"0.001","pw":"c3test1234","modal":false,"createBtn":"Create room","tabs":[]}
+53.5s  CLICK #11 Create room [button:has-text("Create room")]
+54.0s  shot 15-create-room-clicked-opening.png  https://megachat.fun/dashboard
+57.1s  shot 16-after-create-room.png  https://megachat.fun/dashboard
+57.1s  post-create state: {"url":"https://megachat.fun/dashboard","pw":"","modal":false,"tabs":["Log in / Sign up","Defaults"]}
+57.1s  BRANCH = managing
+60.3s  shot 17-managing-dashboard.png  https://megachat.fun/dashboard
+60.3s  CLICK #12 Defaults tab [button:has-text("Defaults"), a:has-text("Defaults")]
+62.9s  shot 18-managing-defaults-tab.png  https://megachat.fun/dashboard?section=defaults
+62.9s  CLICK #13 Log in / Sign up (managing) [button:has-text("Log in"), button:has-text("Sign in")]
+64.5s  shot 19-managing-privy-modal-DEAD-END-3.png  https://megachat.fun/dashboard?section=defaults
+TOTAL 64.5s  CLICKS 13  SHOTS 19
+
+=== NETWORK (non-static) ===
+0.0s > GET /account
+0.2s < 200 /account 
+0.2s > GET https://static.cloudflareinsights.com/beacon.min.js/v3d52b47920f24c319d37e2661827c42b1787588026925
+0.3s < 200 https://static.cloudflareinsights.com/beacon.min.js/v3d52b47920f24c319d37e2661827c42b1787588026925 
+0.5s > POST /cdn-cgi/rum? body=
+0.5s > POST /cdn-cgi/rum? body={"startTime":1788371583275,"pageloadId":"c0256168-0234-467a-8ddd-0ab0d5bc654c","eventType":1,"nt":"routing-apis","location":"https://megachat.fun/account","referrer":"https://megachat.fun/account","versions":{"fl":"2024.11.0","js":"2026.8.4","timings":1},"ntapi":1,"siteToken":"ee4d532cfdf94837ba0e73
+0.5s > POST /cdn-cgi/rum? body={"startTime":1788371583275,"pageloadId":"c0256168-0234-467a-8ddd-0ab0d5bc654c","n":2,"eventType":1,"nt":"routing-apis","location":"https://megachat.fun/account","referrer":"https://megachat.fun/account","versions":{"fl":"2024.11.0","js":"2026.8.4","timings":1},"ntapi":1,"siteToken":"ee4d532cfdf94837
+0.5s > GET /api/auth/me
+0.5s > GET /api/auth/me
+0.5s > GET /api/config?room=default
+0.5s < 204 /cdn-cgi/rum? 
+0.5s < 204 /cdn-cgi/rum? 
+0.5s < 204 /cdn-cgi/rum? 
+0.6s < 200 /api/config?room=default {"roomId":"default","roomName":"Default Room","roomActive":true,"lazyConnect":{"enabled":true,"scope":"seat","heartbeatIntervalMs":15000,"signalPollMs":4000,"connectRetryBaseMs":500,"connectRetryMaxMs":15000},"obsOneClick":true,"chainId":4217,"chainIdHex":"0x1079","chainName":"Tempo","network":"eip1
+0.6s < 200 /api/auth/me {"identity":null}
+0.7s < 200 /api/auth/me {"identity":null}
+0.9s > HEAD /account
+1.1s > HEAD /account
+1.1s < 200 /account 
+1.2s < 200 /account 
+10.5s > POST /cdn-cgi/rum? body=
+10.5s > GET /app
+10.5s < 204 /cdn-cgi/rum? 
+10.7s < 200 /app 
+10.7s > GET https://static.cloudflareinsights.com/beacon.min.js/v3d52b47920f24c319d37e2661827c42b1787588026925
+10.7s < 200 https://static.cloudflareinsights.com/beacon.min.js/v3d52b47920f24c319d37e2661827c42b1787588026925 
+10.8s > POST /cdn-cgi/rum? body={"startTime":1788371593310,"pageloadId":"0b346705-8919-4bca-ae0d-1c10a4cc1dd9","eventType":1,"nt":"navigate","location":"https://megachat.fun/app","referrer":"https://megachat.fun/account","versions":{"fl":"2024.11.0","js":"2026.8.4","timings":2},"memory":{"totalJSHeapSize":76600000,"usedJSHeapSize"
+10.8s > POST /cdn-cgi/rum? body=
+10.8s > POST /cdn-cgi/rum? body={"startTime":1788371593561,"pageloadId":"120da0ec-ec16-464a-a218-58c7afcb09c4","n":2,"eventType":1,"nt":"routing-apis","location":"https://megachat.fun/app","referrer":"https://megachat.fun/app","versions":{"fl":"2024.11.0","js":"2026.8.4","timings":1},"ntapi":1,"siteToken":"ee4d532cfdf94837ba0e73cb
+10.8s > GET /api/auth/me
+10.8s > GET /api/config?room=default
+10.8s > GET /bounty/s/x/martinshkreli?_rsc=R0tRxeXOP7hmQRIY
+10.8s > GET /bounty/s/kick/chessbrah?_rsc=R0tRxeXOP7hmQRIY
+10.8s > GET /bounty/s/twitch/threadguy?_rsc=R0tRxeXOP7hmQRIY
+10.8s > GET /legacy?_rsc=R0tRxeXOP7hmQRIY
+10.8s < 204 /cdn-cgi/rum? 
+10.8s < 204 /cdn-cgi/rum? 
+10.8s < 204 /cdn-cgi/rum? 
+10.9s < 200 /api/config?room=default {"roomId":"default","roomName":"Default Room","roomActive":true,"lazyConnect":{"enabled":true,"scope":"seat","heartbeatIntervalMs":15000,"signalPollMs":4000,"connectRetryBaseMs":500,"connectRetryMaxMs":15000},"obsOneClick":true,"chainId":4217,"chainIdHex":"0x1079","chainName":"Tempo","network":"eip1
+10.9s < 200 /legacy?_rsc=R0tRxeXOP7hmQRIY 
+10.9s < 200 /bounty/s/twitch/threadguy?_rsc=R0tRxeXOP7hmQRIY 
+10.9s < 200 /api/auth/me {"identity":null}
+10.9s > GET /how-it-works?_rsc=R0tRxeXOP7hmQRIY
+10.9s < 200 /bounty/s/kick/chessbrah?_rsc=R0tRxeXOP7hmQRIY 
+10.9s > HEAD /app
+10.9s > GET /bounty?_rsc=R0tRxeXOP7hmQRIY
+10.9s < 200 /bounty/s/x/martinshkreli?_rsc=R0tRxeXOP7hmQRIY 
+10.9s > HEAD /app
+10.9s > GET /?stay=1&_rsc=R0tRxeXOP7hmQRIY
+10.9s > GET /bounty/s/x/martinshkreli?_rsc=KTVpN2EO63YCLLZU
+11.0s < 200 /how-it-works?_rsc=R0tRxeXOP7hmQRIY 
+11.0s > GET /bounty/s/kick/chessbrah?_rsc=KTVpN2EO63YCLLZU
+11.1s < 200 /bounty?_rsc=R0tRxeXOP7hmQRIY 
+11.1s < 200 /bounty/s/x/martinshkreli?_rsc=KTVpN2EO63YCLLZU 
+11.1s < 200 /?stay=1&_rsc=R0tRxeXOP7hmQRIY 
+11.1s < 200 /app 
+11.1s < 200 /app 
+11.1s > GET /bounty/s/twitch/threadguy?_rsc=KTVpN2EO63YCLLZU
+11.1s > GET /legacy?_rsc=KTVpN2EO63YCLLZU
+11.1s > GET /how-it-works?_rsc=mz_YIMrM44wxgAS9
+11.1s > GET /how-it-works?_rsc=nwl-2bOUu1kZwbbi
+11.2s < 200 /bounty/s/kick/chessbrah?_rsc=KTVpN2EO63YCLLZU 
+11.3s < 200 /bounty/s/twitch/threadguy?_rsc=KTVpN2EO63YCLLZU 
+11.3s < 200 /how-it-works?_rsc=mz_YIMrM44wxgAS9 
+11.3s > GET /how-it-works?_rsc=97mF0S3SiJLnmbmO
+11.3s > GET /how-it-works?_rsc=MaPn8CLDsVJb3vhs
+11.3s < 200 /how-it-works?_rsc=nwl-2bOUu1kZwbbi 
+11.3s < 200 /legacy?_rsc=KTVpN2EO63YCLLZU 
+11.3s > GET /bounty?_rsc=KTVpN2EO63YCLLZU
+11.3s > GET /?stay=1&_rsc=KTVpN2EO63YCLLZU
+11.4s < 200 /bounty?_rsc=KTVpN2EO63YCLLZU 
+11.4s < 200 /how-it-works?_rsc=MaPn8CLDsVJb3vhs 
+11.4s < 200 /how-it-works?_rsc=97mF0S3SiJLnmbmO 
+11.4s > GET /?_rsc=R0tRxeXOP7hmQRIY
+11.4s < 200 /?stay=1&_rsc=KTVpN2EO63YCLLZU 
+11.5s < 200 /?_rsc=R0tRxeXOP7hmQRIY 
+15.8s > GET /api/rooms/public
+15.9s < 200 /api/rooms/public {"rooms":[{"id":"33e51df4","name":"c3 obs test b","handle":null,"live":0,"waiting":0,"maxSeats":3,"passkeyTickPrice":"0.001","passkeyTickSeconds":1,"paymentTokenSymbol":"USDC.e","rewardsEnabled":false,"twitchChannel":null,"twitchLive":false,"createdAt":"2026-09-02T17:52:44.981Z"},{"id":"ab06e1ad","n
+20.8s > GET /api/rooms/public
+21.1s < 200 /api/rooms/public {"rooms":[{"id":"33e51df4","name":"c3 obs test b","handle":null,"live":0,"waiting":0,"maxSeats":3,"passkeyTickPrice":"0.001","passkeyTickSeconds":1,"paymentTokenSymbol":"USDC.e","rewardsEnabled":false,"twitchChannel":null,"twitchLive":false,"createdAt":"2026-09-02T17:52:44.981Z"},{"id":"ab06e1ad","n
+23.4s > POST /cdn-cgi/rum? body=
+23.4s > POST /cdn-cgi/rum? body={"startTime":1788371606244,"pageloadId":"afde7486-06bd-4ad7-a9e1-9a031b0fd432","n":3,"eventType":1,"nt":"routing-apis","location":"https://megachat.fun/how-it-works","referrer":"https://megachat.fun/app","versions":{"fl":"2024.11.0","js":"2026.8.4","timings":1},"ntapi":1,"siteToken":"ee4d532cfdf9483
+23.5s > GET /api/auth/me
+23.5s < 204 /cdn-cgi/rum? 
+23.5s < 204 /cdn-cgi/rum? 
+23.6s < 200 /api/auth/me {"identity":null}
+30.1s > POST /cdn-cgi/rum? body=
+30.1s > GET /dashboard
+30.1s < 204 /cdn-cgi/rum? 
+30.2s < 200 /dashboard 
+30.2s > GET https://static.cloudflareinsights.com/beacon.min.js/v3d52b47920f24c319d37e2661827c42b1787588026925
+30.2s < 200 https://static.cloudflareinsights.com/beacon.min.js/v3d52b47920f24c319d37e2661827c42b1787588026925 
+30.3s > POST /cdn-cgi/rum? body=
+30.3s > POST /cdn-cgi/rum? body={"startTime":1788371613061,"pageloadId":"c87893c9-8223-4441-9a19-8b4f5307dcd4","eventType":1,"nt":"routing-apis","location":"https://megachat.fun/dashboard","referrer":"https://megachat.fun/dashboard","versions":{"fl":"2024.11.0","js":"2026.8.4","timings":1},"ntapi":1,"siteToken":"ee4d532cfdf94837ba
+30.3s > GET /api/config?room=default
+30.3s > POST /cdn-cgi/rum? body={"startTime":1788371613061,"pageloadId":"c87893c9-8223-4441-9a19-8b4f5307dcd4","n":2,"eventType":1,"nt":"navigate","location":"https://megachat.fun/dashboard","referrer":"https://megachat.fun/dashboard","versions":{"fl":"2024.11.0","js":"2026.8.4","timings":2},"memory":{"totalJSHeapSize":76600000,"u
+30.3s > GET /api/auth/me
+30.3s > GET /api/config?room=default
+30.3s > GET /api/auth/me
+30.3s > GET /api/dashboard/my-rooms
+30.3s > GET /api/account/defaults
+30.3s > GET /api/account/linked
+30.3s < 204 /cdn-cgi/rum? 
+30.3s < 204 /cdn-cgi/rum? 
+30.3s < 204 /cdn-cgi/rum? 
+30.4s < 200 /api/config?room=default {"roomId":"default","roomName":"Default Room","roomActive":true,"lazyConnect":{"enabled":true,"scope":"seat","heartbeatIntervalMs":15000,"signalPollMs":4000,"connectRetryBaseMs":500,"connectRetryMaxMs":15000},"obsOneClick":true,"chainId":4217,"chainIdHex":"0x1079","chainName":"Tempo","network":"eip1
+30.4s CONSOLE Failed to load resource: the server responded with a status of 401 ()
+30.4s < 200 /api/dashboard/my-rooms {"rooms":[]}
+30.4s CONSOLE Failed to load resource: the server responded with a status of 401 ()
+30.4s > HEAD /dashboard
+30.4s < 200 /api/auth/me {"identity":null}
+30.4s > HEAD /dashboard
+30.4s < 401 /api/account/defaults {"error":"Sign in first"}
+30.4s < 401 /api/account/linked {"error":"Sign in first"}
+30.5s < 200 /api/config?room=default {"roomId":"default","roomName":"Default Room","roomActive":true,"lazyConnect":{"enabled":true,"scope":"seat","heartbeatIntervalMs":15000,"signalPollMs":4000,"connectRetryBaseMs":500,"connectRetryMaxMs":15000},"obsOneClick":true,"chainId":4217,"chainIdHex":"0x1079","chainName":"Tempo","network":"eip1
+30.5s < 200 /api/auth/me {"identity":null}
+30.5s < 200 /dashboard 
+30.5s < 200 /dashboard 
+53.5s > PUT /api/account/defaults
+53.7s CONSOLE Failed to load resource: the server responded with a status of 401 ()
+53.7s > POST /api/dashboard/create body={"name":"C3 T6 defaults test 2","config":{"unlisted":false,"payoutAddress":null,"twitchChannel":null,"twitchAuto":true,"passkeyTickPrice":"0.001","passkeyTickSeconds":1,"maxSession":"2","maxSeats":3,"tickPrice":"0.1","tickSeconds":10,"paymentTokenAddress":"0x20c000000000000000000000b9537d11c60e8b50"
+53.7s < 401 /api/account/defaults {"error":"Sign in first"}
+54.1s > GET /api/dashboard/rooms/2073f14b
+54.1s > GET /api/dashboard/my-rooms
+54.1s < 201 /api/dashboard/create {"room":{"id":"2073f14b","name":"C3 T6 defaults test 2","active":true,"unlisted":false,"tickSeconds":10,"tickPrice":"0.1","passkeyTickSeconds":1,"passkeyTickPrice":"0.001","maxSession":"2","maxSeats":3,"paymentTokenAddress":"0x20c000000000000000000000b9537d11c60e8b50","paymentTokenSymbol":"USDC.e","
+54.2s > GET /api/auth/me
+54.2s > GET /api/config?room=2073f14b
+54.2s > GET /api/livekit/overlay/health?room=2073f14b
+54.2s > GET /api/dashboard/rooms/2073f14b/letters
+54.2s < 200 /api/dashboard/my-rooms {"rooms":[]}
+54.3s < 200 /api/config?room=2073f14b {"roomId":"2073f14b","roomName":"C3 T6 defaults test 2","roomActive":true,"lazyConnect":{"enabled":true,"scope":"seat","heartbeatIntervalMs":15000,"signalPollMs":4000,"connectRetryBaseMs":500,"connectRetryMaxMs":15000},"obsOneClick":true,"chainId":4217,"chainIdHex":"0x1079","chainName":"Tempo","netw
+54.3s < 200 /api/auth/me {"identity":null}
+54.3s < 200 /api/dashboard/rooms/2073f14b {"room":{"id":"2073f14b","name":"C3 T6 defaults test 2","active":true,"unlisted":false,"tickSeconds":10,"tickPrice":"0.1","passkeyTickSeconds":1,"passkeyTickPrice":"0.001","maxSession":"2","maxSeats":3,"paymentTokenAddress":"0x20c000000000000000000000b9537d11c60e8b50","paymentTokenSymbol":"USDC.e","
+54.3s < 200 /api/livekit/overlay/health?room=2073f14b {"present":false,"healthy":false,"lkState":"idle","activityState":"idle","lastBeatMsAgo":null,"seats":0,"pendingPrewarms":0,"duplicateOverlays":null}
+54.4s < 200 /api/dashboard/rooms/2073f14b/letters {"letters":[],"overlayLive":false}
+59.2s > GET /api/livekit/overlay/health?room=2073f14b
+59.2s > GET /api/dashboard/rooms/2073f14b/letters
+59.2s > GET /api/dashboard/rooms/2073f14b
+59.3s < 200 /api/livekit/overlay/health?room=2073f14b {"present":false,"healthy":false,"lkState":"idle","activityState":"idle","lastBeatMsAgo":null,"seats":0,"pendingPrewarms":0,"duplicateOverlays":null}
+59.3s < 200 /api/dashboard/rooms/2073f14b/letters {"letters":[],"overlayLive":false}
+59.4s < 200 /api/dashboard/rooms/2073f14b {"room":{"id":"2073f14b","name":"C3 T6 defaults test 2","active":true,"unlisted":false,"tickSeconds":10,"tickPrice":"0.1","passkeyTickSeconds":1,"passkeyTickPrice":"0.001","maxSession":"2","maxSeats":3,"paymentTokenAddress":"0x20c000000000000000000000b9537d11c60e8b50","paymentTokenSymbol":"USDC.e","
+60.3s > POST /cdn-cgi/rum? body=
+60.3s > POST /cdn-cgi/rum? body={"startTime":1788371643091,"pageloadId":"268e61a7-1d49-426d-aadf-6bae9845f1dd","n":3,"eventType":1,"nt":"routing-apis","location":"https://megachat.fun/dashboard","referrer":"https://megachat.fun/dashboard","versions":{"fl":"2024.11.0","js":"2026.8.4","timings":1},"ntapi":1,"siteToken":"ee4d532cfdf9
+60.3s > POST /cdn-cgi/rum? body=
+60.3s > POST /cdn-cgi/rum? body={"startTime":1788371643093,"pageloadId":"31ad40d1-d904-41b7-8193-b224dc2e5eb4","n":4,"eventType":1,"nt":"routing-apis","location":"https://megachat.fun/dashboard","referrer":"https://megachat.fun/dashboard","versions":{"fl":"2024.11.0","js":"2026.8.4","timings":1},"ntapi":1,"siteToken":"ee4d532cfdf9
+60.3s < 204 /cdn-cgi/rum? 
+60.3s < 204 /cdn-cgi/rum? 
+60.3s < 204 /cdn-cgi/rum? 
+60.3s < 204 /cdn-cgi/rum? 
+64.2s > GET /api/livekit/overlay/health?room=2073f14b
+64.2s > GET /api/dashboard/rooms/2073f14b/letters
+64.2s > GET /api/dashboard/rooms/2073f14b
+64.3s < 200 /api/livekit/overlay/health?room=2073f14b {"present":false,"healthy":false,"lkState":"idle","activityState":"idle","lastBeatMsAgo":null,"seats":0,"pendingPrewarms":0,"duplicateOverlays":null}
+64.4s < 200 /api/dashboard/rooms/2073f14b {"room":{"id":"2073f14b","name":"C3 T6 defaults test 2","active":true,"unlisted":false,"tickSeconds":10,"tickPrice":"0.1","passkeyTickSeconds":1,"passkeyTickPrice":"0.001","maxSession":"2","maxSeats":3,"paymentTokenAddress":"0x20c000000000000000000000b9537d11c60e8b50","paymentTokenSymbol":"USDC.e","
+64.4s < 200 /api/dashboard/rooms/2073f14b/letters {"letters":[],"overlayLive":false}

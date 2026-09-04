@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { getMyContributions, type MyContribution } from '@/lib/bounty-api'
+import { formatDollars } from '@/lib/display-format'
 
 const STATE_LABEL: Record<string, { label: string; cls: string }> = {
   pending_upload: { label: 'Waiting for upload', cls: 'border-[var(--neon-amber)]/60 text-[var(--neon-amber)]' },
@@ -56,7 +57,7 @@ export function MyPledges({ initialMe }: { initialMe?: string }) {
       </div>
 
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void load(me) }}>
-        <input value={me} onChange={(e) => setMe(e.target.value)}
+        <input aria-label="Contribution account" value={me} onChange={(e) => setMe(e.target.value)}
           placeholder="0x… or the account you pledged with"
           className="w-full max-w-md rounded-xl border border-border bg-input/30 px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground" />
         <button type="submit" className="rounded-full border border-border px-4 py-2 text-sm font-bold text-foreground">
@@ -80,7 +81,7 @@ export function MyPledges({ initialMe }: { initialMe?: string }) {
                 <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold ${s.cls}`}>{s.label}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-bold text-foreground">
-                    {r.amount} → {r.targets.map((t) => t.split(':')[1]).join(' / ')}
+                    {formatDollars(r.amount)} → {r.targets.map((t) => t.split(':')[1]).join(' / ')}
                     {r.targets.length > 1 && r.winner ? ` (won by ${r.winner.split(':')[1]})` : ''}
                   </span>
                   <span className="block text-xs text-muted-foreground">{r.next}</span>

@@ -26,3 +26,8 @@ pumpfun-probe.png
 
 # runtime pledge ledger — live state, same as the other data/ stores
 data/bounty.json
+data/bounty-ledger.jsonl
+
+# local browser-testing identity minter — never ships (see the P0 note: it
+# forges cookies prod currently honors via the fallback secret)
+dev-auth.mjs

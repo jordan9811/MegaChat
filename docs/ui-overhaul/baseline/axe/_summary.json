@@ -1,0 +1,429 @@
+[
+  {
+    "page": "landing",
+    "viewport": "1440",
+    "finalUrl": "https://megachat.fun/?stay=1",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 1,
+      "minor": 0
+    },
+    "rules": [
+      {
+        "id": "region",
+        "impact": "moderate",
+        "nodes": 4,
+        "help": "All page content should be contained by landmarks",
+        "targets": [
+          "video",
+          "h1",
+          ".text-\\[16px\\]",
+          ".pt-1 > .text-\\[var\\(--mcl-mint-ink\\)\\].hover\\:opacity-90.bg-\\[var\\(--mcl-mint\\)\\]"
+        ]
+      }
+    ]
+  },
+  {
+    "page": "landing",
+    "viewport": "390",
+    "finalUrl": "https://megachat.fun/?stay=1",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 1,
+      "minor": 0
+    },
+    "rules": [
+      {
+        "id": "region",
+        "impact": "moderate",
+        "nodes": 4,
+        "help": "All page content should be contained by landmarks",
+        "targets": [
+          "video",
+          "h1",
+          ".text-\\[16px\\]",
+          ".pt-1 > .text-\\[var\\(--mcl-mint-ink\\)\\].hover\\:opacity-90.bg-\\[var\\(--mcl-mint\\)\\]"
+        ]
+      }
+    ]
+  },
+  {
+    "page": "app",
+    "viewport": "1440",
+    "finalUrl": "https://megachat.fun/app",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 0,
+      "minor": 0
+    },
+    "rules": []
+  },
+  {
+    "page": "app",
+    "viewport": "390",
+    "finalUrl": "https://megachat.fun/app",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 0,
+      "minor": 0
+    },
+    "rules": []
+  },
+  {
+    "page": "create-room",
+    "viewport": "1440",
+    "finalUrl": "https://megachat.fun/dashboard?new=1",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 3,
+      "minor": 0
+    },
+    "rules": [
+      {
+        "id": "landmark-one-main",
+        "impact": "moderate",
+        "nodes": 1,
+        "help": "Document should have one main landmark",
+        "targets": [
+          "html"
+        ]
+      },
+      {
+        "id": "page-has-heading-one",
+        "impact": "moderate",
+        "nodes": 1,
+        "help": "Page should contain a level-one heading",
+        "targets": [
+          "html"
+        ]
+      },
+      {
+        "id": "region",
+        "impact": "moderate",
+        "nodes": 24,
+        "help": "All page content should be contained by landmarks",
+        "targets": [
+          ".whitespace-nowrap.text-\\[var\\(--mcc-dim\\)\\].text-\\[12\\.5px\\]",
+          ".ml-auto",
+          ".gap-2\\.5.items-center:nth-child(2)",
+          ".gap-3.flex-col > .gap-6.items-end.flex-wrap > .gap-1\\.5.flex-col.flex:nth-child(1) > .lbl",
+          ".gap-3.flex-col > .gap-6.items-end.flex-wrap > .gap-1\\.5.flex-col.flex:nth-child(1) > .gap-2.items-center.flex > .ratefield.items-baseline.justify-center > input[inputmode=\"decimal\"][aria-label=\"MegaChat rate\"][type=\"text\"]"
+        ]
+      }
+    ]
+  },
+  {
+    "page": "create-room",
+    "viewport": "390",
+    "finalUrl": "https://megachat.fun/dashboard?new=1",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 3,
+      "minor": 0
+    },
+    "rules": [
+      {
+        "id": "landmark-one-main",
+        "impact": "moderate",
+        "nodes": 1,
+        "help": "Document should have one main landmark",
+        "targets": [
+          "html"
+        ]
+      },
+      {
+        "id": "page-has-heading-one",
+        "impact": "moderate",
+        "nodes": 1,
+        "help": "Page should contain a level-one heading",
+        "targets": [
+          "html"
+        ]
+      },
+      {
+        "id": "region",
+        "impact": "moderate",
+        "nodes": 24,
+        "help": "All page content should be contained by landmarks",
+        "targets": [
+          ".whitespace-nowrap.text-\\[var\\(--mcc-dim\\)\\].text-\\[12\\.5px\\]",
+          ".ml-auto",
+          ".gap-2\\.5.items-center:nth-child(2)",
+          ".gap-3.flex-col > .gap-6.items-end.flex-wrap > .gap-1\\.5.flex-col.flex:nth-child(1) > .lbl",
+          ".gap-3.flex-col > .gap-6.items-end.flex-wrap > .gap-1\\.5.flex-col.flex:nth-child(1) > .gap-2.items-center.flex > .ratefield.items-baseline.justify-center > input[inputmode=\"decimal\"][aria-label=\"MegaChat rate\"][type=\"text\"]"
+        ]
+      }
+    ]
+  },
+  {
+    "page": "bounty",
+    "viewport": "1440",
+    "finalUrl": "https://megachat.fun/bounty",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 0,
+      "minor": 0
+    },
+    "rules": []
+  },
+  {
+    "page": "bounty",
+    "viewport": "390",
+    "finalUrl": "https://megachat.fun/bounty",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 0,
+      "minor": 0
+    },
+    "rules": []
+  },
+  {
+    "page": "account",
+    "viewport": "1440",
+    "finalUrl": "https://megachat.fun/account",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 0,
+      "minor": 0
+    },
+    "rules": []
+  },
+  {
+    "page": "account",
+    "viewport": "390",
+    "finalUrl": "https://megachat.fun/account",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 0,
+      "minor": 0
+    },
+    "rules": []
+  },
+  {
+    "page": "how-it-works",
+    "viewport": "1440",
+    "finalUrl": "https://megachat.fun/how-it-works",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 0,
+      "minor": 0
+    },
+    "rules": []
+  },
+  {
+    "page": "how-it-works",
+    "viewport": "390",
+    "finalUrl": "https://megachat.fun/how-it-works",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 1,
+      "moderate": 0,
+      "minor": 0
+    },
+    "rules": [
+      {
+        "id": "scrollable-region-focusable",
+        "impact": "serious",
+        "nodes": 1,
+        "help": "Scrollable region must have keyboard access",
+        "targets": [
+          ".mt-8"
+        ]
+      }
+    ]
+  },
+  {
+    "page": "join",
+    "viewport": "1440",
+    "finalUrl": "https://megachat.fun/demo",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 4,
+      "minor": 0
+    },
+    "rules": [
+      {
+        "id": "landmark-no-duplicate-banner",
+        "impact": "moderate",
+        "nodes": 1,
+        "help": "Document should not have more than one banner landmark",
+        "targets": [
+          ".border-\\[\\#1a1a1f\\]"
+        ]
+      },
+      {
+        "id": "landmark-one-main",
+        "impact": "moderate",
+        "nodes": 1,
+        "help": "Document should have one main landmark",
+        "targets": [
+          "html"
+        ]
+      },
+      {
+        "id": "landmark-unique",
+        "impact": "moderate",
+        "nodes": 1,
+        "help": "Landmarks should have a unique role or role/label/title (i.e. accessible name) combination",
+        "targets": [
+          ".border-\\[\\#1a1a1f\\]"
+        ]
+      },
+      {
+        "id": "region",
+        "impact": "moderate",
+        "nodes": 5,
+        "help": "All page content should be contained by landmarks",
+        "targets": [
+          "#demoBanner",
+          "#previewIdle",
+          ".gap-x-3",
+          ".gap-1\\.5.flex-col.flex",
+          ".adv-only"
+        ]
+      }
+    ]
+  },
+  {
+    "page": "join",
+    "viewport": "390",
+    "finalUrl": "https://megachat.fun/demo",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 0,
+      "moderate": 4,
+      "minor": 0
+    },
+    "rules": [
+      {
+        "id": "landmark-no-duplicate-banner",
+        "impact": "moderate",
+        "nodes": 1,
+        "help": "Document should not have more than one banner landmark",
+        "targets": [
+          ".border-\\[\\#1a1a1f\\]"
+        ]
+      },
+      {
+        "id": "landmark-one-main",
+        "impact": "moderate",
+        "nodes": 1,
+        "help": "Document should have one main landmark",
+        "targets": [
+          "html"
+        ]
+      },
+      {
+        "id": "landmark-unique",
+        "impact": "moderate",
+        "nodes": 1,
+        "help": "Landmarks should have a unique role or role/label/title (i.e. accessible name) combination",
+        "targets": [
+          ".border-\\[\\#1a1a1f\\]"
+        ]
+      },
+      {
+        "id": "region",
+        "impact": "moderate",
+        "nodes": 4,
+        "help": "All page content should be contained by landmarks",
+        "targets": [
+          "#demoBanner",
+          ".gap-x-3",
+          ".gap-1\\.5.flex-col.flex",
+          ".adv-only"
+        ]
+      }
+    ]
+  },
+  {
+    "page": "roadmap",
+    "viewport": "1440",
+    "finalUrl": "https://megachat.fun/roadmap",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 1,
+      "moderate": 1,
+      "minor": 0
+    },
+    "rules": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": 1,
+        "help": "Elements must meet minimum color contrast ratio thresholds",
+        "targets": [
+          ".bg-primary\\/20"
+        ]
+      },
+      {
+        "id": "heading-order",
+        "impact": "moderate",
+        "nodes": 1,
+        "help": "Heading levels should only increase by one",
+        "targets": [
+          "li[data-horizon=\"near\"]:nth-child(1) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > h3"
+        ]
+      }
+    ]
+  },
+  {
+    "page": "roadmap",
+    "viewport": "390",
+    "finalUrl": "https://megachat.fun/roadmap",
+    "navErr": null,
+    "byImpact": {
+      "critical": 0,
+      "serious": 1,
+      "moderate": 1,
+      "minor": 0
+    },
+    "rules": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": 1,
+        "help": "Elements must meet minimum color contrast ratio thresholds",
+        "targets": [
+          ".bg-primary\\/20"
+        ]
+      },
+      {
+        "id": "heading-order",
+        "impact": "moderate",
+        "nodes": 1,
+        "help": "Heading levels should only increase by one",
+        "targets": [
+          "li[data-horizon=\"near\"]:nth-child(1) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > h3"
+        ]
+      }
+    ]
+  }
+]

@@ -2,7 +2,7 @@
 
 // THE BOUNTY LEADERBOARD — /bounty.
 //
-// One table: who has money waiting on their name, how much of it is actually
+// One table: each nominated streamer, how much of the pool is actually
 // theirs, and what a fan does next. The stacked bar is the whole argument.
 // A pool's headline number is never blended: solid green is money locked to
 // that one name, the yellow hatch is money pledged to rivals as well and may
@@ -17,10 +17,12 @@
 import { useEffect, useState } from 'react'
 import { AccountChip } from '@/components/account-chip'
 import { getBountyConfig, getProgram, type BountyClientConfig, type ProgramPool } from '@/lib/bounty-api'
+import { exampleTotals } from '@/lib/bounty-examples'
+import { formatDollars } from '@/lib/display-format'
 
 // From docs/design/copy-bank.md — the bounty page is the one surface where
 // "demand more" is literally what the product does.
-const DEMAND_LINE = 'Record a MegaChat, put money on it, and tell your favorite streamer to come claim it.'
+const START_LINE = 'Choose a streamer and platform. Add the amount and terms on the next screen.'
 
 // Mirrors sanitizeHandle in rooms-store.js — the only shape /<handle> serves.
 const ROOM_HANDLE = /^[a-z0-9_]{3,20}$/
@@ -47,9 +49,7 @@ function platformLabel(p: string | null): string {
   return k.charAt(0).toUpperCase() + k.slice(1)
 }
 
-function money(n: number): string {
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 })
-}
+const money = formatDollars
 
 function poolHref(p: { platform: string | null; handle: string | null }): string {
   return p.platform && p.handle
@@ -154,7 +154,19 @@ function Avatar({
   )
 }
 
-function Row({ pool, rank, currency }: { pool: ProgramPool; rank: number; currency: string }) {
+function Row({
+  pool,
+  rank,
+  currency,
+  selected,
+  onSelect,
+}: {
+  pool: ProgramPool
+  rank: number
+  currency: string
+  selected: boolean
+  onSelect: () => void
+}) {
   const handle = pool.handle || pool.handleKey
   const contested = pool.contested || []
   const contestedTotal = pool.contestedTotal || 0
@@ -171,7 +183,7 @@ function Row({ pool, rank, currency }: { pool: ProgramPool; rank: number; curren
   const seeded = !claimed && !!pool.seeded
   const quiet = !claimed && !seeded && !!pool.promotional
 
-  const pip = claimed ? 'Claimed' : seeded ? 'Seeded' : quiet ? 'Open' : 'Unclaimed'
+  const pip = claimed ? 'Claimed' : pool.displayOnly ? 'Example' : seeded ? 'Seeded' : quiet ? 'Open' : 'Unclaimed'
   const pipColor = claimed
     ? 'var(--mcc-live)'
     : seeded
@@ -186,7 +198,7 @@ function Row({ pool, rank, currency }: { pool: ProgramPool; rank: number; curren
         : `${money(guaranteed)} ${currency}, all locked to this name`
 
   return (
-    <div className={`lb-row${claimed ? ' is-claimed' : ''}`}>
+    <div className={`lb-row${claimed ? ' is-claimed' : ''}${selected ? ' is-selected' : ''}`}>
       <span
         className="lb-rank text-[17px] font-[800] tabular-nums"
         style={{ color: rank <= 3 && !claimed ? 'var(--mcc-accent)' : 'var(--mcc-ghost)' }}
@@ -194,12 +206,12 @@ function Row({ pool, rank, currency }: { pool: ProgramPool; rank: number; curren
         {String(rank).padStart(2, '0')}
       </span>
 
-      <div className="lb-who flex min-w-0 items-center gap-3.5">
+      <button type="button" className="lb-who flex min-w-0 items-center gap-3.5 text-left" onClick={onSelect} aria-pressed={selected}>
         <Avatar handle={handle} platform={pool.platform} avatarUrl={pool.avatarUrl} />
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate text-[17px] font-[700] tracking-[-0.01em]">{handle}</span>
           <span className="truncate text-[12.5px] text-[var(--mcc-faint)]">
-            {pool.contributionCount > 0
+            {pool.displayOnly ? 'Display example' : pool.contributionCount > 0
               ? `${pool.contributionCount} backer${pool.contributionCount === 1 ? '' : 's'}`
               : 'No backers yet'}{' '}
             {pool.clipsWaiting > 0
@@ -208,7 +220,7 @@ function Row({ pool, rank, currency }: { pool: ProgramPool; rank: number; curren
             · {platformLabel(pool.platform)}
           </span>
         </span>
-      </div>
+      </button>
 
       <div className="lb-bar flex flex-col gap-2">
         <div className="track" role="img" aria-label={barLabel}>
@@ -222,8 +234,8 @@ function Row({ pool, rank, currency }: { pool: ProgramPool; rank: number; curren
         <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
           {total <= 0 ? (
             <>
-              <span className="text-[15px] font-[700] tabular-nums text-[var(--mcc-ghost)]">0 {currency}</span>
-              <span className="text-[12px] text-[var(--mcc-faint)]">be the first to put money on this name</span>
+              <span className="text-[15px] font-[700] tabular-nums text-[var(--mcc-ghost)]">$0</span>
+              <span className="text-[12px] text-[var(--mcc-faint)]">No contributions yet</span>
             </>
           ) : (
             <>
@@ -267,14 +279,14 @@ function Row({ pool, rank, currency }: { pool: ProgramPool; rank: number; curren
         // mint address, and linking that is a guaranteed 404. Fall back to
         // the pool page, which always exists.
         <a
-          href={ROOM_HANDLE.test(handle) ? `/${encodeURIComponent(handle)}` : poolHref(pool)}
+          href={poolHref(pool)}
           className="lb-cta rowcta-ghost"
         >
-          {ROOM_HANDLE.test(handle) ? 'Watch the room' : 'See the pool'}
+          View bounty
         </a>
       ) : (
         <a href={poolHref(pool)} className="lb-cta rowcta">
-          Put money on it
+          View bounty
         </a>
       )}
     </div>
@@ -285,9 +297,11 @@ export function BountyProgram() {
   const [config, setConfig] = useState<BountyClientConfig | null | 'loading'>('loading')
   const [pools, setPools] = useState<ProgramPool[]>([])
   const [totals, setTotals] = useState<{ realValue: number; displayedTotal: number } | null>(null)
-  const [currency, setCurrency] = useState('USDC')
+  const currency = ''
+  const [loadError, setLoadError] = useState('')
   const [platform, setPlatform] = useState('twitch')
   const [handle, setHandle] = useState('')
+  const [selected, setSelected] = useState(0)
 
   useEffect(() => {
     void getBountyConfig().then(async (cfg) => {
@@ -297,9 +311,8 @@ export function BountyProgram() {
           const p = await getProgram()
           setPools(p.pools)
           setTotals(p.totals)
-          setCurrency(p.currency)
         } catch {
-          /* renders empty-state */
+          setLoadError('Bounties could not load. Refresh to retry.')
         }
       }
     })
@@ -308,126 +321,136 @@ export function BountyProgram() {
   // Mirrors handleKey in bounty-store.js. Without this a space or a '#' builds
   // a URL that 400s on getPoolView, and the pool page swallows that error and
   // renders blank — the button looked like it worked and silently did nothing.
-  const wanted = handle.trim().replace(/^@/, '').toLowerCase()
-  const wantedOk = /^[a-z0-9_.-]{1,40}$/.test(wanted)
+  const rawHandle = handle.trim().replace(/^@/, '')
+  const wanted = platform === 'pumpfun' ? rawHandle : rawHandle.toLowerCase()
+  const wantedOk = platform === 'pumpfun' ? /^[1-9A-HJ-NP-Za-km-z]{32,64}$/.test(wanted) : /^[a-z0-9_.-]{1,40}$/.test(wanted)
   const startHref = wantedOk
     ? `/bounty/s/${encodeURIComponent(platform)}/${encodeURIComponent(wanted)}`
     : null
+  const active = pools[selected] || pools[0] || null
+  const activeGuaranteed = active?.guaranteed || 0
+  const activeContested = active?.contestedTotal || 0
+  const activeTotal = activeGuaranteed + activeContested
+  const activeRivals = active ? rivalCount(active.contested || []) : 0
+  const examples = exampleTotals(pools)
+  const openCount = pools.filter((p) => !p.claimed).length
 
   return (
     <div className="mc-bounty dark min-h-screen">
-      {/* the only chrome: one thin bar, same as the room board */}
-      <header className="border-b border-[#1a1a1f]">
-        <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-center justify-between gap-3 px-5 py-3">
-          <span className="flex flex-wrap items-baseline gap-3.5">
-            <a href="/app" className="bc text-[18px] font-bold tracking-[0.1em] text-[var(--mcc-fg)]">
-              MEGACHAT
-            </a>
-            <span className="text-[13px] font-semibold text-[var(--mcc-dim)]">Bounties</span>
+      <header className="mcb-product-header">
+        <div>
+          <span className="mcb-product-brand">
+            <a href="/?stay=1" className="bc">MEGACHAT</a>
+            <i aria-hidden="true" />
+            <span>Bounties</span>
           </span>
-          <AccountChip accent="var(--mcc-accent)" />
+          <nav aria-label="Product navigation">
+            <a href="/app">Rooms</a>
+            <a href="/bounty" aria-current="page">Bounties</a>
+            <a href="/how-it-works">How it works</a>
+          </nav>
+          <span className="mcb-product-actions">
+            <a href="/dashboard?new=1">Create room</a>
+            <AccountChip accent="var(--mcc-accent)" />
+          </span>
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-[1400px] flex-col gap-7 px-5 pt-9 pb-14">
+      <main className="mcb-shell">
         {config === 'loading' ? (
-          <div className="h-40 animate-pulse bg-white/5" aria-hidden="true" />
+          <div className="mcb-loading" aria-label="Loading bounties" />
         ) : !config || !config.enabled ? (
-          <div className="border border-[var(--mcc-rule)] bg-[var(--mcc-sunk)] px-6 py-12 text-center">
-            <h1 className="text-[26px] font-[800] tracking-[-0.02em]">
-              Your favorite streamer doesn&rsquo;t even know you.
-            </h1>
-            <p className="mx-auto mt-2 max-w-[440px] text-[14px] leading-[1.5] text-[var(--mcc-muted)]">
+          <section className="mcb-disabled">
+            <span className="mcb-coordinate">Creator bounties</span>
+            <h1>Your favorite streamer doesn&rsquo;t even know you.</h1>
+            <p>
               Not open yet. Soon, recorded MegaChats will stack up against streamers who
               aren&rsquo;t here, and pay out when they claim their handle and play them on stream.
             </p>
-          </div>
+          </section>
         ) : (
           <>
-            <div className="flex flex-wrap items-end justify-between gap-8">
-              <div className="flex max-w-[620px] flex-col gap-2.5">
-                <h1 className="text-[32px] leading-[1.05] font-[800] tracking-[-0.02em] md:text-[40px]">
-                  Your favorite streamer doesn&rsquo;t even know you.
-                </h1>
-                <p className="text-[17px] font-[600] leading-[1.4] text-[var(--mcc-muted)]">
-                  Be more than a username.
-                </p>
+            <section className="mcb-hero">
+              <div>
+                <span className="mcb-coordinate">Creator bounties / open</span>
+                <h1>Your favorite streamer<br />doesn&rsquo;t even know you.</h1>
+                <p>Be more than a username.</p>
               </div>
-
-              {/* Two numbers, two labels, never added together: one escrow per
-                  pledge vs. what every pool page adds up to. */}
               {totals ? (
-                <div className="flex flex-wrap gap-10">
-                  <div className="flex flex-col gap-1">
-                    <span className="colhead">In escrow</span>
-                    <span className="text-[26px] font-[800] tabular-nums">
-                      {money(totals.realValue)}{' '}
-                      <span className="text-[13px] font-[600] text-[var(--mcc-dim)]">{currency}</span>
-                    </span>
-                    <span className="text-[12px] text-[var(--mcc-faint)]">real, counted once</span>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <span className="colhead">Across pools</span>
-                    <span className="text-[26px] font-[800] tabular-nums text-[var(--mcc-warn)]">
-                      {money(totals.displayedTotal)}{' '}
-                      <span className="text-[13px] font-[600] text-[var(--mcc-dim)]">{currency}</span>
-                    </span>
-                    <span className="text-[12px] text-[var(--mcc-faint)]">contested money counted per name</span>
-                  </div>
+                <div className="mcb-totals">
+                  <span><small>{examples.count ? 'Example total' : 'Ledger balance'}</small><strong>{money(examples.count ? examples.unique : totals.realValue)}</strong><em>counted once</em></span>
+                  <i aria-hidden="true" />
+                  <span><small>Visible across pools</small><strong>{money(examples.count ? examples.visible : totals.displayedTotal)}</strong><em>{examples.count ? 'examples only' : 'contested value repeats'}</em></span>
                 </div>
               ) : null}
+            </section>
+
+            {examples.count > 0 && <p className="mcb-example-notice">Example amounts, not funded: $100 per name plus one shared $100. Funded pools replace their examples. Current ledger balance: {money(totals?.realValue || 0)}.</p>}
+            {loadError && <p role="alert" className="mcb-example-notice">{loadError}</p>}
+
+            <div className="mcb-board-layout">
+              <section className="mcb-leaderboard">
+                <header>
+                  <div><span className="mcb-coordinate">Top targets</span><h2>Top bounties</h2></div>
+                  <span className="mcb-open-count"><i /> {openCount} open pool{openCount === 1 ? '' : 's'}</span>
+                </header>
+                <div className="lb-head">
+                  <span className="colhead">#</span>
+                  <span className="colhead">Streamer</span>
+                  <span className="colhead">Pool</span>
+                  <span className="colhead">Status</span>
+                  <span />
+                </div>
+
+                {pools.length === 0 ? (
+                  <p className="mcb-empty">No active bounties. Create one for any streamer.</p>
+                ) : pools.map((p, i) => (
+                  <Row
+                    key={p.handleKey}
+                    pool={p}
+                    rank={i + 1}
+                    currency={currency}
+                    selected={active?.handleKey === p.handleKey}
+                    onSelect={() => setSelected(i)}
+                  />
+                ))}
+              </section>
+
+              <aside className="mcb-pool-detail">
+                {active ? (
+                  <>
+                    <span className="mcb-coordinate">Selected pool</span>
+                    <div className="mcb-detail-person">
+                      <Avatar handle={active.handle || active.handleKey} platform={active.platform} avatarUrl={active.avatarUrl} />
+                      <span><h2>{active.handle || active.handleKey}</h2><p>{platformLabel(active.platform)} · {active.displayOnly ? 'Display example' : `${active.contributionCount} backer${active.contributionCount === 1 ? '' : 's'}`}</p></span>
+                    </div>
+                    <div className="mcb-detail-total"><strong>{money(activeTotal)}</strong><span>{active.displayOnly ? 'Example, not funded' : 'potential bounty'}</span></div>
+                    <div className="mcb-detail-split">
+                      <span><i className="is-locked" /><b>{money(activeGuaranteed)} {currency} locked</b><small>Reserved for this streamer.</small></span>
+                      <span><i className="is-contested" /><b>{money(activeContested)} {currency} contested</b><small>{activeRivals > 0 ? `${activeRivals + 1} streamers can claim this portion.` : 'No competing names.'}</small></span>
+                    </div>
+                    <a href={poolHref(active)} className="mcb-detail-action">Open bounty</a>
+                    {!active.claimed && <a href={`${poolHref(active)}?claim=1`} className="mcb-claim-action">{active.displayOnly ? 'Preview claim setup' : 'Claim this bounty'}</a>}
+                  </>
+                ) : (
+                  <><span className="mcb-coordinate">Selected pool</span><p className="mcb-empty">Select a bounty to see its terms.</p></>
+                )}
+              </aside>
             </div>
 
-            <div className="flex flex-col">
-              <div className="lb-head">
-                <span className="colhead">#</span>
-                <span className="colhead">Streamer</span>
-                <span className="colhead">Pledged</span>
-                <span className="colhead">Status</span>
-                <span />
-              </div>
+            <section className="mcb-anatomy">
+              <div><span aria-hidden="true" className="track-locked" /><p><strong>Locked</strong><small>Reserved for one streamer. Released after their verified broadcast.</small></p></div>
+              <div><span aria-hidden="true" className="hatch" /><p><strong>Contested</strong><small>Shared across named streamers. The first verified broadcast takes it.</small></p></div>
+              <div><p><strong>Refund rules</strong><small>Declined clips refund in full. Unclaimed bounties return at expiry.</small></p></div>
+            </section>
 
-              {pools.length === 0 ? (
-                <p className="border-b border-[var(--mcc-hairline)] py-6 text-[14px] text-[var(--mcc-muted)]">
-                  Nobody has money on their name yet. Any handle can be the first.
-                </p>
-              ) : (
-                pools.map((p, i) => (
-                  <Row key={p.handleKey} pool={p} rank={i + 1} currency={currency} />
-                ))
-              )}
-            </div>
-
-            {/* The abbreviated version of the anatomy sheet: what the two
-                halves of the bar mean, one line each. */}
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2.5 pt-1">
-              <span className="flex items-center gap-2 text-[12.5px] text-[var(--mcc-muted)]">
-                <span aria-hidden="true" className="track-locked h-2 w-[22px] shrink-0" />
-                Locked to this name only
-              </span>
-              <span className="flex items-center gap-2 text-[12.5px] text-[var(--mcc-muted)]">
-                <span aria-hidden="true" className="hatch h-2 w-[22px] shrink-0" />
-                Also pledged to rivals — whoever airs first takes it
-              </span>
-            </div>
-
-            {/* Restored deliberately. These three are the reasons pledging is
-                safe, and they were the only place on the site that said so —
-                /how-it-works covers paid sessions, not bounties. A page that
-                takes money states its refund terms on the page. */}
-            <div className="flex flex-wrap gap-x-8 gap-y-2.5 border-t border-[var(--mcc-rule)] pt-4 text-[12.5px] text-[var(--mcc-muted)]">
-              <span>Nothing airs without the streamer approving it.</span>
-              <span>A declined clip refunds you in full.</span>
-              <span>Nobody claims it before your expiry, you get it all back.</span>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-5 border border-[var(--mcc-rule)] bg-[var(--mcc-sunk)] px-6 py-[22px]">
-              <div className="flex max-w-[640px] flex-col gap-1.5">
-                <span className="text-[19px] font-[700] tracking-[-0.01em]">Don&rsquo;t see them? Demand them.</span>
-                <span className="text-[14px] leading-[1.5] text-[var(--mcc-muted)]">{DEMAND_LINE}</span>
+            <section className="mcb-create-bounty">
+              <div>
+                <span className="mcb-coordinate">Create a bounty</span>
+                <h2>Add a streamer.</h2>
+                <p>{START_LINE}</p>
               </div>
               <form
-                className="flex flex-wrap items-center gap-2"
                 onSubmit={(e) => {
                   e.preventDefault()
                   if (startHref) window.location.href = startHref
@@ -447,7 +470,7 @@ export function BountyProgram() {
                 </select>
                 <input
                   aria-label="Streamer handle"
-                  className="field w-[180px]"
+                  className="field"
                   placeholder="their handle"
                   value={handle}
                   onChange={(e) => setHandle(e.target.value)}
@@ -455,10 +478,10 @@ export function BountyProgram() {
                   spellCheck={false}
                 />
                 <button type="submit" className="btn" disabled={!startHref}>
-                  Start a pool
+                  Continue
                 </button>
               </form>
-            </div>
+            </section>
           </>
         )}
       </main>

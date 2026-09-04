@@ -1,0 +1,15 @@
+[0.1s] tap link -> loading https://megachat.fun/app
+[0.5s] domcontentloaded
+[1.9s] networkidle - page visible
+[5.1s] scanned header: MEGACHAT | 0 rooms on air | All | On air | Sign in. No avatar/profile/account. Only candidate: Sign in
+[5.1s] Sign in button box {"x":312.6875,"y":-2.5,"width":61.3125,"height":53}
+[5.2s] CLICK 1: tapped Sign in
+[7.8s] after tap: {"found":true,"tag":"IFRAME","text":"","iframes":["https://auth.privy.io/apps/cmrbd61gx00vr0dl2hyz9uguk/embedded-wallets?caid=02bed660-03c6-4af2-adf0-049c2c1586c5"],"url":"https://megachat.fun/app","bodyTail":"MEGACHAT 0 rooms on air All On air Opening… MegaChat rooms — 0 on air, 3 on the board OPEN 0 USDC.e / 1s HERRRRRO KRISTOPHER 0 of 3 on camera · Twitch · Drops Take a seat OPEN 0.001 USDC.e / 1s MegaChat Demo — try everything for pennies 0 of 3 on camera · Drops Take a seat OPEN 0.001 USDC.e / 1s Default Room 0 of 3 on camera Take a seat Open a room Your stream, your seats, your rate. The next tile on this wall is yours. How you get on a stream MegaChats Record a clip, pay for the seconds it runs, and it plays on the broadcast by itself. Find a room→ Open mic Buy a live camera seat beside the s"}
+[7.8s] visible controls now: [{"t":"A","text":"MEGACHAT","y":10},{"t":"BUTTON","text":"All","y":2},{"t":"BUTTON","text":"Opening…","y":7},{"t":"A","text":"OPEN 0 USDC.e / 1s HERRRRRO KRISTOPHER 0 of 3 on camera · Tw","y":48},{"t":"A","text":"OPEN 0.001 USDC.e / 1s MegaChat Demo — try everything for pe","y":254},{"t":"A","text":"OPEN 0.001 USDC.e / 1s Default Room 0 of 3 on camera Take a ","y":460},{"t":"A","text":"Open a room Your stream, your seats, your rate. The next til","y":666},{"t":"BUTTON","text":"close modal","y":355},{"t":"INPUT","text":"your@email.com","y":454},{"t":"BUTTON","text":"Submit","y":457},{"t":"BUTTON","text":"Google","y":518},{"t":"BUTTON","text":"Twitter","y":582},{"t":"BUTTON","text":"Twitch","y":646},{"t":"BUTTON","text":"I have a passkey","y":753},{"t":"A","text":"","y":815}]
+[10.8s] persona reads modal: asks for login. No account, no way to reach "account page". Dead end -> bounce
+[10.9s] BOUNCE at 10.9s
+[10.9s] POPUP opened: about:blank
+[13.7s] AUDIT /account: {"url":"https://megachat.fun/account","text":"MEGACHAT Account Sign in Sign in to see your account Your handle, the sign-ins linked to it, your balance and your saved room defaults all live here. You do not need a room to have an account. Sign in"}
+[14.2s] AUDIT all hrefs on /app: ["/?stay=1","/bounty","/how-it-works","/jordandotfun","/demo","/join?room=default","/dashboard?new=1","/bounty/s/twitch/threadguy","/bounty/s/kick/chessbrah","/bounty/s/x/martinshkreli","/bounty/s/x/rasmr"]
+[15.8s] AUDIT footer: Held for streamers threadguy 200.00 2 backers chessbrah 100.00 1 backer martinshkreli 100.00 1 backer
+[15.8s] SCORED RUN TOTAL SECONDS (load->bounce): 10.9
