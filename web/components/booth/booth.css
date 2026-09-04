@@ -2,20 +2,20 @@
    status language into the Broadcast OS system used by the rest of the app. */
 
 .mc-booth {
-  --mcb-bg: #060c14;
-  --mcb-panel: #0b1622;
-  --mcb-panel-up: #102031;
-  --mcb-fg: #f1f6fb;
-  --mcb-muted: #a8bac9;
-  --mcb-dim: #8299ac;
-  --mcb-off: #b8c7d3;
-  --mcb-hairline: rgba(135, 188, 226, 0.16);
-  --mcb-accent: #82d8f2;
-  --mcb-live: #57e7b9;
-  --mcb-queue: #f8d66b;
+  --mcb-bg: #050609;
+  --mcb-panel: #0a0c12;
+  --mcb-panel-up: #0f1219;
+  --mcb-fg: #f4f6f8;
+  --mcb-muted: #a9b2bd;
+  --mcb-dim: #7d8794;
+  --mcb-off: #b3bcc6;
+  --mcb-hairline: rgba(255, 255, 255, 0.16);
+  --mcb-accent: #3ae8ff;
+  --mcb-live: #b8ff45;
+  --mcb-queue: #ffd23d;
   background-color: var(--mcb-bg);
   background-image:
-    radial-gradient(circle at 12% 0%, rgba(77, 170, 226, 0.11), transparent 31rem),
+    radial-gradient(circle at 12% 0%, rgba(255, 45, 120, 0.11), transparent 31rem),
     linear-gradient(rgba(101, 171, 214, 0.025) 1px, transparent 1px),
     linear-gradient(90deg, rgba(101, 171, 214, 0.025) 1px, transparent 1px);
   background-size: auto, 42px 42px, 42px 42px;
@@ -25,19 +25,19 @@
 
 html:has(.mc-booth),
 html:has(.mc-booth) * {
-  scrollbar-color: #315979 transparent;
+  scrollbar-color: #2a2f3a transparent;
 }
 
 body:has(.mc-booth) {
-  background: #060c14;
+  background: #050609;
 }
 
 html:has(.mc-booth) ::-webkit-scrollbar-thumb {
-  background: #315979;
+  background: #2a2f3a;
 }
 
 html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
-  background: #4c7898;
+  background: #3a4150;
 }
 
 /* Was a condensed face. Condensed narrows letterforms to buy space and
@@ -57,7 +57,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 
 /* Status text sits over live thumbnails whose top edge carries no scrim. */
 .mc-chip-plate {
-  background: rgba(4, 10, 17, 0.72);
+  background: rgba(5, 6, 9, 0.72);
   padding: 3px 8px;
 }
 
@@ -72,11 +72,11 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   background: radial-gradient(120% 90% at 34% 74%, #245542 0%, #0d211b 62%);
 }
 .mc-mesh-3 {
-  background: radial-gradient(120% 90% at 62% 26%, #31506b 0%, #101c29 64%);
+  background: radial-gradient(120% 90% at 62% 26%, #262b36 0%, #101c29 64%);
 }
 .mc-mesh-4 {
   background: radial-gradient(120% 90% at 26% 30%, #594c25 0%, #211d10 64%);
 }
 .mc-mesh-5 {
-  background: radial-gradient(120% 90% at 70% 68%, #294d60 0%, #0e1b24 64%);
+  background: radial-gradient(120% 90% at 70% 68%, #1e222b 0%, #0e1b24 64%);
 }

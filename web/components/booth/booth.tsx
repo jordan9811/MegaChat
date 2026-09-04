@@ -8,6 +8,7 @@ import { AccountChip } from '@/components/account-chip'
 import { formatDollars } from '@/lib/display-format'
 import { roomPresentation } from '@/lib/room-browse'
 import './booth.css'
+import { BrandText } from '@/components/brand-text'
 
 const ROOM_POLL_MS = 5000
 const POOL_POLL_MS = 30000
@@ -15,7 +16,7 @@ const POOL_POLL_MS = 30000
 const WAYS_IN = [
   {
     title: 'MegaChats',
-    color: '#82d8f2',
+    color: '#3ae8ff',
     body: 'Record a clip, pay for the seconds it runs, and it plays on the broadcast by itself.',
     cta: 'How MegaChats work',
     href: '/how-it-works',
@@ -27,7 +28,7 @@ const WAYS_IN = [
   },
   {
     title: 'Open mic',
-    color: '#57e7b9',
+    color: '#b8ff45',
     body: 'Buy a live camera seat beside the streamer. Billed by the second, only while you are on air.',
     cta: 'How live seats work',
     href: '/how-it-works',
@@ -41,7 +42,7 @@ const WAYS_IN = [
   },
   {
     title: 'Bounties',
-    color: '#f8d66b',
+    color: '#ffd23d',
     body: 'Create a bounty for someone who is not here. They claim it by going live.',
     cta: 'Browse bounties',
     href: '/bounty',
@@ -57,9 +58,9 @@ const WAYS_IN = [
 const FIGURE_TINTS = [
   'rgba(91,190,238,0.46)',
   'rgba(244,184,99,0.38)',
-  'rgba(87,231,185,0.36)',
+  'rgba(184, 255, 69, 0.36)',
   'rgba(112,189,235,0.38)',
-  'rgba(248,214,107,0.3)',
+  'rgba(255, 210, 61, 0.3)',
   'rgba(102,189,224,0.34)',
 ]
 
@@ -90,7 +91,7 @@ function twitchChannel(room: PublicRoomCard): string | null {
 
 function RateChip({ room }: { room: PublicRoomCard }) {
   return (
-    <span className="mc-bc absolute right-2.5 top-2 bg-[rgba(4,10,17,0.66)] px-2 py-1 text-[13px] font-[600] text-[var(--mcb-fg)]">
+    <span className="mc-bc absolute right-2.5 top-2 bg-[rgba(5,6,9,0.66)] px-2 py-1 text-[13px] font-[600] text-[var(--mcb-fg)]">
       {roomPresentation(room).rate}
     </span>
   )
@@ -145,7 +146,7 @@ function RoomTile({ room, hero = false }: { room: PublicRoomCard; hero?: boolean
         className="absolute inset-0"
         style={{
           background:
-            'linear-gradient(to top, rgba(4,10,17,0.94) 0%, rgba(4,10,17,0.3) 38%, rgba(4,10,17,0) 66%)',
+            'linear-gradient(to top, rgba(5, 6, 9, 0.94) 0%, rgba(5, 6, 9, 0.3) 38%, rgba(5, 6, 9, 0) 66%)',
         }}
       />
       <StateChip room={room} />
@@ -163,7 +164,7 @@ function RoomTile({ room, hero = false }: { room: PublicRoomCard; hero?: boolean
           </span>
         </span>
         <span
-          className="whitespace-nowrap px-3 py-2 text-[12.5px] font-[700] text-[#061019] transition-transform group-hover:-translate-y-0.5"
+          className="whitespace-nowrap px-3 py-2 text-[12.5px] font-[700] text-[#050609] transition-transform group-hover:-translate-y-0.5"
           style={{ background: full ? 'var(--mcb-queue)' : 'var(--mcb-accent)' }}
         >
           {presentation.action}
@@ -181,7 +182,7 @@ function PoolTile({ pool }: { pool: BountyPool }) {
         className="absolute inset-0"
         style={{
           background:
-            'linear-gradient(to top, rgba(4,10,17,0.94) 0%, rgba(4,10,17,0.3) 40%, rgba(4,10,17,0) 68%)',
+            'linear-gradient(to top, rgba(5, 6, 9, 0.94) 0%, rgba(5, 6, 9, 0.3) 40%, rgba(5, 6, 9, 0) 68%)',
         }}
       />
       <span className="mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]">
@@ -201,7 +202,7 @@ function PoolTile({ pool }: { pool: BountyPool }) {
             {pool.platform ? ` · ${platformLabel(pool.platform)}` : ''}
           </span>
         </span>
-        <span className="whitespace-nowrap bg-[var(--mcb-queue)] px-3.5 py-2 text-[12.5px] font-[700] text-[#061019] transition-transform group-hover:-translate-y-0.5">
+        <span className="whitespace-nowrap bg-[var(--mcb-queue)] px-3.5 py-2 text-[12.5px] font-[700] text-[#050609] transition-transform group-hover:-translate-y-0.5">
           View bounty
         </span>
       </span>
@@ -309,8 +310,8 @@ export function Booth({
       {/* chrome: one bar */}
       <header className="flex h-12 shrink-0 items-center justify-between px-4">
         <div className="flex items-center gap-5">
-          <Link href="/?stay=1" className="mc-bc text-[19px] font-[700] tracking-[0.1em]">
-            MEGACHAT
+          <Link href="/?stay=1" className="mc-bc mc-booth-brand text-[19px] font-[700] tracking-[0.1em]">
+            <BrandText />
           </Link>
           <span className="flex items-center gap-1.5 text-[13px] font-[600] text-[var(--mcb-live)]">
             <span className="inline-block size-1.5 rounded-full bg-[var(--mcb-live)]" aria-hidden="true" />
@@ -341,7 +342,7 @@ export function Booth({
           <Link href="/how-it-works" className="hidden hover:text-white md:inline">
             How it works
           </Link>
-          <Link href="/dashboard?new=1" className="border border-[var(--mcb-accent)] px-3 py-2 font-[700] text-[var(--mcb-accent)] hover:bg-[rgba(130,216,242,0.1)]">
+          <Link href="/dashboard?new=1" className="border border-[var(--mcb-accent)] px-3 py-2 font-[700] text-[var(--mcb-accent)] hover:bg-[rgba(58,232,255,0.1)]">
             Create room
           </Link>
           <AccountChip />
@@ -362,7 +363,7 @@ export function Booth({
               <a href="/demo" className="text-[20px] font-semibold text-[var(--mcb-accent)]">Try the demo room</a>
               <Link
                 href="/dashboard?new=1"
-                className="mt-1 bg-[var(--mcb-accent)] px-5 py-2.5 text-[13.5px] font-[700] text-[#061019]"
+                className="mt-1 bg-[var(--mcb-accent)] px-5 py-2.5 text-[13.5px] font-[700] text-[#050609]"
               >
                 Open a room
               </Link>
@@ -410,7 +411,7 @@ export function Booth({
                   <Link
                     key={w.title}
                     href={w.href}
-                    className="group flex flex-col gap-2 border-l-2 bg-[#0b1622] px-4 py-4 transition-colors hover:bg-[#102131]"
+                    className="group flex flex-col gap-2 border-l-2 bg-[#0a0c12] px-4 py-4 transition-colors hover:bg-[#0f1219]"
                     style={{ borderLeftColor: w.color }}
                   >
                     <span className="flex items-center gap-2.5">
@@ -491,7 +492,7 @@ export function Booth({
               <Link
                 key={pool.handleKey}
                 href={poolHref(pool)}
-                className="flex min-w-0 grow flex-col justify-center border-l-2 border-[var(--mcb-queue)] bg-[#0b1622] px-3 py-2 transition-colors hover:bg-[#102131]"
+                className="flex min-w-0 grow flex-col justify-center border-l-2 border-[var(--mcb-queue)] bg-[#0a0c12] px-3 py-2 transition-colors hover:bg-[#0f1219]"
               >
                 <span className="truncate text-[16px] font-[600] leading-[1.1]">
                   {pool.handle ?? pool.handleKey}

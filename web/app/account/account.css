@@ -12,39 +12,39 @@ html:has(.mc-account) {
 }
 
 body:has(.mc-account) {
-  background: #060c14;
+  background: #050609;
 }
 /* html itself owns the page scrollbar, and the site's rule is `*` — which
    matches html but not `html *`. Both selectors are needed. */
 html:has(.mc-account),
 html:has(.mc-account) * {
-  scrollbar-color: #315979 transparent;
+  scrollbar-color: #2a2f3a transparent;
 }
 html:has(.mc-account) ::-webkit-scrollbar-thumb {
-  background-color: #315979;
+  background-color: #2a2f3a;
 }
 html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
-  background-color: #4c7898;
+  background-color: #3a4150;
 }
 
 .mc-account {
-  --mcc-bg: #060c14;
-  --mcc-panel: #0c1927;
-  --mcc-sunk: #07121d;
-  --mcc-fg: #f1f6fb;
-  --mcc-muted: #afc0ce;
-  --mcc-dim: #8fa7b9;
-  --mcc-faint: #7892a6;
-  --mcc-rule: rgba(135, 188, 226, 0.17);
-  --mcc-rule-2: rgba(135, 188, 226, 0.28);
-  --mcc-accent: #82d8f2;
-  --mcc-live: #57e7b9;
-  --mcc-warn: #f8d66b;
+  --mcc-bg: #050609;
+  --mcc-panel: #0a0c12;
+  --mcc-sunk: #07090f;
+  --mcc-fg: #f4f6f8;
+  --mcc-muted: #a9b2bd;
+  --mcc-dim: #7d8794;
+  --mcc-faint: #6b7684;
+  --mcc-rule: rgba(255, 255, 255, 0.17);
+  --mcc-rule-2: rgba(255, 255, 255, 0.28);
+  --mcc-accent: #3ae8ff;
+  --mcc-live: #b8ff45;
+  --mcc-warn: #ffd23d;
   background-color: var(--mcc-bg);
   background-image:
-    radial-gradient(circle at 10% 0%, rgba(74, 173, 229, 0.11), transparent 31rem),
-    linear-gradient(rgba(105, 180, 225, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(105, 180, 225, 0.025) 1px, transparent 1px);
+    radial-gradient(circle at 10% 0%, rgba(255, 45, 120, 0.11), transparent 31rem),
+    linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px);
   background-size: auto, 42px 42px, 42px 42px;
   color: var(--mcc-fg);
   font-family: var(--font-ui), system-ui, sans-serif;
@@ -56,7 +56,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   top: 0;
   height: 58px;
   border-bottom: 1px solid var(--mcc-rule);
-  background: rgba(6, 12, 20, 0.9);
+  background: rgba(5, 6, 9, 0.9);
   backdrop-filter: blur(18px);
 }
 
@@ -82,7 +82,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 .mcc-product-header > div > :last-child { justify-self: end; }
 .mcc-product-actions { display: flex; align-items: center; gap: 10px; }
 .mcc-product-actions > a { padding: 8px 12px; border: 1px solid var(--mcc-accent); color: var(--mcc-accent); font-size: 11px; font-weight: 750; }
-.mcc-product-actions > a:hover { background: rgba(130, 216, 242, .1); }
+.mcc-product-actions > a:hover { background: rgba(58, 232, 255, .1); }
 
 .mcc-coordinate {
   color: var(--mcc-accent);
@@ -96,7 +96,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   max-width: 650px;
   padding: 46px;
   border: 1px solid var(--mcc-rule);
-  background: linear-gradient(145deg, rgba(20, 49, 72, .78), rgba(7, 18, 29, .92));
+  background: linear-gradient(145deg, rgba(18, 21, 29, .78), rgba(7, 9, 15, .92));
 }
 
 .mcc-signed-out h1 { margin: 12px 0 10px; font-size: 34px; letter-spacing: -.035em; }
@@ -106,7 +106,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   width: min(1500px, calc(100% - 40px));
   margin: 20px auto 40px;
   border: 1px solid var(--mcc-rule);
-  background: rgba(5, 13, 21, .72);
+  background: rgba(5, 6, 9, .72);
 }
 
 .mcc-identity-hero {
@@ -118,8 +118,8 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   padding: 38px 42px;
   border-bottom: 1px solid var(--mcc-rule);
   background:
-    radial-gradient(circle at 20% 15%, rgba(99, 186, 255, .2), transparent 29rem),
-    linear-gradient(110deg, #0d2436 0%, #091724 62%, #07121d 100%);
+    radial-gradient(circle at 20% 15%, rgba(58, 232, 255, .2), transparent 29rem),
+    linear-gradient(110deg, #0f1219 0%, #07090f 62%, #07090f 100%);
 }
 
 .mcc-identity-hero h1 {
@@ -138,7 +138,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: stretch;
   border: 1px solid var(--mcc-rule-2);
-  background: rgba(4, 10, 17, .52);
+  background: rgba(5, 6, 9, .52);
 }
 
 .mcc-room-link > span {
@@ -161,14 +161,14 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   padding: 0 14px;
   border: 0;
   border-left: 1px solid var(--mcc-rule);
-  background: rgba(99, 186, 255, .08);
+  background: rgba(58, 232, 255, .08);
   color: var(--mcc-fg);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
 }
 
-.mcc-room-link :is(button, a):hover { background: rgba(99, 186, 255, .17); }
+.mcc-room-link :is(button, a):hover { background: rgba(58, 232, 255, .17); }
 
 .mcc-account-layout {
   display: grid;
@@ -180,18 +180,18 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--mcc-rule);
-  background: rgba(7, 18, 29, .72);
+  background: rgba(7, 9, 15, .72);
 }
 
 .mcc-section-nav > div { display: flex; flex-direction: column; padding: 26px 16px 10px; }
 .mcc-section-nav > div > span { margin: 0 10px 9px; color: var(--mcc-faint); font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .mcc-section-nav button:not(.mcc-signout),
 .mcc-section-nav a { padding: 10px; border: 0; border-left: 2px solid transparent; background: transparent; color: var(--mcc-dim); font-size: 12px; font-weight: 650; text-align: left; cursor: pointer; }
-.mcc-section-nav button[aria-current='page'] { border-left-color: var(--mcc-accent); background: rgba(99, 186, 255, .09); color: var(--mcc-fg); }
+.mcc-section-nav button[aria-current='page'] { border-left-color: var(--mcc-accent); background: rgba(58, 232, 255, .09); color: var(--mcc-fg); }
 .mcc-section-nav :is(button, a):hover { color: var(--mcc-fg); }
 .mcc-nav-links { border-top: 1px solid var(--mcc-rule); }
 .mcc-signout { margin: auto 16px 16px; padding: 11px; border: 1px solid var(--mcc-rule); background: transparent; color: var(--mcc-faint); font-size: 11px; font-weight: 650; text-align: left; cursor: pointer; }
-.mcc-signout:hover { border-color: rgba(255, 102, 125, .45); color: #ff8fa1; }
+.mcc-signout:hover { border-color: rgba(255, 107, 61, .45); color: #ff8a66; }
 
 .mcc-account-work { min-width: 0; padding: 34px; }
 .mcc-overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -207,10 +207,10 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 
 .mcc-balance-zone {
   border-left: 3px solid var(--mcc-warn);
-  background: linear-gradient(145deg, rgba(248, 214, 107, .16), rgba(43, 37, 18, .38));
+  background: linear-gradient(145deg, rgba(255, 210, 61, .16), rgba(43, 37, 18, .38));
 }
 
-.mcc-balance-zone .mcc-coordinate { color: #dac267; }
+.mcc-balance-zone .mcc-coordinate { color: #e6bd37; }
 .mcc-balance-zone > strong { margin: auto 0 4px; color: var(--mcc-warn); font-size: clamp(45px, 5vw, 68px); line-height: 1; letter-spacing: -.055em; }
 .mcc-balance-zone > strong b { margin-right: 3px; font-size: .46em; vertical-align: super; }
 .mcc-balance-zone p,
@@ -220,7 +220,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 
 .mcc-room-zone {
   border-left: 3px solid var(--mcc-live);
-  background: linear-gradient(145deg, rgba(87, 231, 185, .14), rgba(13, 49, 42, .38));
+  background: linear-gradient(145deg, rgba(184, 255, 69, .14), rgba(13, 49, 42, .38));
   color: var(--mcc-live);
 }
 .mcc-room-zone .mcc-coordinate { color: var(--mcc-live); }
@@ -229,14 +229,14 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 .mcc-overview-status {
   grid-column: 1 / -1;
   border: 1px solid var(--mcc-rule);
-  background: rgba(8, 20, 31, .74);
+  background: rgba(7, 9, 15, .74);
 }
 .mcc-overview-status header { display: flex; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid var(--mcc-rule); }
 .mcc-overview-status header span { font-size: 12px; font-weight: 750; }
 .mcc-overview-status header small { color: var(--mcc-live); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
 .mcc-overview-status button { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border: 0; border-top: 1px solid var(--mcc-rule); background: transparent; color: var(--mcc-fg); text-align: left; cursor: pointer; }
 .mcc-overview-status button:first-of-type { border-top: 0; }
-.mcc-overview-status button:hover { background: rgba(99, 186, 255, .07); }
+.mcc-overview-status button:hover { background: rgba(58, 232, 255, .07); }
 .mcc-overview-status button span { display: flex; flex-direction: column; gap: 3px; }
 .mcc-overview-status button b { font-size: 12px; }
 .mcc-overview-status button small { color: var(--mcc-faint); font-size: 10px; }
@@ -252,7 +252,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 .mcc-settings-zone header p,
 .mcc-connections-zone header p { max-width: 590px; margin: 0; color: var(--mcc-muted); font-size: 12px; line-height: 1.55; }
 
-.mcc-setting-rows { margin: 20px 0; padding: 0; list-style: none; border: 1px solid var(--mcc-rule); background: rgba(7, 18, 29, .58); }
+.mcc-setting-rows { margin: 20px 0; padding: 0; list-style: none; border: 1px solid var(--mcc-rule); background: rgba(7, 9, 15, .58); }
 .mcc-setting-rows li { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 13px 16px; border-top: 1px solid var(--mcc-rule); }
 .mcc-setting-rows li:first-child { border-top: 0; }
 .mcc-setting-rows span { color: var(--mcc-muted); font-size: 12px; }
@@ -261,9 +261,9 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 
 .mcc-connections-list { margin: 20px 0; padding: 0; list-style: none; }
 .mcc-connections-list li,
-.mcc-wallet-line { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 13px; min-height: 68px; padding: 10px 14px; border: 1px solid var(--mcc-rule); border-top: 0; background: rgba(7, 18, 29, .64); }
+.mcc-wallet-line { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 13px; min-height: 68px; padding: 10px 14px; border: 1px solid var(--mcc-rule); border-top: 0; background: rgba(7, 9, 15, .64); }
 .mcc-connections-list li:first-child { border-top: 1px solid var(--mcc-rule); }
-.mcc-provider { width: 34px; height: 34px; display: grid; place-items: center; background: rgba(99, 186, 255, .13); color: var(--mcc-accent); font-weight: 800; }
+.mcc-provider { width: 34px; height: 34px; display: grid; place-items: center; background: rgba(58, 232, 255, .13); color: var(--mcc-accent); font-weight: 800; }
 .mcc-connections-list li > span:nth-child(2),
 .mcc-wallet-line > span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .mcc-connections-list strong,
@@ -273,7 +273,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 .mcc-connections-list li > b,
 .mcc-wallet-line > b { color: var(--mcc-live); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
 .mcc-wallet-line { grid-template-columns: minmax(0, 1fr) auto; border-top: 1px solid var(--mcc-rule); }
-.mcc-empty-connection { margin: 20px 0; padding: 22px; border: 1px solid var(--mcc-rule); background: rgba(7, 18, 29, .64); }
+.mcc-empty-connection { margin: 20px 0; padding: 22px; border: 1px solid var(--mcc-rule); background: rgba(7, 9, 15, .64); }
 .mcc-empty-connection p { margin: 0 0 14px; color: var(--mcc-muted); font-size: 12px; }
 
 .mc-account .bc {
@@ -353,7 +353,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   padding: 9px 18px;
   border: 0;
   background: var(--mcc-accent);
-  color: #061019;
+  color: #050609;
   cursor: pointer;
 }
 .mc-account .btn:disabled {

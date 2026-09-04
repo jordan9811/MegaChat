@@ -130,7 +130,7 @@ export function ClaimFlow({
             platform account comes next — nothing here moves real funds.
           </p>
           {!canClaim && <p className="mt-3 text-sm text-muted-foreground">This is an unfunded example. Create a real bounty before claiming; the setup preview is available here.</p>}
-          {error || authError ? <p role="alert" className="mt-2 text-sm text-[#ffbbb3]">{error || authError}</p> : null}
+          {error || authError ? <p role="alert" className="mt-2 text-sm text-[#ffb39e]">{error || authError}</p> : null}
           <button
             type="button"
             disabled={stage === 'claiming' || !canClaim}

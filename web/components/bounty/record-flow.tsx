@@ -235,7 +235,7 @@ export function RecordFlow({ target, config, otherPools, onDone, onCancel }: {
             <input aria-label="Streamer handle" value={newTargetHandle} onChange={(e) => { setNewTargetHandle(e.target.value); setTargetError('') }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTarget() } }} placeholder="Streamer handle" className="min-h-10 min-w-0 border border-border bg-background/40 px-3 text-sm" />
             <button type="button" className={button} disabled={extraTargets.length >= 2 || !newTargetHandle.trim()} onClick={addTarget}>Add streamer</button>
           </div>
-          {targetError && <p role="alert" className="mt-2 text-sm text-[#ffbbb3]">{targetError}</p>}
+          {targetError && <p role="alert" className="mt-2 text-sm text-[#ffb39e]">{targetError}</p>}
           {extraTargets.filter((key) => !choices.some((pool) => `${pool.platform}:${pool.handle}` === key)).length > 0 && <div className="mt-2 flex flex-wrap gap-2">{extraTargets.filter((key) => !choices.some((pool) => `${pool.platform}:${pool.handle}` === key)).map((key) => <button key={key} type="button" className={`${button} max-w-full break-all border-primary bg-primary/10`} onClick={() => setExtraTargets((prev) => prev.filter((item) => item !== key))}>{key.replace(':', ' / ')} ×</button>)}</div>}
           {extraTargets.length > 0 && <p className="mt-2 text-sm text-muted-foreground">One {formatDollars(amount)} pledge, shared across {extraTargets.length + 1} names. Only one can receive it.</p>}
         </fieldset>
@@ -248,7 +248,7 @@ export function RecordFlow({ target, config, otherPools, onDone, onCancel }: {
       </div>}
 
       <div hidden={showTerms && !blob || stage === 'done'} className="mt-5">
-        <div className="relative overflow-hidden border border-border bg-[#07121c]">
+        <div className="relative overflow-hidden border border-border bg-[#07090f]">
           <video ref={video} playsInline aria-label="Bounty recording preview" className="aspect-video w-full max-h-[360px]" />
           {!blob && stage !== 'recording' && <span className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted-foreground">{stage === 'requesting' ? 'Allow camera and microphone in your browser' : 'Camera off'}</span>}
         </div>
@@ -259,7 +259,7 @@ export function RecordFlow({ target, config, otherPools, onDone, onCancel }: {
           {stage === 'preview' && <><button type="button" className={primary} onClick={() => setStage('terms')}>Review and confirm</button><button type="button" className={button} onClick={() => { setBlob(null); setError(''); setStage('idle') }}>Re-record</button><span className="text-sm text-muted-foreground">{duration}s recorded</span></>}
         </div>
       </div>
-      {(error || authError) && <p role="alert" className="mt-4 text-sm text-[#ffbbb3]">{error || authError}</p>}
+      {(error || authError) && <p role="alert" className="mt-4 text-sm text-[#ffb39e]">{error || authError}</p>}
       {stage === 'done' && <div className="mt-5"><h3 className="text-lg font-bold text-[var(--neon-lime)]">Preview pledge submitted</h3><p className="my-3 text-sm text-muted-foreground">Your recording is ready for moderation. No real funds moved.</p><button type="button" className={primary} onClick={() => onDone(identity ? `${identity.provider}:${identity.username}` : name)}>View my contributions</button></div>}
     </section>
   )

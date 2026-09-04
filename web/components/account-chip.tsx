@@ -62,7 +62,7 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
       >
         {wallet.modalOpen ? 'Opening…' : 'Sign in'}
       </button>
-      {authError && <p role="alert" className="absolute right-0 top-full z-50 mt-2 w-72 border border-[#536878] bg-[#11243a] p-3 text-left text-[13px] leading-normal text-[#f1f6fb]">{authError}</p>}
+      {authError && <p role="alert" className="absolute right-0 top-full z-50 mt-2 w-72 border border-[#4f5865] bg-[#0f1219] p-3 text-left text-[13px] leading-normal text-[#f4f6f8]">{authError}</p>}
       </div>
     )
   }
@@ -95,7 +95,7 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
               className="block px-2.5 pb-1.5 pt-2 text-[11.5px] leading-[1.45] text-[#9aa4ad] hover:text-white"
             >
               Your room link
-              <span className="mt-0.5 block font-[600] text-[#43e0a8]">
+              <span className="mt-0.5 block font-[600] text-[#b8ff45]">
                 megachat.fun/{identity.handle}
               </span>
             </a>
@@ -128,7 +128,7 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
               {connectingBalance ? 'Connecting…' : 'Connect balance'}
             </button>
           )}
-          {authError && <p role="alert" className="px-2.5 py-2 text-[13px] text-[#ffbbb3]">{authError}</p>}
+          {authError && <p role="alert" className="px-2.5 py-2 text-[13px] text-[#ffb39e]">{authError}</p>}
 
           <a href="/account" role="menuitem" className="block px-2.5 py-2 text-[13px] text-white hover:bg-white/10">
             Account

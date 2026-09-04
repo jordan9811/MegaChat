@@ -47,7 +47,7 @@ export function DashboardShell({ contactHref }: { contactHref: string }) {
           </span>
           <h1 className="font-heading text-3xl font-bold text-foreground">{room?.name || 'Your room'}</h1>
           <p role="status" className="text-sm text-muted-foreground">{saveState === 'saving' ? 'Saving changes...' : saveState === 'error' ? 'Changes not saved' : 'All changes saved'}</p>
-          {saveError && <p role="alert" className="text-sm text-[#ffbbb3]">{saveError}</p>}
+          {saveError && <p role="alert" className="text-sm text-[#ffb39e]">{saveError}</p>}
           <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
             Share your links, watch viewers roll onto camera, and tune anything you set up.
           </p>

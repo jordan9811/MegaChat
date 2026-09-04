@@ -1,7 +1,7 @@
 // NOTE: @vercel/analytics was removed — the app deploys on Railway, so the
 // injected /_vercel/insights/script.js could only ever 404 on every page.
 import type { Metadata, Viewport } from 'next'
-import { Plus_Jakarta_Sans, Pacifico } from 'next/font/google'
+import { Archivo, Pacifico, Plus_Jakarta_Sans, Space_Mono } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
 import { TempoWalletProvider } from '@/components/providers/tempo-wallet'
 import './globals.css'
@@ -10,6 +10,11 @@ import './product.css'
 const ui = Plus_Jakarta_Sans({ variable: '--font-ui', subsets: ['latin'], weight: ['400', '500', '600', '700', '800'] })
 // Brush-script graffiti face for the hero tagline — Pacifico is thick and
 // smooth like the brand reference (Kaushan read too thin/gritty).
+// Display face for headlines and the wordmark, and a mono for anything that
+// reads like a readout (coordinates, meters, meta). Site-wide so every page
+// can reach them; the UI face stays Jakarta.
+const display = Archivo({ variable: '--font-display', subsets: ['latin'], weight: ['700', '800', '900'] })
+const code = Space_Mono({ variable: '--font-code', subsets: ['latin'], weight: ['400', '700'] })
 const graffiti = Pacifico({
   variable: '--font-graffiti',
   subsets: ['latin'],
@@ -70,7 +75,7 @@ export const viewport: Viewport = {
   colorScheme: 'dark light',
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#f4ecfa' },
-    { media: '(prefers-color-scheme: dark)', color: '#1a1029' },
+    { media: '(prefers-color-scheme: dark)', color: '#050609' },
   ],
 }
 
@@ -83,7 +88,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${ui.variable} ${graffiti.variable}`}
+      className={`${ui.variable} ${graffiti.variable} ${display.variable} ${code.variable}`}
       data-scroll-behavior="smooth"
     >
       <body className="bg-background font-sans antialiased">

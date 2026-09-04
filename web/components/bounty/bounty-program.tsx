@@ -19,6 +19,7 @@ import { AccountChip } from '@/components/account-chip'
 import { getBountyConfig, getProgram, type BountyClientConfig, type ProgramPool } from '@/lib/bounty-api'
 import { exampleTotals } from '@/lib/bounty-examples'
 import { formatDollars } from '@/lib/display-format'
+import { BrandText } from '@/components/brand-text'
 
 // From docs/design/copy-bank.md — the bounty page is the one surface where
 // "demand more" is literally what the product does.
@@ -99,7 +100,7 @@ function PlatformMark({ platform }: { platform: string | null }) {
     return (
       <svg viewBox="0 0 24 24" width="14" height="14" role="img" aria-label={label}>
         <g transform="rotate(-45 12 12)">
-          <rect x="0.5" y="7.25" width="23" height="9.5" rx="4.75" fill="#43e0a8" />
+          <rect x="0.5" y="7.25" width="23" height="9.5" rx="4.75" fill="#b8ff45" />
           <rect x="11.3" y="7.25" width="1.4" height="9.5" fill="#08080a" />
         </g>
       </svg>
@@ -340,7 +341,7 @@ export function BountyProgram() {
       <header className="mcb-product-header">
         <div>
           <span className="mcb-product-brand">
-            <a href="/?stay=1" className="bc">MEGACHAT</a>
+            <a href="/?stay=1" className="bc"><BrandText /></a>
             <i aria-hidden="true" />
             <span>Bounties</span>
           </span>

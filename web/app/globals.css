@@ -55,41 +55,43 @@
 }
 
 /* ===== DARK (primary) ===== */
+/* Nerve system: near-black ground, hot pink primary, electric cyan, acid
+   lime, and a yellow that money reads in. Chart colors are untouched. */
 :root,
 .dark {
   color-scheme: dark;
-  --background: oklch(0.16 0.045 305);
-  --foreground: oklch(0.97 0.01 320);
-  --card: oklch(0.21 0.05 303);
-  --card-foreground: oklch(0.97 0.01 320);
-  --popover: oklch(0.19 0.05 303);
-  --popover-foreground: oklch(0.97 0.01 320);
-  --primary: oklch(0.68 0.26 336);
-  --primary-foreground: oklch(0.14 0.04 305);
-  --secondary: oklch(0.28 0.06 300);
-  --secondary-foreground: oklch(0.97 0.01 320);
-  --muted: oklch(0.26 0.05 302);
-  --muted-foreground: oklch(0.72 0.04 315);
-  --accent: oklch(0.3 0.08 320);
-  --accent-foreground: oklch(0.97 0.01 320);
-  --destructive: oklch(0.62 0.24 18);
-  --border: oklch(0.7 0.12 320 / 18%);
-  --input: oklch(0.7 0.1 320 / 14%);
-  --ring: oklch(0.68 0.26 336);
+  --background: #050609;
+  --foreground: #f4f6f8;
+  --card: #0a0c12;
+  --card-foreground: #f4f6f8;
+  --popover: #0c0f17;
+  --popover-foreground: #f4f6f8;
+  --primary: #ff2d78;
+  --primary-foreground: #ffffff;
+  --secondary: #12151d;
+  --secondary-foreground: #f4f6f8;
+  --muted: #0f1219;
+  --muted-foreground: #a9b2bd;
+  --accent: #151a24;
+  --accent-foreground: #f4f6f8;
+  --destructive: #ff6b3d;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #ff2d78;
 
-  --neon-magenta: oklch(0.68 0.27 340);
-  --neon-violet: oklch(0.6 0.24 295);
-  --neon-lime: oklch(0.88 0.22 128);
-  --neon-cyan: oklch(0.8 0.14 200);
-  --neon-amber: oklch(0.82 0.16 75);
+  --neon-magenta: #ff2d78;
+  --neon-violet: #a855ff;
+  --neon-lime: #b8ff45;
+  --neon-cyan: #3ae8ff;
+  --neon-amber: #ffd23d;
   /* Wordmark outline — near-white pop on dark, dark plum on light. */
   --wordmark-stroke: oklch(0.98 0.02 320 / 0.85);
-  /* Noir backdrop blooms + grid — variable-driven so .bg-noir follows the
+  /* Backdrop blooms + grid — variable-driven so .bg-noir follows the
      theme (the join page re-locks these by carrying .dark on its wrapper). */
-  --noir-bloom-1: oklch(0.4 0.18 330 / 0.35);
-  --noir-bloom-2: oklch(0.4 0.16 285 / 0.3);
-  --noir-bloom-3: oklch(0.38 0.16 300 / 0.4);
-  --grid-line: oklch(0.7 0.12 320 / 0.06);
+  --noir-bloom-1: rgba(255, 45, 120, 0.14);
+  --noir-bloom-2: rgba(58, 232, 255, 0.1);
+  --noir-bloom-3: rgba(255, 45, 120, 0.1);
+  --grid-line: rgba(255, 255, 255, 0.05);
 
   --chart-1: oklch(0.68 0.26 336);
   --chart-2: oklch(0.6 0.24 295);
@@ -97,14 +99,14 @@
   --chart-4: oklch(0.88 0.22 128);
   --chart-5: oklch(0.75 0.18 20);
   --radius: 0.75rem;
-  --sidebar: oklch(0.19 0.05 303);
-  --sidebar-foreground: oklch(0.97 0.01 320);
-  --sidebar-primary: oklch(0.68 0.26 336);
-  --sidebar-primary-foreground: oklch(0.14 0.04 305);
-  --sidebar-accent: oklch(0.28 0.06 300);
-  --sidebar-accent-foreground: oklch(0.97 0.01 320);
-  --sidebar-border: oklch(0.7 0.12 320 / 18%);
-  --sidebar-ring: oklch(0.68 0.26 336);
+  --sidebar: #0a0c12;
+  --sidebar-foreground: #f4f6f8;
+  --sidebar-primary: #ff2d78;
+  --sidebar-primary-foreground: #050609;
+  --sidebar-accent: #12151d;
+  --sidebar-accent-foreground: #f4f6f8;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: #ff2d78;
 }
 
 /* ===== LIGHT ===== */

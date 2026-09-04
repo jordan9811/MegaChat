@@ -20,6 +20,7 @@ import {
 import { AccountChip } from '@/components/account-chip'
 import { contactUrl } from '@/components/site-footer'
 import './how-it-works.css'
+import { BrandText } from '@/components/brand-text'
 
 export const metadata: Metadata = {
   title: 'How it works — MegaChat',
@@ -254,7 +255,7 @@ export default function HowItWorksPage() {
       <header className="mch-product-header">
         <div>
           <span className="mch-product-brand">
-            <a href="/app" className="bc">MEGACHAT</a>
+            <a href="/app" className="bc"><BrandText /></a>
             <i aria-hidden="true" />
             <span>How it works</span>
           </span>
@@ -367,7 +368,7 @@ export default function HowItWorksPage() {
 
       <footer className="mch-footer">
         <div>
-          <span className="bc">MEGACHAT</span>
+          <span className="bc"><BrandText /></span>
           <nav aria-label="Footer">
             <a href="/app">Rooms</a>
             <a href="/bounty">Bounties</a>

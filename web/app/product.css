@@ -1,62 +1,68 @@
 /* Shared product grammar, including components carried forward from the old manager. */
 body { font-family: var(--font-ui), sans-serif; }
+/* Wordmark as text: MEGA carries the brand pink everywhere it is set in type. */
+.mc-brand-mega { color: #ff2d78; }
+body :is(.mc-product-brand, .mcc-brand, .mcb-product-brand .bc, .mcc-product-brand .bc, .mch-product-brand .bc, .mcj-product-brand .bc, .mc-booth-brand, .mch-footer .bc) { font-family: var(--font-display), var(--font-ui), sans-serif; font-weight: 900; letter-spacing: .2em; }
+/* The page headers style every span inside the lockup as the page title; the MEGA half is a span too, so it needs to outrank that and inherit the mark. */
+body :is(.mcb-product-brand, .mcc-product-brand, .mch-product-brand, .mcj-product-brand, .mcc-brand-lockup, .mch-footer, .mc-product-header, .mc-booth-brand) .mc-brand-mega { display: inline; margin: 0; padding: 0; color: #ff2d78; font: inherit; letter-spacing: inherit; }
 .mc-product {
-  --background: #060c14;
-  --foreground: #f1f6fb;
-  --card: #102236;
-  --card-foreground: #f1f6fb;
-  --popover: #11243a;
-  --popover-foreground: #f1f6fb;
-  --primary: #82d8f2;
-  --primary-foreground: #061019;
-  --secondary: #18354a;
-  --secondary-foreground: #f1f6fb;
-  --muted: #13283b;
-  --muted-foreground: #acbdcb;
-  --accent: #1c3c52;
-  --accent-foreground: #f1f6fb;
-  --border: #294457;
-  --input: #254459;
-  --ring: #82d8f2;
-  --neon-magenta: #82d8f2;
-  --neon-violet: #82d8f2;
-  --neon-cyan: #82d8f2;
-  --neon-lime: #57e7b9;
-  --neon-amber: #f8d66b;
+  --background: #050609;
+  --foreground: #f4f6f8;
+  --card: #0a0c12;
+  --card-foreground: #f4f6f8;
+  --popover: #0f1219;
+  --popover-foreground: #f4f6f8;
+  --primary: #3ae8ff;
+  --primary-foreground: #050609;
+  --secondary: #12151d;
+  --secondary-foreground: #f4f6f8;
+  --muted: #0f1219;
+  --muted-foreground: #a9b2bd;
+  --accent: #151a24;
+  --accent-foreground: #f4f6f8;
+  --border: #1e222b;
+  --input: #22262f;
+  --ring: #3ae8ff;
+  --neon-magenta: #3ae8ff;
+  --neon-violet: #3ae8ff;
+  --neon-cyan: #3ae8ff;
+  --neon-lime: #b8ff45;
+  --neon-amber: #ffd23d;
   --radius: 2px;
   color: var(--foreground);
-  background: radial-gradient(ellipse at 0 0, #15334a 0, transparent 45rem), var(--background);
+  background: linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px), radial-gradient(ellipse at 0 0, rgba(255, 45, 120, 0.07) 0, transparent 40rem), var(--background);
+  background-size: 48px 48px, 48px 48px, auto, auto;
   font-family: var(--font-ui), sans-serif;
   font-size: 14px;
 }
-body:has(.mc-product) { background: #060c14; }
+body:has(.mc-product) { background: #050609; }
 .mc-product [class*='rounded-']:not([role='switch']) { border-radius: 2px; }
 .mc-product [class*='font-'] { font-family: var(--font-ui), sans-serif; }
 .mc-product .reveal { opacity: 1; animation: none; transform: none; }
 .mc-product :is(button, input, select) { font-family: inherit; }
-.mc-product :is(button, a):focus-visible { outline: 2px solid #82d8f2; outline-offset: 3px; }
+.mc-product :is(button, a):focus-visible { outline: 2px solid #3ae8ff; outline-offset: 3px; }
 .mc-product-main { max-width: 1440px; margin: 0 auto; padding: 32px; }
-.mc-product-header { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 20px; min-height: 64px; padding: 12px 32px; border-bottom: 1px solid #294457; background: #091522f2; }
+.mc-product-header { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 20px; min-height: 64px; padding: 12px 32px; border-bottom: 1px solid #1e222b; background: #07090ff2; }
 .mc-product-brand { font-size: 16px; font-weight: 800; letter-spacing: .07em; }
-.mc-product-header > span { color: #acbdcb; }
+.mc-product-header > span { color: #a9b2bd; }
 .mc-product-header nav { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin-left: auto; }
 .mc-product-header nav > a { display: inline-flex; align-items: center; min-height: 40px; font-size: 13px; }
-.mc-product-create { border: 1px solid #82d8f2; color: #82d8f2; padding: 0 12px; }
-.mc-product h1 { font-size: clamp(30px, 3vw, 44px); font-weight: 700; letter-spacing: -.025em; line-height: 1.15; }
+.mc-product-create { border: 1px solid #3ae8ff; color: #3ae8ff; padding: 0 12px; }
+.mc-product h1 { font-family: var(--font-display), var(--font-ui), sans-serif; font-size: clamp(30px, 3vw, 44px); font-weight: 800; letter-spacing: -.02em; line-height: 1.08; }
 .mc-product h2 { letter-spacing: -.02em; }
-.mc-product .text-white[class*='bg-[var(--neon-'] { color: #061019; }
+.mc-product .text-white[class*='bg-[var(--neon-'] { color: #050609; }
 
-.mcc-room-recovery { margin: 0 0 20px; border: 1px solid #294457; background: #102236; color: #acbdcb; font-size: 14px; }
-.mcc-room-recovery summary { padding: 14px 18px; cursor: pointer; color: #82d8f2; font-weight: 600; }
+.mcc-room-recovery { margin: 0 0 20px; border: 1px solid #1e222b; background: #0a0c12; color: #a9b2bd; font-size: 14px; }
+.mcc-room-recovery summary { padding: 14px 18px; cursor: pointer; color: #3ae8ff; font-weight: 600; }
 .mcc-room-recovery form { display: flex; align-items: end; gap: 16px; padding: 4px 18px 18px; flex-wrap: wrap; }
 .mcc-room-recovery label { display: grid; flex: 1; gap: 6px; min-width: 180px; }
-.mcc-room-recovery input { border: 1px solid #3c5a70; background: #091522; padding: 10px; color: #f1f6fb; min-width: 0; width: 100%; }
-.mcc-room-recovery button { min-height: 42px; background: #82d8f2; padding: 10px 18px; color: #061019; font-weight: 700; }
+.mcc-room-recovery input { border: 1px solid #2e3340; background: #07090f; padding: 10px; color: #f4f6f8; min-width: 0; width: 100%; }
+.mcc-room-recovery button { min-height: 42px; background: #3ae8ff; padding: 10px 18px; color: #050609; font-weight: 700; }
 .mcc-room-recovery button:disabled { opacity: .55; }
-.mcc-room-recovery p { padding: 0 18px 18px; color: #ffbbb3; }
+.mcc-room-recovery p { padding: 0 18px 18px; color: #ffb39e; }
 .mcc-owned-rooms { display: flex; gap: 12px; flex-wrap: wrap; padding: 0 18px 18px; }
-.mcc-owned-rooms button { background: #18354a; color: #f1f6fb; }
-.mcc-owned-rooms span { margin-left: 20px; color: #82d8f2; }
+.mcc-owned-rooms button { background: #12151d; color: #f4f6f8; }
+.mcc-owned-rooms span { margin-left: 20px; color: #3ae8ff; }
 body .mcc-progress { text-transform: none; }
 
 /* Readable label floor across scoped product screens; display typography is separate. */
@@ -64,20 +70,19 @@ body :is(.mc-product, .mc-create, .mc-join, .mc-bounty, .mc-account, .mc-how, .m
 body :is(.mc-product, .mc-create, .mc-join, .mc-bounty, .mc-account, .mc-how) :is(p, label, small) { line-height: 1.55; }
 body :is(.mc-product, .mc-create, .mc-join, .mc-bounty, .mc-account, .mc-how) :is(p, label, small):is(.text-xs, [class*='text-[12']) { font-size: 13px; }
 body :is(.mcb-product-header, .mcj-product-header, .mcc-product-header, .mch-product-header) nav a { font-size: 13px; min-height: 40px; display: inline-flex; align-items: center; }
-body :is(.mcb-coordinate, .join-coordinate, .mcc-coordinate, .mch-coordinate, .mcl-coordinate, .mcc-progress, .mcc-preview-note, .mcc-module-copy > span, .mcc-advanced-head span, .mcc-preview-head > div > span) { font-size: 12px; letter-spacing: .025em; font-weight: 600; }
-body :is(.mcb-hero h1, .mcc-identity-hero h1, .mch-hero h1) { font-size: clamp(36px, 4vw, 54px); letter-spacing: -.025em; line-height: 1.1; font-weight: 700; }
+body :is(.mcc-progress, .mcc-preview-note, .mcc-module-copy > span) { font-size: 12px; letter-spacing: .025em; font-weight: 600; }
+/* Readouts and section coordinates read like a HUD: mono, small caps, wide tracking. */
+body :is(.mcb-coordinate, .join-coordinate, .mcc-coordinate, .mch-coordinate, .mcc-advanced-head span, .mcc-preview-head > div > span) { font-family: var(--font-code), ui-monospace, monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; font-weight: 400; }
+body :is(.mcb-hero h1, .mcc-identity-hero h1, .mch-hero h1) { font-family: var(--font-display), var(--font-ui), sans-serif; font-size: clamp(36px, 4vw, 54px); letter-spacing: -.02em; line-height: 1.02; font-weight: 800; }
 body :is(.mcb-totals small, .mcb-totals em, .mcb-detail-person p, .mcb-detail-total span, .mcb-detail-split small, .mcb-anatomy small) { font-size: 13px; line-height: 1.5; }
 body :is(.mcb-detail-action, .mcb-claim-action, .mcc-section-nav a, .mcc-signout, .join-advanced summary) { font-size: 14px; }
-body :is(.mcl-bounty-poster h2, .mcl-create-strip h2) { font-size: clamp(32px, 3.4vw, 48px); letter-spacing: -.025em; line-height: 1.1; }
-body .mcl-entry-card { padding-bottom: 70px; }
-body .mcl-card-number { font-size: 52px; }
 body .mc-create :is(.lbl, .hint, .tabchip, .mcc-switch, .mcc-identity-field > span:first-child, .mcc-charging > span:first-child) { font-size: 13px; letter-spacing: 0; }
 body .mc-create .mcc-section-title :is(h1,h2) { font-size: 21px; }
 body .mc-create .mcc-module-copy strong { font-size: 16px; }
 body .mc-join :is(#priceLabel, #walletInfo, #passkeyFundNote, #camHint, #letterStatus, .join-trust-line) { font-size: 13px; }
 body .mc-join .join-mode-zone h2 { font-size: 22px; letter-spacing: -.02em; }
 body .mc-bounty .mcb-totals { min-width: 285px; }
-.mcb-example-notice { padding: 12px 26px; border-bottom: 1px solid #294457; background: #132337; color: #b7c6d2; font-size: 13px; line-height: 1.5; }
+.mcb-example-notice { padding: 12px 26px; border-bottom: 1px solid #1e222b; background: #0e1119; color: #a9b2bd; font-size: 13px; line-height: 1.5; }
 body .mc-bounty :is(.colhead, .pip, .rowcta, .rowcta-ghost, .mcb-open-count) { font-size: 12px; letter-spacing: .025em; }
 body .mc-bounty .lb-row.is-claimed { opacity: 1; }
 body .mc-bounty :is(.mcb-leaderboard h2, .mcb-create-bounty h2, .mcb-detail-person h2) { font-weight: 600; letter-spacing: -.02em; }

@@ -314,19 +314,30 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     { platform: 'x', handle: 'martinshkreli' },
     { platform: 'x', handle: 'rasmr' },
     { platform: 'pumpfun', handle: 'GnBQjwQibzB9zFPHEGEhoiASon7JfaRADxQe6C64pump' },
+    { platform: 'twitch', handle: 'asmongold' },
+    { platform: 'twitch', handle: 'pokimane' },
+    { platform: 'kick', handle: 'xqc' },
   ];
   try {
-    if (store.listReservedHandles().length === 0) {
-      for (const t of DEMO_TARGETS) {
-        escrow.pledge({ targets: [t], contributor: 'seed:demo', amount: '100', actor: 'admin', displayName: 'Seeded' });
-      }
+    // Per name, not once per store: a name added to this list later still
+    // gets its pool on the next boot, and a name that already has one — seeded
+    // or pledged by a real fan — is left exactly as it is.
+    const firstBoot = store.listReservedHandles().length === 0;
+    const have = new Set(store.listReservedHandles().map((r) => r.key));
+    let added = 0;
+    for (const t of DEMO_TARGETS) {
+      if (have.has(store.handleKey(t.platform, t.handle))) continue;
+      escrow.pledge({ targets: [t], contributor: 'seed:demo', amount: '100', actor: 'admin', displayName: 'Seeded' });
+      added += 1;
+    }
+    if (firstBoot) {
       // One pot every name competes for. This is what draws the hatched half
       // of the bar and makes realValue and displayedTotal honestly disagree.
       // Capped to whatever pledgeMaxTargets allows, so it never throws.
       const contested = DEMO_TARGETS.slice(0, bountyConfig.pledgeMaxTargets);
       escrow.pledge({ targets: contested, contributor: 'seed:demo-contested', amount: '100', actor: 'admin', displayName: 'Seeded' });
-      log.warn(`[bounty] demo board seeded — ${DEMO_TARGETS.length} pools, contested across ${contested.length}. NOT REAL MONEY; clear before settlement.`);
     }
+    if (added) log.warn(`[bounty] demo board seeded — ${added} new pool(s) of ${DEMO_TARGETS.length} listed. NOT REAL MONEY; clear before settlement.`);
   } catch (e) {
     log.warn(`[bounty] demo seed skipped: ${e.message}`);
   }

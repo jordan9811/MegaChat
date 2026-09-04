@@ -3,42 +3,42 @@ html:has(.mc-how) {
 }
 
 body:has(.mc-how) {
-  background: #060c14;
+  background: #050609;
 }
 
 html:has(.mc-how),
 html:has(.mc-how) * {
-  scrollbar-color: #315979 transparent;
+  scrollbar-color: #2a2f3a transparent;
 }
 
 html:has(.mc-how) ::-webkit-scrollbar-thumb {
-  background-color: #315979;
+  background-color: #2a2f3a;
 }
 
 html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
-  background-color: #4c7898;
+  background-color: #3a4150;
 }
 
 .mc-how {
-  --mcc-bg: #060c14;
-  --mcc-panel: #0c1927;
-  --mcc-panel-up: #11243a;
-  --mcc-sunk: #07121d;
-  --mcc-fg: #f1f6fb;
-  --mcc-muted: #afc0ce;
-  --mcc-dim: #8fa7b9;
-  --mcc-faint: #7892a6;
-  --mcc-rule: rgba(135, 188, 226, 0.17);
-  --mcc-rule-2: rgba(135, 188, 226, 0.28);
-  --mcc-accent: #82d8f2;
-  --mcc-live: #57e7b9;
-  --mcc-warn: #f8d66b;
+  --mcc-bg: #050609;
+  --mcc-panel: #0a0c12;
+  --mcc-panel-up: #0f1219;
+  --mcc-sunk: #07090f;
+  --mcc-fg: #f4f6f8;
+  --mcc-muted: #a9b2bd;
+  --mcc-dim: #7d8794;
+  --mcc-faint: #6b7684;
+  --mcc-rule: rgba(255, 255, 255, 0.17);
+  --mcc-rule-2: rgba(255, 255, 255, 0.28);
+  --mcc-accent: #3ae8ff;
+  --mcc-live: #b8ff45;
+  --mcc-warn: #ffd23d;
   min-height: 100vh;
   background-color: var(--mcc-bg);
   background-image:
-    radial-gradient(circle at 8% 0%, rgba(74, 173, 229, 0.12), transparent 32rem),
-    linear-gradient(rgba(105, 180, 225, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(105, 180, 225, 0.025) 1px, transparent 1px);
+    radial-gradient(circle at 8% 0%, rgba(255, 45, 120, 0.12), transparent 32rem),
+    linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px);
   background-size: auto, 42px 42px, 42px 42px;
   color: var(--mcc-fg);
   font-family: var(--font-ui), system-ui, sans-serif;
@@ -60,7 +60,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   top: 0;
   height: 58px;
   border-bottom: 1px solid var(--mcc-rule);
-  background: rgba(6, 12, 20, 0.9);
+  background: rgba(5, 6, 9, 0.9);
   backdrop-filter: blur(18px);
 }
 
@@ -129,14 +129,14 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mch-product-actions > a:hover {
-  background: rgba(130, 216, 242, 0.1);
+  background: rgba(58, 232, 255, 0.1);
 }
 
 .mch-main {
   width: min(1500px, calc(100% - 40px));
   margin: 20px auto 40px;
   border: 1px solid var(--mcc-rule);
-  background: rgba(5, 13, 21, 0.72);
+  background: rgba(5, 6, 9, 0.72);
 }
 
 .mch-coordinate {
@@ -155,9 +155,9 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   padding: 54px 56px;
   border-bottom: 1px solid var(--mcc-rule);
   background:
-    radial-gradient(circle at 78% 22%, rgba(87, 231, 185, 0.11), transparent 25rem),
-    radial-gradient(circle at 18% 0%, rgba(99, 186, 255, 0.23), transparent 32rem),
-    linear-gradient(118deg, #102a3f 0%, #0a1927 54%, #07121d 100%);
+    radial-gradient(circle at 78% 22%, rgba(184, 255, 69, 0.11), transparent 25rem),
+    radial-gradient(circle at 18% 0%, rgba(58, 232, 255, 0.23), transparent 32rem),
+    linear-gradient(118deg, #102a3f 0%, #0a1927 54%, #07090f 100%);
 }
 
 .mch-hero h1 {
@@ -179,7 +179,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 
 .mch-tree-section {
   padding: 58px 56px 64px;
-  background: linear-gradient(180deg, rgba(12, 30, 46, 0.82), rgba(7, 18, 29, 0.9));
+  background: linear-gradient(180deg, rgba(12, 15, 23, 0.82), rgba(7, 9, 15, 0.9));
 }
 
 .mch-tree-root {
@@ -187,7 +187,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   margin: 0 auto;
   padding: 24px 28px;
   border-top: 3px solid var(--mcc-accent);
-  background: linear-gradient(135deg, rgba(130, 216, 242, 0.15), rgba(8, 22, 34, 0.82));
+  background: linear-gradient(135deg, rgba(58, 232, 255, 0.15), rgba(7, 9, 15, 0.82));
   text-align: center;
 }
 
@@ -248,7 +248,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 .mch-flow {
   min-width: 0;
   border: 1px solid var(--mcc-rule);
-  background: rgba(6, 15, 24, 0.82);
+  background: rgba(5, 6, 9, 0.82);
 }
 
 .mch-flow > header {
@@ -258,15 +258,15 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   gap: 18px;
   padding: 27px;
   border-bottom: 1px solid var(--mcc-rule);
-  background: linear-gradient(135deg, rgba(130, 216, 242, 0.14), rgba(8, 22, 34, 0.42));
+  background: linear-gradient(135deg, rgba(58, 232, 255, 0.14), rgba(7, 9, 15, 0.42));
 }
 
 .mch-flow.is-streamer > header {
-  background: linear-gradient(135deg, rgba(87, 231, 185, 0.13), rgba(8, 28, 29, 0.36));
+  background: linear-gradient(135deg, rgba(184, 255, 69, 0.13), rgba(8, 28, 29, 0.36));
 }
 
 .mch-flow > header > span {
-  color: rgba(241, 246, 251, 0.19);
+  color: rgba(244, 246, 248, 0.19);
   font-size: 34px;
   font-weight: 800;
   letter-spacing: -0.05em;
@@ -343,9 +343,9 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   width: min(660px, 100%);
   margin: 46px auto 0;
   padding: 28px 34px;
-  border: 1px solid rgba(87, 231, 185, 0.32);
+  border: 1px solid rgba(184, 255, 69, 0.32);
   border-left: 3px solid var(--mcc-live);
-  background: linear-gradient(120deg, rgba(87, 231, 185, 0.13), rgba(7, 26, 28, 0.48));
+  background: linear-gradient(120deg, rgba(184, 255, 69, 0.13), rgba(7, 26, 28, 0.48));
   text-align: center;
 }
 
@@ -361,7 +361,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mch-clock-section {
-  background: linear-gradient(120deg, rgba(27, 49, 69, 0.7), rgba(8, 20, 31, 0.86));
+  background: linear-gradient(120deg, rgba(18, 21, 29, 0.7), rgba(7, 9, 15, 0.86));
 }
 
 .mch-clock-section > div,
@@ -404,7 +404,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   min-height: 205px;
   padding: 26px;
   border-left: 1px solid var(--mcc-rule);
-  background: rgba(7, 18, 29, 0.66);
+  background: rgba(7, 9, 15, 0.66);
 }
 
 .mch-clock-grid > div:first-child {
@@ -413,7 +413,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 
 .mch-clock-grid > div.is-lead {
   border-top: 3px solid var(--mcc-accent);
-  background: linear-gradient(145deg, rgba(130, 216, 242, 0.15), rgba(8, 22, 34, 0.72));
+  background: linear-gradient(145deg, rgba(58, 232, 255, 0.15), rgba(7, 9, 15, 0.72));
 }
 
 .mch-clock-grid h3,
@@ -433,7 +433,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 
 .mch-rails-section {
   background:
-    radial-gradient(circle at 90% 16%, rgba(248, 214, 107, 0.09), transparent 25rem),
+    radial-gradient(circle at 90% 16%, rgba(255, 210, 61, 0.09), transparent 25rem),
     var(--mcc-sunk);
 }
 
@@ -465,7 +465,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 16px 0 0;
   border: 1px solid var(--mcc-rule);
-  background: rgba(13, 31, 46, 0.58);
+  background: rgba(12, 15, 23, 0.58);
 }
 
 .mch-stats > div {
@@ -491,7 +491,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mch-faq-section {
-  background: rgba(7, 18, 29, 0.82);
+  background: rgba(7, 9, 15, 0.82);
 }
 
 .mch-faq-list {
@@ -543,7 +543,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 .mch-cta {
   padding: 42px 56px;
   border-top: 1px solid var(--mcc-rule);
-  background: linear-gradient(100deg, rgba(45, 111, 151, 0.38), rgba(10, 28, 42, 0.8));
+  background: linear-gradient(100deg, rgba(58, 232, 255, 0.38), rgba(12, 15, 23, 0.8));
 }
 
 .mch-cta > div {
@@ -578,12 +578,12 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 .mch-cta a:last-child {
   border-color: var(--mcc-accent);
   background: var(--mcc-accent);
-  color: #061019;
+  color: #050609;
 }
 
 .mch-footer {
   border-top: 1px solid var(--mcc-rule);
-  background: rgba(4, 10, 16, 0.92);
+  background: rgba(5, 6, 9, 0.92);
 }
 
 .mch-footer > div {

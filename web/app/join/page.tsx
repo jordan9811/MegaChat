@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans } from 'next/font/google'
 import { AccountChip } from '@/components/account-chip'
 import { JoinClient } from '@/components/join/join-client'
 import './join.css'
+import { BrandText } from '@/components/brand-text'
 
 // One UI face across the app, loaded per route — there is no site-wide
 // provider. Same call as the room board and the create page.
@@ -28,7 +29,7 @@ export default function JoinPage() {
               aria-label="MegaChat home"
               className="bc"
             >
-              MEGACHAT
+              <BrandText />
             </a>
             <i aria-hidden="true" />
             <span>Join room</span>

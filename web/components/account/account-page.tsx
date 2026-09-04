@@ -22,6 +22,7 @@ import {
 } from '@/lib/api'
 import { shortAddr, useAccount } from '@/lib/use-account'
 import { formatDollars } from '@/lib/display-format'
+import { BrandText } from '@/components/brand-text'
 
 const PROVIDER_LABEL: Record<string, string> = {
   twitch: 'Twitch',
@@ -136,7 +137,7 @@ export function AccountPage() {
       <header className="mcc-product-header">
         <div>
           <span className="mcc-product-brand">
-            <a href="/?stay=1" className="bc">MEGACHAT</a>
+            <a href="/?stay=1" className="bc"><BrandText /></a>
             <i aria-hidden="true" />
             <span>Account</span>
           </span>

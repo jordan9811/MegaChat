@@ -42,6 +42,7 @@ import { AccountChip } from '@/components/account-chip'
 import { RoomRecovery } from '@/components/room-recovery'
 import { formatDollars } from '@/lib/display-format'
 import './create-room.css'
+import { BrandText } from '@/components/brand-text'
 
 // Server bounds, mirrored from rooms-store.js so the control cannot express
 // a value the server would silently clamp on the way back out.
@@ -395,7 +396,7 @@ export function CreateRoom() {
       <header className="mcc-header">
         <div className="mcc-header-inner">
           <span className="mcc-brand-lockup">
-            <a href="/?stay=1" className="mcc-brand">MEGACHAT</a>
+            <a href="/?stay=1" className="mcc-brand"><BrandText /></a>
             <span className="mcc-header-divider" />
             <span className="mcc-page-title">New room</span>
           </span>
@@ -961,8 +962,8 @@ export function CreateRoom() {
           onClick={() => setSaveDefault((v) => !v)}
           className="mcc-defaults"
           style={{
-            borderColor: saveDefault ? 'rgba(67,224,168,0.35)' : 'var(--mcc-rule)',
-            background: saveDefault ? 'rgba(67,224,168,0.04)' : 'var(--mcc-sunk)',
+            borderColor: saveDefault ? 'rgba(184, 255, 69, 0.35)' : 'var(--mcc-rule)',
+            background: saveDefault ? 'rgba(184, 255, 69, 0.04)' : 'var(--mcc-sunk)',
           }}
         >
           <span
@@ -1050,12 +1051,12 @@ export function CreateRoom() {
         {/* the room tile, as it lands on the board */}
         <div
           className="mcc-preview-stage relative aspect-video overflow-hidden"
-          style={{ background: 'radial-gradient(120% 90% at 22% 18%, #275675 0%, #10253a 55%, #09131f 100%)' }}
+          style={{ background: 'radial-gradient(120% 90% at 22% 18%, #262b36 0%, #0f1219 55%, #07090f 100%)' }}
         >
           <span
             aria-hidden="true"
             className="absolute left-1/2 top-[58%] size-[150px] -translate-x-1/2 rounded-full blur-[26px]"
-            style={{ background: 'rgba(99,186,255,0.34)' }}
+            style={{ background: 'rgba(58, 232, 255, 0.34)' }}
           />
           <span
             aria-hidden="true"

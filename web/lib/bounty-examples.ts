@@ -7,11 +7,15 @@ const TARGETS = [
   ['x', 'martinshkreli'],
   ['x', 'rasmr'],
   ['pumpfun', 'GnBQjwQibzB9zFPHEGEhoiASon7JfaRADxQe6C64pump'],
+  ['twitch', 'asmongold'],
+  ['twitch', 'pokimane'],
+  ['kick', 'xqc'],
 ] as const
 
 const AVATARS: Record<string, string> = {
   'twitch:threadguy': 'https://static-cdn.jtvnw.net/jtv_user_pictures/36375bf2-fec0-4fb3-a5f2-02575bb63325-profile_image-300x300.png',
   'kick:chessbrah': 'https://files.kick.com/images/user/1329939/profile_image/conversion/2e5379d9-f81e-44a5-8b49-50a82666a5cd-medium.webp',
+  'kick:xqc': 'https://files.kick.com/images/user/676/profile_image/conversion/931b4e8f-5445-427c-bd82-b473530390cc-medium.webp',
 }
 
 export function bountyKey(platform: string, handle: string) {
