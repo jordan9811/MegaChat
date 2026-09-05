@@ -44,7 +44,7 @@ export function RoomRecovery() {
 
   return (
     <details className="mcc-room-recovery" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary>Manage an existing room</summary>
+      <summary>Recover a room with password</summary>
       {myRooms.length > 0 && <div className="mcc-owned-rooms">{myRooms.map((room) => (
         <button key={room.id} type="button" disabled={busy} onClick={() => void manage(room.id)}>{room.name} <span>Manage</span></button>
       ))}</div>}

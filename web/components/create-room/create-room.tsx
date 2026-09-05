@@ -54,13 +54,14 @@ const SPEND_CAPS = ['1', '2', '5', '10'] as const
 
 const money = formatDollars
 
-// Below this the atomic-unit conversion truncates to zero, which would turn
-// a paid room free without saying so.
+// Positive rates below this truncate to zero on-chain. Zero itself is a
+// deliberate free price and must remain zero.
 const MIN_RATE = 0.000001
 
 function safeRate(raw: string, fallback: string): string {
   const n = parseFloat(raw)
-  if (!Number.isFinite(n) || n <= 0) return fallback
+  if (!Number.isFinite(n) || n < 0) return fallback
+  if (n === 0) return '0'
   return String(parseFloat(Math.max(MIN_RATE, n).toFixed(6)))
 }
 
@@ -84,7 +85,7 @@ function Stepper({
   // A finite base for the arithmetic: an incoming '' (from a stale saved
   // default) would otherwise make '+' commit the string 'NaN'.
   const parsed = parseFloat(value)
-  const good = Number.isFinite(parsed) && parsed > 0 ? value : values[1]
+  const good = Number.isFinite(parsed) && parsed >= 0 ? value : values[1]
   const n = parseFloat(good)
   const rungs = useMemo(() => values.map((v) => parseFloat(v)).sort((a, b) => a - b), [values])
 
@@ -95,7 +96,7 @@ function Stepper({
   }
   const lower = () => {
     const below = [...rungs].reverse().find((r) => r < n - 1e-12)
-    commit(String(below ?? Math.max(MIN_RATE, n / 2)))
+    commit(String(below ?? 0))
   }
   const raise = () => {
     const above = rungs.find((r) => r > n + 1e-12)
@@ -306,11 +307,13 @@ export function CreateRoom() {
   // rewrote your account defaults, so the next create form came up wearing
   // the last room's settings instead of the real defaults.
   const [saveDefault, setSaveDefault] = useState(false)
+  const [shareWithMods, setShareWithMods] = useState(false)
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const free = draft.passkeyTickPrice === '0'
+  const micPrice = parseFloat(draft.passkeyTickPrice)
+  const micFree = draft.passkeyTickPrice.trim() !== '' && Number.isFinite(micPrice) && micPrice === 0
   const clipSeconds = Number(draft.lettersMaxSeconds) || 10
 
   // MegaChats are priced per second of clip. The stored field is a flat price,
@@ -322,11 +325,14 @@ export function CreateRoom() {
   // as $0.005. Report the real per-second rate instead.
   const megaRate = useMemo(() => {
     const flat = parseFloat(draft.lettersPrice)
-    if (Number.isFinite(flat) && flat > 0) {
+    if (Number.isFinite(flat) && flat >= 0) {
       return String(parseFloat((flat / Math.max(1, clipSeconds)).toFixed(6)))
     }
-    return MEGA_RATES[1] as string
-  }, [draft.lettersPrice, clipSeconds])
+    return micFree ? '0' : (MEGA_RATES[1] as string)
+  }, [draft.lettersPrice, clipSeconds, micFree])
+
+  const megaFree = parseFloat(megaRate) === 0
+  const free = megaFree && micFree
 
   const setMegaRate = useCallback(
     (rate: string) => {
@@ -352,7 +358,7 @@ export function CreateRoom() {
     (isFree: boolean) => {
       updateDraft(
         isFree
-          ? { passkeyTickPrice: '0', lettersPrice: '' }
+          ? { passkeyTickPrice: '0', lettersPrice: '0' }
           : { passkeyTickPrice: '0.005', lettersPrice: String(parseFloat((0.001 * clipSeconds).toFixed(6))) },
       )
     },
@@ -370,7 +376,7 @@ export function CreateRoom() {
           // defaults are a convenience — never block opening the room
         }
       }
-      await create(hasIdentity ? undefined : password)
+      await create(password || undefined)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not open the room. Try again.')
     } finally {
@@ -378,7 +384,9 @@ export function CreateRoom() {
     }
   }, [create, hasIdentity, password, saveDefault, saveDefaultsFromDraft])
 
-  const canCreate = hasIdentity || password.trim().length >= 4
+  const canCreate = hasIdentity
+    ? !shareWithMods || password.trim().length >= 4
+    : password.trim().length >= 4
 
   // Only when the clash is with a room this account owns — a handle held by
   // someone else is not a room we can offer to open.
@@ -389,6 +397,7 @@ export function CreateRoom() {
 
   const clip = money(parseFloat(megaRate) * clipSeconds)
   const micPerMin = money(parseFloat(draft.passkeyTickPrice) * 60)
+  const stageFree = draft.joinStreamEnabled ? micFree : draft.lettersEnabled ? megaFree : true
   const activeAdvanced = ADVANCED_TABS.find((item) => item.id === tab) ?? ADVANCED_TABS[0]
 
   return (
@@ -406,7 +415,7 @@ export function CreateRoom() {
       </header>
 
       <main className="mcc-shell">
-        <RoomRecovery />
+        {!hasIdentity ? <RoomRecovery /> : null}
         <section className="mcc-identity" aria-label="Room identity">
           <div className="mcc-identity-field">
             <span>Room name</span>
@@ -469,21 +478,19 @@ export function CreateRoom() {
         >
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-end gap-6">
-              {!free ? (
-                <span className="flex flex-col gap-1.5">
-                  <span className="lbl">MegaChat rate</span>
-                  <Stepper
-                    label="MegaChat rate"
-                    values={MEGA_RATES}
-                    value={megaRate}
-                    onChange={setMegaRate}
-                    suffix="/s"
-                  />
-                  <span className="hint">
-                    {clipSeconds}s = {clip}
-                  </span>
+              <span className="flex flex-col gap-1.5">
+                <span className="lbl">MegaChat rate</span>
+                <Stepper
+                  label="MegaChat rate"
+                  values={MEGA_RATES}
+                  value={megaRate}
+                  onChange={setMegaRate}
+                  suffix="/s"
+                />
+                <span className="hint">
+                  {megaFree ? 'Free' : `${clipSeconds}s = ${clip}`} · enter 0 for free
                 </span>
-              ) : null}
+              </span>
               <span className="flex flex-col gap-1.5">
                 <span className="lbl flex items-center gap-1.5">
                   Who screens clips
@@ -550,19 +557,17 @@ export function CreateRoom() {
           accent="live"
         >
           <div className="flex flex-wrap items-end gap-6">
-            {!free ? (
-              <span className="flex flex-col gap-1.5">
-                <span className="lbl">Open mic rate</span>
-                <Stepper
-                  label="Open mic rate"
-                  values={MIC_RATES}
-                  value={draft.passkeyTickPrice}
-                  onChange={(v) => updateDraft({ passkeyTickPrice: v })}
-                  suffix="/s"
-                />
-                <span className="hint">{micPerMin} a minute</span>
-              </span>
-            ) : null}
+            <span className="flex flex-col gap-1.5">
+              <span className="lbl">Open mic rate</span>
+              <Stepper
+                label="Open mic rate"
+                values={MIC_RATES}
+                value={draft.passkeyTickPrice}
+                onChange={(v) => updateDraft({ passkeyTickPrice: v })}
+                suffix="/s"
+              />
+              <span className="hint">{micFree ? 'Free' : `${micPerMin} a minute`} · enter 0 for free</span>
+            </span>
             <span className="flex flex-col gap-1.5">
               <span className="lbl">People on camera</span>
               <Seg
@@ -573,7 +578,7 @@ export function CreateRoom() {
               />
               <span className="hint">+ a pinned co-host, free</span>
             </span>
-            {!free ? (
+            {!micFree ? (
               <span className="flex flex-col gap-1.5">
                 <span className="lbl">Most a viewer can spend</span>
                 <Seg
@@ -596,49 +601,46 @@ export function CreateRoom() {
           blurb="pay people to watch, or credit toward MegaChats"
           accent="money"
         >
-          <div className="flex flex-wrap items-end gap-6">
+          <div className="mcc-reward-grid">
             <span className="flex flex-col gap-1.5">
-              <span className="lbl">They earn</span>
+              <span className="lbl">Reward type</span>
               <Seg
                 label="Reward type"
-                value={draft.rewardsType === 'points' ? 'points' : 'usdc'}
+                value={draft.rewardsType === 'points' ? 'points' : draft.rewardsType === 'token' ? 'token' : 'usdc'}
                 onChange={(v) =>
-                  // Points carry 0 decimals: a fractional amount truncates to
-                  // zero and silently pays nobody, so switch to whole units.
                   updateDraft(
                     v === 'points'
                       ? { rewardsType: 'points', rewardsEarnAmount: '1', rewardsEarnCap: '50' }
-                      : { rewardsType: 'usdc', rewardsEarnAmount: '0.1', rewardsEarnCap: '5' },
+                      : v === 'token'
+                        ? { rewardsType: 'token', rewardsEarnAmount: '1', rewardsEarnCap: '50' }
+                        : { rewardsType: 'usdc', rewardsEarnAmount: '0.1', rewardsEarnCap: '5' },
                   )
                 }
                 options={[
                   { v: 'usdc', l: 'Cash' },
                   { v: 'points', l: 'MegaChat credit' },
+                  { v: 'token', l: 'Custom token' },
                 ]}
               />
-              <span className="hint">
-                {draft.rewardsType === 'points'
-                  ? 'Spendable here only'
-                  : 'Real money, theirs to keep'}
-              </span>
             </span>
             <span className="flex flex-col gap-1.5">
-              <span className="lbl">Each payout</span>
-              <span className="text-[15px] font-semibold tabular-nums">
-                {draft.rewardsType === 'points'
-                  ? `${draft.rewardsEarnAmount} credit`
-                  : money(draft.rewardsEarnAmount)}
-                <span className="hint"> every {draft.rewardsEarnInterval}s</span>
-              </span>
+              <label className="lbl" htmlFor="reward-amount">Amount per reward</label>
+              <input id="reward-amount" type="text" inputMode="decimal" value={draft.rewardsEarnAmount} onChange={(e) => updateDraft({ rewardsEarnAmount: e.target.value })} />
             </span>
             <span className="flex flex-col gap-1.5">
-              <span className="lbl">Most one viewer earns</span>
-              <span className="text-[15px] font-semibold tabular-nums">
-                {draft.rewardsType === 'points'
-                  ? `${draft.rewardsEarnCap} credit`
-                  : money(draft.rewardsEarnCap)}
-              </span>
+              <label className="lbl" htmlFor="reward-interval">Pay every</label>
+              <span className="mcc-inline-unit"><input id="reward-interval" type="text" inputMode="numeric" value={draft.rewardsEarnInterval} onChange={(e) => updateDraft({ rewardsEarnInterval: e.target.value.replace(/\D/g, '') })} /><span>seconds</span></span>
             </span>
+            <span className="flex flex-col gap-1.5">
+              <label className="lbl" htmlFor="reward-cap">Maximum per viewer</label>
+              <input id="reward-cap" type="text" inputMode="decimal" value={draft.rewardsEarnCap} onChange={(e) => updateDraft({ rewardsEarnCap: e.target.value })} />
+            </span>
+            {draft.rewardsType === 'token' ? (
+              <span className="flex flex-col gap-1.5 sm:col-span-2">
+                <label className="lbl" htmlFor="reward-token">Token contract</label>
+                <input id="reward-token" type="text" value={draft.rewardsTokenAddress} placeholder="0x…" onChange={(e) => updateDraft({ rewardsTokenAddress: e.target.value.trim() })} />
+              </span>
+            ) : null}
           </div>
         </FeatureCard>
 
@@ -648,7 +650,6 @@ export function CreateRoom() {
         {/* ── 2 · advanced settings ── */}
             <section className="mcc-form-section mcc-advanced-section">
               <div className="mcc-section-title">
-                <span className="stepnum">02</span>
                 <div>
                   <h2>Advanced settings</h2>
                   <p>Rates, screening, access, money, and stream behavior.</p>
@@ -698,8 +699,7 @@ export function CreateRoom() {
                   <div className="mcc-advanced-content">
             {tab === 'mega' ? (
               <div className="flex flex-col gap-4">
-                {!free ? (
-                  <div className="keyrow flex flex-wrap items-end gap-6">
+                <div className="keyrow flex flex-wrap items-end gap-6">
                     <span className="flex flex-col gap-1.5">
                       <span className="lbl" style={{ color: 'var(--mcc-accent)' }}>Key &#183; rate</span>
                       <Stepper label="MegaChat rate" values={MEGA_RATES} value={megaRate} onChange={setMegaRate} suffix="/s" />
@@ -716,8 +716,7 @@ export function CreateRoom() {
                         ]}
                       />
                     </span>
-                  </div>
-                ) : null}
+                </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   <span className="flex flex-col gap-1.5">
                     <span className="lbl">AI strictness</span>
@@ -755,8 +754,7 @@ export function CreateRoom() {
             {tab === 'mic' ? (
               <div className="flex flex-col gap-4">
                 <div className="keyrow flex flex-wrap items-end gap-6">
-                  {!free ? (
-                    <span className="flex flex-col gap-1.5">
+                  <span className="flex flex-col gap-1.5">
                       <span className="lbl" style={{ color: 'var(--mcc-accent)' }}>Key &#183; rate</span>
                       <Stepper
                         label="Open mic rate"
@@ -765,8 +763,7 @@ export function CreateRoom() {
                         onChange={(v) => updateDraft({ passkeyTickPrice: v })}
                         suffix="/s"
                       />
-                    </span>
-                  ) : null}
+                  </span>
                   <span className="flex flex-col gap-1.5">
                     <span className="lbl" style={{ color: 'var(--mcc-accent)' }}>Key &#183; people on camera</span>
                     <Seg
@@ -958,6 +955,21 @@ export function CreateRoom() {
 
         <button
           type="button"
+          aria-pressed={draft.twitchAuto}
+          onClick={() => updateDraft({ twitchAuto: !draft.twitchAuto })}
+          className="mcc-defaults"
+        >
+          <span aria-hidden="true" className="mcc-footer-check" data-on={draft.twitchAuto}>
+            {draft.twitchAuto ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#08080a" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : null}
+          </span>
+          <span className="min-w-0 grow">
+            <span className="text-[14px] font-semibold">Follow my stream status</span>
+            <span className="block text-[12px] text-[var(--mcc-faint)]">Bring this room live automatically when your linked stream starts again.</span>
+          </span>
+        </button>
+
+        <button
+          type="button"
           aria-pressed={saveDefault}
           onClick={() => setSaveDefault((v) => !v)}
           className="mcc-defaults"
@@ -989,6 +1001,26 @@ export function CreateRoom() {
             </span>
           </span>
         </button>
+
+        {hasIdentity ? (
+          <>
+            <button type="button" aria-pressed={shareWithMods} onClick={() => { setShareWithMods((v) => !v); if (shareWithMods) setPassword('') }} className="mcc-defaults">
+              <span aria-hidden="true" className="mcc-footer-check" data-on={shareWithMods}>
+                {shareWithMods ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#08080a" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : null}
+              </span>
+              <span className="min-w-0 grow">
+                <span className="text-[14px] font-semibold">Let moderators manage this room</span>
+                <span className="block text-[12px] text-[var(--mcc-faint)]">Add a separate password for moderators. Your account always has access.</span>
+              </span>
+            </button>
+            {shareWithMods ? (
+              <div className="mcc-password">
+                <span className="lbl">Moderator password</span>
+                <span className="mcc-password-field"><LockKeyhole size={16} aria-hidden="true" /><input type="password" value={password} placeholder="At least 4 characters" aria-label="Moderator password" onChange={(e) => setPassword(e.target.value)} /></span>
+              </div>
+            ) : null}
+          </>
+        ) : null}
 
         {!hasIdentity ? (
           <div className="mcc-password">
@@ -1070,7 +1102,7 @@ export function CreateRoom() {
             <span aria-hidden="true" className="inline-block size-1.5 rounded-full bg-[var(--mcc-live)]" />
             PREVIEW
           </span>
-          {!free ? (
+          {!stageFree ? (
             <span className="bc absolute right-2.5 top-2 bg-[rgba(8,8,10,0.55)] px-2 py-1 text-[12.5px] font-semibold">
               {draft.joinStreamEnabled ? `${money(draft.passkeyTickPrice)}/s` : `${money(megaRate)}/s`}
             </span>
@@ -1106,8 +1138,8 @@ export function CreateRoom() {
             <span className="flex items-baseline justify-between border-b border-[#1a1a1f] pb-2">
               <span className="text-[13px] text-[var(--mcc-muted)]">A MegaChat</span>
               <span className="text-[13.5px] font-semibold tabular-nums">
-                {free ? 'Free' : `${money(megaRate)}/s`}
-                {!free ? (
+                {megaFree ? 'Free' : `${money(megaRate)}/s`}
+                {!megaFree ? (
                   <span className="text-[11px] text-[var(--mcc-faint)]">
                     {' '}
                     {clipSeconds}s = {clip}
@@ -1129,7 +1161,7 @@ export function CreateRoom() {
             >
               {!draft.joinStreamEnabled
                 ? 'Open mic off'
-                : free
+                : micFree
                   ? 'Free'
                   : `${money(draft.passkeyTickPrice)}/s`}
             </span>
@@ -1150,7 +1182,7 @@ export function CreateRoom() {
               </span>
             </span>
           ) : null}
-          {!free ? (
+          {!micFree ? (
             <span className="flex items-baseline justify-between">
               <span className="text-[13px] text-[var(--mcc-muted)]">Most you can spend</span>
               <span className="text-[13.5px] font-semibold tabular-nums">

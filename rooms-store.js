@@ -157,8 +157,8 @@ export function resolveLetters(cfg) {
     ),
   );
   const maxSeconds = Math.min(30, Math.max(minSeconds, Number(l.maxSeconds ?? 10) || 10));
-  const price =
-    typeof l.price === 'string' && parseFloat(l.price) > 0 ? String(l.price) : null;
+  const parsedPrice = typeof l.price === 'string' ? parseFloat(l.price) : NaN;
+  const price = Number.isFinite(parsedPrice) && parsedPrice >= 0 ? String(parsedPrice) : null;
   return {
     // MegaChats are the hero feature — ON unless the streamer turns them off.
     enabled: l.enabled !== false,
