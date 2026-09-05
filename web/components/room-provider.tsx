@@ -68,6 +68,7 @@ export type ConfigDraft = {
   rewardsEarnCap: string
   rewardsType: string
   rewardsTokenAddress: string
+  rewardsTokenSymbol: string
   lettersEnabled: boolean
   lettersMaxSeconds: string
   lettersPrice: string
@@ -81,6 +82,8 @@ export type ConfigDraft = {
   mcFollowersOnly: boolean
   mcSubsOnly: boolean
   joinStreamEnabled: boolean
+  openMicAdmission: 'ai' | 'approve' | 'manual'
+  openMicSafety: 'alert' | 'remove' | 'host'
   jsGatesSame: boolean
   jsMinWatch: string
   jsFollowersOnly: boolean
@@ -117,6 +120,7 @@ const DEFAULT_DRAFT: ConfigDraft = {
   rewardsEarnCap: '5',
   rewardsType: 'usdc',
   rewardsTokenAddress: '',
+  rewardsTokenSymbol: 'TOKEN',
   lettersEnabled: true, // the hero feature — on by default
   lettersMaxSeconds: '10',
   lettersPrice: '',
@@ -132,6 +136,8 @@ const DEFAULT_DRAFT: ConfigDraft = {
   // streamer once configured; live camera seats put a stranger on the
   // broadcast, which is a bigger ask to have switched on by default.
   joinStreamEnabled: false,
+  openMicAdmission: 'ai',
+  openMicSafety: 'alert',
   jsGatesSame: true,
   jsMinWatch: '0',
   jsFollowersOnly: false,
@@ -226,6 +232,8 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
     },
     joinStream: {
       enabled: draft.joinStreamEnabled,
+      admission: draft.openMicAdmission,
+      liveSafety: draft.openMicSafety,
       gatesSameAsMegaChat: draft.jsGatesSame,
       gates: {
         minWatchSeconds: Number(draft.jsMinWatch) || 0,
@@ -240,6 +248,7 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
       earnCap: draft.rewardsEarnCap,
       rewardType: draft.rewardsType,
       rewardTokenAddress: draft.rewardsTokenAddress.trim() || null,
+      rewardTokenSymbol: draft.rewardsType === 'token' ? (draft.rewardsTokenSymbol.trim().toUpperCase() || 'TOKEN') : null,
     },
   }
 }
@@ -270,6 +279,7 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     rewardsEarnCap: String(rw.earnCap ?? '5'),
     rewardsType: rw.rewardType || 'usdc',
     rewardsTokenAddress: rw.rewardTokenAddress || '',
+    rewardsTokenSymbol: rw.rewardTokenSymbol || 'TOKEN',
     lettersEnabled: !!room.letters?.enabled,
     lettersMaxSeconds: String(room.letters?.maxSeconds ?? 10),
     lettersPrice: room.letters?.price || '',
@@ -282,6 +292,8 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     mcFollowersOnly: !!room.letters?.gates?.followersOnly,
     mcSubsOnly: !!room.letters?.gates?.subsOnly,
     joinStreamEnabled: room.joinStream ? room.joinStream.enabled !== false : true,
+    openMicAdmission: room.joinStream?.admission === 'approve' || room.joinStream?.admission === 'manual' ? room.joinStream.admission : 'ai',
+    openMicSafety: room.joinStream?.liveSafety === 'remove' || room.joinStream?.liveSafety === 'host' ? room.joinStream.liveSafety : 'alert',
     jsGatesSame: room.joinStream ? room.joinStream.gatesSameAsMegaChat !== false : true,
     jsMinWatch: String(room.joinStream?.gates?.minWatchSeconds ?? 0),
     jsFollowersOnly: !!room.joinStream?.gates?.followersOnly,

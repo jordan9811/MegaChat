@@ -182,6 +182,8 @@ function resolveJoinStream(cfg) {
   const j = cfg.joinStream || {};
   return {
     enabled: j.enabled !== false, // default ON — existing rooms unchanged
+    admission: ['approve', 'manual'].includes(j.admission) ? j.admission : 'ai',
+    liveSafety: ['remove', 'host'].includes(j.liveSafety) ? j.liveSafety : 'alert',
     gatesSameAsMegaChat: j.gatesSameAsMegaChat !== false,
     gates: resolveGates(j.gates),
   };

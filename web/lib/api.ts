@@ -28,6 +28,8 @@ export type LettersConfig = {
 
 export type JoinStreamConfig = {
   enabled: boolean
+  admission: 'ai' | 'approve' | 'manual' | string
+  liveSafety: 'alert' | 'remove' | 'host' | string
   /** Billing/shipping pattern: inherit MegaChat gates unless overridden. */
   gatesSameAsMegaChat: boolean
   gates: FeatureGates
@@ -136,6 +138,7 @@ export type RoomConfigPatch = {
     earnCap: string
     rewardType: string
     rewardTokenAddress: string | null
+    rewardTokenSymbol?: string | null
   }
 }
 
