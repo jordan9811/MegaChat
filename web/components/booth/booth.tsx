@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { listPublicRooms, type PublicRoomCard } from '@/lib/api'
 import { listBountyPools, type BountyPool } from '@/lib/bounty-api'
 import { AccountChip } from '@/components/account-chip'
+import { PlatformPip } from '@/components/platform-pip'
 import { formatDollars } from '@/lib/display-format'
 import { roomPresentation } from '@/lib/room-browse'
 import './booth.css'
@@ -12,62 +13,39 @@ import { BrandText } from '@/components/brand-text'
 
 const ROOM_POLL_MS = 5000
 const POOL_POLL_MS = 30000
+const GRID_CAP = 8
 
-const WAYS_IN = [
-  {
-    title: 'MegaChats',
-    color: '#3ae8ff',
-    body: 'Record a clip, pay for the seconds it runs, and it plays on the broadcast by itself.',
-    cta: 'How MegaChats work',
-    href: '/how-it-works',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      </svg>
-    ),
-  },
-  {
-    title: 'Open mic',
-    color: '#b8ff45',
-    body: 'Buy a live camera seat beside the streamer. Billed by the second, only while you are on air.',
-    cta: 'How live seats work',
-    href: '/how-it-works',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <rect x="2" y="7" width="20" height="14" rx="2" />
-        <path d="M12 7V4" />
-        <circle cx="12" cy="14" r="3" />
-      </svg>
-    ),
-  },
-  {
-    title: 'Bounties',
-    color: '#ffd23d',
-    body: 'Create a bounty for someone who is not here. They claim it by going live.',
-    cta: 'Browse bounties',
-    href: '/bounty',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z" />
-        <path d="m9 12 2 2 4-4" />
-      </svg>
-    ),
-  },
+// Filters over the rooms, not over the page: bounties keep their own rail on
+// the right, so a chip that swapped the grid to bounties would just show the
+// same board twice. These five are the real ways a room differs.
+type ChipKey = 'all' | 'live' | 'seats' | 'letters' | 'free'
+
+const CHIPS: { key: ChipKey; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'live', label: 'Live now' },
+  { key: 'seats', label: 'Live seats' },
+  { key: 'letters', label: 'MegaChats' },
+  { key: 'free', label: 'Free rooms' },
 ]
 
-const FIGURE_TINTS = [
-  'rgba(91,190,238,0.46)',
-  'rgba(244,184,99,0.38)',
-  'rgba(184, 255, 69, 0.36)',
-  'rgba(112,189,235,0.38)',
-  'rgba(255, 210, 61, 0.3)',
-  'rgba(102,189,224,0.34)',
-]
+const EMPTY_COPY: Record<ChipKey, string> = {
+  all: 'No rooms on the board yet.',
+  live: 'Nothing is on air this minute.',
+  seats: 'No room is selling live camera seats right now.',
+  letters: 'No room is taking recorded MegaChats right now.',
+  free: 'No room is running free right now.',
+}
 
-function meshIndex(id: string): number {
-  let h = 0
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
-  return h % 6
+function onAir(room: PublicRoomCard): boolean {
+  return room.live > 0 || room.twitchLive
+}
+
+function matches(room: PublicRoomCard, chip: ChipKey): boolean {
+  if (chip === 'live') return onAir(room)
+  if (chip === 'seats') return room.joinStream?.enabled === true
+  if (chip === 'letters') return room.letters?.enabled === true
+  if (chip === 'free') return roomPresentation(room).rate === 'Free'
+  return true
 }
 
 function roomHref(room: PublicRoomCard): string {
@@ -89,144 +67,177 @@ function twitchChannel(room: PublicRoomCard): string | null {
   return c && room.twitchLive ? c : null
 }
 
-function RateChip({ room }: { room: PublicRoomCard }) {
-  return (
-    <span className="mc-bc absolute right-2.5 top-2 bg-[rgba(5,6,9,0.66)] px-2 py-1 text-[13px] font-[600] text-[var(--mcb-fg)]">
-      {roomPresentation(room).rate}
-    </span>
-  )
+function initial(name: string): string {
+  return (name.trim().charAt(0) || '?').toUpperCase()
 }
 
-function StateChip({ room }: { room: PublicRoomCard }) {
-  const { full, onAir, state: label } = roomPresentation(room)
-  const color = full ? 'var(--mcb-queue)' : onAir ? 'var(--mcb-live)' : 'var(--mcb-off)'
-  return (
-    <span
-      className="mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em]"
-      style={{ color }}
-    >
-      <span className="inline-block size-1.5 rounded-full" style={{ background: color }} aria-hidden="true" />
-      {label}
-    </span>
-  )
-}
-
-function RoomTile({ room, hero = false }: { room: PublicRoomCard; hero?: boolean }) {
-  const mesh = meshIndex(room.id)
+/** The card's media: a real Twitch preview when the channel is up, the house
+ *  stage glow when it isn't. Scanlines sit over both so one grammar reads.
+ *  `linked` only on the featured card — a grid card is one big anchor
+ *  already, and an anchor inside an anchor is not markup a browser keeps. */
+function Stage({
+  room,
+  hero = false,
+  linked = false,
+}: {
+  room: PublicRoomCard
+  hero?: boolean
+  linked?: boolean
+}) {
   const channel = twitchChannel(room)
-  const presentation = roomPresentation(room)
-  const full = presentation.full
-  // ~2-minute cache-bust bucket, same as the directory's Twitch preview
+  const { state, rate, full } = roomPresentation(room)
+  // ~2-minute cache-bust bucket — Twitch serves a stale still otherwise.
   const bust = Math.floor(Date.now() / 120000)
+  const Tag = linked ? 'a' : 'span'
   return (
-    <a
-      href={roomHref(room)}
-      className={`mc-room-tile group relative block overflow-hidden mc-mesh-${mesh} min-h-[220px]`}
+    <Tag
+      {...(linked ? { href: roomHref(room), 'aria-label': room.name } : {})}
+      className="mcr-stage"
     >
       {channel ? (
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           key={bust}
           src={`https://static-cdn.jtvnw.net/previews-ttv/live_user_${channel}-${hero ? '1280x720' : '440x248'}.jpg?b=${bust}`}
           alt=""
           loading="lazy"
-          className="absolute inset-0 size-full object-cover"
           onError={(e) => {
             e.currentTarget.style.display = 'none'
           }}
         />
-      ) : (
-        <span
-          aria-hidden="true"
-          className="absolute left-1/2 top-[58%] size-[190px] -translate-x-1/2 rounded-full blur-[28px]"
-          style={{ background: FIGURE_TINTS[mesh] }}
-        />
-      )}
-      <span
-        aria-hidden="true"
-        className="absolute inset-0"
-        style={{
-          background:
-            'linear-gradient(to top, rgba(5, 6, 9, 0.94) 0%, rgba(5, 6, 9, 0.3) 38%, rgba(5, 6, 9, 0) 66%)',
-        }}
-      />
-      <StateChip room={room} />
-      <RateChip room={room} />
-      <span className="absolute inset-x-3 bottom-2.5 flex items-end justify-between gap-2.5">
-        <span className="min-w-0">
-          <span
-            className={`mc-bc block truncate font-[700] leading-[1.05] tracking-[0.01em] ${hero ? 'text-[34px]' : 'text-[24px]'}`}
-          >
-            {room.name}
-          </span>
-          <span className="mt-0.5 block text-[12px] font-[500] text-[var(--mcb-muted)]">
-            {presentation.capabilities}
+      ) : null}
+      <span className="mcr-scan" aria-hidden="true" />
+      <span className="mcr-tags">
+        <span className={`mcr-tag ${onAir(room) ? 'is-live' : full ? 'is-full' : ''}`}>
+          <i aria-hidden="true" />
+          {state}
+        </span>
+        <span className="mcr-tag">{rate}</span>
+      </span>
+    </Tag>
+  )
+}
+
+function FeaturedRoom({ room }: { room: PublicRoomCard }) {
+  const { action, capabilities, full } = roomPresentation(room)
+  return (
+    <div className={`mcr-feat ${onAir(room) ? 'is-live' : ''}`}>
+      <Stage room={room} hero linked />
+      <div className="mcr-feat-body">
+        <h2>
+          <a href={roomHref(room)}>{room.name}</a>
+        </h2>
+        <span className="mcr-meta">
+          {capabilities}
+          {room.live > 0 ? ` · ${room.live} on camera` : ''}
+          {room.waiting > 0 ? ` · ${room.waiting} waiting` : ''}
+        </span>
+        <span className="mcr-cta">
+          <a href={roomHref(room)} className={`mcr-btn ${full ? 'is-queue' : ''}`}>
+            {action}
+          </a>
+          <Link href="/how-it-works" className="mcr-ghost">
+            How it works
+          </Link>
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function RoomCard({ room }: { room: PublicRoomCard }) {
+  const { action, capabilities } = roomPresentation(room)
+  return (
+    <a href={roomHref(room)} className={`mcr-card ${onAir(room) ? 'is-live' : ''}`}>
+      <Stage room={room} />
+      <span className="mcr-card-body">
+        <span className="mcr-mono" aria-hidden="true">
+          {initial(room.name)}
+        </span>
+        <span className="mcr-t">
+          <span className="mcr-name">{room.name}</span>
+          <span className="mcr-sub">
+            {capabilities}
             {room.live > 0 ? ` · ${room.live} on camera` : ''}
           </span>
         </span>
-        <span
-          className="whitespace-nowrap px-3 py-2 text-[12.5px] font-[700] text-[#050609] transition-transform group-hover:-translate-y-0.5"
-          style={{ background: full ? 'var(--mcb-queue)' : 'var(--mcb-accent)' }}
-        >
-          {presentation.action}
-        </span>
+        <span className="mcr-ghost is-sm">{action}</span>
       </span>
     </a>
   )
 }
 
-function PoolTile({ pool }: { pool: BountyPool }) {
+function OpenRoomCard() {
   return (
-    <Link href={poolHref(pool)} className="group relative block min-h-[180px] overflow-hidden mc-mesh-4">
-      <span
-        aria-hidden="true"
-        className="absolute inset-0"
-        style={{
-          background:
-            'linear-gradient(to top, rgba(5, 6, 9, 0.94) 0%, rgba(5, 6, 9, 0.3) 40%, rgba(5, 6, 9, 0) 68%)',
-        }}
-      />
-      <span className="mc-bc mc-chip-plate absolute left-3 top-2.5 flex items-center gap-1.5 text-[11px] font-[700] tracking-[0.08em] text-[var(--mcb-off)]">
-        <span className="inline-block size-1.5 rounded-full bg-[var(--mcb-off)]" aria-hidden="true" />
-        Bounty <span className="font-[500] tracking-[0]">· {pool.displayOnly ? 'example' : pool.status === 'CLAIMED' ? 'claimed' : 'view pool'}</span>
+    <Link href="/dashboard" className="mcr-open">
+      <span className="mcr-plus" aria-hidden="true">
+        +
       </span>
-      <span className="absolute inset-x-3 bottom-2.5 flex items-end justify-between gap-2.5">
-        <span className="min-w-0">
-          <span className="mc-bc block truncate text-[24px] font-[700] leading-[1.05]">
-            {pool.handle ?? pool.handleKey}
-          </span>
-          <span className="mt-0.5 flex items-baseline gap-2 text-[12px] font-[500] text-[var(--mcb-muted)]">
-            <span className="text-[14px] font-[600] text-[var(--mcb-queue)]">
-              {formatDollars(pool.remaining)}
-            </span>
-            {pool.contributionCount} backer{pool.contributionCount === 1 ? '' : 's'}
-            {pool.platform ? ` · ${platformLabel(pool.platform)}` : ''}
-          </span>
-        </span>
-        <span className="whitespace-nowrap bg-[var(--mcb-queue)] px-3.5 py-2 text-[12.5px] font-[700] text-[#050609] transition-transform group-hover:-translate-y-0.5">
-          View bounty
-        </span>
-      </span>
+      <strong>Open a room</strong>
+      <small>Your stream, your seats, your rate.</small>
     </Link>
   )
 }
 
-function InviteTile() {
+function BountyFace({ pool }: { pool: BountyPool }) {
+  const [broken, setBroken] = useState(false)
+  const handle = pool.handle ?? pool.handleKey
   return (
-    <Link
-      href="/dashboard"
-      className="flex min-h-[150px] flex-col items-center justify-center gap-2.5 border border-dashed border-[rgba(242,242,244,0.3)] px-4 text-center transition-colors hover:border-[var(--mcb-accent)] md:min-h-0"
-    >
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--mcb-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <line x1="12" y1="5" x2="12" y2="19" />
-        <line x1="5" y1="12" x2="19" y2="12" />
-      </svg>
-      <span className="text-[16px] font-[700] text-[var(--mcb-accent)]">Open a room</span>
-      <span className="text-[12.5px] font-[500] leading-[1.5] text-[var(--mcb-dim)]">
-        Your stream, your seats, your rate.
-        <br />
-        The next tile on this wall is yours.
-      </span>
-    </Link>
+    <span className="mcr-face">
+      {pool.avatarUrl && !broken ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={pool.avatarUrl}
+          alt=""
+          width={44}
+          height={44}
+          loading="lazy"
+          onError={() => setBroken(true)}
+        />
+      ) : (
+        <i aria-hidden="true">{initial(handle)}</i>
+      )}
+      <b>
+        <PlatformPip platform={pool.platform} />
+      </b>
+    </span>
+  )
+}
+
+function BountyBoard({ pools }: { pools: BountyPool[] }) {
+  return (
+    <aside className="mcr-board">
+      <header className="mcr-board-head">
+        <h2>Bounty board</h2>
+        <Link href="/bounty">See the board &#8594;</Link>
+      </header>
+      {pools.length === 0 ? (
+        <div className="mcr-board-foot">
+          No pools open yet. <Link href="/bounty">Start one for any streamer &#8594;</Link>
+        </div>
+      ) : (
+        <>
+          {pools.map((pool) => (
+            <Link key={pool.handleKey} href={poolHref(pool)} className="mcr-row">
+              <BountyFace pool={pool} />
+              <span>
+                <strong>{pool.handle ?? pool.handleKey}</strong>
+                <small>
+                  {pool.platform ? platformLabel(pool.platform) : 'Unlisted'} ·{' '}
+                  {pool.displayOnly
+                    ? 'example'
+                    : `${pool.contributionCount} backer${pool.contributionCount === 1 ? '' : 's'}`}
+                </small>
+              </span>
+              <span className="mcr-money">{formatDollars(pool.remaining)}</span>
+            </Link>
+          ))}
+          <div className="mcr-board-foot">
+            Back a streamer before they have a room. They claim it by going live.
+          </div>
+        </>
+      )}
+    </aside>
   )
 }
 
@@ -239,7 +250,7 @@ export function Booth({
 }) {
   const [rooms, setRooms] = useState<PublicRoomCard[]>(initialRooms)
   const [pools, setPools] = useState<BountyPool[]>(initialPools)
-  const [filter, setFilter] = useState<'all' | 'onair'>('all')
+  const [chip, setChip] = useState<ChipKey>('all')
   const [showAll, setShowAll] = useState(false)
 
   // Entering the app marks the visitor as returning — the landing page
@@ -287,23 +298,25 @@ export function Booth({
     }
   }, [])
 
-  const onAirCount = useMemo(
-    () => rooms.filter((r) => r.live > 0 || r.twitchLive).length,
-    [rooms],
-  )
-  const visible = useMemo(
-    () => (filter === 'onair' ? rooms.filter((r) => r.live > 0 || r.twitchLive) : rooms),
-    [rooms, filter],
-  )
-  const topPools = useMemo(
-    () => [...pools].sort((a, b) => b.remaining - a.remaining),
-    [pools],
-  )
+  const onAirCount = useMemo(() => rooms.filter(onAir).length, [rooms])
+  const visible = useMemo(() => rooms.filter((r) => matches(r, chip)), [rooms, chip])
+  const topPools = useMemo(() => [...pools].sort((a, b) => b.remaining - a.remaining), [pools])
 
-  const wall = visible.length >= 4
-  const heroRoom = visible[0]
-  const sideRooms = visible.slice(1, 3)
-  const sidePools = topPools.slice(0, Math.max(0, 3 - 1 - sideRooms.length))
+  // What earns the big card: whatever is live, else the demo — the room a
+  // first-time visitor can actually try — else whatever is hottest.
+  const featured = useMemo(() => {
+    return (
+      visible.find(onAir) ??
+      visible.find((r) => r.isDemo || r.handle === 'demo') ??
+      visible[0] ??
+      null
+    )
+  }, [visible])
+  const rest = useMemo(
+    () => (featured ? visible.filter((r) => r.id !== featured.id) : visible),
+    [visible, featured],
+  )
+  const shown = showAll ? rest : rest.slice(0, GRID_CAP)
 
   return (
     <div className="mc-booth dark flex min-h-dvh flex-col">
@@ -319,22 +332,6 @@ export function Booth({
           </span>
         </div>
         <nav className="flex items-center gap-5 text-[13px] font-[500] text-[var(--mcb-dim)]">
-          <button
-            type="button"
-            aria-pressed={filter === 'all'}
-            onClick={() => setFilter('all')}
-            className={`py-3 ${filter === 'all' ? 'text-[var(--mcb-fg)] underline underline-offset-4' : 'hover:text-white'}`}
-          >
-            All
-          </button>
-          <button
-            type="button"
-            aria-pressed={filter === 'onair'}
-            onClick={() => setFilter('onair')}
-            className={`py-3 ${filter === 'onair' ? 'text-[var(--mcb-fg)] underline underline-offset-4' : 'hover:text-white'}`}
-          >
-            On air
-          </button>
           <Link href="/bounty" className="hidden hover:text-white sm:inline">
             Bounties
           </Link>
@@ -349,178 +346,76 @@ export function Booth({
         </nav>
       </header>
 
-      {/* the wall */}
-      <main className="grow px-3 pb-6">
+      <main className="grow px-4 pb-10 pt-3.5">
         <h1 className="sr-only">
           MegaChat rooms — {onAirCount} on air, {rooms.length} on the board
         </h1>
-        {visible.length === 0 ? (
-          <div className="grid h-full grid-cols-1 gap-1.5 md:grid-cols-[1.62fr_1fr]">
-            <div className="flex flex-col items-center justify-center gap-4 border border-dashed border-[rgba(242,242,244,0.3)] px-6 text-center">
-              <span className="text-[13px] font-[600] text-[var(--mcb-dim)]">
-                {filter === 'onair' ? 'Nothing on air right now' : 'No rooms on the board yet'}
-              </span>
-              <a href="/demo" className="text-[20px] font-semibold text-[var(--mcb-accent)]">Try the demo room</a>
-              <Link
-                href="/dashboard"
-                className="mt-1 bg-[var(--mcb-accent)] px-5 py-2.5 text-[13.5px] font-[700] text-[#050609]"
-              >
-                Open a room
-              </Link>
-            </div>
-            <div className="hidden min-h-0 flex-col gap-1.5 md:flex">
-              {topPools.slice(0, 2).map((p) => (
-                <PoolTile key={p.handleKey} pool={p} />
-              ))}
-              <InviteTile />
-            </div>
-          </div>
-        ) : wall ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {(showAll ? visible : visible.slice(0, 6)).map((room) => (
-              <RoomTile key={room.id} room={room} />
-            ))}
-            {visible.length > 6 && <button type="button" onClick={() => setShowAll(!showAll)} className="col-span-full min-h-12 border border-[var(--mcb-hairline)] text-[14px] text-[var(--mcb-accent)]">{showAll ? 'Show fewer rooms' : `Show all ${visible.length} rooms`}</button>}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-7">
-            {/* Featured room, at a sane size. A quiet night should not hand
-                one room the whole viewport — that reads as an empty page,
-                not a big room. */}
-            <div className="grid grid-cols-1 gap-1.5 md:h-[340px] md:grid-cols-[1.35fr_1fr]">
-              {heroRoom ? <RoomTile room={heroRoom} hero /> : null}
-              <div className="flex flex-col gap-1.5 md:[&>*]:min-h-0 md:[&>*]:grow md:[&>*]:basis-0">
-                {sideRooms.map((room) => (
-                  <RoomTile key={room.id} room={room} />
-                ))}
-                {sidePools.map((pool) => (
-                  <PoolTile key={pool.handleKey} pool={pool} />
-                ))}
-                <InviteTile />
-              </div>
-            </div>
 
-            {/* Always true, whatever is live — the page explains itself
-                instead of relying on a full board to look alive. */}
-            <section className="flex flex-col gap-3">
-              <h2 className="text-[18px] font-[700] tracking-[-0.01em] text-[var(--mcb-fg)]">
-                How you get on a stream
-              </h2>
-              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
-                {WAYS_IN.map((w) => (
-                  <Link
-                    key={w.title}
-                    href={w.href}
-                    className="group flex flex-col gap-2 border-l-2 bg-[#0a0c12] px-4 py-4 transition-colors hover:bg-[#0f1219]"
-                    style={{ borderLeftColor: w.color }}
-                  >
-                    <span className="flex items-center gap-2.5">
-                      <span style={{ color: w.color }}>{w.icon}</span>
-                      <span className="text-[17px] font-[700] tracking-[-0.01em]">{w.title}</span>
-                    </span>
-                    <span className="text-[13px] leading-[1.5] text-[var(--mcb-muted)]">
-                      {w.body}
-                    </span>
-                    <span
-                      className="mt-auto pt-1 text-[12.5px] font-[700]"
-                      style={{ color: w.color }}
-                    >
-                      {w.cta} &#8594;
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            </section>
-
-            {/* Bounties get a real section here rather than only the thin
-                rail — off-air names with money on them are content too. */}
-            <section className="flex flex-col gap-3">
-              <span className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="text-[18px] font-[700] tracking-[-0.01em] text-[var(--mcb-fg)]">
-                  Bounties
-                </h2>
-                <Link
-                  href="/bounty"
-                  className="text-[13px] font-[500] text-[var(--mcb-dim)] hover:text-white"
-                >
-                  The bounty board &#8594;
-                </Link>
-              </span>
-              {topPools.length > 0 ? (
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
-                  {topPools.slice(0, 4).map((pool) => (
-                    <PoolTile key={pool.handleKey} pool={pool} />
-                  ))}
-                </div>
-              ) : (
-                <Link
-                  href="/bounty"
-                  className="flex flex-col items-start gap-2 border border-dashed border-[rgba(242,242,244,0.22)] px-5 py-5 transition-colors hover:border-[var(--mcb-accent)]"
-                >
-                  <span className="text-[17px] font-[700] tracking-[-0.01em]">
-                    No active bounties
-                  </span>
-                  <span className="max-w-[62ch] text-[13px] leading-[1.55] text-[var(--mcb-muted)]">
-                    Choose any streamer who isn&#39;t here. Backers can add to the bounty, and the
-                    first verified broadcast claims it &#8212; proof is read straight off the stream.
-                  </span>
-                  <span className="pt-1 text-[12.5px] font-[700] text-[var(--mcb-accent)]">
-                    Start a pool &#8594;
-                  </span>
-                </Link>
-              )}
-            </section>
-          </div>
-        )}
-      </main>
-
-      {/* bounty rail */}
-      <footer className="flex h-[72px] shrink-0 items-center gap-5 border-t border-[var(--mcb-hairline)] px-4">
-        <h2 className="text-[13.5px] font-[700] leading-[1.25] text-[var(--mcb-dim)]">
-          Bounties
-        </h2>
-        <div className="flex min-w-0 grow items-stretch gap-2 overflow-hidden">
-          {topPools.length === 0 ? (
-            <Link
-              href="/bounty"
-              className="flex grow items-center justify-center border border-dashed border-[rgba(255,255,255,0.18)] px-3 text-[13px] font-[500] text-[var(--mcb-dim)] hover:text-white"
+        {/* Filters moved out of the nav: the nav is where you leave this page,
+            the chips are how you read it. */}
+        <div className="mcr-chips">
+          {CHIPS.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              className="mcr-chip"
+              aria-pressed={chip === c.key}
+              onClick={() => {
+                setChip(c.key)
+                setShowAll(false)
+              }}
             >
-              Start a pool for any streamer →
-            </Link>
-          ) : (
-            topPools.slice(0, 3).map((pool) => (
-              <Link
-                key={pool.handleKey}
-                href={poolHref(pool)}
-                className="flex min-w-0 grow flex-col justify-center border-l-2 border-[var(--mcb-queue)] bg-[#0a0c12] px-3 py-2 transition-colors hover:bg-[#0f1219]"
-              >
-                <span className="truncate text-[16px] font-[600] leading-[1.1]">
-                  {pool.handle ?? pool.handleKey}
-                </span>
-                <span className="mt-0.5 flex min-w-0 items-baseline gap-2">
-                  <span className="shrink-0 text-[13px] font-[600] text-[var(--mcb-queue)]">
-                    {formatDollars(pool.remaining)}
-                  </span>
-                  <span className="truncate text-[12px] font-[500] text-[var(--mcb-dim)]">
-                    {pool.displayOnly ? 'Example, not funded' : `${pool.contributionCount} backer${pool.contributionCount === 1 ? '' : 's'}`}
-                  </span>
-                </span>
-              </Link>
-            ))
-          )}
+              {c.label}
+            </button>
+          ))}
+          <span className="mcr-sort">sort · hottest</span>
         </div>
-        <span className="hidden items-center gap-2 text-[12px] font-[500] leading-[1.35] text-[var(--mcb-muted)] lg:flex">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--mcb-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z" />
-            <path d="m9 12 2 2 4-4" />
-          </svg>
-          <span>
-            Read back off
-            <br />
-            the broadcast
-          </span>
-        </span>
-      </footer>
+
+        <div className="mcr-cols">
+          <div>
+            {featured ? (
+              <>
+                <FeaturedRoom room={featured} />
+                <div className="mcr-grid">
+                  {shown.map((room) => (
+                    <RoomCard key={room.id} room={room} />
+                  ))}
+                  <OpenRoomCard />
+                  {rest.length > GRID_CAP ? (
+                    <button type="button" className="mcr-more" onClick={() => setShowAll(!showAll)}>
+                      {showAll ? 'Show fewer rooms' : `Show all ${rest.length + 1} rooms`}
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <div className="mcr-empty">
+                <h2>{EMPTY_COPY[chip]}</h2>
+                <p>
+                  The demo room is always open — take a seat, record a MegaChat, and watch it play
+                  back on the broadcast for a fraction of a cent.
+                </p>
+                <span className="mcr-cta">
+                  <a href="/demo" className="mcr-btn">
+                    Try the demo
+                  </a>
+                  {chip === 'all' ? (
+                    <Link href="/dashboard" className="mcr-ghost">
+                      Open a room
+                    </Link>
+                  ) : (
+                    <button type="button" className="mcr-ghost" onClick={() => setChip('all')}>
+                      Show every room
+                    </button>
+                  )}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <BountyBoard pools={topPools.slice(0, 5)} />
+        </div>
+      </main>
     </div>
   )
 }

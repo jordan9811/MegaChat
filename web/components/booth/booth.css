@@ -1,5 +1,9 @@
-/* Booth app board. Keep the compact wall layout, but bring its surfaces and
-   status language into the Broadcast OS system used by the rest of the app. */
+/* Rooms board — a directory, on the Nerve skin.
+   One featured room, a uniform grid under it, and the bounty board as a calm
+   side rail. Colour carries meaning and nothing else: lime is on air, cyan is
+   the thing to click, yellow is money, pink is the filter you are standing in.
+   Every panel is the same dark surface; a 2px line across the top says what
+   kind of thing the card is. */
 
 .mc-booth {
   --mcb-bg: #050609;
@@ -9,7 +13,10 @@
   --mcb-muted: #a9b2bd;
   --mcb-dim: #7d8794;
   --mcb-off: #b3bcc6;
+  --mcb-line: rgba(255, 255, 255, 0.09);
+  --mcb-line2: rgba(255, 255, 255, 0.17);
   --mcb-hairline: rgba(255, 255, 255, 0.16);
+  --mcb-brand: #ff2d78;
   --mcb-accent: #3ae8ff;
   --mcb-live: #b8ff45;
   --mcb-queue: #ffd23d;
@@ -18,7 +25,7 @@
     radial-gradient(circle at 12% 0%, rgba(255, 45, 120, 0.11), transparent 31rem),
     linear-gradient(rgba(101, 171, 214, 0.025) 1px, transparent 1px),
     linear-gradient(90deg, rgba(101, 171, 214, 0.025) 1px, transparent 1px);
-  background-size: auto, 42px 42px, 42px 42px;
+  background-size: auto, 48px 48px, 48px 48px;
   color: var(--mcb-fg);
   font-family: var(--font-ui), system-ui, sans-serif;
 }
@@ -55,28 +62,547 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   outline-offset: 2px;
 }
 
-/* Status text sits over live thumbnails whose top edge carries no scrim. */
-.mc-chip-plate {
-  background: rgba(5, 6, 9, 0.72);
-  padding: 3px 8px;
+/* ── filter row ─────────────────────────────────────────────────────── */
+
+.mcr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
-/* abstract camera-feed placeholders (no photos in the app, by decision) */
-.mc-mesh-0 {
-  background: radial-gradient(120% 90% at 22% 18%, #245374 0%, #0d1b29 62%);
+.mcr-chip {
+  padding: 8px 14px;
+  border: 1px solid var(--mcb-line2);
+  background: transparent;
+  color: var(--mcb-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
 }
-.mc-mesh-1 {
-  background: radial-gradient(120% 90% at 76% 20%, #5a4130 0%, #201912 64%);
+
+.mcr-chip:hover {
+  color: var(--mcb-fg);
+  border-color: rgba(255, 255, 255, 0.32);
 }
-.mc-mesh-2 {
-  background: radial-gradient(120% 90% at 34% 74%, #245542 0%, #0d211b 62%);
+
+.mcr-chip[aria-pressed='true'] {
+  background: var(--mcb-brand);
+  border-color: var(--mcb-brand);
+  color: #fff;
 }
-.mc-mesh-3 {
-  background: radial-gradient(120% 90% at 62% 26%, #262b36 0%, #101c29 64%);
+
+.mcr-sort {
+  margin-left: auto;
+  color: var(--mcb-dim);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 12.5px;
 }
-.mc-mesh-4 {
-  background: radial-gradient(120% 90% at 26% 30%, #594c25 0%, #211d10 64%);
+
+/* ── the two columns ────────────────────────────────────────────────── */
+
+.mcr-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 20px;
+  align-items: start;
 }
-.mc-mesh-5 {
-  background: radial-gradient(120% 90% at 70% 68%, #1e222b 0%, #0e1b24 64%);
+
+@media (max-width: 1100px) {
+  .mcr-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── media stage ────────────────────────────────────────────────────── */
+
+.mcr-stage {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 70% 70% at 50% 110%, rgba(58, 232, 255, 0.28), transparent 65%),
+    radial-gradient(ellipse 45% 55% at 12% 0%, rgba(255, 45, 120, 0.26), transparent 60%),
+    #07090f;
+}
+
+.mcr-stage img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Scanlines read as a signal rather than a still, and they sit over the
+   Twitch preview too — one treatment whether or not a feed is up. */
+.mcr-scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.28) 0 2px, transparent 2px 4px);
+}
+
+.mcr-tags {
+  position: absolute;
+  inset: 12px 12px auto 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mcr-card .mcr-tags {
+  inset: 10px 10px auto 10px;
+}
+
+.mcr-tag {
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  background: rgba(5, 6, 9, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--mcb-muted);
+  white-space: nowrap;
+}
+
+.mcr-tag i {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: currentColor;
+  vertical-align: middle;
+}
+
+.mcr-tag.is-live {
+  color: var(--mcb-live);
+  border-color: rgba(184, 255, 69, 0.6);
+  box-shadow: 0 0 14px -4px var(--mcb-live);
+}
+
+.mcr-tag.is-full {
+  color: var(--mcb-queue);
+  border-color: rgba(255, 210, 61, 0.55);
+}
+
+/* ── featured room ──────────────────────────────────────────────────── */
+
+.mcr-feat {
+  display: grid;
+  grid-template-columns: 520px minmax(0, 1fr);
+  margin-bottom: 16px;
+  background: var(--mcb-panel);
+  border: 1px solid var(--mcb-line);
+  border-top: 2px solid var(--mcb-accent);
+}
+
+.mcr-feat.is-live {
+  border-top-color: var(--mcb-live);
+}
+
+@media (max-width: 900px) {
+  .mcr-feat {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mcr-feat-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+}
+
+.mcr-feat-body h2 {
+  margin: 0;
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+}
+
+.mcr-feat-body h2 a:hover {
+  color: var(--mcb-accent);
+}
+
+.mcr-meta {
+  color: var(--mcb-muted);
+  font-size: 13px;
+}
+
+.mcr-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+/* ── buttons ────────────────────────────────────────────────────────── */
+
+.mcr-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  background: var(--mcb-accent);
+  color: #050609;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 0 26px -8px var(--mcb-accent);
+  transition: transform 0.12s ease;
+}
+
+.mcr-btn.is-queue {
+  background: var(--mcb-queue);
+  box-shadow: 0 0 26px -8px var(--mcb-queue);
+}
+
+.mcr-btn:hover {
+  transform: translateY(-1px);
+}
+
+.mcr-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--mcb-line2);
+  color: var(--mcb-fg);
+  font-size: 13px;
+  font-weight: 700;
+  transition: border-color 0.12s ease;
+}
+
+.mcr-ghost:hover {
+  border-color: var(--mcb-fg);
+}
+
+.mcr-ghost.is-sm {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+/* ── the grid ───────────────────────────────────────────────────────── */
+
+.mcr-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 700px) {
+  .mcr-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mcr-card {
+  display: block;
+  background: var(--mcb-panel);
+  border: 1px solid var(--mcb-line);
+  border-top: 2px solid var(--mcb-accent);
+  transition: background-color 0.12s ease;
+}
+
+.mcr-card.is-live {
+  border-top-color: var(--mcb-live);
+}
+
+.mcr-card.is-bounty {
+  border-top-color: var(--mcb-queue);
+}
+
+.mcr-card:hover {
+  background: var(--mcb-panel-up);
+}
+
+.mcr-card-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.mcr-card-body .mcr-t {
+  flex: 1;
+  min-width: 0;
+}
+
+.mcr-name {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcr-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--mcb-dim);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcr-mono {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--mcb-accent);
+  background: linear-gradient(145deg, #123245, #0a1622);
+  border: 1px solid rgba(58, 232, 255, 0.25);
+}
+
+.mcr-mono.is-queue {
+  color: var(--mcb-queue);
+  background: linear-gradient(145deg, #3a3117, #1a160b);
+  border-color: rgba(255, 210, 61, 0.25);
+}
+
+/* Open-a-room sits in the grid as a card-shaped invitation, not a button
+   bolted to the page — the next tile on this wall is genuinely theirs. */
+.mcr-open {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 100%;
+  padding: 28px 20px;
+  border: 1px dashed var(--mcb-line2);
+  text-align: center;
+  color: var(--mcb-muted);
+  transition: border-color 0.12s ease;
+}
+
+.mcr-open:hover {
+  border-color: var(--mcb-accent);
+}
+
+.mcr-open strong {
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--mcb-accent);
+}
+
+.mcr-open .mcr-plus {
+  font-size: 28px;
+  line-height: 1;
+  color: var(--mcb-accent);
+}
+
+.mcr-open small {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.mcr-more {
+  grid-column: 1 / -1;
+  min-height: 46px;
+  border: 1px solid var(--mcb-line2);
+  background: transparent;
+  color: var(--mcb-accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mcr-more:hover {
+  border-color: var(--mcb-accent);
+}
+
+/* ── empty board ────────────────────────────────────────────────────── */
+
+.mcr-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 40px 28px;
+  border: 1px dashed var(--mcb-line2);
+}
+
+.mcr-empty h2 {
+  margin: 0;
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.mcr-empty p {
+  margin: 0;
+  max-width: 58ch;
+  color: var(--mcb-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* ── bounty board rail ──────────────────────────────────────────────── */
+
+.mcr-board {
+  background: var(--mcb-panel);
+  border: 1px solid var(--mcb-line);
+  border-top: 2px solid var(--mcb-queue);
+}
+
+.mcr-board-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--mcb-line);
+}
+
+.mcr-board-head h2 {
+  margin: 0;
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.mcr-board-head a {
+  color: var(--mcb-accent);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.mcr-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--mcb-line);
+  transition: background-color 0.12s ease;
+}
+
+.mcr-row:hover {
+  background: var(--mcb-panel-up);
+}
+
+.mcr-row strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcr-row small {
+  display: block;
+  margin-top: 2px;
+  color: var(--mcb-dim);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcr-money {
+  color: var(--mcb-queue);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.mcr-board-foot {
+  padding: 12px 16px;
+  border-top: 1px solid var(--mcb-line);
+  color: var(--mcb-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mcr-board-foot a {
+  color: var(--mcb-accent);
+  font-weight: 700;
+}
+
+/* Face + platform pip, same anatomy as the landing's bounty rows. */
+.mcr-face {
+  position: relative;
+  flex: 0 0 auto;
+  display: block;
+  width: 44px;
+  height: 44px;
+}
+
+.mcr-face img {
+  width: 44px;
+  height: 44px;
+  display: block;
+  object-fit: cover;
+}
+
+.mcr-face i {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 800;
+  color: var(--mcb-accent);
+  background: linear-gradient(145deg, #123245, #0a1622);
+  border: 1px solid rgba(58, 232, 255, 0.25);
+}
+
+.mcr-face b {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  background: var(--mcb-panel);
+}
+
+.mcr-face b svg {
+  width: 10px;
+  height: 10px;
+  fill: var(--mcb-muted);
+}
+
+/* The one bar carries a wordmark, a live count and the whole site nav; below
+   the sm breakpoint that is wider than a phone. Let it wrap onto a second
+   row rather than pushing the page sideways — same items, same order. */
+@media (max-width: 640px) {
+  .mc-booth > header {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 16px;
+  }
+
+  .mc-booth > header nav {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
 }
