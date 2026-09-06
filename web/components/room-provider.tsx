@@ -429,15 +429,16 @@ export function RoomProvider({ children }: { children: ReactNode }) {
           setMyRooms(d.rooms)
           myRoomsRef.current = d.rooms
           const params = new URLSearchParams(window.location.search)
-          if (params.get('new') !== '1' && !autoOpenedRef.current && d.rooms.length > 0 && !roomIdRef.current) {
+          // No ?new=1 exception any more: an owner always lands in their room.
+          if (!autoOpenedRef.current && d.rooms.length > 0 && !roomIdRef.current) {
             autoOpenedRef.current = true
             const selected = d.rooms.find((r) => r.id === params.get('room')) || d.rooms[0]
             void openOwnedRoom(selected.id).catch(() => {})
             return
           }
-          // ?new=1 calls switchRoom before this list arrives, so the handle
-          // was seeded without knowing which ones are already spoken for.
-          // Re-seed now that we know, unless the streamer has typed one.
+          // No room to open: the create draft was seeded before this list
+          // arrived, so re-seed the handle now that we know which names are
+          // taken — unless the streamer has already typed one.
           if (!roomIdRef.current && !draftTouchedRef.current) {
             const h = seedHandle()
             setDraft((prev) => (prev.handle === h ? prev : { ...prev, handle: h }))

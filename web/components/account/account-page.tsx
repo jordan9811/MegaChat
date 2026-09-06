@@ -147,7 +147,7 @@ export function AccountPage() {
             <a href="/how-it-works">How it works</a>
           </nav>
           <span className="mcc-product-actions">
-            <a href="/dashboard?new=1">Create room</a>
+            <a href="/dashboard">Create room</a>
             <AccountChip accent="var(--mcc-accent)" />
           </span>
         </div>
@@ -216,7 +216,6 @@ export function AccountPage() {
               <div className="mcc-nav-links">
                 <span>Go to</span>
                 <a href="/dashboard">Your room</a>
-                <a href="/dashboard?new=1">Open a new room</a>
                 <a href="/app">Room board</a>
               </div>
               <button type="button" className="mcc-signout" onClick={() => void signOut()}>Sign out</button>
@@ -269,7 +268,7 @@ export function AccountPage() {
                 <section className="mcc-settings-zone">
                   <header>
                     <div><span className="mcc-coordinate">Room defaults</span><h2>Start every room ready.</h2><p>These values load into Create Room and can still be changed per stream.</p></div>
-                    <a href="/dashboard?new=1" className="btn-ghost">Open full setup</a>
+                    <a href="/dashboard" className="btn-ghost">Open full setup</a>
                   </header>
                   {!identity ? (
                     <p className="hint">Add a sign-in before saving account-level room defaults.</p>
@@ -285,7 +284,7 @@ export function AccountPage() {
                     <p className="hint">No defaults saved yet. New rooms use the stock settings.</p>
                   )}
                   <div className="mcc-settings-actions">
-                    <a href="/dashboard?new=1" className="btn">Edit defaults</a>
+                    <a href="/dashboard" className="btn">Edit defaults</a>
                     {defaults ? (
                       <button type="button" id="clear-defaults" disabled={busy} onClick={() => void clearDefaults()} className="btn-ghost">
                         {busy ? 'Clearing…' : 'Clear defaults'}
