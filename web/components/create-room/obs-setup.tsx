@@ -37,35 +37,48 @@ export function ObsSetup() {
   return (
     <section className="mcc-obs" aria-label="Get MegaChat on your stream">
       <header>
-        <strong>Get it on your stream</strong>
+        <strong>Add it to your stream</strong>
         <small>Your viewers use the link. Your broadcast needs the overlay in OBS.</small>
       </header>
       <div className="mcc-obs-body">
         <CopyRow label="Viewer" value={viewerLink} />
 
+        {/* Two ways in, both folded shut. Expanded, either one is a wall of
+            instructions, and showing both at once is how a first-time
+            streamer stalls out. */}
         {oneClick ? (
-          <div className="mcc-obs-reco">
-            <strong>Recommended · let MegaChat add it to OBS</strong>
-            <small>Connects to OBS over its WebSocket and adds the overlay as a browser source at the right size. Nothing to type.</small>
-            <ObsOneClick overlayUrl={obsLink} mode="room" />
-          </div>
+          <details className="mcc-obs-choice">
+            <summary>
+              <span className="mcc-obs-num">1</span>
+              <b>Connect OBS</b>
+              <em className="reco">Recommended</em>
+              <ChevronDown size={15} aria-hidden="true" />
+            </summary>
+            <div className="mcc-obs-panel">
+              <p>MegaChat talks to OBS and adds the overlay itself, sized correctly. Nothing to type.</p>
+              <ObsOneClick overlayUrl={obsLink} mode="room" />
+            </div>
+          </details>
         ) : null}
 
-        <details className="mcc-obs-manual">
-          <summary>{oneClick ? 'Step-by-step OBS walkthrough' : 'Add it to OBS by hand'}<ChevronDown size={14} aria-hidden="true" /></summary>
-          <div>
-            {/* the one-click box already carries the link and the size; only
-                the hand route needs them here */}
-            {!oneClick ? <CopyRow label="OBS" value={obsLink} /> : null}
+        <details className="mcc-obs-choice">
+          <summary>
+            {oneClick ? <span className="mcc-obs-num">2</span> : null}
+            <b>Manual setup</b>
+            <em className="any">Works everywhere</em>
+            <ChevronDown size={15} aria-hidden="true" />
+          </summary>
+          <div className="mcc-obs-panel">
+            <CopyRow label="OBS" value={obsLink} />
             {room.transport !== 'livekit' ? (
               <CopyRow label="Host cam" value={`https://vdo.ninja/?push=mc-host-${room.id}&webcam&quality=1080&stereo&autostart`} />
             ) : null}
             <ol className="mcc-obs-steps">
-              <li><strong>Cameras on your scene.</strong> Add the OBS link as a Browser Source, full canvas size, transparent background.</li>
-              <li><strong>Guest audio into your stream.</strong> Enable &ldquo;Control audio via OBS&rdquo; on that source so guest voices and stinger sounds reach your mix.</li>
-              <li><strong>Hear guests yourself.</strong> Step 2 routes them into the OBS mixer, which your own ears are not in. On the source&rsquo;s mixer entry, set Audio Monitoring to <strong>Monitor and Output</strong>.</li>
-              <li><strong>Smooth video.</strong> In OBS Settings → Advanced, keep &ldquo;Browser Source Hardware Acceleration&rdquo; on.</li>
-              <li><strong>Talk back.</strong> Keep this page open while you stream. The co-host booth is what carries your camera and mic to guests.</li>
+              <li><strong>Add the overlay.</strong> In OBS add a Browser Source with the link above, at your full canvas size, transparent background.</li>
+              <li><strong>Let guests be heard.</strong> Tick &ldquo;Control audio via OBS&rdquo; on that source so guest voices and stinger sounds reach your stream.</li>
+              <li><strong>Hear them yourself.</strong> Step 2 sends them to the OBS mixer, which your own ears are not in. On that source&rsquo;s mixer entry set Audio Monitoring to <strong>Monitor and Output</strong>.</li>
+              <li><strong>Keep video smooth.</strong> In OBS Settings → Advanced, leave &ldquo;Browser Source Hardware Acceleration&rdquo; on.</li>
+              <li><strong>Talk back.</strong> Keep this page open while you stream — it carries your camera and mic to guests.</li>
             </ol>
           </div>
         </details>
