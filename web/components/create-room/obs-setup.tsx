@@ -56,7 +56,10 @@ export function ObsSetup() {
             </summary>
             <div className="mcc-obs-panel">
               <p>MegaChat talks to OBS and adds the overlay itself, sized correctly. Nothing to type.</p>
-              <ObsOneClick overlayUrl={obsLink} mode="room" />
+              {/* showManual off: choice 2 below IS the manual road, and this
+                  component renders its own copy of it by default. */}
+              <ObsOneClick overlayUrl={obsLink} mode="room" showManual={false} />
+              <p className="mcc-obs-note">Not working? Open <strong>Manual setup</strong> below — it works everywhere.</p>
             </div>
           </details>
         ) : null}
