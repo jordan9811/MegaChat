@@ -19,6 +19,7 @@ import {
   listRooms,
   letterPriceFor,
   getRoomByHandle,
+  getRoomRecord,
   setRoomHandle,
   createRoomWithPassword,
   verifyRoomPassword,
@@ -34,7 +35,8 @@ import { createAlerter } from './ops-alerts.js';
 import { bountyConfig } from './bounty-claim.config.js';
 import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
 import { attachBountyRoutes, makeClipHooks } from './bounty-routes.js';
-import { verifyRoomAccess } from './auth.js';
+import { verifyRoomAccess, readIdentityFromRequest } from './auth.js';
+import { isWhitelisted, recordJoin as recordWhitelistJoin } from './guest-whitelist.js';
 import {
   toAtomic,
   fromAtomic,
@@ -217,7 +219,7 @@ const MPP_FEE_HEADROOM = process.env.MPP_FEE_HEADROOM || '0.01';
 // wallet (allowance) or return straight from channel escrow (MPP settle).
 async function refundSeat(seat) {
   if (!seat || seat.refunded) return;
-  if (seat.paymentMode === 'free_stream') {
+  if (seat.paymentMode === 'free_stream' || seat.paymentMode === 'whitelist_stream') {
     seat.refunded = true; // nothing was ever charged
     return;
   }
@@ -758,9 +760,12 @@ function addParticipant(username, meta = {}) {
 
   // Pinned co-host seats ride for free ON TOP of the paid seats — they don't
   // consume a slot, so a full room + pinned guest still admits maxSeats payers.
+  // A seat that ARRIVES pinned (whitelisted guest) is exempt from the cap for
+  // the same reason: it never takes a chair a paying viewer could have sat in,
+  // so admitting it cannot bump or delay anyone who paid.
   const roomSeatCount = [...activeSeats.values()]
     .filter((s) => s.streamRoomId === streamRoomId && !s.pinned).length;
-  if (roomSeatCount >= roomCfg.maxSeats) {
+  if (!meta.pinned && roomSeatCount >= roomCfg.maxSeats) {
     return { success: false, reason: 'no_seats_available' };
   }
 
@@ -789,6 +794,9 @@ function addParticipant(username, meta = {}) {
     refunded: false,
     ownerWs: null,
     paymentMode: meta.paymentMode || 'gateway',
+    // Whitelisted guests arrive pinned: meter paused, no seat consumed.
+    pinned: !!meta.pinned,
+    guestHandle: meta.guestHandle || null,
     sessionCapAtomic: meta.sessionCapAtomic ?? remainingAtomic,
     gatewayTickSeconds: roomCfg.tickSeconds,
     gatewayTickPriceAtomic: atomics.tickPriceAtomic,
@@ -1010,6 +1018,10 @@ function tickAllMeters() {
   for (const seat of activeSeats.values()) {
     if (!seat.live) continue;
     if (seat.pinned) continue; // co-host seat: meter fully paused, zero charges
+    // Belt and braces for the whitelist: the seat is already pinned, but a
+    // streamer unpinning one from the dashboard must not start billing a guest
+    // who was told they ride free — and there is no balance to bill anyway.
+    if (seat.paymentMode === 'whitelist_stream') continue;
     // Free-room seats: no billing, and no payment-staleness kick — their
     // liveness is the WS/LiveKit connection (grace timers), not vouchers.
     if (seat.paymentMode === 'free_stream') continue;
@@ -1192,6 +1204,104 @@ function checkFeatureGates(cfg, gates, address) {
     }
   }
   return { blocked: false };
+}
+
+// ─── Guest whitelist: the free-join short circuit ───────────────────────────
+// Runs FIRST in the join path — before the room's own feature switches, before
+// the reputation gates, before any balance read, channel open or wallet
+// prompt. Two reasons it sits here rather than as a bypass inside the payment
+// step: a whitelisted guest must never be shown a payment prompt at all, and a
+// short circuit that never reaches the payment code cannot leave a half-opened
+// hold behind if it fires late.
+//
+// The handle comes from the SEALED identity cookie, never from the request
+// body. That is what makes this safe to put in front of payment: a client can
+// claim any username it likes and still cannot claim to be someone on the
+// list.
+function whitelistGuestFor(req, roomId) {
+  const owner = getRoomRecord(roomId)?.ownerKey;
+  if (!owner) return null;            // unowned room — nobody to keep a list
+  const handle = readIdentityFromRequest(req)?.handle;
+  if (!handle) return null;           // signed out, or no handle claimed yet
+  if (!isWhitelisted(owner, handle)) return null;
+  return { ownerKey: owner, handle };
+}
+
+/**
+ * Grant the free seat, or return false and let the normal (paid) path run.
+ *
+ * Seat contention: the guest seat is created PINNED, which in this codebase
+ * already means "rides on top of maxSeats, meter paused" (the co-host pin the
+ * dashboard has always had). So a whitelisted guest neither waits for a chair
+ * nor takes one from a viewer who paid for it — see DECISIONS.md.
+ *
+ * The room still has to be live: `addParticipant` refuses on a stopped room,
+ * and that is a missing room rather than a gate on the person, so the
+ * whitelist does not override it.
+ */
+async function tryWhitelistJoin(req, res) {
+  const resolved = resolveRoomFromRequest(req.body, req.query);
+  if (resolved.error) return false;   // normal path owns the error message
+  const { roomId, cfg } = resolved;
+  const guest = whitelistGuestFor(req, roomId);
+  if (!guest) return false;
+
+  const username = String(req.body?.username || guest.handle).slice(0, 40);
+  const result = addParticipant(username, {
+    remainingAtomic: 0n,
+    sessionCapAtomic: 0n,
+    payer: null,
+    viewerAddress: null,
+    paymentMode: 'whitelist_stream',
+    streamRoomId: roomId,
+    pinned: true,
+    guestHandle: guest.handle,
+    flyIn: req.body?.flyIn,
+    flyOut: req.body?.flyOut,
+  });
+  if (!result.success) {
+    const status = result.reason === 'room_stopped' ? 403 : 409;
+    res.status(status).json({
+      error: result.reason === 'room_stopped'
+        ? 'Room is not accepting joins'
+        : 'Could not seat you',
+      reason: result.reason,
+      roomId,
+    });
+    return true;
+  }
+
+  schedulePendingCameraTimeout(result.seat.id);
+  // The whole audit trail: no hold, no ledger row, no transfer — one record
+  // that this guest walked in free, and one line in the log.
+  recordWhitelistJoin(guest.ownerKey, guest.handle);
+  console.log(`[join:whitelist] room ${roomId} seat ${result.seat.id} for @${guest.handle} (free guest)`);
+
+  const seat = result.seat;
+  res.json({
+    success: true,
+    // `free` is the flag the join client already reads to skip the meter UI,
+    // so a guest sees no payment chrome without the client needing to learn
+    // anything new about whitelists.
+    free: true,
+    whitelist: true,
+    guestHandle: guest.handle,
+    message: 'Seat assigned — you are on the guest list. Allow camera access to go live:',
+    pushUrl: seat.pushUrl,
+    seatId: seat.id,
+    remaining: '0',
+    sessionCap: '0',
+    tickPrice: '0',
+    tickSeconds: cfg.passkeyTickSeconds,
+    maxSession: '0',
+    secondsLeft: 0,
+    paymentMode: 'whitelist_stream',
+    paymentTokenSymbol: cfg.paymentTokenSymbol,
+    paymentTokenAddress: cfg.paymentTokenAddress,
+    paymentTokenDecimals: cfg.paymentTokenDecimals,
+    payment: { payer: null, mode: 'whitelist_stream', network: NETWORK },
+  });
+  return true;
 }
 
 // ─── LiveKit transport (default once configured; vdo is the backup) ────────
@@ -1588,6 +1698,8 @@ function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
 // Passkey/modular smart account join — NO Gateway x402 middleware or transfer lookup.
 app.post('/api/join/passkey', async (req, res) => {
   try {
+    // Guest whitelist first: free, and before any payment logic runs.
+    if (await tryWhitelistJoin(req, res)) return;
     const { username, address } = req.body;
     if (!username) {
       return res.status(400).json({ error: 'Username required' });
@@ -1913,6 +2025,9 @@ app.post('/api/join/passkey', async (req, res) => {
 // opens on the first paid tick after the camera goes live.
 app.post('/api/join/mpp', async (req, res) => {
   try {
+    // Guest whitelist first — ahead of the meter check too, since a guest who
+    // is never charged does not need a payment meter to exist.
+    if (await tryWhitelistJoin(req, res)) return;
     if (!mppMeter) {
       return res.status(503).json({
         error: 'MPP meter unavailable on this server',
