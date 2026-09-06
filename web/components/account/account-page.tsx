@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { AccountChip } from '@/components/account-chip'
+import { GuestWhitelist } from '@/components/account/guest-whitelist'
 import {
   getAccountDefaults,
   listLinkedAccounts,
@@ -86,7 +87,7 @@ export function AccountPage() {
   const [note, setNote] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [origin, setOrigin] = useState('')
-  const [section, setSection] = useState<'overview' | 'defaults' | 'connections'>('overview')
+  const [section, setSection] = useState<'overview' | 'defaults' | 'guests' | 'connections'>('overview')
 
   useEffect(() => setOrigin(window.location.origin), [])
 
@@ -211,6 +212,7 @@ export function AccountPage() {
                 <span>Account</span>
                 <button type="button" aria-current={section === 'overview' ? 'page' : undefined} onClick={() => setSection('overview')}>Overview</button>
                 <button type="button" aria-current={section === 'defaults' ? 'page' : undefined} onClick={() => setSection('defaults')}>Room defaults</button>
+                <button type="button" aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}>Guest list</button>
                 <button type="button" aria-current={section === 'connections' ? 'page' : undefined} onClick={() => setSection('connections')}>Connections</button>
               </div>
               <div className="mcc-nav-links">
@@ -294,6 +296,12 @@ export function AccountPage() {
                   </div>
                   {note ? <p className="hint">{note}</p> : null}
                 </section>
+              ) : null}
+
+              {section === 'guests' ? (
+                !identity
+                  ? <section className="mcc-settings-zone"><p className="hint">Add a sign-in before keeping a guest list — it is tied to your account, not to a room.</p></section>
+                  : <GuestWhitelist myHandle={identity.handle ?? null} />
               ) : null}
 
               {section === 'connections' ? (

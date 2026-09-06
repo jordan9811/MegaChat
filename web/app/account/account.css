@@ -412,3 +412,130 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   .mcc-settings-zone > header { display: block; }
   .mcc-settings-zone > header > a { display: inline-flex; margin-top: 15px; }
 }
+
+/* ── Guest list ────────────────────────────────────────────────────────────
+   Same slab as the other account zones. The one thing designed loudly is the
+   "on but switched off" state: a streamer who forgot they disabled this will
+   otherwise report the whole feature as broken. */
+.mcc-guests header { align-items: flex-start; gap: 20px; }
+
+.mcc-guests-switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid var(--mcc-rule-2);
+  background: var(--mcc-sunk);
+  color: var(--mcc-dim);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.mcc-guests-switch i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mcc-faint);
+}
+.mcc-guests-switch.is-on {
+  border-color: color-mix(in srgb, var(--mcc-live) 55%, transparent);
+  color: var(--mcc-live);
+}
+.mcc-guests-switch.is-on i {
+  background: var(--mcc-live);
+  box-shadow: 0 0 10px var(--mcc-live);
+}
+.mcc-guests-switch:disabled { opacity: 0.55; cursor: default; }
+
+.mcc-guests-alarm {
+  margin: 16px 0 0;
+  padding: 13px 15px;
+  border-left: 2px solid var(--mcc-warn);
+  background: color-mix(in srgb, var(--mcc-warn) 9%, transparent);
+  color: var(--mcc-fg);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.mcc-guests-alarm strong { color: var(--mcc-warn); }
+
+.mcc-guests-add { display: flex; flex-direction: column; gap: 8px; margin-top: 22px; }
+.mcc-guests-add label {
+  color: var(--mcc-dim);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.mcc-guests-add > div { display: flex; align-items: stretch; gap: 8px; }
+.mcc-guests-at {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  border: 1px solid var(--mcc-rule);
+  border-right: 0;
+  background: var(--mcc-sunk);
+  color: var(--mcc-faint);
+}
+.mcc-guests-add input {
+  flex: 1;
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid var(--mcc-rule);
+  background: var(--mcc-sunk);
+  color: var(--mcc-fg);
+  font: inherit;
+}
+.mcc-guests-add input:focus-visible { outline: 2px solid var(--mcc-accent); outline-offset: 1px; }
+.mcc-guests-add input:disabled { opacity: 0.5; }
+.mcc-guests-add small { color: var(--mcc-faint); font-size: 12px; }
+
+.mcc-guests-error {
+  margin: 14px 0 0;
+  padding: 11px 14px;
+  border-left: 2px solid #ff6b3d;
+  background: rgba(255, 107, 61, 0.08);
+  color: #ffb39e;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.mcc-guests-list { display: flex; flex-direction: column; margin: 20px 0 0; padding: 0; list-style: none; }
+.mcc-guests-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 62px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--mcc-rule);
+}
+.mcc-guests-who { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.mcc-guests-who strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.mcc-guests-who em {
+  padding: 2px 7px;
+  border: 1px solid var(--mcc-rule-2);
+  color: var(--mcc-faint);
+  font-size: 10.5px;
+  font-style: normal;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.mcc-guests-meta { display: flex; flex-direction: column; gap: 3px; text-align: right; }
+.mcc-guests-meta small {
+  color: var(--mcc-faint);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 11.5px;
+}
+.mcc-guests-foot { margin: 18px 0 0; color: var(--mcc-faint); font-size: 12.5px; line-height: 1.55; }
+
+@media (max-width: 640px) {
+  .mcc-guests header { flex-direction: column; }
+  .mcc-guests-add > div { flex-wrap: wrap; }
+  .mcc-guests-list li { grid-template-columns: minmax(0, 1fr) auto; }
+  .mcc-guests-meta { grid-column: 1 / -1; flex-direction: row; gap: 14px; text-align: left; }
+}

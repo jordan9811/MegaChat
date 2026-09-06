@@ -362,6 +362,49 @@ export function getAccountDefaults() {
   return request<{ defaults: Record<string, unknown> | null }>('/api/account/defaults')
 }
 
+// ── Guest whitelist (per streamer, not per room) ────────────────────────────
+
+export type GuestEntry = {
+  handle: string
+  addedAt: string
+  lastJoinedAt: string | null
+  joinCount: number
+}
+/** `enabled` is the EFFECTIVE state; `explicit` is null until the streamer
+ *  touches the master switch, after which their choice always wins. */
+export type GuestList = {
+  enabled: boolean
+  explicit: boolean | null
+  entries: GuestEntry[]
+  max: number
+}
+
+/** The signed-in streamer's guest list. */
+export function getGuestWhitelist() {
+  return request<GuestList>('/api/whitelist')
+}
+
+/** Add by MegaChat handle. `skipped: 'self'` comes back for your own handle. */
+export function addGuest(handle: string) {
+  return request<GuestList & { added: boolean; skipped?: string; message?: string }>(
+    '/api/whitelist',
+    { method: 'POST', body: { handle } },
+  )
+}
+
+/** Remove a guest. Anyone currently live keeps their seat until they leave. */
+export function removeGuest(handle: string) {
+  return request<GuestList & { removed: boolean }>(
+    `/api/whitelist/${encodeURIComponent(handle)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** Master switch. The list itself is never touched. */
+export function setGuestWhitelistEnabled(enabled: boolean) {
+  return request<GuestList>('/api/whitelist/enabled', { method: 'POST', body: { enabled } })
+}
+
 /** Save (object) or clear (null) the identity's room defaults. */
 export function saveAccountDefaults(defaults: Record<string, unknown> | null) {
   return request<{ ok: boolean; defaults: Record<string, unknown> | null }>(
