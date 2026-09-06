@@ -37,6 +37,8 @@ Where a day's brief was prompted by a specific request worth preserving, keep
 it alongside as `YYYY-MM-DD.request.md`.
 
 ## Index
+- [2026-09-05](2026-09-05.md) — guest list built and gated; a money check that was
+  passing for a bad reason, and seventeen older tests found to be unreliable.
 - [2026-07-25](2026-07-25.md) — LiveKit cost leak found and fixed; bounty
   mechanic built; Cloud verification still outstanding.
   ([request](2026-07-25.request.md))
