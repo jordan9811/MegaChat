@@ -40,6 +40,19 @@ export function getIdentity(provider, platformId) {
   return store.identities[key(provider, platformId)] || null;
 }
 
+/**
+ * Handle -> identity. The whitelist names people by handle, so adding a guest
+ * has to prove the name resolves to a real account before it goes on the list;
+ * a typo that silently never matches is worse than a rejection.
+ */
+export function getIdentityByHandle(handle) {
+  const store = load();
+  const h = sanitizeHandle(handle);
+  if (!h) return null;
+  const k = store.handles[h];
+  return k ? store.identities[k] || null : null;
+}
+
 export function isHandleTakenByIdentity(handle) {
   const store = load();
   return !!store.handles[handle];
