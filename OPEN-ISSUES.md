@@ -771,3 +771,56 @@ at `bounty-escrow.js:195-201`. Pick one before writing code.
 review (approve / "not for me" / "breaks the rules"), which fires *after* the
 fan has already paid. A price floor is the pre-payment filter that queue
 cannot be.
+
+## Guest whitelist (2026-09-05, `feat/guest-whitelist`)
+
+Streamers can name MegaChat handles that join their rooms free, any time.
+Built, gated, and unmerged. `_gate-guest-whitelist.mjs` — 53 assertions,
+sections A–H, all green.
+
+### Known gaps / deferrals
+- **W1 — "Invite-only mode" has no literal switch in this codebase.** The spec
+  asked that the whitelist supersede it. The nearest two real settings are
+  covered and asserted separately: Join Stream switched off entirely
+  (`joinStream.enabled: false`) and the eligibility gate that is actually
+  enforced (`minWatchSeconds`). `followersOnly` / `subsOnly` are stored config
+  that nothing enforces yet — when platform verification ships, they must be
+  added to the same override or the whitelist will silently stop superseding
+  them.
+- **W2 — Guests are exempt from the seat cap, so a room can exceed `maxSeats`
+  by up to the whitelist size** (default 20, so 3 + 20 = 23 publishers on a
+  LiveKit room). This is the deliberate seat-contention choice
+  (DECISIONS.md), but it interacts with the LiveKit burn budget: a large
+  whitelist is a real cost surface, and the breaker is the only thing standing
+  in front of it. Consider a separate, smaller cap on *simultaneously live*
+  guests if this ever gets used at scale.
+- **W3 — A guest with no claimed handle cannot be whitelisted.** The list names
+  people by handle, and an identity that has never claimed one has nothing to
+  match. The add route says so explicitly; there is no invite-by-link path.
+- **W4 — Adding someone mid-session does not retroactively free them.** Their
+  current paid session runs to completion and the next join is free. This is
+  the same rule as removal, chosen so neither direction can strand or refund a
+  hold half-way through. Documented in the UI.
+
+### Fragility this exposed (pre-existing, NOT caused by this work)
+- **W5 — Several gates spawn a DEV-mode server and then sleep a fixed 2.5–9s
+  before their first request.** On this machine a warm dev server takes
+  **132 seconds** to answer (measured), so those gates cannot pass here — and
+  worse, `_gate-dashboard-phase1` *appeared* to pass on trunk only because a
+  stale server from an earlier run was still holding its port. That is exactly
+  the zombie-server failure `_gate-helpers.mjs` was written to prevent, and
+  these gates predate it and do not use it. Affected:
+  `_gate-dashboard-phase1`, `_gate-phase1`, `_gate-phase2`, `_gate-ui-part-a`,
+  `_gate-rewards-part-b`, `_gate-lazy-connect`, and the 9s family
+  (`_gate-browse-deck`, `_gate-cohost-booth`, `_gate-free-megachat`,
+  `_gate-p1-features`, `_gate-polish`, `_gate-lk-phase1..3`,
+  `_gate-cam-autoswitch`, `_gate-browse-thumb`, `_gate-bounty-claim`).
+  Fix is mechanical: port them to `startGateServer`, which polls readiness and
+  refuses to run against a port it did not open.
+- **W6 — Two false greens were found inside the new gate while writing it**,
+  both worth remembering because they are the standard shape of this mistake:
+  it pointed `RPC_URL` at its mock while the server reads `TEMPO_RPC_URL`, so
+  the "zero transfer calls" section first passed against **zero recorded
+  calls**; and the cap section filled the list to exactly the limit without
+  ever attempting the add that should be refused. Both now assert positively —
+  section H records 9 real calls and asserts none of them move money.

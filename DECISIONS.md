@@ -421,3 +421,14 @@ reason than "the API is expensive".
   stub live stream carrying real overlay badges: tier 2 auto-verifies, tier 4
   opens a review naming every cause, and the no-OBS streamer verifies and is
   paid the same (10 vs 10). Undo: n/a (evidence).
+
+## Guest whitelist (2026-09-05, `feat/guest-whitelist`)
+
+- **Seat contention: a guest seat rides ON TOP of `maxSeats`, it never takes a chair and never waits.** The three options were bump a payer (they paid — no), queue like everyone else, or reserve capacity. Reserving won because the codebase already had exactly this seat: `setSeatPinned` gives a co-host a free seat that the cap check skips, and the meter ignores. A whitelisted guest is that seat, granted at join instead of promoted mid-session, so there is one free-seat concept in the system rather than two that can disagree. Queueing was the runner-up and is defensible; it was rejected because "come and go as they please" is the entire point of the feature, and a co-host who has to wait for a stranger to leave does not have that. Undo: pass `pinned: false` in `tryWhitelistJoin`, and guests queue like anyone else.
+- **The check reads the SEALED identity cookie, never a handle from the request body.** Anything client-asserted would make the free path forgeable by editing one JSON field. Undo: n/a (this is the security property).
+- **It short-circuits at the TOP of the join path rather than bypassing the payment step.** Two reasons: a guest must never be shown a payment prompt at all, and a bypass that fires part-way through can leave a half-opened hold behind. Undo: n/a.
+- **The whitelist does NOT override a stopped room.** Price, seat cap, join-stream-off and the watch-time gate are all overridden, but `addParticipant` still refuses when the room is not accepting joins — that is the absence of a room to join, not a gate on the person. Undo: n/a.
+- **Per streamer, not per room** — keyed by the same `ownerKey` rooms carry, so a co-host added once works in every room that streamer opens. Undo: key the store by roomId.
+- **Master switch is tri-state on disk** (`null` = derive from whether the list is non-empty, explicit `true`/`false` = the streamer's choice). This makes the first add work without a second click while letting an explicit "off" survive adding someone. Undo: store a plain boolean defaulting to true.
+- **No room-password path on the management routes** — the room password is shared with mods to run one room, and this list silently applies to every room the account owns. Identity cookie only. Undo: add `verifyRoomAccess` to `whitelist-routes.js`.
+- **Cap defaults to 20 (`GUEST_WHITELIST_MAX`)** — a co-host bench and a circle of regulars, not a way to run a free room at scale. Undo: raise the env var.
