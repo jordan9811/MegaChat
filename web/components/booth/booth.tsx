@@ -213,7 +213,7 @@ function PoolTile({ pool }: { pool: BountyPool }) {
 function InviteTile() {
   return (
     <Link
-      href="/dashboard?new=1"
+      href="/dashboard"
       className="flex min-h-[150px] flex-col items-center justify-center gap-2.5 border border-dashed border-[rgba(242,242,244,0.3)] px-4 text-center transition-colors hover:border-[var(--mcb-accent)] md:min-h-0"
     >
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--mcb-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -342,7 +342,7 @@ export function Booth({
           <Link href="/how-it-works" className="hidden hover:text-white md:inline">
             How it works
           </Link>
-          <Link href="/dashboard?new=1" className="border border-[var(--mcb-accent)] px-3 py-2 font-[700] text-[var(--mcb-accent)] hover:bg-[rgba(58,232,255,0.1)]">
+          <Link href="/dashboard" className="border border-[var(--mcb-accent)] px-3 py-2 font-[700] text-[var(--mcb-accent)] hover:bg-[rgba(58,232,255,0.1)]">
             Create room
           </Link>
           <AccountChip />
@@ -362,7 +362,7 @@ export function Booth({
               </span>
               <a href="/demo" className="text-[20px] font-semibold text-[var(--mcb-accent)]">Try the demo room</a>
               <Link
-                href="/dashboard?new=1"
+                href="/dashboard"
                 className="mt-1 bg-[var(--mcb-accent)] px-5 py-2.5 text-[13.5px] font-[700] text-[#050609]"
               >
                 Open a room

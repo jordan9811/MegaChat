@@ -207,7 +207,7 @@ export default function HowItWorksPage() {
             <a href="/how-it-works" aria-current="page">How it works</a>
           </nav>
           <span className="mch-product-actions">
-            <a href="/dashboard?new=1">Create room</a>
+            <a href="/dashboard">Create room</a>
             <AccountChip accent="var(--mcc-accent)" />
           </span>
         </div>
@@ -258,7 +258,7 @@ export default function HowItWorksPage() {
         <section className="mch-cta">
           <div><p>Choose a live room or open your own.</p><div>
               <a href="/app">Browse rooms</a>
-              <a href="/dashboard?new=1">Create room</a>
+              <a href="/dashboard">Create room</a>
             </div>
           </div>
         </section>

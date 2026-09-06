@@ -351,7 +351,7 @@ export function BountyProgram() {
             <a href="/how-it-works">How it works</a>
           </nav>
           <span className="mcb-product-actions">
-            <a href="/dashboard?new=1">Create room</a>
+            <a href="/dashboard">Create room</a>
             <AccountChip accent="var(--mcc-accent)" />
           </span>
         </div>
