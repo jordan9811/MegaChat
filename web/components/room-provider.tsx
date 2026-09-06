@@ -23,6 +23,7 @@ import {
   getRoomSession,
   updateRoom,
   setRoomActive,
+  endRoom as apiEndRoom,
   kickSeat as apiKickSeat,
   pinSeat as apiPinSeat,
   getPublicConfig,
@@ -177,6 +178,9 @@ type RoomContextValue = {
   create: (password?: string) => Promise<void>
   unlock: (roomId: string, password: string) => Promise<void>
   toggleActive: () => Promise<void>
+  /** END the open room: delete it (seats cleared + refunded) and return to a
+   *  clean slate — the create form, or the picker if other rooms remain. */
+  endRoom: () => Promise<void>
   kick: (seatId: string) => Promise<void>
   pin: (seatId: string, pinned: boolean) => Promise<void>
   switchRoom: () => void
@@ -573,6 +577,10 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     try {
       const d = await listMyRooms()
       setMyRooms(d.rooms)
+      // The ref only catches up on the next render, but endRoom seeds the
+      // fresh draft synchronously right after this — against the stale list
+      // it offered yourname_2 for a room that no longer existed.
+      myRoomsRef.current = d.rooms
     } catch {
       /* signed out or offline — leave the list as-is */
     }
@@ -684,6 +692,30 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       if (err instanceof ApiError && err.status === 401) switchRoom()
     }
   }, [room, switchRoom])
+
+  // END the room: delete it server-side (live seats cleared + refunded), then
+  // return the UI to a clean slate. switchRoom() drops us out of managing —
+  // and because the deleted room is no longer in myRooms, the settings surface
+  // lands on the room picker if others remain, or the create form if not.
+  const endRoom = useCallback(async () => {
+    const roomId = roomIdRef.current
+    if (!roomId) return
+    try {
+      await apiEndRoom(roomId, passwordRef.current || undefined)
+      try {
+        const saved = JSON.parse(localStorage.getItem('mc-last-room') || 'null')
+        if (saved?.id === roomId) localStorage.removeItem('mc-last-room')
+      } catch { /* storage optional */ }
+      await refreshMyRooms()
+      // Do not auto-reopen a room on the next load — the person just cleared
+      // this one on purpose.
+      autoOpenedRef.current = true
+      switchRoom()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) switchRoom()
+      else throw err
+    }
+  }, [refreshMyRooms, switchRoom])
 
   const kick = useCallback(
     async (seatId: string) => {
@@ -831,13 +863,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       create,
       unlock,
       toggleActive,
+      endRoom,
       kick,
       pin,
       switchRoom,
       lettersAdmin,
       hostToken,
     }),
-    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
+    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, endRoom, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

@@ -6,6 +6,7 @@ import {
   createRoomWithPassword,
   updateRoom,
   setRoomActive,
+  deleteRoom,
   normalizeRoomId,
   verifyRoomPassword,
   setRoomPassword,
@@ -295,6 +296,34 @@ export function attachDashboardRoutes(app, deps) {
     if (!room) return res.status(404).json({ error: 'Room not found' });
     console.log(`[dashboard] room ${room.id} stopped (no new joins)`);
     res.json({ room });
+  });
+
+  // END a room — the clean-slate action, distinct from stop/pause.
+  //
+  // Stop just flips `active` so no NEW seats join; the room, its config, its
+  // handle and everyone already on camera all persist. End DELETES the room:
+  // every live seat is removed first (which refunds its prepaid USDC and drops
+  // it from the SFU — see removeParticipant), the record is gone from the
+  // store, and the handle is freed. Irreversible, so the UI two-step confirms
+  // before calling this. deleteRoom refuses the default/demo room by id, which
+  // is the last-ditch guard if a bad id ever reaches here.
+  app.delete('/api/dashboard/rooms/:roomId', requireRoomAccess, (req, res) => {
+    const id = req.roomId;
+    let removed = 0;
+    for (const seat of [...activeSeats.values()]) {
+      if (seat.streamRoomId !== id) continue;
+      removeParticipant(seat.id, 'room_ended');
+      removed++;
+    }
+    const ok = deleteRoom(id);
+    if (!ok) {
+      return res.status(400).json({
+        error: 'This room cannot be ended.',
+        hint: 'The default and demo rooms are permanent.',
+      });
+    }
+    console.log(`[dashboard] room ${id} ENDED — deleted, ${removed} seat(s) cleared`);
+    res.json({ ok: true, ended: id, seatsCleared: removed });
   });
 
   app.post('/api/dashboard/rooms/:roomId/kick/:seatId', requireRoomAccess, (req, res) => {

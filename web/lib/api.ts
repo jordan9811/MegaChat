@@ -287,6 +287,16 @@ export function setRoomActive(roomId: string, password: string, active: boolean)
   )
 }
 
+// END a room: delete it, clearing live seats (each refunded). Distinct from
+// setRoomActive(false), which only pauses new joins. Owner opens with no
+// password (identity cookie authorizes); a mod passes the room password.
+export function endRoom(roomId: string, password?: string) {
+  return request<{ ok: true; ended: string; seatsCleared: number }>(
+    `/api/dashboard/rooms/${encodeURIComponent(roomId)}`,
+    { method: 'DELETE', password },
+  )
+}
+
 export function kickSeat(roomId: string, password: string, seatId: string) {
   return request<{ success: boolean }>(
     `/api/dashboard/rooms/${encodeURIComponent(roomId)}/kick/${encodeURIComponent(seatId)}`,

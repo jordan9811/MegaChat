@@ -136,9 +136,6 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
           <a href="/dashboard" role="menuitem" className="block px-2.5 py-2 text-[13px] text-white hover:bg-white/10">
             Your room
           </a>
-          <a href="/dashboard" role="menuitem" className="block px-2.5 py-2 text-[13px] text-white hover:bg-white/10">
-            Open a new room
-          </a>
           <button
             type="button"
             role="menuitem"
