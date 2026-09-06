@@ -52,19 +52,15 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 /* the display face for headlines and the wordmark; mono for readouts */
 .mcl-brand,
 .mcl-h1,
-.mcl-tag,
 .mcl-entry-card h3,
 .mcl-bounty-poster h2,
 .mcl-create-strip h2,
-.mcl-pool-row > i,
+.mcl-thumb i,
 .mcl-footer > span {
   font-family: var(--font-display), var(--font-ui), system-ui, sans-serif;
 }
 
 .mcl-coordinate,
-.mcl-lbl,
-.mcl-chip,
-.mcl-meter,
 .mcl-card-top > span,
 .mcl-entry-card strong,
 .mcl-mini-board > header,
@@ -171,58 +167,6 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   pointer-events: none;
 }
 
-.mcl-chip {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: rgba(5, 6, 9, 0.62);
-  color: var(--mcl-cyan);
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.mcl-chip i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--mcl-cyan);
-  box-shadow: 0 0 8px var(--mcl-cyan);
-}
-
-.mcl-meter {
-  position: absolute;
-  left: 16px;
-  bottom: 20px;
-  z-index: 2;
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 8px 12px;
-  border-left: 2px solid var(--mcl-yellow);
-  background: rgba(5, 6, 9, 0.68);
-  color: var(--mcl-fg);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.mcl-meter b {
-  color: var(--mcl-yellow);
-  font-weight: 700;
-}
-
-.mcl-meter small {
-  color: var(--mcl-dim);
-  font-size: 9.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .mcl-film-ctl {
   position: absolute;
   right: 16px;
@@ -298,50 +242,6 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   text-shadow:
     0 0 18px rgba(255, 45, 120, 0.55),
     0 0 48px rgba(255, 45, 120, 0.25);
-}
-
-.mcl-arewe {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-}
-
-.mcl-lbl {
-  color: var(--mcl-dim);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.mcl-tag {
-  padding: 7px 13px;
-  border: 1.5px solid;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.mcl-tag-watch {
-  border-color: rgba(58, 232, 255, 0.65);
-  color: var(--mcl-cyan);
-  box-shadow:
-    0 0 18px -6px var(--mcl-cyan),
-    inset 0 0 12px -8px var(--mcl-cyan);
-}
-
-.mcl-tag-play {
-  border-color: rgba(255, 45, 120, 0.65);
-  color: var(--mcl-pink);
-  box-shadow:
-    0 0 18px -6px var(--mcl-pink),
-    inset 0 0 12px -8px var(--mcl-pink);
-}
-
-.mcl-or {
-  color: var(--mcl-dim);
-  font-size: 12px;
 }
 
 .mcl-sub {
@@ -583,7 +483,25 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   font-size: 12px;
 }
 
-.mcl-pool-row > i {
+/* One 40px slot, two sources: the streamer's real photo when we have it, a
+   monogram when we do not. The platform pip corners it so a row says who and
+   where without a second line. */
+.mcl-thumb {
+  position: relative;
+  display: block;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.mcl-thumb img {
+  display: block;
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+}
+
+.mcl-thumb i {
   display: grid;
   width: 40px;
   height: 40px;
@@ -594,6 +512,23 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   font-size: 14px;
   font-style: normal;
   font-weight: 800;
+}
+
+.mcl-thumb b {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  background: var(--mcl-panel-2);
+}
+
+.mcl-thumb b svg {
+  width: 11px;
+  height: 11px;
+  fill: var(--mcl-muted);
 }
 
 .mcl-pool-row > p {
@@ -771,9 +706,6 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   .mcl-h1 { font-size: 38px; }
   .mcl-ctas { flex-direction: column; align-items: stretch; }
   .mcl-btn-primary, .mcl-btn-ghost { justify-content: center; text-align: center; }
-  .mcl-chip { top: 12px; left: 12px; }
-  .mcl-meter { left: 12px; bottom: 14px; padding: 6px 10px; font-size: 11.5px; }
-  .mcl-meter small { display: none; }
   .mcl-film-ctl { right: 12px; bottom: 14px; }
   .mcl-entry, .mcl-bounty-poster, .mcl-mini-board { padding-right: 20px; padding-left: 20px; }
   .mcl-create-strip { flex-direction: column; align-items: stretch; gap: 20px; padding: 40px 20px 44px; }

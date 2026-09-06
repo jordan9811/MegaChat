@@ -16,15 +16,6 @@ import { PLATFORMS, PlatformMark } from './landing-platforms'
 // to its own shape, so nothing important is cropped off the top — the old
 // full-bleed hero lost a quarter of the frame on a wide monitor.
 
-// The meter over the film reads the film's own clock at a nominal rate, so
-// the number the page makes its promise with is a number you watch tick.
-const METER_RATE = 0.0033
-
-function clock(t: number): string {
-  const s = Math.max(0, Math.floor(t))
-  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
-}
-
 export function LandingHero() {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [ended, setEnded] = useState(false)
@@ -32,7 +23,6 @@ export function LandingHero() {
   // Someone who asked their OS for less motion should not be handed a
   // 10-second autoplaying film; they get the poster and an explicit play.
   const [reduced, setReduced] = useState(false)
-  const [time, setTime] = useState(0)
   const [progress, setProgress] = useState(0)
 
   useEffect(() => {
@@ -86,19 +76,12 @@ export function LandingHero() {
           onPause={() => setPlaying(false)}
           onTimeUpdate={(e) => {
             const v = e.currentTarget
-            setTime(v.currentTime)
             setProgress(v.duration > 0 ? v.currentTime / v.duration : 0)
           }}
           className="mcl-film-media"
         />
         <div aria-hidden="true" className="mcl-film-hold" style={{ opacity: ended ? 0.22 : 0 }} />
         <div aria-hidden="true" className="mcl-film-shade" />
-        <span className="mcl-chip"><i aria-hidden="true" />Launch film</span>
-        <div className="mcl-meter" aria-hidden="true">
-          <span>{clock(time)}</span>
-          <b>${(time * METER_RATE).toFixed(2)}</b>
-          <small>per-second</small>
-        </div>
         <div className="mcl-film-ctl">
           {/* pause exists whenever the film is running: an autoplaying video
               with no stop control is a WCAG 2.2.2 failure */}
@@ -138,12 +121,6 @@ export function LandingHero() {
           <span className="mcl-r1">SKIP THE CHAT.</span>
           <span className="mcl-r2 mcl-neon">BE THE STREAM.</span>
         </h1>
-        <div className="mcl-arewe mcl-r2">
-          <span className="mcl-lbl">Are you a</span>
-          <span className="mcl-tag mcl-tag-watch">Watcher</span>
-          <span className="mcl-or">or</span>
-          <span className="mcl-tag mcl-tag-play">Player</span>
-        </div>
         <p className="mcl-sub mcl-r3">Camera seats on live broadcasts, billed by the second.</p>
         <div className="mcl-ctas mcl-r3">
           <Link href="/app" className="mcl-btn-primary">Enter MegaChat</Link>

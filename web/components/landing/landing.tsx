@@ -13,6 +13,7 @@ import type { PublicRoomCard } from '@/lib/api'
 import type { BountyPool } from '@/lib/bounty-api'
 import { formatDollars } from '@/lib/display-format'
 import { BrandText } from '@/components/brand-text'
+import { PoolThumb } from './pool-thumb'
 import { LandingHero } from './landing-hero'
 import './landing.css'
 
@@ -102,7 +103,6 @@ export function Landing({
 
         <section className="mcl-bounty">
           <div className="mcl-bounty-poster">
-            <span className="mcl-coordinate mcl-coordinate-pink">// The bounty board</span>
             <h2>Your favorite streamer<br />doesn&apos;t even know you.</h2>
             <p>Be more than a username.</p>
             <Link href="/bounty">Browse bounties <ArrowRight size={16} aria-hidden="true" /></Link>
@@ -112,7 +112,7 @@ export function Landing({
             {boardPools.length > 0 ? boardPools.map((pool, index) => (
               <Link key={pool.handleKey} href={poolHref(pool)} className="mcl-pool-row">
                 <span>{String(index + 1).padStart(2, '0')}</span>
-                <i>{(pool.handle || pool.handleKey).charAt(0).toUpperCase()}</i>
+                <PoolThumb handle={pool.handle || pool.handleKey} platform={pool.platform} avatarUrl={pool.avatarUrl} />
                 <p><strong>{pool.handle || pool.handleKey}</strong><small>{pool.platform || 'unlisted'} / {pool.contributionCount} backer{pool.contributionCount === 1 ? '' : 's'}</small></p>
                 <b>{formatDollars(pool.remaining)}{pool.displayOnly ? ' example' : ''}</b>
               </Link>
@@ -133,7 +133,7 @@ export function Landing({
         </section>
 
         <section className="mcl-create-strip">
-          <div><span className="mcl-coordinate mcl-coordinate-cyan">// For streamers</span><h2>Open a room.</h2><p>Set your rate, connect OBS, and decide how viewers can join.</p></div>
+          <div><h2>Open a room.</h2><p>Set your rate, connect OBS, and decide how viewers can join.</p></div>
           <Link href="/dashboard?new=1">Create room <ArrowRight size={16} aria-hidden="true" /></Link>
         </section>
       </main>

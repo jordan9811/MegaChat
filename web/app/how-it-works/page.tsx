@@ -13,9 +13,6 @@ import {
   Share2,
   Users,
   Sparkles,
-  Wallet,
-  RefreshCcw,
-  Zap,
 } from 'lucide-react'
 import { AccountChip } from '@/components/account-chip'
 import { contactUrl } from '@/components/site-footer'
@@ -35,14 +32,6 @@ const ui = Plus_Jakarta_Sans({
   weight: ['400', '500', '600', '700', '800'],
   variable: '--font-ui',
 })
-
-// Spec strip — the rails below, in four numbers.
-const STATS = [
-  { value: 'Per-second', label: 'live-seat billing', simpleLabel: 'live-seat billing' },
-  { value: 'One tap', label: 'Passkey to live', simpleLabel: 'sign-in to live' },
-  { value: 'Your cap', label: 'maximum spend set up front', simpleLabel: 'maximum spend set up front' },
-  { value: 'On-chain', label: 'Tempo network', simpleLabel: 'always verifiable' },
-]
 
 const VIEWER_STEPS = [
   {
@@ -120,51 +109,6 @@ const STREAMER_STEPS = [
   },
 ]
 
-// The three clocks, in plain words. Card two is the claim that matters, so it
-// carries the accent rail.
-const CLOCK = [
-  {
-    title: 'Spectating is delayed',
-    body: 'The broadcast you watch runs a touch behind reality — every big platform buffers like that, for every viewer. Nothing here changes it.',
-  },
-  {
-    title: 'Going live is instant',
-    lead: true,
-    body: 'Your camera doesn’t ride the broadcast — it rides MegaChat’s own connection, straight to the streamer, in well under a second. You two talk in real time; the broadcast relays your moment to everyone else at its usual delay.',
-  },
-  {
-    title: 'MegaChats skip the clock',
-    body: 'A MegaChat is recorded, so delay can’t touch it. Record your take, send it, and watch it pop onto the stream like everyone else does.',
-  },
-]
-
-const RAILS = [
-  {
-    icon: Fingerprint,
-    title: 'One-tap accounts',
-    body: 'Email, passkey, or socials spin up an embedded wallet on Tempo — nothing to install or back up.',
-    simpleBody: 'Sign in with email, a passkey, or your socials — your account and balance are ready instantly.',
-  },
-  {
-    icon: Zap,
-    title: 'True per-second settlement',
-    body: 'Live seats bill through TIP-1034 payment channels: one on-chain escrow, then signed off-chain vouchers every second. No lump sums, no subscriptions.',
-    simpleBody: 'Live seats bill only for the seconds you are on camera, up to the spend limit you approved.',
-  },
-  {
-    icon: RefreshCcw,
-    title: 'Unused money is your money',
-    body: 'The session cap is a ceiling, not a price. Leave early and the unspent escrow refunds straight back to your wallet on close.',
-    simpleBody: 'The cap is a ceiling, not a price. Leave early and your unused balance stays yours.',
-  },
-  {
-    icon: Wallet,
-    title: 'Prefer MetaMask?',
-    body: 'A secondary path meters through a one-time allowance on Tempo. Same seat, same refund guarantee.',
-    simpleBody: 'Power users can bring their own wallet — same seats, same refunds.',
-  },
-]
-
 const FAQ = [
   {
     q: 'Do I need a crypto wallet?',
@@ -214,18 +158,16 @@ type Step = {
 
 function FlowColumn({
   kind,
-  title,
   body,
   steps,
 }: {
   kind: 'viewer' | 'streamer'
-  title: string
   body: string
   steps: Step[]
 }) {
   return (
     <section className={`mch-flow is-${kind}`}>
-      <header><span>{kind === 'viewer' ? '01' : '02'}</span><div><h2>{title}</h2><p>{body}</p></div></header>
+      <header><p>{body}</p></header>
       <ol>
       {steps.map((s, i) => (
         <li key={s.title}>
@@ -279,64 +221,20 @@ export default function HowItWorksPage() {
         </section>
 
         <section className="mch-tree-section">
-          <div className="mch-tree-root">
-            <span className="mch-coordinate">Start here</span>
-            <h2>One room. Two sides.</h2>
-            <p>The viewer joins. The streamer decides what the room accepts.</p>
+          <div className="mch-arewe">
+            <span className="mch-arewe-lead">Are you a</span>
+            <span className="mch-tag is-chatter">Chatter</span>
+            <span className="mch-arewe-or">or</span>
+            <span className="mch-tag is-streamer">Streamer</span>
           </div>
-          <div className="mch-tree-branch" aria-hidden="true"><i /><i /><i /></div>
           <div className="mch-flow-grid">
-            <FlowColumn kind="viewer" title="Viewer" body="Enter a room, choose a format, and approve the maximum cost before anything starts." steps={VIEWER_STEPS} />
-            <FlowColumn kind="streamer" title="Streamer" body="Open a room, set the terms, add the overlay, and run the broadcast." steps={STREAMER_STEPS} />
+            <FlowColumn kind="viewer" body="Enter a room, choose a format, and approve the maximum cost before anything starts." steps={VIEWER_STEPS} />
+            <FlowColumn kind="streamer" body="Open a room, set the terms, add the overlay, and run the broadcast." steps={STREAMER_STEPS} />
           </div>
           <div className="mch-tree-result">
             <span className="mch-coordinate">Result</span>
             <h2>A camera seat on the broadcast.</h2>
             <p>Real-time between viewer and streamer. Public stream timing remains unchanged.</p>
-          </div>
-        </section>
-
-        <section className="mch-clock-section">
-          <div>
-            <SectionHeading label="The clock" title="Why you’re never actually late" />
-            <div className="mch-clock-grid">
-              {CLOCK.map((c) => (
-                <div key={c.title} className={c.lead ? 'is-lead' : undefined}>
-                  <h3>{c.title}</h3>
-                  <p>{c.body}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="mch-rails-section">
-          <div>
-            <SectionHeading label="Under the hood" title="The rails it runs on" />
-            <div className="mch-rails-grid">
-              {RAILS.map((r) => (
-                <div key={r.title}>
-                  <r.icon className="mch-rail-icon" />
-                  <h3>{r.title}</h3>
-                  <p>
-                    <span className="adv-only">{r.body}</span>
-                    <span className="simple-only">{r.simpleBody}</span>
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <dl className="mch-stats">
-              {STATS.map((s) => (
-                <div key={s.label}>
-                  <dt>{s.value}</dt>
-                  <dd>
-                    <span className="adv-only">{s.label}</span>
-                    <span className="simple-only">{s.simpleLabel}</span>
-                  </dd>
-                </div>
-              ))}
-            </dl>
           </div>
         </section>
 

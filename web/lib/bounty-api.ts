@@ -7,6 +7,9 @@ import { withBountyExamples } from './bounty-examples'
 
 export type BountyPool = {
   displayOnly?: boolean
+  /** Profile photo, server-fetched and cached; null when that platform has no
+   *  image API (X, Rumble) or the fetch failed — callers draw a monogram. */
+  avatarUrl?: string | null
   handleKey: string
   platform: string | null
   handle: string | null
