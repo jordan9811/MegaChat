@@ -37,6 +37,7 @@ import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
 import { attachBountyRoutes, makeClipHooks } from './bounty-routes.js';
 import { verifyRoomAccess, readIdentityFromRequest } from './auth.js';
 import { isWhitelisted, recordJoin as recordWhitelistJoin } from './guest-whitelist.js';
+import { attachWhitelistRoutes } from './whitelist-routes.js';
 import {
   toAtomic,
   fromAtomic,
@@ -2433,6 +2434,10 @@ attachDashboardRoutes(app, {
   setSeatPinned,
   atomicToUsdc,
 });
+
+// Guest whitelist management — account-scoped, so it is attached next to the
+// dashboard routes but takes no roomId and no room password.
+attachWhitelistRoutes(app);
 
 await migrateLegacyRoomPasswords();
 
