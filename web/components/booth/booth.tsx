@@ -6,6 +6,7 @@ import { listPublicRooms, type PublicRoomCard } from '@/lib/api'
 import { listBountyPools, type BountyPool } from '@/lib/bounty-api'
 import { AccountChip } from '@/components/account-chip'
 import { PlatformPip } from '@/components/platform-pip'
+import { TwitchPreview } from '@/components/twitch-preview'
 import { formatDollars } from '@/lib/display-format'
 import { roomPresentation } from '@/lib/room-browse'
 import './booth.css'
@@ -62,19 +63,18 @@ function platformLabel(p: string): string {
   return p.charAt(0).toUpperCase() + p.slice(1)
 }
 
-function twitchChannel(room: PublicRoomCard): string | null {
-  const c = room.twitchChannel?.trim().replace(/^@/, '').toLowerCase()
-  return c && room.twitchLive ? c : null
-}
-
 function initial(name: string): string {
   return (name.trim().charAt(0) || '?').toUpperCase()
 }
 
-/** The card's media: a real Twitch preview when the channel is up, the house
- *  stage glow when it isn't. Scanlines sit over both so one grammar reads.
- *  `linked` only on the featured card — a grid card is one big anchor
- *  already, and an anchor inside an anchor is not markup a browser keeps. */
+/** The card's media: a real Twitch preview when the channel is up AND Twitch
+ *  actually has a frame for it, the house stage glow otherwise. "Otherwise"
+ *  covers more than offline — a channel can be live while the CDN is still
+ *  serving a black still for the size this card wants, and that falls through
+ *  to the glow too. TwitchPreview owns both judgements. Scanlines sit over
+ *  either outcome so one grammar reads. `linked` only on the featured card —
+ *  a grid card is one big anchor already, and an anchor inside an anchor is
+ *  not markup a browser keeps. */
 function Stage({
   room,
   hero = false,
@@ -84,28 +84,24 @@ function Stage({
   hero?: boolean
   linked?: boolean
 }) {
-  const channel = twitchChannel(room)
   const { state, rate, full } = roomPresentation(room)
-  // ~2-minute cache-bust bucket — Twitch serves a stale still otherwise.
-  const bust = Math.floor(Date.now() / 120000)
   const Tag = linked ? 'a' : 'span'
   return (
     <Tag
       {...(linked ? { href: roomHref(room), 'aria-label': room.name } : {})}
       className="mcr-stage"
     >
-      {channel ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          key={bust}
-          src={`https://static-cdn.jtvnw.net/previews-ttv/live_user_${channel}-${hero ? '1280x720' : '440x248'}.jpg?b=${bust}`}
-          alt=""
-          loading="lazy"
-          onError={(e) => {
-            e.currentTarget.style.display = 'none'
-          }}
-        />
-      ) : null}
+      {/* Renders nothing at all when the channel is offline or has no usable
+          frame, which is what lets the stage's own glow act as the fallback.
+          It has to stay FIRST here: neither the picture nor the scanlines nor
+          the tags carry a z-index, so DOM order alone decides that the chrome
+          paints over the picture rather than under it. Liveness and channel
+          normalization both live inside the component — do not re-gate here. */}
+      <TwitchPreview
+        channel={room.twitchChannel}
+        live={room.twitchLive}
+        size={hero ? 'hero' : 'card'}
+      />
       <span className="mcr-scan" aria-hidden="true" />
       <span className="mcr-tags">
         <span className={`mcr-tag ${onAir(room) ? 'is-live' : full ? 'is-full' : ''}`}>

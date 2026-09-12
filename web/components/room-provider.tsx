@@ -153,6 +153,11 @@ type RoomContextValue = {
   seats: Seat[]
   joinUrl: string | null
   overlayUrl: string | null
+  /** Server-verified liveness of the room's SAVED Twitch channel. The probe
+   *  is lazy with a 90s TTL, so a cold first load answers false for a channel
+   *  that is live and flips true on the next poll: false means "no picture to
+   *  show yet", never "you are offline". */
+  twitchLive: boolean
   draft: ConfigDraft
   usdcAddress: string
   livekitConfigured: boolean
@@ -314,6 +319,9 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const [seats, setSeats] = useState<Seat[]>([])
   const [joinUrl, setJoinUrl] = useState<string | null>(null)
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
+  // Server-verified: is the room's saved Twitch channel actually broadcasting.
+  // Session state, not config — it changes without the owner touching the form.
+  const [twitchLive, setTwitchLive] = useState(false)
   const [draft, setDraft] = useState<ConfigDraft>(DEFAULT_DRAFT)
   const [usdcAddress, setUsdcAddress] = useState(USDC_FALLBACK)
   const [livekitConfigured, setLivekitConfigured] = useState(false)
@@ -533,6 +541,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     setSeats([])
     setJoinUrl(null)
     setOverlayUrl(null)
+    setTwitchLive(false)
     // Start the create form from defaults, not from the room just closed.
     draftTouchedRef.current = false
     if (!identityHandleRef.current) guestHandleRef.current = ''
@@ -548,6 +557,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       setSeats(data.seats)
       setJoinUrl(data.joinUrl)
       setOverlayUrl(data.overlayUrl)
+      setTwitchLive(data.twitchLive === true)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) switchRoom()
     }
@@ -847,6 +857,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       seats,
       joinUrl,
       overlayUrl,
+      twitchLive,
       draft,
       usdcAddress,
       livekitConfigured,
@@ -870,7 +881,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       lettersAdmin,
       hostToken,
     }),
-    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, endRoom, kick, pin, switchRoom, lettersAdmin, hostToken],
+    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, twitchLive, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, endRoom, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

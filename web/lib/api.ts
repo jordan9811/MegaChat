@@ -98,6 +98,10 @@ export type Seat = {
 export type RoomSession = {
   room: Room
   seats: Seat[]
+  /** True only when room.twitchChannel is actually live (server-verified).
+   *  Twitch answers for an offline channel with a gray placeholder frame at
+   *  HTTP 200, so an <img> can never tell — render the preview only on this. */
+  twitchLive: boolean
   joinUrl: string
   overlayUrl: string
 }

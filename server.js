@@ -2317,6 +2317,9 @@ attachDashboardRoutes(app, {
   removeParticipant,
   setSeatPinned,
   atomicToUsdc,
+  // Shared with the browse directory on purpose: one cache, one probe budget.
+  // The manage page needs the same server-verified answer the browse cards get.
+  twitchLiveCached,
 });
 
 await migrateLegacyRoomPasswords();

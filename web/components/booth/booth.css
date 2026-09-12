@@ -119,6 +119,11 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 
 /* ── media stage ────────────────────────────────────────────────────── */
 
+/* position/aspect-ratio are load-bearing, not decoration: <TwitchPreview>
+   paints itself absolutely over this box and contributes no height of its
+   own, so the box has to be positioned and has to size itself. The gradient
+   is the fallback art — it is simply what shows through whenever the preview
+   decides it has no real frame to render. */
 .mcr-stage {
   position: relative;
   display: block;
@@ -128,14 +133,6 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
     radial-gradient(ellipse 70% 70% at 50% 110%, rgba(58, 232, 255, 0.28), transparent 65%),
     radial-gradient(ellipse 45% 55% at 12% 0%, rgba(255, 45, 120, 0.26), transparent 60%),
     #07090f;
-}
-
-.mcr-stage img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 /* Scanlines read as a signal rather than a still, and they sit over the

@@ -62,6 +62,7 @@ export function attachDashboardRoutes(app, deps) {
     removeParticipant,
     setSeatPinned,
     atomicToUsdc,
+    twitchLiveCached,
   } = deps;
 
   // Owner-by-identity (signed-in cookie) OR the room password (shared mods).
@@ -246,6 +247,12 @@ export function attachDashboardRoutes(app, deps) {
     res.json({
       room,
       seats,
+      // Runtime state, not config — it sits beside seats rather than on room,
+      // which is the shape the owner edits and PUTs back. Same cached probe the
+      // browse cards use, so the manage page can show the owner the exact
+      // preview viewers get without a second hit on Twitch. Lazy by design:
+      // false on a cold cache, true on the next poll.
+      twitchLive: room.twitchChannel ? twitchLiveCached(room.twitchChannel) : false,
       joinUrl: `${deps.baseUrl}/?room=${room.id}`,
       overlayUrl: `${deps.baseUrl}/overlay?room=${room.id}`,
     });
