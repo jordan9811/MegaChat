@@ -4,31 +4,37 @@
 // the streamer's channel.
 //
 // This exists because the thumbnail we WANT is not always the thumbnail that
-// exists. The server proves a channel is live by probing the 440x248 variant
-// (server.js refreshTwitchLive), but the hero card wants 1280x720, and Twitch
-// populates the larger variants later than the small one: measured on a
-// channel that was definitely live, 1280x720 came back HTTP 200 with a fully
-// black frame (max channel value 41) at the same instant 440x248 had real
-// picture. A 200 with a black body is indistinguishable from a good frame to
-// an <img>, so the only way to tell is to look at the pixels.
+// exists, and Twitch answers both failure modes with HTTP 200 and a valid
+// JPEG, so an <img> cannot tell any of them apart:
 //
-// So: walk candidate sizes largest-first, measure each one on a canvas, and
-// use the first that actually has picture in it. If none do, render nothing
-// and let the caller's own fallback art show through.
+//   1. BLACK. Measured on a channel that was definitely live: 1280x720 came
+//      back 200 with a fully black frame (max channel value 41) at the same
+//      instant 440x248 had real picture. The large variants populate later.
+//   2. THE OFFLINE PLACEHOLDER. For a dark channel Twitch REDIRECTS to
+//      ttv-static/404_preview-<size>.jpg — a gray camera glyph — and serves it
+//      at 200. It is not black (mean luminance ~85), so a pixel test alone
+//      waves it straight through. Measured 2026-09-12, when exactly that got
+//      painted onto a room card as if it were the stream.
+//
+// So each candidate is fetched rather than loaded: the response's final URL
+// catches the placeholder, and the decoded pixels catch the black frame. The
+// first candidate that survives both is rendered; if none do, this renders
+// nothing and the caller's own fallback art shows through.
 
 import { useEffect, useState } from 'react'
 
 // Twitch sends Cache-Control: max-age=300 on these images, so a bucket shorter
-// than 5 minutes does not actually buy fresher pixels from a cold cache — what
-// it buys is a new URL, which forces the browser to go ask again instead of
-// pinning whatever it got the first time. 2 minutes matches the bucket the
-// rooms board already used, and it is the interval on which a channel that was
-// black a minute ago gets re-checked and recovers on its own.
+// than 5 minutes does not buy fresher pixels from a cold cache — what it buys
+// is a new URL, which forces the browser to go ask again instead of pinning
+// whatever it got the first time. 2 minutes matches the bucket the rooms board
+// already used, and it is the interval on which a channel that was black a
+// minute ago gets re-checked and recovers on its own.
 const BUCKET_MS = 120000
 
-// Largest-first. 440x248 is always last because it is the exact variant the
-// server already proved is live — if even that one is blank the channel truly
-// has nothing to show yet, and guessing another size will not help.
+// Largest-first. 440x248 is last because it is the smallest and softest, not
+// because it is trustworthy: it is in fact the ONE variant that does not
+// redirect when a channel is dark, which is how a stale frame from it fooled
+// the server's liveness probe. The URL check below is what makes it safe.
 const SIZES: Record<'hero' | 'card', string[]> = {
   hero: ['1280x720', '640x360', '440x248'],
   card: ['440x248'],
@@ -36,10 +42,10 @@ const SIZES: Record<'hero' | 'card', string[]> = {
 
 // Mean luminance at or below this counts as "no picture yet". The measured
 // black frame was 0,0,0 mean with a single stray pixel at 41, so its mean
-// luminance rounds to ~0; two samples of real picture measured ~28 and ~80.
-// 6 sits in the empty gap between those, far enough above 0 to absorb the
-// JPEG noise in an almost-black frame and far enough below 28 that a genuinely
-// dark-but-real stream (a horror game, a black desktop) still renders.
+// luminance rounds to ~0; samples of real picture measured 26, 85 and 89.
+// 6 sits in the empty gap, far enough above 0 to absorb JPEG noise in an
+// almost-black frame and far enough below 26 that a genuinely dark-but-real
+// stream (a horror game, a black desktop) still renders.
 const BLANK_LUMA = 6
 
 // Small enough to be free, still 16:9 so the downscale samples the whole frame
@@ -51,26 +57,42 @@ function previewUrl(login: string, size: string, bucket: number) {
   return `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-${size}.jpg?b=${bucket}`
 }
 
-// Returns mean luminance 0-255, or null when the pixels could not be read at
-// all (a browser that blocks canvas reads, say). The CDN sends
-// Access-Control-Allow-Origin: *, so with crossOrigin='anonymous' the canvas
-// is NOT tainted and this normally just works.
-function meanLuma(img: HTMLImageElement): number | null {
+type Verdict = 'ok' | 'reject' | 'unknown'
+
+// 'reject' means we looked and there is nothing worth showing. 'unknown' means
+// we could not look at all — a blocked fetch, a browser that refuses the
+// canvas read — which is deliberately NOT the same answer, because blanking a
+// stream that is genuinely on air is a worse failure than the one this guards.
+async function inspect(url: string, signal: AbortSignal): Promise<Verdict> {
+  let res: Response
   try {
+    // The CDN sends Access-Control-Allow-Origin: *, so this is a normal CORS
+    // read and the pixels below are not tainted.
+    res = await fetch(url, { mode: 'cors', signal })
+  } catch {
+    return 'unknown'
+  }
+  if (!res.ok) return 'reject'
+  // The redirect is the only honest signal for a dark channel: the bytes that
+  // come back are a real JPEG either way.
+  if (/ttv-static|404_preview/i.test(res.url)) return 'reject'
+  try {
+    const bitmap = await createImageBitmap(await res.blob())
     const canvas = document.createElement('canvas')
     canvas.width = PROBE_W
     canvas.height = PROBE_H
     const ctx = canvas.getContext('2d', { willReadFrequently: true })
-    if (!ctx) return null
-    ctx.drawImage(img, 0, 0, PROBE_W, PROBE_H)
+    if (!ctx) return 'unknown'
+    ctx.drawImage(bitmap, 0, 0, PROBE_W, PROBE_H)
+    bitmap.close?.()
     const { data } = ctx.getImageData(0, 0, PROBE_W, PROBE_H)
     let sum = 0
     for (let i = 0; i < data.length; i += 4) {
       sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]
     }
-    return sum / (data.length / 4)
+    return sum / (data.length / 4) <= BLANK_LUMA ? 'reject' : 'ok'
   } catch {
-    return null
+    return 'unknown'
   }
 }
 
@@ -95,18 +117,16 @@ export function TwitchPreview({
   const [bucket, setBucket] = useState(() => Math.floor(Date.now() / BUCKET_MS))
   // Keyed by channel+size so a stale result from the previous channel can never
   // paint over the new one, and so the old frame survives a bucket refresh
-  // instead of flashing the fallback every two minutes. `cors` is false for a
-  // frame we are showing UNMEASURED — see the fail-open path below.
-  const [found, setFound] = useState<{ key: string; url: string; cors: boolean } | null>(null)
-  // Bumped to re-run detection out of band: the rendered frame failing is the
-  // one signal that arrives after detection has already finished.
-  const [retry, setRetry] = useState(0)
+  // instead of flashing the fallback every two minutes.
+  const [found, setFound] = useState<{ key: string; url: string } | null>(null)
 
   const key = `${login}|${size}`
 
   // Tick to the next bucket boundary rather than every BUCKET_MS from mount, so
   // every card on the page refreshes together and a card mounted 10s before a
-  // boundary does not sit on a black frame for two more minutes.
+  // boundary does not sit on a rejected frame for two more minutes. The +250ms
+  // clears the boundary so the recomputation below lands in the NEXT bucket
+  // instead of racing it and reading the same number back.
   useEffect(() => {
     if (!login || !live) return
     const delay = BUCKET_MS - (Date.now() % BUCKET_MS) + 250
@@ -122,73 +142,34 @@ export function TwitchPreview({
       setFound(null)
       return
     }
-    const candidates = SIZES[size]
+    const control = new AbortController()
     let cancelled = false
-    let probe: HTMLImageElement | null = null
-    // Did any candidate decode at all? Distinguishes "Twitch has no picture
-    // yet" (loaded, measured blank) from "we could not look" (never loaded).
-    let anyLoaded = false
 
-    const attempt = (i: number) => {
-      if (cancelled) return
-      if (i >= candidates.length) {
-        if (!anyLoaded) {
-          // Nothing decoded, so nothing was ever MEASURED. The usual cause is
-          // the CORS request failing — a proxy that strips the CDN's
-          // Access-Control-Allow-Origin, an extension, an offline cache — and
-          // that must not blank a channel the server has already proved is on
-          // air. Fail OPEN: show the last candidate with no crossOrigin and no
-          // measurement. Blanking a working stream is a worse bug than the
-          // black frame this component exists to catch.
-          setFound({ key: `${login}|${size}`, url: previewUrl(login, candidates[candidates.length - 1], bucket), cors: false })
-          return
-        }
-        // Every variant decoded and every one was blank: the channel genuinely
-        // has no picture yet, so drop back to the caller's fallback art.
-        setFound(null)
-        return
-      }
-      const url = previewUrl(login, candidates[i], bucket)
-      const img = new Image()
-      probe = img
-      // Must be set before .src or the request goes out without CORS and the
-      // canvas read below throws.
-      img.crossOrigin = 'anonymous'
-      img.onload = () => {
+    void (async () => {
+      // Remembered so that "we could not look" can fall back to showing
+      // something, while "we looked and it was a placeholder" never does.
+      let unlooked: string | null = null
+      for (const candidate of SIZES[size]) {
+        const url = previewUrl(login, candidate, bucket)
+        const verdict = await inspect(url, control.signal)
         if (cancelled) return
-        anyLoaded = true
-        const luma = meanLuma(img)
-        // If we could not measure at all, only the last candidate is
-        // trustworthy — it is the one the server already proved live, so show
-        // it rather than blanking a channel that is genuinely on air.
-        const blank = luma === null ? i < candidates.length - 1 : luma <= BLANK_LUMA
-        if (blank) {
-          attempt(i + 1)
+        if (verdict === 'ok') {
+          setFound({ key: `${login}|${size}`, url })
           return
         }
-        setFound({ key: `${login}|${size}`, url, cors: true })
+        if (verdict === 'unknown') unlooked = url
       }
-      // A 404 (variant not generated yet) is the same situation as a black
-      // frame: nothing to show at this size, try the next one down.
-      img.onerror = () => attempt(i + 1)
-      img.src = url
-    }
+      // Every candidate was inspected and rejected: the channel has no picture
+      // worth showing, so drop back to the caller's fallback art. Only when we
+      // were never able to LOOK do we show something unverified.
+      setFound(unlooked ? { key: `${login}|${size}`, url: unlooked } : null)
+    })()
 
-    attempt(0)
-
-    // Strict mode mounts effects twice and callers unmount cards while images
-    // are still in flight. Detach the handlers and blank the src so the
-    // in-flight load cannot resolve into setState on a dead component.
     return () => {
       cancelled = true
-      if (probe) {
-        probe.onload = null
-        probe.onerror = null
-        probe.src = ''
-        probe = null
-      }
+      control.abort()
     }
-  }, [login, live, size, bucket, retry])
+  }, [login, live, size, bucket])
 
   const url = found && found.key === key ? found.url : null
   if (!login || !live || !url) return null
@@ -198,23 +179,15 @@ export function TwitchPreview({
     <img
       className={className}
       src={url}
-      // Same crossOrigin the probe used so the browser reuses that cache entry
-      // — except on the fail-open path, where the probe never got a CORS
-      // response and asking for one again would fail the same way.
-      crossOrigin={found && found.cors ? 'anonymous' : undefined}
       alt=""
       aria-hidden="true"
       loading="lazy"
       decoding="async"
       // The frame is decorative — both callers render their own live/state
-      // badge, so nothing here is the only source of any information.
-      // Re-probe rather than just blanking: without the bump nothing in the
-      // detection effect's deps changes, so a single failed paint would hold
-      // the fallback until the next bucket tick two minutes away.
-      onError={() => {
-        setFound(null)
-        setRetry((n) => n + 1)
-      }}
+      // badge, so nothing here is the only source of any information. Hiding
+      // on error rather than re-probing: a retry here has no new information
+      // to act on and only risks a loop, and the bucket tick recovers it.
+      onError={() => setFound(null)}
       style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
     />
   )

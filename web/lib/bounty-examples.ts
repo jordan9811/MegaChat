@@ -30,8 +30,12 @@ export function withBountyExamples(pools: BountyPool[]): BountyPool[] {
     const key = bountyKey(platform, handle)
     const index = result.findIndex((p) => p.platform && p.handle && bountyKey(p.platform, p.handle) === key)
     const real = result[index] as ProgramPool | undefined
-    // Once funded, real history always replaces its example, even after expiry.
-    if (real && !real.displayOnly && (real.totalContributed > 0 || real.remaining > 0 || real.refunded > 0 || real.releasedContributor > 0)) continue
+    // Real history replaces its example — but a pool whose money was REFUNDED
+    // has no live history to show, and suppressing on `refunded` alone is what
+    // silently emptied the landing board and the /app rail: every pool refunded,
+    // so every example was skipped, and the `remaining > 0` filter downstream
+    // then dropped the zero-remaining real rows too. Nothing rendered at all.
+    if (real && !real.displayOnly && (real.totalContributed > 0 || real.remaining > 0 || real.releasedContributor > 0)) continue
     const example: ProgramPool = {
       handleKey: key, platform, handle, status: 'EXAMPLE', displayOnly: true,
       contributionCount: 0, totalContributed: 0, refunded: 0,

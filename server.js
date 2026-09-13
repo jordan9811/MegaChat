@@ -2238,11 +2238,16 @@ async function refreshTwitchLive(login) {
   twitchRefreshing.add(login);
   let live = false;
   try {
-    const url = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(login)}-440x248.jpg`;
+    // 640x360, NOT 440x248. Measured 2026-09-12 on an offline channel: the
+    // large variants redirect to the ttv-static 404_preview placeholder, but
+    // 440x248 answers 200 with no redirect at all — which fell through to the
+    // "served directly" branch below and reported a dark channel as LIVE. The
+    // card then painted Twitch's gray placeholder as if it were the stream.
+    const url = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(login)}-640x360.jpg`;
     const r = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(4000) });
     const loc = r.headers.get('location') || '';
     if (loc) live = !/404_preview|ttv-static/i.test(loc); // offline placeholder → not live
-    else if (r.status === 200) live = true; // served directly (rare)
+    else if (r.status === 200) live = true; // served directly = a real frame
   } catch { /* network/timeout → treat as offline */ }
   twitchLiveCache.set(login, { live, at: Date.now() });
   twitchRefreshing.delete(login);
