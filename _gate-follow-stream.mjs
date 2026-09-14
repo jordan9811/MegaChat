@@ -180,6 +180,46 @@ try {
     ticks > 0 && ticks <= 4,
     `${ticks} requests across ~3 ticks for 2 rooms`);
 
+  // ── G. airings: the record a "recently aired" board is built on ─────────
+  // Runs before F because F kills the fake Twitch.
+  const recent = async () => (await api('/api/rooms/recent')).body.airings || [];
+  const mine = async () => {
+    const r = await fetch(`${APP}/api/dashboard/rooms/${roomId}/airings`, {
+      headers: { 'x-room-password': 'gate-pass-1234' },
+    });
+    return (await r.json().catch(() => ({}))).airings || [];
+  };
+
+  // The owner's view is unfiltered, so an airing with no moments is visible
+  // here even though the board correctly refuses to carry it.
+  const closed = (await mine()).filter((a) => a.endedAt != null);
+  ok('G1 a finished broadcast produced an airing',
+    closed.length >= 1, `airings=${closed.length}`);
+  const first = closed[0];
+  // The owner endpoint returns the RAW record; durationMs is a convenience
+  // the public board computes, so derive it here rather than expecting it.
+  const durMs = first ? first.endedAt - first.startedAt : NaN;
+  ok('G2 the airing is closed and has a real duration',
+    !!first && durMs > 0, first ? `${durMs}ms` : 'none');
+
+  // The confirm window is a hedge about PAUSING. It must not end up stamped
+  // into history as five minutes of dead air on the end of a replay.
+  ok('G3 closed when the stream went dark, not when the room paused',
+    !!first && durMs < OFF_CONFIRM_MS,
+    first ? `duration=${durMs}ms confirmWindow=${OFF_CONFIRM_MS}ms` : 'none');
+
+  // A blip must not leave two cards behind for one broadcast.
+  ok('G5 a blip reopened the airing instead of starting a second one',
+    closed.length === 1, `closedAirings=${closed.length}`);
+
+  // An airing with nothing in it is the empty board wearing a costume. This
+  // one has no moments, so it must be visible to the owner and absent from
+  // the board — the two endpoints disagreeing is the assertion.
+  const onBoardNow = (await recent()).filter((a) => a.roomId === roomId);
+  ok('G4 an empty airing is owner-visible but NOT board content',
+    (first?.moments?.length || 0) === 0 && closed.length >= 1 && onBoardNow.length === 0,
+    `ownerSees=${closed.length} boardSees=${onBoardNow.length} moments=${first?.moments?.length}`);
+
   // ── F. "could not ask" must never pause anything ────────────────────────
   live = true;
   await until('active again', async () => await isActive(roomId));

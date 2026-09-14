@@ -28,6 +28,7 @@ import {
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
 import { getLiveByLogins, twitchApiConfigured } from './twitch-api.js';
+import { openAiring, closeAiring, addMoment, recentAirings, listAirings } from './airings-store.js';
 import { createActivityManager } from './livekit-activity.js';
 import { createWebhookTracker, verifyWebhookJwt, reconcile } from './livekit-webhooks.js';
 import { createBreaker, breakerConfig } from './livekit-breaker.js';
@@ -833,6 +834,13 @@ function activateSeatLive(seatId, ws) {
 
   seat.live = true;
   seat.liveAt = Date.now();
+  // A moment on the room's current airing, if it is on air. Silent no-op when
+  // it is not — a seat in a room whose owner never streams is normal.
+  try {
+    addMoment(seat.streamRoomId, { kind: 'seat', label: seat.username || null });
+  } catch (e) {
+    console.warn(`[airings] seat moment failed: ${e.message}`);
+  }
   // MPP: the staleness clock starts now; the first paid tick (which also
   // opens the channel) must land within MPP_STALE_MS.
   seat.lastPaidAt = Date.now();
@@ -2320,14 +2328,26 @@ async function followTick() {
       followState.set(r.id, { live: true, offSince: null });
       // Rising edge, or the first thing we ever saw. Both mean the same thing
       // to the owner: their broadcast is up and their room is not.
-      if (!r.active && (!prev || !prev.live)) {
-        updateRoom(r.id, { active: true });
-        console.log(`[follow] ${r.id} (${login}) went live → room active`);
+      if (!prev || !prev.live) {
+        // The airing records the BROADCAST, so it opens on the edge even when
+        // the room was already active — otherwise a room the owner opened by
+        // hand before going live would never get a record of the stream.
+        openAiring({ roomId: r.id, channel: login, resumeWithinMs: FOLLOW_OFF_CONFIRM_MS });
+        if (!r.active) {
+          updateRoom(r.id, { active: true });
+          console.log(`[follow] ${r.id} (${login}) went live → room active`);
+        }
       }
       continue;
     }
 
     const offSince = prev && prev.offSince ? prev.offSince : now;
+    if (prev && prev.live) {
+      // Closed at the moment it went dark, not when the room eventually
+      // pauses — the confirm window is a hedge about pausing, and stamping it
+      // into history would put five minutes of nothing on the end of a replay.
+      closeAiring(r.id, offSince);
+    }
     followState.set(r.id, { live: false, offSince });
     // Hidden from discovery already, by hiddenByBroadcast. The room itself only
     // pauses once the dark has held for the full window.
@@ -2347,6 +2367,44 @@ function twitchLiveCached(channel) {
   }
   return hit ? hit.live : false;
 }
+
+// Recently aired — what the board shows when nothing is live right now.
+//
+// The cold-start problem is not solved by waiting for more streamers: a board
+// with three rooms and none of them live reads as abandoned however good the
+// layout is. These are finished broadcasts with something to show, and each
+// carries the offsets a card seeks to — the second a MegaChat played or a
+// guest took a seat — so the replay opens on the interesting frame instead of
+// two hours of pre-roll.
+//
+// Rooms that opted out of the board stay out of it here too: unlisted means
+// unlisted, and a room's history is no less the room.
+app.get('/api/rooms/recent', (req, res) => {
+  const limit = Math.max(1, Math.min(24, Number(req.query.limit) || 12));
+  const byId = new Map(listRooms().map((r) => [r.id, r]));
+  const out = [];
+  for (const a of recentAirings({ limit: limit * 2 })) {
+    const room = byId.get(a.roomId);
+    if (!room || !room.config || room.config.unlisted) continue;
+    out.push({
+      airingId: a.id,
+      roomId: a.roomId,
+      name: room.config.name,
+      handle: room.config.handle || null,
+      platform: a.platform,
+      channel: a.channel,
+      startedAt: a.startedAt,
+      endedAt: a.endedAt,
+      durationMs: Math.max(0, (a.endedAt || a.startedAt) - a.startedAt),
+      vodUrl: a.vodUrl,
+      captureRef: a.captureRef,
+      // Where a card should start playing, and what its thumbnail is of.
+      moments: a.moments.map((m) => ({ kind: m.kind, label: m.label, offsetMs: m.offsetMs })),
+    });
+    if (out.length >= limit) break;
+  }
+  res.json({ airings: out });
+});
 
 // Public browse directory — active rooms that haven't opted out (unlisted).
 // Reuses rooms-store + the live seat map; no duplicated state. Sorted hottest
@@ -2414,6 +2472,7 @@ attachDashboardRoutes(app, {
   // Shared with the browse directory on purpose: one cache, one probe budget.
   // The manage page needs the same server-verified answer the browse cards get.
   twitchLiveCached,
+  listAirings,
 });
 
 await migrateLegacyRoomPasswords();

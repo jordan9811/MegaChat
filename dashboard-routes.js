@@ -63,6 +63,7 @@ export function attachDashboardRoutes(app, deps) {
     setSeatPinned,
     atomicToUsdc,
     twitchLiveCached,
+    listAirings,
   } = deps;
 
   // Owner-by-identity (signed-in cookie) OR the room password (shared mods).
@@ -208,6 +209,19 @@ export function attachDashboardRoutes(app, deps) {
       return { ...r, live, waiting };
     });
     res.json({ rooms });
+  });
+
+  /**
+   * This room's past broadcasts, newest first.
+   *
+   * Owner-gated, and deliberately UNFILTERED where the public board is not:
+   * the board only carries airings with something to show, but "you were on
+   * air for two hours and nothing happened" is exactly the thing an owner is
+   * entitled to see about their own room. Same records, different question.
+   */
+  app.get('/api/dashboard/rooms/:roomId/airings', requireRoomAccess, (req, res) => {
+    const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 20));
+    res.json({ airings: listAirings(req.roomId, { limit }) });
   });
 
   app.get('/api/dashboard/rooms/:roomId', requireRoomAccess, (req, res) => {
