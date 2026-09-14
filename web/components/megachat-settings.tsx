@@ -516,8 +516,8 @@ export function MegaChatSettings() {
                   </span>
                   <span className="text-xs leading-relaxed text-muted-foreground">
                     {draft.twitchAuto
-                      ? 'Your stream shows on your join page, and your live thumbnail shows in Browse. Already on — nothing to set up.'
-                      : "Off — your room won't show a stream preview or a live thumbnail."}
+                      ? 'This room opens itself when you go live and leaves the board when you stop. Your stream also shows on your join page, with your live thumbnail in Browse.'
+                      : "Off — this room stays manual, and shows no stream preview or live thumbnail."}
                   </span>
                   {draft.twitchAuto && draft.twitchChannel && draft.twitchChannel !== linkedTwitch ? (
                     <span className="mt-1 text-xs text-[var(--neon-amber)]">
