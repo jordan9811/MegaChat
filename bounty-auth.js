@@ -79,6 +79,8 @@ export const ROUTE_POLICY = {
 
   // ── Streamer: their inbox and their money ───────────────────────────────
   'GET /api/bounty/queue': { tier: TIER.STREAMER, subject: SUBJECT.QUERY_HANDLE },
+  // Pass C Part 3a: the streamer's banked clips. Same subject rule as the queue.
+  'GET /api/bounty/bank': { tier: TIER.STREAMER, subject: SUBJECT.QUERY_HANDLE },
   'POST /api/bounty/clip/:clipId/approve': { tier: TIER.STREAMER, subject: SUBJECT.PARAM_CLIP },
   'POST /api/bounty/clip/:clipId/reject': { tier: TIER.STREAMER, subject: SUBJECT.PARAM_CLIP },
   'GET /api/bounty/claim/:id': { tier: TIER.STREAMER, subject: SUBJECT.PARAM_CLAIM },
@@ -114,6 +116,7 @@ export const ROUTE_POLICY = {
   'POST /api/bounty/admin/playback': { tier: TIER.ADMIN },
   'POST /api/bounty/admin/playback/end': { tier: TIER.ADMIN },
   'POST /api/bounty/admin/sweep-pledges': { tier: TIER.ADMIN },
+  'POST /api/bounty/admin/sweep-bank': { tier: TIER.ADMIN },
   'POST /api/bounty/admin/seed': { tier: TIER.ADMIN },
   'POST /api/bounty/admin/seed-pledge': { tier: TIER.ADMIN },
   'POST /api/bounty/admin/seed-clear': { tier: TIER.ADMIN },

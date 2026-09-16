@@ -492,6 +492,34 @@ export const bountyConfig = {
    */
   minCodePixelHeight: num(process.env.BOUNTY_MIN_CODE_PX, 12),
 
+  // ── Banking (Pass C Part 3a) ────────────────────────────────────────────
+  /**
+   * A playback counts as BURIED when an overlay_hidden window covers at least
+   * this fraction of it. Half, because a clip that was on screen for most of
+   * its length was seen, and banking it would replay something the audience
+   * already watched.
+   */
+  bankCoverFraction: Number(process.env.BOUNTY_BANK_COVER_FRACTION || 0.5),
+  /**
+   * DRAIN RATE. When the overlay comes back, queued clips replay one at a time
+   * with at least this gap between starts. Twenty seconds: longer than the
+   * longest MegaChat tile plus its stingers, so two banked clips can never be
+   * on screen together, and slow enough that a viewer sees a stream resume
+   * rather than a backlog dump.
+   */
+  bankDrainIntervalMs: num(process.env.BOUNTY_BANK_DRAIN_INTERVAL_MS, 20_000),
+  /**
+   * EXPIRY. A banked clip refunds when the air session has been closed for
+   * this long — the tail covers a session closed by accident and reopened —
+   * or when it has waited bankMaxHoldMs regardless. The hold is bounded by
+   * the stream, not by the pledge: a queued clip is a liability against a
+   * broadcast that is over.
+   */
+  bankTailMs: num(process.env.BOUNTY_BANK_TAIL_MS, 10 * 60_000),
+  bankMaxHoldMs: num(process.env.BOUNTY_BANK_MAX_HOLD_MS, 12 * 60 * 60_000),
+  /** A clip whose replay is ALSO buried re-queues at most this many times. */
+  bankMaxReplays: num(process.env.BOUNTY_BANK_MAX_REPLAYS, 2),
+
   // ── Ambiguous-result review ─────────────────────────────────────────────
   /** How long a review may sit before admin flags it loudly. */
   reviewSlaMs: num(process.env.BOUNTY_REVIEW_SLA_MS, 24 * 60 * 60_000),

@@ -541,9 +541,12 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
     };
   }
 
-  // Unit is the verified PLAYBACK, not the distinct clip: airing the same
-  // clip twice is two pieces of evidence and pays twice, provided each airing
-  // is separately evidenced by its own code set.
+  // Unit here is the verified PLAYBACK, not the distinct clip: airing the
+  // same clip twice is two pieces of EVIDENCE, each separately attested by its
+  // own code set. Whether it PAYS twice is not this module's call — since Pass
+  // C Part 3a, release() collapses verified playbacks to one payable airing
+  // per pledge (payablePlaybacks, bounty-escrow.js). This count is what was
+  // observed; the ledger row records both numbers.
   const verifiedClips = clipVerdicts.filter((c) => c.verified).length;
   const verifiedClipSeconds = +clipVerdicts
     .filter((c) => c.verified)

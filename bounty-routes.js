@@ -28,6 +28,9 @@ import { readIdentityFromRequest } from './auth.js';
 import settlement from './bounty-settlement.js';
 import { policyFor, authorize, TIER, platformLoginFor } from './bounty-auth.js';
 import * as capture from './bounty-capture.js';
+import * as bank from './bounty-bank.js';
+import * as seatEscrow from './seat-escrow.js';
+import { hiddenWindows } from './overlay-visibility.js';
 import { buildPoster, buildCard } from './room-poster.js';
 import { listAirings, attachRecording } from './airings-store.js';
 import { resolveRoomConfig, updateRoom } from './rooms-store.js';
@@ -220,12 +223,26 @@ export function makeClipHooks({ log = console } = {}) {
       // Viewer count + broadcast start, captured together while the channel
       // is provably live. See captureBroadcastObservation.
       captureBroadcastObservation(s, { playbackId: r?.playbackId || null, clipId, log });
+      // A replay of a BANKED clip: record which window is the replay. The
+      // fresh nonce is startClipPlayback's own guarantee; this only notes it.
+      if (r?.playbackId) {
+        try { bank.onPlaybackStarted(s.id, r.playbackId, clipId); }
+        catch (e) { log.warn(`[bank] playback-start hook failed: ${e.message}`); }
+      }
     },
     onClipEnd(roomId, { clipId }) {
       if (!bountyConfig.enabled) return;
       const s = findOpenSession(roomId);
       if (!s) return;
+      // Resolve the window BEFORE closing it — endClipPlayback truncates it,
+      // and openWindowFor only finds windows that are still open.
+      const win = watermark.openWindowFor(s.id, { clipId });
       watermark.endClipPlayback(s.id, { clipId });
+      // Was this playback buried under a hidden overlay? Then bank it.
+      if (win?.playbackId) {
+        try { bank.onPlaybackEnded(s.id, win.playbackId); }
+        catch (e) { log.warn(`[bank] playback-end hook failed: ${e.message}`); }
+      }
     },
   };
 }
@@ -952,6 +969,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       // rehearsal drives THIS route during a real broadcast, so leaving it out
       // meant the one session that matters most carried no broadcast start.
       captureBroadcastObservation(sess, { playbackId: out?.playbackId || null, clipId, log });
+      if (out?.playbackId) bank.onPlaybackStarted(airSessionId, out.playbackId, String(clipId || 'rehearsal'));
       res.json({ ok: true, playbackId: out?.playbackId || null, code: out?.code || null, reason: out?.reason || null });
     } catch (e) { fail(res, e); }
   });
@@ -966,6 +984,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       // to the window it proves.
       const win = watermark.openWindowFor(airSessionId, { clipId, playbackId });
       watermark.endClipPlayback(airSessionId, { clipId, playbackId });
+      // Buried under a hidden overlay? The bank decides from the visibility
+      // windows; a rehearsal id with no pledge behind it is simply ignored.
+      const buriedPb = playbackId || win?.playbackId || null;
+      if (buriedPb) bank.onPlaybackEnded(airSessionId, buriedPb);
       // FREEZE ON END, not on start: by now the segments carrying this clip
       // have had time to arrive despite the 12-25s broadcast delay, which is
       // the entire reason the buffer rolls instead of grabbing on demand.
@@ -997,6 +1019,28 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     try {
       res.json({ ok: true, swept: escrow.sweepExpiredPledges({ settlement }) });
     } catch (e) { fail(res, e); }
+  });
+
+  /** Deterministic bank sweep (expiry + drain), for gates and operators. `now` may be supplied. */
+  guarded.post('/api/bounty/admin/sweep-bank', (req, res) => {
+    try {
+      const now = Number(req.body?.now) || Date.now();
+      res.json({ ok: true, ...sweepBank(now) });
+    } catch (e) { fail(res, e); }
+  });
+
+  /** What a streamer's banked clips are doing, and the numbers that govern them. */
+  guarded.get('/api/bounty/bank', (req, res) => {
+    const key = store.handleKey(req.query.platform, req.query.handle);
+    if (!key) return res.status(400).json({ error: 'platform and handle required' });
+    res.json({
+      ok: true, ...bank.bankSummary(key),
+      config: {
+        drainIntervalMs: bountyConfig.bankDrainIntervalMs, tailMs: bountyConfig.bankTailMs,
+        maxHoldMs: bountyConfig.bankMaxHoldMs, maxReplays: bountyConfig.bankMaxReplays,
+        coverFraction: bountyConfig.bankCoverFraction,
+      },
+    });
   });
 
   /** Hand-picked program entries. Labelled promotional on every surface. */
@@ -1070,11 +1114,41 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     } catch (e) { fail(res, e); }
   });
 
+  /**
+   * PASS C PART 3a — expire what is due, drain what can drain, and NAME the
+   * expiries: a banked clip that refunds pays the streamer zero, so it opens
+   * a review with its cause rather than vanishing into the ledger.
+   */
+  function sweepBank(now = Date.now()) {
+    const out = bank.sweep({ now, settlement });
+    for (const x of out.expired) {
+      const sess = x.airSessionId ? store.getAirSession(x.airSessionId) : null;
+      if (!sess || store.hasOpenReview(sess.id)) continue;
+      const review = store.createReview({
+        airSessionId: sess.id, claimId: sess.claimId, handleKey: x.handleKey,
+        verificationId: null, confidence: null,
+        reason: `banked clip expired unaired — refunded to the fan (BANKED_CLIP_EXPIRED): `
+          + `${x.tailDue ? 'the stream ended with the clip still queued' : 'the hold cap was reached'}; clip ${x.clipId}`,
+      });
+      store.appendLedger({
+        handleKey: x.handleKey, claimId: sess.claimId, airSessionId: sess.id,
+        type: 'REVIEW_OPENED', actor: 'bank',
+        reason: 'banked clip expired — named so the zero is not silent',
+        meta: { reviewId: review.id, contributionId: x.contributionId },
+      });
+    }
+    if (out.expired.length || out.drained.length) {
+      log.log(`[bank] sweep: ${out.expired.length} expired, ${out.drained.length} replay(s) started`);
+    }
+    return out;
+  }
+
   const pledgeSweeper = setInterval(() => {
     try {
       const swept = escrow.sweepExpiredPledges({ settlement });
       if (swept.length) log.log(`[bounty] pledge sweeper refunded ${swept.length} expired pledge(s)`);
     } catch (e) { log.warn(`[bounty] pledge sweep failed: ${e.message}`); }
+    try { sweepBank(); } catch (e) { log.warn(`[bank] sweep failed: ${e.message}`); }
   }, bountyConfig.pledgeSweepMs);
   if (pledgeSweeper.unref) pledgeSweeper.unref();
 
@@ -1529,6 +1603,11 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       }
       const v = await verifier.verifyAirSession(s.id, sourceOpts);
 
+      // PASS C PART 3a — the bank reads every verdict: a verified playback of
+      // a banked pledge is AIRED (one payable airing, no replay); a NOT_SHOWN
+      // playback with a matching hidden window is QUEUED for replay.
+      const banked = bank.onVerification(s.id, v);
+
       // ── STREAM CONTEXT: a gate, not a dial ──────────────────────────────
       // Did these playbacks happen inside a real broadcast? Warmup + tail,
       // pass/fail per playback, failures to HUMAN REVIEW. Broadcast start
@@ -1699,6 +1778,31 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       if (confidence?.needsReview && v.verifiedClips > 0 && causes.length === 0) {
         causes.push(`confidence: ${confidence.summary}`);
       }
+      // PASS C PART 3d — states that pay zero or delay payment get a NAMED
+      // cause. A verdict with no cause is a silent denial.
+      // Whether it was banked by THIS verification or at playback end — the
+      // normal path — the cause is the same: money is delayed, not denied.
+      const bankedOpen = bank.bankRecords({ airSessionId: s.id })
+        .filter((b) => b.state === 'QUEUED' || b.state === 'DRAINING' || b.state === 'REPLAYED');
+      if (bankedOpen.length) {
+        causes.push(`banked: overlay hidden during ${bankedOpen.length} pledged playback(s) — queued for replay when `
+          + 'the overlay is back, not denied; refunds if the stream ends first');
+      }
+      // overlay_scaled_below_floor is ITS OWN cause: the overlay was on screen,
+      // the clip probably aired, and we probably could not read the badge. That
+      // is ours to explain, not the streamer's.
+      const scaledWindows = s.roomId ? hiddenWindows(s.roomId).filter((w) => w.signal === 'overlay_scaled_below_floor') : [];
+      if (scaledWindows.length) {
+        const nowTs = Date.now();
+        const overlaps = (w) => scaledWindows.some((h) => Math.min(h.endedAt ?? nowTs, w.endsAt ?? nowTs) > Math.max(h.startedAt, w.startedAt));
+        const unread = (s.playbackWindows || []).filter((w) => overlaps(w)
+          && !(v.clipVerdicts || []).some((c) => c.playbackId === w.playbackId && c.verified));
+        if (unread.length) {
+          causes.push(`overlay scaled below the ${bountyConfig.minCodePixelHeight}px floor during ${unread.length} `
+            + `unverified playback(s) (${unread.map((w) => w.playbackId).join(', ')}) — the clip probably aired and we `
+            + 'probably could not read it; that is ours to explain, not the streamer\'s');
+        }
+      }
       if (causes.length && !store.hasOpenReview(s.id)) {
         review = store.createReview({
           airSessionId: s.id, claimId: claim.id, handleKey: key,
@@ -1719,6 +1823,9 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       const out = escrow.release({
         handleKey: key, claimId: claim.id, airSessionId: s.id,
         verifiedClips: v.verifiedClips, verifiedClipSeconds: v.verifiedClipSeconds,
+        // ONE PAYABLE AIRING PER PLEDGE: release() collapses these by contribution.
+        verifiedPlaybacks: (v.clipVerdicts || []).filter((c) => c.verified)
+          .map((c) => ({ clipId: c.clipId, playbackId: c.playbackId, durationS: c.durationS, verified: true })),
         confidence: v.confidence,
         detectionRate: v.detectionRate,
         // The tier is WHY this release was allowed to happen unattended (null
@@ -1729,7 +1836,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         actor: 'verifier', idempotencyKey: `release:${s.id}`, settlement,
       });
       res.json({
-        ok: true, verification: v, release: out, review,
+        ok: true, verification: v, release: out, review, banked,
         // WHICH FRAMES THIS VERDICT READ: 'capture' (our own recording of the
         // public live HLS) or 'external' (the platform's playlist head or its
         // archive, read after the fact). Returned because a caller cannot
@@ -1797,6 +1904,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     }));
     res.json({
       reviews,
+      // PASS C PART 3d — seat outcomes that paid zero or delayed payment, with
+      // their named causes. Kept beside the bounty reviews rather than folded
+      // into them: a seat is not an air session and has no claim to resolve.
+      seatReviews: seatEscrow.reviewItems(),
       slaMs: bountyConfig.reviewSlaMs,
       openCount: reviews.filter((r) => r.state === 'OPEN').length,
       breachedCount: reviews.filter((r) => r.breachedSla).length,

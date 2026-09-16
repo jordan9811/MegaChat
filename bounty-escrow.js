@@ -466,6 +466,10 @@ export const REFUND_REASONS = {
     full: false,
     text: 'clip could not be verified as aired',
   },
+  BANKED_CLIP_EXPIRED: {
+    full: false,
+    text: 'clip was banked for replay while the overlay was hidden, and the stream ended before it could air',
+  },
   CLIP_NEVER_UPLOADED: {
     full: false,
     text: 'contribution was paid but no recording was ever uploaded',
@@ -622,6 +626,51 @@ export function refundExpired({ handleKey, actor = 'system', settlement }) {
 }
 
 /**
+ * ONE PAYABLE AIRING PER PLEDGE (Pass C Part 3a).
+ *
+ * Evidence stays per PLAYBACK: two airings of one clip are two windows, two
+ * code namespaces, two verdicts (gate K). Payout is per PLEDGE: a fan paid
+ * once for their clip to air once, and a clip that aired twice — because it
+ * was banked while the overlay was hidden and then replayed, or because the
+ * streamer simply played it again — is one paid airing, not two. Before this,
+ * release() paid `verifiedClips` as handed to it, so a banked clip whose
+ * original playback later turned out to have aired would have paid twice.
+ *
+ * The unit is the contribution the clip belongs to. A clip with no
+ * contribution (a letter id, a rehearsal id) is its own unit, so the
+ * rehearsal harnesses and gate K keep their meaning.
+ */
+export function payablePlaybacks(verifiedPlaybacks = []) {
+  const units = new Map();
+  const raw = [];
+  for (const p of verifiedPlaybacks || []) {
+    if (!p || p.verified === false) continue;
+    raw.push(p);
+    const clip = p.clipId ? clips.getClipRecord(p.clipId) : null;
+    const unit = clip?.contributionId ? `contribution:${clip.contributionId}` : `clip:${p.clipId}`;
+    const durationS = Number(p.durationS) || 0;
+    if (!units.has(unit)) {
+      units.set(unit, { unit, contributionId: clip?.contributionId || null, clipId: p.clipId, playbackId: p.playbackId, durationS, alsoVerified: [] });
+    } else {
+      units.get(unit).alsoVerified.push(p.playbackId);
+    }
+  }
+  const list = [...units.values()];
+  return {
+    payableClips: list.length,
+    payableClipSeconds: +list.reduce((a, u) => a + u.durationS, 0).toFixed(3),
+    rawVerifiedClips: raw.length,
+    rawVerifiedClipSeconds: +raw.reduce((a, p) => a + (Number(p.durationS) || 0), 0).toFixed(3),
+    units: list,
+    // Which playbacks verified but do not pay, and which one paid in their
+    // place — so a status surface can say "aired twice, paid once" instead of
+    // showing a number that disagrees with the evidence.
+    collapsed: list.filter((u) => u.alsoVerified.length)
+      .map((u) => ({ unit: u.unit, paid: u.playbackId, notPaid: u.alsoVerified })),
+  };
+}
+
+/**
  * Release a slice of the pool for verified airtime.
  *
  * Proportional, not lump-sum: `verifiedMinutes × releaseRatePerMinute` of the
@@ -643,9 +692,21 @@ export function release({
   // is recorded on the ledger row and must never touch the amount — every
   // tier that passes pays exactly the same.
   confidenceTier = null,
+  // The verified playbacks themselves — { clipId, playbackId, durationS }.
+  // When present, verifiedClips/verifiedClipSeconds are DERIVED from them
+  // with one payable airing per pledge (payablePlaybacks). Callers that only
+  // have counts (fixtures) keep their behaviour exactly as it was.
+  verifiedPlaybacks = null,
 }) {
   assertEnabled();
   if (!idempotencyKey) throw new Error('release requires an idempotencyKey');
+
+  let payable = null;
+  if (Array.isArray(verifiedPlaybacks)) {
+    payable = payablePlaybacks(verifiedPlaybacks);
+    verifiedClips = payable.payableClips;
+    verifiedClipSeconds = payable.payableClipSeconds;
+  }
 
   const existing = store.findByIdempotencyKey(idempotencyKey);
   if (existing) return { rows: [existing], deduped: true, released: 0, match: 0 };
@@ -717,7 +778,14 @@ export function release({
     reason: `verified ${verifiedClips} clip playback(s), ${verifiedClipSeconds}s (confidence ${confidence}`
       + `${confidenceTier != null ? `, tier ${confidenceTier}` : ''})`,
     idempotencyKey,
-    meta: { verifiedClips, verifiedClipSeconds, confidence, confidenceTier, disputeWindowEndsAt: finalAt, final: false },
+    meta: {
+      verifiedClips, verifiedClipSeconds, confidence, confidenceTier, disputeWindowEndsAt: finalAt, final: false,
+      // Evidence count vs paid count. Equal unless a pledge aired more than
+      // once; when they differ, `collapsed` names which playback paid.
+      rawVerifiedClips: payable?.rawVerifiedClips ?? verifiedClips,
+      payableClips: verifiedClips,
+      collapsed: payable?.collapsed?.length ? payable.collapsed : null,
+    },
   });
   // Separate row, separate bucket — never blended into the contributor pool.
   const { row: matchRow } = store.appendLedger({
@@ -744,7 +812,7 @@ export function release({
     transition({ handleKey, to: target, actor, reason: 'release recorded', claimId, airSessionId });
   }
 
-  return { rows: [contribRow, matchRow], deduped: false, released: amount, match: matchAmount };
+  return { rows: [contribRow, matchRow], deduped: false, released: amount, match: matchAmount, payable };
 }
 
 /** Manual admin override — reason is REQUIRED and lands in the ledger. */

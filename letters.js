@@ -494,6 +494,38 @@ export function attachLetters(app, deps) {
     }, letter.durationS * 1000 + STINGER_BUFFER_MS);
   }
 
+  /**
+   * PASS C PART 3a — a stored pledged clip goes on air THROUGH THIS QUEUE.
+   *
+   * The bank replays a buried clip by handing its bytes here as a synthetic,
+   * already-paid letter whose id IS the clip id. The scheduler then does what
+   * it does for every letter: waits for a free tile and a live overlay,
+   * broadcasts letter_play, and fires onClipPlay — which opens the watermark
+   * window with a FRESH per-playback nonce, because that is the only door a
+   * window opens through. No second play path, no second proof path.
+   *
+   * price 0 and payer null: the fan paid at pledge time through the escrow;
+   * refundLetter must never see this as money to return.
+   */
+  function enqueueStoredClip(roomId, { clipId, media, mime, durationS, username = null }) {
+    if (!roomId || !clipId || !Buffer.isBuffer(media) || media.length < 1024) return { ok: false, reason: 'no media' };
+    if (byId.has(clipId)) return { ok: false, reason: 'already queued' };
+    const state = roomState(roomId);
+    if (state.queue.length >= QUEUE_MAX_PER_ROOM) return { ok: false, reason: 'queue full' };
+    if (globalBytes + media.length > GLOBAL_MAX_BYTES) return { ok: false, reason: 'server full' };
+    const letter = {
+      id: clipId, roomId, username: username ? String(username).slice(0, 20) : null,
+      payer: null, price: '0', durationS: Math.ceil(Number(durationS) || 0), mime: String(mime || 'video/webm'),
+      flyIn: null, flyOut: null, status: 'queued', media, paidAt: Date.now(), uploadedAt: Date.now(),
+      bounty: true,
+    };
+    byId.set(letter.id, letter);
+    globalBytes += media.length;
+    state.queue.push(letter);
+    log.log(`[letters] bounty replay ${clipId} queued in room ${roomId} (${letter.durationS}s, position ${state.queue.length})`);
+    return { ok: true, position: state.queue.length };
+  }
+
   log.log('[letters] letter mode attached (one-shot, in-memory)');
-  return { _byId: byId }; // exposed for tests
+  return { _byId: byId, enqueueStoredClip }; // _byId exposed for tests
 }
