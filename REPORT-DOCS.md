@@ -134,3 +134,13 @@ Status calls raised: U1 (which seat payment route is live — narrowed by source
 docs:check: 2 hits on first run (both fixed: one cited, one rephrased).
 
 Exit: interface regions match source by construction; a new contributor has setup, env, ports, modes and hazards on one page; the deliberately-absent list is checked against every store module's header.
+
+### Gate 3 — internal docs + the honesty check (1 iteration)
+
+Read in full for this gate: `DECISIONS.md` (all 15 runs) and `OPEN-ISSUES.md` (all 76 entries, 2,168 lines). 18 pages: launch-readiness with a 27-row retest checklist (each row names its gate or rehearsal and whether the proof is fixture / rehearsal / real broadcast); a work-history index and 12 period pages (2026-07-05 → 09-16) built from the decision log, the issue log, the briefs and the git log — Pass A's page carries the enumeration-lockdown near-miss and the reverted NOT_SHOWN cause branch as asked; roadmap (46 items, one tag each, dependencies named; the B6-vs-stream-context disagreement recorded rather than resolved); outstanding (12 owner items, 8 needing a broadcast, 32 engineering items, reconciled entry by entry — every open bullet in OPEN-ISSUES.md maps to a row or to a RESOLVED/RETRACTED/SUPERSEDED marker in the file); limitations register (L1–L29, stable ids); needs-a-status-call (U1–U6).
+
+FOUND WHILE WRITING, and filed: **the bounty badge does not follow the layout origin.** ROADMAP.md specced "the barcode takes the diagonally opposite corner automatically"; Pass A shipped the layout editor with `#bounty-badge` still fixed at `left:16px; bottom:16px` and nothing reading `layout.origin`. A bounty room with a bottom-left origin stacks tiles over the badge, which the badge's own CSS comment says must never happen, and an occluded badge is an honest streamer unpaid. Default origin is top-right, so unedited rooms are unaffected. Appended to OPEN-ISSUES.md (2026-09-16), registered as L13 / E1 / U4, added to the public limitations page and the create-room feature page. No behaviour changed (Run 2 rule).
+
+The honesty check ran on every authored page; hits fixed by citing. Advisory hits on the 46 pre-existing record pages remain advisory.
+
+Exit: docs:check green on authored pages; every source document has a work-history page (the migration-era `*_TEST.md` records are covered by one page and say so); the outstanding list reconciles against OPEN-ISSUES.md.

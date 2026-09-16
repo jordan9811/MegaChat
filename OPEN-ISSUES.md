@@ -109,6 +109,32 @@ exposure. Not wired in this pass (each is a multi-minute run to re-verify);
 lift G0 into `_gate-helpers.mjs` and adopt it before any of their greens is
 cited across a merge.
 
+### THE BOUNTY BADGE DOES NOT FOLLOW THE LAYOUT ORIGIN (overlay, 2026-09-16)
+
+Found by the docs pass while citing ROADMAP.md's "Overlay placement" section
+against what Pass A shipped. The layout editor (`94b0a23`) lets a streamer put
+the tile stack in any corner via `applyStageAnchor()` in `public/overlay.html`.
+The bounty badge did not move with it: `#bounty-badge` is still
+`position: fixed; left: 16px; bottom: 16px`, and nothing reads
+`layout.origin`.
+
+ROADMAP.md specced the opposite — "The barcode takes the diagonally opposite
+corner automatically, which preserves the never-over-video invariant by
+construction" — and that invariant is load-bearing: the badge's own CSS comment
+says "solid backing plate (never over live video)", and a badge occluded by a
+tile is a badge the verifier cannot read, which is an honest streamer not paid.
+
+WHO IT AFFECTS: only a bounty room whose owner chose the `bottom-left` origin
+(tiles stack up from the badge's corner). The default is top-right, so every
+unedited room is unaffected, and a plain MegaChat room has no badge at all.
+
+FIX, one of two (owner's call — U4 in docs/internal/needs-a-status-call.md):
+either `applyStageAnchor()` places the badge in the corner diagonally opposite
+`layout.origin` and `_gate-overlay.mjs` asserts it for all four origins, or
+the layout editor refuses `bottom-left` for rooms with a bounty claim. Not
+changed in the docs pass (no behaviour changes there); registered as L13 in
+docs/internal/limitations-register.md and E1 in docs/internal/outstanding.md.
+
 # OPEN ISSUES
 
 Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
