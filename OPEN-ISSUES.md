@@ -1,3 +1,44 @@
+### STASHED EDITS ON feat/real-broadcast, NOT MINE TO RESTORE (2026-09-15)
+
+Two files had uncommitted edits in this worktree when the prod merge needed a
+clean tree. They are not mine and I did not read them, so they were stashed and
+deliberately NOT restored and NOT dropped — restoring them would have swept
+someone else's in-flight work into a merge commit they never saw.
+
+    stash SHA  f7219f416b99e59e9188b1cf1e9a988fa6e6fc73
+    files      OPEN-ISSUES.md, _rehearsal-rumble.mjs
+    message    "pre-merge: pre-existing edits not mine (2026-09-15-2154)"
+
+Recover with `git stash apply f7219f4` (apply, not pop — the SHA above is the
+only handle on it, and `git stash list` will not show it once the ref expires).
+Note OPEN-ISSUES.md has since been unioned across the merge, so that half will
+likely conflict; `_rehearsal-rumble.mjs` should apply cleanly.
+
+### FRONT-END: THE BOUNTY COMPONENTS LOST THE NERVE SKIN (2026-09-15)
+
+web/components/bounty/{my-pledges,record-flow,streamer-page}.tsx render in the
+pre-Nerve skin. The merge had to choose between prod's 2026-09-04 restyle and
+this branch's contributor-enumeration lockdown, and they are the same files:
+prod's my-pledges still asks for "0x… or the account you pledged with" and
+prod's streamer-page still forwards ?me=<contributor> into it, both of which
+predate the server-side lockdown (bounty-api.ts getMyContributions() now takes
+no arguments precisely because the param was an enumeration hole).
+
+The lockdown won. Reapplying the restyle ON TOP of the locked-down components
+is a front-end task and not a merge decision — the constraint is that the
+contributor must come from the session, never from an input.
+
+### GATE: _gate-bounty-claim.mjs SECTION G IS A FIXED-SLEEP RACE (2026-09-15)
+
+Section G does `spawn(..., { stdio: 'ignore' })` then `await sleep(9000)` with
+no readiness check, so a slow boot reports as a product failure (`0,0,0`) with
+no way to see why. Measured boot on this machine is 2.1s; it failed once and
+passed on re-run — flaky, not broken. `_gate-helpers.mjs` already exports
+`startGateServer`, which polls for readiness with a deadline and pipes stdio,
+and its own comment says "stdio 'ignore' is what hid the original failure. Pipe
+and KEEP it." This gate predates that helper and still uses the pattern the
+helper exists to replace.
+
 # OPEN ISSUES
 
 Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
