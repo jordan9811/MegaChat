@@ -86,15 +86,27 @@ export function makeMockObs({ port, password = PASSWORD, seed = {} } = {}) {
         case 'GetCurrentProgramScene':
           return reply(true, { currentProgramSceneName: state.programScene, sceneName: state.programScene });
         case 'GetSceneItemList': {
-          // v5 returns every item in a scene, newest first, each with its id,
-          // source name and transform. The one-click flow never needed it —
-          // it asks for a source by name — but a VISIBILITY check has to see
-          // what is actually in the scene, including what it did not expect.
+          // Every item in the scene with its id, source name, enabled flag,
+          // transform and INDEX. The one-click flow never needed it — it asks
+          // for a source by name — but a VISIBILITY check has to see what is
+          // actually in the scene, including what it did not expect.
+          //
+          // The comment here used to say "newest first" while both creators
+          // `push`, so the mock returned newest LAST and a gate written to the
+          // comment would have encoded the wrong end as the top and passed
+          // anyway, because the mock agreed with whatever it assumed.
+          //
+          // `sceneItemIndex` is the array position, and a HIGHER index is
+          // treated as nearer the viewer. Real obs-websocket v5 returns this
+          // field; which direction IT means is not established anywhere in
+          // this repo and one real OBS session settles it. What the mock can
+          // and does test is the occlusion LOGIC against a stated convention.
           const items = state.scenes[requestData.sceneName] || [];
-          return reply(true, { sceneItems: items.map((i) => ({
+          return reply(true, { sceneItems: items.map((i, index) => ({
             sceneItemId: i.sceneItemId,
             sourceName: i.sourceName,
             sceneItemEnabled: i.enabled !== false,
+            sceneItemIndex: Number.isFinite(i.sceneItemIndex) ? i.sceneItemIndex : index,
             sceneItemTransform: i.transform,
           })) });
         }

@@ -10,6 +10,7 @@ node_modules/
 # from a real deployment would put payout records into git history.
 data/bounty.json
 data/bounty-evidence.jsonl
+data/overlay-visibility.jsonl
 data/bounty-ledger.jsonl
 data/bounty-captures/
 data/rooms.json

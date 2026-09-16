@@ -41,6 +41,7 @@ import { attachBountyRoutes, makeClipHooks } from './bounty-routes.js';
 import { verifyRoomAccess, readIdentityFromRequest, roomOwnerKey } from './auth.js';
 import { isWhitelisted, recordJoin as recordWhitelistJoin } from './guest-whitelist.js';
 import { attachWhitelistRoutes } from './whitelist-routes.js';
+import { attachVisibilityRoutes } from './visibility-routes.js';
 import {
   toAtomic,
   fromAtomic,
@@ -2728,6 +2729,13 @@ attachDashboardRoutes(app, {
 // Guest whitelist management — account-scoped, so it is attached next to the
 // dashboard routes but takes no roomId and no room password.
 attachWhitelistRoutes(app);
+
+// Overlay visibility — the streamer's own OBS, reported by their own browser,
+// for ANY live room. Deliberately not under /api/bounty: those routes mount
+// only with BOUNTY_CLAIM=1 and are keyed to an air session, and a plain
+// MegaChat room still deserves to be told its overlay is hidden. Produces
+// signals only; nothing here touches settlement.
+attachVisibilityRoutes(app);
 
 await migrateLegacyRoomPasswords();
 

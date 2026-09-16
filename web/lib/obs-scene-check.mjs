@@ -120,7 +120,9 @@ export async function checkOverlayVisible(client, {
     const { sceneItemEnabled } = await client.request('GetSceneItemEnabled', { sceneName, sceneItemId });
     const { sceneItemTransform: t } = await client.request('GetSceneItemTransform', { sceneName, sceneItemId });
     const rect = effectiveRect(t || {});
-    const out = { ...ctx, sceneItemId, enabled: !!sceneItemEnabled, rect };
+    // The raw transform rides along: a caller deriving the rendered SCALE
+    // needs sourceHeight, which the rect has already folded away.
+    const out = { ...ctx, sceneItemId, enabled: !!sceneItemEnabled, rect, transform: t || null };
 
     if (!sceneItemEnabled) {
       return { ...out, state: SCENE_STATE.HIDDEN, detail: `"${inputName}" is hidden in "${sceneName}"` };
