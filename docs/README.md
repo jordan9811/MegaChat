@@ -21,10 +21,10 @@ And one way to get a streamer's attention before they have ever heard of you: a 
 | See what each feature does, how it works, and what it does **not** do | [Features](features/README.md) |
 | Know how a bounty is verified, and what verification does not prove | [Verification](verification/README.md) — the hard page |
 | Run it, contribute, or audit it | [Technical](technical/README.md) |
-| Know what is shipped versus specced versus an idea | [Internal](internal/README.md) — the owner's half |
+| Know what is shipped versus specced versus an idea | *Internal* — the owner's half, last in the sidebar |
 
 ## How these pages are written
 
-Every claim about security, money, identity, data or correctness cites the file (and where useful the line) it comes from. Every feature carries exactly one status tag: `SHIPPED`, `SHIPPED-PARTIAL`, `SPECCED`, `IDEA`, `KNOWN-BROKEN`, `ASSUMPTION` or `UNCLEAR`. Tags are read from the repo, never invented; anything ambiguous is `UNCLEAR` and listed on [Needs a status call](internal/needs-a-status-call.md). The rules and the scripts that enforce them are in `CONTRIBUTING-DOCS.md` at the repo root.
+Every claim about security, money, identity, data or correctness cites the file (and where useful the line) it comes from. Every feature carries exactly one status tag: `SHIPPED`, `SHIPPED-PARTIAL`, `SPECCED`, `IDEA`, `KNOWN-BROKEN`, `ASSUMPTION` or `UNCLEAR`. Tags are read from the repo, never invented; anything ambiguous is `UNCLEAR` and listed on the internal *Needs a status call* page. The rules and the scripts that enforce them are in `CONTRIBUTING-DOCS.md` at the repo root.
 
 The repo is the truth. These pages never assert more than it does.

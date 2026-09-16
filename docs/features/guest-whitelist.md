@@ -21,7 +21,7 @@ Account page → *Guest list*. Add a handle; the person must have signed in to M
 
 ## The migration on the owner's list
 
-Entries written before `identityKey` existed carry none, and match on handle alone. `_migrate-whitelist-identity.mjs` reports them (default) and, with `--write`, pins the key by resolving each handle through the identity store; unresolvable entries are left and listed. It has been exercised locally, not run against the production volume — that is the owner's action, recorded in [Outstanding](../internal/outstanding.md).
+Entries written before `identityKey` existed carry none, and match on handle alone. `_migrate-whitelist-identity.mjs` reports them (default) and, with `--write`, pins the key by resolving each handle through the identity store; unresolvable entries are left and listed. It has been exercised locally, not run against the production volume — that is the owner's action, recorded on the internal *Outstanding* page.
 
 ## What this does NOT do
 

@@ -1,6 +1,6 @@
 # Limitations of verification
 
-What the pipeline on the [previous page](README.md) cannot see (`bounty-confidence.js`, "WHAT EACH SIGNAL ACTUALLY PROVES"), with what is done about each and what remains. Each row carries an id from the internal [limitations register](../internal/limitations-register.md), which holds the full entry: source, mitigation, residual risk, and what would close it.
+What the pipeline on the [previous page](README.md) cannot see (`bounty-confidence.js`, "WHAT EACH SIGNAL ACTUALLY PROVES"), with what is done about each and what remains. Each row carries an id from the internal *limitations register*, which holds the full entry: source, mitigation, residual risk, and what would close it.
 
 | Id | Limitation | Mitigation in place | Residual risk |
 |---|---|---|---|

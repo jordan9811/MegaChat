@@ -40,4 +40,4 @@ Join Stream has its own switch and admission mode on the room (`resolveJoinStrea
 - **It does not keep a seat across a server restart** — `activeSeats` is memory (`server.js`).
 - **It does not give the streamer a copy of the guest's video.** Media goes through LiveKit to the overlay; nothing is recorded by the seat path.
 - **It does not charge for a network blip on LiveKit rooms**; the client pauses ticks and the server allows `LIVEKIT_SEAT_GRACE_S` (+5 s) before a stale kick (`tickAllMeters`, `server.js`).
-- **It does not use `/api/join/mpp` from the join page** even though the route exists ([U1](../internal/needs-a-status-call.md)).
+- **It does not use `/api/join/mpp` from the join page** even though the route exists (status call U1, on the internal *Needs a status call* page).

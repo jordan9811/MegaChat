@@ -34,3 +34,7 @@ work* with *shown to work*.
   Append-only; verify via the boot log.
 - **Commit ≠ ship.** Railway auto-deploys from `v0-ui-migration`; a change
   isn't live until the deployed URL says so.
+- **The handbook is part of the verification chain.** `docs/` is generated
+  from the repo and kept current by construction; `npm run docs:verify`
+  (check + sync + gitbook-check) runs with the gates before a merge, and
+  `CONTRIBUTING-DOCS.md` says which page to touch when work closes.

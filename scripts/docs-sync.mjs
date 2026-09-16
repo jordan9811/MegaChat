@@ -64,15 +64,21 @@ const normalise = (text) => text
 const sha = (text) => crypto.createHash('sha1').update(normalise(text)).digest('hex').slice(0, 16);
 const langOf = (file) => ({ ts: 'typescript', tsx: 'tsx', js: 'javascript', mjs: 'javascript', cjs: 'javascript', json: 'json', md: 'markdown', yaml: 'yaml', yml: 'yaml', html: 'html', css: 'css' })[path.extname(file).slice(1)] || '';
 
-function readRepo(rel) {
-  const p = path.join(ROOT, rel);
-  if (!fs.existsSync(p) || fs.statSync(p).isDirectory()) return null;
-  return fs.readFileSync(p, 'utf8').split(/\r?\n/);
+/**
+ * Resolve a cited path: repo root first (source files), then docs/ (a page
+ * naming another page), then the citing page's own directory.
+ */
+function readRepo(rel, fromDir = null) {
+  for (const base of [ROOT, DOCS, fromDir].filter(Boolean)) {
+    const p = path.join(base, rel);
+    if (fs.existsSync(p) && !fs.statSync(p).isDirectory()) return fs.readFileSync(p, 'utf8').split(/\r?\n/);
+  }
+  return null;
 }
 
 /** The section a citation names, as text — or null when the file is missing. */
-function citedSection(file, a, b) {
-  const lines = readRepo(file);
+function citedSection(file, a, b, fromDir = null) {
+  const lines = readRepo(file, fromDir);
   if (!lines) return null;
   if (!a) return lines.join('\n');
   const A = Number(a), B = b ? Number(b) : null;
@@ -127,7 +133,7 @@ for (const page of authored) {
     const [, file, a, b] = m;
     const key = `${file}${a ? ':' + a : ''}${b ? '-' + b : ''}`;
     if (seen[key] !== undefined) continue;
-    const section = citedSection(file, a, b);
+    const section = citedSection(file, a, b, path.dirname(p));
     // A `.json`/`.jsonl` name that is not in the repo is a runtime data file
     // (rooms.json, bounty-ledger.jsonl — gitignored, written under DATA_DIR),
     // named in the docs as a thing, not cited as a source. Not drift.

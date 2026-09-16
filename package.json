@@ -17,7 +17,8 @@
     "docs:summary": "node scripts/docs-summary.mjs",
     "docs:check": "node scripts/docs-check.mjs",
     "docs:sync": "node scripts/docs-sync.mjs",
-    "docs:gitbook-check": "node scripts/docs-gitbook-check.mjs"
+    "docs:gitbook-check": "node scripts/docs-gitbook-check.mjs",
+    "docs:verify": "node scripts/docs-check.mjs && node scripts/docs-sync.mjs && node scripts/docs-gitbook-check.mjs"
   },
   "dependencies": {
     "@circle-fin/modular-wallets-core": "^1.0.13",

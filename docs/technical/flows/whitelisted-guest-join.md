@@ -23,7 +23,7 @@ The short circuit at the head of every join route, and what it deliberately does
 
 ## The migration
 
-Entries written before `identityKey` existed match on handle alone. `_migrate-whitelist-identity.mjs` reports them; `--write` pins keys by resolving each handle through `getIdentityByHandle` and leaves the unresolvable ones listed. Exercised locally; **not yet run against the production volume** — [Outstanding](../../internal/outstanding.md).
+Entries written before `identityKey` existed match on handle alone. `_migrate-whitelist-identity.mjs` reports them; `--write` pins keys by resolving each handle through `getIdentityByHandle` and leaves the unresolvable ones listed. Exercised locally; **not yet run against the production volume** — on the internal *Outstanding* page.
 
 ## Proven by
 

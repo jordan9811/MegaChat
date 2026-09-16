@@ -1,6 +1,6 @@
 # Flow: a paid seat, from link to leave
 
-The path the join page actually takes today. Two of the four payment modes in the code are on it (`passkey_stream` for a funded wallet, `credit_stream` for earned balance); the MPP channel route is mounted but not called by the page ([U1](../../internal/needs-a-status-call.md)).
+The path the join page actually takes today. Two of the four payment modes in the code are on it (`passkey_stream` for a funded wallet, `credit_stream` for earned balance); the MPP channel route is mounted but not called by the page (status call U1, on the internal *Needs a status call* page).
 
 | # | Step | Where | What can stop it |
 |---|---|---|---|

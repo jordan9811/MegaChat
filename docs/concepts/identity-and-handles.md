@@ -26,7 +26,7 @@ The dashboard resolves the obvious conflict — "the handle I reserved by signin
 
 ## A handle is not an authorization token
 
-This is recorded as an open issue and worth repeating here. The guest whitelist originally admitted anyone presenting a listed handle; a handle can be squatted or reassigned, so entries now pin the `identityKey` they were added for and refuse a match on handle alone when one is recorded (`isWhitelisted(ownerKey, handle, identityKey)`, `guest-whitelist.js`; `OPEN-ISSUES.md`, "A HANDLE IS NOT AN AUTHORIZATION TOKEN"). Entries written before that field existed need the migration `_migrate-whitelist-identity.mjs` run against production data — that is on the owner's list in [Outstanding](../internal/outstanding.md).
+This is recorded as an open issue and worth repeating here. The guest whitelist originally admitted anyone presenting a listed handle; a handle can be squatted or reassigned, so entries now pin the `identityKey` they were added for and refuse a match on handle alone when one is recorded (`isWhitelisted(ownerKey, handle, identityKey)`, `guest-whitelist.js`; `OPEN-ISSUES.md`, "A HANDLE IS NOT AN AUTHORIZATION TOKEN"). Entries written before that field existed need the migration `_migrate-whitelist-identity.mjs` run against production data — that is on the owner's list in the internal *Outstanding* page.
 
 ## What this does NOT do
 

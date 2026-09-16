@@ -1,6 +1,6 @@
 # Features
 
-One page per area. Each carries exactly one status tag at the top, says how the thing works mechanically, how to use it, and what it does **not** do. Sources are cited inline; the [limitations register](../internal/limitations-register.md) holds anything unproven.
+One page per area. Each carries exactly one status tag at the top, says how the thing works mechanically, how to use it, and what it does **not** do. Sources are cited inline; the [limitations](../verification/limitations.md) page holds anything unproven.
 
 | Feature | Status | Page |
 |---|---|---|
