@@ -20,6 +20,7 @@
  */
 import { spawn } from 'child_process';
 import puppeteer from 'puppeteer-core';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -30,6 +31,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const PORT = 3218;
 const APP = `http://localhost:${PORT}`;
+
+// server.js --prod serves web/.next exactly as it sits on disk: if the build
+// predates the source, everything below grades the PREVIOUS tree. Check first,
+// before spawning the server or launching Chrome.
+{
+  const fresh = assertFreshBuild();
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
   env: { ...process.env, PORT: String(PORT), LIVEKIT_URL: 'ws://localhost:7880', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'secret' },

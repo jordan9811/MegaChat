@@ -29,6 +29,7 @@
  */
 import { spawn } from 'child_process';
 import puppeteer from 'puppeteer-core';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -54,6 +55,25 @@ const LK_ENV = {
   LAZY_HEARTBEAT_MS: '1500',
   LAZY_SIGNAL_POLL_MS: '1200',
 };
+
+// ── G0. FRESH BUILD — before anything expensive or irreversible ────────────
+// `server.js --prod` serves web/.next exactly as it sits on disk, so a gate
+// that drives a page before a rebuild grades the PREVIOUS tree and reports it
+// as current (two weeks of that on _gate-bounty-claim's section G). This gate
+// only loads /overlay, which Express serves straight out of public/ and so
+// cannot be stale — but the build must still EXIST, because nextApp.prepare()
+// runs at boot in prod even for a gate that never loads a Next page.
+// First thing after the cheap consts: ahead of the SFU probe, the spawns and
+// puppeteer.launch, so a stale-build abort costs nothing.
+{
+  const fresh = assertFreshBuild({ watch: ['public'], requireNextBuild: false });
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
 
 const health = await fetch('http://localhost:7880').then((r) => r.text()).catch(() => '');
 if (!health.includes('OK')) {

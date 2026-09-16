@@ -16,6 +16,7 @@ import { createWalletClient, createPublicClient, http, erc20Abi, formatUnits } f
 import { privateKeyToAccount } from 'viem/accounts';
 import { tempo } from 'viem/chains';
 import { tempo as tempoClient } from 'mppx/client';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 try { process.loadEnvFile(); } catch { /* env external */ }
 
@@ -27,6 +28,19 @@ const ok = (n, c, e = '') => {
   else { fail++; console.error(`  FAIL  ${n}${e ? ' — ' + e : ''}`); }
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Refuse to grade a stale build BEFORE we spawn a server, launch a browser or
+// build a wallet — this gate spends real mainnet dust, and an abort after the
+// wallet exists has already cost money.
+{
+  const fresh = assertFreshBuild();
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
   env: { ...process.env, PORT: '3220' }, stdio: 'ignore', cwd: process.cwd(),

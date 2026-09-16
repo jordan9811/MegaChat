@@ -20,6 +20,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { tempo } from 'viem/chains';
 import { tempo as tempoClient } from 'mppx/client';
 import { RoomServiceClient } from 'livekit-server-sdk';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 try { process.loadEnvFile(); } catch { /* env external */ }
 
@@ -30,6 +31,21 @@ const ok = (name, cond, extra = '') => {
   else { fail++; console.error(`  FAIL  ${name}${extra ? ' — ' + extra : ''}`); }
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ── G0. freshness gate — BEFORE the SFU probe, the server spawn, puppeteer and
+// the wallet. server.js --prod serves web/.next as it sits on disk, so a stale
+// build means this suite grades the PREVIOUS tree and reports it as current
+// (the two-week _gate-bounty-claim section G lie). This gate also spends real
+// mainnet dust, so the abort has to land above privateKeyToAccount.
+{
+  const fresh = assertFreshBuild({ watch: ['web/app', 'web/components', 'web/lib', 'public'] });
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
 
 const health = await fetch('http://localhost:7880/').then((r) => r.text()).catch(() => null);
 if (health !== 'OK') { console.error('local livekit-server not running'); process.exit(1); }

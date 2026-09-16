@@ -16,6 +16,7 @@
  */
 import { spawn, execSync } from 'child_process';
 import puppeteer from 'puppeteer-core';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -26,6 +27,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const BASE = 'eae3f7d'; // branch point on v0-ui-migration
 const chrome = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+
+// ── G0. the build under test must be newer than the source ──────────────────
+// server.js --prod serves web/.next as it sits on disk: an older build means
+// this gate grades the PREVIOUS tree and reports it as current. Runs before
+// the first execSync, the first spawn and puppeteer.launch, so a stale tree
+// costs nothing.
+{
+  const fresh = assertFreshBuild();
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
 
 // ── C. hero freeze (git-level, exact) ───────────────────────────────────────
 const heroDiff = execSync(

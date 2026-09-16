@@ -18,6 +18,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { tempo } from 'viem/chains';
 import { tempo as tempoClient } from 'mppx/client';
 import { RoomServiceClient } from 'livekit-server-sdk';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 try { process.loadEnvFile(); } catch { /* env external */ }
 
@@ -28,6 +29,19 @@ const ok = (name, cond, extra = '') => {
   else { fail++; console.error(`  FAIL  ${name}${extra ? ' — ' + extra : ''}`); }
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Before the SFU probe, the server spawn, the browser, and — above all — the
+// wallet: this gate spends real mainnet dust, and a stale-build abort after
+// the wallet is built has already cost money.
+{
+  const fresh = assertFreshBuild();
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
 
 const health = await fetch('http://localhost:7880/').then((r) => r.text()).catch(() => null);
 if (health !== 'OK') { console.error('local livekit-server not running'); process.exit(1); }

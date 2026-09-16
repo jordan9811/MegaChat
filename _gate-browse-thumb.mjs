@@ -17,6 +17,7 @@
  */
 import { spawn } from 'child_process';
 import puppeteer from 'puppeteer-core';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 let pass = 0, fail = 0, skip = 0;
 const ok = (name, cond, extra = '') => {
@@ -27,6 +28,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const PORT = 3219;
 const APP = `http://localhost:${PORT}`;
+
+// ── G0. the build under test must not predate the source ────────────────────
+// This gate drives the Next landing at /#browse, which `server.js --prod`
+// serves from web/.next exactly as it sits on disk. A stale build means we
+// grade the PREVIOUS tree and report it as current. Runs before the external
+// Twitch probes, the server spawn and puppeteer, so a stale tree costs nothing.
+{
+  const fresh = assertFreshBuild();
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail, ${skip} skip`);
+    process.exit(1);
+  }
+}
 
 // ── A. classification rule (the exact test server.js uses) ──────────────────
 const classify = (loc) => (loc ? !/404_preview|ttv-static/i.test(loc) : false);

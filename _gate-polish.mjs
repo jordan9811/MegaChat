@@ -23,6 +23,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { createHmac } from 'crypto';
 import puppeteer from 'puppeteer-core';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 try { process.loadEnvFile(); } catch { /* env external */ }
 
@@ -57,6 +58,19 @@ const identityCookie = {
   domain: 'localhost',
   path: '/',
 };
+
+// `server.js --prod` serves web/.next as it sits on disk. If that build predates
+// the source, every assertion below grades the PREVIOUS tree and calls it current.
+// Refuse before we spawn anything.
+{
+  const fresh = assertFreshBuild();
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
   env: { ...process.env, PORT: String(PORT), AUTH_SECRET, DATA_DIR: dataDir, KEEP_ORPHAN_ROOMS: 'true' },

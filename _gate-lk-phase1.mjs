@@ -23,6 +23,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { tempo } from 'viem/chains';
 import { tempo as tempoClient } from 'mppx/client';
 import { RoomServiceClient } from 'livekit-server-sdk';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 try { process.loadEnvFile(); } catch { /* env external */ }
 
@@ -38,6 +39,19 @@ const ok = (name, cond, extra = '') => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jwtPayload = (t) => JSON.parse(Buffer.from(t.split('.')[1], 'base64url').toString());
+
+// ── G0. freshness: server.js --prod serves web/.next as it sits on disk, so a
+// build older than the source grades the PREVIOUS tree. Abort here, before the
+// SFU probe, the spawns, the browser, and (critically) the mainnet wallet.
+{
+  const fresh = assertFreshBuild({ watch: ['web/app', 'web/components', 'web/lib', 'public'] });
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
 
 // sanity: local SFU is up
 const health = await fetch('http://localhost:7880/').then((r) => r.text()).catch(() => null);

@@ -12,6 +12,7 @@
  */
 import { spawn } from 'child_process';
 import puppeteer from 'puppeteer-core';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -24,6 +25,21 @@ console.log('moderation key present:', !!process.env.MODERATION_API_KEY);
 
 const PORT = 3221, APP = `http://localhost:${PORT}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ── G0. STALE-BUILD GUARD — before the server, the browser, or anything else ──
+// `server.js --prod` serves web/.next exactly as it sits on disk. Grading a
+// build older than its source is how _gate-bounty-claim's section G passed for
+// two weeks on copy the merged source no longer produced. This gate drives
+// /join (Next) AND /overlay (public/), so both trees are watched.
+{
+  const fresh = assertFreshBuild({ watch: ['web/app', 'web/components', 'web/lib', 'public'] });
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
   env: { ...process.env, PORT: String(PORT) },

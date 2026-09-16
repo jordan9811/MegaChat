@@ -30,8 +30,9 @@
 import { spawn } from 'child_process';
 import { createServer } from 'net';
 import { randomUUID, createHmac } from 'crypto';
-import { mkdtempSync, writeFileSync } from 'fs';
+import { mkdtempSync, writeFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { tmpdir } from 'os';
+import { fileURLToPath } from 'url';
 import path from 'path';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -44,6 +45,81 @@ export function portInUse(port, host = '127.0.0.1') {
     probe.once('listening', () => probe.close(() => resolve(false)));
     probe.listen(port, host);
   });
+}
+
+/** The repo root, resolved from THIS module — never from cwd, because a gate
+ *  run from anywhere else would silently compare the wrong trees. */
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
+
+const DEFAULT_WATCH = ['web/app', 'web/components', 'web/lib'];
+
+/** Newest mtime under a directory, ignoring build output and dependencies. */
+function newestUnder(dir) {
+  let newest = { at: 0, file: null };
+  const walk = (d) => {
+    let entries;
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (e.name === 'node_modules' || e.name === '.next' || e.name === '.git') continue;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      let at;
+      try { at = statSync(p).mtimeMs; } catch { continue; }
+      if (at > newest.at) newest = { at, file: path.relative(REPO_ROOT, p) };
+    }
+  };
+  walk(dir);
+  return newest;
+}
+
+/**
+ * IS THE BUILD UNDER TEST NEWER THAN THE SOURCE IT CLAIMS TO SERVE?
+ *
+ * `server.js --prod` serves web/.next exactly as it sits on disk, so a gate
+ * that drives a page before a rebuild is grading the PREVIOUS tree and
+ * reporting it as the current one. That happened for two weeks on
+ * _gate-bounty-claim's section G: it asserted a line of copy that the merged
+ * source no longer produced, and passed, because the .next it rendered from
+ * predated the merge.
+ *
+ * Returns a VERDICT rather than exiting: each gate owns its own pass/fail
+ * counters and RESULT line, and a helper that called process.exit would print
+ * someone else's totals.
+ *
+ *   watch            dirs whose mtimes must predate the build (repo-relative)
+ *   requireNextBuild false for gates that render something Express serves
+ *                    directly (public/overlay.html), where there is no build
+ *                    step to be stale — the file on disk IS what is served.
+ *                    The build must still EXIST, because nextApp.prepare()
+ *                    runs at boot in prod even for a gate that never loads a
+ *                    Next page.
+ */
+export function assertFreshBuild({ watch = DEFAULT_WATCH, requireNextBuild = true } = {}) {
+  const buildId = path.join(REPO_ROOT, 'web', '.next', 'BUILD_ID');
+  if (!existsSync(buildId)) {
+    return { ok: false, builtAt: null, newestAt: 0, newestFile: null,
+      detail: 'no web/.next/BUILD_ID — run `npm run build` first' };
+  }
+  const builtAt = statSync(buildId).mtimeMs;
+  if (!requireNextBuild) {
+    return { ok: true, builtAt, newestAt: 0, newestFile: null,
+      detail: `build present; ${watch.join(', ')} is served directly, so it cannot be stale` };
+  }
+  let newest = { at: 0, file: null };
+  for (const rel of watch) {
+    const n = newestUnder(path.join(REPO_ROOT, rel));
+    if (n.at > newest.at) newest = n;
+  }
+  const ok = builtAt >= newest.at;
+  return {
+    ok,
+    builtAt,
+    newestAt: newest.at,
+    newestFile: newest.file,
+    detail: ok
+      ? `built ${new Date(builtAt).toISOString()}, newest source ${new Date(newest.at).toISOString()}`
+      : `STALE: ${newest.file} changed ${new Date(newest.at).toISOString()}, after the build at ${new Date(builtAt).toISOString()} — run \`npm run build\``,
+  };
 }
 
 /**
