@@ -20,7 +20,6 @@ import {
 import { RecordFlow } from './record-flow'
 import { ApprovalQueue } from './approval-queue'
 import { ClaimFlow } from './claim-flow'
-import { formatDollars } from '@/lib/display-format'
 
 export function StreamerBountyPage({ platform, handle }: { platform: string; handle: string }) {
   const [config, setConfig] = useState<BountyClientConfig | null | 'loading'>('loading')
@@ -31,22 +30,17 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
   const [twitchLive, setTwitchLive] = useState<boolean | null>(null)
   const [recording, setRecording] = useState(false)
   const [claiming, setClaiming] = useState(false)
-  const [error, setError] = useState('')
-  const [canClaim, setCanClaim] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
       const v = await getPoolView(platform, handle)
-      setView({ ...v.view, platform, handle })
-      setError('')
+      setView(v.view)
       setClaimedBy(v.reserved?.claimedBy ?? null)
-      setCanClaim(!!v.reserved)
       setClipCount(v.clips)
-    } catch (e) { setError(e instanceof Error ? e.message : 'Bounty could not load. Retry below.') }
+    } catch { /* transient */ }
   }, [platform, handle])
 
   useEffect(() => {
-    setClaiming(new URLSearchParams(window.location.search).get('claim') === '1')
     void getBountyConfig().then(async (cfg) => {
       setConfig(cfg)
       if (!cfg?.enabled) return
@@ -77,6 +71,8 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
     )
   }
 
+  const currency = config.currency
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-4">
@@ -92,8 +88,8 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
                 <CircleCheck className="size-3" /> claimed
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-                <span className="size-1.5 bg-[var(--neon-amber)]" aria-hidden="true" /> unclaimed
+              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                not on MegaChat yet
               </span>
             )}
             {twitchLive === true ? (
@@ -110,24 +106,22 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
         </div>
       </div>
 
-      {error && <p role="alert">{error} <button type="button" onClick={() => void refresh()} className="underline">Retry</button></p>}
-      <p className="border-l-2 border-[var(--neon-amber)] bg-card p-3 text-sm text-muted-foreground">Preview build: amounts below are ledger entries, not funded escrow. The leaderboard examples are display-only; real payments and identity verification are not connected here.</p>
       {view ? (
         <div className="grid gap-3 sm:grid-cols-3">
           {/* GUARANTEED leads. Always. */}
           <div className="rounded-2xl border border-[var(--neon-lime)]/40 bg-[var(--neon-lime)]/5 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Locked to this streamer</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Guaranteed to {handle}</p>
             <p className="mt-1 font-heading text-2xl font-bold text-foreground tabular">
-              {formatDollars(view.guaranteed)}
+              {view.guaranteed.toLocaleString()} <span className="text-sm">{currency}</span>
             </p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Released after a verified broadcast, not just a claim.</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">theirs alone the moment they claim</p>
           </div>
           <div className="rounded-2xl border border-border/70 bg-card/50 p-4">
             <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
               <Swords className="size-3" /> Contested
             </p>
             <p className="mt-1 font-heading text-2xl font-bold text-foreground tabular">
-              {formatDollars(view.contestedTotal)}
+              {view.contestedTotal.toLocaleString()} <span className="text-sm">{currency}</span>
             </p>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
               {view.contested.length
@@ -149,7 +143,7 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" onClick={() => setRecording(true)}
             className="rounded-full bg-[var(--neon-magenta)] px-6 py-3 text-sm font-bold text-white transition-transform hover:scale-[1.02]">
-            Create a bounty
+            🎙 Record a MegaChat for {handle}
           </button>
           {!claimedBy ? (
             <button type="button" onClick={() => setClaiming(true)}
@@ -165,15 +159,12 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
           target={{ platform, handle }}
           config={config}
           otherPools={others}
-          onCancel={() => setRecording(false)}
-          onDone={(contributor) => {
-            window.location.href = `/bounty/mine${contributor ? `?me=${encodeURIComponent(contributor)}` : ''}`
-          }}
+          onDone={() => { window.location.href = '/bounty/mine' }}
         />
       ) : null}
 
       {claiming && view ? (
-        <ClaimFlow pool={view} config={config} canClaim={canClaim} onClose={() => { setClaiming(false); void refresh() }} />
+        <ClaimFlow pool={view} config={config} onClose={() => { setClaiming(false); void refresh() }} />
       ) : null}
 
       {/* The claimed streamer's working surface, right where their fans look. */}
