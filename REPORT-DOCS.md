@@ -168,3 +168,46 @@ ASSUMPTION carried into the code comment and CONNECTING-GITBOOK step 8: GitBook 
 **A. Diagrams** — one Mermaid flowchart on the architecture page (browser/OBS → the one process → the stores, with LiveKit, Tempo and the platforms), text-sourced beside the ASCII version. Not extended to the flow pages: each flow is already a step table with a source per row, and a diagram would restate it without adding a citation.
 
 **C. Public-only branch** — not taken. `docs:summary --public-only --out` produces the seed; creating and maintaining a second branch is the owner's call once a space exists (U5 asks whether Notes belong in it).
+
+## 5. Report (Run 2)
+
+**Verdict: the handbook is on the branch GitBook will sync, every claim in it cites its source, the honesty check and the GitBook check are green, and the app links to it only once the owner sets one variable — nothing is at risk in production, and the one thing this pass found that IS at risk (the bounty badge pinned under a bottom-left layout) is filed, not fixed, because Run 2 changes no behaviour.**
+
+### What shipped (live at `a90604a` on `v0-ui-migration`; DEPLOYED after 539s: the layout-editor docs-link string is in the served bundle (31 chunks))
+
+- **53 authored pages** under `docs/` in the GitBook layout (`.gitbook.yaml`, `SUMMARY.md`, `.gitbook/assets`): a landing page, 7 concepts, 9 status-tagged features, the verification hard page and its limitations, 10 technical pages with interfaces embedded from source, 18 internal pages (launch readiness with a 27-row retest checklist, 12 work-history periods, roadmap, outstanding, a stable-id limitations register, six status calls), a glossary, and `docs/notes/` for you. 46 pre-existing record pages are listed under Internal, untouched.
+- **Four scripts** — `docs:check`, `docs:sync`, `docs:summary`, `docs:gitbook-check` — and `docs:verify` as the chain; `CONTRIBUTING-DOCS.md`, `CONNECTING-GITBOOK.md`.
+- **The docs link in the app**, behind `NEXT_PUBLIC_DOCS_URL`, with a 27-assertion gate that proves absence and presence against real builds.
+- **Two fixes outside the docs**, both small and both verified: the stale tail of the freeze-delay derivation comment (`bounty-claim.config.js`, comment only), and `_gate-bounty-claim` section G moved onto the readiness-polling harness after it raced twice under build load (102/0 after).
+
+### What I decided
+
+- **The pre-existing engineering record stays where it is** (briefs, decisions, design, legacy, reference, ui-overhaul, four root files) and is grouped under Internal by one set in `docs-summary.mjs` — because `OPEN-ISSUES.md`, `AGENTS.md` and the pages themselves link to those paths and the pass does not edit pages it did not write. This deviates from "one directory, trivially separable"; a `git mv` plus one set edit restores it. Notes are excluded from `--public-only` too (U5).
+- **Public pages do not link into the internal half at all** — eleven links rewritten as plain references after the checker caught them. The sidebar still shows Internal in the same space; a second, public-only space is call option C, not taken.
+- **The shared pre-launch notice is a stamped region, not an include** (GitBook has none): `docs:sync --write` re-stamps it from one file; leaving stealth is one edit and one command. HTML-comment markers are an assumption about GitBook's normaliser (L28).
+- **Call options A and B taken** (a Mermaid architecture diagram; the glossary with the git/agent vocabulary you asked for), **C not** (a public-only branch needs a space to publish to first).
+- `docs:sync` skips `.json`/`.jsonl` names that are not in the repo — runtime data files named in prose, not sources.
+
+### What I found
+
+- **The bounty badge does not follow the layout origin.** `ROADMAP.md` specced "the barcode takes the diagonally opposite corner automatically"; Pass A shipped the editor with `#bounty-badge` still fixed bottom-left. A bounty room with a bottom-left origin stacks tiles over the badge the verifier reads. Default origin is top-right, so no unedited room is affected; no rooms have chosen bottom-left in stealth. Filed: OPEN-ISSUES entry, L13, E1, U4. Not fixed — Run 2 rule.
+- **The freeze-delay comment still described the 90 s / 60 s pair** Pass A replaced with 75 s / 51 s and claimed 60 s "survives D = 0", which 51 s does not (right bound 45 s at zero delay). Corrected, including that zero-delay stubs pass only because their clips are short.
+- **Sources that disagree**, cited both ways on the pages rather than resolved: which chain (Tempo per `server.js`/`rooms-store.js`; "Arc network" still in `layout.tsx` keywords and `ARC_*` in `.env.example`); X parked (`platform-feasibility.md`) vs X proven on self-capture (`2f6e5d4`) — different questions, both true; Kick "no VOD" in the streamer-facing notice vs the recorded correction; viewer-proportional payout specced in B6 vs refused in `bounty-stream-context.js`; `README.md` describing a VDO.Ninja-era product.
+- **No `REPORT-*.md` files exist**, despite the spec naming them as a primary source; the record lives in `DECISIONS.md`, `OPEN-ISSUES.md`, the briefs and the handoffs, all read in full.
+- **Section G of `_gate-bounty-claim` raced twice in a row** (`0,0,0`) after two builds — the fixed 9 s sleep, not the product. On the harness: 102/0, routes answering `404,404,404`.
+
+### The UNCLEAR list (docs/internal/needs-a-status-call.md)
+
+U1 — is `/api/join/mpp` a live seat-payment mode or retained code? (The join page calls only `/api/join/passkey`.) · U2 — Kick VOD wording shown to streamers vs the recorded correction. · U3 — is dark mode still broken (`_gate-theme` red 2026-08-26, not re-run since the Nerve skin)? · U4 — badge follows the layout origin, or the editor refuses bottom-left? · U5 — do your Notes belong in the public half? · U6 — viewer-proportional payout: dead or deferred?
+
+### Verification
+
+`docs:check` 0 uncited claims in authored pages (194 advisory hits across 46 record pages, never failures) · `docs:sync` 0 drifts (proven to detect a deliberate edit: 6 pages flagged, cleared on revert) · `docs:gitbook-check` 0 errors, 2 advisory · `docs:summary --check` current · `_gate-docs-link` 27/0 including the two real builds (href in 14 server files with the fixture, 0 of 343 without) · `tsc --noEmit` 0 · existing suite at baseline: `_gate-bounty-claim` 102/0, `_gate-room-poster` 20/0, `_gate-missed-code-authoritative` 16/0 · Gate H 0 offenders · live `/how-it-works` renders no Docs link (variable unset in Railway), as designed.
+
+### What's on you
+
+1. **Connect GitBook** — `CONNECTING-GITBOOK.md`, eight steps, sync `v0-ui-migration`. Then set `NEXT_PUBLIC_DOCS_URL` in Railway and trigger a build (build-time variable); confirm one deep link (step 8).
+2. **Six status calls** above; each is one tag change on one page.
+3. **The badge/layout collision (U4)** — decide which fix; either is small and gate-able.
+4. **The retest checklist** on `docs/internal/launch-readiness.md` is the launch gate: 27 rows, three of them owner actions already on the outstanding list (identity migration on prod, `BOUNTY_ADMIN_KEY`, LiveKit webhooks), one that must be built (a single suite entry point), one that does not exist (real settlement).
+5. **Two stale worktree registrations** still print `Permission denied` on every commit — pause OneDrive for the folder and `git worktree prune`.
