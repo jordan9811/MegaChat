@@ -85,6 +85,19 @@ export function makeMockObs({ port, password = PASSWORD, seed = {} } = {}) {
           return reply(true, { ...state.canvas, outputWidth: state.canvas.baseWidth, outputHeight: state.canvas.baseHeight });
         case 'GetCurrentProgramScene':
           return reply(true, { currentProgramSceneName: state.programScene, sceneName: state.programScene });
+        case 'GetSceneItemList': {
+          // v5 returns every item in a scene, newest first, each with its id,
+          // source name and transform. The one-click flow never needed it —
+          // it asks for a source by name — but a VISIBILITY check has to see
+          // what is actually in the scene, including what it did not expect.
+          const items = state.scenes[requestData.sceneName] || [];
+          return reply(true, { sceneItems: items.map((i) => ({
+            sceneItemId: i.sceneItemId,
+            sourceName: i.sourceName,
+            sceneItemEnabled: i.enabled !== false,
+            sceneItemTransform: i.transform,
+          })) });
+        }
         case 'GetSceneItemId': {
           const item = findItem(requestData.sceneName, requestData.sourceName);
           if (!item) return reply(false, null, 600, 'No scene items were found');
