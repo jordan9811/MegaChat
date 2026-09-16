@@ -100,6 +100,7 @@ if (!haveFfmpeg) {
       { kind: 'seat', label: 'ripley', offsetMs: 5000 },
       { kind: 'megachat', label: 'dallas', offsetMs: 9000 },
       { kind: 'seat', label: 'ripley', offsetMs: 12000 },
+      { kind: 'seat_leave', label: 'ripley', offsetMs: 20000 },
     ],
   };
   const card = buildCard(airing, { title: 'Gate Room' });
@@ -109,6 +110,7 @@ if (!haveFfmpeg) {
     card.title === 'Gate Room' && card.durationMs === 42 * 60_000, `${card.durationMs}ms`);
   ok('D4 guests are deduped', card.guests.length === 2 && card.guests.includes('ripley'), card.guests.join(','));
   ok('D5 and it claims no source, because there is no picture behind it', card.source === null);
+  ok('D6 a seat_leave is bookkeeping, not a moment the card counts', card.momentCount === 3, `momentCount=${card.momentCount} of 4 records`);
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed\n`);

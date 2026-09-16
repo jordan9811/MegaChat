@@ -995,6 +995,17 @@ function removeParticipant(seatId, reason = 'left') {
   if (!seat) return { success: false };
 
   activeSeats.delete(seatId);
+  // The matching leave for the 'seat' moment activateSeatLive recorded, so the
+  // running seat count on an airing is no longer monotonic and "peak" means
+  // something. Only for seats that went live: a seat that never did left no
+  // join to pair with.
+  if (seat.live) {
+    try {
+      addMoment(seat.streamRoomId, { kind: 'seat_leave', label: seat.username || null });
+    } catch (e) {
+      console.warn(`[airings] seat_leave moment failed: ${e.message}`);
+    }
+  }
   if (seat._graceTimer) { clearTimeout(seat._graceTimer); seat._graceTimer = null; }
   // Lazy connect: last seat out starts the grace timer (not an instant hangup —
   // back-to-back joiners must never see a connect/disconnect flap).
@@ -2628,7 +2639,9 @@ app.get('/api/rooms/recent', (req, res) => {
       // draw a photograph or a generated card; it must never guess.
       poster: room.config.poster || null,
       // Where a card should start playing, and what its thumbnail is of.
-      moments: a.moments.map((m) => ({ kind: m.kind, label: m.label, offsetMs: m.offsetMs })),
+      // Leaves are bookkeeping for the seat count, not something to show or
+      // count; the rail never sees them.
+      moments: a.moments.filter((m) => m.kind !== 'seat_leave').map((m) => ({ kind: m.kind, label: m.label, offsetMs: m.offsetMs })),
     });
     if (out.length >= limit) break;
   }

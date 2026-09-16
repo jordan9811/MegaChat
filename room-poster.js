@@ -15,15 +15,16 @@
  * is unaffected.
  *
  * WHICH FRAME. The requirement prefers peak seat count and falls back to the
- * midpoint of the longest clip playback. Peak seat count IS NOT DERIVABLE from
- * what the airings record stores: `moments` records joins and not leaves, so
- * the running count is monotonic and "peak" degenerates to "the last person who
- * joined". Using it would be a number that looks meaningful and is not. So the
- * fallback is the rule — the midpoint of the longest playback, which is the
- * deepest point of the longest stretch the room was in use, and far from both
- * the join stinger and the end card. Recording a `seat_leave` moment would make
- * the preferred rule genuinely available; that is one line in the seat teardown
- * and deliberately not done here.
+ * midpoint of the longest clip playback. The rule here is the fallback. When it
+ * was written, peak was not derivable: `moments` recorded joins and not leaves,
+ * so the running count was monotonic and "peak" degenerated to "the last person
+ * who joined". server.js records `seat_leave` now, so peak IS derivable from
+ * any airing written after that landed. Switching the rule over is a deliberate
+ * follow-up, not done here: nothing has yet measured whether the two rules pick
+ * different seconds on a real capture, and until they are shown to disagree the
+ * midpoint of the longest playback stands — the deepest point of the longest
+ * stretch the room was in use, and far from both the join stinger and the end
+ * card.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -105,8 +106,10 @@ export function buildPoster(roomId, records, { log = console } = {}) {
  * single-source rule effectiveMaxSeats follows.
  */
 export function buildCard(airing, { title = null } = {}) {
+  // Leaves are bookkeeping for the seat count, never a moment in their own right.
+  const shown = (airing?.moments || []).filter((m) => m.kind !== 'seat_leave');
   const guests = [];
-  for (const m of airing?.moments || []) {
+  for (const m of shown) {
     if (m.label && !guests.includes(m.label)) guests.push(m.label);
     if (guests.length >= 4) break;
   }
@@ -116,7 +119,7 @@ export function buildCard(airing, { title = null } = {}) {
     source: null,
     title: title || null,
     guests,
-    momentCount: (airing?.moments || []).length,
+    momentCount: shown.length,
     durationMs: airing?.endedAt && airing?.startedAt ? Math.max(0, airing.endedAt - airing.startedAt) : null,
   };
 }

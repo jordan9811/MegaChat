@@ -91,10 +91,15 @@ pledge refund. `_gate-room-poster.mjs` holds that: it ages a capture to 30 days,
 runs `purgeExpiredCaptures`, and asserts the poster survives.
 
 **The frame is the midpoint of the longest clip playback.** The brief preferred
-peak seat count; it is not derivable from what we store. `moments` records joins
-and not leaves, so the running count is monotonic and "peak" degenerates to "the
-last person who joined". Recording a `seat_leave` moment would make the
-preferred rule available — one line in the seat teardown, deliberately not done.
+peak seat count. When Run 1 shipped it was not derivable: `moments` recorded
+joins and not leaves, so the running count was monotonic and "peak" degenerated
+to "the last person who joined". `removeParticipant` in `server.js` now records
+a `seat_leave` moment for every seat that went live, so peak IS derivable from
+any airing written after that landed. The rule was not switched: nothing has
+measured whether the two rules pick different seconds on a real capture, and
+until they are shown to disagree the midpoint stands. Leaves are bookkeeping —
+`/api/rooms/recent` filters them off the wire and `buildCard` does not count
+them (`_gate-room-poster` D6), so the rail's "N moments" means what it did.
 
 **`attachRecording()` has its caller.** Air-session close, after
 `awaitPendingFreezes`: a freeze is scheduled ~51s after its clip ends, so at
