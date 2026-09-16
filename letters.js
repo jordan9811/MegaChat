@@ -30,6 +30,7 @@ import { verifyRoomAccess } from './auth.js';
 import { moderateMedia } from './moderation.js';
 import { toWebRequest } from './meter-mpp.js';
 import { toAtomic, fromAtomic } from './token-utils.js';
+import { addMoment } from './airings-store.js';
 
 const LETTER_MAX_BYTES = 25 * 1024 * 1024; // per letter
 const GLOBAL_MAX_BYTES = 120 * 1024 * 1024; // all rooms combined
@@ -459,6 +460,14 @@ export function attachLetters(app, deps) {
   function playLetter(roomId, state, letter, why = '') {
     state.playing = letter;
     letter.status = 'playing';
+    // The most interesting second in a broadcast: somebody paid to be on the
+    // stream and here they are. A "recently aired" card opens its replay
+    // here rather than at zero. No-op when the room is not on air.
+    try {
+      addMoment(roomId, { kind: 'megachat', label: letter.username || null });
+    } catch (e) {
+      log.warn?.(`[airings] megachat moment failed: ${e.message}`);
+    }
     log.log(`[letters] ${letter.id} playing in room ${roomId} (${letter.durationS}s)${why ? ' — ' + why : ''}`);
     broadcastToRoom(roomId, {
       type: 'letter_play',

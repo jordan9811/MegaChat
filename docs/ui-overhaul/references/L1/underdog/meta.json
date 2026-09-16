@@ -1,0 +1,90 @@
+{
+  "site": "underdog",
+  "url": "https://www.underdogsports.com/",
+  "captured": "2026-09-02T17:26:18.139Z",
+  "shots": {
+    "landing-390": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\underdog\\landing-390.png",
+    "landing-768": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\underdog\\landing-768.png",
+    "landing-1440": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\underdog\\landing-1440.png",
+    "landing-1440-full": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\underdog\\landing-1440-full.png",
+    "app-1440": "C:\\Users\\jorda\\mc-ui-overhaul\\docs\\ui-overhaul\\references\\L1\\underdog\\app-1440.png"
+  },
+  "hero": {
+    "title": "Underdog Sports: Predictions, Pick'em and Season-long Fantasy for NFL, NBA & more",
+    "url": "https://www.underdogsports.com/",
+    "top": [
+      {
+        "tag": "span",
+        "fs": 40,
+        "y": 1072,
+        "t": "Keep Your $1,000,000",
+        "href": ""
+      },
+      {
+        "tag": "div",
+        "fs": 34,
+        "y": 944,
+        "t": "ALL ON UNDERDOG LIVE NATIONWIDE",
+        "href": ""
+      },
+      {
+        "tag": "p",
+        "fs": 24,
+        "y": 337,
+        "t": "spreads, totals, moneylines and parlays",
+        "href": ""
+      },
+      {
+        "tag": "div",
+        "fs": 20,
+        "y": 20,
+        "t": "KEEP YOUR $1,000,000! TERMS APPLY.",
+        "href": ""
+      },
+      {
+        "tag": "div",
+        "fs": 20,
+        "y": 20,
+        "t": "KEEP YOUR $1,000,000! TERMS APPLY.",
+        "href": ""
+      },
+      {
+        "tag": "div",
+        "fs": 20,
+        "y": 20,
+        "t": "KEEP YOUR $1,000,000! TERMS APPLY.",
+        "href": ""
+      },
+      {
+        "tag": "div",
+        "fs": 20,
+        "y": 20,
+        "t": "KEEP YOUR $1,000,000! TERMS APPLY.",
+        "href": ""
+      },
+      {
+        "tag": "a",
+        "fs": 16,
+        "y": 87,
+        "t": "Explore",
+        "href": "https://app.underdogsports.com/?explore=true"
+      },
+      {
+        "tag": "a",
+        "fs": 16,
+        "y": 87,
+        "t": "Log In",
+        "href": "https://app.underdogsports.com/login"
+      },
+      {
+        "tag": "a",
+        "fs": 16,
+        "y": 87,
+        "t": "Sign Up",
+        "href": "https://app.underdogsports.com/register"
+      }
+    ]
+  },
+  "appUrl": "https://app.underdogsports.com/register",
+  "appTitle": "Underdog Sports: Predictions, Pick'em and Season-long Fantasy for NFL, NBA & more"
+}

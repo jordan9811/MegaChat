@@ -27,6 +27,8 @@ import {
   updateRoom,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
+import { getLiveByLogins, twitchApiConfigured } from './twitch-api.js';
+import { openAiring, closeAiring, addMoment, recentAirings, listAirings } from './airings-store.js';
 import { createActivityManager } from './livekit-activity.js';
 import { createWebhookTracker, verifyWebhookJwt, reconcile } from './livekit-webhooks.js';
 import { createBreaker, breakerConfig } from './livekit-breaker.js';
@@ -832,6 +834,13 @@ function activateSeatLive(seatId, ws) {
 
   seat.live = true;
   seat.liveAt = Date.now();
+  // A moment on the room's current airing, if it is on air. Silent no-op when
+  // it is not — a seat in a room whose owner never streams is normal.
+  try {
+    addMoment(seat.streamRoomId, { kind: 'seat', label: seat.username || null });
+  } catch (e) {
+    console.warn(`[airings] seat moment failed: ${e.message}`);
+  }
   // MPP: the staleness clock starts now; the first paid tick (which also
   // opens the channel) must land within MPP_STALE_MS.
   seat.lastPaidAt = Date.now();
@@ -2238,14 +2247,115 @@ async function refreshTwitchLive(login) {
   twitchRefreshing.add(login);
   let live = false;
   try {
-    const url = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(login)}-440x248.jpg`;
+    // 640x360, NOT 440x248. Measured 2026-09-12 on an offline channel: the
+    // large variants redirect to the ttv-static 404_preview placeholder, but
+    // 440x248 answers 200 with no redirect at all — which fell through to the
+    // "served directly" branch below and reported a dark channel as LIVE. The
+    // card then painted Twitch's gray placeholder as if it were the stream.
+    const url = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(login)}-640x360.jpg`;
     const r = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(4000) });
     const loc = r.headers.get('location') || '';
     if (loc) live = !/404_preview|ttv-static/i.test(loc); // offline placeholder → not live
-    else if (r.status === 200) live = true; // served directly (rare)
+    else if (r.status === 200) live = true; // served directly = a real frame
   } catch { /* network/timeout → treat as offline */ }
   twitchLiveCache.set(login, { live, at: Date.now() });
   twitchRefreshing.delete(login);
+}
+
+// ── follow my stream ───────────────────────────────────────────────────────
+// The room's state follows the owner's broadcast. This is what the "Follow my
+// stream status" toggle has promised since it shipped and never did: twitchAuto
+// was stored, read by the UI to adopt the owner's channel name, and read by
+// nothing else. A room's paused/active state was a manual switch.
+//
+// TWO QUESTIONS, ANSWERED AT TWO DIFFERENT SPEEDS, because they carry different
+// costs when we get them wrong:
+//
+//   DISCOVERY reacts the moment the broadcast goes dark. The board is where
+//   people spend money, and a room with nobody behind it and no preview should
+//   not be able to take a paid MegaChat while we hedge about a blip. Hiding is
+//   free to undo and costs the owner nothing.
+//
+//   PAUSING waits FOLLOW_OFF_CONFIRM_MS. A stream that drops for ninety seconds
+//   is a blip, not an ending — the room stays live so a conversation already in
+//   flight survives it, and anyone holding a direct link keeps working. Only a
+//   broadcast confirmed dark for the whole window pauses the room.
+//
+// Liveness comes from Helix in ONE batched call for every following room, not
+// from the per-room thumbnail probe: this question gets asked forever, and the
+// cost has to not grow with the product. A null answer means WE COULD NOT ASK,
+// and nothing is touched on it — pausing somebody's room because Twitch timed
+// out would be the worst failure this loop could have.
+// Overridable so a gate can drive the two-speed behaviour in seconds instead
+// of minutes — the defaults are the real ones and nothing in production sets
+// these, exactly like TWITCH_API_BASE.
+const FOLLOW_POLL_MS = Number(process.env.FOLLOW_POLL_MS) || 60_000;
+const FOLLOW_OFF_CONFIRM_MS = Number(process.env.FOLLOW_OFF_CONFIRM_MS) || 5 * 60_000;
+const followState = new Map(); // roomId -> { live: boolean, offSince: number|null }
+
+function followsBroadcast(cfg) {
+  return !!(cfg && cfg.twitchAuto !== false && cfg.twitchChannel);
+}
+
+/** Discovery hides a following room as soon as its broadcast is confirmed dark.
+ *  Only a room we have OBSERVED go offline is hidden: before the first tick,
+ *  and after a restart, nothing is hidden on a guess. */
+function hiddenByBroadcast(room) {
+  if (!followsBroadcast(room.config)) return false;
+  const st = followState.get(room.id);
+  return !!st && st.live === false;
+}
+
+async function followTick() {
+  const following = [];
+  for (const r of listRooms()) {
+    if (followsBroadcast(r.config)) following.push(r);
+    else followState.delete(r.id);
+  }
+  if (!following.length) return;
+  const logins = following.map((r) => String(r.config.twitchChannel).trim().replace(/^@/, '').toLowerCase());
+  const liveByLogin = await getLiveByLogins(logins);
+  if (!liveByLogin) return; // could not ask — change nothing
+
+  const now = Date.now();
+  for (const r of following) {
+    const login = String(r.config.twitchChannel).trim().replace(/^@/, '').toLowerCase();
+    if (!liveByLogin.has(login)) continue;
+    const live = liveByLogin.get(login);
+    const prev = followState.get(r.id);
+
+    if (live) {
+      followState.set(r.id, { live: true, offSince: null });
+      // Rising edge, or the first thing we ever saw. Both mean the same thing
+      // to the owner: their broadcast is up and their room is not.
+      if (!prev || !prev.live) {
+        // The airing records the BROADCAST, so it opens on the edge even when
+        // the room was already active — otherwise a room the owner opened by
+        // hand before going live would never get a record of the stream.
+        openAiring({ roomId: r.id, channel: login, resumeWithinMs: FOLLOW_OFF_CONFIRM_MS });
+        if (!r.active) {
+          updateRoom(r.id, { active: true });
+          console.log(`[follow] ${r.id} (${login}) went live → room active`);
+        }
+      }
+      continue;
+    }
+
+    const offSince = prev && prev.offSince ? prev.offSince : now;
+    if (prev && prev.live) {
+      // Closed at the moment it went dark, not when the room eventually
+      // pauses — the confirm window is a hedge about pausing, and stamping it
+      // into history would put five minutes of nothing on the end of a replay.
+      closeAiring(r.id, offSince);
+    }
+    followState.set(r.id, { live: false, offSince });
+    // Hidden from discovery already, by hiddenByBroadcast. The room itself only
+    // pauses once the dark has held for the full window.
+    if (r.active && now - offSince >= FOLLOW_OFF_CONFIRM_MS) {
+      updateRoom(r.id, { active: false });
+      console.log(`[follow] ${r.id} (${login}) dark for ${Math.round((now - offSince) / 1000)}s → room paused`);
+    }
+  }
 }
 
 function twitchLiveCached(channel) {
@@ -2258,6 +2368,44 @@ function twitchLiveCached(channel) {
   return hit ? hit.live : false;
 }
 
+// Recently aired — what the board shows when nothing is live right now.
+//
+// The cold-start problem is not solved by waiting for more streamers: a board
+// with three rooms and none of them live reads as abandoned however good the
+// layout is. These are finished broadcasts with something to show, and each
+// carries the offsets a card seeks to — the second a MegaChat played or a
+// guest took a seat — so the replay opens on the interesting frame instead of
+// two hours of pre-roll.
+//
+// Rooms that opted out of the board stay out of it here too: unlisted means
+// unlisted, and a room's history is no less the room.
+app.get('/api/rooms/recent', (req, res) => {
+  const limit = Math.max(1, Math.min(24, Number(req.query.limit) || 12));
+  const byId = new Map(listRooms().map((r) => [r.id, r]));
+  const out = [];
+  for (const a of recentAirings({ limit: limit * 2 })) {
+    const room = byId.get(a.roomId);
+    if (!room || !room.config || room.config.unlisted) continue;
+    out.push({
+      airingId: a.id,
+      roomId: a.roomId,
+      name: room.config.name,
+      handle: room.config.handle || null,
+      platform: a.platform,
+      channel: a.channel,
+      startedAt: a.startedAt,
+      endedAt: a.endedAt,
+      durationMs: Math.max(0, (a.endedAt || a.startedAt) - a.startedAt),
+      vodUrl: a.vodUrl,
+      captureRef: a.captureRef,
+      // Where a card should start playing, and what its thumbnail is of.
+      moments: a.moments.map((m) => ({ kind: m.kind, label: m.label, offsetMs: m.offsetMs })),
+    });
+    if (out.length >= limit) break;
+  }
+  res.json({ airings: out });
+});
+
 // Public browse directory — active rooms that haven't opted out (unlisted).
 // Reuses rooms-store + the live seat map; no duplicated state. Sorted hottest
 // first: live on-camera count, then queued viewers (paid, camera pending).
@@ -2267,6 +2415,10 @@ app.get('/api/rooms/public', (req, res) => {
     if (!r.active) continue;
     const cfg = r.config;
     if (!cfg || cfg.unlisted) continue;
+    // A following room whose broadcast is dark leaves the board immediately,
+    // well before it would be paused — nobody should be able to pay into a
+    // room with no picture and nobody behind it.
+    if (hiddenByBroadcast(r)) continue;
     let live = 0;
     let waiting = 0;
     for (const s of activeSeats.values()) {
@@ -2317,9 +2469,30 @@ attachDashboardRoutes(app, {
   removeParticipant,
   setSeatPinned,
   atomicToUsdc,
+  // Shared with the browse directory on purpose: one cache, one probe budget.
+  // The manage page needs the same server-verified answer the browse cards get.
+  twitchLiveCached,
+  listAirings,
 });
 
 await migrateLegacyRoomPasswords();
+
+// "Follow my stream status" is only real if something asks. FOLLOW_STREAM=0
+// turns the loop off and leaves every room's paused/active state manual, the
+// way it behaved before this existed. Unconfigured Twitch app credentials do
+// the same thing by themselves: getLiveByLogins answers null and the tick
+// changes nothing, so a deploy without them degrades to the old behaviour
+// rather than pausing everybody's rooms.
+const followEnabled = process.env.FOLLOW_STREAM !== '0' && twitchApiConfigured();
+if (followEnabled) {
+  const followTimer = setInterval(() => { void followTick(); }, FOLLOW_POLL_MS);
+  followTimer.unref?.();
+  void followTick(); // first answer at boot, not a minute into it
+  console.log(`[follow] watching broadcasts every ${FOLLOW_POLL_MS / 1000}s`);
+} else {
+  console.log('[follow] off — room state stays manual'
+    + (process.env.FOLLOW_STREAM === '0' ? ' (FOLLOW_STREAM=0)' : ' (no TWITCH_CLIENT_ID/SECRET)'));
+}
 
 // ─── Boot cleanup: dump orphan rooms ────────────────────────────────────────
 // Now that the volume persists data, junk test rooms would otherwise pile up

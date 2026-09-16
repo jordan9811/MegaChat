@@ -3,8 +3,13 @@
 // surfaces check `enabled` from /api/bounty/config before rendering anything.
 
 import { backendHttpUrl } from './backend'
+import { withBountyExamples } from './bounty-examples'
 
 export type BountyPool = {
+  displayOnly?: boolean
+  /** Profile photo, server-fetched and cached; null when that platform has no
+   *  image API (X, Rumble) or the fetch failed — callers draw a monogram. */
+  avatarUrl?: string | null
   handleKey: string
   platform: string | null
   handle: string | null
@@ -94,8 +99,9 @@ export async function getBountyConfig(): Promise<BountyClientConfig | null> {
   }
 }
 
-export function listBountyPools() {
-  return req<{ pools: BountyPool[]; currency: string }>('/api/bounty/pools')
+export async function listBountyPools() {
+  const result = await req<{ pools: BountyPool[]; currency: string }>('/api/bounty/pools')
+  return { ...result, pools: withBountyExamples(result.pools) }
 }
 
 export function startClaim(platform: string, handle: string, claimant: string) {
@@ -192,14 +198,19 @@ export type ProgramPool = PoolView & {
   claimed: boolean
   promotional: boolean
   clipsWaiting: number
+  /** Profile photo, server-fetched and cached. null means no image API for
+   *  that platform (X, Rumble) or the fetch failed — the leaderboard draws a
+   *  monogram in the same slot rather than a broken frame. */
+  avatarUrl: string | null
 }
 
-export function getProgram() {
-  return req<{
+export async function getProgram() {
+  const result = await req<{
     pools: ProgramPool[]
     currency: string
     totals: { realValue: number; displayedTotal: number; note: string }
   }>('/api/bounty/program')
+  return { ...result, pools: withBountyExamples(result.pools) }
 }
 
 export function getPoolView(platform: string, handle: string) {

@@ -23,6 +23,7 @@ import { kickApiConfigured, getChannelBySlug } from './kick-api.js';
 import { youtubeApiConfigured, getVideoLiveDetails, extractVideoId } from './youtube-api.js';
 import { rumbleApiConfigured, getRumbleLiveStatus } from './rumble-api.js';
 import { getStreamByMint } from './pumpfun-api.js';
+import { resolveAvatars, avatarKey } from './platform-avatars.js';
 import { readIdentityFromRequest } from './auth.js';
 import settlement from './bounty-settlement.js';
 import { policyFor, authorize, TIER, platformLoginFor } from './bounty-auth.js';
@@ -493,6 +494,52 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
 
   log.warn('[bounty] BOUNTY_CLAIM ON — escrow is a LEDGER ONLY. Settlement is stubbed; no funds move.');
 
+  /**
+   * DEMO BOARD. Runs once, on the first boot that finds no pools at all, so
+   * the board is populated without anyone holding an admin key.
+   *
+   * These go through the SAME escrow path a fan pledge takes — the point is
+   * that nothing about this board is special, and it behaves identically when
+   * real money arrives. Every row carries the `seed:` contributor prefix, so
+   * POST /api/bounty/admin/seed-clear removes all of it in one call.
+   *
+   * ⚠ Run that clear before settlement goes live. Run B replays ledger rows,
+   * and a seeded row surviving into the replay pays out money nobody put in.
+   */
+  const DEMO_TARGETS = [
+    { platform: 'twitch', handle: 'threadguy' },
+    { platform: 'kick', handle: 'chessbrah' },
+    { platform: 'x', handle: 'martinshkreli' },
+    { platform: 'x', handle: 'rasmr' },
+    { platform: 'pumpfun', handle: 'GnBQjwQibzB9zFPHEGEhoiASon7JfaRADxQe6C64pump' },
+    { platform: 'twitch', handle: 'asmongold' },
+    { platform: 'twitch', handle: 'pokimane' },
+    { platform: 'kick', handle: 'xqc' },
+  ];
+  try {
+    // Per name, not once per store: a name added to this list later still
+    // gets its pool on the next boot, and a name that already has one — seeded
+    // or pledged by a real fan — is left exactly as it is.
+    const firstBoot = store.listReservedHandles().length === 0;
+    const have = new Set(store.listReservedHandles().map((r) => r.key));
+    let added = 0;
+    for (const t of DEMO_TARGETS) {
+      if (have.has(store.handleKey(t.platform, t.handle))) continue;
+      escrow.pledge({ targets: [t], contributor: 'seed:demo', amount: '100', actor: 'admin', displayName: 'Seeded' });
+      added += 1;
+    }
+    if (firstBoot) {
+      // One pot every name competes for. This is what draws the hatched half
+      // of the bar and makes realValue and displayedTotal honestly disagree.
+      // Capped to whatever pledgeMaxTargets allows, so it never throws.
+      const contested = DEMO_TARGETS.slice(0, bountyConfig.pledgeMaxTargets);
+      escrow.pledge({ targets: contested, contributor: 'seed:demo-contested', amount: '100', actor: 'admin', displayName: 'Seeded' });
+    }
+    if (added) log.warn(`[bounty] demo board seeded — ${added} new pool(s) of ${DEMO_TARGETS.length} listed. NOT REAL MONEY; clear before settlement.`);
+  } catch (e) {
+    log.warn(`[bounty] demo seed skipped: ${e.message}`);
+  }
+
   // Protect reserved handles from being claimed as ordinary room handles.
   // Registered only while the flag is on (see rooms-store.setHandleGuard).
   import('./rooms-store.js').then(({ setHandleGuard }) => {
@@ -719,7 +766,11 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
    * requirement that rehypothecated money is never presented as bigger than
    * it is.
    */
-  guarded.get('/api/bounty/program', (_req, res) => {
+  guarded.get('/api/bounty/program', async (_req, res) => {
+    // Express 4 does not catch a rejected handler promise, so an async body
+    // without this wrapper answers NOTHING on a throw and hangs the page.
+    // Same shape as every other async route in this file.
+    try {
     const views = store.listReservedHandles().map((r) => ({
       ...escrow.poolView(r.key),
       seeded: !!r.seeded,
@@ -732,8 +783,18 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       .sort((a, b) => (b.guaranteed + b.contestedTotal) - (a.guaranteed + a.contestedTotal));
     const realValue = views.reduce((a, v) => a + v.totalContributed, 0);
     const displayedTotal = views.reduce((a, v) => a + v.guaranteed + v.contestedTotal, 0);
+    // Faces for streamers who never signed up — public profile images read
+    // with OUR app credentials, resolved concurrently behind a deadline and a
+    // cache. `avatarUrl: null` means "render the monogram", and every failure
+    // mode lands there: unsupported platform, no such channel, platform down,
+    // cold cache that missed the budget. Decoration must never be able to
+    // fail the money page, so it also cannot throw.
+    let avatars = new Map();
+    try {
+      avatars = await resolveAvatars(views.map((v) => ({ platform: v.platform, handle: v.handle })));
+    } catch { /* rule 1 in platform-avatars.js — belt as well as braces */ }
     res.json({
-      pools: views,
+      pools: views.map((v) => ({ ...v, avatarUrl: avatars.get(avatarKey(v.platform, v.handle)) ?? null })),
       currency: bountyConfig.currency,
       totals: {
         realValue: +realValue.toFixed(6),
@@ -741,6 +802,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         note: 'displayedTotal counts a contested pledge once per target; realValue counts each escrow once',
       },
     });
+    } catch (e) { fail(res, e); }
   });
 
   /**
@@ -945,6 +1007,63 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       }
       store.updateReservedHandle(key, { seeded: true });
       res.json({ ok: true, reserved: store.getReservedHandleByKey(key) });
+    } catch (e) { fail(res, e); }
+  });
+
+  /**
+   * DEMO SEED — pledges that look and behave exactly like real ones, so the
+   * board can be shown to people before settlement exists.
+   *
+   * They go through the SAME escrow path as a fan pledge, deliberately: the
+   * point is that nothing special happens on this board, and when real money
+   * arrives it behaves identically. The one difference is the contributor
+   * key, which is prefixed `seed:` — that prefix is the entire reason this is
+   * reversible. Without it, "take the fake ones out" means reading the ledger
+   * row by row.
+   *
+   * Run B replays settlement off ledger rows. A seeded row that survived into
+   * that replay would be a real payout of money nobody ever put in, so
+   * /admin/seed-clear exists next to this and must be run before settlement
+   * goes live.
+   */
+  guarded.post('/api/bounty/admin/seed-pledge', (req, res) => {
+    try {
+      const { targets, amount, expiresInMs, label } = req.body || {};
+      if (!Array.isArray(targets) || !targets.length) {
+        return res.status(400).json({ error: 'targets[] required' });
+      }
+      const out = escrow.pledge({
+        targets,
+        contributor: `seed:${String(label || 'demo').slice(0, 32)}`,
+        amount,
+        expiresInMs,
+        actor: 'admin',
+        displayName: label ? String(label).slice(0, 64) : 'Seeded',
+      });
+      log.warn(`[bounty] SEEDED pledge ${out.pledge.id} — ${amount} across ${targets.length} target(s). Not real money.`);
+      res.json({ ok: true, seeded: true, pledge: out.pledge, contribution: out.contribution });
+    } catch (e) { fail(res, e); }
+  });
+
+  /** Remove every seeded pledge. Run this before real money exists. */
+  guarded.post('/api/bounty/admin/seed-clear', (req, res) => {
+    try {
+      const seeded = store.listPledges({ status: 'OPEN' })
+        .filter((p) => String(p.contributor || '').startsWith('seed:'));
+      const cleared = [];
+      for (const p of seeded) {
+        store.updatePledge(p.id, { status: 'EXPIRED' });
+        const c = store.getContribution(p.contributionId);
+        if (c && c.status === 'HELD') {
+          escrow.refund({
+            handleKey: c.handleKey, reason: 'PLEDGE_EXPIRED', actor: 'admin',
+            contributionIds: [c.id], reference: p.id, settlement,
+          });
+        }
+        cleared.push({ pledgeId: p.id, amount: p.amount });
+      }
+      log.warn(`[bounty] seed-clear removed ${cleared.length} seeded pledge(s)`);
+      res.json({ ok: true, cleared: cleared.length, pledges: cleared });
     } catch (e) { fail(res, e); }
   });
 

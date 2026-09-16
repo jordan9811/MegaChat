@@ -1,0 +1,37 @@
+[2.1s] shot 01-app-landing.png
+[2.2s] shot 02-app-landing-full.png
+[2.2s] landing: open-a-room tile present=false, any /dashboard link=false
+[2.2s] read 7s: CONFUSION 1: wall of rooms + bounties. Header: All / On air / Bounties / How it works / Sign in. Nothing says start a room / for streamers / dashboard. Scroll the whole page looking.
+[9.9s] shot 03-app-scrolled-bottom-no-streamer-cta.png
+[10.3s] shot 04-before-how-it-works.png
+[10.3s] CLICK #1: how-it-works
+[11.6s] shot 05-after-how-it-works.png
+[11.6s] read 4s: long playbook page, viewer steps first; scroll for a streamer section
+[16.1s] shot 06-hiw-streamers-section.png
+[16.1s] read 8s: Streamers 01 Create your room (Dashboard, name, password); 03 Drop the overlay into OBS. Keep scrolling for a button.
+[24.6s] shot 07-before-start-a-room.png
+[24.6s] CLICK #2: start-a-room
+[27.3s] shot 08-after-start-a-room.png
+[27.4s] shot 09-new-room-form-full.png
+[27.4s] read 8s: dense creator: Charging Paid/Free, MegaChats rate, screening, Open mic, Drops, Advanced tabs, password, Create room
+[35.4s] shot 10-before-name-your-room.png
+[35.4s] CLICK #3: name-your-room
+[36.0s] shot 11-after-name-your-room.png
+[37.0s] shot 12-before-password-field.png
+[37.0s] CLICK #4: password-field
+[37.6s] shot 13-after-password-field.png
+[38.1s] shot 14-form-filled-full.png
+[38.2s] shot 15-before-create-room.png
+[38.2s] CLICK #5: create-room
+[38.7s] shot 16-after-create-room.png
+[40.3s] shot 17-managing-dashboard-settled.png
+[40.5s] shot 18-managing-dashboard-full.png
+[40.5s] read 8s: different-looking page: STREAMER DASHBOARD / Managing. Share links card: Viewer + OBS URLs. CONFUSION 2: "Temporary link. Set a display name to make it permanent" next to the OBS URL -- will it change on me?
+[49.1s] shot 19-before-copy-obs-link.png
+[49.1s] CLICK #6: copy-obs-link
+[49.7s] shot 20-after-copy-obs-link.png
+[49.7s] DONE. clicks=6 clipboard=https://megachat.fun/overlay?room=33e51df4 obsShown=https://megachat.fun/overlay?room=33e51df4 url=https://megachat.fun/dashboard
+[50.5s] shot 21-post-add-it-to-obs-expanded.png
+[51.3s] shot 22-post-obs-setup-guide-expanded-full.png
+--- create calls ---
+[38.7s] POST 201 https://megachat.fun/api/dashboard/create

@@ -13,6 +13,8 @@
  *     gone — funding is a plain TIP-20 transfer on Tempo.
  */
 
+import { formatDollars, guestName } from '@/lib/display-format';
+
 let CONFIG = null;
 let account = null;
 let mySeatId = null;
@@ -51,6 +53,10 @@ async function loadConfig() {
     throw new Error(err.error || 'Failed to load room config');
   }
   CONFIG = await res.json();
+  const roomName = document.getElementById('joinRoomName');
+  if (roomName) roomName.textContent = CONFIG.roomName || 'Room';
+  const roomState = document.getElementById('joinRoomState');
+  if (roomState) roomState.textContent = CONFIG.isDemo ? 'Demo room' : CONFIG.roomActive === false ? 'Room closed' : 'Room entrance';
   // The URL may have carried a HANDLE — adopt the server-resolved room id for
   // every follow-up call (join, balance, letters, WS), and fix the socket's
   // subscription if it already opened with the handle string.
@@ -83,7 +89,7 @@ async function loadConfig() {
 
 function tokenSymbol() {
   if (!CONFIG) return 'USDC';
-  return CONFIG.paymentTokenSymbol || 'USDC';
+  return (CONFIG.paymentTokenSymbol || 'USDC').replace(/USDC\.e/gi, 'USDC');
 }
 
 // ── Simple/Advanced presentation (see web/lib/ui-mode.ts) ──
@@ -121,21 +127,8 @@ function applyFreeRoomUi() {
   if (meter) meter.classList.remove('show');
 }
 
-function uiSimple() {
-  return typeof document !== 'undefined'
-    && document.documentElement.dataset.ui === 'simple';
-}
-function perCreditUsd() {
-  const p = parseFloat((CONFIG && (CONFIG.passkeyTickPrice || CONFIG.tickPrice)) || '0.001');
-  return p > 0 ? p : 0.001;
-}
-function credits(usdc) {
-  const n = parseFloat(usdc || '0');
-  if (!isFinite(n)) return '0';
-  return String(Math.max(0, Math.round(n / perCreditUsd())));
-}
 function fmtAmount(usdc) {
-  return uiSimple() ? `${credits(usdc)} credits` : `${usdc} ${tokenSymbol()}`;
+  return formatDollars(usdc);
 }
 
 // ─── Human-readable transaction errors (display only) ───────────────────────
@@ -245,7 +238,7 @@ async function showTxError(prefix, err, ctx) {
 let lastMeter = null;
 function applyModeText() {
   const dep = document.getElementById('depositBtn');
-  if (dep) dep.textContent = uiSimple() ? '➕ Add funds' : '💧 Fund wallet';
+  if (dep) dep.textContent = 'Add funds';
 }
 
 function joinStreamEnabled() {
@@ -255,31 +248,19 @@ function joinStreamEnabled() {
 
 function updatePriceDisplay() {
   if (!CONFIG) return;
-  const sym = tokenSymbol();
   const amt = document.getElementById('priceAmount');
   const lbl = document.getElementById('priceLabel');
   const tickPrice = CONFIG.passkeyTickPrice || CONFIG.tickPrice;
   const tickSec = CONFIG.passkeyTickSeconds || 1;
   const mc = CONFIG.letters && CONFIG.letters.enabled ? CONFIG.letters : null;
-  if (joinStreamEnabled() && roomIsFree()) {
-    if (amt) amt.textContent = 'FREE';
-    if (lbl) lbl.textContent = 'this room is free — hop on camera, no wallet needed';
+  if (mc) {
+    const total = Number(mc.price ?? Number(tickPrice) * mc.maxSeconds / tickSec);
+    if (amt) amt.textContent = `${fmtAmount(total / mc.maxSeconds)} /second`;
+    // The backend charges a flat clip price, including shorter takes.
+    if (lbl) lbl.textContent = `Clip total: ${fmtAmount(total)} · Max: ${mc.maxSeconds} seconds`;
   } else if (joinStreamEnabled()) {
-    if (uiSimple()) {
-      if (amt) amt.textContent = '1 credit';
-      if (lbl) lbl.textContent = `per second on camera · session cap ${credits(CONFIG.maxSession)} credits`;
-    } else {
-      // One meter on Tempo — every wallet mode streams at the same rate.
-      if (amt) amt.textContent = `${tickPrice} ${sym}`;
-      if (lbl) {
-        lbl.textContent =
-          `${tickPrice} ${sym} / ${tickSec}s · cap ${CONFIG.maxSession} ${sym} · Tempo`;
-      }
-    }
-  } else if (mc) {
-    // MegaChats-only room: the headline price is the flat MegaChat price.
-    if (amt) amt.textContent = fmtAmount(mc.price);
-    if (lbl) lbl.textContent = `per MegaChat · up to ${mc.maxSeconds}s · recorded, plays once`;
+    if (amt) amt.textContent = `${fmtAmount(Number(tickPrice) / tickSec)} /second`;
+    if (lbl) lbl.textContent = roomIsFree() ? 'Free live seat' : `Live seat · Spend limit: ${fmtAmount(CONFIG.maxSession)}`;
   } else {
     if (amt) amt.textContent = '—';
     if (lbl) lbl.textContent = 'Nothing is enabled in this room right now.';
@@ -291,8 +272,10 @@ function applyFeatureVisibility() {
   if (!CONFIG) return;
   const on = joinStreamEnabled();
   const joinBtn = document.getElementById('joinBtn');
+  const action = document.getElementById('liveSeatAction');
   const leaveBtn = document.getElementById('leaveBtn');
   if (joinBtn) joinBtn.style.display = on ? '' : 'none';
+  if (action) action.style.display = on ? '' : 'none';
   if (leaveBtn && !on) leaveBtn.classList.remove('show');
 }
 
@@ -884,7 +867,7 @@ async function buildMppManager(maxDeposit) {
   // letting the wallet SEND instead of sign strands the deposit — mppx
   // derives its channel bookkeeping from the raw bytes (gate-proven: a
   // wallet-broadcast open landed on-chain but the session never recognized
-  // it). Failing clean with no money moved is the only safe behavior.
+  // it). Failing clean before any funds move is the only safe behavior.
   const normalizeTempoTx = (tx) => {
     const fix = (v) => (v === '0x' ? '0x0' : v);
     const out = { ...tx };
@@ -1016,7 +999,7 @@ async function joinSeatMpp(username) {
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
     const detail = data.available != null
-      ? ` (available ${data.available} ${data.tokenSymbol || tokenSymbol()})`
+      ? ` (available ${fmtAmount(data.available)})`
       : '';
     throw new Error((data.hint || data.error || 'Cannot join') + detail);
   }
@@ -1039,7 +1022,7 @@ async function joinSeatMetered(username) {
   const terms = await first.json().catch(() => ({}));
   if (!first.ok) {
     const detail = terms.available != null
-      ? ` (available ${terms.available} ${terms.tokenSymbol || tokenSymbol()})`
+      ? ` (available ${fmtAmount(terms.available)})`
       : '';
     throw new Error((terms.hint || terms.error || 'Cannot join') + detail);
   }
@@ -1186,7 +1169,6 @@ let camMsgBound = false;
 function onJoinSuccess(data) {
   mySeatId = data.seatId;
   lastJoinData = data;
-  const sym = data.paymentTokenSymbol || tokenSymbol();
   // Bind this WS to the seat so closing the tab instantly frees + refunds it.
   if (ws.readyState === 1) {
     ws.send(JSON.stringify({ type: 'register_seat', seatId: mySeatId }));
@@ -1204,8 +1186,8 @@ function onJoinSuccess(data) {
     ? ` · <a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">authorization tx</a>`
     : '';
   const meterNote =
-    `${data.tickPrice} ${sym} every ${data.tickSeconds}s while live (silent after authorize)`;
-  const refundNote = `Unspent ${sym} stays in your wallet when you leave.`;
+    `${fmtAmount(data.tickPrice)} every ${data.tickSeconds}s while live`;
+  const refundNote = 'Your unused balance stays yours when you leave.';
   showMessage(
     `✅ Authorized! Allow camera access above, then hit GO LIVE on the same button. Metering
     (${meterNote}) starts when you're live; ${refundNote}${txLink}`,
@@ -1743,12 +1725,15 @@ function lettersCfg() {
 
 function initLetterUi() {
   const btn = document.getElementById('letterBtn');
+  const action = document.getElementById('megachatAction');
   if (!btn) return;
   const cfg = lettersCfg();
   if (!cfg) {
     btn.style.display = 'none';
+    if (action) action.style.display = 'none';
     return;
   }
+  if (action) action.style.display = '';
   btn.style.display = '';
   // Short label — "· up to 10s" pushed the button onto two wrapped lines on
   // mobile, and the recorder stage states the cap the moment it opens.
@@ -1795,7 +1780,7 @@ async function openLetterStage() {
   letterState = 'idle';
   letterBlob = null;
   letterButtons({ record: true, redo: false, send: false });
-  setLetterStatus(`${cfg.minSeconds ?? 3}–${cfg.maxSeconds}s. Flat price ${cfg.price} ${tokenSymbol()} — your MegaChat plays once on stream.`);
+  setLetterStatus(`${cfg.minSeconds ?? 3}–${cfg.maxSeconds}s · ${fmtAmount(cfg.price)} per clip, including shorter takes.`);
 }
 
 function closeLetterStage() {
@@ -1888,7 +1873,7 @@ function toggleLetterRecording() {
       return;
     }
     letterButtons({ record: false, redo: true, send: true });
-    setLetterStatus(`${letterDurationS}s take — happy with it? Send for ${cfg.price} ${tokenSymbol()}.`);
+    setLetterStatus(`${letterDurationS}s recorded. Send for ${fmtAmount(cfg.price)}.`);
   };
   letterRecorder.start();
   letterState = 'recording';
@@ -1933,7 +1918,7 @@ async function sendLetter() {
     if (!account) return;
   }
   letterState = 'sending';
-  setLetterStatus(letterIsFree ? 'Sending…' : `Paying ${cfg.price} ${tokenSymbol()}…`);
+  setLetterStatus(letterIsFree ? 'Sending…' : `Paying ${fmtAmount(cfg.price)}…`);
   try {
     // Free letters skip the payment session entirely — plain fetch, no wallet.
     // The stub must still quack like a session: close() gets called after
@@ -2011,18 +1996,16 @@ async function sendLetter() {
 // handle from that verified session. This just reflects the result.
 async function initAuthUi() {
   const who = document.getElementById('authIdentity');
-  if (!who) return;
   const prefill = (name) => {
     const input = document.getElementById('username');
     // Never clobber something the viewer typed themselves.
-    if (input && !input.value && name) input.value = name;
+    if (input && input.dataset.userEdited !== 'true' && name) input.value = name.slice(0, 20);
   };
   try {
     const me = await (await fetch('/api/auth/me')).json();
     const identity = me.identity || null;
     if (identity) {
-      who.style.display = '';
-      who.innerHTML = `🟢 Signed in as <strong>@${identity.handle}</strong>`;
+      if (who) { who.style.display = ''; who.textContent = `Signed in as @${identity.handle}`; }
       prefill(identity.handle);
       return;
     }
@@ -2031,17 +2014,16 @@ async function initAuthUi() {
     // look like being anonymous.
     const MW = getMegaWallet();
     if (MW && MW.authenticated && MW.displayName) {
-      who.style.display = '';
-      who.innerHTML = `🟢 Signed in as <strong>@${MW.displayName}</strong>`;
+      if (who) { who.style.display = ''; who.textContent = `Signed in as @${MW.displayName}`; }
       prefill(MW.displayName);
       return;
     }
-    who.style.display = 'none';
+    if (who) who.style.display = 'none';
   } catch { /* identity optional */ }
 
   const welcome = new URLSearchParams(location.search).get('welcome');
   if (welcome) {
-    showMessage(`✅ Handle <strong>@${welcome}</strong> is yours — it's your display name and your megachat.xyz/${welcome} link.`, 'success');
+    showMessage(`Handle <strong>@${escapeHtml(welcome)}</strong> is yours. Your link is megachat.fun/${escapeHtml(welcome)}.`, 'success');
   }
 }
 
@@ -2063,7 +2045,7 @@ async function init() {
       lbl.textContent = (err && err.message) || 'Failed to load room';
     }
     showMessage(
-      'Could not load room. Open http://localhost:3000 (not 127.0.0.1) and refresh.',
+      'Could not load this room. Refresh to retry, or find another room on the Rooms page.',
       'error',
     );
   }
@@ -2171,7 +2153,7 @@ function initRewardsClient(wsUrl) {
     if (el) {
       const sym = msg.symbol || 'USDC';
       const amount = msg.joinBalance != null ? msg.joinBalance : (msg.earnedSession != null ? msg.earnedSession : '0');
-      el.textContent = `${amount} ${sym}` + (msg.capped ? ' (cap)' : '');
+      el.textContent = (/^USDC(?:\.e)?$/i.test(sym) ? fmtAmount(amount) : `${amount} ${sym}`) + (msg.capped ? ' (cap)' : '');
     }
   }
 
@@ -2289,7 +2271,7 @@ export function initJoinPage({ wsUrl }) {
         // Every way a seat can end gets its own message — a viewer should
         // never have to guess whether they left, got kicked, or broke.
         if (msg.reason === 'out_of_funds') {
-          showMessage('⚠️ Out of funds — your seat ended. Deposit more USDC and rejoin.', 'error');
+          showMessage('Out of funds. Your seat ended. Add funds to rejoin.', 'error');
         } else if (msg.reason === 'kicked') {
           showMessage(
             '🚫 The streamer removed you from the stream. You were only charged for the time you were on camera — the rest stays in your wallet.',
@@ -2385,6 +2367,12 @@ export function initJoinPage({ wsUrl }) {
 
   const usernameEl = document.getElementById('username');
   if (usernameEl) {
+    if (!usernameEl.value) {
+      let name = guestName();
+      try { name = sessionStorage.getItem('mc-guest-name') || name; sessionStorage.setItem('mc-guest-name', name); } catch { /* storage optional */ }
+      usernameEl.value = name;
+    }
+    usernameEl.addEventListener('input', () => { usernameEl.dataset.userEdited = 'true'; }, { signal: abort.signal });
     usernameEl.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') joinSeat();
     }, { signal: abort.signal });

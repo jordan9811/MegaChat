@@ -28,6 +28,8 @@ export type LettersConfig = {
 
 export type JoinStreamConfig = {
   enabled: boolean
+  admission: 'ai' | 'approve' | 'manual' | string
+  liveSafety: 'alert' | 'remove' | 'host' | string
   /** Billing/shipping pattern: inherit MegaChat gates unless overridden. */
   gatesSameAsMegaChat: boolean
   gates: FeatureGates
@@ -96,6 +98,10 @@ export type Seat = {
 export type RoomSession = {
   room: Room
   seats: Seat[]
+  /** True only when room.twitchChannel is actually live (server-verified).
+   *  Twitch answers for an offline channel with a gray placeholder frame at
+   *  HTTP 200, so an <img> can never tell — render the preview only on this. */
+  twitchLive: boolean
   joinUrl: string
   overlayUrl: string
 }
@@ -136,6 +142,7 @@ export type RoomConfigPatch = {
     earnCap: string
     rewardType: string
     rewardTokenAddress: string | null
+    rewardTokenSymbol?: string | null
   }
 }
 
@@ -189,16 +196,33 @@ export type PublicRoomCard = {
    *  serves a gray placeholder for offline channels, so gate on this. */
   twitchLive: boolean
   createdAt: string
+  letters?: Pick<LettersConfig, 'enabled' | 'price' | 'maxSeconds'>
+  joinStream?: Pick<JoinStreamConfig, 'enabled'>
+  isDemo?: boolean
 }
 
 /** Active, listed rooms sorted hottest first (live count, then waiting). */
-export function listPublicRooms() {
-  return request<{ rooms: PublicRoomCard[] }>('/api/rooms/public')
+const browseConfigCache = new Map<string, { at: number; config: Partial<PublicRoomCard> }>()
+export async function listPublicRooms() {
+  const data = await request<{ rooms: PublicRoomCard[] }>('/api/rooms/public')
+  const rooms = await Promise.all(data.rooms.map(async (room) => {
+    const cached = browseConfigCache.get(room.id)
+    if (cached && Date.now() - cached.at < 30_000) return { ...room, ...cached.config }
+    try {
+      const config = await request<Partial<PublicRoomCard>>(`/api/config?room=${encodeURIComponent(room.id)}`)
+      const capabilities = { letters: config.letters, joinStream: config.joinStream, isDemo: config.isDemo }
+      browseConfigCache.set(room.id, { at: Date.now(), config: capabilities })
+      return { ...room, ...capabilities }
+    } catch { return room }
+  }))
+  return { rooms }
 }
 
 /** Public room + chain config (also exposes the real Arc USDC address). */
 export function getPublicConfig(room = 'default') {
   return request<{
+    roomId?: string
+    roomName?: string
     usdcAddress: string
     paymentTokenSymbol: string
     livekitConfigured?: boolean
@@ -264,6 +288,16 @@ export function setRoomActive(roomId: string, password: string, active: boolean)
   return request<{ room: Room }>(
     `/api/dashboard/rooms/${encodeURIComponent(roomId)}/${active ? 'start' : 'stop'}`,
     { method: 'POST', password },
+  )
+}
+
+// END a room: delete it, clearing live seats (each refunded). Distinct from
+// setRoomActive(false), which only pauses new joins. Owner opens with no
+// password (identity cookie authorizes); a mod passes the room password.
+export function endRoom(roomId: string, password?: string) {
+  return request<{ ok: true; ended: string; seatsCleared: number }>(
+    `/api/dashboard/rooms/${encodeURIComponent(roomId)}`,
+    { method: 'DELETE', password },
   )
 }
 

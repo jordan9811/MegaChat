@@ -1,0 +1,1449 @@
+{
+  "page": "roadmap",
+  "requestedUrl": "https://megachat.fun/roadmap",
+  "finalUrl": "https://megachat.fun/roadmap",
+  "viewport": {
+    "name": "390",
+    "width": 390,
+    "height": 844,
+    "isMobile": true,
+    "hasTouch": true,
+    "deviceScaleFactor": 3
+  },
+  "navErr": null,
+  "timestamp": "2026-09-02T17:17:21.007Z",
+  "axeVersion": "4.13.0",
+  "byImpact": {
+    "critical": 0,
+    "serious": 1,
+    "moderate": 1,
+    "minor": 0
+  },
+  "violations": [
+    {
+      "id": "color-contrast",
+      "impact": "serious",
+      "tags": [
+        "cat.color",
+        "wcag2aa",
+        "wcag143",
+        "TTv5",
+        "TT13.c",
+        "EN-301-549",
+        "EN-9.1.4.3",
+        "ACT",
+        "RGAAv4",
+        "RGAA-3.2.1"
+      ],
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "fgColor": "#fa30cb",
+                "bgColor": "#451646",
+                "contrastRatio": 4.36,
+                "fontSize": "8.3pt (11px)",
+                "fontWeight": "bold",
+                "messageKey": null,
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"rounded-full bg-primary/20 px-2 py-0.5 text-[var(--neon-magenta)]\">Adv</span>",
+                  "target": [
+                    ".bg-primary\\/20"
+                  ]
+                },
+                {
+                  "html": "<button type=\"button\" title=\"Advanced mode: the full crypto-native view. Click for Simple.\" aria-label=\"Toggle simple / advanced mode\" class=\"inline-flex items-center gap-1 rounded-full border border-border bg-input/30 p-1 text-[11px] font-bold uppercase tracking-wide\">",
+                  "target": [
+                    ".gap-1"
+                  ]
+                },
+                {
+                  "html": "<header class=\"sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur-md\">",
+                  "target": [
+                    "header"
+                  ]
+                },
+                {
+                  "html": "<div class=\"relative min-h-screen bg-background text-foreground\">",
+                  "target": [
+                    ".min-h-screen"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element has insufficient color contrast of 4.36 (foreground color: #fa30cb, background color: #451646, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"rounded-full bg-primary/20 px-2 py-0.5 text-[var(--neon-magenta)]\">Adv</span>",
+          "target": [
+            ".bg-primary\\/20"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.36 (foreground color: #fa30cb, background color: #451646, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+        }
+      ]
+    },
+    {
+      "id": "heading-order",
+      "impact": "moderate",
+      "tags": [
+        "cat.semantics",
+        "best-practice"
+      ],
+      "description": "Ensure the order of headings is semantically correct",
+      "help": "Heading levels should only increase by one",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/heading-order?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "heading-order",
+              "data": null,
+              "relatedNodes": [],
+              "impact": "moderate",
+              "message": "Heading order invalid"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "moderate",
+          "html": "<h3 class=\"font-heading text-base font-bold text-foreground\">LiveKit hardening</h3>",
+          "target": [
+            "li[data-horizon=\"near\"]:nth-child(1) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > h3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Heading order invalid"
+        }
+      ]
+    }
+  ],
+  "incomplete": [
+    {
+      "id": "color-contrast",
+      "impact": "serious",
+      "tags": [
+        "cat.color",
+        "wcag2aa",
+        "wcag143",
+        "TTv5",
+        "TT13.c",
+        "EN-301-549",
+        "EN-9.1.4.3",
+        "ACT",
+        "RGAAv4",
+        "RGAA-3.2.1"
+      ],
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "18.0pt (24px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "3:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"font-heading font-bo...\" style=\"background-image:lin...\">",
+                  "target": [
+                    ".tracking-tight"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"font-heading font-bo...\" style=\"background-image:lin...\">",
+          "target": [
+            ".tracking-tight"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.0pt (12px)",
+                "fontWeight": "bold",
+                "messageKey": "elmPartiallyObscured",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"absolute right-0 top-0 size-80 rounded-full bg-[var(--neon-magenta)] opacity-20 blur-[120px]\"></div>",
+                  "target": [
+                    ".right-0"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it's partially obscured by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p class=\"reveal text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]\" style=\"--reveal-delay:0.05s\">Where this is going</p>",
+          "target": [
+            ".text-xs"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "27.0pt (36px)",
+                "fontWeight": "bold",
+                "messageKey": "elmPartiallyObscured",
+                "expectedContrastRatio": "3:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"absolute right-0 top-0 size-80 rounded-full bg-[var(--neon-magenta)] opacity-20 blur-[120px]\"></div>",
+                  "target": [
+                    ".right-0"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it's partially obscured by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<h1 class=\"reveal chromatic mt-2 font-heading text-4xl font-bold leading-tight text-foreground md:text-6xl\" style=\"--reveal-delay:0.12s\">Roadmap</h1>",
+          "target": [
+            "h1"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "13.5pt (18px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscured",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"absolute right-0 top-0 size-80 rounded-full bg-[var(--neon-magenta)] opacity-20 blur-[120px]\"></div>",
+                  "target": [
+                    ".right-0"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it's partially obscured by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p class=\"reveal mt-5 max-w-2xl text-pretty text-lg leading-relaxed text-foreground/85\" style=\"--reveal-delay:0.2s\">The spine stays the same — pay-to-join metered camera seats. What follows is priority order, top to bottom: green ships next, amber after that, purple is the big swing.</p>",
+          "target": [
+            ".mt-5"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<button type=\"button\" class=\"flex items-center gap-2 rounded-full border border-border bg-input/30 px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-input/50\">",
+                  "target": [
+                    ".px-4"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<button type=\"button\" class=\"flex items-center gap-2 rounded-full border border-border bg-input/30 px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-input/50\">",
+          "target": [
+            ".px-4"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "7.5pt (10px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-lime);border-color:color-mix(in oklab, var(--neon-lime) 50%, transparent);background:color-mix(in oklab, var(--neon-lime) 10%, transparent)\">Near term</span>",
+                  "target": [
+                    ".px-2\\.5.py-1.text-\\[10px\\]:nth-child(1)"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-lime);border-color:color-mix(in oklab, var(--neon-lime) 50%, transparent);background:color-mix(in oklab, var(--neon-lime) 10%, transparent)\">Near term</span>",
+          "target": [
+            ".px-2\\.5.py-1.text-\\[10px\\]:nth-child(1)"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "7.5pt (10px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-amber);border-color:color-mix(in oklab, var(--neon-amber) 50%, transparent);background:color-mix(in oklab, var(--neon-amber) 10%, transparent)\">Mid term</span>",
+                  "target": [
+                    ".px-2\\.5.py-1.text-\\[10px\\]:nth-child(2)"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-amber);border-color:color-mix(in oklab, var(--neon-amber) 50%, transparent);background:color-mix(in oklab, var(--neon-amber) 10%, transparent)\">Mid term</span>",
+          "target": [
+            ".px-2\\.5.py-1.text-\\[10px\\]:nth-child(2)"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "7.5pt (10px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-violet);border-color:color-mix(in oklab, var(--neon-violet) 50%, transparent);background:color-mix(in oklab, var(--neon-violet) 10%, transparent)\">Ambitious</span>",
+                  "target": [
+                    ".px-2\\.5.py-1.text-\\[10px\\]:nth-child(3)"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-violet);border-color:color-mix(in oklab, var(--neon-violet) 50%, transparent);background:color-mix(in oklab, var(--neon-violet) 10%, transparent)\">Ambitious</span>",
+          "target": [
+            ".px-2\\.5.py-1.text-\\[10px\\]:nth-child(3)"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "12.0pt (16px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"near\"]:nth-child(1) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<h3 class=\"font-heading text-base font-bold text-foreground\">LiveKit hardening</h3>",
+          "target": [
+            "li[data-horizon=\"near\"]:nth-child(1) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > h3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "7.5pt (10px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-lime);border-color:color-mix(in oklab, var(--neon-lime) 50%, transparent);background:color-mix(in oklab, var(--neon-lime) 10%, transparent)\">Near term</span>",
+                  "target": [
+                    "li[data-horizon=\"near\"]:nth-child(1) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+                  ]
+                },
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"near\"]:nth-child(1) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-lime);border-color:color-mix(in oklab, var(--neon-lime) 50%, transparent);background:color-mix(in oklab, var(--neon-lime) 10%, transparent)\">Near term</span>",
+          "target": [
+            "li[data-horizon=\"near\"]:nth-child(1) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "elmPartiallyObscuring",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it partially overlaps other elements"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p class=\"mt-1 text-sm leading-relaxed text-muted-foreground\">Battle-testing the new media transport — reconnect grace, simulcast tuning, connection quality under real load — until it can be the default on every room.</p>",
+          "target": [
+            "li[data-horizon=\"near\"]:nth-child(1) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .mt-1.leading-relaxed.text-muted-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "12.0pt (16px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"near\"]:nth-child(2) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<h3 class=\"font-heading text-base font-bold text-foreground\">Twitch Drops OAuth, phase 2</h3>",
+          "target": [
+            "li[data-horizon=\"near\"]:nth-child(2) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > h3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "7.5pt (10px)",
+                "fontWeight": "bold",
+                "messageKey": "elmPartiallyObscured",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-lime);border-color:color-mix(in oklab, var(--neon-lime) 50%, transparent);background:color-mix(in oklab, var(--neon-lime) 10%, transparent)\">Near term</span>",
+                  "target": [
+                    "li[data-horizon=\"near\"]:nth-child(2) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+                  ]
+                },
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"near\"]:nth-child(2) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute -left-24 top-1/4 size-72 rounded-full bg-[var(--neon-violet)] opacity-20 blur-[100px]\"></div>",
+                  "target": [
+                    ".-left-24"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it's partially obscured by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-lime);border-color:color-mix(in oklab, var(--neon-lime) 50%, transparent);background:color-mix(in oklab, var(--neon-lime) 10%, transparent)\">Near term</span>",
+          "target": [
+            "li[data-horizon=\"near\"]:nth-child(2) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"near\"]:nth-child(2) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p class=\"mt-1 text-sm leading-relaxed text-muted-foreground\">Real linked-account drops: watch time on the Twitch side earns join balance here, so your existing audience arrives with a seat already funded. Also unlocks enforced follower/subscriber gates.</p>",
+          "target": [
+            "li[data-horizon=\"near\"]:nth-child(2) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .mt-1.leading-relaxed.text-muted-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "12.0pt (16px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"near\"]:nth-child(3) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<h3 class=\"font-heading text-base font-bold text-foreground\">Live AI moderation (v3)</h3>",
+          "target": [
+            "li[data-horizon=\"near\"]:nth-child(3) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > h3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "7.5pt (10px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-lime);border-color:color-mix(in oklab, var(--neon-lime) 50%, transparent);background:color-mix(in oklab, var(--neon-lime) 10%, transparent)\">Near term</span>",
+                  "target": [
+                    "li[data-horizon=\"near\"]:nth-child(3) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+                  ]
+                },
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"near\"]:nth-child(3) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-lime);border-color:color-mix(in oklab, var(--neon-lime) 50%, transparent);background:color-mix(in oklab, var(--neon-lime) 10%, transparent)\">Near term</span>",
+          "target": [
+            "li[data-horizon=\"near\"]:nth-child(3) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"near\"]:nth-child(3) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p class=\"mt-1 text-sm leading-relaxed text-muted-foreground\">MegaChats already get frames-plus-transcript review before they play. v3 points the same pipeline at live seats, sampling in near-real-time so a room can run hands-off.</p>",
+          "target": [
+            "li[data-horizon=\"near\"]:nth-child(3) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .mt-1.leading-relaxed.text-muted-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "12.0pt (16px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"mid\"]:nth-child(4) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<h3 class=\"font-heading text-base font-bold text-foreground\">Stinger marketplace</h3>",
+          "target": [
+            "li[data-horizon=\"mid\"]:nth-child(4) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > h3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "7.5pt (10px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-amber);border-color:color-mix(in oklab, var(--neon-amber) 50%, transparent);background:color-mix(in oklab, var(--neon-amber) 10%, transparent)\">Mid term</span>",
+                  "target": [
+                    "li[data-horizon=\"mid\"]:nth-child(4) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+                  ]
+                },
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"mid\"]:nth-child(4) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-amber);border-color:color-mix(in oklab, var(--neon-amber) 50%, transparent);background:color-mix(in oklab, var(--neon-amber) 10%, transparent)\">Mid term</span>",
+          "target": [
+            "li[data-horizon=\"mid\"]:nth-child(4) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"mid\"]:nth-child(4) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p class=\"mt-1 text-sm leading-relaxed text-muted-foreground\">Creators publish and sell custom entrance/exit stingers; streamers equip them per room. Cosmetics as an economy.</p>",
+          "target": [
+            "li[data-horizon=\"mid\"]:nth-child(4) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .mt-1.leading-relaxed.text-muted-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "12.0pt (16px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"mid\"]:nth-child(5) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<h3 class=\"font-heading text-base font-bold text-foreground\">Sybil-resistant bans</h3>",
+          "target": [
+            "li[data-horizon=\"mid\"]:nth-child(5) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > h3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "7.5pt (10px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-amber);border-color:color-mix(in oklab, var(--neon-amber) 50%, transparent);background:color-mix(in oklab, var(--neon-amber) 10%, transparent)\">Mid term</span>",
+                  "target": [
+                    "li[data-horizon=\"mid\"]:nth-child(5) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+                  ]
+                },
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"mid\"]:nth-child(5) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-amber);border-color:color-mix(in oklab, var(--neon-amber) 50%, transparent);background:color-mix(in oklab, var(--neon-amber) 10%, transparent)\">Mid term</span>",
+          "target": [
+            "li[data-horizon=\"mid\"]:nth-child(5) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"mid\"]:nth-child(5) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p class=\"mt-1 text-sm leading-relaxed text-muted-foreground\">Bans keyed on wallet + linked platform identity — a kicked troll can’t just rejoin with a fresh burner wallet.</p>",
+          "target": [
+            "li[data-horizon=\"mid\"]:nth-child(5) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .mt-1.leading-relaxed.text-muted-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "12.0pt (16px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"mid\"]:nth-child(6) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<h3 class=\"font-heading text-base font-bold text-foreground\">Browse ranking that means something</h3>",
+          "target": [
+            "li[data-horizon=\"mid\"]:nth-child(6) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > h3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "7.5pt (10px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-amber);border-color:color-mix(in oklab, var(--neon-amber) 50%, transparent);background:color-mix(in oklab, var(--neon-amber) 10%, transparent)\">Mid term</span>",
+                  "target": [
+                    "li[data-horizon=\"mid\"]:nth-child(6) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+                  ]
+                },
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"mid\"]:nth-child(6) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-amber);border-color:color-mix(in oklab, var(--neon-amber) 50%, transparent);background:color-mix(in oklab, var(--neon-amber) 10%, transparent)\">Mid term</span>",
+          "target": [
+            "li[data-horizon=\"mid\"]:nth-child(6) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"mid\"]:nth-child(6) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p class=\"mt-1 text-sm leading-relaxed text-muted-foreground\">Hottest-first, but earned: spend velocity, uptime, and returning viewers feed the directory ranking instead of raw recency.</p>",
+          "target": [
+            "li[data-horizon=\"mid\"]:nth-child(6) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .mt-1.leading-relaxed.text-muted-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "12.0pt (16px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"far\"]:nth-child(7) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<h3 class=\"font-heading text-base font-bold text-foreground\">Card top-ups, flipped on</h3>",
+          "target": [
+            "li[data-horizon=\"far\"]:nth-child(7) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > h3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "7.5pt (10px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-violet);border-color:color-mix(in oklab, var(--neon-violet) 50%, transparent);background:color-mix(in oklab, var(--neon-violet) 10%, transparent)\">Ambitious</span>",
+                  "target": [
+                    "li[data-horizon=\"far\"]:nth-child(7) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+                  ]
+                },
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"far\"]:nth-child(7) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-violet);border-color:color-mix(in oklab, var(--neon-violet) 50%, transparent);background:color-mix(in oklab, var(--neon-violet) 10%, transparent)\">Ambitious</span>",
+          "target": [
+            "li[data-horizon=\"far\"]:nth-child(7) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"far\"]:nth-child(7) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p class=\"mt-1 text-sm leading-relaxed text-muted-foreground\">Buy credits with a debit card straight from the join page — the last crypto-shaped step gone for Simple-mode viewers.</p>",
+          "target": [
+            "li[data-horizon=\"far\"]:nth-child(7) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .mt-1.leading-relaxed.text-muted-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "12.0pt (16px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"far\"]:nth-child(8) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<h3 class=\"font-heading text-base font-bold text-foreground\">Mobile polish pass</h3>",
+          "target": [
+            "li[data-horizon=\"far\"]:nth-child(8) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > h3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "7.5pt (10px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-violet);border-color:color-mix(in oklab, var(--neon-violet) 50%, transparent);background:color-mix(in oklab, var(--neon-violet) 10%, transparent)\">Ambitious</span>",
+                  "target": [
+                    "li[data-horizon=\"far\"]:nth-child(8) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+                  ]
+                },
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"far\"]:nth-child(8) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<span class=\"rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest\" style=\"color:var(--neon-violet);border-color:color-mix(in oklab, var(--neon-violet) 50%, transparent);background:color-mix(in oklab, var(--neon-violet) 10%, transparent)\">Ambitious</span>",
+          "target": [
+            "li[data-horizon=\"far\"]:nth-child(8) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .gap-x-3.gap-y-1.flex-wrap > .px-2.py-0\\.5.text-\\[10px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5\">",
+                  "target": [
+                    "li[data-horizon=\"far\"]:nth-child(8) > .rounded-2xl.p-5.backdrop-blur-sm"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p class=\"mt-1 text-sm leading-relaxed text-muted-foreground\">A join flow that feels native on a phone: camera prep, one-thumb controls, layouts that stay overlay-safe.</p>",
+          "target": [
+            "li[data-horizon=\"far\"]:nth-child(8) > .rounded-2xl.p-5.backdrop-blur-sm > .min-w-0 > .mt-1.leading-relaxed.text-muted-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "13.5pt (18px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p class=\"font-heading text-lg font-bold text-foreground\">Want something bumped up the list?</p>",
+          "target": [
+            ".mt-14 > .text-lg"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "bold",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<a href=\"https://x.com/yeak__\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"rounded-full border border-[var(--neon-cyan)]/60 bg-[var(--neon-cyan)]/10 px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[var(--neon-cyan)] transition-transform hover:scale-[1.03]\">Tell us on X</a>",
+                  "target": [
+                    ".border-\\[var\\(--neon-cyan\\)\\]\\/60"
+                  ]
+                },
+                {
+                  "html": "<div class=\"absolute inset-0 bg-grid opacity-60\"></div>",
+                  "target": [
+                    ".bg-grid"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<a href=\"https://x.com/yeak__\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"rounded-full border border-[var(--neon-cyan)]/60 bg-[var(--neon-cyan)]/10 px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[var(--neon-cyan)] transition-transform hover:scale-[1.03]\">Tell us on X</a>",
+          "target": [
+            ".border-\\[var\\(--neon-cyan\\)\\]\\/60"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+        }
+      ]
+    }
+  ]
+}

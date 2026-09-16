@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { Plus_Jakarta_Sans } from 'next/font/google'
 import {
   Compass,
   KeyRound,
@@ -12,33 +13,31 @@ import {
   Share2,
   Users,
   Sparkles,
-  Wallet,
-  RefreshCcw,
-  Zap,
 } from 'lucide-react'
-import { SiteHeader } from '@/components/site-header'
-import { GlitchBackground } from '@/components/glitch-background'
-import { SiteFooter, contactUrl } from '@/components/site-footer'
+import { AccountChip } from '@/components/account-chip'
+import { contactUrl } from '@/components/site-footer'
+import './how-it-works.css'
+import { BrandText } from '@/components/brand-text'
 
 export const metadata: Metadata = {
   title: 'How it works — MegaChat',
   description:
-    'Viewers pay per-second in USDC to put their camera on a live broadcast. How the join flow works, how streamers set up rooms, and every question answered.',
+    'Record a MegaChat or join a live broadcast on camera. Learn how to join, create a room, and manage your settings.',
 }
 
-// Trust stats moved off the landing hero — they summarize the rails below.
-const STATS = [
-  { value: 'Per-second', label: 'USDC settlement', simpleLabel: 'billing, to the second' },
-  { value: 'One tap', label: 'Passkey to live', simpleLabel: 'sign-in to live' },
-  { value: '0 risk', label: 'Unused balance refunds', simpleLabel: 'unused credits stay yours' },
-  { value: 'On-chain', label: 'Tempo network', simpleLabel: 'always verifiable' },
-]
+// One UI face across the app, loaded per route — there is no site-wide
+// provider. Same call as the room board's page.
+const ui = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  variable: '--font-ui',
+})
 
 const VIEWER_STEPS = [
   {
     icon: Compass,
     title: 'Find a room',
-    body: 'Browse live rooms on the home page — hottest first — or open the join link a streamer shared. Each card shows the per-second price before you commit to anything.',
+    body: 'Browse Rooms or follow a streamer\'s link. Check the price and which features are enabled before you join.',
   },
   {
     icon: Fingerprint,
@@ -49,27 +48,27 @@ const VIEWER_STEPS = [
   },
   {
     icon: KeyRound,
-    title: 'Authorize your session',
-    body: 'One prompt approves a hard session cap in USDC (the room sets it — think 2 USDC max). That is the most a session can ever cost you. Billing is per-second from there, silently.',
+    title: 'Record or take a live seat',
+    body: 'MegaChats have a clip total you review before sending. For a live seat, approve a maximum spend first; the meter charges only while you are on camera.',
     simpleBody:
-      'One prompt approves a hard session cap in credits — the room sets it. That is the most a session can ever cost you. Billing is one credit per second from there, silently.',
+      'MegaChats have a clip total you review before sending. For a live seat, approve a maximum spend first; the meter charges only while you are on camera.',
   },
   {
     icon: Camera,
     title: 'Camera check',
-    body: 'Your camera preview appears on the join page — nothing is broadcast yet. When the feed looks right, the button flips to GO LIVE. You pull the trigger, not us.',
+    body: 'Review your recording before sending it. For a live seat, check your private camera preview and press Go Live when ready.',
   },
   {
     icon: Radio,
     title: 'You are the stream',
-    body: 'Your face pops onto the broadcast with your entrance stinger, name chip and all. The meter runs per-second only while you are actually live.',
+    body: 'Your MegaChat plays after screening and any streamer approval. A live seat puts you on camera beside the streamer, with the meter running only while you are live.',
   },
   {
     icon: LogOut,
     title: 'Leave whenever',
     body: 'Hit Leave — or just close the tab. The meter stops instantly and every unspent cent refunds straight back to your wallet.',
     simpleBody:
-      'Hit Leave — or just close the tab. The meter stops instantly and unused credits go straight back to your balance.',
+      'Hit Leave or close the tab. Live-seat billing stops; your unused balance stays yours.',
   },
 ]
 
@@ -77,14 +76,14 @@ const STREAMER_STEPS = [
   {
     icon: LayoutDashboard,
     title: 'Create your room',
-    body: 'Open the Dashboard, name your room, set a password. That password is your admin key — unlock the room from any device to manage it.',
+    body: 'Choose Create room and set your name and link. Sign in to own it, or set a room password. Manage an existing room lets you return later.',
   },
   {
     icon: SlidersHorizontal,
-    title: 'Price your seats',
-    body: 'Set the per-second rate, the session cap, and how many camera seats run at once (up to 3). Default is 0.001 USDC per second — tune it to your audience. You can also list the room in the public directory or keep it unlisted.',
+    title: 'Set your rates',
+    body: 'MegaChats start enabled and paid. Set the rate and clip length; the form shows the total. Open mic and drops are optional. Live seats have their own rate and spend cap.',
     simpleBody:
-      'Set the price per credit, the session cap, and how many camera seats run at once (up to 3). Tune it to your audience — and list the room in the public directory or keep it unlisted.',
+      'MegaChats start enabled and paid. Set the rate and clip length; the form shows the total. Open mic and drops are optional. Live seats have their own rate and spend cap.',
   },
   {
     icon: MonitorPlay,
@@ -104,36 +103,9 @@ const STREAMER_STEPS = [
   {
     icon: Sparkles,
     title: 'Optional: watch-to-earn drops',
-    body: 'Flip on rewards and viewers earn USDC toward their first seat just by watching. Fund the pool, set the drip rate and cap — it feeds joins, not chat.',
+    body: 'Enable rewards if you want to pay viewers to watch. Choose the reward, earning rate, and cap before turning it on.',
     simpleBody:
       'Flip on rewards and viewers earn credit toward their first seat just by watching. Fund the pool, set the drip rate and cap — it feeds joins, not chat.',
-  },
-]
-
-const RAILS = [
-  {
-    icon: Fingerprint,
-    title: 'One-tap accounts',
-    body: 'Email, passkey, or socials spin up an embedded wallet on Tempo — nothing to install or back up.',
-    simpleBody: 'Sign in with email, a passkey, or your socials — your account and balance are ready instantly.',
-  },
-  {
-    icon: Zap,
-    title: 'True per-second settlement',
-    body: 'Live seats bill through TIP-1034 payment channels: one on-chain escrow, then signed off-chain vouchers every second. No lump sums, no subscriptions.',
-    simpleBody: 'You are billed one credit per second you are actually on camera — never a lump sum, never a subscription.',
-  },
-  {
-    icon: RefreshCcw,
-    title: 'Unused money is your money',
-    body: 'The session cap is a ceiling, not a price. Leave early and the unspent escrow refunds straight back to your wallet on close.',
-    simpleBody: 'The cap is a ceiling, not a price. Leave early and unused credits go straight back to your balance.',
-  },
-  {
-    icon: Wallet,
-    title: 'Prefer MetaMask?',
-    body: 'A secondary path meters through a one-time allowance on Tempo. Same seat, same refund guarantee.',
-    simpleBody: 'Power users can bring their own wallet — same seats, same refunds.',
   },
 ]
 
@@ -144,15 +116,15 @@ const FAQ = [
   },
   {
     q: 'How much does it cost to be on stream?',
-    a: 'Whatever the room charges — the price is on the room card before you join (default 0.001 USDC per second, capped at 2 USDC per session). You authorize the cap once; the meter only bills seconds you are actually live.',
+    a: 'The room sets the price. The default live-seat rate is $0.001 per second with a $2 spend limit. MegaChats show a separate clip total before you send. Free rooms are marked as free.',
   },
   {
     q: 'What happens if I close the tab?',
-    a: 'Your seat ends and the meter stops. Unspent USDC stays in your smart account; Gateway prepays are refunded automatically. A brief network blip won’t kill your seat — you get a grace window to reconnect.',
+    a: 'Your live seat ends and billing stops. Your unused balance stays yours. A brief network blip has a grace window for reconnecting.',
   },
   {
     q: 'Is this real money?',
-    a: 'MegaChat currently runs on Arc Testnet USDC. Grab free test USDC at faucet.circle.com (select Arc Testnet) and try everything end to end.',
+    a: 'Paid rooms use real funds, including the low-cost demo room. Check the price before confirming. The bounty preview is separate: its example amounts are not funded and its ledger does not send real payments.',
   },
   {
     q: 'Can the streamer remove me?',
@@ -168,30 +140,11 @@ const FAQ = [
   },
 ]
 
-function SectionHeading({
-  kicker,
-  title,
-  accent = 'lime',
-}: {
-  kicker: string
-  title: string
-  accent?: 'lime' | 'magenta' | 'cyan'
-}) {
-  const accentVar =
-    accent === 'lime'
-      ? 'var(--neon-lime)'
-      : accent === 'cyan'
-        ? 'var(--neon-cyan)'
-        : 'var(--neon-magenta)'
+function SectionHeading({ label, title }: { label: string; title: string }) {
   return (
-    <div className="mb-8 flex flex-col gap-1">
-      <span
-        className="text-xs font-bold uppercase tracking-widest"
-        style={{ color: accentVar }}
-      >
-        {kicker}
-      </span>
-      <h2 className="font-heading text-3xl font-bold text-foreground md:text-4xl">{title}</h2>
+    <div className="mch-section-heading">
+      <span>{label}</span>
+      <h2>{title}</h2>
     </div>
   )
 }
@@ -203,319 +156,126 @@ type Step = {
   simpleBody?: string
 }
 
-// One tile on the scoreboard. `tag` only shows on mobile, where the two
-// columns collapse into one and the side needs naming.
-function StepCard({ step, accent, tag }: { step: Step; accent: 'magenta' | 'cyan'; tag: string }) {
-  const chip =
-    accent === 'magenta'
-      ? 'border-[var(--neon-magenta)]/40 bg-[var(--neon-magenta)]/10 text-[var(--neon-magenta)]'
-      : 'border-[var(--neon-cyan)]/40 bg-[var(--neon-cyan)]/10 text-[var(--neon-cyan)]'
-  const hover =
-    accent === 'magenta'
-      ? 'hover:border-[var(--neon-magenta)]/50 hover:shadow-[0_0_24px_oklch(0.68_0.27_340/0.2)]'
-      : 'hover:border-[var(--neon-cyan)]/50 hover:shadow-[0_0_24px_oklch(0.78_0.15_210/0.2)]'
+function FlowColumn({
+  kind,
+  body,
+  steps,
+}: {
+  kind: 'viewer' | 'streamer'
+  body: string
+  steps: Step[]
+}) {
   return (
-    <div
-      className={`flex h-full flex-col gap-3 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5 ${hover}`}
-    >
-      <div className="flex items-center justify-between">
-        <span className={`inline-flex size-9 items-center justify-center rounded-lg border ${chip}`}>
-          <step.icon className="size-4.5" />
-        </span>
-        <span
-          className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest md:hidden ${chip}`}
-        >
-          {tag}
-        </span>
-      </div>
-      <h3 className="font-heading text-lg font-bold leading-snug text-foreground">{step.title}</h3>
-      <p className="text-sm leading-relaxed text-muted-foreground">
-        {step.simpleBody ? (
-          <>
-            <span className="adv-only">{step.body}</span>
-            <span className="simple-only">{step.simpleBody}</span>
-          </>
-        ) : (
-          step.body
-        )}
-      </p>
-    </div>
-  )
-}
-
-// Darts-scoreboard layout: VIEWERS column left, STREAMERS right, step
-// numbers descending on a chalk spine between them. On mobile the spine
-// becomes a divider chip and each row stacks viewer-then-streamer.
-function Scoreboard() {
-  const rows = VIEWER_STEPS.map((viewer, i) => ({
-    viewer,
-    streamer: STREAMER_STEPS[i],
-    n: i + 1,
-  }))
-  return (
-    <>
-      {/* top rail — the two players (desktop; mobile relies on card tags) */}
-      <div
-        className="reveal mb-6 hidden items-stretch gap-x-6 md:grid md:grid-cols-[1fr_3.5rem_1fr]"
-        style={{ ['--reveal-delay' as string]: '0.05s' }}
-      >
-        <div className="rounded-2xl border border-[var(--neon-magenta)]/50 bg-[var(--neon-magenta)]/10 px-5 py-3 text-center">
-          <p className="font-heading text-xl font-bold uppercase tracking-widest text-[var(--neon-magenta)]">
-            Viewers
-          </p>
-        </div>
-        <div aria-hidden className="self-center text-center text-xl">
-          🎯
-        </div>
-        <div className="rounded-2xl border border-[var(--neon-cyan)]/50 bg-[var(--neon-cyan)]/10 px-5 py-3 text-center">
-          <p className="font-heading text-xl font-bold uppercase tracking-widest text-[var(--neon-cyan)]">
-            Streamers
-          </p>
-        </div>
-      </div>
-
-      <div className="relative">
-        {/* the chalk spine the step numbers sit on */}
-        <div
-          aria-hidden
-          className="absolute inset-y-2 left-1/2 hidden -translate-x-1/2 border-l border-dashed border-border/70 md:block"
-        />
-        <ol className="flex flex-col gap-10 md:gap-6">
-          {rows.map((row, i) => (
-            <li
-              key={row.n}
-              className="reveal grid grid-cols-1 gap-3 md:grid-cols-[1fr_3.5rem_1fr] md:items-stretch md:gap-x-6"
-              style={{ ['--reveal-delay' as string]: `${0.08 + i * 0.05}s` }}
-            >
-              <div className="flex items-center gap-3 md:col-start-2 md:row-start-1 md:justify-center md:self-center">
-                <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-[var(--neon-lime)]/60 bg-background font-heading text-sm font-bold text-[var(--neon-lime)] shadow-[0_0_14px_oklch(0.9_0.2_128/0.25)]">
-                  {String(row.n).padStart(2, '0')}
-                </span>
-                <span aria-hidden className="h-px flex-1 border-t border-dashed border-border/70 md:hidden" />
-              </div>
-              <div className="md:col-start-1 md:row-start-1">
-                <StepCard step={row.viewer} accent="magenta" tag="viewer" />
-              </div>
-              <div className="md:col-start-3 md:row-start-1">
-                <StepCard step={row.streamer} accent="cyan" tag="streamer" />
-              </div>
-            </li>
-          ))}
-        </ol>
-      </div>
-    </>
+    <section className={`mch-flow is-${kind}`}>
+      <header><p>{body}</p></header>
+      <ol>
+      {steps.map((s, i) => (
+        <li key={s.title}>
+          <span>{String(i + 1).padStart(2, '0')}</span>
+          <s.icon className="mch-step-icon" />
+          <div><h3>{s.title}</h3><p>
+            {s.simpleBody ? (
+              <>
+                <span className="adv-only">{s.body}</span>
+                <span className="simple-only">{s.simpleBody}</span>
+              </>
+            ) : (
+              s.body
+            )}
+          </p></div>
+        </li>
+      ))}
+      </ol>
+    </section>
   )
 }
 
 export default function HowItWorksPage() {
   const contactHref = contactUrl()
   return (
-    <div className="relative min-h-screen bg-background text-foreground">
-      <SiteHeader />
-      <div className="relative">
-        <GlitchBackground />
+    <div className={`mc-how dark min-h-screen ${ui.variable}`}>
+      <header className="mch-product-header">
+        <div>
+          <span className="mch-product-brand">
+            <a href="/app" className="bc"><BrandText /></a>
+            <i aria-hidden="true" />
+            <span>How it works</span>
+          </span>
+          <nav aria-label="Product navigation">
+            <a href="/app">Rooms</a>
+            <a href="/bounty">Bounties</a>
+            <a href="/how-it-works" aria-current="page">How it works</a>
+          </nav>
+          <span className="mch-product-actions">
+            <a href="/dashboard">Create room</a>
+            <AccountChip accent="var(--mcc-accent)" />
+          </span>
+        </div>
+      </header>
 
-        <main className="relative z-10">
-          {/* Intro — the product, in the words the landing hero used to carry */}
-          <section className="mx-auto max-w-6xl px-6 pb-14 pt-16 md:pt-20">
-            <p
-              className="reveal text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]"
-              style={{ ['--reveal-delay' as string]: '0.05s' }}
-            >
-              The playbook
-            </p>
-            <h1
-              className="reveal chromatic mt-2 max-w-3xl font-heading text-4xl font-bold leading-tight text-foreground md:text-6xl"
-              style={{ ['--reveal-delay' as string]: '0.12s' }}
-            >
-              How MegaChat works
-            </h1>
-            <p
-              className="reveal mt-5 max-w-2xl text-pretty text-lg leading-relaxed text-foreground/85"
-              style={{ ['--reveal-delay' as string]: '0.2s' }}
-            >
-              Viewers pay per-second to put their camera on your live broadcast.
-              A face on stream beats a wall of chat every time.
-            </p>
-          </section>
+      <main className="mch-main">
+        <section className="mch-hero">
+          <span className="mch-coordinate">The full signal path</span>
+          <h1>How MegaChat works</h1>
+          <p>Viewers can send a recorded MegaChat or take a live camera seat. Streamers control the room from one dashboard and one OBS source.</p>
+        </section>
 
-          {/* The scoreboard — the good part. Pulled UP to sit right under the
-              intro. No section heading: the VIEWERS/STREAMERS rail directly
-              below already says "side by side" visually, and repeated it in
-              words on top ("Side by side" kicker + a title) — the columns
-              speak for themselves without a caption. */}
-          <section className="mx-auto max-w-6xl px-6 pb-12 md:pb-16">
-            <Scoreboard />
-          </section>
+        <section className="mch-tree-section">
+          <div className="mch-arewe">
+            <span className="mch-arewe-lead">Are you a</span>
+            <span className="mch-tag is-chatter">Chatter</span>
+            <span className="mch-arewe-or">or</span>
+            <span className="mch-tag is-streamer">Streamer</span>
+          </div>
+          <div className="mch-flow-grid">
+            <FlowColumn kind="viewer" body="Enter a room, choose a format, and approve the maximum cost before anything starts." steps={VIEWER_STEPS} />
+            <FlowColumn kind="streamer" body="Open a room, set the terms, add the overlay, and run the broadcast." steps={STREAMER_STEPS} />
+          </div>
+          <div className="mch-tree-result">
+            <span className="mch-coordinate">Result</span>
+            <h2>A camera seat on the broadcast.</h2>
+            <p>Real-time between viewer and streamer. Public stream timing remains unchanged.</p>
+          </div>
+        </section>
 
-          {/* Latency architecture — the settled design, in plain words. */}
-          <section className="border-t border-border/50">
-            <div className="mx-auto max-w-6xl px-6 py-12 md:py-16">
-              <SectionHeading kicker="The clock" title="Why you're never actually late" accent="cyan" />
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-                <div className="reveal rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm">
-                  <h3 className="font-heading text-base font-bold text-foreground">👀 Spectating is delayed</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    The broadcast you watch runs a touch behind reality —
-                    every big platform buffers like that, for every viewer.
-                    That&apos;s normal and nothing here changes it.
-                  </p>
-                </div>
-                <div
-                  className="reveal rounded-2xl border border-[var(--neon-lime)]/40 bg-card/60 p-5 backdrop-blur-sm"
-                  style={{ ['--reveal-delay' as string]: '0.08s' }}
-                >
-                  <h3 className="font-heading text-base font-bold text-foreground">🎬 Going live is instant</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    Your camera doesn&apos;t ride the broadcast — it rides
-                    MegaChat&apos;s own connection, straight to the streamer,
-                    in well under a second. You two talk in real time; the
-                    broadcast relays your moment to everyone else at its usual
-                    delay.
-                  </p>
-                </div>
-                <div
-                  className="reveal rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm"
-                  style={{ ['--reveal-delay' as string]: '0.16s' }}
-                >
-                  <h3 className="font-heading text-base font-bold text-foreground">📼 MegaChats skip the clock</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    A MegaChat is recorded, so delay can&apos;t touch it. Record
-                    your take, send it, and watch it pop onto the stream like
-                    everyone else does.
-                  </p>
-                </div>
-              </div>
-
-              {/* One-glance diagram: the two pipes and their clocks. */}
-              <div className="reveal mt-8 overflow-x-auto" style={{ ['--reveal-delay' as string]: '0.2s' }}>
-                <svg
-                  viewBox="0 0 720 150"
-                  role="img"
-                  aria-label="Diagram: your camera reaches the streamer in under a second over MegaChat's pipe; the public broadcast reaches all spectators after a slight delay"
-                  className="mx-auto block min-w-[560px] max-w-3xl"
-                >
-                  <defs>
-                    <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-                      <path d="M0 0 L8 4 L0 8 z" fill="currentColor" />
-                    </marker>
-                  </defs>
-                  <g fontFamily="var(--font-space-grotesk), sans-serif" fontSize="13">
-                    <rect x="8" y="52" width="120" height="44" rx="10" fill="none" stroke="var(--neon-magenta)" />
-                    <text x="68" y="78" textAnchor="middle" fill="currentColor" fontWeight="700">YOU</text>
-                    <rect x="300" y="52" width="130" height="44" rx="10" fill="none" stroke="var(--neon-cyan)" />
-                    <text x="365" y="78" textAnchor="middle" fill="currentColor" fontWeight="700">STREAMER</text>
-                    <rect x="590" y="52" width="122" height="44" rx="10" fill="none" stroke="var(--border)" />
-                    <text x="651" y="78" textAnchor="middle" fill="currentColor" fontWeight="700">EVERYONE</text>
-                    <g color="var(--neon-lime)">
-                      <line x1="132" y1="66" x2="292" y2="66" stroke="currentColor" strokeWidth="2" markerEnd="url(#arr)" />
-                    </g>
-                    <text x="212" y="52" textAnchor="middle" fill="var(--neon-lime)" fontWeight="700">MegaChat pipe · &lt;1s</text>
-                    <g color="var(--muted-foreground)">
-                      <line x1="434" y1="82" x2="582" y2="82" stroke="currentColor" strokeWidth="2" strokeDasharray="6 5" markerEnd="url(#arr)" />
-                    </g>
-                    <text x="508" y="112" textAnchor="middle" fill="var(--muted-foreground)">broadcast · slight delay</text>
-                  </g>
-                </svg>
-              </div>
-            </div>
-          </section>
-
-          {/* Rails */}
-          <section className="mx-auto max-w-6xl px-6 py-12 md:py-16">
-            <SectionHeading kicker="Under the hood" title="The rails it runs on" accent="lime" />
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-              {RAILS.map((r, i) => (
-                <div
-                  key={r.title}
-                  className="reveal flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm"
-                  style={{ ['--reveal-delay' as string]: `${0.08 + i * 0.06}s` }}
-                >
-                  <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--neon-cyan)]/40 bg-[var(--neon-cyan)]/10 text-[var(--neon-cyan)]">
-                    <r.icon className="size-4.5" />
-                  </span>
-                  <div>
-                    <h3 className="font-heading text-base font-bold text-foreground">{r.title}</h3>
-                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                      <span className="adv-only">{r.body}</span>
-                      <span className="simple-only">{r.simpleBody}</span>
-                    </p>
-                  </div>
-                </div>
+        <section id="faq" className="mch-faq-section">
+          <div>
+            <SectionHeading label="Questions" title="FAQ" />
+            <div className="mch-faq-list">
+              {FAQ.map((f) => (
+                <details key={f.q}>
+                  <summary>
+                    {f.q}
+                    <span aria-hidden="true" className="mark">+</span>
+                  </summary>
+                  <p>{f.a}</p>
+                </details>
               ))}
             </div>
-            {/* Spec strip — moved down here from the intro, where it delayed
-                the side-by-side. It's reference data, so it lives with the
-                rails rather than gating the explanation. */}
-            <dl className="reveal mt-5 grid grid-cols-2 gap-y-4 divide-border/40 rounded-2xl border border-border/60 bg-card/40 px-6 py-5 backdrop-blur-sm sm:grid-cols-4 sm:divide-x">
-              {STATS.map((s) => (
-                <div key={s.label} className="flex flex-col gap-0.5 px-2 first:pl-0 sm:px-4">
-                  <dt className="tabular font-heading text-xl font-bold text-foreground">
-                    {s.value}
-                  </dt>
-                  <dd className="text-xs font-medium text-muted-foreground">
-                    <span className="adv-only">{s.label}</span>
-                    <span className="simple-only">{s.simpleLabel}</span>
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </section>
+          </div>
+        </section>
 
-          {/* FAQ — merged here on purpose; the nav's FAQ link anchors to it */}
-          <section id="faq" className="scroll-mt-24 border-t border-border/50">
-            <div className="mx-auto max-w-3xl px-6 py-12 md:py-16">
-              <SectionHeading kicker="Questions" title="FAQ" accent="magenta" />
-              <div className="flex flex-col gap-3">
-                {FAQ.map((f) => (
-                  <details
-                    key={f.q}
-                    className="group rounded-xl border border-border/70 bg-card/60 backdrop-blur-sm transition-colors open:border-[var(--neon-magenta)]/50"
-                  >
-                    <summary className="flex cursor-pointer select-none items-center justify-between gap-4 px-5 py-4 font-heading text-base font-bold text-foreground [&::-webkit-details-marker]:hidden">
-                      {f.q}
-                      <span
-                        aria-hidden="true"
-                        className="text-[var(--neon-lime)] transition-transform group-open:rotate-45"
-                      >
-                        +
-                      </span>
-                    </summary>
-                    <p className="px-5 pb-4 text-sm leading-relaxed text-muted-foreground">
-                      {f.a}
-                    </p>
-                  </details>
-                ))}
-              </div>
+        <section className="mch-cta">
+          <div><p>Choose a live room or open your own.</p><div>
+              <a href="/app">Browse rooms</a>
+              <a href="/dashboard">Create room</a>
             </div>
-          </section>
+          </div>
+        </section>
+      </main>
 
-          {/* CTA band */}
-          <section className="border-t border-border/50">
-            <div className="mx-auto flex max-w-6xl flex-col items-start gap-5 px-6 py-12 sm:flex-row sm:items-center sm:justify-between md:py-14">
-              <p className="font-heading text-2xl font-bold italic text-foreground md:text-3xl">
-                Put your face{' '}
-                <span className="text-[var(--neon-magenta)]">on the stream.</span>
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <a
-                  href="/#browse"
-                  className="glow-magenta rounded-full bg-primary px-6 py-3 text-sm font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:scale-[1.03]"
-                >
-                  Browse rooms
-                </a>
-                <a
-                  href="/dashboard"
-                  className="rounded-full border border-[var(--neon-lime)]/60 bg-[var(--neon-lime)]/10 px-6 py-3 text-sm font-bold uppercase tracking-wide text-[var(--neon-lime)] transition-transform hover:scale-[1.03]"
-                >
-                  Start a room
-                </a>
-              </div>
-            </div>
-          </section>
-        </main>
-      </div>
-      <SiteFooter contactHref={contactHref} />
+      <footer className="mch-footer">
+        <div>
+          <span className="bc"><BrandText /></span>
+          <nav aria-label="Footer">
+            <a href="/app">Rooms</a>
+            <a href="/bounty">Bounties</a>
+            <a href="/dashboard">Dashboard</a>
+            <a href="/roadmap">Roadmap</a>
+            <a href={contactHref} target="_blank" rel="noopener noreferrer">Contact</a>
+          </nav>
+        </div>
+      </footer>
     </div>
   )
 }

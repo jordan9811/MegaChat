@@ -1,46 +1,33 @@
-import { SiteHeader } from '@/components/site-header'
-import { SiteFooter, contactUrl } from '@/components/site-footer'
+import { Suspense } from 'react'
+import { Plus_Jakarta_Sans } from 'next/font/google'
+import { contactUrl } from '@/components/site-footer'
 import { RoomProvider } from '@/components/room-provider'
-import { DashboardRooms } from '@/components/dashboard-rooms'
-import { DashboardSections } from '@/components/dashboard-sections'
+import { DashboardShell } from '@/components/dashboard-shell'
 
 export const metadata = {
   title: 'MegaChat — Streamer dashboard',
   description: 'Tune pricing, share links, watch viewers roll onto camera.',
 }
 
+// The create surface wears the app skin, same face as the room board.
+const ui = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  variable: '--font-ui',
+})
+
 export default function DashboardPage() {
-  const contactHref = contactUrl()
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <SiteHeader />
-
-      {/* Calm, usable dashboard */}
-      <main
-        id="dashboard"
-        className="mx-auto max-w-6xl scroll-mt-20 px-6 py-14 md:py-20"
-      >
-        <div className="reveal mb-8 flex flex-col gap-1">
-          <span className="text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]">
-            Streamer dashboard
-          </span>
-          <h2 className="font-heading text-3xl font-bold text-foreground">
-            Set up your MegaChat room
-          </h2>
-          <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
-            Tune your pricing, share your links, and watch viewers roll onto
-            camera in real time.
-          </p>
-        </div>
-
+    <div className={`${ui.variable}`}>
+      {/* The shell picks its own chrome: creating is a full page of its own,
+          managing keeps the header/tabs/footer control room. */}
+      {/* Suspense: the shell reads ?new=1 to force the create page, and
+          useSearchParams needs a boundary on a statically rendered route. */}
+      <Suspense fallback={null}>
         <RoomProvider>
-          {/* layout lives in DashboardRooms — it needs the room lifecycle
-              (config vs runtime columns), which is client state */}
-          <DashboardSections rooms={<DashboardRooms />} />
+          <DashboardShell contactHref={contactUrl()} />
         </RoomProvider>
-      </main>
-
-      <SiteFooter contactHref={contactHref} />
+      </Suspense>
     </div>
   )
 }

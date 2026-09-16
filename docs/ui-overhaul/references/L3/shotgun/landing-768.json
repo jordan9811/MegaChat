@@ -1,0 +1,126 @@
+{
+  "title": "Tickets for Music Events, Concerts, and Festivals · Shotgun",
+  "h1": [
+    {
+      "t": "GRAB YOUR TICKET, MAKE MEMORIES",
+      "top": 105,
+      "h": 64,
+      "vis": true
+    }
+  ],
+  "h2": [
+    {
+      "t": "POPULAR EVENTS IN UNITED STATES",
+      "top": 690,
+      "h": 40,
+      "vis": true
+    }
+  ],
+  "p": [
+    {
+      "t": "Download Shotgun to find the best parties in town.",
+      "top": 177,
+      "h": 24,
+      "vis": true
+    },
+    {
+      "t": "Zap Outdoorz 2026",
+      "top": 972,
+      "h": 23,
+      "vis": true
+    },
+    {
+      "t": "Twisted Festival",
+      "top": 972,
+      "h": 23,
+      "vis": true
+    },
+    {
+      "t": "Queen Out At The Café: Petal Supply, Beverly Chills+",
+      "top": 1322,
+      "h": 45,
+      "vis": true
+    }
+  ],
+  "ctas": [
+    {
+      "t": "Search for an event, artist, organizer or city",
+      "top": 12,
+      "h": 40,
+      "vis": true
+    },
+    {
+      "t": "EXPLORE",
+      "top": 12,
+      "h": 40,
+      "vis": true
+    },
+    {
+      "t": "LOGIN / SIGN UP",
+      "top": 14,
+      "h": 36,
+      "vis": true
+    },
+    {
+      "t": "App Store",
+      "top": 225,
+      "h": 40,
+      "vis": true
+    },
+    {
+      "t": "Play Store",
+      "top": 225,
+      "h": 40,
+      "vis": true
+    },
+    {
+      "t": "UNITED STATES",
+      "top": 690,
+      "h": 40,
+      "vis": true
+    },
+    {
+      "t": "Zap Outdoorz 2026 Camp Tall Timbers Sep 4 – 7 $120.75",
+      "top": 762,
+      "h": 318,
+      "vis": true
+    },
+    {
+      "t": "MORE EVENTS IN UNITED STATES",
+      "top": 1485,
+      "h": 40,
+      "vis": true
+    },
+    {
+      "t": "KETTAMA NÜ ANDROIDS",
+      "top": 1733,
+      "h": 124,
+      "vis": true
+    },
+    {
+      "t": "SARA LANDRY BRUNCH ELECTRONIK",
+      "top": 1857,
+      "h": 124,
+      "vis": true
+    },
+    {
+      "t": "BLACK COFFEE FASHION WEEK",
+      "top": 1981,
+      "h": 124,
+      "vis": true
+    },
+    {
+      "t": "MIND AGAINST SUNDAY LOVE",
+      "top": 2105,
+      "h": 124,
+      "vis": true
+    },
+    {
+      "t": "WHOMADEWHO THE SPOTLIGHT",
+      "top": 2229,
+      "h": 124,
+      "vis": true
+    }
+  ],
+  "url": "https://shotgun.live/en"
+}

@@ -11,7 +11,7 @@
 // Signed in, the button becomes a chip (your @handle — never an address) and
 // the dropdown carries balance, your room link, dashboard and sign out.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ChevronDown,
   LogOut,
@@ -20,94 +20,30 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useUiMode } from '@/lib/ui-mode'
-
-type Identity = { provider: string; username: string; handle: string } | null
-type WalletState = {
-  configured: boolean
-  authenticated: boolean
-  address: string | null
-  displayName: string | null
-  modalOpen: boolean
-}
+import { shortAddr, useAccount } from '@/lib/use-account'
 
 const itemCls =
   'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-input/50'
 const itemDisabledCls =
   'flex w-full cursor-not-allowed items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground opacity-60'
 
-const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
-
-function readWallet(): WalletState {
-  const MW = typeof window !== 'undefined' ? window.MegaWallet : undefined
-  return {
-    configured: !!MW?.configured,
-    authenticated: !!MW?.authenticated,
-    address: MW?.address ?? null,
-    displayName: MW?.displayName ?? null,
-    modalOpen: !!MW?.modalOpen,
-  }
-}
-
 export function HeaderAuth() {
-  const [identity, setIdentity] = useState<Identity>(null)
-  const [loaded, setLoaded] = useState(false)
   const [open, setOpen] = useState(false)
-  const [wallet, setWallet] = useState<WalletState>({
-    configured: false, authenticated: false, address: null, displayName: null, modalOpen: false,
-  })
-  const [balance, setBalance] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const simple = useUiMode() === 'simple'
-
-  // Privy's modal keeps you on the page, so there's no returnTo to carry.
-  useEffect(() => {
-    fetch('/api/auth/me')
-      .then((r) => r.json())
-      .then((me) => setIdentity(me?.identity || null))
-      .catch(() => {})
-      .finally(() => setLoaded(true))
-  }, [])
-
-  // Wallet state comes from the window bridge (provider mounts app-wide).
-  useEffect(() => {
-    const sync = () => setWallet(readWallet())
-    sync()
-    window.addEventListener('megawallet:changed', sync)
-    return () => window.removeEventListener('megawallet:changed', sync)
-  }, [])
-
-  // Privy sign-in mints the handle server-side — pick it up without a reload.
-  useEffect(() => {
-    const onIdentity = () => {
-      fetch('/api/auth/me')
-        .then((r) => r.json())
-        .then((me) => setIdentity(me?.identity || null))
-        .catch(() => {})
-    }
-    window.addEventListener('megachat:identity', onIdentity)
-    return () => window.removeEventListener('megachat:identity', onIdentity)
-  }, [])
-
-  // Balance preview for the dropdown — read-only, refreshed on address
-  // change and every time the menu opens.
-  const refreshBalance = useCallback((address: string) => {
-    fetch(`/api/balance/${address}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.available != null) {
-          const n = parseFloat(d.available)
-          setBalance(Number.isFinite(n) ? n.toFixed(2) : null)
-        }
-      })
-      .catch(() => {})
-  }, [])
-  useEffect(() => {
-    if (wallet.address) refreshBalance(wallet.address)
-    else setBalance(null)
-  }, [wallet.address, refreshBalance])
-  useEffect(() => {
-    if (open && wallet.address) refreshBalance(wallet.address)
-  }, [open, wallet.address, refreshBalance])
+  // Shared with the app-skin chip so the two controls cannot disagree.
+  const {
+    loaded,
+    identity,
+    wallet,
+    balance,
+    signedIn,
+    chipLabel,
+    openSignIn: startSignIn,
+    connectBalance: doConnectBalance,
+    connectingBalance,
+    signOut: doSignOut,
+  } = useAccount(open)
 
   // click-outside + escape close the menu
   useEffect(() => {
@@ -131,54 +67,27 @@ export function HeaderAuth() {
   // dismissing the modal simply flips modalOpen back to false — nothing can
   // hang the button waiting on a promise that never settles.
   function openSignIn() {
-    if (!window.MegaWallet?.configured) return
     setOpen(false)
-    window.MegaWallet.openLogin()
+    startSignIn()
   }
 
   // "Connect balance": the person is already signed in (has an identity) but
   // their embedded wallet is missing. openLogin() no-ops when authenticated,
   // so this path uses connect(), which creates the wallet directly — no modal,
   // so no dismissal-hang risk.
-  const [connectingBalance, setConnectingBalance] = useState(false)
   async function connectBalance() {
-    if (!window.MegaWallet?.configured || connectingBalance) return
-    setConnectingBalance(true)
-    try {
-      await window.MegaWallet.connect()
-      setOpen(false)
-    } catch {
-      /* cancelled/failed — state unchanged */
-    } finally {
-      setConnectingBalance(false)
-    }
+    await doConnectBalance()
+    setOpen(false)
   }
 
   async function signOut() {
-    // Both halves: OAuth identity cookie AND the Privy session.
-    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
-    if (window.MegaWallet?.authenticated) {
-      await window.MegaWallet.logout().catch(() => {})
-    }
-    window.location.reload()
+    await doSignOut()
   }
 
   // Reserve the slot pre-load so the header never visibly reflows.
   if (!loaded) {
     return <span aria-hidden="true" className="inline-block h-9 w-24 rounded-full bg-input/20" />
   }
-
-  const signedIn = !!identity || !!wallet.address
-  // NEVER a wallet address here. This is a consumer app: you are your name,
-  // and hex on a button is the opposite of that. The address lives inside the
-  // dropdown for the people who actually want it.
-  // handle (server-minted) → Privy's own name (client-side, survives a failed
-  // mint) → generic. An address is never a name.
-  const chipLabel = identity
-    ? `@${identity.handle}`
-    : wallet.displayName
-      ? `@${wallet.displayName}`
-      : 'Account'
 
   return (
     <div ref={rootRef} className="relative">

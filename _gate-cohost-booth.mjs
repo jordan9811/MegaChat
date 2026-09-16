@@ -44,10 +44,16 @@ const app = spawn(process.execPath, ['server.js', '--prod'], {
 await sleep(9000);
 
 const svc = new RoomServiceClient('http://localhost:7880', 'devkey', 'secret');
+// Counts the host's VIDEO tracks, not all tracks. A booth that fails to get a
+// camera still publishes a mic, so the old all-tracks count reported a
+// picture-less host as a healthy one -- the gate went green on exactly the
+// state the operator was complaining about. TrackType.VIDEO is 1 on the wire;
+// accept the string form too in case the SDK hands back an enum name.
+const isVideoTrack = (t) => t && (t.type === 1 || t.type === 'VIDEO' || t.source === 'CAMERA');
 const hostOnSfu = async (roomId) => {
   const ps = await svc.listParticipants(`mc-${roomId}`).catch(() => []);
   const h = ps.find((p) => p.identity === `host:${roomId}`);
-  return h ? (h.tracks || []).length : -1; // -1 = absent, n = track count
+  return h ? (h.tracks || []).filter(isVideoTrack).length : -1; // -1 = absent, n = VIDEO tracks
 };
 const pollHost = async (roomId, want, tries = 14) => {
   for (let i = 0; i < tries; i++) {
@@ -85,10 +91,25 @@ const GUM_OVERRIDE = () => {
   };
   window.__gumCalls = 0;
   window.__gumTracks = [];
-  navigator.mediaDevices.getUserMedia = async () => {
+  // HONOURS ITS CONSTRAINTS. The old stub ignored the argument entirely and
+  // always handed back a stream with both kinds, so the booth's camera-failed
+  // branch -- the one that puts a host on air with sound and no picture -- had
+  // never executed under test. That is how "they heard me but never saw me"
+  // shipped twice. __gumCamBusy fails ONLY video requests, which is what a
+  // camera held by OBS actually does: the mic is untouched.
+  navigator.mediaDevices.getUserMedia = async (constraints) => {
     window.__gumCalls++;
     if (window.__gumDeny) throw new DOMException('Permission denied', 'NotAllowedError');
+    const wantsVideo = !!(constraints && constraints.video);
+    const wantsAudio = !!(constraints && constraints.audio);
+    if (wantsVideo && window.__gumCamBusy) {
+      throw new DOMException('Could not start video source', 'NotReadableError');
+    }
     const s = makeStream(window.__gumLabel || 'CAM');
+    // Give back only what was asked for, so an audio-only request cannot
+    // accidentally satisfy a caller that needed a camera.
+    if (!wantsVideo) s.getVideoTracks().forEach((t) => { t.stop(); s.removeTrack(t); });
+    if (!wantsAudio) s.getAudioTracks().forEach((t) => { t.stop(); s.removeTrack(t); });
     s.getTracks().forEach((t) => window.__gumTracks.push(t));
     return s;
   };
@@ -198,7 +219,7 @@ try {
   console.log('  [joiner] live on the free room');
 
   const tracks = await pollHost(room.id, 'present');
-  ok('guest live → booth AUTO-publishes (SFU lists host with tracks)', tracks >= 1, `tracks=${tracks}`);
+  ok('guest live → booth AUTO-publishes a CAMERA (not just a mic)', tracks >= 1, `videoTracks=${tracks}`);
 
   await joiner.bringToFront();
   let feed = { w: 0 };

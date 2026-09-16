@@ -114,16 +114,16 @@ export function StingerPreview() {
           <span className="sp-label">YOU</span>
         </div>
       </div>
-      <div className="mt-2 flex items-center justify-between">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+      <div className="mt-2 flex items-center justify-between gap-3">
+        <span className="text-[12px] text-[var(--mcj-faint)]">
           Preview — how you&apos;ll hit the stream
         </span>
         <button
           id="stingerReplayBtn"
           type="button"
-          className="rounded-full border border-[var(--neon-cyan)]/50 bg-[var(--neon-cyan)]/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[var(--neon-cyan)] transition-colors hover:bg-[var(--neon-cyan)]/20"
+          className="border border-[var(--mcj-rule-2)] px-3 py-1 text-[12px] font-semibold text-[var(--mcj-dim)] transition-colors hover:border-[var(--mcj-fg)] hover:text-[var(--mcj-fg)]"
         >
-          ▶ Replay
+          Replay
         </button>
       </div>
     </div>

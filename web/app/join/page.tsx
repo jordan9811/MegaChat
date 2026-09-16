@@ -1,10 +1,17 @@
 import type { Metadata } from 'next'
-import { GlitchBackground } from '@/components/glitch-background'
-import { Wordmark } from '@/components/wordmark'
-import { ModeToggle } from '@/components/mode-toggle'
-import { HeaderAuth } from '@/components/header-auth'
+import { Plus_Jakarta_Sans } from 'next/font/google'
+import { AccountChip } from '@/components/account-chip'
 import { JoinClient } from '@/components/join/join-client'
 import './join.css'
+import { BrandText } from '@/components/brand-text'
+
+// One UI face across the app, loaded per route — there is no site-wide
+// provider. Same call as the room board and the create page.
+const ui = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  variable: '--font-ui',
+})
 
 export const metadata: Metadata = {
   title: 'Join on camera — MegaChat',
@@ -13,26 +20,32 @@ export const metadata: Metadata = {
 
 export default function JoinPage() {
   return (
-    <div className="dark relative min-h-screen bg-noir text-foreground">
-      <GlitchBackground />
-      <div className="relative z-10">
-        {/* Tight paddings/gaps on purpose: wordmark + mode pill + login must
-            all fit a 375px viewport without wrapping. */}
-        {/* width matches JoinClient's shell (xl → 6xl at lg) or the wordmark
-            floats indented over the widened desktop layout */}
-        <header className="mx-auto flex w-full max-w-xl items-center justify-between gap-2 px-3 py-4 sm:px-6 lg:max-w-6xl">
-          <a href="/" aria-label="MegaChat home" className="shrink-0 transition-opacity hover:opacity-90">
-            <Wordmark size="sm" />
-          </a>
-          <div className="flex items-center gap-1.5">
-            {/* Simple/Advanced matters most right here — the paying surface. */}
-            <ModeToggle />
-            {/* Identity + balance, top right, same as every other page. */}
-            <HeaderAuth />
-          </div>
-        </header>
-        <JoinClient />
-      </div>
+    <div className={`${ui.variable} mc-join dark min-h-screen`}>
+      <header className="mcj-product-header">
+        <div>
+          <span className="mcj-product-brand">
+            <a
+              href="/app"
+              aria-label="MegaChat home"
+              className="bc"
+            >
+              <BrandText />
+            </a>
+            <i aria-hidden="true" />
+            <span>Join room</span>
+          </span>
+          <nav aria-label="Product navigation">
+            <a href="/app">Rooms</a>
+            <a href="/bounty">Bounties</a>
+            <a href="/how-it-works">How it works</a>
+          </nav>
+          <span className="mcj-product-actions">
+            <a href="/dashboard">Create room</a>
+            <AccountChip accent="var(--mcj-accent)" />
+          </span>
+        </div>
+      </header>
+      <JoinClient />
     </div>
   )
 }

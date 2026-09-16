@@ -115,17 +115,31 @@ export function _resetCache() {
  * reserved against them; what they can't do is take a matching MegaChat room
  * handle. That mismatch is logged in OPEN-ISSUES.md rather than papered over.
  */
+/**
+ * Platforms whose identifier is CASE-SENSITIVE. A pump.fun target is a Solana
+ * mint — base58, where `G` and `g` are different characters — so lowercasing
+ * it does not normalise the address, it destroys it, and the lowered form
+ * cannot be converted back to verify against the chain. Twitch, Kick and X
+ * handles are genuinely case-insensitive and keep the old behaviour.
+ */
+const CASE_SENSITIVE_PLATFORMS = new Set(['pumpfun']);
+
 export function handleKey(platform, handle) {
   const p = String(platform || '').trim().toLowerCase();
-  if (!p) return null;
   const raw = String(handle || '').trim().replace(/^@/, '');
-  if (!raw) return null;
-  if (p === 'pumpfun') {
-    const m = normalizePumpFunMint(raw);
-    return m ? `${p}:${m}` : null;
-  }
-  const h = raw.toLowerCase();
-  if (!/^[a-z0-9_.-]{1,40}$/.test(h)) return null;
+  const h = CASE_SENSITIVE_PLATFORMS.has(p) ? raw : raw.toLowerCase();
+  if (!p || !h) return null;
+  // 48, not 40: a pump.fun target is a Solana mint address, which is base58
+  // and 43-44 characters. At 40 every mint failed handleKey, so a pump.fun
+  // pool could be reserved by other paths but never pledged against — the
+  // one platform whose identifier is an address was silently unbountyable.
+  if (!/^[a-zA-Z0-9_.-]{1,48}$/.test(h)) return null;
+  // ...and where the identifier IS an address, validate it as one. base58
+  // excludes 0, O, I and l, which the generic handle pattern above accepts
+  // happily — and a handleKey that is not a real mint is a pool that can be
+  // reserved and never pledged against, the same class of silent dead end the
+  // 40-character cap created.
+  if (p === 'pumpfun' && !normalizePumpFunMint(h)) return null;
   return `${p}:${h}`;
 }
 
@@ -173,11 +187,11 @@ export function reserveHandle({ platform, handle, reservedBy = null, ttlMs }) {
   const rec = {
     key,
     platform: String(platform).toLowerCase(),
-    // The handle as it will be USED, not merely as it was matched. For a
-    // pump.fun mint that means the original case: this value is what
+    // Same rule as handleKey: a case-sensitive platform keeps its casing, or
+    // the stored handle stops being the thing it identifies. This value is what
     // sessionHandle() hands to the frame sources and the live-status lookers,
     // and a lowercased base58 address is not a real address.
-    handle: String(platform).toLowerCase() === 'pumpfun'
+    handle: CASE_SENSITIVE_PLATFORMS.has(String(platform).trim().toLowerCase())
       ? String(handle).trim().replace(/^@/, '')
       : String(handle).replace(/^@/, '').toLowerCase(),
     claimStatus: 'ACCUMULATING',

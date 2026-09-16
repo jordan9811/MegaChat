@@ -1,0 +1,137 @@
+{
+  "title": "Upcoming Events · Shotgun",
+  "h1": [
+    {
+      "t": "UPCOMING EVENTS",
+      "top": 164,
+      "h": 36,
+      "vis": true
+    }
+  ],
+  "h2": [],
+  "p": [
+    {
+      "t": "Classics Only X Rivers King • Croisière & Party Sur Seine",
+      "top": 463,
+      "h": 45,
+      "vis": true
+    },
+    {
+      "t": "Yaya Midweek Club By Edesia I Opening Night",
+      "top": 463,
+      "h": 45,
+      "vis": true
+    },
+    {
+      "t": "Destino",
+      "top": 463,
+      "h": 23,
+      "vis": true
+    },
+    {
+      "t": "Wild Wednesday - 2nd September",
+      "top": 856,
+      "h": 23,
+      "vis": true
+    },
+    {
+      "t": "Isso É Jazz ?! Real Gang",
+      "top": 856,
+      "h": 23,
+      "vis": true
+    },
+    {
+      "t": "Bozo Records : Michelle (Live), P.O, Marco Del Bosque & More",
+      "top": 856,
+      "h": 45,
+      "vis": true
+    },
+    {
+      "t": "1st Anniversary Badass Jam - 02/09/26",
+      "top": 1250,
+      "h": 23,
+      "vis": true
+    },
+    {
+      "t": "Opening Six Education Only At Six Brotteaux - Lyon",
+      "top": 1250,
+      "h": 45,
+      "vis": true
+    },
+    {
+      "t": "Room Pres.: Robert Roman (Ubiyu, Us)",
+      "top": 1250,
+      "h": 23,
+      "vis": true
+    },
+    {
+      "t": "Woh Present Bonnie & Clyde : Jérémy Weizman B2b Saverio",
+      "top": 1643,
+      "h": 45,
+      "vis": true
+    },
+    {
+      "t": "Underbass & Aperotech Presents: Arpl, Fleurbleus, Saphyr",
+      "top": 1643,
+      "h": 45,
+      "vis": true
+    },
+    {
+      "t": "Osmose : Damsterdam + Immek",
+      "top": 1643,
+      "h": 23,
+      "vis": true
+    }
+  ],
+  "ctas": [
+    {
+      "t": "Search for an event, artist, organizer or city",
+      "top": 12,
+      "h": 40,
+      "vis": true
+    },
+    {
+      "t": "EXPLORE",
+      "top": 12,
+      "h": 40,
+      "vis": true
+    },
+    {
+      "t": "LOGIN / SIGN UP",
+      "top": 14,
+      "h": 36,
+      "vis": true
+    },
+    {
+      "t": "Home",
+      "top": 80,
+      "h": 20,
+      "vis": true
+    },
+    {
+      "t": "1",
+      "top": 1806,
+      "h": 36,
+      "vis": true
+    },
+    {
+      "t": "2",
+      "top": 1806,
+      "h": 36,
+      "vis": true
+    },
+    {
+      "t": "3",
+      "top": 1806,
+      "h": 36,
+      "vis": true
+    },
+    {
+      "t": "LIST YOUR EVENT",
+      "top": 1955,
+      "h": 36,
+      "vis": true
+    }
+  ],
+  "url": "https://shotgun.live/en/events"
+}

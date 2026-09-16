@@ -1,0 +1,21 @@
+{
+  "page": "account",
+  "requestedUrl": "https://megachat.fun/account",
+  "finalUrl": "https://megachat.fun/account",
+  "viewport": {
+    "name": "1440",
+    "width": 1440,
+    "height": 900
+  },
+  "navErr": null,
+  "timestamp": "2026-09-02T17:16:47.626Z",
+  "axeVersion": "4.13.0",
+  "byImpact": {
+    "critical": 0,
+    "serious": 0,
+    "moderate": 0,
+    "minor": 0
+  },
+  "violations": [],
+  "incomplete": []
+}

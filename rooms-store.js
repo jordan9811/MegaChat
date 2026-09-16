@@ -157,8 +157,8 @@ export function resolveLetters(cfg) {
     ),
   );
   const maxSeconds = Math.min(30, Math.max(minSeconds, Number(l.maxSeconds ?? 10) || 10));
-  const price =
-    typeof l.price === 'string' && parseFloat(l.price) > 0 ? String(l.price) : null;
+  const parsedPrice = typeof l.price === 'string' ? parseFloat(l.price) : NaN;
+  const price = Number.isFinite(parsedPrice) && parsedPrice >= 0 ? String(parsedPrice) : null;
   return {
     // MegaChats are the hero feature — ON unless the streamer turns them off.
     enabled: l.enabled !== false,
@@ -182,6 +182,8 @@ function resolveJoinStream(cfg) {
   const j = cfg.joinStream || {};
   return {
     enabled: j.enabled !== false, // default ON — existing rooms unchanged
+    admission: ['approve', 'manual'].includes(j.admission) ? j.admission : 'ai',
+    liveSafety: ['remove', 'host'].includes(j.liveSafety) ? j.liveSafety : 'alert',
     gatesSameAsMegaChat: j.gatesSameAsMegaChat !== false,
     gates: resolveGates(j.gates),
   };
@@ -315,6 +317,12 @@ const RESERVED_HANDLES = new Set([
   'api', 'join', 'dashboard', 'overlay', 'r', 'auth', 'roadmap', 'index',
   'admin', 'www', 'assets', 'static', 'login', 'how-it-works', 'next',
   '_next', 'public', 'favicon', 'icon', 'robots', 'sitemap',
+  // the landing/app split: /app is the room board and /legacy the previous
+  // front end. Both are plain lowercase, so neither the dash-or-dot rule nor
+  // anything else stops a handle from shadowing them — /:handle is matched
+  // BEFORE the Next fallthrough, so claiming one would make the page
+  // unreachable. 'bounty' had the same gap.
+  'app', 'legacy', 'bounty',
   // plausible future routes — cheap to reserve now, painful to reclaim later
   'about', 'blog', 'browse', 'careers', 'channel', 'contact', 'docs',
   'explore', 'faq', 'help', 'home', 'jobs', 'legal', 'live', 'logout',

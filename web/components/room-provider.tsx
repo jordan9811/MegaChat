@@ -23,6 +23,7 @@ import {
   getRoomSession,
   updateRoom,
   setRoomActive,
+  endRoom as apiEndRoom,
   kickSeat as apiKickSeat,
   pinSeat as apiPinSeat,
   getPublicConfig,
@@ -41,6 +42,7 @@ import {
   type RoomConfigPatch,
 } from '@/lib/api'
 import { backendWsUrl } from '@/lib/backend'
+import { guestName } from '@/lib/display-format'
 
 // Tempo mainnet USDC.e — fallback only; the real value is re-read from
 // /api/config on mount.
@@ -67,6 +69,7 @@ export type ConfigDraft = {
   rewardsEarnCap: string
   rewardsType: string
   rewardsTokenAddress: string
+  rewardsTokenSymbol: string
   lettersEnabled: boolean
   lettersMaxSeconds: string
   lettersPrice: string
@@ -80,6 +83,8 @@ export type ConfigDraft = {
   mcFollowersOnly: boolean
   mcSubsOnly: boolean
   joinStreamEnabled: boolean
+  openMicAdmission: 'ai' | 'approve' | 'manual'
+  openMicSafety: 'alert' | 'remove' | 'host'
   jsGatesSame: boolean
   jsMinWatch: string
   jsFollowersOnly: boolean
@@ -87,6 +92,14 @@ export type ConfigDraft = {
 }
 
 // Defaults mirror the legacy dashboard form (backed by env defaults server-side).
+// A handle is a URL segment, not a display name. The server charset is
+// /^[a-z0-9_]{3,20}$/ (rooms-store.js sanitizeHandle), so a display name it
+// cannot express prefills nothing rather than prefilling something broken.
+const toHandle = (raw?: string | null) => {
+  const h = String(raw ?? '').trim().replace(/^@/, '').toLowerCase()
+  return /^[a-z0-9_]{3,20}$/.test(h) ? h : ''
+}
+
 const DEFAULT_DRAFT: ConfigDraft = {
   name: '',
   handle: '',
@@ -108,6 +121,7 @@ const DEFAULT_DRAFT: ConfigDraft = {
   rewardsEarnCap: '5',
   rewardsType: 'usdc',
   rewardsTokenAddress: '',
+  rewardsTokenSymbol: 'TOKEN',
   lettersEnabled: true, // the hero feature — on by default
   lettersMaxSeconds: '10',
   lettersPrice: '',
@@ -119,7 +133,12 @@ const DEFAULT_DRAFT: ConfigDraft = {
   mcMinWatch: '0',
   mcFollowersOnly: false,
   mcSubsOnly: false,
-  joinStreamEnabled: true,
+  // Open mic is OPT-IN on a new room. MegaChats need nothing from the
+  // streamer once configured; live camera seats put a stranger on the
+  // broadcast, which is a bigger ask to have switched on by default.
+  joinStreamEnabled: false,
+  openMicAdmission: 'ai',
+  openMicSafety: 'alert',
   jsGatesSame: true,
   jsMinWatch: '0',
   jsFollowersOnly: false,
@@ -127,11 +146,18 @@ const DEFAULT_DRAFT: ConfigDraft = {
 }
 
 type RoomContextValue = {
+  saveState: 'saved' | 'saving' | 'error'
+  saveError: string | null
   mode: 'create' | 'managing'
   room: Room | null
   seats: Seat[]
   joinUrl: string | null
   overlayUrl: string | null
+  /** Server-verified liveness of the room's SAVED Twitch channel. The probe
+   *  is lazy with a 90s TTL, so a cold first load answers false for a channel
+   *  that is live and flips true on the next poll: false means "no picture to
+   *  show yet", never "you are offline". */
+  twitchLive: boolean
   draft: ConfigDraft
   usdcAddress: string
   livekitConfigured: boolean
@@ -157,6 +183,9 @@ type RoomContextValue = {
   create: (password?: string) => Promise<void>
   unlock: (roomId: string, password: string) => Promise<void>
   toggleActive: () => Promise<void>
+  /** END the open room: delete it (seats cleared + refunded) and return to a
+   *  clean slate — the create form, or the picker if other rooms remain. */
+  endRoom: () => Promise<void>
   kick: (seatId: string) => Promise<void>
   pin: (seatId: string, pinned: boolean) => Promise<void>
   switchRoom: () => void
@@ -212,6 +241,8 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
     },
     joinStream: {
       enabled: draft.joinStreamEnabled,
+      admission: draft.openMicAdmission,
+      liveSafety: draft.openMicSafety,
       gatesSameAsMegaChat: draft.jsGatesSame,
       gates: {
         minWatchSeconds: Number(draft.jsMinWatch) || 0,
@@ -226,6 +257,7 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
       earnCap: draft.rewardsEarnCap,
       rewardType: draft.rewardsType,
       rewardTokenAddress: draft.rewardsTokenAddress.trim() || null,
+      rewardTokenSymbol: draft.rewardsType === 'token' ? (draft.rewardsTokenSymbol.trim().toUpperCase() || 'TOKEN') : null,
     },
   }
 }
@@ -256,6 +288,7 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     rewardsEarnCap: String(rw.earnCap ?? '5'),
     rewardsType: rw.rewardType || 'usdc',
     rewardsTokenAddress: rw.rewardTokenAddress || '',
+    rewardsTokenSymbol: rw.rewardTokenSymbol || 'TOKEN',
     lettersEnabled: !!room.letters?.enabled,
     lettersMaxSeconds: String(room.letters?.maxSeconds ?? 10),
     lettersPrice: room.letters?.price || '',
@@ -268,6 +301,8 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     mcFollowersOnly: !!room.letters?.gates?.followersOnly,
     mcSubsOnly: !!room.letters?.gates?.subsOnly,
     joinStreamEnabled: room.joinStream ? room.joinStream.enabled !== false : true,
+    openMicAdmission: room.joinStream?.admission === 'approve' || room.joinStream?.admission === 'manual' ? room.joinStream.admission : 'ai',
+    openMicSafety: room.joinStream?.liveSafety === 'remove' || room.joinStream?.liveSafety === 'host' ? room.joinStream.liveSafety : 'alert',
     jsGatesSame: room.joinStream ? room.joinStream.gatesSameAsMegaChat !== false : true,
     jsMinWatch: String(room.joinStream?.gates?.minWatchSeconds ?? 0),
     jsFollowersOnly: !!room.joinStream?.gates?.followersOnly,
@@ -276,11 +311,17 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
 }
 
 export function RoomProvider({ children }: { children: ReactNode }) {
+  const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const saveVersion = useRef(0)
   const [mode, setMode] = useState<'create' | 'managing'>('create')
   const [room, setRoom] = useState<Room | null>(null)
   const [seats, setSeats] = useState<Seat[]>([])
   const [joinUrl, setJoinUrl] = useState<string | null>(null)
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
+  // Server-verified: is the room's saved Twitch channel actually broadcasting.
+  // Session state, not config — it changes without the owner touching the form.
+  const [twitchLive, setTwitchLive] = useState(false)
   const [draft, setDraft] = useState<ConfigDraft>(DEFAULT_DRAFT)
   const [usdcAddress, setUsdcAddress] = useState(USDC_FALLBACK)
   const [livekitConfigured, setLivekitConfigured] = useState(false)
@@ -296,13 +337,63 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const draftTouchedRef = useRef(false)
   // Auto-open your room once per page load (see loadMine).
   const autoOpenedRef = useRef(false)
+  const guestHandleRef = useRef('')
 
   const passwordRef = useRef('')
   const roomIdRef = useRef<string | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipNextAutosaveRef = useRef(true)
+  // Same reason as identityHandleRef: read the latest value from a stable
+  // callback without making that callback change identity every render.
+  const accountDefaultsRef = useRef<Record<string, unknown> | null>(null)
+  accountDefaultsRef.current = accountDefaults
+  const linkedTwitchRef = useRef<string | null>(null)
+  linkedTwitchRef.current = linkedTwitch
+  const myRoomsRef = useRef<MyRoomCard[]>([])
+  myRoomsRef.current = myRooms
+
+  // A handle points at exactly one room. Prefilling the one your existing
+  // room already uses walked you into a 409 you did not ask for, so take
+  // the next free variant instead — the same shape the server suggests.
+  const seedHandle = useCallback(() => {
+    if (!guestHandleRef.current) guestHandleRef.current = guestName().toLowerCase()
+    const h = toHandle(identityHandleRef.current) || guestHandleRef.current
+    const taken = new Set(myRoomsRef.current.map((r) => r.handle).filter(Boolean))
+    if (!taken.has(h)) return h
+    for (let i = 2; i < 10; i++) {
+      const alt = `${h.slice(0, 17)}_${i}`
+      if (!taken.has(alt)) return alt
+    }
+    return ''
+  }, [])
+
+  // A NEW room starts from stock defaults plus the prefills that are facts
+  // about the account. It must NEVER inherit the room you were just
+  // managing — that was showing an existing room's toggles on a create form
+  // and reading as "the defaults are wrong".
+  const freshDraft = useCallback((): ConfigDraft => {
+    const base: ConfigDraft = { ...DEFAULT_DRAFT }
+    const saved = accountDefaultsRef.current
+    if (saved) {
+      for (const [k, v] of Object.entries(saved)) {
+        if (k === 'name' || k === 'handle') continue
+        if (k in base && typeof v === typeof base[k as keyof ConfigDraft]) {
+          ;(base as Record<string, unknown>)[k] = v
+        }
+      }
+    }
+    // Account facts run AFTER the saved sweep so a linked Twitch account
+    // beats a stale saved channel, and twitchAuto === false stays an opt-out.
+    const h = seedHandle()
+    if (h) base.handle = h
+    if (linkedTwitchRef.current && base.twitchAuto !== false) {
+      base.twitchChannel = linkedTwitchRef.current
+    }
+    return base
+  }, [seedHandle])
 
   useEffect(() => {
+    setDraft((d) => d.handle ? d : { ...d, handle: seedHandle() })
     getPublicConfig()
       .then((cfg) => {
         if (cfg.usdcAddress) setUsdcAddress(cfg.usdcAddress)
@@ -321,8 +412,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     // signed-in streamer.
     const applyName = (name?: string | null) => {
       if (!name) return
+      identityHandleRef.current = name
       setIdentityHandle(name)
-      setDraft((d) => (d.handle ? d : { ...d, handle: name }))
+      // Never seed a handle into a room being managed, never overwrite one
+      // the streamer has already typed, and never seed one that would 409.
+      if (roomIdRef.current || draftTouchedRef.current) return
+      const h = seedHandle()
+      if (!h) return
+      setDraft((d) => ({ ...d, handle: h }))
     }
     fetch('/api/auth/me')
       .then((r) => r.json())
@@ -342,9 +439,21 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       listMyRooms()
         .then((d) => {
           setMyRooms(d.rooms)
+          myRoomsRef.current = d.rooms
+          const params = new URLSearchParams(window.location.search)
+          // No ?new=1 exception any more: an owner always lands in their room.
           if (!autoOpenedRef.current && d.rooms.length > 0 && !roomIdRef.current) {
             autoOpenedRef.current = true
-            void openOwnedRoom(d.rooms[0].id).catch(() => {})
+            const selected = d.rooms.find((r) => r.id === params.get('room')) || d.rooms[0]
+            void openOwnedRoom(selected.id).catch(() => {})
+            return
+          }
+          // No room to open: the create draft was seeded before this list
+          // arrived, so re-seed the handle now that we know which names are
+          // taken — unless the streamer has already typed one.
+          if (!roomIdRef.current && !draftTouchedRef.current) {
+            const h = seedHandle()
+            setDraft((prev) => (prev.handle === h ? prev : { ...prev, handle: h }))
           }
         })
         .catch(() => {})
@@ -432,7 +541,12 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     setSeats([])
     setJoinUrl(null)
     setOverlayUrl(null)
-  }, [])
+    setTwitchLive(false)
+    // Start the create form from defaults, not from the room just closed.
+    draftTouchedRef.current = false
+    if (!identityHandleRef.current) guestHandleRef.current = ''
+    setDraft(freshDraft())
+  }, [freshDraft])
 
   const refresh = useCallback(async () => {
     const roomId = roomIdRef.current
@@ -443,6 +557,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       setSeats(data.seats)
       setJoinUrl(data.joinUrl)
       setOverlayUrl(data.overlayUrl)
+      setTwitchLive(data.twitchLive === true)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) switchRoom()
     }
@@ -453,11 +568,16 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       passwordRef.current = password
       roomIdRef.current = r.id
       skipNextAutosaveRef.current = true
+      setSaveState('saved')
+      setSaveError(null)
       setRoom(r)
       setDraft(roomToDraft(r, usdcAddress))
       setJoinUrl(join)
       setOverlayUrl(overlay)
+      try { localStorage.setItem('mc-last-room', JSON.stringify({ id: r.id, name: r.name, handle: r.handle })) } catch { /* password is never persisted */ }
+      window.history.replaceState(null, '', `/dashboard?room=${encodeURIComponent(r.id)}`)
       setMode('managing')
+      requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }))
       void refresh()
     },
     [usdcAddress, refresh],
@@ -467,6 +587,10 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     try {
       const d = await listMyRooms()
       setMyRooms(d.rooms)
+      // The ref only catches up on the next render, but endRoom seeds the
+      // fresh draft synchronously right after this — against the stale list
+      // it offered yourname_2 for a room that no longer existed.
+      myRoomsRef.current = d.rooms
     } catch {
       /* signed out or offline — leave the list as-is */
     }
@@ -534,8 +658,15 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     // Mid-edit guard: a backspaced-to-empty (or garbled) price is INVALID,
     // not "free" — never autosave it over a live room's real price. '0' is
     // legit (the Free room switch writes it explicitly).
+    const version = ++saveVersion.current
     const p = draft.passkeyTickPrice.trim()
-    if (p === '' || !isFinite(parseFloat(p)) || parseFloat(p) < 0) return
+    if (p === '' || !isFinite(Number(p)) || Number(p) < 0) {
+      setSaveState('error')
+      setSaveError('Enter a valid rate. Your last saved settings are unchanged.')
+      return
+    }
+    setSaveState('saving')
+    setSaveError(null)
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
       const roomId = roomIdRef.current
@@ -546,9 +677,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
           handle: draft.handle.trim() || null,
           config: draftToConfig(draft, usdcAddress),
         })
-        setRoom(data.room)
+        if (roomIdRef.current === roomId && saveVersion.current === version) {
+          setRoom(data.room)
+          setSaveState('saved')
+        }
       } catch (err) {
+        if (roomIdRef.current !== roomId || saveVersion.current !== version) return
         if (err instanceof ApiError && err.status === 401) switchRoom()
+        else { setSaveState('error'); setSaveError(err instanceof Error ? err.message : 'Changes could not save. Edit the field to retry.') }
       }
     }, 900)
     return () => {
@@ -566,6 +702,30 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       if (err instanceof ApiError && err.status === 401) switchRoom()
     }
   }, [room, switchRoom])
+
+  // END the room: delete it server-side (live seats cleared + refunded), then
+  // return the UI to a clean slate. switchRoom() drops us out of managing —
+  // and because the deleted room is no longer in myRooms, the settings surface
+  // lands on the room picker if others remain, or the create form if not.
+  const endRoom = useCallback(async () => {
+    const roomId = roomIdRef.current
+    if (!roomId) return
+    try {
+      await apiEndRoom(roomId, passwordRef.current || undefined)
+      try {
+        const saved = JSON.parse(localStorage.getItem('mc-last-room') || 'null')
+        if (saved?.id === roomId) localStorage.removeItem('mc-last-room')
+      } catch { /* storage optional */ }
+      await refreshMyRooms()
+      // Do not auto-reopen a room on the next load — the person just cleared
+      // this one on purpose.
+      autoOpenedRef.current = true
+      switchRoom()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) switchRoom()
+      else throw err
+    }
+  }, [refreshMyRooms, switchRoom])
 
   const kick = useCallback(
     async (seatId: string) => {
@@ -690,11 +850,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<RoomContextValue>(
     () => ({
+      saveState,
+      saveError,
       mode,
       room,
       seats,
       joinUrl,
       overlayUrl,
+      twitchLive,
       draft,
       usdcAddress,
       livekitConfigured,
@@ -711,13 +874,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       create,
       unlock,
       toggleActive,
+      endRoom,
       kick,
       pin,
       switchRoom,
       lettersAdmin,
       hostToken,
     }),
-    [mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
+    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, twitchLive, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, endRoom, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

@@ -1,0 +1,25 @@
+1.7s  landing loaded https://megachat.fun/?stay=1
+1.9s  shot 01-landing-hero
+1.9s  reading 7s: hero headline + subline + CTAs; wait, MegaChat = a camera seat, not a message?
+8.9s  reading 4s: re-read hero to reconcile "MegaChat" with "camera seats billed by the second"
+13.5s  shot 02-landing-how-a-seat-works
+13.5s  reading 14s: HOW A SEAT WORKS: pick a live room / take a seat / leave whenever
+28.2s  shot 03-landing-cards-and-board
+28.2s  reading 16s: SEATS / THE METER / BOUNTIES / NO WALL cards + ON THE BOARD rates (0.001 USDC.e / 1s)
+44.8s  shot 04-landing-bounties-cta
+44.8s  reading 8s: HELD FOR STREAMERS bounties + Parasocial CTA (Create a room / Browse rooms)
+54.5s  shot 05-landing-before-click-how-it-works
+54.5s  CLICK 1: nav "How it works"
+55.3s  arrived https://megachat.fun/how-it-works
+55.3s  shot 06-how-it-works-top
+55.3s  how-it-works scrollHeight 3678
+55.5s  reading 8s: how-it-works top viewport
+64.1s  shot 07-how-it-works-scroll-800
+64.1s  reading 8s: skim viewport at 800
+72.8s  shot 08-how-it-works-scroll-1600
+72.8s  reading 8s: skim viewport at 1600
+81.4s  shot 09-how-it-works-scroll-2400
+81.4s  reading 8s: skim viewport at 2400
+90.1s  shot 10-how-it-works-scroll-3200
+90.1s  reading 8s: skim viewport at 3200
+98.1s  END of stage 2 (on /how-it-works, scrolled to bottom)

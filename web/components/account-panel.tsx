@@ -11,6 +11,7 @@ import { CopyRow } from '@/components/copy-row'
 import { useRoom } from '@/components/room-provider'
 import { listLinkedAccounts, type LinkedAccount } from '@/lib/api'
 import { useUiMode } from '@/lib/ui-mode'
+import { formatDollars } from '@/lib/display-format'
 
 const PROVIDER_LABEL: Record<string, string> = {
   twitch: '🎮 Twitch',
@@ -101,9 +102,7 @@ export function AccountCard() {
                     ? '— no wallet connected'
                     : balance == null
                       ? '…'
-                      : simple
-                        ? `$${balance}`
-                        : `${balance} USDC`}
+                      : formatDollars(balance)}
                 </span>
               </div>
               {address ? (
@@ -153,11 +152,11 @@ function defaultsSummary(d: Record<string, unknown>): [string, string][] {
   const s = (k: string) => (typeof d[k] === 'string' ? (d[k] as string) : null)
   const b = (k: string) => (typeof d[k] === 'boolean' ? (d[k] as boolean) : null)
   const price = s('passkeyTickPrice')
-  if (price != null) rows.push(['Price / second', price === '0' ? 'FREE room' : `${price} USDC`])
+  if (price != null) rows.push(['Price / second', price === '0' ? 'Free room' : formatDollars(Number(price) / (Number(s('passkeyTickSeconds')) || 1))])
   const secs = s('passkeyTickSeconds')
   if (secs != null && secs !== '1') rows.push(['Charge interval', `${secs}s`])
   const cap = s('maxSession')
-  if (cap != null) rows.push(['Session cap', `${cap} USDC`])
+  if (cap != null) rows.push(['Session cap', formatDollars(cap)])
   const t = s('transport')
   if (t != null) rows.push(['Transport', t === 'livekit' ? 'LiveKit (default)' : 'vdo.ninja'])
   const mc = b('lettersEnabled')

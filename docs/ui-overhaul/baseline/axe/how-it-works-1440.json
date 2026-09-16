@@ -1,0 +1,182 @@
+{
+  "page": "how-it-works",
+  "requestedUrl": "https://megachat.fun/how-it-works",
+  "finalUrl": "https://megachat.fun/how-it-works",
+  "viewport": {
+    "name": "1440",
+    "width": 1440,
+    "height": 900
+  },
+  "navErr": null,
+  "timestamp": "2026-09-02T17:16:57.124Z",
+  "axeVersion": "4.13.0",
+  "byImpact": {
+    "critical": 0,
+    "serious": 0,
+    "moderate": 0,
+    "minor": 0
+  },
+  "violations": [],
+  "incomplete": [
+    {
+      "id": "color-contrast",
+      "impact": "serious",
+      "tags": [
+        "cat.color",
+        "wcag2aa",
+        "wcag143",
+        "TTv5",
+        "TT13.c",
+        "EN-301-549",
+        "EN-9.1.4.3",
+        "ACT",
+        "RGAAv4",
+        "RGAA-3.2.1"
+      ],
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.8pt (13px)",
+                "fontWeight": "bold",
+                "messageKey": "bgOverlap",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it is overlapped by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<text x=\"68\" y=\"78\" text-anchor=\"middle\" fill=\"var(--mcc-fg)\" font-weight=\"700\">YOU</text>",
+          "target": [
+            "text[x=\"68\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.8pt (13px)",
+                "fontWeight": "bold",
+                "messageKey": "bgOverlap",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it is overlapped by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<text x=\"365\" y=\"78\" text-anchor=\"middle\" fill=\"var(--mcc-fg)\" font-weight=\"700\">STREAMER</text>",
+          "target": [
+            "text[x=\"365\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.8pt (13px)",
+                "fontWeight": "bold",
+                "messageKey": "bgOverlap",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it is overlapped by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<text x=\"651\" y=\"78\" text-anchor=\"middle\" fill=\"var(--mcc-fg)\" font-weight=\"700\">EVERYONE</text>",
+          "target": [
+            "text[x=\"651\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.8pt (13px)",
+                "fontWeight": "bold",
+                "messageKey": "imgNode",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<svg viewBox=\"0 0 720 150\" role=\"img\" aria-label=\"Diagram: your camera reaches the streamer in under a second over MegaChat's pipe; the public broadcast reaches all spectators after a slight delay\" class=\"mx-auto block min-w-[560px] max-w-3xl\">",
+                  "target": [
+                    ".block"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because element contains an image node"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<text x=\"212\" y=\"52\" text-anchor=\"middle\" fill=\"var(--mcc-live)\" font-weight=\"700\">MegaChat pipe · &lt;1s</text>",
+          "target": [
+            "text[x=\"212\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because element contains an image node"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "9.8pt (13px)",
+                "fontWeight": "normal",
+                "messageKey": "imgNode",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<svg viewBox=\"0 0 720 150\" role=\"img\" aria-label=\"Diagram: your camera reaches the streamer in under a second over MegaChat's pipe; the public broadcast reaches all spectators after a slight delay\" class=\"mx-auto block min-w-[560px] max-w-3xl\">",
+                  "target": [
+                    ".block"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because element contains an image node"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<text x=\"508\" y=\"112\" text-anchor=\"middle\" fill=\"var(--mcc-dim)\">broadcast · slight delay</text>",
+          "target": [
+            "text[x=\"508\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because element contains an image node"
+        }
+      ]
+    }
+  ]
+}

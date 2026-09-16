@@ -1,0 +1,98 @@
+[
+  {
+    "tag": "A",
+    "text": "MegaChat",
+    "href": "/",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "BUTTON",
+    "text": "SIMPLE\nADV",
+    "href": null,
+    "type": "button",
+    "disabled": false,
+    "vis": true
+  },
+  {
+    "tag": "BUTTON",
+    "text": "",
+    "href": null,
+    "type": "button",
+    "disabled": false,
+    "vis": true
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Log in / Sign up",
+    "href": null,
+    "type": "button",
+    "disabled": false,
+    "vis": true
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Re-record",
+    "href": null,
+    "type": "button",
+    "disabled": false,
+    "vis": true
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Looks good — set the bounty",
+    "href": null,
+    "type": "button",
+    "disabled": false,
+    "vis": true
+  },
+  {
+    "tag": "A",
+    "text": "Browse rooms",
+    "href": "/app",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "A",
+    "text": "Bounties",
+    "href": "/bounty",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "A",
+    "text": "Dashboard",
+    "href": "/dashboard",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "A",
+    "text": "How it works",
+    "href": "/how-it-works",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "A",
+    "text": "Roadmap",
+    "href": "/roadmap",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "A",
+    "text": "FAQ",
+    "href": "/how-it-works#faq",
+    "type": null,
+    "vis": true
+  },
+  {
+    "tag": "A",
+    "text": "Contact",
+    "href": "https://x.com/yeak__",
+    "type": null,
+    "vis": true
+  }
+]
