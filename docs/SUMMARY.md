@@ -1,0 +1,68 @@
+# Table of contents
+
+* [MegaChat](README.md)
+
+## Concepts
+* [Concepts](concepts/README.md)
+
+## Features
+* [Features](features/README.md)
+
+## Technical
+* [Technical](technical/README.md)
+
+## Verification
+* [Verification](verification/README.md)
+
+## Notes
+* [Notes](notes/README.md)
+
+## Internal
+* [Internal](internal/README.md)
+  * [Needs a status call](internal/needs-a-status-call.md)
+* [Daily briefs](briefs/README.md)
+  * [MegaChat brief — 2026-07-25](briefs/2026-07-25.md)
+  * [Request that triggered the 2026-07-25 brief](briefs/2026-07-25.request.md)
+  * [MegaChat brief — 2026-07-26](briefs/2026-07-26.md)
+  * [MegaChat brief — 2026-07-27 (evening run)](briefs/2026-07-27-evening.md)
+  * [MegaChat brief — 2026-07-27](briefs/2026-07-27.md)
+  * [MegaChat brief — 2026-07-28](briefs/2026-07-28.md)
+  * [2026-07-29 (later) — per-VOD timeline calibration](briefs/2026-07-29-calibration.md)
+  * [2026-07-29 (night) — OBS one-click: Add to OBS, with sound](briefs/2026-07-29-obs-oneclick.md)
+  * [2026-07-29 — prove it, then clear the decks](briefs/2026-07-29.md)
+  * [2026-08-24 — platform parity and lockdown](briefs/2026-08-24-platform-parity.md)
+  * [2026-08-25 — capture hardening, and a platform we wrongly wrote off](briefs/2026-08-25.md)
+  * [2026-08-26 (evening) — the first real broadcast, and what it caught](briefs/2026-08-26-real-broadcast.md)
+  * [2026-08-26 — the front door opens, and four platforms move](briefs/2026-08-26.md)
+  * [2026-09-05 — Guest list](briefs/2026-09-05.md)
+* [Bounty clip storage](decisions/bounty-clip-storage.md)
+* [Mirror-test audit](decisions/mirror-test-audit.md)
+* [OAuth + embed domain audit (Task 8)](decisions/oauth-domain-audit.md)
+* [Post-release clawback](decisions/post-release-clawback.md)
+* [Sub-3s clip residual — where does the money go?](decisions/sub3s-residual.md)
+* [Design docs](design/README.md)
+  * [Copy bank](design/copy-bank.md)
+* [The legacy front end](legacy/README.md)
+* [Dilum Sanjaya — front-end thread](reference/dilum.md)
+* [MegaChat interface audit](ui-overhaul/audit.md)
+* [UI overhaul baseline: Lighthouse + axe](ui-overhaul/baseline/audits.md)
+* [Ideal paths, streamer tasks T5-T10 (signed in, local)](ui-overhaul/baseline/ideal-paths-local.md)
+* [Ideal paths — UX task-flow baseline for megachat.fun](ui-overhaul/baseline/ideal-paths.md)
+* [UI overhaul baseline screenshots](ui-overhaul/baseline/screenshots/index.md)
+* [MegaChat copy principles (R5)](ui-overhaul/copy-principles.md)
+* [MegaChat design principles (R3)](ui-overhaul/design-principles.md)
+* [Dilum reference: principles for MegaChat](ui-overhaul/dilum-principles.md)
+* [Contrast](ui-overhaul/directions/L3/contrast.md)
+* [Tokens — L1 · Arcade / Street](ui-overhaul/directions/tokens-L1.md)
+* [Tokens, lens L2: polished tech company](ui-overhaul/directions/tokens-L2.md)
+* [Tokens, lens L3: Zoomer digital futurist / Nerve](ui-overhaul/directions/tokens-L3.md)
+* [Directive changes (supersede the run spec)](ui-overhaul/DIRECTIVE-CHANGES.md)
+* [Local UI Fixes - September 4](ui-overhaul/local-fixes-2026-09-04.md)
+* [MegaChat UI overhaul plan](ui-overhaul/plan.md)
+* [L1 references: Arcade / Street](ui-overhaul/references/L1.md)
+* [L2 reference set: Polished tech company](ui-overhaul/references/L2.md)
+* [L3 references: Zoomer digital futurist / Nerve](ui-overhaul/references/L3.md)
+* [OBS one-click — the owner's five-minute real-OBS checklist](obs-oneclick-checklist.md)
+* [Pass B handoff — self-capture frames](pass-b-handoff.md)
+* [Platform feasibility — X and pump.fun](platform-feasibility.md)
+* [Run B — real verification: how it works, what is proven, what remains](run-b-verification.md)

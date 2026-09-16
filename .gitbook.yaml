@@ -1,0 +1,17 @@
+# GitBook Git Sync configuration.
+#
+# `root` is the directory GitBook treats as the space. Everything under it that
+# is listed in SUMMARY.md becomes a page; anything not listed does not exist to
+# GitBook. Assets must live under docs/.gitbook/assets or they will not resolve.
+#
+# Connecting this repo to a space is the owner's action — see
+# CONNECTING-GITBOOK.md at the repo root.
+root: ./docs/
+
+structure:
+  readme: README.md
+  summary: SUMMARY.md
+
+# Old → new page paths, if a page is ever moved. Keys are the old path relative
+# to `root` (without .md), values the new one. Empty until something moves.
+redirects: {}
