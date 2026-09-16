@@ -23,6 +23,7 @@ import {
   getRoomSession,
   updateRoom,
   setRoomActive,
+  endRoom as apiEndRoom,
   kickSeat as apiKickSeat,
   pinSeat as apiPinSeat,
   getPublicConfig,
@@ -152,6 +153,11 @@ type RoomContextValue = {
   seats: Seat[]
   joinUrl: string | null
   overlayUrl: string | null
+  /** Server-verified liveness of the room's SAVED Twitch channel. The probe
+   *  is lazy with a 90s TTL, so a cold first load answers false for a channel
+   *  that is live and flips true on the next poll: false means "no picture to
+   *  show yet", never "you are offline". */
+  twitchLive: boolean
   draft: ConfigDraft
   usdcAddress: string
   livekitConfigured: boolean
@@ -177,6 +183,9 @@ type RoomContextValue = {
   create: (password?: string) => Promise<void>
   unlock: (roomId: string, password: string) => Promise<void>
   toggleActive: () => Promise<void>
+  /** END the open room: delete it (seats cleared + refunded) and return to a
+   *  clean slate — the create form, or the picker if other rooms remain. */
+  endRoom: () => Promise<void>
   kick: (seatId: string) => Promise<void>
   pin: (seatId: string, pinned: boolean) => Promise<void>
   switchRoom: () => void
@@ -310,6 +319,9 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const [seats, setSeats] = useState<Seat[]>([])
   const [joinUrl, setJoinUrl] = useState<string | null>(null)
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
+  // Server-verified: is the room's saved Twitch channel actually broadcasting.
+  // Session state, not config — it changes without the owner touching the form.
+  const [twitchLive, setTwitchLive] = useState(false)
   const [draft, setDraft] = useState<ConfigDraft>(DEFAULT_DRAFT)
   const [usdcAddress, setUsdcAddress] = useState(USDC_FALLBACK)
   const [livekitConfigured, setLivekitConfigured] = useState(false)
@@ -429,15 +441,16 @@ export function RoomProvider({ children }: { children: ReactNode }) {
           setMyRooms(d.rooms)
           myRoomsRef.current = d.rooms
           const params = new URLSearchParams(window.location.search)
-          if (params.get('new') !== '1' && !autoOpenedRef.current && d.rooms.length > 0 && !roomIdRef.current) {
+          // No ?new=1 exception any more: an owner always lands in their room.
+          if (!autoOpenedRef.current && d.rooms.length > 0 && !roomIdRef.current) {
             autoOpenedRef.current = true
             const selected = d.rooms.find((r) => r.id === params.get('room')) || d.rooms[0]
             void openOwnedRoom(selected.id).catch(() => {})
             return
           }
-          // ?new=1 calls switchRoom before this list arrives, so the handle
-          // was seeded without knowing which ones are already spoken for.
-          // Re-seed now that we know, unless the streamer has typed one.
+          // No room to open: the create draft was seeded before this list
+          // arrived, so re-seed the handle now that we know which names are
+          // taken — unless the streamer has already typed one.
           if (!roomIdRef.current && !draftTouchedRef.current) {
             const h = seedHandle()
             setDraft((prev) => (prev.handle === h ? prev : { ...prev, handle: h }))
@@ -528,6 +541,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     setSeats([])
     setJoinUrl(null)
     setOverlayUrl(null)
+    setTwitchLive(false)
     // Start the create form from defaults, not from the room just closed.
     draftTouchedRef.current = false
     if (!identityHandleRef.current) guestHandleRef.current = ''
@@ -543,6 +557,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       setSeats(data.seats)
       setJoinUrl(data.joinUrl)
       setOverlayUrl(data.overlayUrl)
+      setTwitchLive(data.twitchLive === true)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) switchRoom()
     }
@@ -572,6 +587,10 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     try {
       const d = await listMyRooms()
       setMyRooms(d.rooms)
+      // The ref only catches up on the next render, but endRoom seeds the
+      // fresh draft synchronously right after this — against the stale list
+      // it offered yourname_2 for a room that no longer existed.
+      myRoomsRef.current = d.rooms
     } catch {
       /* signed out or offline — leave the list as-is */
     }
@@ -683,6 +702,30 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       if (err instanceof ApiError && err.status === 401) switchRoom()
     }
   }, [room, switchRoom])
+
+  // END the room: delete it server-side (live seats cleared + refunded), then
+  // return the UI to a clean slate. switchRoom() drops us out of managing —
+  // and because the deleted room is no longer in myRooms, the settings surface
+  // lands on the room picker if others remain, or the create form if not.
+  const endRoom = useCallback(async () => {
+    const roomId = roomIdRef.current
+    if (!roomId) return
+    try {
+      await apiEndRoom(roomId, passwordRef.current || undefined)
+      try {
+        const saved = JSON.parse(localStorage.getItem('mc-last-room') || 'null')
+        if (saved?.id === roomId) localStorage.removeItem('mc-last-room')
+      } catch { /* storage optional */ }
+      await refreshMyRooms()
+      // Do not auto-reopen a room on the next load — the person just cleared
+      // this one on purpose.
+      autoOpenedRef.current = true
+      switchRoom()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) switchRoom()
+      else throw err
+    }
+  }, [refreshMyRooms, switchRoom])
 
   const kick = useCallback(
     async (seatId: string) => {
@@ -814,6 +857,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       seats,
       joinUrl,
       overlayUrl,
+      twitchLive,
       draft,
       usdcAddress,
       livekitConfigured,
@@ -830,13 +874,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       create,
       unlock,
       toggleActive,
+      endRoom,
       kick,
       pin,
       switchRoom,
       lettersAdmin,
       hostToken,
     }),
-    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, kick, pin, switchRoom, lettersAdmin, hostToken],
+    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, twitchLive, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, endRoom, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

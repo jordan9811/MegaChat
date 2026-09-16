@@ -40,7 +40,7 @@ export default function JoinPage() {
             <a href="/how-it-works">How it works</a>
           </nav>
           <span className="mcj-product-actions">
-            <a href="/dashboard?new=1">Create room</a>
+            <a href="/dashboard">Create room</a>
             <AccountChip accent="var(--mcj-accent)" />
           </span>
         </div>

@@ -117,8 +117,22 @@ ok('a CORRECTLY seeked frame verifies cleanly', r0.verifiedClips === 2 && r0.res
 // HOW FRAGILE THIS IS, measured rather than assumed. Sample instants sit only a
 // few seconds after each clip's code coverage begins, so a modest residual
 // pushes half the samples off the front of the clip: the clips still verify but
-// confidence collapses to AMBIGUOUS, which routes a streamer who did the work
+// the session degrades to AMBIGUOUS, which routes a streamer who did the work
 // to human review. Accuracy of the seek is worth more than width of the filter.
+//
+// SAME ASSERTION, DIFFERENT MECHANISM SINCE THE detectionRate SPLIT. This used
+// to be carried by confidence collapsing to 0.55, because the mean spanned
+// found and not-found frames alike and so silently equalled read quality x
+// detection rate. Read quality here is 0.9 -- the badges that WERE seeked to
+// were decoded cleanly, and saying otherwise was always a slander on the
+// encoder. What actually degrades is presence: 2 of 4 samples land off the
+// front of the clip, so detectionRate is 0.50 against a 0.55 floor.
+//
+// That 0.05 is deliberately thin and is documented at minDetectionRate: this
+// fixture (0.50, a knowingly broken timeline) and Kick run #4 (0.6154, a
+// broadcast proven honest) are only 0.115 apart. If this assertion ever starts
+// failing because the floor moved, do NOT lower the floor to suit it -- the
+// property it protects is that a mis-seek must never silently auto-pay.
 const r4 = await residual(4_000);
 ok('a 4s residual still verifies but DEGRADES to review-worthy confidence',
   r4.verifiedClips === 2 && r4.result === 'AMBIGUOUS',

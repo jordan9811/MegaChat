@@ -37,6 +37,7 @@ export function ObsOneClick({
   mode = 'bounty',
   airSessionId = null,
   scenePollMs,
+  showManual = true,
 }: {
   overlayUrl: string
   badgeMinHeightPx?: number
@@ -55,6 +56,14 @@ export function ObsOneClick({
    *   offered alongside manual, not a correctness requirement.
    */
   mode?: 'bounty' | 'room'
+  /**
+   * The manual road is rendered here by default, because for most callers this
+   * component IS the whole OBS step and a failed connect must never dead-end.
+   * Set false only when the SURROUNDING page already offers manual setup as a
+   * peer choice — otherwise the same instructions appear twice, once nested
+   * inside the automatic option, which reads as a mistake.
+   */
+  showManual?: boolean
 }) {
   const isBounty = mode === 'bounty'
   const [password, setPassword] = useState('')
@@ -301,7 +310,8 @@ export function ObsOneClick({
         </div>
       ) : null}
 
-      {/* ── Manual fallback — ALWAYS rendered, first-class ───────────── */}
+      {/* ── Manual fallback — first-class, unless the page offers its own ─ */}
+      {showManual ? (
       <div className="rounded-xl border border-border/70 bg-background/40 p-3">
         <p className="text-sm font-semibold text-foreground">Manual setup (works everywhere)</p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -329,6 +339,7 @@ export function ObsOneClick({
           </p>
         ) : null}
       </div>
+      ) : null}
     </div>
   )
 }

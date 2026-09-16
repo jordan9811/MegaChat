@@ -3,6 +3,15 @@ node_modules/
 .env.*
 !.env.example
 *.log
+# The live bounty store: pledges, claims, air sessions, verifications and
+# payouts. Same class of runtime state as its neighbours here, but it was
+# missing from this list, so an empty skeleton created by importing
+# bounty-store.js without DATA_DIR set got committed by accident. Committing it
+# from a real deployment would put payout records into git history.
+data/bounty.json
+data/bounty-evidence.jsonl
+data/bounty-ledger.jsonl
+data/bounty-captures/
 data/rooms.json
 data/identities.json
 tools/
@@ -23,6 +32,12 @@ corpus/
 # moment in time, not source. Re-run the probe rather than reading a stale one.
 pumpfun-probe.json
 pumpfun-probe.png
+
+# Scratch files from interactive sessions — never part of the repo.
+_tmp-*
+
+# Go-signal file for --wait-for-go rehearsals; never part of the repo.
+_GO
 
 # runtime pledge ledger — live state, same as the other data/ stores
 data/bounty.json

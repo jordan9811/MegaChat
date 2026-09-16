@@ -432,3 +432,55 @@ reason than "the API is expensive".
 - **Master switch is tri-state on disk** (`null` = derive from whether the list is non-empty, explicit `true`/`false` = the streamer's choice). This makes the first add work without a second click while letting an explicit "off" survive adding someone. Undo: store a plain boolean defaulting to true.
 - **No room-password path on the management routes** — the room password is shared with mods to run one room, and this list silently applies to every room the account owns. Identity cookie only. Undo: add `verifyRoomAccess` to `whitelist-routes.js`.
 - **Cap defaults to 20 (`GUEST_WHITELIST_MAX`)** — a co-host bench and a circle of regulars, not a way to run a free room at scale. Undo: raise the env var.
+
+## Loose-ends run (2026-08-26, `feat/loose-ends`)
+
+- **Ownership reads WHAT A PLATFORM'S OWN OAUTH CALLED YOU, not the provider
+  name** — `platformLoginFor()`. The display-name ladder (twitch > x > google)
+  answers "what to show"; it CANNOT answer "who owns this X handle" for someone
+  with both linked. Two questions, two functions, kept apart on purpose. Undo:
+  n/a (the alternative shipped broken for every real sign-in).
+- **Confidence tiers decide review routing AND now block release; they never
+  touch the amount** — the RELEASE ledger row records confidenceTier for audit
+  only, and the gate asserts the evaluator returns no amount/rate/multiplier.
+  Undo: n/a (rule).
+- **X, YouTube, Rumble, pump.fun capture/observation ship BEFORE their claim
+  paths** — capture is honest and gated; ownership is the missing piece and is
+  filed per platform. A platform with capture but no claim path simply has no
+  reserved handles to verify, so nothing is exposed. Undo: n/a (staging).
+- **The session's watch URL leads capture on every platform** — it is exact
+  where a channel-page guess was wrong (X/YouTube/Rumble) and no worse where a
+  guess worked (Twitch/Kick). Undo: n/a (bugfix).
+- **PROGRAM-DATE-TIME bypasses calibration only when EVERY window carries it** —
+  a partial truth (one unstamped window) falls back to measuring rather than
+  trusting a mix. Residual is the stamp's granularity (4s), not a broadcast-
+  delay guess. Undo: n/a (correctness).
+- **The pump.fun external source refuses a coin-page URL rather than calling the
+  undocumented discovery API** — building the money path on a reverse-engineered
+  endpoint is a business risk, not a technical one. It verifies against a
+  clips.pump.fun playlist URL and names the gap otherwise. Undo: n/a (rule).
+- **Buffer has() uses a high-water mark, not membership** — "already fetched"
+  must survive eviction, or an append-only playlist refetches its whole history
+  every poll. Undo: n/a (bugfix).
+- **Claim re-entry verifies the caller before handing back a verified claim** —
+  the first cut handed it to anyone, an auth hole under real verification. Undo:
+  n/a (security).
+- **_gate-phase5-oauth.mjs deleted, not repaired** — it gated deleted UI and
+  crashed; _gate-privy-auth.mjs gates what exists. A gate that crashes trains
+  the suite output to be ignored. Undo: n/a (process).
+- **"Self-capture" is a TIMING variant of capture-from-broadcast, not a weaker
+  class of evidence** — a planning pass defined it as "the overlay records
+  itself", which would rank it below external capture as self-attested. It is
+  not: bounty-capture.js startCapture fetches the PLATFORM'S OWN live HLS
+  playlist into a rolling buffer, server-side. The streamer's machine is not
+  involved and cannot influence it. Live-buffer capture and VOD capture read
+  the same public broadcast; they differ only in WHEN. Ranking them as
+  primary/fallback by trust is wrong — they are equally independent. What
+  differs is AVAILABILITY: Twitch VODs are streamer-disableable, Kick has no
+  VOD discovery at all, so the live buffer is the only variant present on every
+  platform. It is preferred because it is always available, not because it is
+  better proof. The genuinely weak signal is SELF-REPORTED (OVERLAY_ENV and
+  badge reports — the overlay describing itself), which never decides a payout
+  and earns its keep only as a cross-check that can contradict a stronger
+  witness and force review. Undo: n/a (taxonomy — carrying the wrong definition
+  causes a strong signal to be distrusted).

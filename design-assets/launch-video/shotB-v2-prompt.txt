@@ -1,0 +1,38 @@
+SHOT B — v2 (re-roll). Seedance 2.5, t2v, 5s, 16:9, 720p, audio on.
+
+Changes from v1:
+- The streamer REACTS: a double take, then he welcomes the arrival like an
+  expected guest (a host, not someone startled by an intruder — the reaction
+  IS the product promise).
+- Guest reaction recalibrated from giddy/awe to composed cool-impressed;
+  "stares at his palms in alarm" cut.
+- PRO STREAMER MIC on a boom arm, NO headset. ("Headset slung around the
+  neck" was the stock AI-streamer pose; a large condenser on an arm reads
+  talk-show/podcast, which is the format we committed to.)
+- Streamer matched to the host on the TV in approved Shot A (frameA_06.png),
+  verified by cropping and upscaling that frame: BLONDE hair and blonde beard
+  (not dark — the earlier draft never specified hair color at all, so the
+  model would have picked its own and produced a different-looking person
+  across a hard cut), dark green tee with a small chest logo, warm room with
+  shelves and amber practicals behind him.
+
+CONTINUITY NOTE: Shot A's host does wear over-ear headphones, but the TV in
+that frame is small, defocused and blue-shifted — it took a 4x crop to even
+identify them, so swapping to a boom mic in the close-up will not read as a
+mismatch at viewing size. If it ever does, Shot A is the one to re-roll, not
+this. Changing the stream FORMAT (e.g. to gameplay) would require re-rolling
+BOTH shots (~65cr) — out of reach on the ~45cr trial remainder.
+
+---
+
+Cinematic premium commercial. A livestream feed fills the entire frame: a charismatic talk-show streamer — a man in his early 30s with short light blonde hair and a trimmed blonde beard, wearing a dark green cotton t-shirt with a small embroidered chest logo, speaking into a large professional broadcast condenser microphone mounted on a boom arm angled in from the side, seated at a desk in a warm-lit room with shelves and soft amber practical lights glowing behind him — sits mid-conversation, gesturing and laughing as he talks to camera. He wears no headset and no headphones. An abstract blurred chat column scrolls on the right edge (no legible text anywhere in the video).
+
+0-1s: a sleek rounded co-host video window pops onto the stream overlay in the upper-left with a soft digital chime, filled with a swirl of white-hot voxel particles with an electric cyan fringe.
+
+1-2s: inside the window the particles assemble into a young man in his early 20s with short dark curly hair and light stubble, wearing a heather-charcoal hoodie, in a warm-lit room. He settles, glances around once to orient himself, and taps two fingers against the inside edge of his window, testing it.
+
+2-3.2s: the streamer notices him — a quick double take away from his microphone, then a delighted grin; he leans back and gestures at the new window, welcoming him in like an expected guest, still talking.
+
+3.2-5s: our guy raises his eyebrows once, gives a slow single nod, and lets a composed half-smile spread — impressed and cool about it, not giddy, not open-mouthed. He leans back slightly, relaxed. The abstract chat column erupts and scrolls much faster.
+
+Grade: filmic teal-and-amber contrast, glossy high-end commercial finish, subtle film grain; his window warm-lit against the streamer's cool-blue setup. Audio: bright soft digital chime, the streamer's warm muffled laugh, lively room ambience, a confident swell at the end. No legible text, no captions, no watermarks, no on-screen words.

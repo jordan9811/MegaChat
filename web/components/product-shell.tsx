@@ -9,7 +9,7 @@ export function ProductShell({ title, children }: { title: string; children: Rea
         <span>{title}</span>
         <nav aria-label="Product navigation">
           <a href="/app">Rooms</a><a href="/bounty">Bounties</a><a href="/how-it-works">How it works</a>
-          <a href="/dashboard?new=1" className="mc-product-create">Create room</a>
+          <a href="/dashboard" className="mc-product-create">Create room</a>
           <AccountChip accent="#3ae8ff" />
         </nav>
       </header>

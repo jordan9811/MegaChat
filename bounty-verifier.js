@@ -7,8 +7,28 @@
  * unit now — airtime alone is not evidence that a fan's clip aired.
  *
  * Both external edges stay interfaces. Run A/patch ships only the mocks,
- * fixture-driven so pass / fail / partial / ambiguous / too-small are
- * deterministic.
+ * fixture-driven so pass / fail / partial / ambiguous / too-small / not-shown
+ * are deterministic.
+ *
+ * VERDICTS this module can return, so downstream never meets an unknown value:
+ *   NO_PLAYBACK        — no clip window worth sampling; nothing verifiable
+ *   SOURCE_UNAVAILABLE — we could not look (dead VOD, uncalibrated timeline,
+ *                        nothing readable). NEVER a verdict against a streamer
+ *   NO_FRAMES          — windows existed but no sample ever reached the checker
+ *   FAIL_TOO_SMALL     — the badge was located everywhere and read nowhere,
+ *                        because it was rendered under the pixel floor
+ *   FAIL               — nothing verified, and not for the too-small reason
+ *   NOT_SHOWN          — some playbacks verified, but at least one playback's
+ *                        required code was never observed in the capture. See
+ *                        the ladder at the bottom of verifyAirSession: misses
+ *                        are authoritative, and this verdict outranks any
+ *                        confidence number. (When NOTHING verified, the more
+ *                        specific FAIL / FAIL_TOO_SMALL above still applies.)
+ *   AMBIGUOUS          — every required code WAS observed, but read quality or
+ *                        detection rate fell short. Routes to a human
+ *   PARTIAL            — every required code observed, thresholds met, but not
+ *                        every playback cleared verification
+ *   PASS               — every playback verified
  */
 
 import fs from 'fs';
@@ -110,16 +130,91 @@ export class MockCodeChecker extends CodeChecker {
 /**
  * Pick sample instants INSIDE a clip's window. Mid-code rather than at the
  * issue boundary, so a frame lands where the code is definitely on screen.
+ *
+ * KEPT CLEAR OF THE WINDOW EDGES BY THE SEEK'S OWN UNCERTAINTY. Mid-code is
+ * the right instant in a world with no seek error; with one, the first code's
+ * midpoint sits only codeValidityMs/2 (2.5s) into the clip, and a residual
+ * larger than that lands the frame BEFORE the clip began.
+ *
+ * MEASURED on Kick run #4, whose calibration reported residualMs 6521: the
+ * first sample of two separate clips landed in the previous playback's tail
+ * and read a perfectly legible 28px badge carrying the NEIGHBOURING window's
+ * code. The verifier scored both as misses, which is correct — window scoping
+ * is what stops one clip's code satisfying another, and seeing it bite is
+ * reassuring — but they were OUR seek error being charged to the streamer's
+ * detection rate, dragging it from 10/13 to 8/13.
+ *
+ * The instant is SHIFTED, never dropped. Dropping unseekable samples would
+ * shrink the denominator, and detectionRate is a release gate — anything that
+ * lets the measurement choose its own denominator is a fraud surface. Shifting
+ * keeps the sample count, the evidentiary weight and the arithmetic identical,
+ * and only asks for a frame at a moment we can actually land on.
+ *
+ * TWO DIFFERENT BOUNDARIES, NOT ONE — found on a real Twitch broadcast whose
+ * badge genuinely rotates the instant `codeRotateMs` (4000ms) elapses, NOT
+ * at the more generous `codeValidityMs` (5000ms) this function used to pull
+ * toward. `currentOrRotate()` in bounty-watermark.js only ISSUES a new code
+ * once `now - last.issuedAt >= codeRotateMs`, so codeRotateMs is a genuine
+ * server-enforced floor on how long a code stays current — but the window-
+ * edge pull below was landing samples up to `codeValidityMs` into a code,
+ * a full second past where the badge had already rotated on screen. Measured
+ * directly on the real VOD: a sample pulled to issuedAt+4029ms decoded the
+ * NEXT code, not the one it was sampling for; all ten samples of the run
+ * missed the same way, and the whole broadcast paid nothing.
+ *
+ *   codeValidityMs — how long a DECODE still counts as correct (generous,
+ *                    tolerance for a late-arriving frame). Governs the FINAL
+ *                    clamp, so a shifted instant is never scored invalid.
+ *   codeRotateMs   — how long the badge is GUARANTEED to still show THIS
+ *                    code (a hard floor, not a tolerance). Governs where the
+ *                    window-edge pull is allowed to land, with a safety
+ *                    margin so normal seek imprecision can't cross it either.
+ *
+ * The clamp never leaves the code's own validity: if the window is too tight
+ * for the residual to fit, mid-code is still the best instant available and is
+ * used unchanged. A residual that wide is a calibration problem, and the
+ * calibration states are where it belongs — not smuggled in here.
  */
-function sampleInstantsForWindow(win, perClip) {
+export function sampleInstantsForWindow(win, perClip, residualMs = 0) {
   const usable = win.codes.filter((c) => c.expiresAt > c.issuedAt);
   if (usable.length === 0) return [];
+  const guard = Math.max(0, Number(residualMs) || 0);
+  const safeFrom = Number.isFinite(win.startedAt) ? win.startedAt + guard : -Infinity;
+  const safeTo = Number.isFinite(win.endsAt) ? win.endsAt - guard : Infinity;
   const picks = [];
   const step = Math.max(1, Math.floor(usable.length / perClip));
   for (let i = 0; i < usable.length && picks.length < perClip; i += step) {
     const c = usable[i];
+    const from = c.issuedAt;
+    // ACCEPTANCE bound — what the final result must stay inside of, so a
+    // scored sample is never disqualified by this function's own choice.
+    const to = Math.min(c.expiresAt, c.issuedAt + bountyConfig.codeValidityMs);
+    const mid = Math.floor((from + to) / 2);
+    // TARGETING bound — where it is actually safe to PULL toward. Tighter
+    // than `to` on purpose: codeRotateMs is the real, server-enforced floor,
+    // and calibrationResidualMarginMs (already the margin constant used for
+    // the analogous calibration-search slack) is reserved so ordinary seek
+    // imprecision can't cross it either. Never wider than the acceptance
+    // bound, and never inverted for a code shorter than the margin allows.
+    const targetTo = Math.max(from, Math.min(to,
+      from + Math.max(0, bountyConfig.codeRotateMs - bountyConfig.calibrationResidualMarginMs)));
+    // Pull toward the middle of the clip, but never outside THIS code's
+    // validity — a shifted instant that no longer has a valid code would be
+    // dropped by the caller, which is the denominator change this avoids.
+    //
+    // AN INVERTED SAFE INTERVAL MEANS THE GUARD DOES NOT FIT, NOT THAT THERE
+    // IS NOTHING TO DO. When the residual is at least half the window,
+    // safeFrom runs past safeTo and the expression below starts pulling toward
+    // an EDGE. Two property-test rounds over generated windows pinned this
+    // down: giving up and returning mid-code fixed 30,022 wrong-way cases and
+    // left 10,115, because mid-code can itself sit OUTSIDE the window while a
+    // guardless clamp would have pulled it in. So the fallback is the same
+    // clamp with the guard dropped — always at least as good as no shift.
+    const lo = safeFrom <= safeTo ? safeFrom : win.startedAt;
+    const hi = safeFrom <= safeTo ? safeTo : win.endsAt;
+    const ts = Math.min(Math.max(mid, Math.min(lo, targetTo)), Math.max(hi, from));
     picks.push({
-      ts: Math.floor((c.issuedAt + Math.min(c.expiresAt, c.issuedAt + bountyConfig.codeValidityMs)) / 2),
+      ts: Math.min(Math.max(ts, from), to),
       clipId: win.clipId, playbackId: win.playbackId,
     });
   }
@@ -241,8 +336,15 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
   if (timelineNeedsReview) log.warn?.(`[verifier] ${describeCalibration(calibration)}`);
   const seekOpts = { skewMs: calibration.skewMs };
 
+  // OUR failures, tallied apart from the streamer's. `readable` counts samples
+  // we actually got a frame for; `unreadable` counts the ones our own source
+  // could not supply. Only the first kind may be held against a payout.
+  let readable = 0;
+  let unreadable = 0;
+  const unreadableStates = {};
+
   for (const win of windows) {
-    const instants = sampleInstantsForWindow(win, perClip);
+    const instants = sampleInstantsForWindow(win, perClip, calibration.residualMs);
     let frames;
     try {
       frames = await fs_.getFrames(session.platform, handleForSource, instants, seekOpts);
@@ -296,7 +398,50 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
         .map((c) => c.code);
       if (expected.length === 0) continue;
 
+      /**
+       * "WE COULD NOT LOOK" IS NOT "THE BADGE WAS NOT THERE".
+       *
+       * That principle already governed whole-session failures — a deleted VOD
+       * returns SOURCE_UNAVAILABLE rather than FAIL — but it did not govern a
+       * SINGLE sample. A frame we could not read reached findCode, which
+       * returns `{found: false, error: 'frame_unreadable'}`, and its own
+       * comment says to "let the hit-rate math treat it as a miss". So our
+       * failure was scored against the streamer.
+       *
+       * That is exactly how a stalled recorder produces FAIL 0/5 on a
+       * broadcast whose badge was legible at 28px throughout: every seek lands
+       * past the end of stale media, ffmpeg writes nothing, and five clips of
+       * honest work are recorded as an absent badge and paid zero.
+       *
+       * An unreadable sample is now held against OUR source, not the streamer:
+       * it is excluded from clipChecks (so it cannot dilute detectionRate) and
+       * counted separately. If NOTHING anywhere was readable the aggregate
+       * below reports SOURCE_UNAVAILABLE — the honest verdict, and the one
+       * that routes to review instead of to a zero payout.
+       */
+      if (frame.unreadable) {
+        unreadable += 1;
+        unreadableStates[frame.unreadable] = (unreadableStates[frame.unreadable] || 0) + 1;
+        checks.push({
+          ts: frame.ts, ref: null, clipId: win.clipId, playbackId: win.playbackId,
+          found: false, confidence: 0, pixelHeight: 0, legible: false, counted: false,
+          unreadable: frame.unreadable, unreadableDetail: frame.unreadableDetail || null,
+        });
+        continue;
+      }
       const res = await cc.findCode(frame, expected);
+      if (res?.error === 'frame_unreadable') {
+        // The file existed but would not decode — same category, same rule.
+        unreadable += 1;
+        unreadableStates.FRAME_UNREADABLE = (unreadableStates.FRAME_UNREADABLE || 0) + 1;
+        checks.push({
+          ts: frame.ts, ref: frame.ref, clipId: win.clipId, playbackId: win.playbackId,
+          found: false, confidence: 0, pixelHeight: 0, legible: false, counted: false,
+          unreadable: 'FRAME_UNREADABLE', unreadableDetail: 'frame did not decode',
+        });
+        continue;
+      }
+      readable += 1;
       const px = Number(res.pixelHeight ?? res.bbox?.h ?? 0);
       // Legibility enforcement: found but unreadably small is NOT a pass.
       const legible = px >= bountyConfig.minCodePixelHeight;
@@ -304,8 +449,13 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
       if (!legible && res.found) tooSmall += 1;
 
       clipChecks += 1;
-      clipConf += Number(res.confidence || 0);
-      if (counted) clipHits += 1;
+      // READ QUALITY ACCUMULATES ONLY FROM READS. On a miss, bounty-ocr.js
+      // returns 0.2 x the decoder's own opinion of a JUNK ring hypothesis —
+      // a number about our locator's noise floor, not about the streamer.
+      // Averaging it with a glyph-match margin is a unit error; see the
+      // reckoning above avgConfidence below. The miss is NOT discarded: it
+      // stays in clipChecks and is held against the session by detectionRate.
+      if (counted) { clipHits += 1; clipConf += Number(res.confidence || 0); }
       const sample = {
         ts: frame.ts, ref: frame.ref, clipId: win.clipId, playbackId: win.playbackId,
         found: !!res.found, confidence: res.confidence, pixelHeight: px,
@@ -315,7 +465,7 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
       clipSamples.push(sample);
     }
 
-    const conf = clipChecks ? clipConf / clipChecks : 0;
+    const conf = clipHits ? clipConf / clipHits : 0;
     // A clip counts as verified when at least one legible sample found its code.
     const verified = clipHits > 0;
     // BELOW-FLOOR QUALITY, SURFACED NOT SWALLOWED. A 480p streamer is not
@@ -324,11 +474,29 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
     // system has. Count reads that LANDED but sat close to the floor, so the
     // shortfall is attributable to stream quality instead of looking like
     // ordinary partial verification.
-    const marginal = clipSamples.filter((c) =>
+    //
+    // MEASURED ONLY WHERE A BADGE WAS ACTUALLY MEASURED. A miss reports the
+    // pixelHeight of whatever junk hypothesis scored best, which on real Kick
+    // captures is 4.1px — GLYPH_H(7) x the locator's minimum pitch, i.e. the
+    // size of the background it was staring at. Letting those into the median
+    // makes a clip sampled [4.1, 4.1, 28] median to 4.1, trip the floor, and
+    // tell an honest streamer their badge was 4.1px against a 12px minimum.
+    // That is an accusation built from frames containing no badge.
+    //
+    // `found`, NOT `counted`. This filtered on `counted` for one revision, and
+    // `counted` is `found && legible` — so it excluded exactly the samples
+    // this block exists to notice. A badge that WAS read and was merely too
+    // small is a real measurement of a real badge, and it is the entire
+    // quality signal. With `counted`, a broadcast whose badge was legibly
+    // located but below the floor in EVERY sample left `reads` empty,
+    // medianPx 0, and `belowQualityFloor` false (it requires medianPx > 0) —
+    // no quality flag raised, from the one scenario the flag is for.
+    const reads = clipSamples.filter((c) => c.found);
+    const marginal = reads.filter((c) =>
       c.pixelHeight > 0
       && c.pixelHeight < bountyConfig.minCodePixelHeight * bountyConfig.qualityWarnRatio).length;
     const medianPx = (() => {
-      const hs = clipSamples.map((c) => c.pixelHeight).filter((h) => h > 0).sort((a, b) => a - b);
+      const hs = reads.map((c) => c.pixelHeight).filter((h) => h > 0).sort((a, b) => a - b);
       return hs.length ? hs[Math.floor(hs.length / 2)] : 0;
     })();
     clipVerdicts.push({
@@ -346,6 +514,33 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
     }
   }
 
+  /**
+   * NOTHING READABLE ANYWHERE IS OUR OUTAGE, NOT A FAILED BROADCAST.
+   *
+   * Per-sample unreadability keeps a partial failure from discarding the
+   * windows that survived. The other end of that rule lives here: if not one
+   * sample in the whole session could be read, there is no evidence either
+   * way, and the only honest verdict is the one that says so. Scoring it as
+   * FAIL would take a broadcast we never managed to look at and record it as
+   * a streamer who did not display the badge — with a zero payout attached.
+   *
+   * SOURCE_UNAVAILABLE routes to review, exactly as a deleted VOD does.
+   */
+  if (readable === 0 && unreadable > 0) {
+    const dominant = Object.entries(unreadableStates)
+      .sort((a, b) => b[1] - a[1])[0];
+    log.warn?.(`[verifier] session ${airSessionId}: ${unreadable} sample(s) unreadable, `
+      + `0 readable — reporting SOURCE_UNAVAILABLE rather than scoring our own `
+      + `outage against the streamer (${dominant[0]} x${dominant[1]})`);
+    return {
+      airSessionId, result: 'SOURCE_UNAVAILABLE', sourceState: dominant[0],
+      sourceDetail: `${unreadable} sample(s) unreadable, none readable`,
+      confidence: 0, verifiedClips: 0, verifiedClipSeconds: 0,
+      detectionRate: 0, checks, clipVerdicts: [],
+      unreadableSamples: unreadable, readableSamples: 0,
+    };
+  }
+
   // Unit is the verified PLAYBACK, not the distinct clip: airing the same
   // clip twice is two pieces of evidence and pays twice, provided each airing
   // is separately evidenced by its own code set.
@@ -354,17 +549,119 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
     .filter((c) => c.verified)
     .reduce((a, c) => a + (c.durationS || 0), 0)
     .toFixed(3);
-  const avgConfidence = checks.length
-    ? checks.reduce((a, c) => a + (c.confidence || 0), 0) / checks.length
+  /**
+   * CONFIDENCE IS READ QUALITY. DETECTION RATE IS PRESENCE. THEY ARE NOT THE
+   * SAME NUMBER, AND THIS USED TO MULTIPLY THEM TOGETHER BY ACCIDENT.
+   *
+   * This was `sum(confidence) / checks.length` over EVERY sample, found or
+   * not. bounty-ocr.js returns two incommensurable quantities under one name:
+   * a glyph-match margin on a read, and 0.2 x a junk ring decode on a miss.
+   * Averaging them makes the result identically
+   *
+   *     mean  =  q*d + m*(1-d)          q = read quality, d = detection rate,
+   *                                     m = the meaningless miss score (0.2)
+   *
+   * which was then compared against minConfidence — a threshold calibrated
+   * purely as a LEGIBILITY number (the fixtures are all-found, so their means
+   * never carry a detection rate at all).
+   *
+   * MEASURED on Kick run #4, reproduced exactly from its own capture files:
+   *     13 samples, 8 reads, 5 misses
+   *     q = 0.8430   m = 0.2000   d = 0.6154
+   *     q*d + m*(1-d) = 0.5957  ->  reported 0.596, vs a 0.6 bar
+   * A streamer who genuinely aired all five clips, every badge read at 28px,
+   * was ruled AMBIGUOUS and paid NOTHING — because 84% read quality was
+   * multiplied by 62% presence behind our backs.
+   *
+   * Splitting them is NOT a loosening. Dropping the misses from the mean
+   * WITHOUT gating presence separately would be: flash the badge for one
+   * sampled frame per clip, miss every other, and read q = 0.9. That is why
+   * detectionRate is computed here and gated in BOTH this ladder and
+   * bounty-escrow.js. Every sample in its denominator was taken inside a clip
+   * window at an instant when one of that clip's codes was valid — frames
+   * with no valid code `continue` above and never reach checks — so a miss
+   * here is real evidence, and correct silence is never punished.
+   */
+  const readSamples = checks.filter((c) => c.counted);
+  const avgConfidence = readSamples.length
+    ? readSamples.reduce((a, c) => a + (c.confidence || 0), 0) / readSamples.length
     : 0;
+  /**
+   * DENOMINATOR IS SAMPLES WE COULD ACTUALLY READ.
+   *
+   * detectionRate is a release gate in its own right, so every sample in the
+   * denominator is a sample that can cost the streamer money. Samples our own
+   * source failed to supply must not sit there: a recorder that dies half way
+   * through would otherwise halve the detection rate of a broadcast that was
+   * carrying the badge perfectly, and push a genuine PASS down to AMBIGUOUS
+   * or below the release gate. The unreadable count is reported separately so
+   * the shortfall stays visible rather than being quietly forgiven.
+   */
+  const attempted = checks.filter((c) => !c.unreadable);
+  const detectionRate = attempted.length ? readSamples.length / attempted.length : 0;
   const hitRate = clipVerdicts.length ? verifiedClips / clipVerdicts.length : 0;
+
+  /**
+   * Playbacks whose required per-playback code was never observed ANYWHERE in
+   * the capture. `hits` counts samples where that playback's own code was
+   * found and legible, so hits === 0 is the miss in its strongest form: we
+   * sampled inside that window, at instants when one of ITS codes was valid,
+   * and never saw it once.
+   */
+  // `samples > 0` is load-bearing, not defensive. A playback whose every sample
+  // came back unreadable never increments clipHits either, so `hits === 0`
+  // alone cannot tell "we sampled it and the code was never there" from "we
+  // never got a readable look at it" — and scoring the second as the first is
+  // the one thing this file refuses to do everywhere else (SOURCE_UNAVAILABLE
+  // exists for exactly that distinction at the session level). `samples` is
+  // incremented only on a frame we actually read, so requiring it keeps a
+  // blind window out of a verdict that says the streamer did not show the code.
+  const unshownPlaybacks = clipVerdicts.filter((c) => (c.samples || 0) > 0 && c.hits === 0);
 
   let result;
   if (checks.length === 0) result = 'NO_FRAMES';
   else if (verifiedClips === 0 && checks.some((c) => c.found && !c.legible)) result = 'FAIL_TOO_SMALL';
   else if (verifiedClips === 0) result = 'FAIL';
+  /**
+   * MISSES ARE AUTHORITATIVE — AND THE ORDER IS THE FIX, NOT THE BRANCH.
+   *
+   * avgConfidence is READ QUALITY, and it is averaged over `counted` samples
+   * only (see the reckoning above it) — that is, exclusively over frames where
+   * the code WAS present. It is structurally incapable of describing a
+   * playback that was never on screen: such a playback contributes no samples
+   * to the mean at all, so a session that missed one entirely can still
+   * average 0.9 off the playbacks that did air. Letting that 0.9 be consulted
+   * first meant a number computed only from hits was allowed to adjudicate a
+   * miss — the same unit error as multiplying read quality by detection rate,
+   * one level up. So presence must be SETTLED before quality is ever asked:
+   * this branch sits above the confidence branch precisely so no confidence
+   * value can reach past it. Moving it below would restore the bug even with
+   * the branch present.
+   *
+   * And the verdict is NOT_SHOWN rather than PARTIAL because PARTIAL is
+   * payable partial credit — "some of what we asked for aired". "A code we
+   * required was never on screen" is a different statement and has to be made
+   * in the verdict, not averaged into a fraction.
+   *
+   * KNOWN INTERACTION, deliberately not papered over here: a playback whose
+   * every sample was OUR failure to read lands with hits === 0 too. The
+   * whole-session case is already caught above (readable === 0 ⇒
+   * SOURCE_UNAVAILABLE); a single blind playback inside an otherwise readable
+   * session is not, and `unreadableSamples` in the returned result is what a
+   * reviewer has to separate the two by.
+   */
+  else if (unshownPlaybacks.length > 0) result = 'NOT_SHOWN';
   else if (avgConfidence < bountyConfig.minConfidence) result = 'AMBIGUOUS';
+  // The presence half, now that confidence no longer carries it silently.
+  else if (detectionRate < bountyConfig.minDetectionRate) result = 'AMBIGUOUS';
   else if (hitRate >= 0.999) result = 'PASS';
+  // PARTIAL is now the tail of a ladder whose earlier rungs cover it: today a
+  // clip is `verified` exactly when clipHits > 0, so "not every playback
+  // verified" and "some playback was never shown" are the same population and
+  // NOT_SHOWN claims it first. That is the point of the change — what used to
+  // be scored as payable partial credit was always a set of unobserved codes.
+  // The branch stays as the terminal else so the ladder remains total if those
+  // two conditions ever stop being identical.
   else result = 'PARTIAL';
 
   const measuredPx = clipVerdicts.map((c) => c.medianPixelHeight)
@@ -373,6 +670,7 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
     airSessionId, checker: checkerName,
     evidenceRef: checks.map((c) => c.ref).join(',') || null,
     result, confidence: +avgConfidence.toFixed(3),
+    detectionRate: +detectionRate.toFixed(3),
     verifiedMinutes: +(verifiedClipSeconds / 60).toFixed(3),
     verifiedClips, verifiedClipSeconds,
     belowQualityFloorClips: clipVerdicts.filter((c) => c.belowQualityFloor).length,
@@ -393,9 +691,18 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
 
   return {
     result, confidence: +avgConfidence.toFixed(3),
+    detectionRate: +detectionRate.toFixed(3),
     verifiedClips, verifiedClipSeconds,
     verifiedMinutes: +(verifiedClipSeconds / 60).toFixed(3),
     hitRate, attempt, checks, clipVerdicts,
+    // OUR SHORTFALL, VISIBLE. A partially-dead source no longer drags the
+    // score down, so without these two numbers it would vanish entirely and a
+    // half-blind verification would read exactly like a clean one. A reviewer
+    // seeing readableSamples well under the sampling density is looking at our
+    // problem, not the streamer's.
+    readableSamples: readable,
+    unreadableSamples: unreadable,
+    unreadableStates: Object.keys(unreadableStates).length ? unreadableStates : null,
     // Aggregates the release path and the review queue both read.
     belowQualityFloorClips: clipVerdicts.filter((c) => c.belowQualityFloor).length,
     samplingDensity: perClip,

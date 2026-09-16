@@ -60,19 +60,39 @@ export function parseMediaPlaylist(text, baseUrl) {
   const lines = String(text).split(/\r?\n/);
   let mediaSequence = 0;
   let pendingDuration = 0;
+  let pendingPdtMs = null;
   const segments = [];
   for (const line of lines) {
     if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
       mediaSequence = Number(line.split(':')[1]) || 0;
     } else if (line.startsWith('#EXTINF:')) {
       pendingDuration = parseFloat(line.split(':')[1]) || 0;
+    } else if (line.startsWith('#EXT-X-PROGRAM-DATE-TIME:')) {
+      // A WALL CLOCK, when the platform stamps one. This comment used to say
+      // "pump.fun stamps every segment; Twitch and Kick stamp none", and the
+      // second half was simply false — KICK STAMPS EVERY SEGMENT TOO,
+      // measured on its first real broadcasts 2026-08-26. Believing otherwise
+      // cost three broadcasts and two fixes aimed at a branch Kick never runs.
+      // Do not assert which platforms stamp; read the playlist.
+      //
+      // It also used to say this "can replace timeline calibration outright".
+      // It cannot. PDT records when a segment was PACKAGED, and the overlay
+      // rendered its code one broadcast delay earlier, so a code issued at T
+      // lands in a segment stamped T + D. The stamp is an ANCHOR — it fixes
+      // media-to-wall exactly, which the frozenAt/duration estimate never
+      // did — but D still has to be measured. See frame-sources.js
+      // wallClockSkew() for the whole reckoning.
+      const t = Date.parse(line.slice('#EXT-X-PROGRAM-DATE-TIME:'.length).trim());
+      pendingPdtMs = Number.isFinite(t) ? t : null;
     } else if (line && !line.startsWith('#')) {
       segments.push({
         uri: new URL(line, baseUrl).toString(),
         durationS: pendingDuration,
         seq: mediaSequence + segments.length,
+        ...(pendingPdtMs != null ? { pdtMs: pendingPdtMs } : {}),
       });
       pendingDuration = 0;
+      pendingPdtMs = null;
     }
   }
   return { mediaSequence, segments };
@@ -120,6 +140,7 @@ export class RollingBuffer {
   constructor({ windowMs = bountyConfig.captureWindowMs } = {}) {
     this.windowMs = windowMs;
     this.segments = []; // { seq, uri, durationS, bytes: Buffer, fetchedAt }
+    this.highWaterSeq = -1; // highest seq ever pushed — see has()
   }
 
   /** Total media duration currently held, in ms. */
@@ -131,10 +152,26 @@ export class RollingBuffer {
     return this.segments.reduce((a, s) => a + s.bytes.length, 0);
   }
 
-  has(seq) { return this.segments.some((s) => s.seq === seq); }
+  /**
+   * "Already fetched?" must cover EVICTED segments, not just held ones.
+   *
+   * The first implementation checked only the live ring. On a SLIDING
+   * playlist (Twitch, Kick) that was accidentally sufficient — old segments
+   * leave the playlist and never resurface. On an APPEND-ONLY playlist
+   * (pump.fun) every past segment stays listed forever, so the moment the
+   * window evicted one, the next poll saw it as new and re-downloaded it —
+   * measured at 205 fetches of 40 backlog segments in under ten seconds,
+   * every 250ms, for the length of the broadcast. The high-water mark is the
+   * fix: sequence numbers only move forward, so anything at or below it has
+   * been fetched once already, held or not.
+   */
+  has(seq) {
+    return seq <= this.highWaterSeq || this.segments.some((s) => s.seq === seq);
+  }
 
   /** Append and evict, oldest first, until the window fits. */
   push(seg) {
+    if (Number.isFinite(seg?.seq)) this.highWaterSeq = Math.max(this.highWaterSeq, seg.seq);
     this.segments.push(seg);
     // Evict by MEDIA duration, not by wall clock: a stall that stops segments
     // arriving must not silently empty the buffer we are about to freeze.
@@ -156,6 +193,10 @@ export class RollingBuffer {
  */
 export async function startCapture(airSessionId, {
   hlsUrl, platform, handle, log = console, fetchImpl = fetch,
+  // Optional: re-derive the media URL from the channel/watch page. Called only
+  // when the ring stalls, so a platform that rotates its storage mid-broadcast
+  // (pump.fun does, unprompted) does not silently end the recording.
+  reresolve = null,
 } = {}) {
   if (!bountyConfig.selfCaptureEnabled) return null;
   if (active.has(airSessionId)) return active.get(airSessionId);
@@ -168,6 +209,10 @@ export async function startCapture(airSessionId, {
     pollTimer: null,
     errors: 0,
     startedAt: Date.now(),
+    // Freshness bookkeeping: when the ring last actually grew, and how many
+    // consecutive polls have added nothing.
+    lastAdvanceAt: Date.now(),
+    noAdvancePolls: 0,
   };
   active.set(airSessionId, state);
 
@@ -176,7 +221,41 @@ export async function startCapture(airSessionId, {
     try {
       const res = await fetchImpl(state.hlsUrl, { signal: AbortSignal.timeout(8000) });
       if (!res.ok) throw new Error(`playlist ${res.status}`);
-      const { segments } = parseMediaPlaylist(await res.text(), state.hlsUrl);
+      const body = await res.text();
+      /**
+       * A MASTER PLAYLIST IS NOT A MEDIA PLAYLIST, and parsing one as the
+       * other fails SILENTLY in the worst possible way.
+       *
+       * pump.fun's derived URL is a master. Parsed as media, its three
+       * `#EXT-X-STREAM-INF` variant URLs look like three "segments" carrying
+       * no duration and no PROGRAM-DATE-TIME — so capture buffered the
+       * PLAYLIST FILES as if they were video and froze 1.0MB / 0ms / no PDT
+       * off three bogus entries. Measured on the real stream: master parses
+       * to 3 segments with 0 PDT, the variant to 3300 segments with 3300 PDT.
+       *
+       * Losing PDT is the expensive part: it is the seek anchor, so a capture
+       * without it forces calibration to measure blind — the same class of
+       * failure as the PDT-bypass bug that cost three Kick broadcasts.
+       *
+       * Resolve once, then stay on the variant. Highest bandwidth first: more
+       * pixels is strictly better for reading a badge, and the buffer is
+       * bounded by time rather than size.
+       */
+      if (/#EXT-X-STREAM-INF/.test(body)) {
+        const lines = body.split(String.fromCharCode(10)).map((l) => l.trim());
+        let best = null;
+        for (let i = 0; i < lines.length; i += 1) {
+          if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
+          const bw = Number(/BANDWIDTH=(\d+)/.exec(lines[i])?.[1] || 0);
+          const uri = lines.slice(i + 1).find((l) => l && !l.startsWith('#'));
+          if (uri && (!best || bw > best.bw)) best = { bw, uri };
+        }
+        if (!best) throw new Error('master playlist lists no variant');
+        state.hlsUrl = new URL(best.uri, state.hlsUrl).toString();
+        log.log?.(`[capture] master playlist → variant @${Math.round(best.bw / 1000)}kbps`);
+        return; // next poll reads the variant; nothing is lost but one tick
+      }
+      const { segments } = parseMediaPlaylist(body, state.hlsUrl);
       // START AT THE LIVE EDGE. Everything older than the window is evicted on
       // arrival, so fetching it buys nothing — and on an append-only playlist
       // it is the difference between a few hundred kB and a few gigabytes.
@@ -186,15 +265,70 @@ export async function startCapture(airSessionId, {
         log.log?.(`[capture] playlist lists ${segments.length} segments; starting at the `
           + `live edge with the last ${fresh.length}`);
       }
+      let added = 0;
+      let segFailures = 0;
       for (const seg of fresh) {
         if (state.stopped) return;
         if (state.buffer.has(seg.seq)) continue;
         const r = await fetchImpl(seg.uri, { signal: AbortSignal.timeout(8000) });
-        if (!r.ok) continue;
+        // A FAILED SEGMENT IS NOT A NO-OP. This was a bare `continue`, so a
+        // total segment outage — every fetch 403ing while the playlist itself
+        // still answers 200 — advanced nothing, logged nothing, and reset
+        // state.errors to 0 on the way out. The recorder looked healthy while
+        // capturing air.
+        if (!r.ok) { segFailures += 1; continue; }
         const bytes = Buffer.from(await r.arrayBuffer());
         state.buffer.push({ ...seg, bytes, fetchedAt: Date.now() });
+        added += 1;
       }
       state.errors = 0;
+
+      /**
+       * A STALLED RING IS THE FAILURE THIS WHOLE FILE EXISTS TO PREVENT, AND
+       * IT USED TO BE THE ONE FAILURE IT COULD NOT SEE.
+       *
+       * Measured on a real pump.fun broadcast: the ring ingested cleanly for
+       * thirty minutes, then stopped dead at 22:03:21 while every later freeze
+       * happily wrote the SAME stale minute of media under a new playback name
+       * — eight byte-identical files, each emitting a coverage assertion into
+       * the append-only evidence chain. Nothing logged. The rehearsal reported
+       * "froze 23/23, PDT on 23/23" and the operator was told self-capture
+       * worked.
+       *
+       * The trigger was almost certainly pump.fun rotating its media directory
+       * (observed twice in that broadcast, ~33-53 min apart, unprompted). We
+       * pin state.hlsUrl at start and only ever rewrite master → variant, so
+       * after a rotation we keep asking a dead address forever.
+       */
+      if (added > 0) {
+        state.lastAdvanceAt = Date.now();
+        state.noAdvancePolls = 0;
+      } else if (fresh.length) {
+        state.noAdvancePolls = (state.noAdvancePolls || 0) + 1;
+        const stalledMs = Date.now() - (state.lastAdvanceAt || state.startedAt || Date.now());
+        if (state.noAdvancePolls === 3 || state.noAdvancePolls % 20 === 0) {
+          log.warn?.(`[capture] ${airSessionId} STALLED: no new segment in `
+            + `${state.noAdvancePolls} poll(s) / ${Math.round(stalledMs / 1000)}s`
+            + `${segFailures ? `, ${segFailures} segment fetch(es) failing` : ''}. `
+            + 'Everything frozen from here would be stale media.');
+        }
+        // Re-derive the address before assuming the broadcast ended. This is
+        // what makes a mid-stream directory rotation survivable instead of
+        // silently terminal.
+        if (typeof reresolve === 'function' && state.noAdvancePolls === 3) {
+          try {
+            const fresh2 = await reresolve();
+            if (fresh2 && fresh2 !== state.hlsUrl) {
+              log.warn?.(`[capture] ${airSessionId} re-derived a NEW media URL after a `
+                + 'stall — the platform rotated storage mid-broadcast');
+              state.hlsUrl = fresh2;
+              state.noAdvancePolls = 0;
+            }
+          } catch (e) {
+            log.warn?.(`[capture] ${airSessionId} re-resolve failed: ${e.message}`);
+          }
+        }
+      }
     } catch (e) {
       // A capture that dies silently is worse than one that never ran: the
       // streamer would be verified against nothing and told nothing.
@@ -229,16 +363,50 @@ export function freezeWindow(airSessionId, { playbackId, clipId, log = console }
     log.warn?.(`[capture] nothing buffered for ${airSessionId} at freeze time`);
     return null;
   }
+  /**
+   * IS THE BUFFER STILL ALIVE, OR JUST NON-EMPTY?
+   *
+   * The only precondition here was `segments.length` — "we have bytes" — which
+   * a dead ring satisfies forever, because the last segments it ever fetched
+   * stay in it. That is how eight playbacks were frozen onto byte-identical
+   * media and eight coverage assertions were written into an append-only
+   * evidence chain that is supposed to be trustworthy. A false evidence row is
+   * worse than a missing one.
+   *
+   * The freeze still happens: partial evidence beats none, and the verifier
+   * now treats an uncoverable instant as OUR failure rather than the
+   * streamer's. But it is recorded as stale, loudly, so nothing downstream can
+   * mistake it for a live recording of this playback.
+   */
+  const stalledMs = Date.now() - (state.lastAdvanceAt || state.startedAt || Date.now());
+  const stale = stalledMs > bountyConfig.captureWindowMs;
+  if (stale) {
+    log.warn?.(`[capture] ${airSessionId} freezing ${playbackId || clipId} from a STALLED `
+      + `ring — no new media for ${Math.round(stalledMs / 1000)}s (window is `
+      + `${Math.round(bountyConfig.captureWindowMs / 1000)}s). This capture cannot cover `
+      + 'the playback it is named after.');
+  }
   ensureDir();
   const file = path.join(CAPTURE_DIR, `${airSessionId}__${playbackId || clipId || 'window'}.ts`);
   const bytes = state.buffer.concat();
   writeFileSync(file, bytes);
+  const first = state.buffer.segments[0];
   const record = {
     airSessionId, playbackId: playbackId || null, clipId: clipId || null,
     file, bytes: bytes.length,
     segments: state.buffer.segments.length,
     spanMs: Math.round(state.buffer.spanMs),
     frozenAt: Date.now(),
+    // The first held segment's PROGRAM-DATE-TIME, when the platform stamps
+    // one: the capture's media t=0 in WALL CLOCK, exact. Null on platforms
+    // that do not stamp (Twitch, Kick) — calibration measures those instead.
+    firstPdtMs: Number.isFinite(first?.pdtMs) ? first.pdtMs : null,
+    // TRAVELS WITH THE EVIDENCE. `stale` says this media predates the playback
+    // it is named after; `stalledMs` says by how far. Recorded on the row
+    // itself because the row is what a reviewer and a payout will read later,
+    // long after the log line has scrolled away.
+    stale,
+    stalledMs: Math.round(stalledMs),
   };
   // Evidence, same append-only treatment as the clip index and the ledger:
   // a payout computed FROM this capture must be able to point at it.
@@ -246,6 +414,87 @@ export function freezeWindow(airSessionId, { playbackId, clipId, log = console }
   log.log?.(`[capture] froze ${(bytes.length / 1e6).toFixed(1)}MB / ${record.spanMs}ms for ${playbackId || clipId}`);
   return record;
 }
+
+/**
+ * Freezes waiting for the broadcast delay to deliver a clip's tail.
+ * airSessionId -> Set<Promise>. See scheduleFreeze.
+ */
+const pendingFreezes = new Map();
+
+/**
+ * FREEZE LATER, NOT AT PLAYBACK END — the bug this exists to fix.
+ *
+ * The rolling buffer holds the newest media the PUBLIC stream has published,
+ * and that is D = 12-25s behind wall clock. Freezing the instant a clip ends
+ * therefore captures media encoded up to (end - D): a clip of length L leaves
+ * only L-D seconds of itself in the file, and a clip shorter than the delay
+ * leaves NOTHING. The original design note — "freeze on END so the unknown
+ * delay is irrelevant" — had the right instinct and forgot which end of the
+ * buffer is fresh.
+ *
+ * It could not be recovered by seeking either: reaching the missing tail would
+ * need a NEGATIVE skew, and the calibration ladder is non-negative by
+ * construction, so the correct hypothesis was not even in the search space.
+ * The failure was deterministic, not flaky — every real broadcast, every time.
+ *
+ * Every gate missed it because stub streams publish segments milliseconds
+ * after writing them, making D ~= 0 and rung 0 correct. A delay-aware stub is
+ * the only thing that can see this class of bug.
+ *
+ * Waiting D + one segment past the clip's end puts the whole clip inside the
+ * window. The 60s window has room: 25s delay + a 30s clip + slack.
+ */
+export function scheduleFreeze(airSessionId, {
+  playbackId, clipId, delayMs = bountyConfig.captureFreezeDelayMs, log = console,
+} = {}) {
+  if (!active.has(airSessionId)) {
+    log.warn?.(`[capture] freeze requested for ${airSessionId} with no running capture`);
+    return Promise.resolve(null);
+  }
+  // A ZERO DELAY MEANS FREEZE NOW, INLINE. Deferring even to the next tick
+  // decouples the buffer read from the frozenAt stamp, and any wall-clock gap
+  // between them becomes a seek error later. Production always has a real
+  // delay to wait out; a stub with none is asking for the old, exact,
+  // read-and-stamp-together behaviour and should get precisely that.
+  if (delayMs <= 0) {
+    try { return Promise.resolve(freezeWindow(airSessionId, { playbackId, clipId, log })); }
+    catch (e) {
+      log.warn?.(`[capture] inline freeze failed for ${playbackId || clipId}: ${e?.message}`);
+      return Promise.resolve(null);
+    }
+  }
+  const p = new Promise((resolve) => {
+    setTimeout(() => {
+      try { resolve(freezeWindow(airSessionId, { playbackId, clipId, log })); }
+      catch (e) {
+        log.warn?.(`[capture] scheduled freeze failed for ${playbackId || clipId}: ${e?.message}`);
+        resolve(null);
+      }
+    }, Math.max(0, delayMs));
+  });
+  if (!pendingFreezes.has(airSessionId)) pendingFreezes.set(airSessionId, new Set());
+  const set = pendingFreezes.get(airSessionId);
+  set.add(p);
+  void p.then(() => set.delete(p));
+  log.log?.(`[capture] freeze for ${playbackId || clipId} scheduled in ${Math.round(delayMs / 1000)}s `
+    + '(waiting out the broadcast delay so the clip has actually aired)');
+  return p;
+}
+
+/**
+ * Settle every scheduled freeze for a session. The session must NOT stop
+ * capturing before these fire — that is the whole point of scheduling them.
+ */
+export async function awaitPendingFreezes(airSessionId) {
+  const set = pendingFreezes.get(airSessionId);
+  if (!set || !set.size) return [];
+  const out = await Promise.all([...set]);
+  pendingFreezes.delete(airSessionId);
+  return out.filter(Boolean);
+}
+
+/** How many freezes are still waiting. The gate asserts on this. */
+export const pendingFreezeCount = (airSessionId) => pendingFreezes.get(airSessionId)?.size || 0;
 
 /** Stop capturing and release the buffer. Idempotent. */
 export function stopCapture(airSessionId, { log = console } = {}) {
@@ -321,7 +570,11 @@ export function captureRecordsFor(airSessionId, { log = console } = {}) {
     // byte-concatenated MPEG-TS reports whatever its FIRST segment claims when
     // the segments do not share a continuous timeline, and a seek computed
     // from that lands nowhere. See CaptureFrameSource.durationS.
-    return { file, playbackId, clipId: rec?.clipId || null, frozenAt, spanMs: rec?.spanMs ?? null };
+    return {
+      file, playbackId, clipId: rec?.clipId || null, frozenAt,
+      spanMs: rec?.spanMs ?? null,
+      firstPdtMs: Number.isFinite(rec?.firstPdtMs) ? rec.firstPdtMs : null,
+    };
   }).filter((r) => r.frozenAt);
 }
 

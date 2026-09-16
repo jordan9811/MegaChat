@@ -19,6 +19,10 @@ import type { Room as LiveKitRoom } from 'livekit-client'
 // Falling-edge grace: a guest reconnect (or a back-to-back second guest)
 // must not churn the camera off/on.
 const OFF_AIR_DEBOUNCE_MS = 5000
+// How often to ask for a camera that something else is holding. 6s is short
+// enough that the operator sees it recover while they are still looking at
+// the booth, and getUserMedia on a busy device fails fast and cheaply.
+const CAM_RETRY_MS = 6000
 
 function isDenied(e: unknown) {
   return (
@@ -124,12 +128,16 @@ export function HostCamCard() {
           true,
           camIdRef.current ? { deviceId: camIdRef.current } : undefined,
         )
-      } catch {
+      } catch (chosenErr) {
         // chosen device gone/busy → try the default before giving up
         try {
           await lkRoom.localParticipant.setCameraEnabled(true)
-        } catch {
+        } catch (defaultErr) {
           camOk = false // truly no camera available (OBS holds the only one)
+          // Both catches used to be empty, so a session that went out audio
+          // only left nothing behind to look at — the operator found out from
+          // a guest saying "I can hear you but I can't see you", twice.
+          console.warn('[booth] camera failed, going on air MIC ONLY', chosenErr, defaultErr)
         }
       }
       if (camOk) {
@@ -155,6 +163,22 @@ export function HostCamCard() {
       setConnecting(false)
     }
   }
+
+  // Stuck mic-only while on air: keep asking for the camera back. The device
+  // that beat us is almost always OBS, which releases it when the operator
+  // stops a capture or starts the virtual cam — and neither of those changes
+  // the device LIST, so the devicechange-driven retry in refreshCams() never
+  // hears about it. A timer is the only thing that notices. tryEnableCamera
+  // attaches and clears micOnly itself, so success ends this on its own.
+  useEffect(() => {
+    if (!onAir || !micOnly) return
+    const t = setInterval(() => {
+      if (!lkRef.current || !micOnlyRef.current) return
+      void tryEnableCamera(camIdRef.current)
+    }, CAM_RETRY_MS)
+    return () => clearInterval(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onAir, micOnly])
 
   // Autopilot: guest presence drives the publish. Rising edge (0 → >0)
   // connects; falling edge starts the grace timer instead of hanging up
@@ -435,6 +459,35 @@ export function HostCamCard() {
             camera, you&apos;d be broadcasting your own broadcast — keep the overlay out of the scene
             you send here.
           </p>
+        ) : null}
+
+        {/* Going out with sound and no picture is the one failure the operator
+            cannot see from inside the booth — the self-view is hidden in this
+            state, so the card looks calm while guests stare at a black frame.
+            It has now cost two live sessions, so it gets an alert rather than
+            a clause in the status line. */}
+        {onAir && micOnly ? (
+          <div
+            role="alert"
+            className="rounded-xl border border-[var(--neon-magenta)]/60 bg-[var(--neon-magenta)]/10 p-3"
+          >
+            <strong className="block text-sm font-bold text-[var(--neon-magenta)]">
+              Your camera isn&#39;t working — {guestNoun} can hear you but cannot see you
+            </strong>
+            <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+              You are still ON AIR with sound. Another app is holding the camera, almost
+              always OBS. Retrying every {Math.round(CAM_RETRY_MS / 1000)}s — the picture
+              comes back on its own the moment the camera is free. Picking OBS Virtual
+              Camera below fixes it immediately.
+            </span>
+            <button
+              type="button"
+              onClick={() => void tryEnableCamera(camIdRef.current)}
+              className="mt-2 h-8 rounded-lg border border-[var(--neon-magenta)]/70 px-3 text-xs font-bold text-[var(--neon-magenta)]"
+            >
+              Try the camera now
+            </button>
+          </div>
         ) : null}
 
         <p id="boothStatus" aria-live="polite" className="text-xs text-muted-foreground">

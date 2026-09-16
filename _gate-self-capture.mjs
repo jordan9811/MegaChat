@@ -121,6 +121,9 @@ try {
       // air-session lifecycle, the freeze-on-playback-end and the verify
       // source preference are all the shipped code paths, not a re-creation
       // of them inside the gate.
+      // Zero-delay stub: nothing to wait out, so freeze effectively at once.
+      // The real delay is exercised in _gate-broadcast-delay.mjs.
+      BOUNTY_CAPTURE_FREEZE_DELAY_MS: '400',
       BOUNTY_CAPTURE_HLS_URL: `http://localhost:${HLS}/live.m3u8`,
       BOUNTY_CAPTURE_WINDOW_MS: '20000',
       BOUNTY_CAPTURE_POLL_MS: '250',
@@ -196,9 +199,13 @@ try {
 
     // ── 2. freeze on playback end, under the delay ────────────────────────
     const ended = await post('/api/bounty/admin/playback/end', { airSessionId: airId, clipId: 'CAP1' });
-    ok('2. ending a playback freezes a window and reports it',
-      !!ended.body.capture && ended.body.capture.bytes > 0,
-      JSON.stringify(ended.body.capture));
+    ok('2. ending a playback SCHEDULES a freeze (it no longer takes one inline)',
+      ended.body.freeze?.scheduled === true && ended.body.capture === null,
+      `${ended.body.freeze?.why || JSON.stringify(ended.body)}`);
+    await sleep(1200); // let the scheduled freeze fire
+    ok('2. ...and the window lands on disk once it fires',
+      serverCaptures().length === 1 && statSync(serverCaptures()[0]).size > 0,
+      `${serverCaptures().length} file(s)`);
     const caps = serverCaptures();
     ok('2. ...persisted as exactly one capture file for that playback',
       caps.length === 1, caps.map((c) => path.basename(c)).join(','));
@@ -267,5 +274,27 @@ try {
   if (browser) await browser.close();
   await new Promise((r) => server.close(r));
 }
+// ── 6. capture is pinned to the PROVEN handle, not a client watch URL ─────
+// A streamer opens the air session and may hand us a watch URL. On platforms
+// with a channel page bound to the OAuth identity (Twitch, Kick), honouring
+// that URL would let them point our recorder at a DIFFERENT stream — run the
+// codes on a throwaway broadcast, hand us that URL, never overlay their real
+// audience stream. The handle-derived page must win there; the watch URL is
+// the SOLE address only where no channel page exists.
+{
+  const { captureSourceUrl } = await import('./bounty-routes.js');
+  ok('6. twitch capture ignores a supplied watch URL (pinned to the proven handle)',
+    captureSourceUrl({ platform: 'twitch', watchUrl: 'https://evil.example/other' }, 'MyHandle')
+    === 'https://www.twitch.tv/myhandle');
+  ok('6. kick capture ignores a supplied watch URL',
+    captureSourceUrl({ platform: 'kick', watchUrl: 'https://evil.example/other' }, 'MyHandle')
+    === 'https://kick.com/myhandle');
+  ok('6. youtube capture uses the supplied watch URL (its only address)',
+    captureSourceUrl({ platform: 'youtube', watchUrl: 'https://youtube.com/watch?v=x' }, 'h')
+    === 'https://youtube.com/watch?v=x');
+  ok('6. a no-channel-page platform with no watch URL is null (skip, never guess)',
+    captureSourceUrl({ platform: 'youtube' }, 'h') === null);
+}
+
 console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

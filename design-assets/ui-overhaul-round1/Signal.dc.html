@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; background: #0b0c0f; }
+    a { color: #b9bec9; text-decoration: none; }
+    a:hover { color: #ffffff; }
+  </style>
+</helmet>
+<div style="width: 1280px; min-height: 2000px; background: #0b0c0f; color: #e9ebef; font-family: 'IBM Plex Sans', system-ui, sans-serif;">
+
+  <!-- nav -->
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 64px; height: 68px; border-bottom: 1px solid rgba(255,255,255,0.08);">
+    <div style="display: flex; align-items: center; gap: 11px;">
+      <img src="m-tail.jpg" alt="MegaChat mark" style="width: 34px; height: 34px; border-radius: 8px; display: block;">
+      <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px;">MegaChat</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 30px; font-size: 14px;">
+      <a href="#">Browse</a>
+      <a href="#">Bounties</a>
+      <a href="#">How it works</a>
+      <span style="color: #7e838e;">Sign in</span>
+      <span style="border: 1px solid rgba(255,255,255,0.2); padding: 9px 20px; border-radius: 8px; font-weight: 500;">Open the app</span>
+    </div>
+  </div>
+
+  <!-- hero -->
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 56px; padding: 84px 64px; align-items: center;">
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <span style="font-size: 12px; font-weight: 500; letter-spacing: 0.2em; color: #7e838e;">LIVE CO-STREAMING, PAID BY THE SECOND</span>
+      <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 52px; line-height: 1.06; letter-spacing: -0.01em;">
+        A seat on the stream, billed by the second.
+      </div>
+      <div style="font-size: 16.5px; line-height: 1.6; color: #a6abb5; max-width: 470px;">
+        MegaChat lets fans join live broadcasts on camera. The streamer sets the rate; the meter runs only while you're on air.
+      </div>
+      <div style="display: flex; align-items: center; gap: 20px; margin-top: 8px;">
+        <span style="background: linear-gradient(100deg, #7b3ff2, #f0246f); color: #ffffff; font-weight: 500; font-size: 15.5px; padding: 14px 28px; border-radius: 10px;">Create a room</span>
+        <span style="display: flex; align-items: center; gap: 8px; font-size: 15px; color: #e9ebef;">
+          Browse live rooms
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        </span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; font-size: 13px; color: #7e838e; margin-top: 4px;">
+        <span>Watch free</span>
+        <span style="width: 3px; height: 3px; border-radius: 50%; background: #4a4e57; display: inline-block;"></span>
+        <span>No account to browse</span>
+        <span style="width: 3px; height: 3px; border-radius: 50%; background: #4a4e57; display: inline-block;"></span>
+        <span>Twitch and Kick</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 6px; padding: 10px 14px; background: #101216; border-bottom: 1px solid rgba(255,255,255,0.08);">
+        <span style="width: 9px; height: 9px; border-radius: 50%; background: #33363d; display: inline-block;"></span>
+        <span style="width: 9px; height: 9px; border-radius: 50%; background: #33363d; display: inline-block;"></span>
+        <span style="width: 9px; height: 9px; border-radius: 50%; background: #33363d; display: inline-block;"></span>
+        <span style="font-size: 11.5px; color: #7e838e; margin-left: 10px;">megachat.fun — the launch film</span>
+      </div>
+      <img src="frameA.jpg" alt="Still from the MegaChat launch film" style="width: 100%; display: block;">
+    </div>
+  </div>
+
+  <!-- mechanics strip -->
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08);">
+    <div style="padding: 30px 32px; border-right: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 8px;">
+      <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 16px;">Per-second billing</span>
+      <span style="font-size: 13.5px; line-height: 1.55; color: #7e838e;">The meter runs only while you're on air.</span>
+    </div>
+    <div style="padding: 30px 32px; border-right: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 8px;">
+      <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 16px;">Four seats max</span>
+      <span style="font-size: 13.5px; line-height: 1.55; color: #7e838e;">Scarcity is the format. A queue forms behind the last slot.</span>
+    </div>
+    <div style="padding: 30px 32px; border-right: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 8px;">
+      <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 16px;">USDC bounties</span>
+      <span style="font-size: 13.5px; line-height: 1.55; color: #7e838e;">Fans escrow pools for streamers who haven't arrived yet.</span>
+    </div>
+    <div style="padding: 30px 32px; display: flex; flex-direction: column; gap: 8px;">
+      <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 16px;">Open viewing</span>
+      <span style="font-size: 13.5px; line-height: 1.55; color: #7e838e;">No login to watch. Accounts start where the camera does.</span>
+    </div>
+  </div>
+
+  <!-- how it works -->
+  <div style="padding: 76px 64px; display: flex; flex-direction: column; gap: 36px;">
+    <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 30px;">How a seat works</span>
+    <div style="display: flex; flex-direction: column;">
+      <div style="display: grid; grid-template-columns: 90px minmax(0, 1fr) minmax(0, 1.4fr); gap: 28px; padding: 26px 0; border-top: 1px solid rgba(255,255,255,0.08); align-items: baseline;">
+        <span style="font-family: 'Space Grotesk', sans-serif; font-size: 15px; color: #7b3ff2; font-weight: 700;">01</span>
+        <span style="font-size: 17px; font-weight: 500;">Pick a live room</span>
+        <span style="font-size: 14.5px; line-height: 1.6; color: #a6abb5;">Rooms mirror broadcasts already live on Twitch or Kick. Browse and watch without an account.</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 90px minmax(0, 1fr) minmax(0, 1.4fr); gap: 28px; padding: 26px 0; border-top: 1px solid rgba(255,255,255,0.08); align-items: baseline;">
+        <span style="font-family: 'Space Grotesk', sans-serif; font-size: 15px; color: #a437d9; font-weight: 700;">02</span>
+        <span style="font-size: 17px; font-weight: 500;">Take a seat</span>
+        <span style="font-size: 14.5px; line-height: 1.6; color: #a6abb5;">Claim one of four camera slots at the streamer's per-second rate. Billing starts when your camera does.</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 90px minmax(0, 1fr) minmax(0, 1.4fr); gap: 28px; padding: 26px 0; border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08); align-items: baseline;">
+        <span style="font-family: 'Space Grotesk', sans-serif; font-size: 15px; color: #f0246f; font-weight: 700;">03</span>
+        <span style="font-size: 17px; font-weight: 500;">Leave whenever</span>
+        <span style="font-size: 14.5px; line-height: 1.6; color: #a6abb5;">Step off and the meter stops that second. Your appearance stays part of the broadcast.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- streamer CTA panel -->
+  <div style="margin: 0 64px 84px 64px; border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 44px 48px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px; align-items: center; background: #0e1014;">
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 26px;">Streaming already? Add seats.</span>
+      <span style="font-size: 15px; line-height: 1.6; color: #a6abb5;">MegaChat rides alongside your existing broadcast — works with OBS, keeps your platform, pays you for every second a fan sits on camera.</span>
+    </div>
+    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 18px;">
+      <span style="font-size: 14.5px; color: #a6abb5;">Set your rate, open four seats</span>
+      <span style="background: linear-gradient(100deg, #7b3ff2, #f0246f); color: #ffffff; font-weight: 500; font-size: 15.5px; padding: 14px 28px; border-radius: 10px;">Create a room</span>
+    </div>
+  </div>
+
+  <!-- footer -->
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 26px 64px 40px 64px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 13px; color: #7e838e;">
+    <div style="display: flex; align-items: center; gap: 9px;">
+      <img src="m-tail.jpg" alt="" style="width: 22px; height: 22px; border-radius: 5px; display: block;">
+      <span>MegaChat</span>
+    </div>
+    <div style="display: flex; gap: 26px;">
+      <span>Browse</span><span>Bounties</span><span>Docs</span><span>Terms</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -20,10 +20,13 @@ import { moderateMedia, moderationConfigured } from './moderation.js';
 import * as evidence from './bounty-evidence.js';
 import { twitchApiConfigured, getStreamByLogin } from './twitch-api.js';
 import { kickApiConfigured, getChannelBySlug } from './kick-api.js';
+import { youtubeApiConfigured, getVideoLiveDetails, extractVideoId } from './youtube-api.js';
+import { rumbleApiConfigured, getRumbleLiveStatus } from './rumble-api.js';
+import { getStreamByMint } from './pumpfun-api.js';
 import { resolveAvatars, avatarKey } from './platform-avatars.js';
 import { readIdentityFromRequest } from './auth.js';
 import settlement from './bounty-settlement.js';
-import { policyFor, authorize, TIER } from './bounty-auth.js';
+import { policyFor, authorize, TIER, platformLoginFor } from './bounty-auth.js';
 import * as capture from './bounty-capture.js';
 
 /**
@@ -63,7 +66,11 @@ export class StubIdentityVerifier extends IdentityVerifier {
  * for the run that has keys).
  */
 export class PlatformIdentityVerifier extends IdentityVerifier {
-  static SUPPORTED = new Set(['twitch', 'kick']);
+  // X joins because Privy's twitter_oauth hands us the real @handle (proven
+  // in _gate-x-claims.mjs, not assumed) — no separate X API agreement is
+  // needed for OWNERSHIP; X still has no pullable stream, so verification on
+  // X runs self-capture + obs-websocket only.
+  static SUPPORTED = new Set(['twitch', 'kick', 'x']);
   async verify(platform, handle, _claimant, { req } = {}) {
     if (!PlatformIdentityVerifier.SUPPORTED.has(platform)) {
       return { approved: false, method: 'REAL_UNSUPPORTED_PLATFORM' };
@@ -73,17 +80,19 @@ export class PlatformIdentityVerifier extends IdentityVerifier {
       return { approved: false, method: 'REAL_NOT_SIGNED_IN' };
     }
     // Cross-platform proof is no proof: a Twitch session says nothing about
-    // who owns a Kick slug of the same name, and vice versa.
-    if (identity.provider !== platform) {
-      return { approved: false, method: `REAL_WRONG_PROVIDER:${identity.provider}` };
+    // who owns an X handle of the same name, and vice versa. The check reads
+    // what PLATFORM P's OWN OAUTH called this person — legacy identities via
+    // provider match, Privy identities via the linked-account logins.
+    const login = platformLoginFor(identity, platform);
+    if (!login) {
+      return { approved: false, method: `REAL_NO_${platform.toUpperCase()}_LINK:${identity.provider}` };
     }
-    const owns = String(identity.username || identity.handle || '')
-      .toLowerCase() === String(handle).toLowerCase();
+    const owns = login.toLowerCase() === String(handle).toLowerCase();
     return owns
       ? {
         approved: true,
-        method: platform === 'twitch' ? 'TWITCH_OAUTH_SESSION' : 'KICK_OAUTH_SESSION',
-        platform, handle, login: identity.username,
+        method: `${platform.toUpperCase()}_OAUTH_SESSION`,
+        platform, handle, login,
       }
       : { approved: false, method: 'REAL_HANDLE_MISMATCH' };
   }
@@ -109,10 +118,54 @@ export const TwitchIdentityVerifier = PlatformIdentityVerifier;
  * Fire-and-forget by contract: a platform round-trip must never sit inside the
  * playback path of a live stream.
  */
+/**
+ * One place that knows how to ask each platform "is this broadcasting".
+ * Twitch/Kick are keyed by HANDLE; YouTube is keyed by the session's watch
+ * URL (live status is per-video); Rumble by the creator's API URL. All
+ * return the same {live, viewerCount, startedAt} shape or null.
+ */
+function liveLookerFor(s) {
+  if (s.platform === 'twitch') return twitchApiConfigured() ? getStreamByLogin : null;
+  if (s.platform === 'kick') return kickApiConfigured() ? getChannelBySlug : null;
+  if (s.platform === 'youtube') {
+    const videoId = extractVideoId(s.watchUrl);
+    return (youtubeApiConfigured() && videoId)
+      ? (_handle, o) => getVideoLiveDetails(videoId, o) : null;
+  }
+  if (s.platform === 'rumble') {
+    return rumbleApiConfigured() ? (_handle, o) => getRumbleLiveStatus(o) : null;
+  }
+  if (s.platform === 'pumpfun') {
+    // Keyed by the coin mint, which rides on the session's watchUrl (a mint,
+    // a coin page, or a playlist URL all resolve). No credential of ours is
+    // involved, so there is nothing to be "configured".
+    //
+    // AND `live` IS NARROWED TO "live AND PUBLISHING" HERE, ONCE.
+    // pump.fun's isLive tracks INGRESS STATE, not content: an ffmpeg push
+    // aborted at the TLS layer, which delivered no frames at all, still
+    // flipped it true within seconds with no media published (measured
+    // 2026-08-27). Every other platform's live flag means media is flowing.
+    //
+    // This matters because the value is recorded as VIEWER-SAMPLE EVIDENCE by
+    // captureBroadcastObservation, and stream context is a gate on payout —
+    // so an unnarrowed flag would let a pump.fun stream publishing NOTHING
+    // accumulate proof that it was broadcasting. Narrowing it at the single
+    // place that knows the platform keeps every consumer honest without each
+    // of them having to learn the quirk.
+    return async (_handle, o) => {
+      const { extractPumpFunMint } = await import('./frame-sources.js');
+      const mint = extractPumpFunMint(s.watchUrl);
+      if (!mint) return null;
+      const info = await getStreamByMint(mint, o);
+      if (!info) return null; // could not ask — still not evidence of anything
+      return { ...info, live: info.live && !!info.playlistUrl };
+    };
+  }
+  return null;
+}
+
 function captureBroadcastObservation(s, { playbackId, clipId, log = console } = {}) {
-  const look = s.platform === 'twitch' ? (twitchApiConfigured() ? getStreamByLogin : null)
-    : s.platform === 'kick' ? (kickApiConfigured() ? getChannelBySlug : null)
-      : null;
+  const look = liveLookerFor(s);
   if (!look) return; // no creds — "could not ask" is not evidence of anything
   const claim = store.getClaim(s.claimId);
   const handle = claim ? store.getReservedHandleByKey(claim.handleKey)?.handle : null;
@@ -188,6 +241,23 @@ function accountKey(req) {
  * forget: a capture that cannot start must never block a streamer from going
  * live — it degrades to the platform VOD path, loudly.
  */
+/**
+ * Which URL should self-capture record for this session? EXPORTED and pure so
+ * the identity-binding rule below is gated directly, not inferred through an
+ * extractor call.
+ *
+ * The channel page derived from the PROVEN handle wins wherever one exists
+ * (Twitch, Kick) — it is bound to the OAuth identity the claim verified. A
+ * client-supplied watch URL is trusted ONLY on platforms with no channel page
+ * (youtube/rumble/pumpfun/x), where it is the sole address rather than an
+ * override of a trustworthy one — and those are not claimable yet.
+ */
+export function captureSourceUrl(session, handle) {
+  if (session.platform === 'twitch') return `https://www.twitch.tv/${String(handle).toLowerCase()}`;
+  if (session.platform === 'kick') return `https://kick.com/${String(handle).toLowerCase()}`;
+  return session.watchUrl || null;
+}
+
 async function startSessionCapture(session, { log = console } = {}) {
   try {
     const claim = store.getClaim(session.claimId);
@@ -196,14 +266,142 @@ async function startSessionCapture(session, { log = console } = {}) {
     let hlsUrl = bountyConfig.captureHlsOverride;
     if (!hlsUrl) {
       const { resolveMediaUrl } = await import('./frame-sources.js');
-      const page = session.platform === 'kick'
-        ? `https://kick.com/${handle.toLowerCase()}`
-        : `https://www.twitch.tv/${handle.toLowerCase()}`;
-      hlsUrl = resolveMediaUrl(page, { log });
+      // THE CHANNEL PAGE DERIVED FROM THE PROVEN HANDLE WINS wherever one
+      // exists (Twitch, Kick). That page is bound to the OAuth identity the
+      // claim verified; a client-supplied watch URL is not, so honouring it
+      // here would let a streamer point our recorder at a DIFFERENT stream —
+      // run the codes on a throwaway broadcast, hand us that URL, and never
+      // put the overlay on their real audience stream at all.
+      //
+      // The watch URL is used ONLY on platforms with no channel page to derive
+      // (youtube/rumble/pumpfun/x), and those are not claimable yet — so it is
+      // the sole address, never an override of a trustworthy one. Binding that
+      // URL to the identity is the work those platforms' claim paths still owe
+      // (YouTube's Data API returns the video's channelId; see OPEN-ISSUES).
+      const page = captureSourceUrl(session, handle);
+      if (!page) {
+        log.warn?.(`[capture] no channel page or watch URL for ${session.platform} session ${session.id} — self-capture skipped`);
+        return;
+      }
+      /**
+       * PUMP.FUN HAS NO PAGE AN EXTRACTOR UNDERSTANDS, and handing it one is
+       * why self-capture never ran there. captureSourceUrl falls through to
+       * the watch URL, which for pump.fun is the COIN PAGE — and
+       * `yt-dlp -g https://pump.fun/coin/<mint>` answers, verbatim,
+       * "ERROR: Unsupported URL". The resolve loop below then treats that as a
+       * hard failure (it is not the "channel offline" shape it retries on), so
+       * every pump.fun session skipped self-capture and silently fell back to
+       * external capture alone.
+       *
+       * We do not need an extractor here at all. getStreamByMint returns the
+       * stream's own directory and playlistFromThumbnail derives the HLS
+       * master from it — a direct .m3u8 the recorder reads without yt-dlp.
+       * Deriving it is also STRICTLY MORE TRUSTWORTHY than resolving a page:
+       * the mint is the claimed identity itself, so there is no client-
+       * supplied address in the path at all.
+       *
+       * Kept inside the retry loop's spirit: at session open the streamer is
+       * usually not live yet, so a missing playlist here is the expected
+       * state, not an error — fall through to the loop, which waits.
+       */
+      if (session.platform === 'pumpfun') {
+        const { extractPumpFunMint } = await import('./frame-sources.js');
+        const { getStreamByMint } = await import('./pumpfun-api.js');
+        const mint = extractPumpFunMint(session.watchUrl);
+        if (!mint) {
+          log.warn?.(`[capture] pumpfun session ${session.id} carries no mint — self-capture skipped`);
+          return;
+        }
+        const deadlinePf = Date.now() + bountyConfig.captureStartRetryMs;
+        for (;;) {
+          const fresh = store.getAirSession(session.id);
+          if (!fresh || fresh.status !== 'OPEN') {
+            log.log?.(`[capture] session ${session.id} closed before pump.fun published — capture not started`);
+            return;
+          }
+          const info = await getStreamByMint(mint, { log });
+          // `live` alone is not enough and never was: pump.fun serves a real
+          // placeholder video on an open ingress with no encoder attached.
+          // A published playlist is the earliest honest signal we have.
+          if (info?.playlistUrl) { hlsUrl = info.playlistUrl; break; }
+          if (Date.now() > deadlinePf) {
+            log.warn?.(`[capture] pump.fun ${String(mint).slice(0, 8)}… published no playlist within `
+              + `${Math.round(bountyConfig.captureStartRetryMs / 60_000)}m of session open — capture not started`);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, bountyConfig.captureStartRetryEveryMs));
+        }
+      }
+      // RESOLVE WITH RETRIES, because the normal order puts this call before
+      // the streamer goes live: they claim their handle, open the air session,
+      // and only then hit Go Live. At session open the channel is offline and
+      // every extractor answers "the channel is not currently live" — which
+      // the single-shot resolve treated as permanent, so SELF-CAPTURE NEVER
+      // STARTED AT ALL in the real sequence, on any platform. It logged one
+      // warning and returned, and verification silently fell back to a VOD
+      // path that Kick, Rumble and X do not have.
+      //
+      // Retrying is the whole fix: the session is open, the streamer is on
+      // their way live, and the only question is how long to keep looking.
+      //
+      // SKIPPED ENTIRELY IF A PLATFORM BRANCH ABOVE ALREADY RESOLVED ONE.
+      // Without this guard the pump.fun branch set hlsUrl and then fell
+      // straight into this loop, which called the extractor on the COIN PAGE
+      // ("ERROR: Unsupported URL"), threw, and was swallowed by the outer
+      // catch as "could not start capture". The URL was resolved correctly and
+      // discarded one line later, so two real broadcasts reported
+      // self-capture froze 0/5 with the fix apparently in place.
+      if (hlsUrl) {
+        log.log?.(`[capture] ${session.platform} resolved its own playlist — skipping extractor`);
+      } else {
+      const deadline = Date.now() + bountyConfig.captureStartRetryMs;
+      let attempt = 0;
+      for (;;) {
+        // Never keep polling for a session nobody is using any more.
+        const fresh = store.getAirSession(session.id);
+        if (!fresh || fresh.status !== 'OPEN') {
+          log.log?.(`[capture] session ${session.id} closed before the channel went live — capture not started`);
+          return;
+        }
+        try {
+          hlsUrl = resolveMediaUrl(page, { log });
+          if (hlsUrl) break;
+        } catch (e) {
+          const offline = /not currently live|CHANNEL_OFFLINE|offline/i.test(
+            `${e?.state || ''} ${e?.detail || ''} ${e?.message || ''}`);
+          if (!offline || Date.now() > deadline) throw e;
+        }
+        attempt += 1;
+        if (Date.now() > deadline) {
+          log.warn?.(`[capture] ${handle} never went live within `
+            + `${Math.round(bountyConfig.captureStartRetryMs / 60_000)}m of session open — capture not started`);
+          return;
+        }
+        // Loud once, then quiet: this is the EXPECTED state for the first
+        // minutes of a session, not an error.
+        if (attempt === 1) {
+          log.log?.(`[capture] ${handle} is not live yet — waiting to start the recording `
+            + `(retrying every ${Math.round(bountyConfig.captureStartRetryEveryMs / 1000)}s)`);
+        }
+        await new Promise((r) => setTimeout(r, bountyConfig.captureStartRetryEveryMs));
+      }
+      }
     }
     await capture.startCapture(session.id, {
       hlsUrl, platform: session.platform, handle, log,
+      // SURVIVE A MID-BROADCAST STORAGE ROTATION. The recorder pins one media
+      // URL for the life of the session; pump.fun rotates its media directory
+      // on its own schedule (twice in one observed broadcast, with no operator
+      // action), after which that URL answers nothing and the ring silently
+      // stops growing while still reporting healthy freezes. Handing the
+      // recorder a way back to the same page it resolved from is what turns a
+      // terminal stall into one missed poll.
+      reresolve: async () => {
+        const { resolveMediaUrl } = await import('./frame-sources.js');
+        return resolveMediaUrl(captureSourceUrl(session, handle), { log });
+      },
     });
+    log.log?.(`[capture] recording started for ${session.platform}:${handle}`);
   } catch (e) {
     log.warn?.(`[capture] could not start for ${session.id}: ${e?.state || e?.message}`
       + ' — verification falls back to the platform VOD path');
@@ -768,10 +966,26 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       // FREEZE ON END, not on start: by now the segments carrying this clip
       // have had time to arrive despite the 12-25s broadcast delay, which is
       // the entire reason the buffer rolls instead of grabbing on demand.
-      const frozen = capture.freezeWindow(airSessionId, {
-        clipId, playbackId: playbackId || win?.playbackId || null, log,
+      // SCHEDULED, not immediate. At this instant the buffer's newest media is
+      // still D = 12-25s behind wall clock, so the tail of the clip that just
+      // ended has not been published yet — freezing now would keep the wrong
+      // 60 seconds. See scheduleFreeze for the full derivation.
+      //
+      // The response therefore reports a freeze that is PENDING. Anything that
+      // needs the artifact (verification, session close) awaits it.
+      const pb = playbackId || win?.playbackId || null;
+      const pending = capture.scheduleFreeze(airSessionId, { clipId, playbackId: pb, log });
+      void pending;
+      res.json({
+        ok: true,
+        capture: null,
+        freeze: {
+          scheduled: capture.pendingFreezeCount(airSessionId) > 0,
+          playbackId: pb,
+          inMs: bountyConfig.captureFreezeDelayMs,
+          why: 'waiting out the broadcast delay so the clip has actually aired',
+        },
       });
-      res.json({ ok: true, capture: frozen ? { bytes: frozen.bytes, spanMs: frozen.spanMs } : null });
     } catch (e) { fail(res, e); }
   });
 
@@ -869,6 +1083,39 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       if (!key) return res.status(400).json({ error: 'platform and handle required' });
       const reserved = store.getReservedHandleByKey(key);
       if (!reserved) return res.status(404).json({ error: 'No bounty reserved for that handle' });
+
+      // RE-ENTRY FOR THE VERIFIED OWNER. Once a claim verifies, the handle
+      // advances past CLAIM_PENDING (AWAITING_AIRTIME, AIRING, …) and the
+      // transition below becomes illegal — so a streamer whose air-session
+      // open failed once (bad watch URL, closed tab) was walled out of their
+      // own claim with a 409 full of escrow jargon. The caller has already
+      // passed STREAMER authorization for THIS handle, so handing back the
+      // existing live claim is the honest answer, not a state violation.
+      if (!['ACCUMULATING', 'RESERVED', 'CLAIM_PENDING'].includes(reserved.claimStatus)) {
+        const existing = (store.listClaims(key) || [])
+          .filter((c) => c.verificationState === 'VERIFIED' && c.expiresAt > Date.now())
+          .sort((a, b) => b.createdAt - a.createdAt)[0];
+        if (existing) {
+          // VERIFY THE CALLER FIRST. The first cut of this branch handed the
+          // existing claim to whoever asked, before any identity check ran —
+          // with the stub verifier that was invisible, and with the real one
+          // it meant any signed-in account could walk into any verified
+          // claim. _gate-x-claims.mjs B5 caught it on its first run.
+          const idv = await identity.verify(platform, handle, claimant, { req });
+          if (!idv.approved) {
+            return res.status(403).json({
+              error: 'This handle already has a verified claim, and this sign-in does not own it',
+              identity: { approved: false, method: idv.method },
+            });
+          }
+          return res.json({
+            ok: true, reclaimed: true, claim: existing,
+            identity: { approved: true, method: idv.method },
+          });
+        }
+        // No live claim to hand back — fall through and let the state machine
+        // refuse loudly rather than minting a claim the escrow cannot honour.
+      }
 
       if (reserved.claimStatus === 'ACCUMULATING') {
         escrow.transition({ handleKey: key, to: 'RESERVED', actor: claimant || 'claimant', reason: 'claim started' });
@@ -973,13 +1220,47 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   // ── Air sessions + watermark ─────────────────────────────────────────────
   guarded.post('/api/bounty/air-session', (req, res) => {
     try {
-      const { claimId, roomId, platform } = req.body || {};
+      const { claimId, roomId, platform: declaredPlatform, watchUrl } = req.body || {};
       const claim = store.getClaim(claimId);
       if (!claim) return res.status(404).json({ error: 'No such claim' });
       if (claim.verificationState !== 'VERIFIED') {
         return res.status(403).json({ error: 'Claim identity is not verified' });
       }
-      const s = store.createAirSession({ claimId, roomId, platform });
+      /**
+       * THE PLATFORM COMES FROM THE CLAIM, NEVER FROM THE REQUEST BODY.
+       *
+       * This used to be `req.body.platform`, taken verbatim, and the STREAMER
+       * policy on this route only proves the caller owns the CLAIM — nothing
+       * compared the declared platform to it. So a streamer holding a genuine
+       * twitch:honest claim could open a session declaring platform 'x' with a
+       * watchUrl they control: captureSourceUrl matches neither the twitch nor
+       * the kick branch, falls through to session.watchUrl, and self-capture
+       * records THEIR chosen stream. Every badge then reads at full size off a
+       * throwaway feed while twitch.tv/honest airs nothing.
+       *
+       * The comment above captureSourceUrl defends this by saying the
+       * client-supplied URL is trusted "only on platforms with no channel
+       * page... and those are not claimable yet". That defence expired when
+       * more platforms became claimable, and nothing re-checked it. Deriving
+       * the platform from handleKey closes it structurally: the only platform
+       * a session can run on is the one the OAuth claim actually proved.
+       */
+      const platform = String(claim.handleKey || '').split(':')[0] || null;
+      if (declaredPlatform && declaredPlatform !== platform) {
+        return res.status(400).json({
+          error: `This claim is for ${platform}, not ${declaredPlatform}`,
+          reason: 'platform_mismatch',
+        });
+      }
+      // The watch URL is REQUIRED for YouTube: live status is per-video, so
+      // without it the whole session would be unobservable and every playback
+      // would route to review for our blind spot, not theirs.
+      if (platform === 'youtube' && !extractVideoId(watchUrl)) {
+        return res.status(400).json({
+          error: 'YouTube sessions need your watch URL (the youtube.com/watch?v=… link for this stream)',
+        });
+      }
+      const s = store.createAirSession({ claimId, roomId, platform, watchUrl });
       // SELF-CAPTURE STARTS WITH THE SESSION AND ONLY WITH THE SESSION. This
       // is the boundary that makes it a verification capture rather than a
       // recording of someone's broadcast — enforced here, not promised in copy.
@@ -1010,6 +1291,57 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         rotateMs: bountyConfig.codeRotateMs,
         badgeTooSmall: !!s.badgeTooSmall,
         status: s.status,
+      });
+    } catch (e) { fail(res, e); }
+  });
+
+  /**
+   * THE SAME CODE, ADDRESSED BY ROOM — so an overlay URL can be STABLE.
+   *
+   * /air-session/:id/code needs the session id, so the overlay URL changes
+   * every session. In production the one-click OBS flow re-adds the browser
+   * source each time and hides that; anyone who sets the source up BY HAND
+   * gets a dead overlay on their next stream, renders nothing, verifies zero,
+   * and is told their broadcast had no badge on it. That failure happened
+   * three times in one testing session and each time it looked like a capture
+   * bug rather than a stale URL.
+   *
+   * Resolving by ROOM makes the address permanent: /overlay?room=<id> works
+   * for every future session in that room, so the browser source is pasted
+   * once and never touched again.
+   *
+   * Same CAPABILITY tier as the by-id route, and deliberately no more
+   * revealing: it returns the current code for whatever session is OPEN in
+   * that room, which is exactly what the by-id route returns to anyone
+   * holding the id. Rooms are already the unit the overlay is scoped to.
+   */
+  guarded.get('/api/bounty/room/:roomId/code', (req, res) => {
+    try {
+      const roomId = String(req.params.roomId || '');
+      // Newest OPEN session for this room. A room can accumulate closed
+      // sessions across streams; only a live one can be earning.
+      const open = store.listAirSessions
+        ? store.listAirSessions().filter((s) => s.roomId === roomId && s.status === 'OPEN')
+        : [];
+      const s = open.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+      if (!s) {
+        // NOT an error: between streams there is legitimately no session, and
+        // the overlay must render nothing rather than break.
+        return res.json({
+          code: null, expiresAt: null, rotateMs: bountyConfig.codeRotateMs,
+          badgeTooSmall: false, status: 'NO_OPEN_SESSION', airSessionId: null,
+        });
+      }
+      const rec = watermark.currentOrRotate(s.id);
+      res.json({
+        code: rec ? rec.code : null,
+        expiresAt: rec ? rec.expiresAt : null,
+        rotateMs: bountyConfig.codeRotateMs,
+        badgeTooSmall: !!s.badgeTooSmall,
+        status: s.status,
+        // So the overlay can report env/badge against the right session
+        // without the operator ever pasting an id.
+        airSessionId: s.id,
       });
     } catch (e) { fail(res, e); }
   });
@@ -1072,13 +1404,16 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       //               observation and now. We record NOW, the generous end of
       //               that interval, because the cost of a wrong tail flag
       //               falls on someone who did the work.
-      // Nothing is held past the session it was captured for.
+      // SETTLE PENDING FREEZES FIRST. Freezes are scheduled D+ seconds after
+      // each clip ends; stopping the capture before they fire would discard
+      // the very media they are waiting for and leave the session with no
+      // artifacts at all.
+      const settled = await capture.awaitPendingFreezes(req.params.id);
+      if (settled.length) log.log?.(`[capture] settled ${settled.length} pending freeze(s) before closing`);
       capture.stopCapture(req.params.id, { log });
       const patch = { status: 'CLOSED', endedAt: Date.now() };
       if (prev) {
-        const look = prev.platform === 'twitch' ? (twitchApiConfigured() ? getStreamByLogin : null)
-          : prev.platform === 'kick' ? (kickApiConfigured() ? getChannelBySlug : null)
-            : null;
+        const look = liveLookerFor(prev);
         const claim = look ? store.getClaim(prev.claimId) : null;
         const handle = claim ? store.getReservedHandleByKey(claim.handleKey)?.handle : null;
         if (handle) {
@@ -1127,6 +1462,11 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         // clip's window, so passing only the first made every probe past the
         // first clip seek off the end of the file — which is what made
         // multi-clip sessions fail to calibrate on the primary path.
+        // A verify can arrive before the scheduled freezes have fired (the
+        // rehearsal harnesses verify immediately after the last clip). Settle
+        // them first or this reads zero captures and reports SOURCE_UNAVAILABLE
+        // for a session whose evidence is seconds from existing.
+        await capture.awaitPendingFreezes(s.id);
         const captures = capture.captureRecordsFor(s.id, { log });
         const preferCapture = captures.length > 0 && req.body.sourceMode !== 'vod'
           && req.body.sourceMode !== 'live' && req.body.sourceMode !== 'files';
@@ -1140,6 +1480,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
             ...(preferCapture ? { mode: 'capture', captures } : {}),
             mode: preferCapture ? 'capture' : (req.body.sourceMode || 'vod'),
             vodUrl: req.body.vodUrl || null,
+            // YouTube/Rumble verify against the URL the streamer handed the
+            // session — the watch URL IS the live stream and (on YouTube)
+            // the replay.
+            watchUrl: s.watchUrl || null,
             frames: req.body.frames || [],
           }),
           codeChecker: new OcrFrameChecker({ log }),
@@ -1172,7 +1516,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
           // Whether this deployment could have observed the broadcast at all.
           // Distinguishes "no credentials" from "credentials, but no start" —
           // see the flood note in bounty-stream-context.js.
-          observable: s.platform === 'kick' ? kickApiConfigured() : twitchApiConfigured(),
+          // "Could this deployment have observed the broadcast at all?" — the
+          // same per-platform answer the observation path uses, so the two
+          // can never disagree about whether silence was our blind spot.
+          observable: !!liveLookerFor(s),
           playbacks: (v.clipVerdicts || []).filter((c) => c.verified).map((c) => ({
             clipId: c.clipId, playbackId: c.playbackId,
             startedAt: (s.playbackWindows || []).find((w) => w.playbackId === c.playbackId)?.startedAt || 0,
@@ -1240,13 +1587,59 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
           + ` (smallest badge ${v.attempt?.smallestBadgePx ?? '?'}px vs ${bountyConfig.minCodePixelHeight}px floor)`
           + ' — reads landed but marginal; do not let the shortfall look like normal partial verification');
       }
+      if (v.result === 'FAIL_TOO_SMALL') {
+        // WE SAW THE BADGE AND COULD NOT READ IT. That is a stream-setup
+        // problem with an obvious remedy, not a fraud signal, and it must
+        // reach a person: this verdict pays zero by construction
+        // (verifiedClips is 0), so with no cause named it was a silent
+        // denial. It was only ever reachable at all through
+        // belowQualityFloorClips happening to fire alongside it — a second,
+        // independent signal — and for one revision it did not even do that,
+        // because the quality median filtered on `counted` and so excluded
+        // every too-small read from the metric meant to notice them.
+        causes.push(`badge found but below the ${bountyConfig.minCodePixelHeight}px floor on every `
+          + `sampled frame (smallest ${v.attempt?.smallestBadgePx ?? '?'}px) — the overlay is `
+          + 'scaled down in the scene; this is a setup fix, not a failed claim');
+      }
       if (v.result === 'SOURCE_UNAVAILABLE') {
         // "We could not look" — a human decides whether to retry later or
         // verify manually. Never a FAIL, never silently zero.
         causes.push(`source unavailable: ${v.sourceState}${v.sourceDetail ? ` — ${v.sourceDetail}` : ''}`);
       }
+      if (v.result === 'NOT_SHOWN') {
+        // NOT_SHOWN is the old PARTIAL population under a truer name: `hits === 0`
+        // is exactly `!verified`, so every session that lands here would have been
+        // PARTIAL before. That means opening a review on all of them would stop
+        // paying claims that pay today — a settlement change hiding inside a
+        // relabel — and opening none would silently delete the review that the
+        // low-confidence half of this population already gets as AMBIGUOUS.
+        //
+        // So the review follows the OLD boundary exactly: a miss is reviewed when
+        // and only when the evidence around it was already weak enough to be
+        // reviewed. A high-confidence miss reports its verdict and pays exactly
+        // what it paid before; nothing that is reviewed today stops being reviewed.
+        const missed = (v.clipVerdicts || []).filter((c) => (c.samples || 0) > 0 && (c.hits || 0) === 0);
+        const weakReads = v.confidence < bountyConfig.minConfidence;
+        const weakPresence = v.detectionRate < bountyConfig.minDetectionRate;
+        if (weakReads || weakPresence) {
+          // Carries the AMBIGUOUS diagnostic too — naming WHICH half fell short,
+          // because the remedies differ and this branch now intercepts sessions
+          // that used to get that sentence from the AMBIGUOUS branch below.
+          causes.push(`code never observed on ${missed.length} of ${(v.clipVerdicts || []).length} playback(s)`
+            + `${missed.length ? ` (${missed.map((c) => c.playbackId).filter(Boolean).join(', ')})` : ''}`
+            + `, alongside ${weakReads ? `read confidence ${v.confidence} below ${bountyConfig.minConfidence}` : ''}`
+            + `${weakReads && weakPresence ? ' and ' : ''}`
+            + `${weakPresence ? `detection rate ${v.detectionRate} below ${bountyConfig.minDetectionRate}` : ''}`
+            + ' — low read quality means the badge was hard to decode, low detection means it was often absent');
+        }
+      }
       if (v.result === 'AMBIGUOUS') {
-        causes.push(`ambiguous: ${v.verifiedClips} clip(s) matched at confidence ${v.confidence}`);
+        // Name WHICH half fell short. These are two different failures with
+        // two different remedies -- low read quality means the badge was
+        // hard to decode (encoder, bitrate, scaling), low detection rate
+        // means it was often absent from the frames we sampled.
+        causes.push(`ambiguous: ${v.verifiedClips} clip(s) matched at read confidence `
+          + `${v.confidence}, detection rate ${v.detectionRate}`);
       }
       // Corroborating signals that DISAGREE with a verification. Only reasons
       // not already named above — a below-floor read is one finding, not two.
@@ -1261,6 +1654,15 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         if (fresh.includes('UNKNOWN_FRAME_ORIGIN')) {
           causes.push('frames of unknown origin — cannot tell whether this came from the platform or our own capture');
         }
+      }
+      // THE TIER TABLE MUST DECIDE. If the evaluator says "a person looks"
+      // and no branch above named a cause — the tier-3 forced-review knob
+      // (BOUNTY_TIER3_AUTO_VERIFY=0) is exactly this shape: needsReview with
+      // ZERO warnings — the money must still stop. Before this catch-all, that
+      // knob flipped the verdict and the release proceeded anyway, which is a
+      // tier table that talks but decides nothing.
+      if (confidence?.needsReview && v.verifiedClips > 0 && causes.length === 0) {
+        causes.push(`confidence: ${confidence.summary}`);
       }
       if (causes.length && !store.hasOpenReview(s.id)) {
         review = store.createReview({
@@ -1283,10 +1685,26 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         handleKey: key, claimId: claim.id, airSessionId: s.id,
         verifiedClips: v.verifiedClips, verifiedClipSeconds: v.verifiedClipSeconds,
         confidence: v.confidence,
+        detectionRate: v.detectionRate,
+        // The tier is WHY this release was allowed to happen unattended (null
+        // on the fixture path, which has no broadcast to have a tier about).
+        // On the ledger it makes the auto-release auditable; it never scales
+        // the amount — every passing tier pays the same.
+        confidenceTier: confidence?.tier ?? null,
         actor: 'verifier', idempotencyKey: `release:${s.id}`, settlement,
       });
       res.json({
         ok: true, verification: v, release: out, review,
+        // WHICH FRAMES THIS VERDICT READ: 'capture' (our own recording of the
+        // public live HLS) or 'external' (the platform's playlist head or its
+        // archive, read after the fact). Returned because a caller cannot
+        // otherwise tell, and one that guesses will eventually guess wrong:
+        // the pump.fun harness asked for a second opinion with a field this
+        // route does not read (`preferCapture`), got the SAME verification
+        // twice, and captioned the pair "two independent captures of ONE
+        // broadcast". Reporting the origin the server actually used is the
+        // only thing that makes a cross-check claim checkable.
+        frameOrigin,
         // What tier this landed in and WHY. Surfaced to the streamer, not just
         // to admin: "we could not confirm your overlay was on screen, so a
         // person is looking" is a thing someone can act on. Silence is not.

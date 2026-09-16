@@ -34,7 +34,10 @@ export async function loadInitialRooms(): Promise<PublicRoomCard[]> {
 // error: callers render their "no pools" composition.
 export async function loadBountyPools(): Promise<BountyPool[]> {
   try {
-    const res = await fetch(`${backendBase()}/api/bounty/pools`, { cache: 'no-store' })
+    // /program rather than /pools: same rows, but it carries the resolved
+    // profile photos, so the landing board shows the faces the bounty page
+    // shows instead of a column of monograms. Avatars are cached server-side.
+    const res = await fetch(`${backendBase()}/api/bounty/program`, { cache: 'no-store' })
     // 404 is the expected shape of "BOUNTY_CLAIM is off" — not worth a warning.
     if (!res.ok) return []
     const data = (await res.json()) as { pools?: BountyPool[] }

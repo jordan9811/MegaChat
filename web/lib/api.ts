@@ -98,6 +98,10 @@ export type Seat = {
 export type RoomSession = {
   room: Room
   seats: Seat[]
+  /** True only when room.twitchChannel is actually live (server-verified).
+   *  Twitch answers for an offline channel with a gray placeholder frame at
+   *  HTTP 200, so an <img> can never tell — render the preview only on this. */
+  twitchLive: boolean
   joinUrl: string
   overlayUrl: string
 }
@@ -284,6 +288,16 @@ export function setRoomActive(roomId: string, password: string, active: boolean)
   return request<{ room: Room }>(
     `/api/dashboard/rooms/${encodeURIComponent(roomId)}/${active ? 'start' : 'stop'}`,
     { method: 'POST', password },
+  )
+}
+
+// END a room: delete it, clearing live seats (each refunded). Distinct from
+// setRoomActive(false), which only pauses new joins. Owner opens with no
+// password (identity cookie authorizes); a mod passes the room password.
+export function endRoom(roomId: string, password?: string) {
+  return request<{ ok: true; ended: string; seatsCleared: number }>(
+    `/api/dashboard/rooms/${encodeURIComponent(roomId)}`,
+    { method: 'DELETE', password },
   )
 }
 

@@ -133,7 +133,21 @@ export function openWindowFor(airSessionId, { clipId, playbackId, now = Date.now
   const wins = s.playbackWindows || [];
   return (playbackId
     ? wins.find((w) => w.playbackId === playbackId)
-    : [...wins].reverse().find((w) => w.clipId === clipId && w.endsAt > now)) || null;
+    // GRACE AT THE BOUNDARY. `endsAt > now` looks right and quietly fails the
+    // most ordinary case there is: a clip that plays for exactly its declared
+    // duration arrives here with endsAt == now, so the window "already ended"
+    // and no playbackId resolves. The capture is then filed under the clip id
+    // instead of the playback id, and the frame source — which routes a probe
+    // to its capture BY playback id — falls back to nearest-by-time and can
+    // hand calibration the wrong window's file. Observed on Kick: only 3 of 5
+    // windows were measurable.
+    //
+    // The grace is one clip-rotation wide, which cannot collide with a later
+    // airing of the same clip: `reverse()` already takes the most recent, and
+    // a re-airing would have to start inside that window to be confused with
+    // this one — which the playback-bound design forbids outright.
+    : [...wins].reverse().find((w) => w.clipId === clipId
+        && w.endsAt > now - bountyConfig.codeRotateMs)) || null;
 }
 
 export function endClipPlayback(airSessionId, { clipId, playbackId, now = Date.now() } = {}) {

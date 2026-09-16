@@ -134,7 +134,35 @@ export function handleKey(platform, handle) {
   // pool could be reserved by other paths but never pledged against — the
   // one platform whose identifier is an address was silently unbountyable.
   if (!/^[a-zA-Z0-9_.-]{1,48}$/.test(h)) return null;
+  // ...and where the identifier IS an address, validate it as one. base58
+  // excludes 0, O, I and l, which the generic handle pattern above accepts
+  // happily — and a handleKey that is not a real mint is a pool that can be
+  // reserved and never pledged against, the same class of silent dead end the
+  // 40-character cap created.
+  if (p === 'pumpfun' && !normalizePumpFunMint(h)) return null;
   return `${p}:${h}`;
+}
+
+/**
+ * A pump.fun identity is a SOLANA MINT, and it is CASE-SENSITIVE.
+ *
+ * The rule above is right for every other platform and wrong for this one, in
+ * two ways that both silently returned null: a mint is 32-44 base58 characters
+ * so it overruns the 40-char cap, and `.toLowerCase()` does not normalise a
+ * base58 address, it DESTROYS it — `GnBQjwQ…` and `gnbqjwq…` are not the same
+ * coin, and the second is not a valid address at all. reserveHandle lowercased
+ * the stored handle too, so there was no round-trip back to the real mint:
+ * sessionHandle() would have handed pump.fun verification a corrupted address.
+ *
+ * Case-folding usernames is CORRECT and stays — `Foo` and `foo` are one
+ * streamer and must share one pool. Case-folding a mint is the opposite: it
+ * would collide two different coins onto one pool.
+ *
+ * Base58 excludes 0, O, I and l precisely so humans cannot confuse them, which
+ * is why this cannot be relaxed into a general alphanumeric rule.
+ */
+function normalizePumpFunMint(raw) {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw) ? raw : null;
 }
 
 // ── ReservedHandle ──────────────────────────────────────────────────────────
@@ -160,7 +188,9 @@ export function reserveHandle({ platform, handle, reservedBy = null, ttlMs }) {
     key,
     platform: String(platform).toLowerCase(),
     // Same rule as handleKey: a case-sensitive platform keeps its casing, or
-    // the stored handle stops being the thing it identifies.
+    // the stored handle stops being the thing it identifies. This value is what
+    // sessionHandle() hands to the frame sources and the live-status lookers,
+    // and a lowercased base58 address is not a real address.
     handle: CASE_SENSITIVE_PLATFORMS.has(String(platform).trim().toLowerCase())
       ? String(handle).trim().replace(/^@/, '')
       : String(handle).replace(/^@/, '').toLowerCase(),
@@ -327,13 +357,17 @@ export function updateClaim(id, patch) {
 
 // ── AirSession ──────────────────────────────────────────────────────────────
 
-export function createAirSession({ claimId, roomId, platform }) {
+export function createAirSession({ claimId, roomId, platform, watchUrl }) {
   const store = load();
   const rec = {
     id: randomUUID(),
     claimId,
     roomId: roomId || null,
     platform: platform || null,
+    // The streamer's own watch/stream-page URL, handed over at session open.
+    // YouTube cannot be observed without it (live status is per-VIDEO, not
+    // per-channel), and on every platform it beats guessing a channel URL.
+    watchUrl: typeof watchUrl === 'string' ? watchUrl.slice(0, 300) : null,
     // Codes now live INSIDE playback windows — a code with no clip is not a
     // thing that can exist. { clipId, startedAt, endsAt, durationS,
     // belowSamplingFloor, codes: [{ code, clipId, issuedAt, expiresAt }] }
@@ -478,6 +512,9 @@ export function recordVerification({
   airSessionId, checker, evidenceRef, result, confidence, verifiedMinutes,
   verifiedClips = 0, verifiedClipSeconds = 0,
   belowQualityFloorClips = 0, smallestBadgePx = null, samplingDensity = null,
+  detectionRate = null,
+  timelineSkewMs = null, timelineState = null, timelineSpreadMs = null,
+  timelineResidualMs = null, timelineFellBack = null,
 }) {
   const store = load();
   const rec = {
@@ -498,6 +535,30 @@ export function recordVerification({
     belowQualityFloorClips,
     smallestBadgePx,
     samplingDensity,
+    // PRESENCE, by the same rule. detectionRate is not a diagnostic: it is a
+    // release gate in its own right (bounty-escrow.release returns
+    // skipped:'low_detection_rate' on it), so a record that omits it cannot
+    // explain its own outcome. It was dropped here silently the moment it was
+    // added, because this destructure is a fixed whitelist and a field absent
+    // from it fails by simply not appearing.
+    //
+    // RESTORED 2026-08-27 after a SECOND silent drop. This block existed,
+    // committed, proven — and then a LATER commit (b4638ff, whose message
+    // claimed to touch only OPEN-ISSUES.md) deleted it without that diff ever
+    // being reviewed. Caught by a fresh live Kick broadcast that verified PASS
+    // with confidence 0.857 and then showed release(stub): 0 of 25 — a
+    // MEASURED calibration DISAGREEMENT had opened a review, and the
+    // verification record carried none of the timeline evidence that would
+    // explain why to a reviewer, because this exact code was gone again. Gate
+    // coverage (_gate-record-flow.mjs section on round-tripping these fields)
+    // now exists specifically so a future silent drop fails loudly instead of
+    // waiting for someone to notice a payout that didn't happen.
+    detectionRate,
+    timelineSkewMs,
+    timelineState,
+    timelineSpreadMs,
+    timelineResidualMs,
+    timelineFellBack,
     checkedAt: Date.now(),
   };
   store.verifications[rec.id] = rec;

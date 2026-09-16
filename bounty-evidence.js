@@ -151,6 +151,10 @@ export const recordCaptureFrozen = (airSessionId, rec) =>
   append(EVIDENCE_TYPES.CAPTURE_FROZEN, {
     airSessionId, playbackId: rec.playbackId, clipId: rec.clipId,
     file: rec.file, bytes: rec.bytes, segments: rec.segments, spanMs: rec.spanMs,
+    // Wall clock of the window's first segment, when the platform stamped one
+    // (pump.fun does, per segment). This is what lets verification SKIP
+    // timeline calibration: the offset is known, not measured.
+    firstPdtMs: rec.firstPdtMs ?? null,
   });
 
 /**

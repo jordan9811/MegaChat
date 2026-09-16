@@ -21,6 +21,46 @@ the identity layer — either handles stop being reassignable once claimed, or
 the store exposes a resolve-to-identity helper that callers are expected to
 persist instead of the string. Until then, treat "we stored a handle" as a
 review flag anywhere it gates access.
+### STASHED EDITS ON feat/real-broadcast, NOT MINE TO RESTORE (2026-09-15)
+
+Two files had uncommitted edits in this worktree when the prod merge needed a
+clean tree. They are not mine and I did not read them, so they were stashed and
+deliberately NOT restored and NOT dropped — restoring them would have swept
+someone else's in-flight work into a merge commit they never saw.
+
+    stash SHA  f7219f416b99e59e9188b1cf1e9a988fa6e6fc73
+    files      OPEN-ISSUES.md, _rehearsal-rumble.mjs
+    message    "pre-merge: pre-existing edits not mine (2026-09-15-2154)"
+
+Recover with `git stash apply f7219f4` (apply, not pop — the SHA above is the
+only handle on it, and `git stash list` will not show it once the ref expires).
+Note OPEN-ISSUES.md has since been unioned across the merge, so that half will
+likely conflict; `_rehearsal-rumble.mjs` should apply cleanly.
+
+### FRONT-END: THE BOUNTY COMPONENTS LOST THE NERVE SKIN (2026-09-15)
+
+web/components/bounty/{my-pledges,record-flow,streamer-page}.tsx render in the
+pre-Nerve skin. The merge had to choose between prod's 2026-09-04 restyle and
+this branch's contributor-enumeration lockdown, and they are the same files:
+prod's my-pledges still asks for "0x… or the account you pledged with" and
+prod's streamer-page still forwards ?me=<contributor> into it, both of which
+predate the server-side lockdown (bounty-api.ts getMyContributions() now takes
+no arguments precisely because the param was an enumeration hole).
+
+The lockdown won. Reapplying the restyle ON TOP of the locked-down components
+is a front-end task and not a merge decision — the constraint is that the
+contributor must come from the session, never from an input.
+
+### GATE: _gate-bounty-claim.mjs SECTION G IS A FIXED-SLEEP RACE (2026-09-15)
+
+Section G does `spawn(..., { stdio: 'ignore' })` then `await sleep(9000)` with
+no readiness check, so a slow boot reports as a product failure (`0,0,0`) with
+no way to see why. Measured boot on this machine is 2.1s; it failed once and
+passed on re-run — flaky, not broken. `_gate-helpers.mjs` already exports
+`startGateServer`, which polls for readiness with a deadline and pipes stdio,
+and its own comment says "stdio 'ignore' is what hid the original failure. Pipe
+and KEEP it." This gate predates that helper and still uses the pattern the
+helper exists to replace.
 
 # OPEN ISSUES
 
@@ -729,12 +769,11 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   while rendering perfectly; making it a warning sent every session in the gate
   to review, including the clean ones. Revisit only with a signal that
   distinguishes "source stopped" from "not the foreground tab".
-- **P6 — `_gate-phase5-oauth.mjs` IS STALE AND CRASHES. Pre-existing, not from
-  this run.** It drives `#authTwitchBtn` on `/join`, which commit `3a8d55e`
-  ("one front door — Privy does Twitch, so the second sign-in is deleted")
-  removed on purpose. The gate has been asserting against deleted UI since
-  then. Either retarget it at the Privy flow or delete it — a gate that
-  crashes is indistinguishable from a gate nobody runs.
+- **P6 — RESOLVED (2026-08-26).** `_gate-phase5-oauth.mjs` deleted;
+  `_gate-privy-auth.mjs` (16/0) replaces it, gating the real front door's
+  rejection wall (forged/junk/missing tokens mint nothing — asserted by
+  byte-comparing the identity store before and after) and asserting the
+  deleted second sign-in stays deleted.
 - **Still open from the previous run**, unchanged: Kick unproven
   (`KICK_STREAM_KEY`/`KICK_RTMP_URL` needed), `BOUNTY_ADMIN_KEY` unset in
   Railway, capture storage has no global ceiling, fresh-account cost is
@@ -744,6 +783,1237 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
   live stream is still a stub. The four bugs above are exactly the kind that a
   stub hides and a real broadcast finds.
 
+## Loose-ends run (2026-08-26, `feat/loose-ends`)
+
+### Resolved
+- **The fan front door is PROVEN.** `record-flow.tsx` was already built;
+  what was missing was proof it works. `_gate-record-flow.mjs` (23/0) drives
+  real Chrome with the fake camera end to end and asserts on what LANDED — a
+  real 183KB webm in the store, keyed to the pledge's contribution, the pool
+  grown by the amount typed in the browser, pay-at-submit proven by ABSENCE
+  (a discarded take leaves ledger and store byte-identical).
+- **The confidence tiers now DECIDE the money**, not just describe it. Tier 4
+  and the tier-3 forced-review knob block the release (skipped=pending_review);
+  the RELEASE ledger row records confidenceTier for audit. `_gate-capture-
+  hardening` 59 → 67/0.
+- **YouTube + Rumble external capture**, stub-gated (`_gate-yt-rumble` 28/0):
+  frame sources, live-status APIs, verifier profiles, per-platform observation
+  unified through `liveLookerFor()`. Offsets proven by pixel.
+- **X ownership** via Privy's twitter_oauth handle, proven not assumed
+  (`_gate-x-claims` 16/0). SUPPORTED += x; X verifies on self-capture +
+  obs-websocket with no external stream.
+- **pump.fun capture** with PROGRAM-DATE-TIME replacing timeline calibration
+  (`_gate-pumpfun-pdt` 17/0): known offset, zero probe grabs, external
+  PDT-indexed lookup downloading one segment.
+
+### Found and fixed while building (each the "clean number, single case" class)
+- **THE STRUCTURAL ONE: real identity verification was broken for EVERY
+  streamer who signed in through the front door.** Both ownership checks
+  required identity.provider === platform, which no Privy identity satisfies —
+  so with `BOUNTY_IDENTITY_REAL=1`, no real streamer could claim or pass a
+  STREAMER route on ANY platform. Invisible because gates mint legacy
+  provider-shaped identities. Fixed with `platformLoginFor()`.
+- **The rolling buffer refetched evicted segments forever on append-only
+  playlists** — 205 fetches of 40 segments in ten seconds; sliding playlists
+  hid it. Fixed with a high-water mark.
+- **self-capture guessed twitch.tv/<handle> for every non-Kick platform** — an
+  X/YouTube/Rumble session would have recorded the wrong site. Now leads on the
+  session's own watch URL.
+- **Claim re-entry handed the claim back BEFORE verifying the caller** (an auth
+  hole I wrote yesterday) — any signed-in account could re-enter any verified
+  claim. Caught by _gate-x-claims B5. Now verifies first.
+- **The verified-owner claim wall**: a failed session-open left the handle in
+  AWAITING_AIRTIME and re-claiming 409'd with escrow jargon — the claim UI
+  retries claim+session together, so it hit the wall on the second try.
+
+### Still open (unchanged — genuinely need a credential or a broadcast)
+- **KICK still unproven** — `KICK_STREAM_KEY`/`KICK_RTMP_URL` needed.
+- **`BOUNTY_ADMIN_KEY` unset in Railway** — admin routes refuse (503) until set.
+- **Capture storage has no global ceiling** — per-session is bounded, the total
+  is not.
+- **SELF-CAPTURE STILL HAS NOT RUN AGAINST A REAL BROADCAST.** Better gated
+  than ever (pump.fun's PDT path, YouTube's actualStartTime, three real
+  sessions in capture-hardening), all against stubs. The bugs found this week
+  are exactly what a stub hides.
+
+### Attack surface, reasoned through and one hole closed THIS run
+- **The watch URL is unbound from the identity — closed for the platforms that
+  are claimable today.** Broadening `watchUrl` to lead capture (needed for
+  YouTube/pump.fun, which have no channel page) briefly let a TWITCH/KICK
+  streamer point our recorder at a stream other than their own: run the codes
+  on a throwaway broadcast, hand us that URL, never overlay the real audience
+  stream. Fixed — `captureSourceUrl()` pins Twitch/Kick to the channel page
+  derived from the PROVEN handle; the watch URL is honoured only where no such
+  page exists, and those platforms are not claimable yet. Gated in
+  _gate-self-capture (6).
+- **The residual, for whoever builds YouTube/Rumble/pump.fun claims:** their
+  watch URL will be the sole capture address, so binding it to the verified
+  identity is REQUIRED before those claims ship. YouTube's Data API already
+  returns the video's `channelId` — assert it equals the claimant's channel.
+  Rumble's creator URL and pump.fun's mint are the identity by construction
+  (see the ownership filings). Do not ship a claim path that reads a
+  client-supplied capture URL without this check.
+- **What stays closed:** hiding the overlay (self-capture reads the public
+  stream), dumping to nobody (stream-context warmup+tail), shrinking the badge
+  (verify-time pixel floor), forging the OBS "visible" report (it only raises
+  tier 2 vs 3 — both pay the same and both auto-verify, so forging buys
+  nothing), claiming another's handle (OAuth ownership, now including X).
+
+### New, filed precisely
+- **pump.fun ownership is unsolved and NOT built this run.** Streams key to a
+  coin mint, not an account. What it would take: (1) wallet-signature binding —
+  the streamer signs a server nonce with the wallet that created the mint (the
+  creator address is on-chain, verifiable with NO pump.fun cooperation),
+  yielding platformLogins-style proof keyed `pumpfun:<mint>`; buildable today.
+  (2) sanctioned mint→playlist discovery — today reverse-engineered only.
+  (3) a product decision on whether MegaChat wants coin-keyed payouts, since
+  the "handle" a fan pledges to would be a mint address, not a name. Only (1)
+  is engineering.
+- **YouTube/Rumble/pump.fun CLAIMS are not in SUPPORTED** — capture and
+  observation are wired and gated, but ownership verification for these is not
+  built (Google OAuth yields an email not a channel; Rumble's URL-capability
+  and pump.fun's wallet-signature designs are filed above). Capture activates
+  the moment a claim path does.
+- **Rumble's Live Stream API response shape is docs-derived, UNPROVEN on a real
+  wire** — rumble-api.js and its gate both say so. First real creator URL is
+  the test that counts, exactly as Kick was.
+
+## Real-broadcast testing run (2026-08-26, `feat/real-broadcast`)
+
+### THE FINDING: self-capture could never have worked on a real broadcast
+
+Two independent, deterministic bugs, both living entirely in the gap between a
+stub stream and a real encoder. Neither is flaky — both fail every real
+broadcast, every time, on every platform whose only evidence path is
+self-capture (Kick, Rumble, X).
+
+- **Capture never started.** The real order is claim → open air session → go
+  live. At session open the channel is offline, the extractor answers "the
+  channel is not currently live", and the single-shot resolve treated that as
+  permanent. Verification then fell back to a VOD path Kick/Rumble/X do not
+  have. FIXED: retries on a 15m budget, stops early if the session closes.
+- **The freeze kept the wrong 60 seconds.** The buffer holds the newest media
+  the PUBLIC stream has published — D = 12-25s behind wall clock. Freezing when
+  a clip ENDS kept media up to (end − D), so a clip of length L retained only
+  L−D seconds of itself and a clip shorter than the delay retained nothing.
+  Unrecoverable by seeking: the missing tail needs a NEGATIVE skew and the
+  calibration ladder is non-negative by construction. FIXED: freezes are
+  scheduled D + a segment past the clip's end; session close and verification
+  both settle pending freezes first.
+
+**Why 23 green gates missed both:** every stub publishes a segment
+milliseconds after writing it, so D ≈ 0, ladder rung 0 is correct, and
+freezing at playback end happens to keep the right media. `_gate-broadcast-delay.mjs`
+(10/0) is the missing test — a stub where content is stamped when CREATED and
+appears in the playlist D later. **This is the fourth green-test-hiding-a-broken-path
+bug in a month.** The first three were: one corpus code hiding a ~50% decoder
+miss rate; a gate asserting verification RAN rather than FOUND; a stub server
+that was stale. The pattern is now conclusive and structural, not bad luck.
+
+### Rumble: the live-status URL is a BROADCAST credential
+
+Measured on the real wire, not inferred. Our docs-derived field assumptions
+(`livestreams[]`, `is_live`, `watching_now`, `created_on`, `title`) were all
+CORRECT. What the docs never said: every livestream entry carries
+`server_url` + `stream_key` in plaintext, so possession of the creator's API
+URL confers the power to BROADCAST AS that channel. `rumble-api.js`'s note that
+"possession is transferable in a way OAuth is not" was right and far too mild.
+No active leak (the parser copies four scalars by name; the URL never reaches a
+client, config, evidence or persistence) — but it was one debug line away.
+Gated: `_gate-yt-rumble` A4 asserts no `stream_key`/`server_url` in the result
+and exactly four keys.
+
+### Rehearsal harnesses had been dead for weeks
+
+- **Twitch**: `args: ['--prod']` REPLACED the helper default rather than
+  appending, so it spawned `node --prod` with no script (exit 9). Broken since
+  the harness moved onto the shared gate harness. Invisible because rehearsals
+  need a real broadcast and so are not in the gate suite.
+- **Twitch**: sent no credentials at all since the 2026-08-24 route lockdown —
+  pledge 401'd and `undefined` flowed into the literal URL
+  `http://localhost:3306undefined`. Now uses `bountyAuth` + `srv.headers()`,
+  with a `must()` helper that stops at the rejected call.
+- **Both**: hardcoded 3 clips — EXACTLY `calibrationMinPoints`, zero margin,
+  against a documented ~1-junk-probe-in-4 rate. Now `--clips`, default 5.
+  **Two clips can never verify anything** on a platform without PROGRAM-DATE-TIME.
+- **Twitch**: the mid-broadcast live spot-check ran the FULL verify+release
+  route — it could open a review blocking every later release, or consume the
+  session's one `release:<id>` idempotency key on a single clip. Now opt-in.
+
+### Open — needs a credential or a decision, not engineering
+
+- **YouTube: UNTESTED.** Every `YOUTUBE_*` credential was blank. Not stubbed
+  around, not guessed — skipped and reported, per the brief.
+- **pump.fun: CANNOT BROADCAST.** No ingest/RTMP URL was supplied and the repo
+  contains zero pump.fun ingest references. A stream is addressed by coin mint,
+  so streaming requires launching a coin — a Solana transaction. The wallet
+  supplied is a PUBLIC address; the ownership-signature path needs a PRIVATE
+  key that only the human can use, in their own wallet UI. Both correctly out
+  of scope for an agent.
+- **Rumble ingest mismatch, unresolved.** The supplied `RUMBLE_RTMP_URL`
+  (`rtmp://rtmp.rumble.com/live`) does not match what Rumble's own API returns
+  for the live stream (`rtmp://ls__.live.rmbl.ws/slot-__`). Pushing to the
+  wrong host is the "streams nowhere, silently" failure. The API's values are
+  authoritative and per-livestream; a Rumble harness should read them from the
+  API rather than env.
+- **No Rumble rehearsal harness exists.** Adapting the Kick one needs: plain
+  RTMP not RTMPS, live status from the creator URL not an OAuth API, and no
+  slug — the identity is a username (`type: "user"`, `channel_id: null`).
+- **`BOUNTY_ADMIN_KEY` still unset in Railway** — admin routes answer 503.
+- **Capture storage still has no global ceiling.**
+
+### Hazard: the git branch moved mid-run
+
+The working tree was switched to `feat/ui-overhaul @ 24c1996` by something
+outside this run, mid-audit. That branch is missing ~710 lines of verification
+work, and a broadcast nearly went out on pre-T3 code. If more than one session
+or person works this repo, pin the SHA at the top of any broadcast script and
+abort on mismatch.
+
+### THE REAL BROADCAST, and the money bug it found
+
+`jordandotfun` on Twitch, 12 minutes, 5 clips, real codes, real encoder.
+Verdict: **AMBIGUOUS, 4 of 5 clips verified, confidence 0.484**, badge heights
+`[28, 28, 28, 28, 27.7, 28, 28, 28, 28, 4.1]`. **Release: 0 of 25.**
+
+Two things came out of it.
+
+**1. External capture WORKS on a real encoder.** 4 of 5 clips read back off the
+platform's own VOD, 9 of 10 samples at a clean 28px — exactly the height the
+design predicts (DOT=4 → 28px). No detection gap versus the synthetic corpus at
+this resolution: the corpus claims ~100% at 1080p/720p and the real encoder
+delivered legible badges on every sample but one. The one 4.1px outlier is a
+single frame sampled mid-transition, not a systemic shortfall.
+
+**2. P0 — CONFIDENCE IS AVERAGED OVER MISSES, SO IT PAYS AN HONEST STREAMER
+ZERO.** `avgConfidence` is the mean of `confidence` across EVERY sampled frame
+(`bounty-verifier.js` — `checks.push(sample)` runs whether or not `res.found`),
+and a frame that found no code contributes ~0. Codes rotate every 4s and
+samples land where they land, so roughly half of any real sample set finds
+nothing — that is normal sampling, not evidence against anyone. The mean lands
+near 0.5, under `minConfidence` 0.6, so `escrow.release` returns
+`skipped: 'low_confidence'` and the run pays **nothing**.
+
+That is exactly the outcome the config comments call the worst failure this
+system has: *"underpaying someone who did the work."* It happened on the very
+first real broadcast, at full badge legibility, with the streamer having done
+everything right.
+
+The measurement conflates two different things. `hitRate` (4/5 = 0.8) already
+answers "how many clips did we cover". Confidence should answer "how sure are
+we of the reads we actually got" — i.e. the mean over FOUND samples, or the
+per-clip confidence of verified clips only. A miss is a sampling artifact.
+**Not fixed in this run** — it is a money-path change and deserves its own
+gate proving a miss-heavy-but-legible sample set still pays.
+
+**3. Minor: captures key on clipId, not playbackId, when a clip runs its full
+declared duration.** The files landed as `<session>__REHEARSAL1.ts` rather than
+`__REHEARSAL1#<nonce>`. `openWindowFor` filters `w.endsAt > now`, and a clip
+that runs exactly its declared `durationS` has `endsAt ≈ now` at the end call,
+so the window does not resolve and `playbackId` is null. Capture→playback
+routing then falls back to nearest-by-time instead of exact. Degrades
+precision, not correctness.
+
+### KICK'S FIRST REAL BROADCAST — and self-capture measurably underperforms
+
+`jordandotfun` on Kick, 10 minutes, 5 clips. **LIVE confirmed by Kick's own API**
+(started 19:28:39Z) — the first time Kick has ever met a real broadcast.
+All 5 self-captures recorded. Stream context OK.
+
+**Verdict: AMBIGUOUS, 1 of 5 clips verified, confidence 0.234.** Badge heights
+`[28,28,28,4.1,28,28,0,28,28,28,28,4.1,28]` — 10 of 13 at a clean 28px.
+
+**The badge was legible and the clips still did not verify.** That rules out
+legibility and points squarely at the seek: self-capture's wall-clock→media
+mapping is an ESTIMATE (`frozenAt` minus the code's issue time, corrected by a
+searched skew), whereas the Twitch VOD path anchors on the archive's own start
+time. Same broadcast quality, same overlay, same decoder:
+
+| path | platform | clips verified |
+|---|---|---|
+| external capture (VOD) | Twitch | **4 / 5** |
+| self-capture | Kick | **1 / 5** |
+
+That gap IS the finding. Tonight's two fixes made self-capture *work at all* —
+it records, it freezes the right window, the badge is in the file. They did not
+make it *reliable*. Self-capture is the only evidence path Kick, Rumble and X
+have, and at 1/5 it is not good enough to pay people on.
+
+**P0 — `BOUNTY_CAPTURE_FREEZE_DELAY_MS` defaults to 51s against a 60s window.**
+Derived as `liveBroadcastDelayMs (45s, deliberately generous) + 6s`, but the
+freeze delay is not the acceptance window and should not inherit its slack.
+At 51s the buffer holds `[end−9s, end+51s]`: for a 30s clip at a real 12-25s
+delay that loses the clip's first several seconds, leaving fewer code
+opportunities for calibration to land on. Should be `max observed delay + one
+segment` ≈ 30s, which holds `[end−30s, end+30s]` and covers a 30s clip whole.
+This is the most likely single cause of 1/5 vs 4/5 and is a one-line change —
+but it needs a delay-aware gate run to prove, not a guess.
+
+### Kick DOES have VODs — our wording was misleading, and it matters
+
+Corrected on the operator's push-back, and they were right. Kick publishes VODs
+in its UI. What does not exist is a way for us to FIND them:
+
+- `GET api.kick.com/public/v1/videos` → **404, the endpoint does not exist**.
+- `yt-dlp https://kick.com/<handle>` resolves as `kick:live` ONLY and 404s the
+  moment the channel is offline.
+- yt-dlp DOES ship a `kick:vod` extractor — it just needs a direct
+  `kick.com/video/<id>` URL.
+
+So the accurate statement is "no VOD **discovery**", not "no VODs", and several
+comments and the platform profile read as the latter. **This is actionable:**
+`KickFrameSource` already accepts `vodUrl` + `vodStartMs`, and the `watchUrl`
+plumbing added this run is exactly the channel for it. If a Kick streamer
+supplies their VOD link, Kick could verify on the archive path that scored 4/5
+on Twitch instead of the self-capture path that scored 1/5. Worth doing before
+any more self-capture tuning.
+
+### The obs-websocket path is still untested against real OBS
+
+Tonight could not test it and no unattended harness can: the harnesses broadcast
+by piping the overlay through ffmpeg, so there is no OBS process to hold a
+websocket connection. It remains gated against a mock in six states only.
+
+Testing it needs a human: OBS running with the overlay as a browser source,
+obs-websocket enabled, the operator going live themselves, and the harness run
+with `--skip-push`. Lowest-stakes of the open gaps — the tier design makes
+obs-websocket corroboration worth nothing on its own (tier 2 and tier 3 pay
+identically), so a bug there cannot cost anyone money.
+
+### Rumble: ingest PROVEN, playback URL is the blocker
+
+Tested against the real service on 2026-08-26. Two corrections to what was
+filed earlier tonight.
+
+**1. The `.env` ingest values are STALE and would have failed silently.**
+Supplied: `rtmp://rtmp.rumble.com/live` + `r-4qdjv0-rwk0-jkyn-625e6d`.
+Rumble's own API returns `rtmp://ls18.live.rmbl.ws/slot-23` + a 14-char key.
+Pushing a test pattern to the API's pair took the channel LIVE (`is_live: true`
+confirmed by the same API) — so ingest works, and the harness must read
+`server_url`/`stream_key` from the live-status response rather than from env.
+Rumble's per-livestream slots are assigned dynamically; an env-pinned ingest is
+wrong by construction, not merely out of date.
+
+**2. THE ACTUAL BLOCKER: the playback URL is not discoverable.** Self-capture
+needs a URL to READ the public stream from, and Rumble exposes none:
+- the live-status API carries `id`, `server_url`, `stream_key` — publishing
+  credentials only, no watch/playback URL field anywhere in the response;
+- `rumble.com/user/<name>` resolves through yt-dlp's `RumbleChannel` extractor
+  as a PLAYLIST of past videos ("Downloading 0 items"), never the live stream —
+  and it exits 0 with EMPTY stdout, so `resolveMediaUrl` would classify it as
+  `EXTRACTION_FAILED` rather than `CHANNEL_OFFLINE`, missing the retry-until-live
+  path added for Kick. A second distinct failure shape for the same situation.
+- `rumble.com/embed/v<id>/` DOES exist (HTTP 200, derivable from the API's `id`
+  as `v` + id), but yt-dlp's `RumbleEmbed` extractor gets **403 Forbidden** on
+  its metadata endpoint, with and without a browser User-Agent, both while the
+  channel was live and while offline.
+
+So Rumble is NOT blocked on credentials — it is blocked on obtaining a readable
+playback URL. The operator can supply one trivially (it is the browser address
+bar while live); automated discovery needs either a working embed extraction or
+a Rumble API that returns a watch URL, and neither exists today.
+
+**Slot consumed.** Pushing to the livestream ended it: the API now returns zero
+livestreams. A fresh one must be created in Rumble Studio before another
+attempt, which also means the ingest pair rotates again — reinforcing that it
+must be read live, never pinned.
+
+## Real broadcast testing — multi-platform (2026-08-26, `feat/real-broadcast`)
+
+### The finding of the night
+
+Every bug below was invisible to the whole gate suite for the same reason:
+**every HLS stub publishes a segment the instant it writes it**, so the
+broadcast delay D between encoder and public playlist is ~0. Anything whose
+behaviour depends on D passes green. Third occurrence this month.
+`_gate-broadcast-delay.mjs` exists specifically to stamp content at CREATE time
+and reveal it D later — extend that one rather than trusting an instant-publish
+stub.
+
+Measured, real encoders, 720p: corpus 100%, Twitch 4/5, Kick 5/5 (was 0/5).
+
+### Resolved this run (with evidence)
+
+- **PROGRAM-DATE-TIME was treated as a calibration BYPASS, not an anchor.**
+  PDT marks when a segment was PACKAGED; the overlay rendered its code one D
+  earlier. `wallClockSkew()` returned `{skewMs: 0, "offset known, not
+  measured"}` and skipped calibration, so D was never measured. Cost three Kick
+  broadcasts (1/5, 0/5, 0/5) with the badge legible at 28px throughout. Also
+  the code asserted "Twitch and Kick stamp none" — **Kick stamps every
+  segment**, which is why two fixes aimed at a branch Kick never executes. PDT
+  is now the seek anchor and calibration measures D on top. 0/5 → 5/5.
+- **`confidence` was read quality TIMES presence, silently.** `bounty-ocr.js`
+  returns a glyph-match margin on a read and `0.2 x` a junk-ring decode on a
+  miss, so the mean over all samples was identically `q*d + m*(1-d)`. Run #4:
+  `q 0.8430, m 0.2000, d 0.6154 -> 0.5957`, reported 0.596 against a 0.6 bar.
+  An honest 5/5 broadcast released NOTHING. Split into `confidence` (read
+  quality) and `detectionRate` (presence), both gated — in the verdict ladder
+  and again in escrow, because splitting without the second gate would help a
+  cheater. `_gate-confidence-split.mjs` (17/0) runs REAL misses through the
+  mean, which no fixture had ever done (they are all-found or all-miss).
+- **`KickFrameSource` never set `calibratable`** — undefined is falsy, so a
+  Kick VOD skipped calibration and used the 16s constant.
+- **Kick and Rumble discarded the measured skew** — both calibratable, both
+  handed the result to a `getFrames` with no `opts` parameter. Kick's VOD
+  branch seeked by a raw `(ts - vodStartMs)` with no skew term at all.
+- **Kick never marked live frames `live`**, so live grabs were judged against
+  the tight post-calibration residual instead of the broadcast delay.
+- **`recordVerification` was a fixed whitelist that ate six fields** — the five
+  `timeline*` values and `detectionRate`. The latter is a RELEASE GATE, so a
+  verification record was gating a payout on a number it did not store.
+- **`openWindowFor` filtered `endsAt > now`**, so a clip playing for exactly
+  its declared duration resolved no playbackId at the boundary and its capture
+  was filed under the clip id. Only 3 of 5 Kick windows were measurable.
+- **Rumble's live-status response embeds the channel's INGEST CREDENTIALS**
+  (`server_url`, `stream_key`) in plaintext. Stripped before the value leaves
+  `rumble-api.js`; the catch clause reports `e?.name`, never `e.message`,
+  because a fetch failure can embed the URL — which IS the credential.
+
+### New / still open
+
+- **R1. The calibration residual exceeds the code validity.** Run #4 measured
+  `residualMs 6521 = validity/2 (2500) + spread (2521) + margin (1500)` against
+  `codeValidityMs 5000`. Consequence: two samples per session land outside
+  their clip (in the previous playback's tail, reading a legible badge carrying
+  the NEIGHBOURING window's code) and are charged to the streamer's detection
+  rate — 8/13 instead of 10/13. **The reducible term is the spread.**
+  `sampleInstantsForWindow` now shifts instants clear of the window edge by the
+  residual, but this does NOT fix it and was not claimed to: with the residual
+  above the validity there is nowhere safe to shift to. HIGHEST-VALUE remaining
+  work on the verification path.
+
+  **Possible reframing, n=1, do not act on it without more samples.** The
+  spread (2521) came out almost exactly `validity/2` (2500). If that holds
+  across broadcasts it means the measured points already agree to within ONE
+  quantization unit — the spread would be at its floor rather than loose, and
+  the residual would be structurally
+
+      validity/2 + validity/2 + margin  ~=  codeValidityMs + margin
+
+  i.e. GUARANTEED to exceed codeValidityMs, for every session, by construction.
+  That would make "tighten the calibration" the wrong lever entirely; the real
+  ones would be `codeValidityMs` itself (shorter codes are harder to catch, so
+  this trades against detection) or giving each probe sub-code resolution so a
+  point's estimate is no longer quantized to its whole validity window.
+  ONE sample is not evidence for a structural claim — collect
+  `timelineSpreadMs` across several real broadcasts first. It is recorded on
+  every verification now.
+- **R2. `minDetectionRate` is 0.55 on a 0.05 margin either side.** It sits
+  between a knowingly-broken 4s-residual fixture (0.50) and a broadcast proven
+  honest (0.6154) — only 0.115 apart, because of R1. Raise it only from a
+  measured distribution across several real broadcasts; `_gate-run-b-ocr.mjs`
+  is the right source. Erring HIGH is correct: too high sends an honest session
+  to review (recoverable), too low silently auto-pays (not).
+- **R3. `validity/2` may be over-conservative for a MEDIAN of N points.**
+  Independent quantization errors shrink with sqrt(N). Deliberately NOT changed
+  — altering a payment-critical tolerance on statistical reasoning without
+  measurement is what produced three of this run's bugs. Now measurable:
+  `timelineSpreadMs` and `timelineResidualMs` persist on every record.
+- **R4a. pump.fun ingest is a LIVEKIT INGRESS and appears SESSION-SCOPED.**
+  The URL is `rtmps://pump-prod-<id>.rtmp.livekit.cloud/x` + key. Pushing to it
+  after the operator's own stream had ended failed at the TLS layer —
+  `IO error: -10053` (WSAECONNABORTED) and *"The specified session has been
+  invalidated for some reason."* The same credentials had worked minutes
+  earlier while the operator was live. NOT PROVEN, but the leading explanation
+  is that pump.fun provisions a LiveKit ingress when the creator clicks "go
+  live" and tears it down when the stream ends — unlike Twitch and Kick, where
+  a stream key is persistent and reusable indefinitely. If so, **unattended
+  broadcasting is not possible on pump.fun**: someone must mint an ingress and
+  the run has to happen inside that window, or `--skip-push` must be used with
+  the operator live. Confirm by capturing a fresh key immediately before a run.
+- **R4b. pump.fun reports `isLive: true` for a stream publishing NOTHING.**
+  RESOLVED in code, filed here because it is a platform fact worth knowing.
+  The aborted push above still flipped `isLive` true within seconds, with no
+  media directory and no derivable playlist — the flag tracks INGRESS STATE,
+  not content. `liveLookerFor` now narrows it to `live && !!playlistUrl` at the
+  single point that knows the quirk, because `captureBroadcastObservation`
+  records the flag as viewer-sample evidence and stream context gates payout.
+  Gate E4 covers both directions.
+- **R4. pump.fun is blocked on ingest only.** Discovery is SOLVED —
+  `livestream-api.pump.fun/livestream?mintId=<mint>` returns live status,
+  viewers, start, creator wallet and the derivable HLS master, unauthenticated.
+  The endpoint is READ-ONLY and carries no ingest fields, so `PUMPFUN_RTMP_URL`
+  and the coin mint must come from the operator. `PUMPFUN_STREAM_KEY` and
+  `PUMPFUN_WALLET_PUBLIC_ADDRESS` are already set. `_rehearsal-pumpfun.mjs` is
+  written and is the only harness that tests BOTH capture paths on one
+  broadcast. Ownership: the API's `creatorAddress` is half the check for free;
+  proving CONTROL still needs a signature over our nonce.
+- **R5. Rumble needs a new livestream slot** (the old one was consumed) plus
+  the watch URL from the address bar while live. Ingest itself is PROVEN — the
+  API's credentials worked and the channel went live.
+- **R6. Rumble's VOD skew has never been checked against a real VOD.** The
+  constant is derived from Twitch. The calibrated value can now override it.
+- **R7. YouTube untested** — 24-hour livestream activation wait.
+- **R8. obs-websocket untested against real OBS** — needs the operator present
+  with OBS running and the harness run with `--skip-push`.
+
+### Found by a full-suite sweep, NOT caused by this run
+
+- **T1. `_gate-theme` is RED: dark mode renders a WHITE background.**
+  `GATE FAIL (3)` — `dark/landing`, `dark/dashboard` and `dark/join` all
+  measure background luminance 1.00, i.e. pure white, where dark is expected.
+  Light mode passes and text contrast passes; it is specifically the dark
+  background that is not applying.
+  NOT FROM THIS RUN: no CSS or theme file changed in the 18 hours of this
+  session, and only one commit in the whole reviewed range touched `web/` at
+  all (`0e6071b`, earlier work). The gate was last edited by `5202c93`
+  ("part 4: light mode fix"), so dark mode broke sometime after that and
+  nothing surfaced it.
+  Clearing `web/.next` (the known stale-Turbopack-cache remedy for this repo)
+  does NOT fix it, so it is not a cache artifact. Left unfixed deliberately —
+  it is a front-end bug well outside a broadcast-testing run, and it deserves
+  its own look rather than a late-night guess at someone else's CSS.
+
+- **T2. The gate suite has no single runnable entry point, and that hid T1.**
+  Gates report in at least four different formats — `RESULT: N pass, M fail`,
+  a bare `GATE PASS`, `GATE FAIL (n)`, `PART B GATE FAILED (n)`, and
+  `Phase 2 token gate PASSED` — so any grep-based sweep silently misclassifies
+  a large fraction. A sweep of all 55 gates classified only 28. Several others
+  crashed with `ECONNRESET` / `fetch failed` purely from running server-starting
+  gates back to back, and pass individually (`_gate-self-capture` 22/0,
+  `_gate-run-b-pipeline` 12/0 on retry), so a sweep also needs isolation or
+  retry to be trustworthy. Until both are fixed, "the suite is green" is a
+  claim nobody can actually check in one command.
+
+### From an adversarial review of this run's payment path (18 agents, 14 findings, 11 survived refutation)
+
+FIXED in this run: the too-small-badge silent zero (quality median filtered on
+`counted`, which excluded the very samples it exists to notice), the
+client-supplied air-session `platform` spoof, the pump.fun PDT bypass left on
+`PumpFunFrameSource` after it was deleted from `CaptureFrameSource`, the
+`getStreamByMint(mint, this.log)` options-object bug, and two gate assertions
+that passed for the wrong reason.
+
+STILL OPEN:
+
+- **A1. X is claimable, but its self-capture address is still client-supplied
+  and unbound to the X identity.** (high) `captureSourceUrl` pins the URL only
+  for the literal strings 'twitch' and 'kick'; every other platform falls
+  through to `session.watchUrl`. Deriving `platform` from the claim (done this
+  run) closes the case where a twitch claimant DECLARES another platform, but
+  not the case where an X claimant supplies a watchUrl pointing at a stream
+  they control. Either pin X to a handle-derived URL the way twitch and kick
+  are, or require an ownership proof on the URL itself before capture trusts
+  it. The comment above `captureSourceUrl` still says these platforms "are not
+  claimable yet" — that sentence is now false and is load-bearing.
+
+- **A2. One degraded Privy fetch permanently deletes `platformLogins`.** (high)
+  `privy-identity.js:191`. A single failed or partial account fetch overwrites
+  the stored logins, and those are a streamer's ONLY ownership proof on every
+  STREAMER-tier route — so a transient upstream problem silently revokes access
+  to their own claim, and nothing restores it. Relates to the known
+  SDK-drops-newer-accounts behaviour: the merge must be additive, and an empty
+  or failed fetch must never be written.
+
+- **A3. The `recordVerification` whitelist widening has no test.** (medium)
+  `detectionRate` and the five `timeline*` fields are persisted now, and
+  `detectionRate` is a release gate, but nothing asserts they survive the
+  round-trip. They were silently dropped for months precisely because that
+  destructure is a fixed whitelist with no coverage. Verified by hand against a
+  real session this run; that is not the same as a gate.
+
+- **A4. Gate E4 tests the gate's own copy of the pump.fun live-narrowing.**
+  (low) It re-implements `live && !!playlistUrl` inline and asserts against the
+  re-implementation, so it would still pass if the shipped narrowing were
+  reverted. Same flaw as the first version of the section-F property test,
+  which was fixed by exporting the real function — do the same here.
+
+METHOD NOTE, worth more than any single finding: three of the 14 were REFUTED
+on inspection, including one whose failure scenario was inverted (the fallback
+constant it complained about was protecting that path, not breaking it). The
+refutation pass is what made the other eleven trustworthy. A review that only
+generates findings generates confident wrong ones.
+
+### From the "golden loop" retest (2026-08-27), Kick run #5
+
+FIXED: the field-loss regression on `recordVerification` came back (see the
+commit "bounty-store: the field-loss regression came back, caught by a live
+Kick retest"). Now backed by a round-trip gate (`_gate-confidence-split.mjs`
+section H) that was proven, not assumed, to catch it — run against the broken
+code it fails 5/5.
+
+NEW EVIDENCE for R1 (calibration residual near codeValidityMs), not a new
+issue: this run's calibration came back DISAGREEMENT, not MEASURED. Five
+estimates: 6.9s, 15.3s, 19.4s, 6.9s, 15.4s. The median clusters {15.3, 15.4}
+as inliers (2 points, need 3); {6.9, 6.9} sit ~8.4s away — almost exactly TWO
+code rotations (`codeRotateMs` x 2 = 8.0s), the signature of a probe decoding
+a neighbouring rotation's code near a boundary. 19.4s missed the inlier
+tolerance by 100ms. This is the majority-cluster safety mechanism working
+AS DESIGNED — it correctly refused to call the timeline measured and opened a
+review rather than risk a bad payout — but it is the SECOND real broadcast
+(after run #4's tight residual margin) suggesting Kick calibration sits close
+to a reliability boundary. Worth tracking as an operational question (how
+often does an honest Kick streamer get routed to manual review?) — not a
+correctness bug, and not something to guess a fix for on two data points.
+
+Otherwise CONFIRMED GOOD on a fresh broadcast, against every payment-path
+commit made tonight after run #4: result PASS, verifiedClips 5/5, confidence
+0.857 (matches the 0.843 offline replay within real-capture variance),
+self-capture froze 5/5 windows.
+
+### From the "golden loop" retest, Twitch run #2 (2026-08-27) -- NOT GOLDEN YET
+
+A fresh Twitch broadcast (VOD 2857568019), the first real test of the
+confidence/detectionRate split and sample clamp on this platform: **FAIL**,
+verifiedClips 0, confidence 0. Nine of ten samples read a real, legible 28px
+badge that matched no expected code -- the signature of a genuine seek
+problem, not noise. Diagnosed by pulling real frames off the actual VOD at a
+spread of offsets and reading them directly (fine-grained sweeps, then
+visually confirmed the rendered badge text), not by theorizing.
+
+**T5a. FIXED — the clamp pulled past the real rotation floor.** See the commit
+"verifier: the sample clamp pulled past the real rotation floor, not just the
+window edge". `sampleInstantsForWindow` was pulling window-edge samples up to
+`codeValidityMs` (5000ms, OCR acceptance tolerance) into a code, but
+`currentOrRotate()` only guarantees a code stays current for `codeRotateMs`
+(4000ms) -- a full second tighter. Fixed: the pull is now capped at
+`codeRotateMs - calibrationResidualMarginMs`; `codeValidityMs` still governs
+final acceptance. Validated against the real VOD offline: every FIRST code of
+a window now decodes correctly (3/3, was 0/3).
+
+**T5b. NOT FIXED — every SECOND code of a window still misses (3/3).** This is
+NOT the same bug and is NOT a targeting-margin problem: no window-edge pulling
+even occurs for these samples (mid-code already sits comfortably inside the
+window, untouched by any clamp), yet the decode still misses. Concrete
+evidence, window1 of this run:
+
+  - c1 (76-4KVR, issuedAt=T+0, nominal validity [T+0, T+5000])
+  - c2 (76-6END, issuedAt=T+18986, nominal validity [T+18986, T+23986])
+
+Sweeping the REAL VOD (skewMs=25480, independently measured and confirmed
+correct for this window by 3 cleanly-matching calibration probes) shows:
+
+  - 76-4KVR genuinely on screen from  ~T+0    to ~T+3750..4000  (close to
+    codeRotateMs, consistent with T5a's fix)
+  - 76-6END genuinely on screen from ~T+4000  to at least T+18000 (14+
+    real seconds -- HELD ON SCREEN LONG PAST its own 5000ms nominal
+    validity, starting nearly 15 SECONDS BEFORE its own recorded issuedAt)
+  - the NEXT window's own first code is already showing by T+20000, roughly
+    10 seconds before that window's recorded startedAt
+
+So the badge visually rotates to c2 almost immediately after c1's real
+window closes (~T+4000), but the SERVER does not record c2 as issued until
+T+18986 -- a ~15-second gap between when a code is REALLY on screen and when
+its `issuedAt` timestamp says it was issued. c2's own nominal midpoint
+(T+21486) lands in territory the real broadcast has ALREADY moved past (the
+next window's own content).
+
+The likely mechanism, not yet confirmed by reading the actual code: the
+overlay's own client-side polling of `currentOrRotate()` may not be
+frequent, so once a code rotates client-side, the SERVER-recorded `issuedAt`
+(stamped when the server call happens to land) can trail the true on-screen
+change by however long the client waited to poll again. `codeRotateMs` is a
+floor on how SOON the server will hand back a fresh code, not a promise
+about when the overlay actually asks. **This was not chased further tonight
+because the actual mechanism lives in the overlay's own client-side
+rendering/polling code, which was not read this session** -- confirming it
+needs reading that code, not another guess at the server-side timing
+constants.
+
+**T5c. Kick likely carries the same T5b defect, silently.** Kick's own
+run #5 (same night) measured detectionRate 0.615 (8/13, 5 misses) -- a
+similar-shaped loss to what T5b would produce -- but still verified 5/5
+because Kick's windows sample enough codes that even a lost second-code
+miss per window still leaves `clipHits > 0` from the first code alone.
+Worth re-examining once T5b's real cause is understood: the loss may be
+larger than it looks precisely because it never causes an outright
+platform failure to force it into view.
+
+**Not golden**: Twitch verification, on the code as it stands, will still
+fail or under-detect on any window whose SECOND-code sample is the one that
+mattered. T5a is shipped, tested, and validated for real; T5b is real,
+evidenced, and open.
+
+### T6. pump.fun's "hollow live" fix is INSUFFICIENT — it publishes a real placeholder video (2026-08-29)
+
+R4b/E4 narrowed pump.fun's live flag to `live && !!playlistUrl`, on the finding
+that `isLive` flips true on ingress creation before any frame arrives. MEASURED
+TODAY: that is not enough. With an ingress open and NO encoder connected,
+pump.fun serves a **complete, reachable HLS playlist carrying a real video** —
+its own placeholder screen (the OBS logo over a blue gradient with a
+camera-disabled icon). So:
+
+    live: true          <- ingress open
+    playlistUrl: set    <- real playlist
+    playlist reachable  <- real segments, real frames
+    viewerCount: 2      <- and it accrues viewers
+
+...for a stream broadcasting nothing but a stock image. Every signal we
+currently gate on says "genuinely broadcasting". Confirmed by pulling a live
+frame and LOOKING at it, which is the only check that caught it.
+
+CONSEQUENCE: a session can open against a placeholder, air its whole clip
+schedule, self-capture placeholder frames, and verify 0/5 — indistinguishable
+from a capture bug. It cost a real streamer's session today: the operator had
+gone live in the pump.fun studio without pointing OBS at the ingest, every
+API signal read healthy, and I asserted "your OBS settings are already
+correct" on the strength of those signals. They were not.
+
+WHY THIS IS HARD TO FIX PROPERLY, and why nothing was changed today: there is
+no API field distinguishing "placeholder" from "real content". The honest
+signals are all in the pixels — a static frame that never changes, or a
+literal match against pump.fun's placeholder image. Both are heuristics, and a
+heuristic that wrongly decides a real broadcast is a placeholder would refuse
+to pay someone who did the work, which is the failure mode this project
+weights heaviest. Options worth considering, none implemented:
+
+  - Sample two frames a few seconds apart at session open; if they are
+    byte-identical (or near-identical by a cheap perceptual hash), the stream
+    is almost certainly static. Cheap, but a genuinely static scene (a
+    "starting soon" card) would trip it — so it should ROUTE TO REVIEW, never
+    auto-fail.
+  - Keep a reference hash of the known placeholder and match against it.
+    Precise, but brittle: pump.fun changes the asset and it silently stops
+    working, which is the same class of failure as the PDT assumption.
+  - Do nothing at session open, and instead make the 0/5 REPORT
+    distinguishable: if no sampled frame in the entire session ever contained
+    a badge AND the frames are static, say "your stream appears to be showing
+    a placeholder" rather than "verification failed". Cheapest, and it fails
+    in the safe direction.
+
+The last option is probably right, and it belongs with T5b (both are about a
+0/5 that does not explain itself). Filed, not guessed at.
+
+### Spend
+
+Zero LiveKit minutes (neither rehearsal harness references LiveKit or sets
+`LIVEKIT_URL`). $0 external — Twitch/Kick/Rumble ingest is free and no pump.fun
+test coin was created.
+
+### T7. The setup helper's expiry is indistinguishable from a broken overlay (2026-08-29)
+
+`_setup-overlay.mjs --minutes N` exits when its window closes, taking its
+server with it. The overlay then renders nothing — which is EXACTLY what a
+misconfigured browser source looks like. During pump.fun setup the operator
+refreshed OBS, saw the badge appear, and reported it visible; by the time the
+stream was checked the helper had hit its 35-minute limit and died, so the
+badge had vanished and the evidence pointed at an OBS problem that did not
+exist. Roughly twenty minutes went into diagnosing a working configuration.
+
+Cheap fixes, none implemented yet:
+  - print a loud countdown ("helper stops in 5 minutes") and a final line
+    saying the badge is ABOUT to disappear and why
+  - on exit, leave the server up for a grace period, or exit only on an
+    explicit interrupt rather than a timer
+  - have the overlay itself render a visible "server unreachable" state
+    instead of silently blanking, so a dead backend never looks like a
+    misconfigured source
+
+The third is the real fix and applies to production too: a streamer whose
+MegaChat backend becomes unreachable mid-broadcast currently sees the badge
+quietly disappear, with no way to tell that from having set the overlay up
+wrong. Related to T5b and T6 — all three are cases where a zero, a blank, or
+a silence fails to say WHICH failure it is.
+
+### pump.fun PROVEN on a real broadcast (2026-08-29) — with three caveats
+
+First successful pump.fun run, after six setup failures (none of them in the
+video pipeline). Full path confirmed end to end: overlay -> OBS -> pump.fun
+ingest -> public HLS -> our capture -> OCR decode -> escrow release.
+
+    canary        FOUND CF-UE3G at 28px, broadcast delay ~10s
+    result        PARTIAL
+    verifiedClips 7
+    confidence    0.937   (highest of any platform: Twitch 4/5, Kick 0.857)
+    detectionRate 0.778
+    stream ctx    OK
+    release(stub) 6.25 of 25   <- FIRST non-zero release on a real broadcast
+
+This is also the first real-broadcast exercise of the confidence/detectionRate
+split all the way through to money moving.
+
+**P1. verifiedClips counts SETUP clips.** 7 verified for a 5-clip run: the
+canary clip and the warmup badge-holder clips carry valid codes and are aired
+inside the session, so they verify like any other. Not false — they really did
+air — but it inflates the payout unit, and payouts are per verified clip. The
+warmup/canary clips need a marker that excludes them from verifiedClips and
+from the release computation, without excluding them from the evidence log.
+
+**P2. Self-capture STILL did not run, so the two columns are the same
+capture.** 0/5 windows froze, so both "self-capture" and "external" ran the
+external path and reported identical numbers. The yt-dlp coin-page fix is
+committed but this server was started before it applied. pump.fun remains the
+only platform that CAN compare two independent captures of one broadcast, and
+that comparison has still never actually happened. Re-run to get it.
+
+**P3. detectionRate 0.778 with the first two samples at px 0.** Consistent
+with the measured ~10s broadcast delay putting the earliest sampled instants
+before the badge reached the public stream. Same family as T5b/R1 — the
+sampler does not yet account for a platform's real delay when choosing WHERE
+in the window to sample.
+
+### T8. External capture is not dependable, and the two "externals" are different things
+
+Raised by the operator, confirmed in code. "External capture" means two
+materially different mechanisms, and one of them is disableable by the
+streamer:
+
+  TWITCH   a genuine VOD ARCHIVE (frame-sources.js:158,
+           /videos?user_id=..&type=archive). A streamer with VODs turned
+           off, past their retention window, or who deleted the VOD,
+           yields NO_VOD_COVERING_TS. External capture is then IMPOSSIBLE
+           and self-capture is the only path that can ever work.
+  KICK     HAS VODs (kick.com/<slug>/videos) and yt-dlp extracts from a
+           direct VOD URL. What is missing is DISCOVERY: the official API
+           (api.kick.com/public/v1) has no VOD listing and 404s, and
+           finding which VOD covers a timestamp needs the unofficial,
+           Cloudflare-guarded v2 API. So VOD capture works with an
+           operator-supplied URL + start time, and self-capture is the only
+           AUTOMATIC path -- not the only path.
+  PUMP.FUN not a VOD: the LIVE playlist is append-only (MEDIA-SEQUENCE:0,
+           825 segments retained across ~27 minutes), so we seek backwards
+           through the live stream itself. Nobody can switch that off --
+           but whether it SURVIVES THE STREAM ENDING is unmeasured, and
+           verification runs after the fact.
+  RUMBLE   no VOD discovery; needs an operator-supplied URL.
+
+CONSEQUENCE: external capture cannot be treated as a dependable fallback.
+It is platform-dependent, streamer-disableable on Twitch, and of unknown
+durability on pump.fun. The code already makes SELF-CAPTURE PRIMARY
+(bounty-routes.js, "SELF-CAPTURE FIRST"), which is correct -- but
+self-capture is currently PROVEN ON ONE PLATFORM OF FOUR:
+
+    Kick      PROVEN   5/5 windows frozen, 85.8MB
+    Twitch    UNPROVEN every Twitch verification to date used the VOD path
+    pump.fun  UNPROVEN was structurally broken (yt-dlp handed a coin page);
+                       fixed, under test now
+    Rumble    UNPROVEN blocked on a live slot
+
+Today's pump.fun success ran ENTIRELY on external capture -- i.e. the
+fallback carried a run while the primary was broken, and nothing in the
+result said so. Worth measuring: does pump.fun's playlist outlive the
+broadcast? If not, pump.fun external verification only works during or
+shortly after the stream, which is a different product than "verify
+later".
+
+### T9. pump.fun ships NATIVE co-streaming with viewer join requests (2026-08-29)
+
+Observed on a real pump.fun test stream: a viewer ("ComfyL") requested to join
+the broadcast and pump.fun surfaced a native yes/no approval prompt, alongside
+its own Clip button, mic/cam controls and a record control.
+
+CONFIRMED NOT OURS. The codebase contains no "wants to join", "request to
+join", "join request" or "raise hand" string anywhere. Our co-host machinery
+uses different wording and has no join-approval prompt or Clip button. This is
+pump.fun's own feature.
+
+WHY IT MATTERS: this overlaps directly with MegaChat's core mechanic. pump.fun
+already has viewer-initiated co-streaming, approval, and clipping built into
+the platform, for free, with no OBS setup. Anything MegaChat offers a pump.fun
+streamer has to be worth more than a feature they already have natively.
+
+NOT a technical blocker and nothing here needs changing. Filed because it is a
+product/positioning fact discovered by accident during verification testing,
+and it should not be lost in a chat log. Worth a deliberate look at what
+pump.fun's native version does and does not do (payouts to the guest? bounty
+clips? verification of what aired?) before assuming the overlap is fatal or
+irrelevant.
+
+**T9 addendum — what pump.fun's native version does NOT do.** Three
+differentiators, all load-bearing and all already built here:
+
+  - NOT CROSS-PLATFORM. It is a pump.fun feature for pump.fun streams. The
+    whole point of this verification work is that one mechanic pays out on
+    Twitch, Kick, Rumble, YouTube and X too.
+  - NO PRE-RECORDED CLIP. Their join request puts a live person on stage.
+    MegaChat's unit is a fan's RECORDED clip, submitted and paid for in
+    advance -- a different product, not a worse version of the same one.
+  - NO PAY-BY-SECOND. Confirmed in bounty-escrow.js:704 --
+    releaseRatePerClip * clips + releaseRatePerClipSecond * verifiedClipSeconds.
+    Today's real pump.fun broadcast released 6.25 on that formula. Their
+    feature has no payment rail at all.
+
+So the overlap is the surface (a viewer appears on a stream), not the
+mechanic (a fan pays to have a specific recorded clip aired, and the streamer
+is paid per verified second it was actually on screen). Keeping T9 filed as a
+positioning fact worth knowing, not as a threat to the thesis.
+
+### ROOT CAUSE FOUND: the overlay polled every 15s while codes rotate every 4s (2026-08-29)
+
+Fixed in "overlay: the poll interval captured a placeholder and froze at 15s".
+
+    let rotateMs = 60000;                            // placeholder
+    poll();                                          // async, has not returned
+    setInterval(poll, Math.max(5000, rotateMs / 4)); // reads 60000 -> 15000ms
+
+setInterval captured the placeholder before the first poll returned, so the
+overlay asked for a new code every 15 SECONDS while the server rotated every
+4. Every code sat on screen ~4x longer than the system believed. A second bug
+sat on top: the max(5000, ...) floor is slower than a 4s rotation even once
+re-armed.
+
+WHY IT BROKE VERIFICATION RATHER THAN JUST LOOKING STALE. Calibration
+estimates the broadcast delay by seeing which code is on screen and comparing
+against that code's NOMINAL midpoint. A code held 4x too long makes an on-time
+stream look ~10s delayed. Measured on a real pump.fun broadcast:
+
+    codes issued 17s apart      (codeRotateMs = 4s)
+    calibration -> skew 10366ms (true offset near zero)
+    every sample seeked ~10s wide, found a REAL badge at 28px carrying the
+    WRONG code, and the broadcast verified 0/9
+
+MEASURED IN A BROWSER, hashing the badge canvas once a second for 40s:
+~15s per code before, 5.7s after, against a 4s server rotation.
+
+THIS LIKELY SUBSUMES SEVERAL OPEN ITEMS -- to be confirmed, not assumed:
+  T5b  Twitch "every SECOND code in a window misses". Exactly what a 15s hold
+       produces: the first code of a window is still displayed when the second
+       code's sample instant arrives.
+  R1   calibration residual exceeding codeValidityMs. The residual is inflated
+       by the same phantom delay.
+  P3   pump.fun detectionRate 0.778 with early samples reading px 0.
+
+NOT YET VALIDATED END TO END. The saved captures cannot prove it: they were
+recorded BY the buggy overlay and physically contain codes held ~15s. Only a
+fresh broadcast with a refreshed overlay page can confirm it, which is running
+now.
+
+### RETRACTED -- the "self-capture" row below was NOT self-capture (2026-08-29)
+
+READ THIS BEFORE THE SECTION IT PRECEDES. The heading and the two closing
+paragraphs of the next section are WRONG and are kept only so the error stays
+legible.
+
+_rehearsal-run-b.mjs never ASKS for self-capture, and never reports it:
+  - its only two verifications pass sourceMode 'live' (:291) and 'vod' (:317),
+    and bounty-routes.js:1341 sets preferCapture only when sourceMode is
+    ABSENT -- 'live', 'vod' and 'files' all force the external path. So no
+    verdict it produces can be a capture verdict, whatever the buffer holds;
+  - grep for freeze/froze/self-capture in that file returns NOTHING -- it has
+    no freeze step and prints no freeze status, unlike _rehearsal-kick.mjs
+    which prints "self-capture froze 5/5 window(s) -- 85.8MB".
+
+NOT ESTABLISHED, and asserted here in a first draft on an earlier audit's
+say-so: that run-b's air-session-before-push ordering (:213 vs :230) leaves
+startSessionCapture looking at an offline channel so capture never starts.
+_rehearsal-kick.mjs has the SAME ordering (air session :197, push :215) and
+froze 5/5, because capture polls and retries until the playlist appears. The
+ordering is therefore not the problem, and the audit's reasoning does not
+survive contact with the Kick run.
+
+WHAT IS ACTUALLY UNKNOWN: whether Twitch self-capture works. It may well work
+and simply never have been read. What is CERTAIN is that no run has ever
+reported it, so it cannot be claimed either way.
+
+So both Twitch numbers came from external frames. The differing skews
+(14910 vs 9972) are the VOD timeline versus the LIVE-edge timeline, which is
+what "two independent reads" actually meant here -- not capture versus
+external. The 0.886 / detectionRate 0.9 figures appear in NO run output and
+NOWHERE in the repo; they could not be traced to a reproducible run, and the
+most likely origin is a hand-run verify with sourceMode 'live' recorded under
+the wrong label.
+
+WHAT IS ACTUALLY EVIDENCED FOR TWITCH: VOD PASS 5/5 confidence 0.881
+detectionRate 1.0, release 6.25 of 25. That row stands.
+
+WHAT IS NOT: Twitch self-capture remains UNPROVEN. That is the opposite of
+what the retracted paragraph claims, and it is the more expensive direction to
+be wrong in -- Twitch VODs are streamer-disableable, so self-capture is the
+only path for those users. Kick is the ONLY platform where self-capture is
+proven end to end ("froze 5/5 window(s) -- 85.8MB", PASS 5/5 at 0.896, with
+no sourceMode passed so preferCapture was genuinely true).
+
+HOW THIS GOT WRITTEN: nothing in the pipeline reported which frames a verdict
+had read. `frameOrigin` was computed at bounty-routes.js:1346 and passed to
+evaluateConfidence, but never returned to the caller, so a harness could label
+a column anything and no output contradicted it. It is now in the verify
+response, and the pump.fun harness prints it per column and refuses to print a
+cross-check claim unless the two origins actually differ.
+
+### TWITCH PROVEN ON BOTH CAPTURE METHODS, AND THEY AGREE (2026-08-29) [RETRACTED -- see above]
+
+First run after the overlay polling fix, driven unattended (ffmpeg push +
+puppeteer overlay, no OBS involved -- so it exercises the fix cleanly with no
+cached page or refresh timing to get wrong).
+
+    VOD capture   PASS 5/5  confidence 0.881  detectionRate 1.0
+                  timeline MEASURED skew 14910ms spread 1927ms
+    Self-capture  PASS 5/5  confidence 0.886  detectionRate 0.9
+                  timeline MEASURED skew  9972ms spread 1935ms
+    release(stub) 6.25 of 25
+
+THE POLLING FIX IS VALIDATED. detectionRate 1.0 on the VOD path, with all ten
+samples reading 28px and ZERO misses. Every prior run had scattered 0-height
+samples: Twitch 4/5 before, Kick 0.615, pump.fun 0.667-0.778. The 15s-vs-4s
+poll was costing samples on every platform, not just breaking pump.fun.
+
+FIRST REAL CROSS-CHECK. Two independent recordings of ONE broadcast, verified
+separately, agreeing on 5/5 with confidence within 0.005. The differing skew
+is correct rather than a discrepancy: the VOD timeline and the capture's PDT
+anchor are different clocks, and calibration measured each with a tight spread
+(~1.9s both).
+  ^ WRONG on the label, right on the substance. These were two external reads
+    (VOD archive and live edge), not a recording-vs-external cross-check. They
+    are still two independent reads of the public broadcast -- the streamer's
+    machine is not involved in either -- so the agreement is real evidence,
+    just not evidence that self-capture works.
+
+TWITCH SELF-CAPTURE WAS NEVER EXERCISED BEFORE TODAY. It matters most here of
+all platforms: Twitch VODs are streamer-disableable, so self-capture is the
+only path for those users, and it was entirely unproven until now.
+  ^ RETRACTED. The first sentence is true; the last clause is false. It was
+    not exercised today either, and remains unproven. Proving it needs a
+    harness that starts the push BEFORE opening the air session and then
+    verifies with NO sourceMode -- i.e. the _rehearsal-kick.mjs shape.
+
+### Terminology correction: "Kick has no VOD" is FALSE and was written twice
+
+frame-sources.js states it correctly and always has: Kick VOD pages exist at
+kick.com/<slug>/videos, yt-dlp extracts from a direct VOD URL, and only
+automatic DISCOVERY is unavailable (official API 404s; discovery needs the
+Cloudflare-guarded unofficial v2 API).
+
+Every summary that shortened this to "Kick has no VOD" was wrong, including
+two in this session's status charts. The operator corrected it both times.
+
+The distinction is not pedantic. "No VOD" implies a Kick streamer can only
+ever be verified live, which would make self-capture load-bearing in a way it
+is not. The truth is narrower: VOD capture on Kick needs a URL from the
+streamer, so it cannot run UNATTENDED -- but it is available as a retry, and
+that is a materially better position than having no archive at all.
+
+Correct one-line form, for reuse:
+  Kick: VOD exists, discovery does not. Self-capture is the only automatic
+  path; VOD capture works with an operator-supplied URL.
+
+### A DEAD RECORDER WAS SCORED AS AN ABSENT BADGE (2026-08-29, FIXED)
+
+The most expensive defect found so far, because it was silent, confident, and
+pointed at the wrong party. Found on a real pump.fun broadcast; the capture
+files are kept and _gate-stale-capture.mjs runs against them.
+
+WHAT HAPPENED. Five clips aired with the badge legible at 28px -- the canary
+read code C6-GHQY off the PUBLIC stream, so the overlay was demonstrably on
+the broadcast. The rolling buffer ingested cleanly for thirty minutes, then
+stopped dead at 22:03:21. Every freeze after that wrote THE SAME stale minute
+of media under a new playback name:
+
+    md5 1a59ef1f319d7b3e3584422430be134b, 1,814,388 bytes, x8
+      PF1 PF2 PF3 PF4 PF5 PF_CANARY PF_HOLD16 PF_SETUP1
+    firstPdtMs 22:02:21.705 on all eight, spanMs 60000
+    overlap between each real clip's window and its own capture: 0 ms
+
+EVERYTHING WE PRINTED SAID IT WORKED. "self-capture froze 23/5 window(s) --
+41.0MB", "PROGRAM-DATE-TIME present on 23/23". Both are PRESENCE checks:
+_rehearsal-pumpfun.mjs counts Number.isFinite(firstPdtMs) and warns only if
+frozen.length < CLIPS. Eight identical files satisfy both. The operator was
+told self-capture was proven on pump.fun. It was not.
+
+  THE COUNTER PROVES NOTHING, ON ANY PLATFORM. What proved Kick was that its
+  verification PASSED 5/5 reading correct ROTATING codes -- stale media cannot
+  produce the right code at the right instant. Read a passing verification as
+  the proof; never the freeze count.
+
+THE ACCUSATION. frame-sources.js computed `dur` and used it only in the
+estimate branch; NEITHER branch bounded the seek from above. A seek 195s into
+a 60s file makes ffmpeg exit 0, print nothing, and write NO output file --
+and grabFrame checked only the exit code, so it returned a path to a file that
+was not there. The checker then failed to decode it and returned
+`{found: false, error: 'frame_unreadable'}`, whose own comment said to "let the
+hit-rate math treat it as a miss". `frame_unreadable` was SET in exactly one
+place and READ NOWHERE. Replayed against the real files with calibration
+forced good: FAIL 0/5. Our outage, recorded as "the streamer had no badge",
+paying zero.
+
+LIKELY TRIGGER, NOT PROVEN: pump.fun rotates its media directory mid-broadcast
+-- observed TWICE in this one stream, ~33-53 min apart, the second with no
+operator present. bounty-capture.js pins state.hlsUrl at start and only ever
+rewrites master -> variant, so after a rotation it polls a dead address
+forever. Segment fetch failures were a bare `continue` and state.errors reset
+to 0 regardless, so a total outage logged nothing. The competing candidate (a
+RollingBuffer high-water latch on renumbering) fits equally well and cannot be
+separated from the artifacts, because _gate-helpers.mjs collects server stdout
+into a string surfaced only on startup failure -- every [capture] line from
+this broadcast was discarded.
+
+  NOT the operator's machine sleeping. The recorder ran clean for the entire
+  thirty minutes the operator was away (holds 1-15, all distinct media) and
+  died at the rotation seam. In production the recorder runs on Railway, not
+  the streamer's PC, so machine sleep is not a production failure mode at all
+  -- but directory rotation is, and it is server-side.
+
+FIXED:
+  - frame-sources.js grabFrame: exit 0 is not proof of a frame; assert the
+    output file exists.
+  - frame-sources.js: new SOURCE_STATES.CAPTURE_GAP. An instant our recording
+    does not reach is reported PER-SAMPLE as unreadable, never as a throw --
+    windows recorded before a stall are still evidence and must survive.
+  - frame-sources.js PumpFunFrameSource: same, for the archive path. One
+    aged-out instant used to abort the whole session at grab 0 of 36, before a
+    single real clip was sampled.
+  - bounty-verifier.js: an unreadable sample is held against OUR source, not
+    the streamer. Excluded from the detectionRate denominator (a release gate),
+    counted separately, and if NOTHING was readable the verdict is
+    SOURCE_UNAVAILABLE -> review, never FAIL -> zero.
+  - bounty-capture.js: count failed segment fetches, log a stall loudly,
+    re-derive the media URL when the ring stops growing, and stamp `stale` on
+    any freeze taken from a stalled ring instead of writing a false coverage
+    row into the append-only evidence chain.
+  - _rehearsal-pumpfun.mjs: --wait-for-go held the badge by opening a playback
+    window every 110s ON THE SCORED SESSION, so a half-hour hold added SIXTEEN
+    PF_HOLD windows that aired to a dead overlay. The hold session is now
+    ENDED at GO and a fresh one opened, so the scored run starts with zero
+    windows. One session open at a time keeps ?bountyRoom unambiguous.
+
+THE FIRST VERSION OF THIS FIX WAS WORSE THAN THE BUG, and _gate-vod-calibration
+caught it: 15/15 -> 7/8. Making grabFrame throw is right, but only the capture
+and pump.fun sources were taught to absorb it per-sample; Twitch, Kick, YouTube
+and Rumble still let it propagate. CALIBRATION EXISTS TO TRY HYPOTHESES, several
+of which are wrong by design, so a probe seeking past the end of a VOD went from
+"this hypothesis scored nothing" to "abort the whole verification" -- a
+deterministic dead session on every platform, invisible until the next real
+broadcast. All nine grabFrame call sites now funnel through frameOrUnreadable().
+
+  The general rule, worth keeping: a per-sample failure must stay per-sample.
+  Every place this system turned one bad sample into a session-wide verdict has
+  produced a wrong answer -- the external abort at grab 0 of 36, and this.
+
+STILL OPEN: verifiedClips counts the canary and setup windows (7 for a 5-clip
+run), which inflates the payout unit. Nothing anywhere excludes scaffolding
+windows from scoring.
+
+### Calibration once swallowed an injected DISAGREEMENT (2026-08-29, UNREPRODUCED)
+
+Observed ONCE, in a full gate sweep. _gate-vod-calibration section 3 injects a
+bimodal timeline -- half the clips at 16s, the rest shifted +12s -- and asserts
+the verdict is DISAGREEMENT rather than a single averaged offset. That run
+reported instead:
+
+    MEASURED spread=1ms
+    "2 outlying probe(s) discarded around a 3-point cluster"
+    ambiguous: 3 clip(s) matched at read confidence 0.895, detection rate 0.5
+
+i.e. outlier rejection discarded the entire shifted group and returned a
+CONFIDENT, tight offset for a timeline no single offset explains.
+
+NOT REPRODUCED in five attempts: 3x standalone, 1x under four busy cores, 1x
+run immediately after _gate-pumpfun-pdt to mimic the sweep sequence. All five
+returned 15/15 with DISAGREEMENT spread≈12000ms. Both conditions predicted to
+trigger it (CPU pressure, sweep ordering) failed to.
+
+NOT DEMONSTRABLY CAUSED by the frameOrUnreadable work landing alongside it.
+That change is behaviour-neutral for calibration probes: an unreadable frame
+reaches codeChecker.findCode, whose decode failure is caught and returned as
+{found:false}, and bounty-timeline-calibration.js:195 `if (!res?.found)
+continue` skips it -- the same outcome the pre-change code reached via a
+phantom file path. Verified by reading, not assumed.
+
+WHY IT IS FILED ANYWAY, rather than dismissed as test flake: the failure mode
+is the expensive one. If enough probes come back empty, the surviving points
+cluster tightly and calibration reports MEASURED with a 1ms spread on a
+timeline that is genuinely inconsistent. Nothing downstream can tell that from
+a real measurement, and DISAGREEMENT exists precisely to send this case to a
+human instead of paying against a seek that cannot be trusted. It is the same
+shape as every other defect found today: confidence the system has not earned.
+
+WHAT WOULD SETTLE IT: log the discarded probes and the surviving cluster size
+on every calibration, so a MEASURED verdict built from 3 of 5 points is
+distinguishable after the fact from one built from 5 of 5. Right now the
+discard count only appears in the review reason of a run that already failed.
+
+### BOTH READ PATHS PROVEN ON TWITCH AND PUMP.FUN (2026-08-30)
+
+The first runs after the dead-recorder fixes, and the first genuine
+capture-vs-external cross-checks this project has produced. `frameOrigin` now
+comes from the server, so neither column can be mislabelled by a harness.
+
+TWITCH -- unattended, own RTMP push, no operator present:
+    our recording  frameOrigin=capture   PASS 5/5  conf 0.874  det 1.000
+                   px: 28 x10, every sample read
+    their replay   frameOrigin=external  PASS 5/5  conf 0.863
+                   px: 4.1 then 28 x9
+    5 capture files, 5 DISTINCT md5s -- the ring never stalled
+    release(stub) 6.25 of 25
+
+  THIS SETTLES THE MORNING'S RETRACTION. Twitch self-capture had never been
+  exercised: run-b named a sourceMode on every verification, and 'live'/'vod'
+  both force the external path, so no run could produce a capture verdict. With
+  the no-sourceMode verification added it works on the first attempt, at the
+  cleanest detection rate of any platform. The earlier audit claim that the
+  harness "structurally cannot" capture because it opens the air session before
+  the push was ALSO wrong, and is now disproven empirically as well as by the
+  Kick counter-example.
+
+PUMP.FUN -- operator broadcasting from OBS:
+    our recording  frameOrigin=capture   PARTIAL 6 clips  conf 0.900  det 0.857
+                   px: 28 28 28 27.7 28 28 28 -- a badge in every sample
+    their replay   frameOrigin=external  PARTIAL 6 clips  conf 0.900  det 1.000
+                   px: 28 28 0 27.7 28 28 28
+    9 capture files, 9 DISTINCT md5s -- no stall, against 8-identical last run
+    release(stub) 6.25 of 25
+
+  THE TWO DETECTION RATES DIFFER FOR DIFFERENT REASONS, which is the point of
+  reporting them apart. External's 0-height sample was UNREADABLE (a gap on
+  pump.fun's side) and is excluded from the denominator, so it reads 1.000
+  rather than being scored as an absent badge -- under the old arithmetic that
+  single sample would have reported 0.857 and dragged an honest broadcast
+  toward the release gate. Capture's 0.857 is a REAL near-miss: a badge visible
+  at 28px carrying a code outside the accepted window, correctly held against
+  the session. Our failure and the streamer's are no longer the same number.
+
+  Broadcast delay measured ~5s this run against ~10s last run, on the same
+  stream and encoder -- consistent with the earlier figure having been inflated
+  by the overlay holding each code ~15s against a 4s rotation.
+
+STILL PARTIAL, NOT PASS: 6 of 7 scored windows verified, and 2 of those 7 are
+scaffolding (canary + setup). The verifiedClips inflation is unfixed.
+
+### YOUTUBE SELF-CAPTURE PROVEN, AFTER TWO REAL BUGS (2026-09-03)
+
+First real YouTube broadcast, jordanyeakley523's channel. Two unrelated bugs
+stood between here and a verified result; both fixed and proven against the
+same preserved broadcast.
+
+BUG 1 -- yt-dlp's default YouTube extraction is silently broken on this host
+(missing JS-challenge-solver component). Every call returned an opaque "We're
+experiencing technical difficulties" matching NONE of resolveMediaUrl's
+classifiers, so a real broken broadcast and this tooling gap would have looked
+identical. Fixed with `--extractor-args youtube:player_client=android`, which
+skips that requirement entirely -- namespaced per-extractor by yt-dlp itself,
+inert for every non-YouTube URL the same shared resolver handles.
+
+BUG 2 -- bounty-timeline-calibration.js's probe formula (`estimateMs: ts + s -
+mid`) silently assumed skew moves the seek LATER as it grows. True everywhere
+except CaptureFrameSource's no-PDT estimate branch, where skew is subtracted
+inside `back` which is then subtracted from `dur` -- skew moves the seek
+EARLIER there. YouTube does not stamp PROGRAM-DATE-TIME on live HLS, so this
+was the FIRST real broadcast on any platform to exercise that branch; every
+other platform's calibration had a PDT anchor or a different, already-proven
+path. Calibration reported confident MEASURED (5/5 agreeing, spread 962ms,
+skewMs=3937) -- self-consistent, and wrong: every real sample missed its code
+by 26-38s despite a legible 28px badge on 8/10 samples (a timing miss, not an
+absent badge).
+
+  THE COUNTER PROVES NOTHING, AGAIN. Same lesson as pump.fun's stale-capture
+  finding: calibration's own CONFIDENCE (tight spread, MEASURED state) was not
+  proof of correctness. Only a passing verification -- or here, a direct
+  frame-by-frame sweep of the actual capture file -- proves anything.
+
+  A frame-sources.js-side sign flip was considered and rejected: it requires
+  skew=-30466ms for the known-good point, outside calibration's ladder search
+  range [0, 48000]ms -- the same unreachable-negative-skew trap already
+  documented for Kick's PDT branch. Fixed in calibration.js instead:
+  CaptureFrameSource.skewSign(target) reports which shape applies per-target,
+  consulted the same duck-typed way wallClockSkew() already is. Every other
+  source (no skewSign method) is byte-identical to before the fix.
+
+RESULT, same preserved broadcast, no new stream:
+    before:  FAIL 0/5   confidence 0      detectionRate 0
+    after:   PASS 5/5   confidence 0.866  detectionRate 1.000
+             timelineSkewMs 31063 -- matches the independently hand-derived
+             30466-31642ms range within 3%
+
+Swept 7 gates covering every platform's calibration/capture path: 140
+assertions, 0 failures.
+
+NOT RELATED TO EITHER BUG: a live-stream copyright interruption notice arrived
+mid-session on the synthetic testsrc2+sine test signal (no real media pushed).
+YouTube's own wording confirms this is the automated live-interruption system,
+not a channel strike -- "automatically re-enabled" once flagged content stops.
+Root cause unconfirmed (no visibility into Content ID matching internals); a
+sustained pure sine tone is a plausible false-positive source. Future harness
+runs should use `anullsrc` (silence) instead -- zero fingerprint surface, and
+audio was never needed for badge verification.
 ## Bounty: a streamer price floor to filter spam MegaChats (BACKLOG, 2026-08-29)
 
 **Ask (owner):** a streamer claiming a bounty should be able to set a minimum

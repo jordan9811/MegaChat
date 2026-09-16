@@ -46,6 +46,12 @@ export const SOURCE_STATES = {
   EXTRACTION_FAILED: 'EXTRACTION_FAILED',
   NO_CAPTURE: 'NO_CAPTURE',                        // self-capture missing for this session
   API_UNAVAILABLE: 'API_UNAVAILABLE',
+  // OUR RECORDING DOES NOT REACH THIS INSTANT. Distinct from NO_CAPTURE (we
+  // have nothing at all) and from a miss (we looked and the badge was absent).
+  // Raised per-sample, never for the whole session: a recorder that stalls
+  // mid-broadcast leaves EARLIER windows perfectly readable, and killing those
+  // too would throw away the evidence that still exists.
+  CAPTURE_GAP: 'CAPTURE_GAP',
 };
 
 export class FrameSourceUnavailable extends Error {
@@ -73,8 +79,22 @@ function haveTool(cmd, args = ['--version']) {
  */
 export function resolveMediaUrl(pageUrl, { log = console } = {}) {
   if (haveTool('yt-dlp')) {
-    const r = spawnSync('yt-dlp', ['--no-warnings', '-g', '-f', 'best[height<=1080]/best', pageUrl],
-      { encoding: 'utf8', timeout: 60000 });
+    const r = spawnSync('yt-dlp', [
+      '--no-warnings', '-g', '-f', 'best[height<=1080]/best',
+      // YOUTUBE'S DEFAULT EXTRACTION PATH NEEDS A JS CHALLENGE SOLVER THIS
+      // HOST DOES NOT HAVE INSTALLED. Without it, yt-dlp's default player
+      // client returns an opaque "We're experiencing technical difficulties"
+      // — matching none of the classifiers below, so it fell through to a
+      // generic EXTRACTION_FAILED that looked like a broken broadcast rather
+      // than a tooling gap. The 'android' client skips that requirement
+      // entirely and was confirmed working against a real live YouTube
+      // broadcast. This flag is namespaced per-extractor by yt-dlp itself
+      // (`KEY:ARGS`), so it is inert for every non-YouTube URL this same
+      // function resolves — safe to pass unconditionally rather than
+      // branching on platform.
+      '--extractor-args', 'youtube:player_client=android',
+      pageUrl,
+    ], { encoding: 'utf8', timeout: 60000 });
     if (r.status === 0 && r.stdout.trim()) return r.stdout.trim().split('\n')[0];
     const err = String(r.stderr || '');
     // The extractor's own words go into the detail. Classifying the failure and
@@ -122,7 +142,47 @@ export function grabFrame(mediaUrl, offsetS, outFile, { decodeThrough = false } 
     '-v', 'error', '-y', ...args, '-frames:v', '1', outFile,
   ], { encoding: 'utf8', timeout: 120000 });
   if (r.status !== 0) throw new FrameSourceUnavailable(SOURCE_STATES.EXTRACTION_FAILED, String(r.stderr || '').slice(0, 200));
+  // EXIT 0 IS NOT PROOF A FRAME EXISTS. Seeking past the end of a file makes
+  // ffmpeg exit 0, print nothing to stderr, and write NO output file. This
+  // returned that path anyway; the checker then failed to decode it and scored
+  // `found: false`, which the hit-rate math counts as a miss — so a capture
+  // that stopped short became "the streamer had no badge on screen", verdict
+  // FAIL, payout zero. Measured on a real pump.fun broadcast: a stalled
+  // recorder produced eight byte-identical 60s files and every seek past them
+  // took this path.
+  if (!existsSync(outFile)) {
+    throw new FrameSourceUnavailable(SOURCE_STATES.EXTRACTION_FAILED,
+      `ffmpeg wrote no frame at ${seek}s (seek past end of media?)`);
+  }
   return outFile;
+}
+
+/**
+ * ONE SAMPLE WE COULD NOT READ IS NOT A DEAD SESSION.
+ *
+ * grabFrame refuses to hand back a path ffmpeg never wrote, which is correct —
+ * but it made every seek that lands outside the media FATAL, and calibration
+ * exists precisely to TRY hypotheses, several of which are wrong by design.
+ * A probe seeking past the end of a VOD went from "this hypothesis scored
+ * nothing" to "abort the whole verification", and _gate-vod-calibration went
+ * from 15/15 to 7/8 with SOURCE_UNAVAILABLE where it used to verify 6/6.
+ *
+ * So every source funnels its grab through here: the failure is recorded ON
+ * THE SAMPLE, and the verifier decides from the aggregate. Nothing readable
+ * anywhere still reports SOURCE_UNAVAILABLE; a few bad probes among good ones
+ * cost nothing, which is exactly how probing is supposed to behave.
+ */
+function frameOrUnreadable(common, grab) {
+  try {
+    return { ...common, ref: grab() };
+  } catch (e) {
+    return {
+      ...common,
+      ref: null,
+      unreadable: e?.state || SOURCE_STATES.EXTRACTION_FAILED,
+      unreadableDetail: e?.detail || String(e?.message || e).slice(0, 120),
+    };
+  }
 }
 
 const workDir = () => {
@@ -195,28 +255,30 @@ export class TwitchFrameSource extends FrameSource {
         this._vodStart = vodStart;
       }
       const file = path.join(workDir(), `tw-${randomUUID().slice(0, 8)}.png`);
-      if (media.live) {
-        // Live spot-check: "now" is the only addressable instant; the caller
-        // samples while the code is actually on air.
-        grabFrame(media.url, 0, file);
-      } else {
-        // A VOD's media timeline runs BEHIND our wall clock. The offset is
-        // MEASURED per broadcast by the calibration pass and handed in here;
-        // the constant is only a documented fallback for when calibration
-        // could not run. See bounty-timeline-calibration.js.
-        const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
-        const offsetS = (ts - vodStart + skew) / 1000;
-        grabFrame(media.url, offsetS, file);
-      }
-      out.push({
+      out.push(frameOrUnreadable({
         // The verifier needs to know a frame is LIVE, because live frames are
         // older than the timestamp that asked for them.
         live: !!media.live,
-        ref: file, ts,
+        ts,
         clipId: typeof t === 'object' ? t.clipId : null,
         playbackId: typeof t === 'object' ? t.playbackId : null,
         platform, handle, toleranceMs: TOLERANCE_MS,
-      });
+      }, () => {
+        if (media.live) {
+          // Live spot-check: "now" is the only addressable instant; the caller
+          // samples while the code is actually on air.
+          grabFrame(media.url, 0, file);
+        } else {
+          // A VOD's media timeline runs BEHIND our wall clock. The offset is
+          // MEASURED per broadcast by the calibration pass and handed in here;
+          // the constant is only a documented fallback for when calibration
+          // could not run. See bounty-timeline-calibration.js.
+          const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
+          const offsetS = (ts - vodStart + skew) / 1000;
+          grabFrame(media.url, offsetS, file);
+        }
+        return file;
+      }));
     }
     return out;
   }
@@ -242,15 +304,24 @@ function parseTwitchDuration(d) {
  * a finding about the platform, not a failure: filed in OPEN-ISSUES.
  */
 export class KickFrameSource extends FrameSource {
-  constructor({ log = console, mode = 'live', vodUrl = null } = {}) {
+  constructor({ log = console, mode = 'live', vodUrl = null, vodStartMs = null } = {}) {
     super();
     this.log = log;
     this.mode = mode;
     this.vodUrl = vodUrl;     // operator-supplied direct VOD page URL
-    this.vodStartMs = null;   // must accompany vodUrl for offset math
+    this.vodStartMs = vodStartMs; // must accompany vodUrl for offset math
+    /**
+     * THIS LINE WAS MISSING, and its absence was silent. Every other source
+     * sets it; Kick alone left it undefined, so `calibratable` was falsy and
+     * an operator-supplied Kick VOD skipped calibration entirely and fell back
+     * to the documented 16s constant — the exact "trust a constant instead of
+     * measuring" failure calibration exists to prevent. Nothing failed loudly
+     * because a missing property is just falsy.
+     */
+    this.calibratable = mode !== 'live';
   }
 
-  async getFrames(platform, handle, timestamps) {
+  async getFrames(platform, handle, timestamps, opts = {}) {
     const out = [];
     let media = null;
     for (const t of timestamps) {
@@ -267,13 +338,357 @@ export class KickFrameSource extends FrameSource {
         }
       }
       const file = path.join(workDir(), `kick-${randomUUID().slice(0, 8)}.png`);
-      grabFrame(media.url, media.live ? 0 : (ts - this.vodStartMs) / 1000, file);
-      out.push({
-        ref: file, ts,
+      out.push(frameOrUnreadable({
+        // The verifier widens its acceptance window for LIVE frames, because a
+        // live grab is one broadcast delay older than the timestamp that asked
+        // for it. Omitting this made every live Kick frame get judged against
+        // the tight post-calibration residual instead.
+        live: !!media.live,
+        ts,
         clipId: typeof t === 'object' ? t.clipId : null,
         playbackId: typeof t === 'object' ? t.playbackId : null,
         platform, handle, toleranceMs: TOLERANCE_MS,
-      });
+      }, () => {
+        if (media.live) {
+          grabFrame(media.url, 0, file);
+        } else {
+          // The measured offset, not a raw subtraction. This used to seek to
+          // (ts - vodStartMs) with no skew term at all, discarding whatever
+          // calibration had just spent frame grabs to establish.
+          const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
+          grabFrame(media.url, (ts - this.vodStartMs + skew) / 1000, file);
+        }
+        return file;
+      }));
+    }
+    return out;
+  }
+}
+
+// ── YouTube ─────────────────────────────────────────────────────────────────
+
+/**
+ * YouTube needs no discovery step at all: the streamer hands us their WATCH
+ * URL at air-session open, that URL is the live stream while it airs, and the
+ * SAME URL is the archive afterwards. The broadcast start comes from the Data
+ * API's actualStartTime, so vod offset math needs nothing hand-supplied.
+ *
+ * `resolver` is injectable so gates exercise the URL-selection and offset
+ * logic against local fixtures without shelling to yt-dlp — the resolver IS
+ * the extractor seam, and the default is the shipped one.
+ */
+export class YouTubeFrameSource extends FrameSource {
+  constructor({ log = console, mode = 'vod', watchUrl = null, vodStartMs = null,
+    resolver = resolveMediaUrl } = {}) {
+    super();
+    this.log = log;
+    this.mode = mode;           // 'vod' | 'live'
+    this.watchUrl = watchUrl;   // the URL the streamer handed the air session
+    this.vodStartMs = vodStartMs; // broadcast start; fetched from the API if absent
+    this.resolver = resolver;
+    this.calibratable = mode !== 'live';
+    this._media = null;
+  }
+
+  async getFrames(platform, handle, timestamps, opts = {}) {
+    if (!this.watchUrl) {
+      throw new FrameSourceUnavailable(SOURCE_STATES.NO_VOD_COVERING_TS,
+        'youtube verification needs the watch URL the streamer gave at session open');
+    }
+    const out = [];
+    for (const t of timestamps) {
+      const ts = typeof t === 'object' ? t.ts : t;
+      if (!this._media) {
+        this._media = { url: this.resolver(this.watchUrl, this), live: this.mode === 'live' };
+        if (!this._media.live && !Number.isFinite(this.vodStartMs)) {
+          const { getVideoLiveDetails, extractVideoId } = await import('./youtube-api.js');
+          const details = await getVideoLiveDetails(extractVideoId(this.watchUrl), this);
+          const started = details?.startedAt ? Date.parse(details.startedAt) : NaN;
+          if (!Number.isFinite(started)) {
+            throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE,
+              'youtube archive offset needs actualStartTime and the Data API could not supply it');
+          }
+          this.vodStartMs = started;
+        }
+      }
+      const file = path.join(workDir(), `yt-${randomUUID().slice(0, 8)}.png`);
+      out.push(frameOrUnreadable({
+        live: this._media.live, ts,
+        clipId: typeof t === 'object' ? t.clipId : null,
+        playbackId: typeof t === 'object' ? t.playbackId : null,
+        platform, handle, toleranceMs: TOLERANCE_MS,
+      }, () => {
+        if (this._media.live) {
+          grabFrame(this._media.url, 0, file);
+        } else {
+          const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
+          grabFrame(this._media.url, (ts - this.vodStartMs + skew) / 1000, file);
+        }
+        return file;
+      }));
+    }
+    return out;
+  }
+}
+
+// ── Rumble ──────────────────────────────────────────────────────────────────
+
+/**
+ * Live-first, exactly like Kick and for the same reason: no sanctioned VOD
+ * discovery. yt-dlp carries three dedicated Rumble extractors, so the live
+ * pull is the streamer's page URL; a replay is operator-supplied
+ * vodUrl+vodStartMs when one exists. Self-capture remains the primary
+ * evidence on this platform — this source is the external corroboration.
+ */
+export class RumbleFrameSource extends FrameSource {
+  constructor({ log = console, mode = 'live', watchUrl = null,
+    vodUrl = null, vodStartMs = null, resolver = resolveMediaUrl } = {}) {
+    super();
+    this.log = log;
+    this.mode = mode;
+    this.watchUrl = watchUrl; // the streamer's live page URL
+    this.vodUrl = vodUrl;
+    this.vodStartMs = vodStartMs;
+    this.resolver = resolver;
+    this.calibratable = mode !== 'live';
+  }
+
+  async getFrames(platform, handle, timestamps, opts = {}) {
+    const out = [];
+    let media = null;
+    for (const t of timestamps) {
+      const ts = typeof t === 'object' ? t.ts : t;
+      if (!media) {
+        if (this.mode === 'vod') {
+          if (!this.vodUrl || !Number.isFinite(this.vodStartMs)) {
+            throw new FrameSourceUnavailable(SOURCE_STATES.NO_VOD_COVERING_TS,
+              'rumble has no VOD discovery — supply vodUrl+vodStartMs or use live mode');
+          }
+          media = { url: this.resolver(this.vodUrl, this), live: false };
+        } else {
+          if (!this.watchUrl) {
+            throw new FrameSourceUnavailable(SOURCE_STATES.NO_VOD_COVERING_TS,
+              'rumble live verification needs the stream page URL from session open');
+          }
+          media = { url: this.resolver(this.watchUrl, this), live: true };
+        }
+      }
+      const file = path.join(workDir(), `rum-${randomUUID().slice(0, 8)}.png`);
+      out.push(frameOrUnreadable({
+        live: media.live, ts,
+        clipId: typeof t === 'object' ? t.clipId : null,
+        playbackId: typeof t === 'object' ? t.playbackId : null,
+        platform, handle, toleranceMs: TOLERANCE_MS,
+      }, () => {
+        // Same omission as Kick's: this source is `calibratable`, so calibration
+        // measures a skew for it and then handed the result to a signature that
+        // did not accept it.
+        const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
+        grabFrame(media.url, media.live ? 0 : (ts - this.vodStartMs + skew) / 1000, file);
+        return file;
+      }));
+    }
+    return out;
+  }
+}
+
+// ── pump.fun ────────────────────────────────────────────────────────────────
+
+/**
+ * pump.fun serves plain public HLS (measured 2026-08-25 across eight live
+ * streams: 1080p60 ladder, 2s MPEG-TS segments, no auth) with TWO properties
+ * no other platform here has at once:
+ *
+ *   1. the media playlist is APPEND-ONLY — MEDIA-SEQUENCE pinned at 0, no
+ *      ENDLIST, the full broadcast history stays listed while it serves; and
+ *   2. EVERY segment carries EXT-X-PROGRAM-DATE-TIME.
+ *
+ * Together they make external verification a LOOKUP, not a search: parse the
+ * playlist, find the segment whose wall-clock window covers the code's issue
+ * time, download that one segment, read the frame. No VOD discovery, no
+ * timeline calibration (wallClockSkew tells the calibrator the offset is
+ * known), no seeking through gigabytes.
+ *
+ * What this source does NOT solve, on purpose: DISCOVERY. The mint→playlist
+ * mapping rides pump.fun's undocumented frontend API, and building the money
+ * path on a reverse-engineered endpoint is a business risk, not a technical
+ * one. The playlist URL arrives via the session's watch URL; anything else is
+ * a typed refusal that names the gap.
+ */
+/**
+ * A pump.fun coin mint out of whatever the streamer pasted: a bare mint, a
+ * coin page, or a /live link. Returns null rather than guessing — a wrong mint
+ * verifies somebody else's broadcast.
+ */
+export function extractPumpFunMint(input) {
+  const s = String(input || '').trim();
+  if (!s) return null;
+  // Base58, and pump.fun mints conventionally end in "pump".
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(s)) return s;
+  const m = /pump\.fun\/(?:coin\/|live\/|board\/)?([1-9A-HJ-NP-Za-km-z]{32,48})/.exec(s);
+  return m ? m[1] : null;
+}
+
+export class PumpFunFrameSource extends FrameSource {
+  constructor({ log = console, watchUrl = null, mint = null, fetchImpl = fetch } = {}) {
+    super();
+    this.log = log;
+    this.watchUrl = watchUrl;
+    // A MINT IS ENOUGH NOW. livestream-api.pump.fun turns it into the stream's
+    // own directory, so the playlist is derived rather than discovered — which
+    // is why this source no longer has to refuse everything but a hand-supplied
+    // .m3u8. See pumpfun-api.js for the measurement behind that.
+    this.mint = mint;
+    this.fetchImpl = fetchImpl;
+    /**
+     * CALIBRATED, like every other seeking source. This read `false` with the
+     * comment "wallClockSkew supersedes probing entirely" — the same bypass
+     * that was deleted from CaptureFrameSource after it cost three real Kick
+     * broadcasts, left behind here because that fix was applied to one source
+     * and not to its sibling.
+     *
+     * It failed worse here than it did there. wallClockSkew() cannot answer
+     * until `_segments` is populated, and `_segments` is only populated by
+     * loadPlaylist() inside getFrames() — but calibrateTimeline consults
+     * wallClockSkew() BEFORE any frame is grabbed. So it always returned null,
+     * `calibratable: false` sent it to the fallback, and the fallback hands
+     * back vodTimelineSkewMs: a constant measured on TWITCH VODs, injected as
+     * pump.fun's seek offset. Every sample then lands 16s from where the code
+     * was, verifiedClips is 0, and the verdict is FAIL — which names no review
+     * cause, so the streamer is paid zero and no human is told.
+     */
+    this.calibratable = true;
+    this._segments = null;     // parsed once per verification
+  }
+
+  /**
+   * NULL ON PURPOSE — a PDT stamp is an ANCHOR, not an answer.
+   *
+   * This returned {skewMs: 0}. PROGRAM-DATE-TIME records when a segment was
+   * PACKAGED, and the overlay rendered its code one broadcast delay earlier,
+   * so a code issued at T lands in a segment stamped T + D. Measured at 12.1s
+   * on Kick. Keeping PDT as the seek anchor is a real gain — it removes the
+   * frozenAt/duration estimate error — but D still has to be measured, which
+   * is what `calibratable: true` above now allows.
+   */
+  wallClockSkew() {
+    return null;
+  }
+
+  async loadPlaylist() {
+    if (this._segments) return this._segments;
+    let url = this.watchUrl;
+    // Not a playlist URL? Derive one from the mint. This used to be a hard
+    // refusal on the belief that the mapping was undiscoverable; it is one
+    // unauthenticated GET keyed by the mint.
+    if (!/\.m3u8(\?|$)/i.test(String(url || ''))) {
+      const mint = this.mint || extractPumpFunMint(url);
+      if (!mint) {
+        throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE,
+          'pump.fun verification needs the coin mint (or a clips.pump.fun playlist URL)');
+      }
+      const { getStreamByMint } = await import('./pumpfun-api.js');
+      // getStreamByMint's second parameter is an OPTIONS object, `{ log }`.
+      // Passing the logger itself destructured to `this.log.log`, so every
+      // 'could not ask' warning from that module was silently dropped.
+      const info = await getStreamByMint(mint, { log: this.log });
+      if (!info) {
+        throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE,
+          `pump.fun livestream api could not be asked about ${String(mint).slice(0, 12)}…`);
+      }
+      if (!info.playlistUrl) {
+        // The stream exists but has published no media directory yet — a
+        // could-not-look, distinct from "the badge was not there".
+        throw new FrameSourceUnavailable(SOURCE_STATES.NO_VOD_COVERING_TS,
+          `pump.fun reports ${info.live ? 'live' : 'offline'} with no playlist published yet`);
+      }
+      url = info.playlistUrl;
+      this.log?.log?.(`[pumpfun] derived playlist for ${String(mint).slice(0, 8)}… from the livestream api`);
+    }
+    const { parseMediaPlaylist } = await import('./bounty-capture.js');
+    let body = await (await this.fetchImpl(url, { signal: AbortSignal.timeout(10_000) })).text();
+    if (/#EXT-X-STREAM-INF/i.test(body)) {
+      // A master playlist: take the top rendition and fetch its media playlist.
+      const rel = body.split(/\r?\n/).find((l) => l.trim() && !l.startsWith('#'));
+      url = new URL(rel, url).toString();
+      body = await (await this.fetchImpl(url, { signal: AbortSignal.timeout(10_000) })).text();
+    }
+    const { segments } = parseMediaPlaylist(body, url);
+    if (!segments.length) {
+      throw new FrameSourceUnavailable(SOURCE_STATES.EXTRACTION_FAILED, 'playlist listed no segments');
+    }
+    if (!segments.every((x) => Number.isFinite(x.pdtMs))) {
+      throw new FrameSourceUnavailable(SOURCE_STATES.EXTRACTION_FAILED,
+        'pump.fun playlist without PROGRAM-DATE-TIME — cannot map wall clock to media');
+    }
+    this._segments = segments;
+    return segments;
+  }
+
+  async getFrames(platform, handle, timestamps, opts = {}) {
+    const segments = await this.loadPlaylist();
+    const out = [];
+    for (const t of timestamps) {
+      const ts = typeof t === 'object' ? t.ts : t;
+      const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : 0;
+      const want = ts + skew;
+      // The segment whose [pdt, pdt+duration) window covers the instant.
+      const seg = segments.find((x) => want >= x.pdtMs && want < x.pdtMs + x.durationS * 1000)
+        // Half-open windows leave the final edge uncovered; take the last
+        // segment when the instant sits within one duration past it.
+        || (want >= segments[segments.length - 1].pdtMs ? segments[segments.length - 1] : null);
+      const common = {
+        live: false, ts,
+        clipId: typeof t === 'object' ? t.clipId : null,
+        playbackId: typeof t === 'object' ? t.playbackId : null,
+        platform, handle, toleranceMs: TOLERANCE_MS,
+      };
+      /**
+       * PER-SAMPLE, NOT A THROW. This threw on the FIRST instant no segment
+       * covered, which returned SOURCE_UNAVAILABLE for the entire session at
+       * grab 0 of 36 — before a single real clip was ever sampled.
+       *
+       * That is not hypothetical. pump.fun rotates its media directory
+       * mid-broadcast (observed twice in one stream, ~33-53 min apart, with no
+       * operator action), and the playlist is derived from the API's CURRENT
+       * thumbnail, so a retired directory cannot be named. Any window older
+       * than the last rotation is therefore uncoverable — and it aborted the
+       * windows that WERE still covered. Measured on the same broadcast: the
+       * five real clips sat inside the surviving playlist and were readable,
+       * while the run died on a setup window half an hour older.
+       */
+      if (!seg) {
+        out.push({
+          ...common,
+          ref: null,
+          unreadable: SOURCE_STATES.NO_VOD_COVERING_TS,
+          unreadableDetail: `no listed segment covers ${new Date(ts).toISOString()}`,
+        });
+        continue;
+      }
+      // ONE segment, not the stream: download just the 2s of media that
+      // carries the instant, then read the frame at the intra-segment offset.
+      let file;
+      try {
+        const segRes = await this.fetchImpl(seg.uri, { signal: AbortSignal.timeout(15_000) });
+        if (!segRes.ok) {
+          throw new FrameSourceUnavailable(SOURCE_STATES.EXTRACTION_FAILED, `segment ${segRes.status}`);
+        }
+        const segFile = path.join(workDir(), `pf-seg-${randomUUID().slice(0, 8)}.ts`);
+        const fsMod = await import('fs');
+        fsMod.writeFileSync(segFile, Buffer.from(await segRes.arrayBuffer()));
+        file = path.join(workDir(), `pf-${randomUUID().slice(0, 8)}.png`);
+        grabFrame(segFile, Math.max(0, (want - seg.pdtMs) / 1000), file, { decodeThrough: true });
+      } catch (e) {
+        out.push({
+          ...common,
+          ref: null,
+          unreadable: e?.state || SOURCE_STATES.EXTRACTION_FAILED,
+          unreadableDetail: e?.detail || String(e?.message || e).slice(0, 120),
+        });
+        continue;
+      }
+      out.push({ ...common, ref: file });
     }
     return out;
   }
@@ -411,6 +826,83 @@ export class CaptureFrameSource extends FrameSource {
     return after || this.captures[this.captures.length - 1];
   }
 
+  /**
+   * Does EVERY capture window know its own wall clock? True only when each
+   * carries a PROGRAM-DATE-TIME anchor (pump.fun stamps every segment). Then
+   * the wall-clock→media mapping is exact by construction and calibration
+   * has nothing left to measure — bounty-timeline-calibration consults this
+   * and skips its probe ladder entirely.
+   *
+   * The residual is the stamp's own granularity: one segment duration of
+   * quantization plus encoder stamping slack. It is NOT the broadcast delay
+   * — PDT names when the media was ENCODED, which is exactly the clock our
+   * code-issue timestamps live on.
+   */
+  /**
+   * DELIBERATELY RETURNS NULL — a PDT stamp is an ANCHOR, not an answer.
+   *
+   * This used to report {skewMs: 0} and skip calibration outright, on the
+   * reasoning that a segment carrying its own wall clock needs no probing.
+   * The stamp is exact; the inference from it was not. PROGRAM-DATE-TIME marks
+   * when a segment was PACKAGED, and the overlay rendered its code one
+   * broadcast delay EARLIER — so content showing a code issued at T lands in a
+   * segment stamped T + D.
+   *
+   * MEASURED on Kick's first real broadcasts: the PDT seek computed 19.69s
+   * while the badge actually began at 20.0s in the same file, and the gap
+   * between a code's issue time and its first appearance was 12.1s — the
+   * broadcast delay, unmeasured because the bypass had already declared the
+   * timeline solved. Three Kick attempts verified 1/5, 0/5, 0/5 with the badge
+   * legible at 28px throughout, and two fixes aimed at the estimate branch
+   * changed nothing because a PDT-stamped capture never executes that branch.
+   *
+   * Every gate agreed with the bypass because every stub publishes segments
+   * the instant it writes them, making D ~= 0 and the bypass accidentally
+   * right. Same blind spot that hid the freeze-timing bug.
+   *
+   * So: keep PDT as the anchor in getFrames — it removes the frozenAt/duration
+   * estimate error entirely, which is a real gain — and let calibration
+   * MEASURE the delay on top of it. The residual it searches for is then just
+   * D, which is positive and well inside the ladder.
+   */
+  wallClockSkew() {
+    return null;
+  }
+
+  /**
+   * WHICH DIRECTION DOES SKEW MOVE THE SEEK, FOR THIS TARGET'S CAPTURE?
+   *
+   * getFrames has two branches with OPPOSITE relationships to `skew`:
+   *   PDT branch:      offsetS = (ts + skew - firstPdtMs) / 1000        — increases with skew
+   *   estimate branch: offsetS = dur - (encodeAnchor - ts + skew)/1000  — DECREASES with skew
+   * (skew is subtracted inside `back`, which is then subtracted from `dur`.)
+   *
+   * bounty-timeline-calibration.js's probe formula, `estimateMs: ts + s - mid`,
+   * silently assumes the first shape everywhere. That is correct for the PDT
+   * branch and for every other source's own seek formula (all share the same
+   * increasing shape — Twitch, Kick VOD, YouTube VOD, Rumble VOD, pump.fun).
+   * It is WRONG for this source's estimate branch, which a real YouTube
+   * broadcast exercised for the first time: calibration reported a confident,
+   * tightly-agreeing MEASURED state (5/5 points, spread 962ms) built from a
+   * formula solving for the wrong unknown, and every real sample landed
+   * ~26-38s from the code that was actually on screen — a badge legible at
+   * 28px on 8/10 samples, all reading the WRONG code, verdict FAIL 0/5.
+   *
+   * Verified directly: sweeping real seek offsets against the actual frozen
+   * capture found every real code exactly where expected (16-18s: 6F-WG6X,
+   * 20-22s: 6F-UGGH, ...), proving the recorder, badge and decoder were never
+   * the problem — only the sign consumed by calibration's formula was wrong,
+   * and only for a target whose capture lacks firstPdtMs.
+   *
+   * Consulted the same way wallClockSkew() already is: an optional method,
+   * checked with typeof so every other source (which does not implement it)
+   * is completely unaffected.
+   */
+  skewSign(target) {
+    const cap = this.pick(target?.ts, target?.playbackId);
+    return Number.isFinite(cap?.firstPdtMs) ? 1 : -1;
+  }
+
   async getFrames(platform, handle, timestamps, opts = {}) {
     const present = this.captures.filter((c) => existsSync(c.file));
     if (!present.length) {
@@ -423,23 +915,108 @@ export class CaptureFrameSource extends FrameSource {
       const playbackId = typeof t === 'object' ? t.playbackId : null;
       const cap = this.pick(ts, playbackId);
       const dur = this.durationS(cap.file);
-      // Map wall clock into the window: the capture's LAST frame is the most
-      // recent media we held, so a timestamp `d` ms before the freeze sits at
-      // (duration - d/1000) seconds in. `skewMs` shifts that by whatever
-      // calibration measured, exactly as the VOD path uses it.
       const skew = Number.isFinite(opts.skewMs) ? opts.skewMs : bountyConfig.vodTimelineSkewMs;
-      const back = (cap.frozenAt - ts + skew) / 1000;
-      const offsetS = Math.max(0, dur - back);
-      const file = path.join(workDir(), `cap-${randomUUID().slice(0, 8)}.png`);
-      grabFrame(cap.file, offsetS, file, { decodeThrough: true });
-      out.push({
-        live: false, ref: file, ts,
-        clipId: typeof t === 'object' ? t.clipId : null,
-        playbackId,
+      let offsetS;
+      if (Number.isFinite(cap.firstPdtMs)) {
+        // EXACT: the window's first segment names its own wall clock, so a
+        // code issued at `ts` sits (ts - firstPdtMs) into the media. No
+        // estimate, no broadcast-delay guess — the anchor IS the mapping.
+        offsetS = Math.max(0, (ts + skew - cap.firstPdtMs) / 1000);
+      } else {
+        // ESTIMATE, ANCHORED ON ENCODE TIME — not on the freeze instant.
+        //
+        // THE BUG THIS FIXES, which cost Kick two real broadcasts (1/5 then
+        // 0/5 while the badge was legible at 28px in 9 of 13 samples): the
+        // newest media in the buffer was PUBLISHED at ~frozenAt but ENCODED
+        // D = 12-25s earlier. Treating the file's end as "frozenAt" therefore
+        // put every seek D seconds too late, and recovering that needed
+        // skewMs = -D — a NEGATIVE value, while the calibration ladder is
+        // built non-negative (0 … calibrationLadderMaxMs). The correct
+        // hypothesis was not merely missed, it was outside the search space,
+        // so the failure was deterministic rather than flaky and no number of
+        // probes could ever have found it.
+        //
+        // Anchoring on (frozenAt - liveBroadcastDelayMs) states the delay we
+        // already know about, and leaves calibration to measure only the
+        // residual — which lands at (liveBroadcastDelayMs - actual D), i.e.
+        // POSITIVE and inside the existing ladder for every delay we have
+        // measured. Calibration still does the real work; it is just no longer
+        // asked to search for it in the wrong direction.
+        const encodeAnchor = cap.frozenAt - bountyConfig.liveBroadcastDelayMs;
+        const back = (encodeAnchor - ts + skew) / 1000;
+        offsetS = Math.max(0, dur - back);
+      }
+      const clipId = typeof t === 'object' ? t.clipId : null;
+      const common = {
+        live: false, ts, clipId, playbackId,
         platform, handle, toleranceMs: TOLERANCE_MS, source: 'capture',
-      });
+      };
+      /**
+       * DOES OUR RECORDING ACTUALLY REACH THIS INSTANT?
+       *
+       * `dur` was computed here and used only by the estimate branch; NEITHER
+       * branch bounded the seek from above, both clamping low with
+       * Math.max(0, …). A recorder that stalls keeps writing files — the same
+       * stale media under each new name — so `offsetS` walks past the end of a
+       * 60s file while the code politely asks for 195s. ffmpeg then exits 0
+       * writing nothing, and the miss was scored against the STREAMER.
+       *
+       * Measured on a real pump.fun broadcast: the ring stopped ingesting at
+       * 22:03:21 and eight windows froze onto byte-identical media. Replayed
+       * against those files with calibration forced good, the old code returns
+       * FAIL 0/5 — our outage, recorded as an accusation, paying zero.
+       *
+       * This is per-sample and NEVER a throw: windows recorded before the
+       * stall are still perfectly readable, and aborting the session would
+       * discard the very evidence that survived.
+       */
+      const covers = Number.isFinite(dur) && dur > 0 && offsetS < dur;
+      if (!covers) {
+        out.push({
+          ...common,
+          ref: null,
+          unreadable: SOURCE_STATES.CAPTURE_GAP,
+          unreadableDetail: `seek ${offsetS.toFixed(1)}s into a `
+            + `${Number.isFinite(dur) ? dur.toFixed(1) : '?'}s recording`,
+        });
+        continue;
+      }
+      const file = path.join(workDir(), `cap-${randomUUID().slice(0, 8)}.png`);
+      try {
+        grabFrame(cap.file, offsetS, file, { decodeThrough: true });
+      } catch (e) {
+        // Also per-sample. If the failure is systemic every sample lands here
+        // and the verifier reports SOURCE_UNAVAILABLE from the aggregate — the
+        // same verdict as before, reached without throwing away good windows.
+        out.push({
+          ...common,
+          ref: null,
+          unreadable: e?.state || SOURCE_STATES.EXTRACTION_FAILED,
+          unreadableDetail: e?.detail || String(e?.message || e).slice(0, 120),
+        });
+        continue;
+      }
+      out.push({ ...common, ref: file });
     }
     return out;
+  }
+}
+
+/**
+ * A source for platforms with NO pullable external stream (X). Construction
+ * succeeds; USE reports the typed unavailability — so a verification with no
+ * self-capture lands SOURCE_UNAVAILABLE → human review through the normal
+ * pipeline instead of 500ing in the route while building its options.
+ */
+export class UnavailableFrameSource extends FrameSource {
+  constructor({ detail } = {}) {
+    super();
+    this.calibratable = false;
+    this.detail = detail || 'this platform exposes no pullable stream';
+  }
+
+  async getFrames() {
+    throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE, this.detail);
   }
 }
 
@@ -451,5 +1028,14 @@ export function frameSourceFor(platform, opts = {}) {
   if (opts.mode === 'capture' || opts.capturePath) return new CaptureFrameSource(opts);
   if (platform === 'twitch') return new TwitchFrameSource(opts);
   if (platform === 'kick') return new KickFrameSource(opts);
+  if (platform === 'youtube') return new YouTubeFrameSource(opts);
+  if (platform === 'rumble') return new RumbleFrameSource(opts);
+  if (platform === 'pumpfun') return new PumpFunFrameSource(opts);
+  if (platform === 'x') {
+    return new UnavailableFrameSource({
+      detail: 'X exposes no pullable stream at any tier — verification on X uses '
+        + 'self-capture (+ obs-websocket corroboration); this session has no capture to read',
+    });
+  }
   throw new FrameSourceUnavailable(SOURCE_STATES.API_UNAVAILABLE, `no frame source for ${platform}`);
 }

@@ -25,6 +25,7 @@
  * app runs exactly as it does today; nothing is faked.
  */
 import { PrivyClient } from '@privy-io/server-auth';
+import { setPlatformLogins } from './identity-store.js';
 import { claimIdentity, getIdentity, suggestHandle, isHandleFree } from './identity-store.js';
 import { sanitizeHandle } from './rooms-store.js';
 
@@ -58,6 +59,23 @@ export function displayNameFromRaw(accounts) {
   const emailAddr = email?.address || email?.email;
   if (emailAddr) return { username: String(emailAddr).split('@')[0], provider: 'email' };
   return null;
+}
+
+/**
+ * What each platform's OWN OAuth says this person is called — as opposed to
+ * displayNameFromRaw above, which picks ONE name for display. Ownership
+ * checks must read this: a fan with Twitch and X linked displays as their
+ * Twitch name, and that name proves nothing about their X handle.
+ */
+export function platformLoginsFromRaw(accounts) {
+  const list = Array.isArray(accounts) ? accounts : [];
+  const f = (type) => list.find((a) => a && a.type === type);
+  const out = {};
+  const twitch = f('twitch_oauth');
+  if (twitch?.username) out.twitch = String(twitch.username);
+  const x = f('twitter_oauth');
+  if (x?.username) out.x = String(x.username);
+  return out;
 }
 
 export function createPrivyIdentity({ log = console } = {}) {
@@ -105,20 +123,23 @@ export function createPrivyIdentity({ log = console } = {}) {
     return body.linked_accounts || [];
   }
 
-  /** Name for a DID, resilient: REST first, SDK second, synthetic floor last. */
-  async function nameFor(did) {
+  /** Linked accounts, resilient: REST first (the SDK drops twitch/x), SDK second. */
+  async function accountsResilient(did) {
     try {
-      const picked = displayNameFromRaw(await rawAccounts(did));
-      if (picked) return picked;
+      return await rawAccounts(did);
     } catch (err) {
       log.warn('[privy-identity] raw account fetch failed, trying SDK:', err.message);
       try {
         const u = await client.getUser(did);
-        const picked = displayNameFromRaw(u.linkedAccounts || []);
-        if (picked) return picked;
-      } catch { /* fall through to synthetic */ }
+        return u.linkedAccounts || [];
+      } catch { return []; }
     }
-    return { username: syntheticName(did), provider: 'wallet' };
+  }
+
+  /** Name for a DID: display ladder over the accounts, synthetic floor last. */
+  async function nameFor(did, accounts = null) {
+    const picked = displayNameFromRaw(accounts ?? await accountsResilient(did));
+    return picked || { username: syntheticName(did), provider: 'wallet' };
   }
 
   return {
@@ -155,6 +176,11 @@ export function createPrivyIdentity({ log = console } = {}) {
       const claims = await client.verifyAuthToken(token); // throws if forged/expired
       const did = claims.userId;
       const existing = getIdentity('privy', did);
+      // ONE account fetch per sign-in serves both needs: the display name
+      // ladder AND the per-platform logins that ownership checks read.
+      // Refreshed every sign-in so linking X today counts tomorrow.
+      const accounts = await accountsResilient(did);
+      const logins = platformLoginsFromRaw(accounts);
 
       // REPAIR: an account that signed in before the REST fix (or before the
       // social finished linking) got the synthetic "user_<did>" placeholder.
@@ -162,8 +188,9 @@ export function createPrivyIdentity({ log = console } = {}) {
       // available and free, upgrade to it. A genuinely-chosen handle is never
       // touched.
       if (existing) {
+        setPlatformLogins('privy', did, logins);
         if (existing.handle === syntheticName(did)) {
-          const picked = await nameFor(did);
+          const picked = await nameFor(did, accounts);
           const real = sanitizeHandle(picked.username);
           if (real && real !== existing.handle && isHandleFree(real)) {
             const upgraded = claimIdentity({
@@ -173,10 +200,10 @@ export function createPrivyIdentity({ log = console } = {}) {
             return upgraded;
           }
         }
-        return existing;
+        return getIdentity('privy', did) || existing;
       }
 
-      const { username, provider } = await nameFor(did);
+      const { username, provider } = await nameFor(did, accounts);
       // The platform name itself first; a free variation only if it's taken.
       const wanted = sanitizeHandle(username) ? username : suggestHandle(username);
       let identity;
@@ -187,8 +214,9 @@ export function createPrivyIdentity({ log = console } = {}) {
           provider: 'privy', platformId: did, username, handle: suggestHandle(username),
         });
       }
+      setPlatformLogins('privy', did, logins);
       log.log(`[privy-identity] claimed @${identity.handle} for ${did} (via ${provider})`);
-      return identity;
+      return getIdentity('privy', did) || identity;
     },
   };
 }

@@ -63,6 +63,16 @@ const HANDLE = arg('handle', null);
  *  first playback so stream context can actually pass. */
 const WARMUP_S = Number(arg('warmup-s', 60));
 const MINUTES = Math.min(15, Number(arg('minutes', 12)));
+/**
+ * How many distinct clips to air. THE DEFAULT IS NOT ARBITRARY: timeline
+ * calibration needs `calibrationMinPoints` (3) AGREEING points and gets at
+ * most ONE probe target per playback window, so three clips is exactly the
+ * minimum with zero margin — and the calibration module's own notes record
+ * roughly one junk probe in four on a real VOD. Three means a single bad
+ * decode fails the run; five leaves room to lose two. On a one-shot broadcast
+ * budget that margin is the difference between a verdict and a wasted attempt.
+ */
+const CLIPS = Math.max(1, Number(arg('clips', 5)));
 const PORT = 3306;
 const APP = `http://localhost:${PORT}`;
 const KEY = process.env.TWITCH_STREAM_KEY;
@@ -121,11 +131,27 @@ if (has('preflight')) {
   process.exit(blocking.length ? 1 : 0);
 }
 
-const post = (p, body) => fetch(`${APP}${p}`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+const AS = () => `twitch:${HANDLE}`;
+const post = (p, body, as = AS()) => fetch(`${APP}${p}`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', ...srv.headers(as) },
   body: JSON.stringify(body),
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
-const get = (p) => fetch(`${APP}${p}`).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+const get = (p, as = AS()) => fetch(`${APP}${p}`, { headers: srv.headers(as) })
+  .then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+
+/**
+ * A rejected call must STOP the run, not flow onward as undefined. Without
+ * this the 401 above produced `http://localhost:3306undefined?durationS=10`
+ * several statements later, so the error named a malformed URL instead of the
+ * authorization that actually failed — and had the URL been well-formed, the
+ * run would have broadcast for twelve minutes issuing zero codes.
+ */
+const must = (label, r) => {
+  if (r.status >= 400) {
+    throw new Error(`${label} -> HTTP ${r.status} ${JSON.stringify(r.body).slice(0, 200)}`);
+  }
+  return r;
+};
 
 // ── 1. server + session ─────────────────────────────────────────────────────
 // Spawned through the gate harness: occupied-port refusal, early-exit stderr,
@@ -135,7 +161,20 @@ const get = (p) => fetch(`${APP}${p}`).then(async (r) => ({ status: r.status, bo
 const { startGateServer } = await import('./_gate-helpers.mjs');
 const dataDir = process.env.REHEARSAL_DATA_DIR || mkdtempSync(path.join(tmpdir(), 'mc-rehearsal-'));
 const srv = await startGateServer({
-  port: PORT, dataDir, args: ['--prod'], label: 'rehearsal',
+  // args is the COMPLETE argv, not extra flags appended to a hardcoded
+  // script: this said ['--prod'] and so spawned `node --prod` with no script,
+  // which Node rejects outright ("bad option: --prod", exit 9). The harness
+  // has been unable to boot since startGateServer's args parameter was
+  // generalised, and nothing caught it because rehearsals need a real
+  // broadcast and so are not in the gate suite.
+  port: PORT, dataDir, args: ['server.js', '--prod'], label: 'rehearsal',
+  // EVERY bounty route this harness drives authorizes server-side since the
+  // 2026-08-24 lockdown: pledge is FAN, air-session/verify are STREAMER,
+  // admin/playback is ADMIN and answers 503 unconditionally when no admin key
+  // is configured. The harness sent no cookie and no admin key, so its first
+  // real HTTP call 401'd and the undefined uploadUrl became the literal URL
+  // "http://localhost:3306undefined" — which is exactly how this failed.
+  bountyAuth: { handles: [`twitch:${HANDLE}`] },
   env: {
     BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
     // REHEARSAL-ONLY WARMUP OVERRIDE. The shipped rule ignores playbacks in the
@@ -162,15 +201,16 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(1); });
 
 try {
   const vid = (n) => Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(n, 7)]);
-  const pl = await post('/api/bounty/pledge', {
+  const pl = must('pledge', await post('/api/bounty/pledge', {
     targets: [{ platform: 'twitch', handle: HANDLE }],
     contributor: '0xrehearsal', amount: '25', expiresInMs: 86_400_000,
+  }));
+  const up = await fetch(`${APP}${pl.body.uploadUrl}?durationS=10`, {
+    method: 'POST', headers: { 'Content-Type': 'video/webm', ...srv.headers(AS()) }, body: vid(4096),
   });
-  await fetch(`${APP}${pl.body.uploadUrl}?durationS=10`, {
-    method: 'POST', headers: { 'Content-Type': 'video/webm' }, body: vid(4096),
-  });
-  const claim = await post('/api/bounty/claim', { platform: 'twitch', handle: HANDLE, claimant: HANDLE });
-  const air = await post('/api/bounty/air-session', { claimId: claim.body.claim.id, platform: 'twitch', roomId: 'rehearsalroom' });
+  if (!up.ok) throw new Error(`clip upload -> HTTP ${up.status}`);
+  const claim = must('claim', await post('/api/bounty/claim', { platform: 'twitch', handle: HANDLE, claimant: HANDLE }));
+  const air = must('air-session', await post('/api/bounty/air-session', { claimId: claim.body.claim.id, platform: 'twitch', roomId: 'rehearsalroom' }));
   const airId = air.body.airSession.id;
   log('air session', airId, 'for', HANDLE);
 
@@ -233,27 +273,49 @@ try {
   await sleep(warmupWaitMs);
 
   const playbacks = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < CLIPS; i++) {
     const p = await post('/api/bounty/admin/playback', { airSessionId: airId, clipId: `REHEARSAL${i + 1}`, durationS: 30 });
     log(`playback ${i + 1} open, first code ${p.body.code?.code}`);
     playbacks.push(p.body);
 
     // ── 4. live spot-check during the SECOND playback ─────────────────────
-    if (i === 1) {
-      await sleep(8000); // let the code render + reach the CDN edge (~5-10s latency)
+    // LIVE SPOT-CHECK — opt-in via --live-check, OFF by default.
+    // It runs the FULL verify+release route, not a read-only probe. A
+    // SOURCE_UNAVAILABLE here (routine on a live edge) opens a review that
+    // blocks every later release with pending_review; a SUCCESS here consumes
+    // the session's single `release:<id>` idempotency key on 1 clip, making
+    // the final 5-clip release a dedupe no-op. Either way the run ends
+    // reporting PASS beside a zero payout, and the spot-check is the cause.
+    if (i === 1 && has('live-check')) {
+      await sleep(8000); // let the code render + reach the CDN edge
       const live = await post(`/api/bounty/air-session/${airId}/verify`, { mode: 'real', sourceMode: 'live' });
       log('LIVE SPOT-CHECK:', JSON.stringify({
         result: live.body.verification?.result,
         clips: live.body.verification?.verifiedClips,
         state: live.body.verification?.sourceState,
+        review: live.body.review?.reason || null,
+        releaseSkipped: live.body.release?.skipped || null,
       }));
     }
     await sleep(30_000);
-    await post('/api/bounty/admin/playback/end', { airSessionId: airId, clipId: `REHEARSAL${i + 1}` });
+    const end = await post('/api/bounty/admin/playback/end',
+      { airSessionId: airId, clipId: `REHEARSAL${i + 1}` });
+    // REPORT WHETHER SELF-CAPTURE ACTUALLY RAN. This harness discarded the
+    // playback/end response entirely, so a run could not say whether the
+    // rolling buffer had frozen anything — and because every verification
+    // below names a sourceMode (which forces the external path), nothing
+    // downstream would reveal it either. A Twitch "self-capture PASS 0.886"
+    // was reported to the operator on that silence; it was an external read.
+    // Freezing is SCHEDULED, not synchronous — see the same note in
+    // _rehearsal-kick.mjs — so `freeze.scheduled` is what to print here.
+    const fz = end.body.freeze;
+    log(`playback ${i + 1} ended — ${fz?.scheduled
+      ? `capture freeze scheduled in ${(fz.inMs / 1000).toFixed(0)}s (${fz.playbackId})`
+      : 'capture NOT FROZEN (self-capture did not run)'}`);
   }
 
   // Keep the broadcast up to the requested length so the VOD is substantial.
-  const remaining = MINUTES * 60_000 - 3 * 38_000 - warmupWaitMs;
+  const remaining = MINUTES * 60_000 - CLIPS * 38_000 - warmupWaitMs;
   if (!has('skip-push') && remaining > 0) {
     log(`holding the broadcast ${Math.round(remaining / 60000)} more minute(s)…`);
     await sleep(remaining);
@@ -272,12 +334,33 @@ try {
   }
 
   // ── 6. the receipts ───────────────────────────────────────────────────────
+  // ── 5b. THE SELF-CAPTURE READ, which this harness never made ────────────
+  // Omitting sourceMode is the ONLY way to reach the capture path:
+  // bounty-routes.js:1341 sets preferCapture only when sourceMode is absent,
+  // so 'live' and 'vod' both read external frames. Every Twitch number this
+  // harness had ever produced was therefore external, including one reported
+  // as "self-capture". frameOrigin is printed rather than assumed.
+  const selfV = await post(`/api/bounty/air-session/${airId}/verify`, { mode: 'real' });
+  const selfResult = selfV.body.verification;
+
   console.log('\n════ REHEARSAL RESULT ════');
+  console.log('self-capture     :', JSON.stringify({
+    frameOrigin: selfV.body.frameOrigin ?? 'unknown',
+    result: selfResult?.result, verifiedClips: selfResult?.verifiedClips,
+    confidence: selfResult?.confidence, detectionRate: selfResult?.detectionRate,
+    pixelHeights: (selfResult?.checks || []).map((c) => c.pixelHeight),
+  }, null, 2));
   console.log('VOD verification :', JSON.stringify({
+    frameOrigin: vodResult ? 'external' : null,
     result: vodResult?.result, verifiedClips: vodResult?.verifiedClips,
     confidence: vodResult?.confidence,
     pixelHeights: (vodResult?.checks || []).map((c) => c.pixelHeight),
   }, null, 2));
+  if (selfV.body.frameOrigin !== 'capture') {
+    console.log('\nNOT a self-capture result: the verifier read '
+      + `${selfV.body.frameOrigin || 'unknown'} frames because the rolling buffer `
+      + 'held nothing for these windows. Twitch self-capture remains unproven.');
+  }
   const pool = await get(`/api/bounty/pool-view?platform=twitch&handle=${HANDLE}`);
   console.log('release (stub)   :', pool.body.view?.releasedContributor, 'of', pool.body.view?.totalContributed);
   const sess = await get('/api/bounty/admin/sessions');

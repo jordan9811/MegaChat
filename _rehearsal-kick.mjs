@@ -27,7 +27,7 @@
  *   KICK_CLIENT_ID / KICK_CLIENT_SECRET   to read live status back
  */
 import { spawn, spawnSync } from 'child_process';
-import { mkdtempSync, existsSync } from 'fs';
+import { mkdtempSync, existsSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import puppeteer from 'puppeteer-core';
@@ -47,9 +47,46 @@ const log = (...a) => console.log('[kick-rehearsal]', ...a);
 const SLUG = arg('slug', null);
 const WARMUP_S = Number(arg('warmup-s', 60));
 const MINUTES = Math.min(15, Number(arg('minutes', 12)));
+/**
+ * See the note in _rehearsal-run-b.mjs: timeline calibration needs 3 AGREEING
+ * points and gets one probe per playback, so 3 clips is the minimum with zero
+ * margin and a real broadcast loses roughly one probe in four. Five leaves
+ * room to lose two.
+ */
+const CLIPS = Math.max(1, Number(arg('clips', 5)));
 const PORT = 3308;
 const APP = `http://localhost:${PORT}`;
 const KEY = process.env.KICK_STREAM_KEY;
+
+/**
+ * Kick ingests through AWS IVS, whose RTMPS target is ALWAYS
+ *
+ *     rtmps://<endpoint>:443/app/<stream-key>
+ *
+ * The dashboard shows the endpoint and the key in separate boxes, so what
+ * lands in KICK_RTMP_URL is usually the bare host — and appending the key
+ * straight onto it yields `rtmps://<host>/<key>`, missing both the port and
+ * the /app application name. IVS closes that connection during the TLS
+ * handshake, which surfaces as "Error in the pull function / IO error: End of
+ * file" — an error that looks like a network or certificate problem and is
+ * actually a malformed path. That cost this run its first Kick attempt.
+ *
+ * This is NOT guessing the endpoint: the host still comes entirely from the
+ * operator, and a URL that already carries a port and an application path is
+ * passed through untouched. Only the invariant part of the IVS contract is
+ * filled in, and the result is logged so the operator can see exactly what
+ * was pushed to.
+ */
+function ivsTarget(base, key) {
+  let u = String(base || '').trim().replace(/\/+$/, '');
+  if (!u) return null;
+  const hasApp = /\/[A-Za-z0-9_-]+$/.test(u.replace(/^rtmps?:\/\//, ''));
+  if (!hasApp) {
+    if (!/:\d+$/.test(u)) u += ':443';
+    u += '/app';
+  }
+  return `${u}/${key}`;
+}
 const RTMP = process.env.KICK_RTMP_URL;
 
 if (!SLUG) {
@@ -185,7 +222,7 @@ try {
       '-c:v', 'libx264', '-preset', 'veryfast', '-b:v', '3000k', '-maxrate', '3000k',
       '-bufsize', '6000k', '-pix_fmt', 'yuv420p', '-g', '60',
       '-c:a', 'aac', '-b:a', '128k',
-      '-f', 'flv', `${RTMP.replace(/\/$/, '')}/${KEY}`,
+      '-f', 'flv', ivsTarget(RTMP, KEY),
     ], { stdio: ['pipe', 'ignore', 'inherit'] });
     screencast = setInterval(async () => {
       try {
@@ -194,7 +231,8 @@ try {
       } catch { /* frame dropped */ }
     }, 500);
     pusher.on('exit', () => clearInterval(screencast));
-    log('RTMPS push started — waiting for Kick to report the channel live…');
+    log('pushing to', String(ivsTarget(RTMP, KEY)).replace(KEY, '<key>'));
+  log('RTMPS push started — waiting for Kick to report the channel live…');
   } else {
     log('--skip-push: go live yourself now with the overlay in your scene.');
   }
@@ -216,26 +254,55 @@ try {
   await sleep((WARMUP_S + 5) * 1000);
 
   // ── air three clips ─────────────────────────────────────────────────────
-  for (let i = 1; i <= 3; i++) {
+  for (let i = 1; i <= CLIPS; i++) {
     const play = await post('/api/bounty/admin/playback',
       { airSessionId: airId, clipId: `KICK${i}`, durationS: 30 });
     log(`playback ${i} open, code ${play.body.code?.code}`);
     await sleep(30_000);
     const end = await post('/api/bounty/admin/playback/end',
       { airSessionId: airId, clipId: `KICK${i}` });
+    // FREEZING IS SCHEDULED, NOT SYNCHRONOUS. The route waits out the
+    // broadcast delay before reading the buffer, so the artifact does not
+    // exist yet when this response is written and `capture` is always null.
+    // Reading only that field printed "self-capture did not run" on every
+    // playback of every run for half a day, including runs where capture
+    // demonstrably worked — a constant string masquerading as an observation.
+    // `freeze.scheduled` is pendingFreezeCount > 0, and scheduleFreeze
+    // registers nothing when no capture is running, so a genuinely dead
+    // self-capture still reports it.
+    const fz = end.body.freeze;
     log(`playback ${i} ended — capture ${end.body.capture
       ? `${(end.body.capture.bytes / 1e6).toFixed(1)}MB / ${end.body.capture.spanMs}ms`
-      : 'NOT FROZEN (self-capture did not run)'}`);
+      : fz?.scheduled
+        ? `freeze scheduled in ${(fz.inMs / 1000).toFixed(0)}s (${fz.playbackId})`
+        : 'NOT FROZEN (self-capture did not run)'}`);
     await sleep(5_000);
   }
 
   // Keep streaming past the last playback so the tail check passes.
-  const holdMs = Math.max(0, MINUTES * 60_000 - (WARMUP_S + 120) * 1000);
+  // Clip time is CLIPS * ~35s, not a hardcoded 2 minutes. With 5 clips the old
+  // constant under-counted by ~55s and the broadcast overran its budget.
+  const holdMs = Math.max(0, MINUTES * 60_000 - (WARMUP_S + CLIPS * 35 + 20) * 1000);
   if (holdMs > 0) { log(`holding the broadcast ${Math.round(holdMs / 60_000)} more minute(s)…`); await sleep(holdMs); }
 
   await post(`/api/bounty/air-session/${airId}/end`, {}, `kick:${SLUG}`);
   if (pusher) { clearInterval(screencast); try { pusher.stdin.end(); } catch { /* */ } pusher.kill(); }
   log('stream ended.');
+
+  // DID THE FREEZES ACTUALLY LAND? The old synchronous log line used to be
+  // this assertion by accident; once freezing became scheduled, nothing
+  // replaced it and the harness had NO signal that self-capture produced
+  // anything. Session end awaits every pending freeze, so by here the
+  // CAPTURE_FROZEN rows are final and a count short of CLIPS is a real fault.
+  const frozen = readFileSync(`${dataDir}/bounty-evidence.jsonl`, 'utf8')
+    .split('\n').filter(Boolean)
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+    .filter((r) => r && r.type === 'CAPTURE_FROZEN' && r.airSessionId === airId);
+  log(`self-capture froze ${frozen.length}/${CLIPS} window(s)`
+    + (frozen.length ? ` — ${(frozen.reduce((a, r) => a + (r.bytes || 0), 0) / 1e6).toFixed(1)}MB total` : ''));
+  if (frozen.length < CLIPS) {
+    log(`WARNING: ${CLIPS - frozen.length} window(s) never froze — verification below is running on less evidence than the broadcast produced`);
+  }
 
   // ── verify FROM THE SELF-CAPTURE (Kick has no VOD) ──────────────────────
   const v = await post(`/api/bounty/air-session/${airId}/verify`, { mode: 'real' }, `kick:${SLUG}`);

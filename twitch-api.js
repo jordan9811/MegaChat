@@ -109,3 +109,40 @@ export async function getStreamByLogin(login, { log = console } = {}) {
     return null; // "could not ask", never "offline"
   }
 }
+
+/**
+ * Liveness for up to 100 logins in ONE Helix call.
+ *
+ * The batching is the whole point. "Follow my stream" has to ask the same
+ * question on a loop forever, and asking it per room does not scale: one
+ * request per room per minute grows with the product, while this is one
+ * request per minute whether three rooms follow a broadcast or a hundred.
+ * Helix caps `user_login` at 100 per call — callers chunk.
+ *
+ * Absence from the response IS the offline signal: /helix/streams returns a
+ * row only for channels that are live. So every login asked for gets an
+ * explicit true/false back, and the caller never has to infer.
+ *
+ * @returns {Promise<Map<string,boolean>|null>} login (lowercased) → live.
+ *   null means "we could not ask" — unconfigured, HTTP error, timeout — and
+ *   MUST NOT be read as "everyone is offline". Anything that pauses a room on
+ *   this answer has to treat null as "leave it alone".
+ */
+export async function getLiveByLogins(logins, { log = console } = {}) {
+  if (!twitchApiConfigured()) return null;
+  const list = [...new Set(
+    (logins || []).map((l) => String(l || '').trim().replace(/^@/, '').toLowerCase()).filter(Boolean),
+  )].slice(0, 100);
+  if (!list.length) return new Map();
+  try {
+    const j = await helix(`/streams?${list.map((l) => `user_login=${encodeURIComponent(l)}`).join('&')}`);
+    const out = new Map(list.map((l) => [l, false]));
+    for (const s of j.data || []) {
+      if (s?.user_login) out.set(String(s.user_login).toLowerCase(), true);
+    }
+    return out;
+  } catch (e) {
+    log.warn(`[twitch-api] live lookup failed (${list.length} logins): ${e.message}`);
+    return null; // "could not ask", never "offline"
+  }
+}

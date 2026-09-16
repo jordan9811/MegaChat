@@ -53,6 +53,12 @@ export const CALIBRATION_STATES = {
   DISAGREEMENT: 'DISAGREEMENT',
   /** Source cannot be calibrated at all (live stream, or a fixture source). */
   NOT_APPLICABLE: 'NOT_APPLICABLE',
+  /**
+   * The offset is KNOWN, not measured: every capture window carries the
+   * platform's own PROGRAM-DATE-TIME stamp (pump.fun stamps every segment).
+   * Zero probe grabs spent; the residual is the stamp's granularity.
+   */
+  WALL_CLOCK: 'WALL_CLOCK',
 };
 
 const median = (xs) => {
@@ -102,6 +108,21 @@ export async function calibrateTimeline({
     residualMs: config.mediaSkewToleranceMs,
     spreadMs: null, points: [], grabs: 0, fellBack: true, detail: null,
   };
+  // A source whose windows carry PROGRAM-DATE-TIME knows its offset by
+  // construction — probing it would spend frame grabs to re-derive a number
+  // the platform already stamped on every segment. Skip to the answer, with
+  // the residual sized to the stamp's granularity rather than to a search.
+  if (typeof frameSource.wallClockSkew === 'function') {
+    const wc = frameSource.wallClockSkew();
+    if (wc) {
+      return {
+        state: CALIBRATION_STATES.WALL_CLOCK,
+        skewMs: wc.skewMs, residualMs: wc.residualMs,
+        spreadMs: 0, points: [], grabs: 0, fellBack: false,
+        detail: wc.detail,
+      };
+    }
+  }
   if (!frameSource?.calibratable) return { ...fallback, detail: 'source is not calibratable' };
 
   const codes = allCodes(session);
@@ -178,8 +199,25 @@ export async function calibrateTimeline({
       points.push({
         ts: target.ts, probeSkewMs: s, code: hit.code, clipId: hit.clipId,
         issuedAt: hit.issuedAt,
-        // Δ estimate: ts + s - midpoint(code on screen).
-        estimateMs: Math.round(target.ts + s - mid),
+        /**
+         * Δ estimate: ts + s - midpoint(code on screen) — CORRECT ONLY WHEN
+         * seeking with a LARGER skew moves the read LATER into the media.
+         * CaptureFrameSource's no-PDT estimate branch is the opposite: skew
+         * is subtracted inside `back`, which is then subtracted from `dur`,
+         * so a larger skew seeks EARLIER. Solving the increasing-shape
+         * formula against a decreasing-shape source found a self-consistent
+         * but wrong number — a real YouTube broadcast measured "MEASURED,
+         * 5/5 agreeing, spread 962ms" while every real sample missed its
+         * code by 26-38s. See CaptureFrameSource.skewSign's comment in
+         * frame-sources.js for the full derivation and the direct-sweep
+         * proof. Every other source (no skewSign method) is byte-identical
+         * to before this change.
+         */
+        estimateMs: Math.round(
+          (typeof frameSource.skewSign === 'function' && frameSource.skewSign(target) < 0)
+            ? (s + (mid - target.ts))
+            : (target.ts + s - mid),
+        ),
       });
       lastGood = s;
       break; // this probe is measured; move to the next one
@@ -256,12 +294,46 @@ export async function calibrateTimeline({
     };
   }
 
-  // The acceptance window is now DERIVED, not guessed: what a measured seek
-  // actually leaves behind is the per-point quantization (±validity/2, because
-  // any instant inside a code's window is indistinguishable) plus whatever the
-  // points disagree by, plus a small margin. This replaces the old flat
-  // tolerance, which was wide enough to hide the very error it absorbed.
-  const residualMs = Math.round(validity / 2) + spreadMs + config.calibrationResidualMarginMs;
+  // THE ACCEPTANCE WINDOW IS THE UNCERTAINTY OF THE MEDIAN, not the sum of
+  // every uncertainty in sight.
+  //
+  // This was `validity/2 + spread + margin`, which DOUBLE-COUNTS. A single
+  // probe can only place the skew within +/-validity/2, because any instant
+  // inside a code's window looks identical. So when several probes disagree,
+  // most of that spread IS that same quantization showing up again -- adding
+  // both treats one error source as two.
+  //
+  // It also ignored that we keep the MEDIAN of N inliers, whose uncertainty
+  // falls with sqrt(N) rather than staying at one point's.
+  //
+  // MEASURED on real broadcasts (2026-08-29, after the overlay poll fix):
+  //   Kick    validity/2 2500 + spread 2970 + 1500 = 6970
+  //   Twitch  validity/2 2500 + spread 1927 + 1500 = 5927
+  // Both EXCEED codeValidityMs (5000), which is the R1 defect: the accepted-
+  // code window then spans more than one rotation, so a badge from an
+  // adjacent rotation satisfies a sample. That is weaker evidence than the
+  // design intends, and it is why sampleInstantsForWindow could never shift
+  // an instant clear of a window edge.
+  //
+  // NARROWING IS THE SAFE DIRECTION. A tighter window accepts FEWER codes,
+  // so it cannot admit a cheater it previously refused; the risk is the
+  // opposite one, rejecting honest samples, which is why this is validated
+  // against real captures rather than reasoned about.
+  const inlierN = Math.max(1, inlierEstimates.length);
+  const medianUncertaintyMs = Math.round(
+    (Math.round(validity / 2) + Math.round(spreadMs / 2)) / Math.sqrt(inlierN),
+  );
+  // NO codeRotateMs FLOOR. The first cut floored this at one code rotation,
+  // reasoning that anything tighter would fail honest samples on seek jitter.
+  // codeRotateMs is a POLICY KNOB, not a physical limit: _gate-vod-calibration
+  // deliberately sets it to 600000 (one code per clip), and the floor then
+  // produced a TEN MINUTE acceptance window -- far worse than the flat 20s
+  // constant this whole derivation replaced.
+  //
+  // The margin already supplies the floor that was actually wanted: it is
+  // 1500ms, matching the +/-1.5s seek tolerance frame-sources documents, and
+  // it is added rather than maxed, so the window can never collapse below it.
+  const residualMs = medianUncertaintyMs + config.calibrationResidualMarginMs;
 
   if (outliers.length) {
     log.warn?.(`[calibration] discarded ${outliers.length} outlying point(s) `
@@ -289,6 +361,9 @@ export function describeCalibration(cal) {
         + `${cal.outliers ? ` (${cal.outliers} outlier(s) discarded)` : ''}, `
         + `spread ${(cal.spreadMs / 1000).toFixed(1)}s, `
         + `residual window ±${(cal.residualMs / 1000).toFixed(1)}s`;
+    case CALIBRATION_STATES.WALL_CLOCK:
+      return `timeline anchored by the platform's own wall clock (${cal.detail}); `
+        + `residual window ±${(cal.residualMs / 1000).toFixed(1)}s, 0 probe grabs spent`;
     case CALIBRATION_STATES.DISAGREEMENT:
       return cal.detail;
     case CALIBRATION_STATES.INSUFFICIENT_POINTS:

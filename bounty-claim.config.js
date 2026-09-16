@@ -209,12 +209,35 @@ export const bountyConfig = {
    */
   selfCaptureEnabled: process.env.BOUNTY_SELF_CAPTURE !== '0',
   /**
-   * How much live media to hold at once. MUST exceed the worst broadcast delay
-   * plus the longest clip, or the content for a clip could age out before the
-   * playback ends — measured delay is 12-25s, clips run to ~30s, so 60s leaves
-   * real headroom. ~22MB at 720p/3Mbps per open session.
+   * How much live media to hold at once.
+   *
+   * THE WINDOW IS NOT SIZED AGAINST ONE BROADCAST DELAY, IT IS SIZED AGAINST
+   * THE SPREAD OF THEM. We pick a single freeze delay F (below) and never
+   * learn the night's actual delay D before using it, so F has to be right at
+   * every D the platform might be running at. The two bounds in
+   * `captureFreezeDelayMs` then pull in opposite directions — F ≥ D_max or the
+   * clip's tail has not been published yet at freeze time, F ≤ window − L +
+   * D_min or its head has already aged out — and one F satisfies both only
+   * when the window itself spans the spread:
+   *
+   *     window  ≥  L  +  D_max  −  D_min
+   *
+   * L is hard-capped at 30s (rooms-store.js clamps letters `maxSeconds` with
+   * Math.min(30, …)), and D runs from the 12s floor measured on the first real
+   * broadcast up to the 45s this very file budgets for broadcast delay in
+   * `liveBroadcastDelayMs`. That is 30 + 45 − 12 = 63s — so the old 60s window
+   * admitted NO valid F at all across that range, whatever number was written
+   * below it. 75s clears the 63s floor by 12s and F splits that slack evenly,
+   * 6s on each bound. A wider window buys margin only against numbers we do
+   * not have: D_min is measured and D_max is already this file's generous
+   * budget, so paying for a 0s-delay platform we have never seen would be
+   * buying memory to cover an assumption.
+   *
+   * ~28MB at 720p/3Mbps per open session, up from ~22MB at 60s (3 Mbit/s ×
+   * 75s ÷ 8). That is per CONCURRENT open session, and it is the price of
+   * covering the delay spread rather than one point in it.
    */
-  captureWindowMs: num(process.env.BOUNTY_CAPTURE_WINDOW_MS, 60_000),
+  captureWindowMs: num(process.env.BOUNTY_CAPTURE_WINDOW_MS, 75_000),
   /** How often to re-read the media playlist for new segments. */
   capturePollMs: num(process.env.BOUNTY_CAPTURE_POLL_MS, 2_000),
   /**
@@ -222,6 +245,68 @@ export const bountyConfig = {
    * dispute, so it outlives neither: purged with its pledge, and swept at this
    * age regardless.
    */
+  /**
+   * How long to wait after a clip ends before freezing its window.
+   *
+   * WAITING TOO LONG IS NOT FREE, which is what the first version of this got
+   * wrong. It derived from `liveBroadcastDelayMs` (45s) — a number chosen to be
+   * deliberately GENEROUS for a completely different job, sizing the accepted-
+   * code window — and landed on 51s. The freeze delay has the opposite
+   * pressure, because the buffer is a sliding window: waiting F seconds means
+   * freezing on media published in [end + F − window, end + F], so every extra
+   * second of F throws away a second of the clip's HEAD.
+   *
+   * The clip's content is published across [end − L + D, end + D] for a clip
+   * of length L at broadcast delay D, so the whole of it is held only when
+   *
+   *     D  ≤  F  ≤  window − L + D
+   *
+   * The 51s sat OUTSIDE that band at every delay we had measured — it kept the
+   * clip's tail and dropped its head, leaving calibration fewer codes to land
+   * on. Kick's first real broadcast verified 1 of 5 clips against Twitch's
+   * 4 of 5 on the archive path; this is the leading suspect.
+   *
+   * BUT ONE F HAS TO COVER THE WHOLE DELAY RANGE AT ONCE, and that is what the
+   * previous derivation quietly assumed away. It read the band as "25 ≤ F ≤
+   * 42" by evaluating BOTH sides at D = 25 — but D is not an input we have.
+   * The clip ends, a timer starts, and whatever the platform's delay happens
+   * to be that night is what we get. So the left bound must hold at the worst
+   * delay and the right bound at the best one, for the same F:
+   *
+   *     D_max  ≤  F  ≤  window − L + D_min
+   *
+   * Written honestly with L = 30, D ∈ [12, 45] (the floor measured on the
+   * first real broadcast, the ceiling this file already budgets in
+   * `liveBroadcastDelayMs`) and the old 60s window, that band is 45 ≤ F ≤ 42 —
+   * EMPTY. No freeze delay was correct across the range, 30s included: at
+   * D = 45 a 30s wait freezes before the clip's last 15s has even aired.
+   * Fixing F alone cannot help; the window has to grow first, which is why
+   * `captureWindowMs` is now 90s (window ≥ L + D_max − D_min = 63s).
+   *
+   * At 90s the band is 45 ≤ F ≤ 72, and 60s takes margin at BOTH ends: 15s of
+   * delay past the 45s budget (35s past the worst delay ever measured) before
+   * a tail goes missing, and 12s of head still held before one falls off the
+   * front. It is also exactly the F that survives D = 0 — the delay every HLS
+   * stub publishes at, 90 − 30 + 0 = 60 — so the stub gates exercise the same
+   * number production runs, instead of a band they sit comfortably inside.
+   *
+   * If the clip cap moves (rooms-store.js), or `captureWindowMs` or
+   * `liveBroadcastDelayMs` changes, re-derive BOTH values — the pair of
+   * inequalities above is the whole contract, they are satisfiable together
+   * only while the window spans the delay spread, and it is easy to violate by
+   * changing a neighbour.
+   */
+  captureFreezeDelayMs: num(process.env.BOUNTY_CAPTURE_FREEZE_DELAY_MS, 51_000),
+  /**
+   * How long to keep retrying the capture-start resolve while a channel is
+   * not yet live. THE ORDER THAT MADE THIS NECESSARY: a streamer claims their
+   * handle, opens an air session, and THEN goes live — so at session open the
+   * channel is offline, the extractor answers "not currently live", and the
+   * single-shot resolve gave up permanently. Self-capture never started at
+   * all in the real sequence, on any platform.
+   */
+  captureStartRetryMs: num(process.env.BOUNTY_CAPTURE_START_RETRY_MS, 15 * 60_000),
+  captureStartRetryEveryMs: num(process.env.BOUNTY_CAPTURE_START_RETRY_EVERY_MS, 15_000),
   captureRetentionMs: num(process.env.BOUNTY_CAPTURE_RETENTION_MS, 14 * 24 * 60 * 60_000),
   /**
    * Skip platform page resolution and capture this HLS url directly. For
@@ -340,8 +425,51 @@ export const bountyConfig = {
   /** Platform match as a fraction of the contributor pool. Tracked as a
    *  SEPARATE ledger entry — never blended into contributor money. */
   platformMatchFraction: Number(process.env.BOUNTY_PLATFORM_MATCH || 0.25),
-  /** Minimum verifier confidence for a release to count. */
+  /** Minimum verifier confidence for a release to count. Since the
+   *  detectionRate split this means READ QUALITY — how decisively the decoder
+   *  resolved the codes it did resolve — and nothing about how often the
+   *  badge was present. The presence half is minDetectionRate below. */
   minConfidence: Number(process.env.BOUNTY_MIN_CONFIDENCE || 0.6),
+  /**
+   * Fraction of CODE-VALID sampled frames that must actually read the code.
+   *
+   * This is the presence evidence that minConfidence used to carry by
+   * accident, back when the mean spanned found and not-found frames alike
+   * (see the reckoning above avgConfidence in bounty-verifier.js). It is a
+   * separate knob because it is a different quantity in different units.
+   *
+   * 0.55, AND IT IS SET BY TWO MEASUREMENTS THAT ARE UNCOMFORTABLY CLOSE.
+   *
+   *   0.50  _gate-media-timeline's 4s-residual fixture — a DELIBERATELY
+   *         broken timeline, which must never auto-pay. Under the old
+   *         diluted mean this was caught by confidence collapsing to 0.55;
+   *         that safety property now lives here, and the floor has to sit
+   *         ABOVE 0.50 for it to keep biting.
+   *   0.6154  Kick run #4 — a broadcast proven honest, all five clips aired,
+   *         every badge read at 28px, replayed from its own capture files.
+   *
+   * 0.115 apart, so the floor lands ~0.05 from each. That thinness is itself
+   * the finding: TWO of run #4's five misses were OUR residual seek error —
+   * frames that landed on the previous clip's tail and showed a perfectly
+   * legible badge carrying the NEIGHBOURING window's code. The streamer's
+   * real presence was 10/13 = 0.769. Our seek error is eating the margin
+   * that should separate "honest" from "broken", and closing it is what
+   * earns the right to raise this number.
+   *
+   * ERRING HIGH IS CORRECT HERE, because the two failure modes are not
+   * symmetric: too high sends an honest session to human REVIEW (recoverable,
+   * a reviewer pays it), too low silently auto-pays a mis-seeked or dishonest
+   * one (not recoverable — the money is gone). 0.6 was rejected only because
+   * it leaves run #4 a 0.015 margin, which would route essentially every real
+   * Kick broadcast to review and drown the queue.
+   *
+   * It still bites where it must: a cheater flashing the badge for one
+   * sampled frame per clip measures d ~= 0.08 against 13 samples. Raise this
+   * only from a measured distribution across several real broadcasts —
+   * _gate-run-b-ocr.mjs computes the found-rate straight from decoder rows
+   * and is the right place to source that number.
+   */
+  minDetectionRate: Number(process.env.BOUNTY_MIN_DETECTION_RATE || 0.55),
   /** Dispute window before a release becomes final. */
   disputeWindowMs: num(process.env.BOUNTY_DISPUTE_WINDOW_MS, 72 * 60 * 60_000),
 
@@ -390,6 +518,51 @@ export const PLATFORM_PROFILES = {
     samplingMultiplier: 1,
     notice: 'Twitch keeps a VOD, so if a live check misses a code we re-check '
       + 'the archive afterwards. A dropped frame during the stream costs you nothing.',
+  },
+  youtube: {
+    platform: 'youtube',
+    // The SAME watch URL is the live stream while it airs and the archive
+    // after — no discovery step, so a missed live read retries against the
+    // replay exactly like Twitch.
+    vodRetry: true,
+    samplingMultiplier: 1,
+    notice: 'YouTube keeps the replay at the same link, so if a live check '
+      + 'misses a code we re-check the replay afterwards. A dropped frame '
+      + 'during the stream costs you nothing.',
+  },
+  rumble: {
+    platform: 'rumble',
+    // No sanctioned VOD discovery — live-first, same bargain as Kick, and
+    // the streamer is told the same way.
+    vodRetry: false,
+    samplingMultiplier: 2,
+    notice: 'Rumble gives us no replay we can read, so the live check is the '
+      + 'only check — we sample twice as often to make up for it, and our own '
+      + 'recording of the public stream is the primary evidence. If a check '
+      + 'is inconclusive it goes to a person, never to a denial.',
+  },
+  x: {
+    platform: 'x',
+    // No pullable stream AT ALL: no VOD retry, and the live pass reads our
+    // own rolling capture rather than anything X serves us.
+    vodRetry: false,
+    samplingMultiplier: 2,
+    notice: 'X gives us no stream we can read, so verification runs entirely '
+      + 'on our own recording of your broadcast plus your OBS confirming the '
+      + 'overlay was on screen. Keep the badge unobstructed while a MegaChat '
+      + 'plays. If a check is inconclusive it goes to a person, never to a denial.',
+  },
+  pumpfun: {
+    platform: 'pumpfun',
+    // The append-only playlist keeps the whole broadcast addressable while
+    // pump.fun serves it — a re-check reads the same public URL. Retention
+    // after the stream is UNPROVEN, so our own recording is still kept.
+    vodRetry: true,
+    samplingMultiplier: 1,
+    notice: 'pump.fun serves a public replay of your stream while it stays up, '
+      + 'and every moment of it is timestamped — checks land exactly where your '
+      + 'MegaChats played. We keep our own recording too, in case the replay '
+      + 'disappears. If a check is inconclusive it goes to a person, never to a denial.',
   },
   kick: {
     platform: 'kick',
