@@ -34,3 +34,13 @@ html:has(.mc-create){color-scheme:dark}body:has(.mc-create){background:#06080b}
 .mcc-stream-card{border-radius:11px;background:var(--mcc-panel)}.mcc-stream-card .mcc-preview-top>b[data-picture=false]{color:var(--mcc-faint)}
 /* TwitchPreview paints an absolutely positioned frame into whatever box it lands in, so the stage has to own that box: positioned, 16:9, clipped. The fallback glyph sits under the frame and is what shows through in the two states where there is nothing to paint — no channel, or no live picture yet. */
 .mcc-stream-stage{height:auto;aspect-ratio:16/9;position:relative;border-radius:8px;padding:0;overflow:hidden}.mcc-stream-fallback{position:absolute;inset:0;display:grid;place-items:center;color:#2b3444;font-size:58px;font-weight:800;letter-spacing:-5px}.mcc-stream-stage .mcc-preview-badge{top:10px;left:10px;background:rgba(6,10,14,.78);text-transform:none;letter-spacing:.02em}
+
+/* ── overlay layout editor ───────────────────────────────────────────────── */
+.mcc-layout-canvas{border:1px solid #3d4654;background:repeating-conic-gradient(#12161d 0% 25%,#171b23 0% 50%) 50%/24px 24px;overflow:hidden}
+.mcc-layout-tile{display:grid;place-items:center;border:1px solid var(--mcc-cyan);background:color-mix(in srgb,var(--mcc-cyan) 14%,transparent);color:var(--mcc-fg);font-size:10px;font-weight:700;overflow:hidden}
+.mcc-layout-tile.is-guest{border-style:dashed;border-color:var(--mcc-lime);background:color-mix(in srgb,var(--mcc-lime) 12%,transparent);color:var(--mcc-lime)}
+.mcc-layout-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:13px}
+.mcc-layout-controls label{display:flex;min-width:0;flex-direction:column}
+.mcc-layout-controls label>span{margin-bottom:6px;color:#8292b0;font-size:11px;font-weight:700}
+.mcc-layout-controls .mcc-layout-wide{grid-column:1/-1}
+@media(max-width:900px){.mcc-layout-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}

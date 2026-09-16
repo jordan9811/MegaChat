@@ -740,12 +740,35 @@ function broadcastMeterUpdate(seat, payload) {
  * component infers it, and no component re-derives it from seat lists — that
  * is how the three of them drifted apart in the first place.
  */
+/**
+ * The ceiling, and where the number comes from.
+ *
+ * The raise was unbounded, which is an uncapped LiveKit bill: a streamer with
+ * a 20-name guest list could put 23 publishers in one room. 10 is not a taste
+ * call, it is where the grid physically runs out:
+ *
+ *   A 1080p OBS canvas leaves 1040px of column after the 20px margins. The
+ *   editor's smallest permitted tile is 90px (resolveLayout clamps there), and
+ *   at a 12px gap that is (1040 + 12) / 102 = 10 tiles. An eleventh has
+ *   nowhere to go without shrinking below the floor.
+ *
+ *   The floor is itself the verifier's, not an aesthetic one. A 320x180 tile
+ *   carries the bounty badge at ~28px in the captured frame (measured, Kick
+ *   run #4); at 90px tiles that is ~14px against a 12px minCodePixelHeight.
+ *   So 10 tiles is simultaneously the last row that fits and the last row
+ *   whose badge is still legible to the thing that pays people.
+ *
+ * MEGACHAT_MAX_SEATS overrides it for a bigger canvas, since both halves of
+ * the derivation scale with canvas height.
+ */
+const MAX_EFFECTIVE_SEATS = Math.max(1, Number(process.env.MEGACHAT_MAX_SEATS) || 10);
+
 function effectiveMaxSeats(roomId, configuredMax) {
   let guests = 0;
   for (const s of activeSeats.values()) {
     if (s.streamRoomId === roomId && s.paymentMode === 'whitelist_stream') guests++;
   }
-  return Number(configuredMax || 0) + guests;
+  return Math.min(MAX_EFFECTIVE_SEATS, Number(configuredMax || 0) + guests);
 }
 
 /** Seats a PAYING viewer is competing for — guests never occupy one. */
@@ -765,6 +788,9 @@ function sendInitialState(ws) {
     // The overlay renders to THIS, never to a literal. It rises when a
     // whitelisted guest is on, and falls again when they leave.
     maxSeats: effectiveMaxSeats(roomId, resolveRoomConfig(roomId)?.config?.maxSeats ?? 3),
+    // Layout rides the same message as the cap so the overlay never renders a
+    // frame with one and not the other.
+    layout: resolveRoomConfig(roomId)?.config?.layout || null,
     seats: Array.from(activeSeats.values()).filter((s) => s.live && s.streamRoomId === roomId).map((s) => ({
       id: s.id,
       username: s.username,
@@ -811,6 +837,15 @@ function addParticipant(username, meta = {}) {
   // so admitting it cannot bump or delay anyone who paid.
   if (!meta.pinned && payingSeatCount(streamRoomId) >= roomCfg.maxSeats) {
     return { success: false, reason: 'no_seats_available' };
+  }
+  // A guest rides on top of the cap, but not past the ceiling: admitting an
+  // 11th publisher the grid cannot place would put them on the bill and not on
+  // the screen, which is the exact failure the raise exists to prevent.
+  if (meta.pinned) {
+    const roomTotal = [...activeSeats.values()].filter((s) => s.streamRoomId === streamRoomId).length;
+    if (roomTotal >= MAX_EFFECTIVE_SEATS) {
+      return { success: false, reason: 'room_at_ceiling' };
+    }
   }
 
   const atomics = roomAtomics(roomCfg);
@@ -913,6 +948,7 @@ function activateSeatLive(seatId, ws) {
     // overlay has to be told at the moment it changes — learning on reconnect
     // is exactly the window a guest joining a full room falls into.
     maxSeats: effectiveMaxSeats(seat.streamRoomId, resolveRoomConfig(seat.streamRoomId)?.config?.maxSeats ?? 3),
+    layout: resolveRoomConfig(seat.streamRoomId)?.config?.layout || null,
     seat: {
       id: seat.id,
       username: seat.username,

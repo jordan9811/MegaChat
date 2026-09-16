@@ -476,9 +476,20 @@
 
   <script>
     // ─── Layout config ───────────────────────────────────────────────────────
-    const TILE_W = 320;    // tile width  (px)
-    const TILE_H = 180;    // tile height (px)
-    const GAP = 12;        // vertical gap between stacked tiles (px)
+    // THE GRID IS DATA NOW. These are the values the overlay shipped with, kept
+    // only as what to draw before the server's first message lands — after
+    // that `layout` replaces them wholesale. Nothing here is a constant any
+    // more, because a streamer has to be able to move the tiles off their
+    // facecam without editing this file.
+    let layout = {
+      version: 0,
+      origin: 'top-right', direction: 'down', margin: 20,
+      tile: { w: 320, h: 180, gap: 12 },
+      clip: { follow: true, w: 320, h: 180, origin: 'top-left', margin: 20 },
+    };
+    const TILE_W = () => layout.tile.w;
+    const TILE_H = () => layout.tile.h;
+    const GAP = () => layout.tile.gap;
     // THE CAP COMES FROM THE SERVER. It was a hardcoded 3, which meant the
     // overlay silently refused to draw a fourth tile no matter what the room
     // was configured for — so a whitelisted guest, who RAISES the cap, was
@@ -499,7 +510,7 @@
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${wsProto}//${location.host}`);
     const stage = document.getElementById('stage');
-    stage.style.width = TILE_W + 'px';
+    stage.style.width = TILE_W() + 'px';
     const videoBoxes = new Map(); // seatId -> tile element (insertion order)
 
     // Build a direct vdo.ninja VIEW url for OBS overlay tiles.
@@ -1206,12 +1217,14 @@
           // pre-message default and drops tiles it is about to be told it can
           // render.
           if (Number.isFinite(msg.maxSeats)) maxSeats = msg.maxSeats;
+          applyLayout(msg.layout);
           // Server only sends seats that are already live (camera approved).
           msg.seats.forEach(seat => addVideoBox(seat));
           break;
         case 'seat_added':
           // Same order, same reason: this message is how a guest raises it.
           if (Number.isFinite(msg.maxSeats)) maxSeats = msg.maxSeats;
+          applyLayout(msg.layout);
           // Broadcast only AFTER camera_ready, so the tile pops in live.
           addVideoBox(msg.seat);
           break;
@@ -1258,10 +1271,10 @@
       box.className = 'tile ' + (fin ? fin.cls : 'joining');
       box.dataset.seatId = seat.id;
       box.dataset.flyOut = (seat.flyOut && FLY_OUTS[seat.flyOut]) ? seat.flyOut : '';
-      box.style.width = TILE_W + 'px';
-      box.style.height = TILE_H + 'px';
+      box.style.width = TILE_W() + 'px';
+      box.style.height = TILE_H() + 'px';
       // Place it in its final slot BEFORE insertion so it doesn't slide on add.
-      box.style.top = (liveCount() * (TILE_H + GAP)) + 'px';
+      box.style.top = slotOffset(liveCount()) + 'px';
 
       // Tile CONTENT: LiveKit <video> for livekit rooms, vdo iframe otherwise.
       let content;
@@ -1347,9 +1360,9 @@
       box.className = 'tile ' + (fin ? fin.cls : 'joining');
       box.dataset.seatId = key;
       box.dataset.flyOut = (letter.flyOut && FLY_OUTS[letter.flyOut]) ? letter.flyOut : '';
-      box.style.width = TILE_W + 'px';
-      box.style.height = TILE_H + 'px';
-      box.style.top = (liveCount() * (TILE_H + GAP)) + 'px';
+      box.style.width = TILE_W() + 'px';
+      box.style.height = TILE_H() + 'px';
+      box.style.top = slotOffset(liveCount()) + 'px';
 
       const video = document.createElement('video');
       video.src = letter.mediaUrl;
@@ -1414,14 +1427,55 @@
     }
 
     // Position every live tile in a top-to-bottom stack and shrink-wrap #stage.
+    /**
+     * Where slot i sits along the stack. The fill order is the streamer's, so
+     * a tile that appears ABOVE the configured count — a whitelisted guest
+     * raising the cap mid-stream — lands at the next slot in that same order
+     * and nobody already placed has to move. That is the whole requirement:
+     * seat N keeps slot N, the new one goes on the end.
+     */
+    function slotOffset(i) {
+      return i * (TILE_H() + GAP());
+    }
+
+    /** Anchor the stack to the streamer's chosen corner and growth direction. */
+    function applyStageAnchor() {
+      const m = layout.margin + 'px';
+      const vertical = layout.direction === 'down' || layout.direction === 'up';
+      stage.style.top = stage.style.bottom = stage.style.left = stage.style.right = '';
+      stage.style[layout.origin.startsWith('top') ? 'top' : 'bottom'] = m;
+      stage.style[layout.origin.endsWith('left') ? 'left' : 'right'] = m;
+      // A horizontal stack grows along x, so the stage is as wide as the row.
+      stage.style.width = vertical ? TILE_W() + 'px' : '';
+      stage.style.flexDirection = vertical ? 'column' : 'row';
+    }
+
+    /**
+     * Adopt a layout the server sent. `version` is compared rather than the
+     * object diffed, so a mid-stream edit is one integer away from detectable
+     * — and re-placing tiles NEVER touches videoBoxes' insertion order, which
+     * is what keeps seat N in slot N while only its coordinates move.
+     */
+    function applyLayout(next) {
+      if (!next || !Number.isFinite(next.version)) return;
+      if (next.version === layout.version) return;
+      layout = { ...layout, ...next, tile: { ...layout.tile, ...(next.tile || {}) }, clip: { ...layout.clip, ...(next.clip || {}) } };
+      applyStageAnchor();
+      for (const box of videoBoxes.values()) {
+        box.style.width = TILE_W() + 'px';
+        box.style.height = TILE_H() + 'px';
+      }
+      relayout();
+    }
+
     function relayout() {
       let i = 0;
       for (const box of videoBoxes.values()) {
         if (box.classList.contains('leaving')) continue; // keeps its current spot
-        box.style.top = (i * (TILE_H + GAP)) + 'px';
+        box.style.top = slotOffset(i) + 'px';
         i++;
       }
-      stage.style.height = i > 0 ? (i * (TILE_H + GAP) - GAP) + 'px' : '0px';
+      stage.style.height = i > 0 ? (i * (TILE_H() + GAP()) - GAP()) + 'px' : '0px';
     }
 
     // (The old 10s-block countdown chip is gone: per-second metering made the

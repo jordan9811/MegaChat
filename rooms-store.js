@@ -126,6 +126,66 @@ export function getEnvDefaults() {
 /** Per-feature reputation gates. minWatchSeconds is enforced today (via the
  * watch-time ledger); followers/subs are stored config until platform
  * verification ships — never silently enforced. */
+/**
+ * OVERLAY LAYOUT — where the tiles sit on the streamer's canvas.
+ *
+ * ON THE ROOM RECORD, not in a store of its own. The overlay already reads the
+ * room on connect, so this costs no second read; it cannot be orphaned when a
+ * room is deleted; it inherits whatever read-modify-write handling rooms-store
+ * has; and a streamer editing mid-stream while the overlay reconnects is
+ * exactly the race a separate file loses. A separate store would only earn its
+ * keep on record size or write contention, and this is ~10 fields written by
+ * one person occasionally.
+ *
+ * THE DEFAULTS ARE THE CURRENT HARDCODED GRID, to the pixel: #stage was
+ * `top:20px right:20px`, tiles 320x180, 12px gap, stacking downward. An
+ * existing room therefore renders identically until somebody edits it — the
+ * migration is that there is no migration.
+ *
+ * `version` is an integer the overlay compares against what it last applied.
+ * It is bumped on every change so a mid-stream edit is detectable without
+ * diffing the object, and so the overlay can re-place tiles WITHOUT
+ * reassigning seat indices: seat N stays seat N, only its canvas position
+ * moves.
+ */
+const LAYOUT_ORIGINS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+const LAYOUT_DIRECTIONS = ['down', 'up', 'right', 'left'];
+
+function clampInt(v, lo, hi, fallback) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : fallback;
+}
+
+export function resolveLayout(raw) {
+  const l = raw || {};
+  const t = l.tile || {};
+  const c = l.clip || {};
+  return {
+    version: clampInt(l.version, 1, 2_000_000_000, 1),
+    origin: LAYOUT_ORIGINS.includes(l.origin) ? l.origin : 'top-right',
+    direction: LAYOUT_DIRECTIONS.includes(l.direction) ? l.direction : 'down',
+    margin: clampInt(l.margin, 0, 400, 20),
+    tile: {
+      // Floors are the legibility floor, not taste: the bounty badge is read
+      // back off a downscaled broadcast frame, and a tile under ~160px wide
+      // takes the badge below the verifier's pixel floor with it.
+      w: clampInt(t.w, 160, 1920, 320),
+      h: clampInt(t.h, 90, 1080, 180),
+      gap: clampInt(t.gap, 0, 200, 12),
+    },
+    clip: {
+      // `follow` keeps a MegaChat clip in the same stack as the seats, which
+      // is what the overlay does today. Turning it off gives the clip its own
+      // size and corner.
+      follow: c.follow !== false,
+      w: clampInt(c.w, 160, 1920, 320),
+      h: clampInt(c.h, 90, 1080, 180),
+      origin: LAYOUT_ORIGINS.includes(c.origin) ? c.origin : 'top-left',
+      margin: clampInt(c.margin, 0, 400, 20),
+    },
+  };
+}
+
 function resolveGates(raw) {
   const g = raw || {};
   return {
@@ -466,6 +526,7 @@ export function resolveRoomConfig(roomId) {
     transport: resolveTransport(cfg.transport),
     // Overlay stinger SFX (synthesized in-browser, master toggle, default on).
     stingerSounds: cfg.stingerSounds !== false,
+    layout: resolveLayout(cfg.layout),
     // Use the owner's LINKED Twitch account automatically (embed on the join
     // page + browse thumbnail). Default ON — if you've connected Twitch, the
     // obvious intent is to use it, so it should not be something you go

@@ -46,6 +46,17 @@ export type RewardsConfig = {
   rewardTokenDecimals?: number | null
 }
 
+/** Where the overlay puts the tiles. Lives on the room record, versioned so a
+ *  mid-stream edit is one integer away from detectable. */
+export type RoomLayout = {
+  version: number
+  origin: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+  direction: 'down' | 'up' | 'right' | 'left'
+  margin: number
+  tile: { w: number; h: number; gap: number }
+  clip: { follow: boolean; w: number; h: number; origin: RoomLayout['origin']; margin: number }
+}
+
 export type Room = {
   id: string
   name: string
@@ -76,6 +87,7 @@ export type Room = {
   transport: 'vdo' | 'livekit' | string
   /** Overlay stinger SFX master toggle (default on). */
   stingerSounds: boolean
+  layout: RoomLayout
 }
 
 export type Seat = {
@@ -121,6 +133,7 @@ export type RoomConfigPatch = {
   twitchAuto: boolean
   transport: string
   stingerSounds: boolean
+  layout: RoomLayout
   // NOTE: no `minSeconds` here on purpose. The floor is derived server-side
   // from the bounty verifier's sampling floor; letting a dashboard PUT set it
   // would let a room configure itself below the level at which a clip can be

@@ -43,6 +43,7 @@ import {
 } from '@/lib/api'
 import { backendWsUrl } from '@/lib/backend'
 import { guestName } from '@/lib/display-format'
+import type { RoomLayout } from '@/lib/api'
 
 // Tempo mainnet USDC.e — fallback only; the real value is re-read from
 // /api/config on mount.
@@ -78,6 +79,9 @@ export type ConfigDraft = {
   lettersAutoRefund: boolean
   transport: 'vdo' | 'livekit'
   stingerSounds: boolean
+  /** Overlay layout. Editing it bumps `version`, which is how the overlay
+   *  notices a mid-stream change without diffing the object. */
+  layout: RoomLayout
   // per-feature gates: MegaChats own theirs; Join Stream inherits unless overridden
   mcMinWatch: string
   mcFollowersOnly: boolean
@@ -130,6 +134,11 @@ const DEFAULT_DRAFT: ConfigDraft = {
   lettersAutoRefund: true,
   transport: 'vdo',
   stingerSounds: true,
+  layout: {
+    version: 1, origin: 'top-right', direction: 'down', margin: 20,
+    tile: { w: 320, h: 180, gap: 12 },
+    clip: { follow: true, w: 320, h: 180, origin: 'top-left', margin: 20 },
+  },
   mcMinWatch: '0',
   mcFollowersOnly: false,
   mcSubsOnly: false,
@@ -226,6 +235,9 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
     paymentTokenAddress,
     transport: draft.transport,
     stingerSounds: draft.stingerSounds,
+    // Bumped on every save. The overlay compares versions rather than diffing,
+    // so this integer IS the mid-stream change notification.
+    layout: { ...draft.layout, version: (draft.layout?.version || 0) + 1 },
     letters: {
       enabled: draft.lettersEnabled,
       maxSeconds: Number(draft.lettersMaxSeconds) || 10,
@@ -297,6 +309,7 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     lettersAutoRefund: room.letters ? room.letters.autoRefundOnReject !== false : true,
     transport: room.transport === 'livekit' ? 'livekit' : 'vdo',
     stingerSounds: room.stingerSounds !== false,
+    layout: room.layout,
     mcMinWatch: String(room.letters?.gates?.minWatchSeconds ?? 0),
     mcFollowersOnly: !!room.letters?.gates?.followersOnly,
     mcSubsOnly: !!room.letters?.gates?.subsOnly,
