@@ -26,6 +26,16 @@
 
 ## Technical
 * [Technical](technical/README.md)
+  * [Architecture](technical/architecture.md)
+  * [Data model](technical/data-model.md)
+  * [Key flows](technical/flows/README.md)
+    * [Flow: a bounty, from pledge to release](technical/flows/bounty-pledge-to-release.md)
+    * [Flow: OBS one-click, and how it is verified](technical/flows/obs-one-click.md)
+    * [Flow: a paid seat, from link to leave](technical/flows/paid-seat-join.md)
+    * [Flow: a whitelisted guest walks in free](technical/flows/whitelisted-guest-join.md)
+  * [Interfaces](technical/interfaces.md)
+  * [Running it](technical/running-it.md)
+  * [Testing methodology](technical/testing-methodology.md)
 
 ## Verification
 * [Verification](verification/README.md)

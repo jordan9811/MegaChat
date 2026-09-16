@@ -124,3 +124,13 @@ Found while citing: the tail of the `captureFreezeDelayMs` comment in `bounty-cl
 Dead links at this commit: 9, all into internal pages Gate 3 creates (outstanding, limitations-register, launch-readiness, work-history, roadmap). Gate 3 resolves them.
 
 Status calls raised: U1 (which seat payment route is live — narrowed by source to "is /api/join/mpp reachable from any UI"; the join page calls only /api/join/passkey), U2 (Kick VOD wording).
+
+### Gate 2 — technical docs (1 iteration)
+
+10 pages: architecture (layer diagram, seams, what runs where, the two loops, deliberately-not-here), interfaces, data model (rewritten documents / append-only files / binary artefacts / memory-only, plus the deliberately-absent list with the reason the code gives for each), four key flows as step tables with the source and the failure exit per row, testing methodology (every standard paired with the incident that produced it), running it (setup, env names by group with absent-behaviour, deploy, hazards incl. OneDrive locks and the stale local prod ref).
+
+`scripts/docs-sync.mjs` was written in this gate rather than Gate 4 because the Interfaces page is built from it: 15 source-embedded regions (`<!-- source:file#Symbol -->`) filled by `--write` from `web/lib/api.ts`, `bounty-escrow.js`, `bounty-settlement.js`, `bounty-confidence.js`, `bounty-claim.config.js`, `airings-store.js` — a symbol is taken from its declaration (with a leading JSDoc block) to the next top-level declaration. Citation hashes recorded for all 35 authored pages. First report run flagged 33 "cites X which does not exist": all were runtime data files named in the data-model page (`rooms.json`, `bounty-ledger.jsonl`, …), not sources; the tool now skips a `.json`/`.jsonl` name that is not in the repo. Remaining reported drift is legitimate and closes in later gates: `scripts/docs-gitbook-check.mjs` (Gate 5), `docs/internal/launch-readiness.md` (Gate 3), `CONTRIBUTING-DOCS.md` (Gate 4).
+
+docs:check: 2 hits on first run (both fixed: one cited, one rephrased).
+
+Exit: interface regions match source by construction; a new contributor has setup, env, ports, modes and hazards on one page; the deliberately-absent list is checked against every store module's header.
