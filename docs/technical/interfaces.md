@@ -293,7 +293,7 @@ The one source for both the verifier's sampling density and the sentence a strea
 
 <!-- source:bounty-claim.config.js#PLATFORM_PROFILES -->
 ```javascript
-// bounty-claim.config.js — PLATFORM_PROFILES (lines 509–583), embedded by docs:sync
+// bounty-claim.config.js — PLATFORM_PROFILES (lines 537–611), embedded by docs:sync
 /**
  * How verification actually behaves per platform — ONE source of truth for
  * the verifier's sampling density and for the words a streamer reads before
