@@ -7,8 +7,28 @@
  * unit now — airtime alone is not evidence that a fan's clip aired.
  *
  * Both external edges stay interfaces. Run A/patch ships only the mocks,
- * fixture-driven so pass / fail / partial / ambiguous / too-small are
- * deterministic.
+ * fixture-driven so pass / fail / partial / ambiguous / too-small / not-shown
+ * are deterministic.
+ *
+ * VERDICTS this module can return, so downstream never meets an unknown value:
+ *   NO_PLAYBACK        — no clip window worth sampling; nothing verifiable
+ *   SOURCE_UNAVAILABLE — we could not look (dead VOD, uncalibrated timeline,
+ *                        nothing readable). NEVER a verdict against a streamer
+ *   NO_FRAMES          — windows existed but no sample ever reached the checker
+ *   FAIL_TOO_SMALL     — the badge was located everywhere and read nowhere,
+ *                        because it was rendered under the pixel floor
+ *   FAIL               — nothing verified, and not for the too-small reason
+ *   NOT_SHOWN          — some playbacks verified, but at least one playback's
+ *                        required code was never observed in the capture. See
+ *                        the ladder at the bottom of verifyAirSession: misses
+ *                        are authoritative, and this verdict outranks any
+ *                        confidence number. (When NOTHING verified, the more
+ *                        specific FAIL / FAIL_TOO_SMALL above still applies.)
+ *   AMBIGUOUS          — every required code WAS observed, but read quality or
+ *                        detection rate fell short. Routes to a human
+ *   PARTIAL            — every required code observed, thresholds met, but not
+ *                        every playback cleared verification
+ *   PASS               — every playback verified
  */
 
 import fs from 'fs';
@@ -581,14 +601,67 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
   const detectionRate = attempted.length ? readSamples.length / attempted.length : 0;
   const hitRate = clipVerdicts.length ? verifiedClips / clipVerdicts.length : 0;
 
+  /**
+   * Playbacks whose required per-playback code was never observed ANYWHERE in
+   * the capture. `hits` counts samples where that playback's own code was
+   * found and legible, so hits === 0 is the miss in its strongest form: we
+   * sampled inside that window, at instants when one of ITS codes was valid,
+   * and never saw it once.
+   */
+  // `samples > 0` is load-bearing, not defensive. A playback whose every sample
+  // came back unreadable never increments clipHits either, so `hits === 0`
+  // alone cannot tell "we sampled it and the code was never there" from "we
+  // never got a readable look at it" — and scoring the second as the first is
+  // the one thing this file refuses to do everywhere else (SOURCE_UNAVAILABLE
+  // exists for exactly that distinction at the session level). `samples` is
+  // incremented only on a frame we actually read, so requiring it keeps a
+  // blind window out of a verdict that says the streamer did not show the code.
+  const unshownPlaybacks = clipVerdicts.filter((c) => (c.samples || 0) > 0 && c.hits === 0);
+
   let result;
   if (checks.length === 0) result = 'NO_FRAMES';
   else if (verifiedClips === 0 && checks.some((c) => c.found && !c.legible)) result = 'FAIL_TOO_SMALL';
   else if (verifiedClips === 0) result = 'FAIL';
+  /**
+   * MISSES ARE AUTHORITATIVE — AND THE ORDER IS THE FIX, NOT THE BRANCH.
+   *
+   * avgConfidence is READ QUALITY, and it is averaged over `counted` samples
+   * only (see the reckoning above it) — that is, exclusively over frames where
+   * the code WAS present. It is structurally incapable of describing a
+   * playback that was never on screen: such a playback contributes no samples
+   * to the mean at all, so a session that missed one entirely can still
+   * average 0.9 off the playbacks that did air. Letting that 0.9 be consulted
+   * first meant a number computed only from hits was allowed to adjudicate a
+   * miss — the same unit error as multiplying read quality by detection rate,
+   * one level up. So presence must be SETTLED before quality is ever asked:
+   * this branch sits above the confidence branch precisely so no confidence
+   * value can reach past it. Moving it below would restore the bug even with
+   * the branch present.
+   *
+   * And the verdict is NOT_SHOWN rather than PARTIAL because PARTIAL is
+   * payable partial credit — "some of what we asked for aired". "A code we
+   * required was never on screen" is a different statement and has to be made
+   * in the verdict, not averaged into a fraction.
+   *
+   * KNOWN INTERACTION, deliberately not papered over here: a playback whose
+   * every sample was OUR failure to read lands with hits === 0 too. The
+   * whole-session case is already caught above (readable === 0 ⇒
+   * SOURCE_UNAVAILABLE); a single blind playback inside an otherwise readable
+   * session is not, and `unreadableSamples` in the returned result is what a
+   * reviewer has to separate the two by.
+   */
+  else if (unshownPlaybacks.length > 0) result = 'NOT_SHOWN';
   else if (avgConfidence < bountyConfig.minConfidence) result = 'AMBIGUOUS';
   // The presence half, now that confidence no longer carries it silently.
   else if (detectionRate < bountyConfig.minDetectionRate) result = 'AMBIGUOUS';
   else if (hitRate >= 0.999) result = 'PASS';
+  // PARTIAL is now the tail of a ladder whose earlier rungs cover it: today a
+  // clip is `verified` exactly when clipHits > 0, so "not every playback
+  // verified" and "some playback was never shown" are the same population and
+  // NOT_SHOWN claims it first. That is the point of the change — what used to
+  // be scored as payable partial credit was always a set of unobserved codes.
+  // The branch stays as the terminal else so the ladder remains total if those
+  // two conditions ever stop being identical.
   else result = 'PARTIAL';
 
   const measuredPx = clipVerdicts.map((c) => c.medianPixelHeight)

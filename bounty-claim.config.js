@@ -209,12 +209,32 @@ export const bountyConfig = {
    */
   selfCaptureEnabled: process.env.BOUNTY_SELF_CAPTURE !== '0',
   /**
-   * How much live media to hold at once. MUST exceed the worst broadcast delay
-   * plus the longest clip, or the content for a clip could age out before the
-   * playback ends — measured delay is 12-25s, clips run to ~30s, so 60s leaves
-   * real headroom. ~22MB at 720p/3Mbps per open session.
+   * How much live media to hold at once.
+   *
+   * THE WINDOW IS NOT SIZED AGAINST ONE BROADCAST DELAY, IT IS SIZED AGAINST
+   * THE SPREAD OF THEM. We pick a single freeze delay F (below) and never
+   * learn the night's actual delay D before using it, so F has to be right at
+   * every D the platform might be running at. The two bounds in
+   * `captureFreezeDelayMs` then pull in opposite directions — F ≥ D_max or the
+   * clip's tail has not been published yet at freeze time, F ≤ window − L +
+   * D_min or its head has already aged out — and one F satisfies both only
+   * when the window itself spans the spread:
+   *
+   *     window  ≥  L  +  D_max  −  D_min
+   *
+   * L is hard-capped at 30s (rooms-store.js clamps letters `maxSeconds` with
+   * Math.min(30, …)), and D runs from the 12s floor measured on the first real
+   * broadcast up to the 45s this very file budgets for broadcast delay in
+   * `liveBroadcastDelayMs`. That is 30 + 45 − 12 = 63s — so the old 60s window
+   * admitted NO valid F at all across that range, whatever number was written
+   * below it. 90s clears the 63s floor by 27s, and F splits that slack between
+   * the two bounds.
+   *
+   * ~34MB at 720p/3Mbps per open session, up from ~22MB at 60s (3 Mbit/s ×
+   * 90s ÷ 8). That is per CONCURRENT open session, and it is the price of
+   * covering the delay spread rather than one point in it.
    */
-  captureWindowMs: num(process.env.BOUNTY_CAPTURE_WINDOW_MS, 60_000),
+  captureWindowMs: num(process.env.BOUNTY_CAPTURE_WINDOW_MS, 90_000),
   /** How often to re-read the media playlist for new segments. */
   capturePollMs: num(process.env.BOUNTY_CAPTURE_POLL_MS, 2_000),
   /**
@@ -238,20 +258,42 @@ export const bountyConfig = {
    *
    *     D  ≤  F  ≤  window − L + D
    *
-   * At the measured 12-25s delay, a 30s clip and the 60s window, that is
-   * 25 ≤ F ≤ 42. The old 51s sat OUTSIDE it at every delay — it kept the
+   * The 51s sat OUTSIDE that band at every delay we had measured — it kept the
    * clip's tail and dropped its head, leaving calibration fewer codes to land
    * on. Kick's first real broadcast verified 1 of 5 clips against Twitch's
    * 4 of 5 on the archive path; this is the leading suspect.
    *
-   * 30s is the middle of that band: past the worst delay ever measured, with a
-   * segment of slack, and comfortably inside the window bound.
+   * BUT ONE F HAS TO COVER THE WHOLE DELAY RANGE AT ONCE, and that is what the
+   * previous derivation quietly assumed away. It read the band as "25 ≤ F ≤
+   * 42" by evaluating BOTH sides at D = 25 — but D is not an input we have.
+   * The clip ends, a timer starts, and whatever the platform's delay happens
+   * to be that night is what we get. So the left bound must hold at the worst
+   * delay and the right bound at the best one, for the same F:
    *
-   * If you raise `minClipSeconds` or lower `captureWindowMs`, re-derive this —
-   * the inequality above is the whole contract, and it is easy to violate by
+   *     D_max  ≤  F  ≤  window − L + D_min
+   *
+   * Written honestly with L = 30, D ∈ [12, 45] (the floor measured on the
+   * first real broadcast, the ceiling this file already budgets in
+   * `liveBroadcastDelayMs`) and the old 60s window, that band is 45 ≤ F ≤ 42 —
+   * EMPTY. No freeze delay was correct across the range, 30s included: at
+   * D = 45 a 30s wait freezes before the clip's last 15s has even aired.
+   * Fixing F alone cannot help; the window has to grow first, which is why
+   * `captureWindowMs` is now 90s (window ≥ L + D_max − D_min = 63s).
+   *
+   * At 90s the band is 45 ≤ F ≤ 72, and 60s takes margin at BOTH ends: 15s of
+   * delay past the 45s budget (35s past the worst delay ever measured) before
+   * a tail goes missing, and 12s of head still held before one falls off the
+   * front. It is also exactly the F that survives D = 0 — the delay every HLS
+   * stub publishes at, 90 − 30 + 0 = 60 — so the stub gates exercise the same
+   * number production runs, instead of a band they sit comfortably inside.
+   *
+   * If the clip cap moves (rooms-store.js), or `captureWindowMs` or
+   * `liveBroadcastDelayMs` changes, re-derive BOTH values — the pair of
+   * inequalities above is the whole contract, they are satisfiable together
+   * only while the window spans the delay spread, and it is easy to violate by
    * changing a neighbour.
    */
-  captureFreezeDelayMs: num(process.env.BOUNTY_CAPTURE_FREEZE_DELAY_MS, 30_000),
+  captureFreezeDelayMs: num(process.env.BOUNTY_CAPTURE_FREEZE_DELAY_MS, 60_000),
   /**
    * How long to keep retrying the capture-start resolve while a channel is
    * not yet live. THE ORDER THAT MADE THIS NECESSARY: a streamer claims their

@@ -1487,6 +1487,33 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         // verify manually. Never a FAIL, never silently zero.
         causes.push(`source unavailable: ${v.sourceState}${v.sourceDetail ? ` — ${v.sourceDetail}` : ''}`);
       }
+      if (v.result === 'NOT_SHOWN') {
+        // NOT_SHOWN is the old PARTIAL population under a truer name: `hits === 0`
+        // is exactly `!verified`, so every session that lands here would have been
+        // PARTIAL before. That means opening a review on all of them would stop
+        // paying claims that pay today — a settlement change hiding inside a
+        // relabel — and opening none would silently delete the review that the
+        // low-confidence half of this population already gets as AMBIGUOUS.
+        //
+        // So the review follows the OLD boundary exactly: a miss is reviewed when
+        // and only when the evidence around it was already weak enough to be
+        // reviewed. A high-confidence miss reports its verdict and pays exactly
+        // what it paid before; nothing that is reviewed today stops being reviewed.
+        const missed = (v.clipVerdicts || []).filter((c) => (c.samples || 0) > 0 && (c.hits || 0) === 0);
+        const weakReads = v.confidence < bountyConfig.minConfidence;
+        const weakPresence = v.detectionRate < bountyConfig.minDetectionRate;
+        if (weakReads || weakPresence) {
+          // Carries the AMBIGUOUS diagnostic too — naming WHICH half fell short,
+          // because the remedies differ and this branch now intercepts sessions
+          // that used to get that sentence from the AMBIGUOUS branch below.
+          causes.push(`code never observed on ${missed.length} of ${(v.clipVerdicts || []).length} playback(s)`
+            + `${missed.length ? ` (${missed.map((c) => c.playbackId).filter(Boolean).join(', ')})` : ''}`
+            + `, alongside ${weakReads ? `read confidence ${v.confidence} below ${bountyConfig.minConfidence}` : ''}`
+            + `${weakReads && weakPresence ? ' and ' : ''}`
+            + `${weakPresence ? `detection rate ${v.detectionRate} below ${bountyConfig.minDetectionRate}` : ''}`
+            + ' — low read quality means the badge was hard to decode, low detection means it was often absent');
+        }
+      }
       if (v.result === 'AMBIGUOUS') {
         // Name WHICH half fell short. These are two different failures with
         // two different remedies -- low read quality means the badge was
