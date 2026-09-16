@@ -29,6 +29,17 @@ import { verifyRoomAccess } from './auth.js';
 import { normalizeRoomId, resolveRoomConfig } from './rooms-store.js';
 import { recordSignal, signalsFor, latestFor, hiddenWindows } from './overlay-visibility.js';
 import { bountyConfig } from './bounty-claim.config.js';
+import * as seatEscrow from './seat-escrow.js';
+
+/**
+ * PASS C PART 3 — a visibility TRANSITION is what the money layers react to.
+ * The bank (bounty clips) is wired by the server only when BOUNTY_CLAIM is
+ * on; the seat escrow is always wired, because a plain room's guest seats are
+ * metered whether or not the bounty program exists. Both are accounting
+ * with stub settlement — nothing here moves funds.
+ */
+let onTransition = null;
+export function setVisibilityTransitionHook(fn) { onTransition = fn; }
 
 /**
  * The badge's glyph height in the overlay page's own CSS pixels.
@@ -106,6 +117,20 @@ export function attachVisibilityRoutes(app, { log = console } = {}) {
 
     if (result.appended) {
       log.log?.(`[visibility] room ${req.roomId}: ${effective}${effectiveReason ? ' (' + effectiveReason + ')' : ''}`);
+      // The seat escrow pauses, resumes, refunds and sweeps on transitions —
+      // never on repeats, which is why this sits inside `appended`.
+      try {
+        const seatOut = seatEscrow.onVisibility(req.roomId, effective, { at: result.row.at, reason: effectiveReason });
+        if (seatOut.paused.length || seatOut.resumed.length) {
+          log.log?.(`[seat-escrow] room ${req.roomId}: paused ${seatOut.paused.length}, resumed ${seatOut.resumed.length}, refunds ${seatOut.refunds.length}, sweeps ${seatOut.sweeps.length}`);
+        }
+      } catch (e) {
+        log.warn?.(`[seat-escrow] visibility hook failed: ${e?.message}`);
+      }
+      if (onTransition) {
+        try { onTransition(req.roomId, effective, { at: result.row.at, reason: effectiveReason }); }
+        catch (e) { log.warn?.(`[visibility] transition hook failed: ${e?.message}`); }
+      }
     }
     res.json({
       ok: true,
@@ -128,6 +153,15 @@ export function attachVisibilityRoutes(app, { log = console } = {}) {
       windows: hiddenWindows(req.roomId, { sessionKey }),
       count: signalsFor(req.roomId, { sessionKey }).length,
     });
+  });
+
+  /**
+   * What the streamer sees about their guest-seat money: pending, released,
+   * held back, and — for a manual-paste room — why it holds longer and until
+   * when. Owner-authorized like the rest of this file.
+   */
+  app.get('/api/rooms/:roomId/seat-escrow', requireRoom, (req, res) => {
+    res.json({ ok: true, ...seatEscrow.summaryFor(req.roomId) });
   });
 
   log.log?.('[visibility] overlay visibility routes ready');

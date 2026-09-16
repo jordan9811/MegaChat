@@ -36,12 +36,14 @@ import { createWebhookTracker, verifyWebhookJwt, reconcile } from './livekit-web
 import { createBreaker, breakerConfig } from './livekit-breaker.js';
 import { createAlerter } from './ops-alerts.js';
 import { bountyConfig } from './bounty-claim.config.js';
+import * as seatEscrow from './seat-escrow.js';
+import { listAirings as listAiringsForSeats } from './airings-store.js';
 import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
 import { attachBountyRoutes, makeClipHooks } from './bounty-routes.js';
 import { verifyRoomAccess, readIdentityFromRequest, roomOwnerKey } from './auth.js';
 import { isWhitelisted, recordJoin as recordWhitelistJoin } from './guest-whitelist.js';
 import { attachWhitelistRoutes } from './whitelist-routes.js';
-import { attachVisibilityRoutes } from './visibility-routes.js';
+import { attachVisibilityRoutes, setVisibilityTransitionHook } from './visibility-routes.js';
 import {
   toAtomic,
   fromAtomic,
@@ -905,6 +907,19 @@ function addParticipant(username, meta = {}) {
 
   activeSeats.set(seatId, seat);
 
+  // PASS C PART 3b — every METERED seat gets a pending bucket. Free and
+  // whitelisted seats never charge, so there is nothing to hold or refund.
+  if (!seat.pinned && seat.paymentMode !== 'free_stream' && seat.paymentMode !== 'whitelist_stream') {
+    try {
+      seatEscrow.open({
+        seatId, roomId: streamRoomId, viewer: seat.viewerAddress || seat.payer || null,
+        streamer: seat.payoutAddress || null,
+        token: { symbol: seat.paymentTokenSymbol || 'USDC', decimals: seat.paymentTokenDecimals ?? 6 },
+        tickMs: (seat.passkeyTickSeconds ?? seat.gatewayTickSeconds ?? 1) * 1000, at: now,
+      });
+    } catch (e) { console.warn(`[seat-escrow] open failed for ${seatId}: ${e.message}`); }
+  }
+
   // Lazy connect: a granted seat is a hard commitment — make sure the overlay
   // is (or is becoming) connected. Usually a no-op because the join sheet
   // already prewarmed us well before payment cleared.
@@ -1030,6 +1045,10 @@ function removeParticipant(seatId, reason = 'left') {
     reason
   });
 
+  // PASS C PART 3b — the seat's pending bucket closes with it: swept now for
+  // an obs-websocket room, held until stream end + tail for a manual-paste one.
+  try { seatEscrow.close(seat.id, { reason }); } catch (e) { console.warn(`[seat-escrow] close failed for ${seat.id}: ${e.message}`); }
+
   // Refund the unused prepaid USDC (fire-and-forget; never blocks removal).
   refundSeat(seat).catch((e) => console.error('[refund] unexpected error:', e));
 
@@ -1047,6 +1066,7 @@ function tickPrepaidSeat(seat) {
 
   seat.remainingAtomic -= tickPrice;
   seat.spentAtomic += tickPrice;
+  try { seatEscrow.accrue(seat.id, tickPrice, { at: Date.now() }); } catch (e) { console.warn(`[seat-escrow] accrue failed: ${e.message}`); }
 
   const ticksLeft = tickPrice > 0n ? Number(seat.remainingAtomic / tickPrice) : 0;
   const secondsLeft = ticksLeft * tickSec;
@@ -1106,6 +1126,7 @@ async function tickPasskeyStreamSeat(seat) {
       return;
     }
 
+    try { seatEscrow.accrue(seat.id, tickPrice, { at: Date.now() }); } catch (e) { console.warn(`[seat-escrow] accrue failed: ${e.message}`); }
     const payload = streamMeterPayload(seat, tickPrice, tickSec, tokenDec);
     payload.remaining = fromAtomic(seat.remainingAtomic, tokenDec);
     payload.spent = fromAtomic(seat.spentAtomic, tokenDec);
@@ -1155,6 +1176,13 @@ function tickAllMeters() {
       }
       continue;
     }
+    // PASS C PART 3b — THE METER STOPS WHILE THE OVERLAY IS HIDDEN. The guest
+    // is not on the broadcast, so the viewer is not charged and the streamer
+    // does not accrue. Server-driven meters only: an MPP seat is billed by
+    // client vouchers and cannot be refused here without tripping its
+    // stale-kick (documented limitation). No signal at all means "charge" —
+    // a manual-paste streamer must not stop earning for our blindness.
+    if (!seatEscrow.shouldCharge(seat.streamRoomId)) continue;
     if (
       seat.paymentMode === 'passkey_stream'
       || seat.paymentMode === 'credit_stream'
@@ -1175,6 +1203,24 @@ function tickAllMeters() {
 }
 
 const meterInterval = setInterval(tickAllMeters, 1000);
+
+// PASS C PART 3b/3c — the ambient seat sweep: manual-paste releases at stream
+// end + tail (or the hold cap), and holdback maturities after the clawback
+// window. Stream end comes from the airings the room already keeps.
+const seatSweepInterval = setInterval(() => {
+  try {
+    const out = seatEscrow.sweepAll({
+      streamEndedAt: (roomId) => {
+        const a = listAiringsForSeats(roomId, { limit: 1 })[0];
+        return a?.endedAt ?? null;
+      },
+    });
+    if (out.manualReleased.length || out.matured.length) {
+      console.log(`[seat-escrow] sweep: ${out.manualReleased.length} manual release(s), ${out.matured.length} matured`);
+    }
+  } catch (e) { console.warn(`[seat-escrow] sweep failed: ${e.message}`); }
+}, seatEscrow.seatConfig.sweepMs);
+if (typeof seatSweepInterval.unref === 'function') seatSweepInterval.unref();
 if (typeof meterInterval.unref === 'function') meterInterval.unref();
 
 // Seat-owner sockets get a reconnect grace window before the seat is freed:
@@ -1717,7 +1763,7 @@ try {
 // ─── Letter mode (isolated; reuses the MPP payment rails read-only) ─────────
 try {
   const { attachLetters } = await import('./letters.js');
-  attachLetters(app, {
+  const lettersApi = attachLetters(app, {
     mppMeter,
     broadcastToRoom,
     hasOverlay,
@@ -1731,6 +1777,22 @@ try {
     // BOUNTY_CLAIM flag is off.
     ...makeClipHooks(),
   });
+  // PASS C PART 3a — a BANKED clip replays through the letters queue, as a
+  // synthetic already-paid letter whose id is the clip id, so the watermark
+  // window opens through the one door it can open through. Only when the
+  // bounty program is on; the bank does not exist otherwise.
+  if (bountyConfig.enabled) {
+    const bank = await import('./bounty-bank.js');
+    const bountyClips = await import('./bounty-clips.js');
+    bank.setReplayer(({ roomId, clipId, durationS }) => {
+      const out = bountyClips.readClip(clipId);
+      if (!out?.ok) return { ok: false, reason: out?.error || 'clip unreadable' };
+      return lettersApi.enqueueStoredClip(roomId, {
+        clipId, media: out.data, mime: out.record?.mime, durationS: durationS ?? out.record?.durationS,
+      });
+    });
+    setVisibilityTransitionHook((roomId, signal, o) => { bank.onSignal(roomId, signal, o); });
+  }
 } catch (err) {
   console.warn('[letters] failed to attach, continuing without letter mode:', err.message);
 }

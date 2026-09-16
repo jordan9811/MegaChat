@@ -26,6 +26,21 @@ const HIDDEN_COPY: Record<string, string> = {
   covered: 'another source is sitting on top of the overlay',
 }
 
+/** What /api/rooms/:id/seat-escrow reports — see seat-escrow.js, summaryFor. */
+type SeatMoney = {
+  seats: number
+  signalled: boolean
+  pending: string
+  released: string
+  holdbackOutstanding: string
+  manualHeldSeats: number
+  manualHoldUntil: number | null
+  holdbackFraction: number
+  clawbackWindowMs: number
+  manualTailMs: number
+  manualMaxHoldMs: number
+}
+
 type Health = {
   present: boolean
   healthy: boolean
@@ -42,10 +57,26 @@ export function OverlayHealthCard() {
   const { room, mode } = useRoom()
   const [health, setHealth] = useState<Health | null>(null)
   const [obsPassword, setObsPassword] = useState<string | null>(null)
+  const [seatMoney, setSeatMoney] = useState<SeatMoney | null>(null)
 
   useEffect(() => {
     try { setObsPassword(localStorage.getItem(LS_OBS_PASSWORD) || null) } catch { /* private mode */ }
   }, [])
+
+  // Guest-seat money: pending, released, held back — and for a manual-paste
+  // room, why it holds longer and until when (Pass C Part 3c).
+  useEffect(() => {
+    if (!room?.id || mode !== 'managing') return
+    let stop = false
+    const load = () =>
+      fetch(`/api/rooms/${encodeURIComponent(room.id)}/seat-escrow`, { credentials: 'include' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (!stop && d) setSeatMoney(d) })
+        .catch(() => { /* transient — next poll retries */ })
+    void load()
+    const t = setInterval(load, 30_000)
+    return () => { stop = true; clearInterval(t) }
+  }, [room?.id, mode])
 
   // Accident detection, for ANY live room. A manual-paste streamer has no
   // password stored, so this never runs and never reports for them — silence
@@ -104,7 +135,29 @@ export function OverlayHealthCard() {
     </div>
   ) : null
 
-  if (mode !== 'managing' || room?.transport !== 'livekit' || !health) return banner
+  // Why seat money holds longer for a manual-paste room, and what shortens it.
+  // Shown only once a metered seat has existed, so an empty room says nothing.
+  const seatNote = seatMoney && seatMoney.seats > 0 ? (
+    <p className="mt-2 text-xs leading-relaxed text-muted-foreground" data-seat-hold={seatMoney.signalled ? 'signalled' : 'manual'}>
+      {seatMoney.signalled ? (
+        <>
+          Guest-seat payouts release in chunks as OBS confirms the overlay is on screen;{' '}
+          {Math.round(seatMoney.holdbackFraction * 100)}% of each chunk holds for{' '}
+          {Math.round(seatMoney.clawbackWindowMs / 3_600_000)} h in case a check disagrees.
+        </>
+      ) : (
+        <>
+          Guest-seat payouts hold until your stream ends plus{' '}
+          {Math.round(seatMoney.manualTailMs / 60_000)} min (at most{' '}
+          {Math.round(seatMoney.manualMaxHoldMs / 3_600_000)} h) because we can&apos;t see your
+          overlay. Connect OBS under <em>OBS setup</em> and they release within a check of each chunk.
+        </>
+      )}
+      {parseFloat(seatMoney.pending) > 0 ? <> Pending now: ${seatMoney.pending}.</> : null}
+    </p>
+  ) : null
+
+  if (mode !== 'managing' || room?.transport !== 'livekit' || !health) return <>{banner}{seatNote}</>
 
   // Three states worth distinguishing, and only one is bad.
   const connected = health.lkState === 'live'
@@ -163,6 +216,7 @@ export function OverlayHealthCard() {
         }}
       />
     </div>
+    {seatNote}
     </>
   )
 }
