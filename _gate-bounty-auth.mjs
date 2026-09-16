@@ -139,7 +139,7 @@ function sampleFor(key, ids) {
     'POST /api/bounty/admin/override': { platform: 'twitch', handle: ids.handle, to: 'OPEN', reason: 'x', actor: 'a' },
   };
   let query = '';
-  if (key === 'GET /api/bounty/queue') query = `?platform=twitch&handle=${ids.handle}`;
+  if (key === 'GET /api/bounty/queue' || key === 'GET /api/bounty/bank') query = `?platform=twitch&handle=${ids.handle}`;
   return { method, urlPath: urlPath + query, body: bodies[key] ?? (method === 'POST' ? {} : undefined) };
 }
 
