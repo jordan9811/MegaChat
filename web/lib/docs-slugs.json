@@ -1,0 +1,14 @@
+{
+  "docs": "README.md",
+  "live-seats": "features/live-seats.md",
+  "megachats": "features/megachats.md",
+  "create-room-and-layout": "features/create-room-and-layout.md",
+  "obs-setup": "features/obs-setup.md",
+  "follow-my-stream": "features/follow-my-stream.md",
+  "guest-whitelist": "features/guest-whitelist.md",
+  "bounty-program": "features/bounty-program.md",
+  "recent-rooms": "features/recent-rooms.md",
+  "platform-support": "features/platform-support.md",
+  "verification": "verification/README.md",
+  "money": "concepts/money-and-metering.md"
+}
