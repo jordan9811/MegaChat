@@ -12,6 +12,7 @@ One page per area. Each carries exactly one status tag at the top, says how the 
 | Guest whitelist — named guests join free, above the paid cap | `SHIPPED` | [guest-whitelist.md](guest-whitelist.md) |
 | Bounty program — pooled money a streamer claims by going live | `SHIPPED-PARTIAL` | [bounty-program.md](bounty-program.md) |
 | Recent rooms — finished broadcasts with a poster frame | `SHIPPED` | [recent-rooms.md](recent-rooms.md) |
+| Overlay visibility — is the overlay actually on screen, and big enough to read | `SHIPPED` | [overlay-visibility.md](overlay-visibility.md) |
 | Platform support — Twitch, Kick, YouTube, Rumble, X, pump.fun | mixed, per platform | [platform-support.md](platform-support.md) |
 
 The tags in this table are summaries; the page is authoritative, and every `SHIPPED-PARTIAL` names what is unproven.

@@ -144,6 +144,137 @@ the layout editor refuses `bottom-left` for rooms with a bounty claim. Not
 changed in the docs pass (no behaviour changes there); registered as L13 in
 docs/internal/limitations-register.md and E1 in docs/internal/outstanding.md.
 
+### THE LAYOUT EDITOR WAS INERT: the overlay never received a layout (2026-09-16, Pass C, FIXED)
+
+Found by reading server.js against rooms-store.js, not by a failing test —
+nothing tested it.
+
+    server.js:793   layout:   resolveRoomConfig(roomId)?.config?.layout || null
+    server.js:790   maxSeats: effectiveMaxSeats(roomId, resolveRoomConfig(roomId)?.config?.maxSeats ?? 3)
+
+`resolveRoomConfig` returns a FLAT object — id, name, active, …, layout — with
+no `config` key. Both expressions were therefore `undefined`:
+
+  - `layout` was always null, so `applyLayout` discarded it on its
+    `Number.isFinite(next.version)` guard and EVERY room on EVERY broadcast
+    rendered the built-in default. The layout editor shipped in Pass A
+    (`94b0a23`) has never once changed what a viewer saw.
+  - `maxSeats` always fell back to the literal 3, so the cap the overlay was
+    told ignored the room's configured seats.
+
+NOT A MONEY BUG, and worth saying in the same breath: `addParticipant` reads
+`roomCfg.maxSeats` — the correct flat field — so ADMISSION was always right.
+`/api/seats` and `/api/rooms/public` also read the correct value. The damage
+was confined to what the overlay was told.
+
+WHY NO GATE CAUGHT IT: `_gate-overlay.mjs` asserts the overlay's own
+`applyLayout` in isolation, and nothing drove the server→ws→overlay path with a
+non-default layout. `_gate-overlay-layout.mjs` now does, and it creates the
+room BEFORE the server boots — rooms-store caches rooms.json on first read, and
+`pruneOrphanRooms` deletes ownerless rooms at boot, both of which silently
+defeated the first version of that assertion.
+
+### THE BOUNTY BADGE SHARED A CORNER WITH THE TILES (2026-09-16, Pass C, FIXED)
+
+Filed as L13/E1/U4 by the docs pass; this closes it. `#bounty-badge` was pinned
+`left: 16px; bottom: 16px`, which is the corner a bottom-left stack starts in.
+The verifier reads that badge off the broadcast, so a tile over it is an honest
+streamer not being paid.
+
+The badge now takes the corner diagonally opposite where the stack ACTUALLY
+lands — derived from the direction's edge and the origin's side, not from
+`origin` alone, because origin top-left with direction up puts the stack
+bottom-left. A layout whose tiles would still reach it at the ten-tile ceiling
+is REFUSED on the write path (`updateRoom` and `createRoom`, so the API cannot
+bypass it) with a reason the editor shows inline. The ceiling is now one
+definition, `maxEffectiveSeats()` in rooms-store, shared by the seat cap and
+the refusal so they cannot drift.
+
+MEASURED, NOT ASSUMED: the badge's real box is 292x64 at a 7-char code. An
+earlier measurement of 404x162 was the UNDRAWN canvas — the HTML default of
+300x150 — which is its own defect, below.
+
+### DIRECTION WAS NEVER IMPLEMENTED IN THE OVERLAY (2026-09-16, Pass C, FIXED)
+
+The layout editor offers Downward / Upward / Rightward / Leftward and its
+preview honours all four. `relayout()` only ever wrote `box.style.top` against
+`.tile { right: 0 }`, and `applyStageAnchor` set `flexDirection` on a #stage
+that is not `display:flex` with absolutely-positioned children. So 'right' and
+'left' rendered as a downward column and the broadcast disagreed with the
+preview. Nobody had seen it because of the entry above — no layout ever reached
+the overlay.
+
+The overlay now matches the preview's semantics, which is the contract the
+streamer was shown: origin picks the cross-axis side, direction picks the edge
+the stack grows from.
+
+### A MISSING code-matrix.cjs RENDERED AN INVISIBLE CODE (2026-09-16, Pass C, FIXED)
+
+The fallback wrote the code into `.bb-code`, which is `display:none` outside
+`.too-small` — so if the matrix library failed to load the badge showed
+"MEGACHAT" and an unsized 300x150 canvas: no readable code, and a box two and a
+half times the badge's true height. Both halves mattered. The canvas is now
+sized in markup (188x52, the real matrix size) and the fallback gets a class
+that shows the text.
+
+### TWO CLEARED INLINE STYLES FELL BACK TO THE CSS AND STRETCHED THE BOX (2026-09-16, Pass C, FIXED)
+
+Caught by the new gate, in the fix for the entries above, before either
+shipped. Setting `el.style.top = ''` does not clear the position — it falls
+back to the stylesheet, which still pinned `#bounty-badge { left; bottom }` and
+`#stage { top; right }`. With all four sides resolved, a fixed box STRETCHES.
+The badge measured 1888x1048 and covered the canvas; a bottom-anchored row kept
+its top edge. Both now set all four explicitly, two to `auto`.
+
+The general form, worth keeping: clearing an inline style reveals the
+stylesheet, it does not neutralise it. Any element whose position JS owns must
+own all four sides.
+
+### THE ELEVEN BROWSER GATES WERE NOT "GRADING THE PAST" — THEY WERE RED AND UNWATCHED (2026-09-16, Pass C)
+
+Pass C Part 1b assumed the eleven gates listed on 2026-09-16 were passing
+against stale builds. They were given the freshness guard, and every one of
+them discriminates (proven: touch a source, all ten Next-rendering gates FAIL
+at G0 and exit 1 before spawning anything; `_gate-lazy-connect` renders only
+`/overlay`, which Express serves from public/ and cannot be stale, so it
+asserts the build EXISTS and refuses when BUILD_ID is moved aside).
+
+But the premise was wrong. Run against a FRESH build, with G0 passing on every
+one:
+
+    browse-thumb     6 pass, 2 fail, 1 skip   client asserts on pre-Nerve markup
+    free-megachat    11 pass, 1 fail
+    browse-deck      crashes                  asserts ZERO git diff vs eae3f7d (July)
+    polish           crashes                  asserts on #price, hero copy, the equation line
+    cam-autoswitch   crashes                  waitForFunction times out
+    cohost-booth     stops cleanly            no local LiveKit SFU on :7880
+    lazy-connect     stops cleanly            no local LiveKit SFU on :7880
+    lk-phase1/2/3    cannot run here          SFU + TEST_VIEWER_KEY unset (real mainnet dust)
+    p1-features      cannot run here          TEST_VIEWER_KEY unset (real mainnet dust)
+
+Every one of those five gates was last touched in JULY. The UI they assert on
+was deliberately rebuilt in the 2026-08-29 → 09-06 overhaul: `#price` now
+exists only in megachat-settings.tsx, the landing's "equation" line is gone,
+and browse-deck pins a git-diff assertion against a commit from before the
+overhaul. They have been failing, unwatched, ever since — which is T2 (no
+single runnable entry point for the suite) with a cost attached.
+
+So the freshness guard is correct and worth having, and it is NOT what was
+wrong with these eleven. Re-pointing them at the current UI is real work and
+deserves its own pass; guessing at what the new assertions should be would
+encode the wrong expectations. Until then "the browser gates are green" is not
+a claim anyone can make, and the retest checklist depends on it.
+
+### npm run lint HAS NEVER BEEN RUNNABLE (2026-09-16, Pass C)
+
+`web/package.json` has `"lint": "eslint ."` and there is no ESLint config
+anywhere in the repo — not `.eslintrc*`, not `eslint.config.*`, and none has
+ever been committed on any branch. ESLint 10 requires a flat config, so the
+command exits 2 with a migration notice. Three run prompts have now listed
+"lint" in their verification steps; it has never run. Either add a config
+(choosing the rule set is a real decision, not a formality) or drop the script
+so the instruction stops being unsatisfiable.
+
 # OPEN ISSUES
 
 Running list of stubs, deferrals, and known gaps. Append, don't rewrite.

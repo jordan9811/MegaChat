@@ -24,6 +24,7 @@
   * [OBS setup](features/obs-setup.md)
   * [Platform support](features/platform-support.md)
   * [Recent rooms — finished broadcasts with a poster](features/recent-rooms.md)
+  * [Overlay visibility](features/overlay-visibility.md)
 
 ## Technical
 * [Technical](technical/README.md)
