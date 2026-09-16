@@ -275,6 +275,70 @@ command exits 2 with a migration notice. Three run prompts have now listed
 (choosing the rule set is a real decision, not a formality) or drop the script
 so the instruction stops being unsatisfiable.
 
+### PASS C SESSION 2 — BANKING AND ESCROW (2026-09-16, the first pass permitted to change settlement)
+
+WHAT SHIPPED. Three modules and one wiring pass, every one of them accounting
+with stub settlement:
+
+    bounty-bank.js      QUEUED → DRAINING → REPLAYED, terminals AIRED / EXPIRED;
+                        folded from BANK rows in the escrow ledger, never stored.
+    seat-escrow.js      OPEN ⇄ PAUSED → CLOSED → SETTLING → SETTLED | CLAWED, in
+                        its own append-only ledger (data/seat-ledger.jsonl).
+    bounty-escrow.js    release() collapses verified playbacks to ONE PAYABLE
+                        AIRING PER PLEDGE; refund reason BANKED_CLIP_EXPIRED.
+    letters.js          enqueueStoredClip — the first path that puts a stored
+                        pledged clip on air (see the finding below).
+    server.js           seat open/accrue/close hooks; the meter SKIPS TICKS while
+                        the room is hidden; the bank replayer; the seat sweeper.
+    bounty-routes.js    bank hooks on every playback and verification; the
+                        payable dedupe; named review causes; sweep-bank and bank
+                        read routes; seat reviews listed beside bounty reviews.
+
+Gate: `_gate-bank-and-seats.mjs`. Old-vs-new proven by running identical inputs
+against HEAD's modules (scratchpad `passc-discriminate.mjs`): a pledge verified
+twice paid 10 before and 5 after; a buried playback was unpaid-and-unqueued
+before and QUEUED after.
+
+THE SETTLEMENT CHANGES, EACH WITH ITS DISCRIMINATING TEST:
+
+    1. one payable airing per pledge                       gate F1–F4 (old 2×, new 1×)
+    2. banked clips refund on expiry, BANKED_CLIP_EXPIRED  gate E2–E7
+    3. seat pending bucket: 80/20 sweep, buried refund,
+       detection lag as platform cost                      gate G3–G4
+    4. seat SOURCE_UNAVAILABLE claws nothing (the clip
+       path refunds in full, shown in the same run)        gate G5
+    5. clawback ≤ holdback; manual-paste hold to stream
+       end + tail, capped                                  gate G6–G7
+    6. the meter skips ticks while hidden                  gate G2, plus the
+       tickAllMeters wiring (read, not driven — below)
+
+FINDING — NO PATH PUT A STORED PLEDGED CLIP ON AIR. `bounty-clips.markPlayed` is
+exported and called by nothing; `playCount` is 0 for every stored clip that
+has ever existed. Playback windows open only through the letters hook (whose
+ids are letter ids) and the admin rehearsal route, so the bounty payout path
+has only ever been exercised by rehearsals and by ordinary letters played
+during an air session. The bank's replay bridge (`enqueueStoredClip`) is the
+first mechanism by which a stored clip reaches the overlay — and only for
+REPLAYS. The initial play of an approved pledged clip still has no UI or
+route. Filed as E37; it blocks the bounty mechanic as a product, not this
+session's scope.
+
+WHAT IS NOT PROVEN, said plainly:
+
+- The seat bucket is not yet real money. `tickPasskeyStreamSeat` still pulls
+  each tick straight to the payout address; the bucket records what SHOULD
+  have happened and emits intents. Redirecting ticks to a platform-held
+  balance and implementing RealSettlement is retest-checklist work with a
+  funded wallet (row 24 and the new rows 28–32).
+- The meter pause is wired into `tickAllMeters` and read, not driven by a
+  gate: a metered seat in a booted server needs a funded or credit-bearing
+  wallet this machine does not have. The decision function (`shouldCharge`)
+  is gated.
+- MPP seats do not pause. Their ticks are client vouchers; refusing one trips
+  the stale-kick and ends the seat instead of pausing it. Limitation L34.
+- The z-order assumption (L30) now also bounds the bank: a missed occlusion
+  is a clip that was not banked, never one banked wrongly.
+
 # OPEN ISSUES
 
 Running list of stubs, deferrals, and known gaps. Append, don't rewrite.

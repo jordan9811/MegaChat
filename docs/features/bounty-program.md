@@ -42,9 +42,23 @@ Contributions sit against a reserved handle for up to 90 days (`reservationTtlMs
 - Three fan-facing components render in the pre-overhaul skin (`OPEN-ISSUES.md`, "THE BOUNTY COMPONENTS LOST THE NERVE SKIN") — a front-end task, not a behaviour defect.
 - The example pools disappeared once when every seeded pool had been refunded; the condition that hid them was removed in `7ee7426`.
 
+## Banking — when a pledged clip aired while the overlay was hidden
+
+Pass C Part 3a. A clip that played while the overlay was not on the broadcast used to be simply lost: unverified, unpaid, and eventually refunded at pledge expiry. Now it is **banked** and replayed when the overlay comes back (`bounty-bank.js`).
+
+1. A playback is *buried* when an `overlay_hidden` window from [Overlay visibility](overlay-visibility.md) covers at least half of it (`bountyConfig.bankCoverFraction`). The pledge enters `QUEUED`. A NOT_SHOWN verdict on a playback with a matching hidden window banks it the same way (`bounty-bank.js`, `onVerification`). A scaled overlay does **not** bank — it was on screen.
+2. When the room's latest signal is `overlay_visible` and the air session is still open, queued clips replay **one at a time, at most one every 20 s per room** (`bountyConfig.bankDrainIntervalMs`), through the same letters queue every MegaChat plays through (`letters.js`, `enqueueStoredClip`). Each replay opens a new playback window with a **fresh per-playback code** (`bounty-watermark.js`, `startClipPlayback`).
+3. **One payable airing per pledge.** A pledge pays once, however many times its clip verified: `release()` collapses verified playbacks by contribution and the ledger row records both the evidence count and the paid count (`bounty-escrow.js`, `payablePlaybacks`). A clip aired twice paid twice before this; the gate shows the old number beside the new one (`_gate-bank-and-seats.mjs`, F1–F4).
+4. **Expiry.** A clip still banked 10 minutes after its air session closed, or 12 hours after banking, refunds the fan with reason `BANKED_CLIP_EXPIRED` and opens a review naming why (`bountyConfig.bankTailMs`, `bankMaxHoldMs`; `bounty-routes.js`, `sweepBank`). No unbounded liability.
+5. Live seats are never banked — see [Live seats](live-seats.md).
+
+The bank's state is folded from `BANK` rows in the escrow ledger, never stored, so every transition is evidence and every writer is replay-safe (`_gate-bank-and-seats.mjs`, A and E6).
+
 ## What this does NOT do
 
-- **It does not pay.** Release and refund are ledger rows and recorded intents; there is no signer and no transfer anywhere in the sixteen `bounty-*.js` modules (Gate H, `_gate-bounty-claim.mjs`).
+- **It does not pay.** Release and refund are ledger rows and recorded intents; there is no signer and no transfer anywhere in the seventeen `bounty-*.js` modules (Gate H, `_gate-bounty-claim.mjs`; extended to the bank, the seat escrow and the visibility path in `_gate-bank-and-seats.mjs`, I1).
+- **It does not put an approved pledged clip on air the first time.** `bounty-clips.markPlayed` is called by nothing; the only path that plays a stored clip is the bank's replay bridge. The initial play still has no UI or route (`OPEN-ISSUES.md`, 2026-09-16 Session 2).
 - **It does not take a fan's money.** `POST /api/bounty/contribute` and `/pledge` write the ledger; no payment method is invoked (Gate H).
 - **It does not run unless switched on.** `BOUNTY_CLAIM` defaults off and, off, mounts nothing (`attachBountyRoutes`, `bounty-routes.js`).
 - **It does not auto-verify on a warning.** A verification whose signals disagree, or that reads well but misses a required code, routes to a person (`bounty-confidence.js`, tier 4; `bounty-verifier.js`, `NOT_SHOWN`).
+- **It does not deny silently.** A banked clip, a clip under a scaled overlay, and a banked clip that expired each carry a named cause in the review builder (`bounty-routes.js`, the verify route and `sweepBank`; `_gate-bank-and-seats.mjs`, H6 and H9).

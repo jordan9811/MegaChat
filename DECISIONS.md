@@ -484,3 +484,75 @@ reason than "the API is expensive".
   and earns its keep only as a cross-check that can contradict a stronger
   witness and force review. Undo: n/a (taxonomy — carrying the wrong definition
   causes a strong signal to be distrusted).
+
+## Pass C, Session 2 — banking and escrow (2026-09-16)
+
+- **A banked clip is a state of the PLEDGE, folded from BANK rows in the escrow
+  ledger, not a second store** — an expiry refunds money, so the bank is
+  evidence; folding from idempotency-keyed rows makes every writer replay-safe
+  by construction and leaves nothing to diverge. Undo: n/a (rule).
+- **Banking triggers on `overlay_hidden` only; `overlay_scaled_below_floor` is a
+  review cause** — a scaled overlay was on screen, so the clip probably aired
+  and we probably could not read it. That is ours to explain, not a replay.
+  Undo: add the scaled signal to `buryWindowFor` (one line) — and accept that
+  the audience would see the clip twice.
+- **A playback is buried when a hidden window covers at least half of it**
+  (`bankCoverFraction` 0.5) — a clip on screen for most of its length was
+  seen, and replaying it dumps something the audience already watched. Undo:
+  `BOUNTY_BANK_COVER_FRACTION`.
+- **Drain at one clip per 20 s per room, only while the latest signal is
+  visible and the air session is OPEN** — longer than a MegaChat tile plus its
+  stingers, so two banked clips are never on screen together, and a refused
+  replay goes back to the queue with the interval still applying. Undo:
+  `BOUNTY_BANK_DRAIN_INTERVAL_MS`.
+- **Expiry is bounded by the STREAM, not the pledge: stream end + 10 min, or 12 h
+  from banking, whichever first** — a queued clip is a liability against a
+  broadcast that is over; the tail covers a session closed by accident. Undo:
+  `BOUNTY_BANK_TAIL_MS`, `BOUNTY_BANK_MAX_HOLD_MS`.
+- **One payable airing per pledge, enforced in release() by collapsing verified
+  playbacks per contribution** — evidence stays per playback (gate K), payout
+  is per pledge. A clip aired twice used to pay twice; now it pays once and
+  the ledger row carries both numbers. This is a settlement change and the
+  spec says so. Undo: stop passing `verifiedPlaybacks` from the verify route.
+- **A banked clip replays THROUGH the letters queue as a synthetic paid letter
+  whose id is the clip id** — the watermark window opens through the one door
+  it can open through, so proof-of-playback and proof-of-air stay one artefact.
+  Nothing else in the repo put a stored pledged clip on air; this is the first
+  path that does. Undo: n/a (there is no second path).
+- **Live seats get a rolling pending bucket in their own ledger, never the
+  bounty escrow** — a meter forced into a discrete-object escrow gives either
+  a row per tick or one that cannot say "on screen forty minutes, buried
+  three". Undo: n/a (rule).
+- **Sweep = release 80 %, hold 20 % for 72 h; clawback takes at most the
+  holdback** — option B of `docs/decisions/post-release-clawback.md`, reused
+  rather than built a second way: a reversal is a non-payment of the tail,
+  never a debt. Undo: `SEAT_HOLDBACK_FRACTION`, `SEAT_CLAWBACK_WINDOW_MS`.
+- **Buried seconds refund to the viewer backdated to the hidden window start;
+  the 30 s detection lag before it is refunded from the PLATFORM and logged as
+  cost** — OBS stamps nothing, so the earliest timestamp is the poll receipt;
+  the platform is the party that could have looked sooner. Undo:
+  `SEAT_DETECTION_LAG_MS`.
+- **The server-driven meters skip ticks while the room is hidden; MPP seats do
+  not pause** — an MPP seat is billed by client vouchers and refusing one trips
+  its stale-kick, which would end the seat rather than pause it. Filed as a
+  limitation. Undo: n/a (the alternative is worse).
+- **SOURCE_UNAVAILABLE on a seat flags and claws nothing; the holdback matures
+  on schedule** — "could not look" refunds a clip because a clip either aired
+  or did not; an hour on screen is not unmade by a five-minute blind spot.
+  Undo: n/a (spec).
+- **Manual-paste rooms sweep once at stream end + 10 min, capped at 24 h from
+  seat open, then release optimistically with the same holdback** — the same
+  optimistic-release-with-review-window the manual-paste bounty tier already
+  uses, reused. Undo: `SEAT_MANUAL_TAIL_MS`, `SEAT_MANUAL_MAX_HOLD_MS`.
+- **The seat bucket is accounting with stub settlement; the on-chain per-tick
+  pull is untouched** — the tick still pays the payout address directly, so
+  today the bucket describes what SHOULD happen. Making it real means
+  redirecting ticks to a platform-held balance plus RealSettlement, which needs
+  a funded wallet and the retest checklist; nothing this session could cover
+  with a test that fails on the old behaviour. Said plainly in the report.
+  Undo: n/a (scope).
+- **Every new terminal-or-delaying state names a cause in the review builder**
+  — banked, scaled-below-floor (own words), bank expiry (opens a review from
+  the sweeper), seat clawback and seat SOURCE_UNAVAILABLE (seat ledger flags,
+  listed beside the bounty reviews). A verdict with no cause is a silent
+  denial. Undo: n/a (rule).

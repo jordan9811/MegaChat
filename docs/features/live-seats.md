@@ -34,8 +34,20 @@ A viewer opens a room's link, pays per second, and their camera appears in a til
 
 Join Stream has its own switch and admission mode on the room (`resolveJoinStream`, `rooms-store.js`: `admission` is `ai` by default, or `approve`/`manual`), and its reputation gates inherit from MegaChats unless the streamer separates them (`gatesSameAsMegaChat`). The only gate enforced today is minimum watch time, read off the rewards module's watch-time ledger (`checkFeatureGates`, `server.js`). Followers-only and subscribers-only are stored and shown as unenforced in the dashboard ("we never silently enforce what we cannot verify").
 
+## What happens to the money when the overlay goes dark
+
+Pass C Part 3b/3c. A seat is a per-second meter, so its money gets a **rolling pending bucket** rather than a discrete escrow (`seat-escrow.js`, header). Every metered seat opens one (`server.js`, `addParticipant`); every tick accrues into it.
+
+- **The meter stops while the overlay is hidden.** When the room's latest [visibility](overlay-visibility.md) signal is `overlay_hidden`, the server-driven meters skip ticks (`server.js`, `tickAllMeters`; `seat-escrow.js`, `shouldCharge`). The guest is not on the broadcast, so the viewer is not charged.
+- **Buried seconds refund to the viewer**, backdated to the hidden window's start. OBS stamps nothing, so that start is the poll receipt. The 30 s of detection lag before it — one poll plus the broadcast delay the audience sees — is refunded from the **platform**, not the streamer, and logged as cost (`seat-escrow.js`, `refundBuried`; `SEAT_DETECTION_LAG_MS`).
+- **Sweeps release 80 % and hold 20 % for 72 h.** When the overlay comes back, and when the seat closes, pending is swept: most released to the streamer at once, a holdback kept until the clawback window closes with no flag (`SEAT_HOLDBACK_FRACTION`, `SEAT_CLAWBACK_WINDOW_MS`). This is option B of the post-release clawback design, reused rather than rebuilt: a reversal is a non-payment of the tail, never a debt.
+- **Could-not-look claws nothing.** A `SOURCE_UNAVAILABLE` flag on a seat opens a review and the holdback matures on schedule; only a positive failure claws back, and never more than the holdback (`seat-escrow.js`, `clawback`; `_gate-bank-and-seats.mjs`, G5–G6).
+- **Manual-paste rooms hold longer.** With no obs-websocket there is no signal to sweep on, so seat money holds until the stream ends plus 10 minutes, capped at 24 hours from seat open, then releases optimistically with the same holdback (`SEAT_MANUAL_TAIL_MS`, `SEAT_MANUAL_MAX_HOLD_MS`). The manage page says so and says what shortens it: connecting OBS (`web/components/overlay-health-card.tsx`).
+
 ## What this does NOT do
 
+- **It does not move the seat money yet.** The pending bucket is accounting with stub settlement; the per-tick on-chain pull still pays the payout address directly (`server.js`, `tickPasskeyStreamSeat`). Making the bucket real money is retest-checklist work: redirect ticks to a platform-held balance and implement `RealSettlement` against the recorded intents (`seat-escrow.js`, header; internal outstanding list E38).
+- **It does not pause an MPP seat.** Those ticks are client-signed vouchers; refusing one trips the stale-kick and ends the seat instead of pausing it (`server.js`, `tickAllMeters`; limitations register L34).
 - **It does not enforce follower or subscriber gates** (`checkFeatureGates`, `server.js`).
 - **It does not keep a seat across a server restart** — `activeSeats` is memory (`server.js`).
 - **It does not give the streamer a copy of the guest's video.** Media goes through LiveKit to the overlay; nothing is recorded by the seat path.

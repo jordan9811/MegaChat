@@ -46,7 +46,7 @@ Every path that touches escrow, settlement, payout, verification, the whitelist,
 | 21 | Review queue blocks release until a human resolves | `_gate-bounty-claim.mjs` | fixture | ☐ |
 | 22 | Bounty route authorization: policy table diffed against mounted routes both ways | `_gate-bounty-auth.mjs` | real HTTP | ☐ |
 | 23 | `BOUNTY_ADMIN_KEY` set in Railway; admin routes answer 200 with it and refuse without | `OPEN-ISSUES.md` (unset as of 2026-08-26) | **owner action** | ☐ |
-| 24 | Settlement: **does not exist.** `RealSettlement` must be written, gated, and re-run against rows 8–12 before any of this pays anyone. | `bounty-settlement.js`, `TODO(run-b)` | — | ☐ |
+| 24 | Settlement: **does not exist.** `RealSettlement` must be written, gated, and re-run against rows 8–12 — and now against the seat and bank intents of rows 28–31 — before any of this pays anyone. | `bounty-settlement.js`, `TODO(run-b)`; `seat-escrow.js` intents | — | ☐ |
 | 25 | OBS one-click and scene check against a real OBS during a real broadcast | `_smoke-obs-overlay.mjs`, `docs/obs-oneclick-checklist.md` | **never run live** | ☐ |
 | 25a | Overlay visibility signals (`overlay_hidden` with each of its four reasons, `overlay_scaled_below_floor`) against a real OBS — including which direction real OBS orders `sceneItemIndex` | `_gate-overlay-visibility.mjs` 32/0 | mock only; **never run live** | ☐ |
 | 25b | The layout a streamer saves is the layout the broadcast renders, and the badge is never under a tile | `_gate-overlay-layout.mjs` 33/0 (real browser, all 16 origin/direction combinations at the ceiling) | real browser, synthetic seats | ☐ |
@@ -54,6 +54,12 @@ Every path that touches escrow, settlement, payout, verification, the whitelist,
 | 26 | Browser gates re-run against a fresh build (G0 rule) | **DONE 2026-09-16 (Pass C):** `assertFreshBuild` in `_gate-helpers.mjs`, wired into all eleven, each proven to refuse a stale build | — | ☑ |
 | 26a | **The five browser gates that assert against the replaced UI** must be re-pointed before their results mean anything — `_gate-polish`, `_gate-browse-deck`, `_gate-browse-thumb`, `_gate-cam-autoswitch`, `_gate-free-megachat` | none — they are red on a fresh build for UI drift, not staleness | — | ☐ |
 | 27 | The whole gate suite from one entry point | none — `OPEN-ISSUES.md` T2: "no single runnable entry point" | **must be built before a launch claim of 'suite green'** | ☐ |
+| 28 | **Banking:** a pledged clip buried under a hidden overlay is QUEUED, replays once the overlay is back at one clip per 20 s with a fresh per-playback code, and refunds with `BANKED_CLIP_EXPIRED` at stream end + tail or the 12 h cap | `_gate-bank-and-seats.mjs` A–E, H1–H7 | fixture + real HTTP | ☐ |
+| 29 | **One payable airing per pledge:** the same pledge verified twice pays once; two pledges pay twice; the old arithmetic paid twice | `_gate-bank-and-seats.mjs` F1–F6; `scratchpad/passc-discriminate.mjs` old-vs-new | fixture | ☐ |
+| 30 | **Seat escrow:** the meter stops while hidden, buried seconds refund backdated with the detection lag charged to the platform, 80/20 sweep, holdback matures after 72 h, clawback ≤ holdback, `SOURCE_UNAVAILABLE` claws nothing | `_gate-bank-and-seats.mjs` G1–G8, J1 | fixture — **accounting only, ticks still pay on-chain (E38)** | ☐ |
+| 31 | **Manual-paste hold:** a room with no visibility signal sweeps at stream end + 10 min, capped at 24 h, and the manage page says why | `_gate-bank-and-seats.mjs` G7; `web/components/overlay-health-card.tsx` | fixture | ☐ |
+| 32 | **Review causes:** banked, scaled-below-floor (own words), bank expiry, seat clawback and seat could-not-look are each named, never silent | `_gate-bank-and-seats.mjs` H6, H9–H11 | real HTTP | ☐ |
+| 33 | **Gate H, extended:** zero transfer-shaped calls across the bounty modules, the bank, the seat escrow and the visibility path; settlement still the stub | `_gate-bank-and-seats.mjs` I1–I3; `_gate-bounty-claim.mjs` H | static scan | ☐ |
 
 ## What leaving stealth changes in these docs
 

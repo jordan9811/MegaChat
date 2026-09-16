@@ -41,6 +41,10 @@ A room whose per-second price is zero is a free room; the join page treats a non
 
 Session settlements pay the room's `payoutAddress` when one is set, else the platform seller wallet from the environment (`resolveRoomConfig`, `rooms-store.js`, "Streamer payout wallet"). MegaChat refunds on rejection are a plain transfer from the platform wallet (`letters.js`, header).
 
+## The seat pending bucket
+
+Since Pass C Part 3, every metered seat also has a pending bucket in `data/seat-ledger.jsonl` that its ticks accrue into (`seat-escrow.js`). Visibility signals sweep it — 80 % released, 20 % held for 72 h — and a hidden overlay pauses the meter and refunds the buried seconds. Today that bucket is accounting with stub settlement beside the on-chain pull, not instead of it; [Live seats](../features/live-seats.md) has the rules and what is not yet real.
+
 ## What this does NOT do
 
 - It does not hold viewer funds in a MegaChat account. There is no balance ledger for viewers except the earned-credit store, which is in memory (`reward-credits.js`, `const store = new Map()`) and does not survive a restart.
