@@ -60,7 +60,7 @@ Blocked-on codes: **owner** (a credential, an account, a dashboard toggle, a dec
 | E20 | One runnable entry point for the gate suite, with isolation or retry (T2) | `OPEN-ISSUES.md` T2 |
 | E21 | `_gate-theme.mjs` reported red for dark mode on 2026-08-26 (T1); not re-checked since the Nerve skin — [U3](needs-a-status-call.md) | `OPEN-ISSUES.md` T1 |
 | E22 | The three bounty components (`my-pledges`, `record-flow`, `streamer-page`) render in the pre-Nerve skin; reapply the restyle on top of the lockdown, contributor from the session only | `OPEN-ISSUES.md`, "THE BOUNTY COMPONENTS LOST THE NERVE SKIN" |
-| E23 | `_gate-bounty-claim.mjs` section G still uses a fixed sleep and `stdio: 'ignore'` (flaky); port to `startGateServer` | `OPEN-ISSUES.md`, "SECTION G IS A FIXED-SLEEP RACE" |
+| E23 | **CLOSED 2026-09-16.** `_gate-bounty-claim.mjs` section G now spawns through `startGateServer` (port precheck, readiness poll, stderr kept, nonce); it had reported `0,0,0` twice in a row under build load on the fixed 9 s sleep, and passed 102/0 on the harness immediately after. The other fixed-sleep gates in W5 remain open (E19). | `OPEN-ISSUES.md`, "SECTION G IS A FIXED-SLEEP RACE" |
 | E24 | Handles are reassignable by design at the identity layer; every consumer that stores a handle must pin the identity — the durable fix belongs in `identity-store.js` | `OPEN-ISSUES.md`, "A HANDLE IS NOT AN AUTHORIZATION TOKEN" |
 | E25 | G4/G5: competing claimants not modelled; MegaChat handles are 3–20 chars against Twitch's 3–25 | `OPEN-ISSUES.md`, "Known gaps still open" (Run A) |
 | E26 | Kick OAuth registration validity unproven (a rendering login page proves nothing); needs a full round trip with a real Kick account | `OPEN-ISSUES.md`, P1 (07-29) |

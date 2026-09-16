@@ -62,6 +62,15 @@ and its own comment says "stdio 'ignore' is what hid the original failure. Pipe
 and KEEP it." This gate predates that helper and still uses the pattern the
 helper exists to replace.
 
+**RESOLVED 2026-09-16.** Section G now spawns both servers through
+`startGateServer` (port precheck, /api/health readiness poll, stderr kept,
+identity nonce). The trigger for finally doing it: after two back-to-back
+`npm run build`s the gate reported `G. flag off: every bounty route 404s —
+0,0,0` twice in a row on the fixed 9s sleep (boot measured 3.4s idle, longer
+under build load), and 102/0 on the harness on the very next run, with the
+routes answering `404,404,404`. The other fixed-sleep gates listed under W5
+are unchanged.
+
 ### GATE: section G reported GREEN AGAINST A STALE BUILD, and the line it checked encoded a retired decision (2026-09-16, FIXED)
 
 Two findings from reconciling Pass A's gate history, both real, neither the

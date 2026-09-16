@@ -714,13 +714,17 @@ console.log(`\n  [server-side subtotal] ${pass} pass, ${fail} fail`);
 // Bounty routes authorize server-side now. Mint the same credentials a real
 // streamer would hold, into THIS server's data dir, and carry them on every
 // request below.
-const { mintBountyAuth } = await import('./_gate-helpers.mjs');
+const { mintBountyAuth, startGateServer } = await import('./_gate-helpers.mjs');
 mkdirSync(`${SCRATCH}-http`, { recursive: true });
 const srv = mintBountyAuth({ handles: ['gateshow', 'revq', 'wm', 'vf'], dataDir: `${SCRATCH}-http` });
 
-const launch = (port, env) => spawn(process.execPath, ['server.js', '--prod'], {
-  env: { ...process.env, PORT: String(port), DATA_DIR: `${SCRATCH}-http`, ...srv.env, ...env },
-  stdio: 'ignore', cwd: process.cwd(),
+// Through the shared harness, not a bare spawn: it refuses a port something
+// else holds, polls /api/health instead of sleeping a fixed 9s, keeps stderr,
+// and proves by nonce that the responder is the process it started. The bare
+// spawn + sleep this replaced reported `0,0,0` twice on a slow boot and was
+// filed as a race (OPEN-ISSUES 2026-09-15); a readiness poll cannot race.
+const launch = (port, env, label) => startGateServer({
+  port, dataDir: `${SCRATCH}-http`, env: { ...srv.env, ...env }, label,
 });
 
 // ── G0. the build under test is newer than the source it claims to serve ──
@@ -756,8 +760,7 @@ const browser = await puppeteer.launch({
   executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: 'new',
 });
 
-const off = launch(3250, { BOUNTY_CLAIM: '0' });
-await sleep(9000);
+const off = await launch(3250, { BOUNTY_CLAIM: '0' }, 'flag-off');
 try {
   const codes = await Promise.all(
     ['/api/bounty/pools', '/api/bounty/config', '/api/bounty/admin/sessions']
@@ -780,8 +783,7 @@ try {
 } finally { off.kill(); }
 
 // flag ON: routes live + page renders the board
-const on = launch(3251, { BOUNTY_CLAIM: '1' });
-await sleep(9000);
+const on = await launch(3251, { BOUNTY_CLAIM: '1' }, 'flag-on');
 try {
   const cfg = await fetch('http://localhost:3251/api/bounty/config').then((r) => r.json());
   ok('G. flag on: config route reports enabled', cfg.enabled === true);
