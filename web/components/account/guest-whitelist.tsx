@@ -88,8 +88,10 @@ export function GuestWhitelist({ myHandle }: { myHandle: string | null }) {
           <span className="mcc-coordinate">Guest list</span>
           <h2>Let your regulars walk in.</h2>
           <p>
-            Anyone here joins any of your rooms free — no per-second charge, no
-            waiting for a seat. It applies to every room you open, not just one.
+            Anyone here takes a camera seat in any of your rooms free — no
+            per-second charge, no waiting for a seat. It applies to every room
+            you open, not just one. Recorded MegaChats are still charged at
+            your normal price.
           </p>
         </div>
         {list ? (

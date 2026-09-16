@@ -99,6 +99,22 @@ function tokenSymbol() {
 function roomIsFree() {
   return !!CONFIG && !(parseFloat(CONFIG.passkeyTickPrice || '1') > 0);
 }
+/**
+ * Does THIS viewer ride free, whatever the room charges?
+ *
+ * roomIsFree() asks about the ROOM's price, which is the wrong question for a
+ * whitelisted guest: the room is paid, they are not. Without this the guest was
+ * still walked through a wallet connect and a chain switch before the request
+ * was even sent — the server short-circuited on arrival and they ended up free,
+ * so the promise held on the server and broke in front of the person.
+ *
+ * Server-derived from the sealed identity cookie (CONFIG.viewerRidesFree). It
+ * only decides what UI to show; the seat is granted or refused server-side
+ * either way, so believing it cannot buy a free seat.
+ */
+function viewerRidesFree() {
+  return !!(CONFIG && (CONFIG as { viewerRidesFree?: boolean }).viewerRidesFree)
+}
 // Session mode (audit P1-1/P1-2): once a seat is held, the setup controls
 // leave the screen — sign-in cluster, fund row, wallet info — and the
 // username locks (editing it mid-session does nothing). All restored on leave.
@@ -1110,8 +1126,9 @@ async function joinSeat() {
     // right here, shows the connected state, then continues straight into the
     // seat authorization. MetaMask users connect via the secondary button
     // first, which sets walletMode below.
-    if (roomIsFree()) {
-      // Free room: no wallet, no chain, no session — straight to the seat.
+    if (roomIsFree() || viewerRidesFree()) {
+      // Free room, or a guest on the streamer's list: no wallet, no chain, no
+      // session — straight to the seat.
       await joinSeatMpp(username);
       return;
     }

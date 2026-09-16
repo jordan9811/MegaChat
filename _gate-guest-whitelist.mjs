@@ -301,6 +301,23 @@ try {
   ok('the guest rides free again', backOn.status === 200 && backOn.body?.free === true);
   await api('POST', `/api/leave/${backOn.body?.seatId}`, { who: 'guest' });
 
+  // D2 — LEAVE AND REJOIN FREELY. Point 4 of the spec, and nothing in the 53
+  // original assertions ever performed a SECOND join for the same guest — it
+  // was proven only by reading that no counter gates the check. A once-only
+  // grant, a consumed token or a cooldown would all have passed the old gate.
+  const r1 = await joinPasskey('guest', paidRoom);
+  ok('D2 rejoin: first join is free', r1.status === 200 && r1.body?.free === true, `status ${r1.status}`);
+  await api('POST', `/api/leave/${r1.body?.seatId}`, { who: 'guest' });
+  const r2 = await joinPasskey('guest', paidRoom);
+  ok('D2 rejoin: SECOND join is free too', r2.status === 200 && r2.body?.free === true, `status ${r2.status}`);
+  ok('D2 rejoin: it is a genuinely new seat, not the old one handed back',
+    r2.body?.seatId && r2.body.seatId !== r1.body?.seatId, `${r1.body?.seatId} -> ${r2.body?.seatId}`);
+  await api('POST', `/api/leave/${r2.body?.seatId}`, { who: 'guest' });
+  const r3 = await joinPasskey('guest', paidRoom);
+  ok('D2 rejoin: and a third, so nothing is being consumed',
+    r3.status === 200 && r3.body?.free === true, `status ${r3.status}`);
+  await api('POST', `/api/leave/${r3.body?.seatId}`, { who: 'guest' });
+
   // ── E. supersedes room settings, one at a time ───────────────────────────
   section('E. Whitelist supersedes room settings');
 
@@ -333,6 +350,32 @@ try {
   const capSeats = await seatsIn(capRoom);
   ok('E2 seat cap: the paying viewer was NOT bumped to make room',
     capSeats?.seats?.some((s) => s.id === filler.body?.seatId));
+
+  // E2b — THE CAP IS RAISED, NOT MERELY UNENFORCED. This is the distinction
+  // the whole feature turns on: "exempt from the check" admits the guest while
+  // every other component still believes the cap is maxSeats, so the overlay
+  // refuses to draw the tile and the browse card says a full room has space.
+  // The guest is admitted and invisible. Assert the raise is VISIBLE, not just
+  // that the join succeeded.
+  ok('E2b the reported cap ROSE to fit the guest (1 configured + 1 guest = 2)',
+    capSeats?.maxSeats === 2, `maxSeats=${capSeats?.maxSeats} configured=${capSeats?.configuredMaxSeats}`);
+  ok('E2b the configured cap is reported separately and did NOT move',
+    capSeats?.configuredMaxSeats === 1, `configured=${capSeats?.configuredMaxSeats}`);
+  ok('E2b availability is 0 for a PAYER — the guest took no chair',
+    capSeats?.available === 0, `available=${capSeats?.available}`);
+  ok('E2b both seats are really on screen, so the raise is not cosmetic',
+    (capSeats?.seats?.length || 0) === 2, `seats=${capSeats?.seats?.length}`);
+  // …and the browse card, the third consumer, agrees with the other two.
+  const board = (await api('GET', '/api/rooms/public')).body?.rooms || [];
+  const cardRow = board.find((r) => r.id === capRoom);
+  ok('E2b the browse card reports the SAME raised cap, not the configured one',
+    !cardRow || cardRow.maxSeats === 2, `card maxSeats=${cardRow?.maxSeats}`);
+
+  // E2c — and it FALLS again when the guest leaves, or the raise is a leak.
+  await api('POST', `/api/leave/${capGuest.body?.seatId}`, { who: 'guest' });
+  const afterGuest = await seatsIn(capRoom);
+  ok('E2c the cap falls back when the guest leaves',
+    afterGuest?.maxSeats === 1, `maxSeats=${afterGuest?.maxSeats}`);
 
   // E3 — join-stream switched off entirely
   const closedRoom = await createRoom('streamer', 'Gate closed room', {

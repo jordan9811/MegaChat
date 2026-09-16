@@ -60,7 +60,8 @@ export function attachWhitelistRoutes(app, { log = console } = {}) {
 
     // A handle that resolves to nobody would sit on the list looking correct
     // and never match anyone, so it is rejected at the door rather than stored.
-    if (!getIdentityByHandle(clean)) {
+    const target = getIdentityByHandle(clean);
+    if (!target) {
       return res.status(404).json({
         error: `No MegaChat account uses @${clean}. Check the spelling — they need to have signed in and claimed their handle at least once.`,
         reason: 'unknown_handle',
@@ -69,7 +70,7 @@ export function attachWhitelistRoutes(app, { log = console } = {}) {
 
     let result;
     try {
-      result = addGuest(req.ownerKey, clean);
+      result = addGuest(req.ownerKey, clean, roomOwnerKey(target));
     } catch (err) {
       const status = err.code === 'list_full' ? 409 : 400;
       return res.status(status).json({ error: err.message, reason: err.code });
@@ -92,7 +93,16 @@ export function attachWhitelistRoutes(app, { log = console } = {}) {
   });
 
   app.post('/api/whitelist/enabled', requireStreamer, (req, res) => {
-    const enabled = req.body?.enabled !== false;
+    // STRICT BOOLEAN, and the strictness is the point. `!== false` fails OPEN:
+    // a missing body, {}, {enabled:'false'} and {enabled:0} all turned the list
+    // ON, and ON is the direction that hands out free seats. A switch whose
+    // failure mode is "give the room away" has to refuse anything it does not
+    // positively understand, so an ambiguous request is a 400 rather than a
+    // silent grant.
+    if (typeof req.body?.enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled must be true or false' });
+    }
+    const enabled = req.body.enabled;
     const list = setEnabled(req.ownerKey, enabled);
     log.log(`[whitelist] ${req.ownerKey} master switch ${enabled ? 'ON' : 'OFF'} (${list.entries.length} guest(s) kept)`);
     res.json(list);

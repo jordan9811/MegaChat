@@ -479,7 +479,14 @@
     const TILE_W = 320;    // tile width  (px)
     const TILE_H = 180;    // tile height (px)
     const GAP = 12;        // vertical gap between stacked tiles (px)
-    const MAX_SEATS = 3;   // never render more than this many tiles
+    // THE CAP COMES FROM THE SERVER. It was a hardcoded 3, which meant the
+    // overlay silently refused to draw a fourth tile no matter what the room
+    // was configured for — so a whitelisted guest, who RAISES the cap, was
+    // admitted free and then never appeared on stream. The server computes one
+    // effective cap (configured seats + active whitelisted guests) and sends it
+    // on initial_state and on every seat_added, so this rises and falls with
+    // them. The 3 remains only as the value before the first message lands.
+    let maxSeats = 3;
     const CRT_MS = 460;    // CHANGE 5 leave animation duration
     const JOIN_MS = 700;   // CHANGE 4 join animation duration
 
@@ -1108,10 +1115,16 @@
           applyDesired(msg.state === 'wake' ? 'wake' : 'sleep', msg.reason || 'ws');
           break;
         case 'initial_state':
+          // Adopt the cap BEFORE drawing — otherwise the first paint uses the
+          // pre-message default and drops tiles it is about to be told it can
+          // render.
+          if (Number.isFinite(msg.maxSeats)) maxSeats = msg.maxSeats;
           // Server only sends seats that are already live (camera approved).
           msg.seats.forEach(seat => addVideoBox(seat));
           break;
         case 'seat_added':
+          // Same order, same reason: this message is how a guest raises it.
+          if (Number.isFinite(msg.maxSeats)) maxSeats = msg.maxSeats;
           // Broadcast only AFTER camera_ready, so the tile pops in live.
           addVideoBox(msg.seat);
           break;
@@ -1151,7 +1164,7 @@
     function addVideoBox(seat) {
       if (!transportKnown) { pendingSeats.push(seat); return; }
       if (videoBoxes.has(seat.id)) return;
-      if (liveCount() >= MAX_SEATS) return; // CHANGE 2 — never render a 4th
+      if (liveCount() >= maxSeats) return; // cap is the server's, not a literal
 
       const fin = FLY_INS[seat.flyIn] || null;
       const box = document.createElement('div');
@@ -1240,7 +1253,7 @@
     function addLetterBox(letter) {
       const key = 'letter:' + letter.id;
       if (videoBoxes.has(key)) return;
-      if (liveCount() >= MAX_SEATS) return; // server schedules around this; belt+braces
+      if (liveCount() >= maxSeats) return; // server schedules around this; belt+braces
 
       const fin = FLY_INS[letter.flyIn] || null;
       const box = document.createElement('div');

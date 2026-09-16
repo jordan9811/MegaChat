@@ -99,12 +99,21 @@ export function getList(ownerKey) {
  * switch — the list stays on disk, everyone on it is simply treated as a
  * normal paying viewer until it comes back on.
  */
-export function isWhitelisted(ownerKey, handle) {
+export function isWhitelisted(ownerKey, handle, identityKey = null) {
   const clean = sanitizeHandle(handle);
   if (!clean || !ownerKey) return false;
   const list = rawList(ownerKey);
   if (!list || !effectiveEnabled(list)) return false;
-  return list.entries.some((e) => e.handle === clean);
+  return list.entries.some((e) => {
+    if (e.handle !== clean) return false;
+    // An entry that knows WHICH account it meant requires that account. A
+    // handle can be released and re-claimed by someone else, so matching on
+    // the string alone lets a stranger inherit a free seat by taking a name.
+    // Entries written before identityKey existed have null and keep the old
+    // handle-only behaviour rather than locking their owner out.
+    if (!e.identityKey) return true;
+    return !!identityKey && e.identityKey === identityKey;
+  });
 }
 
 /**
@@ -116,7 +125,7 @@ export function isWhitelisted(ownerKey, handle) {
  * check (it owns the identity store), because this module deliberately knows
  * nothing about identities.
  */
-export function addGuest(ownerKey, handle) {
+export function addGuest(ownerKey, handle, identityKey = null) {
   const clean = sanitizeHandle(handle);
   if (!clean) {
     const err = new Error('Handles are 3-20 characters: letters, numbers and underscores.');
@@ -134,6 +143,14 @@ export function addGuest(ownerKey, handle) {
   }
   const entry = {
     handle: clean,
+    // WHO the handle was when it was added. A handle is a display name that
+    // can be released and re-claimed (identity-store.js frees the old one on
+    // re-claim), so an entry that stores only the string is an authorization
+    // token somebody else can later take. Pinning the identity means a
+    // re-claimed handle stops matching instead of silently inheriting a free
+    // seat. Null for entries written before this existed — those fall back to
+    // handle-only matching and are flagged in the UI.
+    identityKey: identityKey || null,
     addedAt: new Date().toISOString(),
     lastJoinedAt: null,
     joinCount: 0,

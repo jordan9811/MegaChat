@@ -1,3 +1,27 @@
+### A HANDLE IS NOT AN AUTHORIZATION TOKEN (identity-store, 2026-09-16)
+
+Filed against `identity-store.js`, NOT against the guest whitelist, because the
+whitelist is only the first consumer to be bitten by it. Anything that stores a
+handle and later treats a match on it as permission has the same hole.
+
+`identity-store.js:101` frees a handle on re-claim, so handles are reassignable
+by design — sensible for display names, dangerous the moment one is persisted
+as a grant. The guest whitelist stored `{ handle }` and matched on the string,
+so releasing a handle handed the free seat to whoever claimed it next.
+
+FIXED IN THE WHITELIST, not in the identity layer: entries now pin
+`identityKey` (`provider:platformId`, from `roomOwnerKey`) at add time, and
+`isWhitelisted` requires it when present. Entries written before this have
+`identityKey: null` and keep handle-only matching rather than locking their
+owner out.
+
+WHAT IS STILL OPEN, and why it belongs here: every OTHER future consumer has to
+remember to do the same thing, and nothing makes them. The durable fix is at
+the identity layer — either handles stop being reassignable once claimed, or
+the store exposes a resolve-to-identity helper that callers are expected to
+persist instead of the string. Until then, treat "we stored a handle" as a
+review flag anywhere it gates access.
+
 # OPEN ISSUES
 
 Running list of stubs, deferrals, and known gaps. Append, don't rewrite.

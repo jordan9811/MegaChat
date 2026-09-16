@@ -35,7 +35,7 @@ import { createAlerter } from './ops-alerts.js';
 import { bountyConfig } from './bounty-claim.config.js';
 import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
 import { attachBountyRoutes, makeClipHooks } from './bounty-routes.js';
-import { verifyRoomAccess, readIdentityFromRequest } from './auth.js';
+import { verifyRoomAccess, readIdentityFromRequest, roomOwnerKey } from './auth.js';
 import { isWhitelisted, recordJoin as recordWhitelistJoin } from './guest-whitelist.js';
 import { attachWhitelistRoutes } from './whitelist-routes.js';
 import {
@@ -521,6 +521,16 @@ app.get('/api/config', (req, res) => {
     tickPrice: cfg.tickPrice,
     maxSession: cfg.maxSession,
     maxSeats: cfg.maxSeats,
+    // Does the VIEWER ASKING ride free here? Derived from the sealed identity
+    // cookie on this request, never from anything the client said — the same
+    // source the join path authorises on, so the two cannot disagree.
+    //
+    // This is a UI hint and nothing more. The server still decides at join, so
+    // a client that lies to itself gains exactly nothing; what it buys is the
+    // one thing the feature promised and did not deliver — a whitelisted guest
+    // never being shown a wallet modal and a chain switch on their way to a
+    // seat they were told was free.
+    viewerRidesFree: !!whitelistGuestFor(req, roomId),
     passkeyTickSeconds: cfg.passkeyTickSeconds,
     passkeyTickPrice: cfg.passkeyTickPrice,
     passkeyMeterApproach: PASSKEY_METER_APPROACH,
@@ -715,11 +725,44 @@ function broadcastMeterUpdate(seat, payload) {
   broadcastToRoom(seat.streamRoomId, msg);
 }
 
+/**
+ * THE CAP, AS IT ACTUALLY STANDS RIGHT NOW.
+ *
+ * A whitelisted guest RAISES the cap rather than being exempt from the check,
+ * and the difference is not pedantry — "exempt" means the check passes while
+ * every other component still believes the cap is `maxSeats`, so the overlay
+ * refuses to draw the tile, /api/seats reports negative availability, and the
+ * browse card says a full room has space. The guest is admitted and invisible.
+ *
+ * So the raise is computed once, here, and handed to every consumer. No
+ * component infers it, and no component re-derives it from seat lists — that
+ * is how the three of them drifted apart in the first place.
+ */
+function effectiveMaxSeats(roomId, configuredMax) {
+  let guests = 0;
+  for (const s of activeSeats.values()) {
+    if (s.streamRoomId === roomId && s.paymentMode === 'whitelist_stream') guests++;
+  }
+  return Number(configuredMax || 0) + guests;
+}
+
+/** Seats a PAYING viewer is competing for — guests never occupy one. */
+function payingSeatCount(roomId) {
+  let n = 0;
+  for (const s of activeSeats.values()) {
+    if (s.streamRoomId === roomId && s.paymentMode !== 'whitelist_stream') n++;
+  }
+  return n;
+}
+
 function sendInitialState(ws) {
   const roomId = ws.__streamRoomId || DEFAULT_ROOM_ID;
   ws.send(JSON.stringify({
     type: 'initial_state',
     room: roomId,
+    // The overlay renders to THIS, never to a literal. It rises when a
+    // whitelisted guest is on, and falls again when they leave.
+    maxSeats: effectiveMaxSeats(roomId, resolveRoomConfig(roomId)?.config?.maxSeats ?? 3),
     seats: Array.from(activeSeats.values()).filter((s) => s.live && s.streamRoomId === roomId).map((s) => ({
       id: s.id,
       username: s.username,
@@ -764,9 +807,7 @@ function addParticipant(username, meta = {}) {
   // A seat that ARRIVES pinned (whitelisted guest) is exempt from the cap for
   // the same reason: it never takes a chair a paying viewer could have sat in,
   // so admitting it cannot bump or delay anyone who paid.
-  const roomSeatCount = [...activeSeats.values()]
-    .filter((s) => s.streamRoomId === streamRoomId && !s.pinned).length;
-  if (!meta.pinned && roomSeatCount >= roomCfg.maxSeats) {
+  if (!meta.pinned && payingSeatCount(streamRoomId) >= roomCfg.maxSeats) {
     return { success: false, reason: 'no_seats_available' };
   }
 
@@ -859,13 +900,20 @@ function activateSeatLive(seatId, ws) {
 
   broadcastToRoom(seat.streamRoomId, {
     type: 'seat_added',
+    // The cap as of THIS seat. A guest raises it, so an already-connected
+    // overlay has to be told at the moment it changes — learning on reconnect
+    // is exactly the window a guest joining a full room falls into.
+    maxSeats: effectiveMaxSeats(seat.streamRoomId, resolveRoomConfig(seat.streamRoomId)?.config?.maxSeats ?? 3),
     seat: {
       id: seat.id,
       username: seat.username,
       viewUrl: seat.viewUrl,
       expiresAt: seat.expiresAt,
       flyIn: seat.flyIn,
-      flyOut: seat.flyOut
+      flyOut: seat.flyOut,
+      // Was omitted here while sendInitialState included it, so a guest who
+      // joined live got no CO-HOST badge until the overlay reconnected.
+      pinned: !!seat.pinned
     }
   });
   const modeLabel = seat.paymentMode === 'passkey_stream' ? 'stream meter' : 'prepaid meter';
@@ -1222,9 +1270,13 @@ function checkFeatureGates(cfg, gates, address) {
 function whitelistGuestFor(req, roomId) {
   const owner = getRoomRecord(roomId)?.ownerKey;
   if (!owner) return null;            // unowned room — nobody to keep a list
-  const handle = readIdentityFromRequest(req)?.handle;
+  const identity = readIdentityFromRequest(req);
+  const handle = identity?.handle;
   if (!handle) return null;           // signed out, or no handle claimed yet
-  if (!isWhitelisted(owner, handle)) return null;
+  // The identity goes in alongside the handle: an entry that recorded WHICH
+  // account it meant requires that account, so releasing a handle does not
+  // hand the free seat to whoever claims it next.
+  if (!isWhitelisted(owner, handle, roomOwnerKey(identity))) return null;
   return { ownerKey: owner, handle };
 }
 
@@ -2327,12 +2379,17 @@ app.get('/api/seats', (req, res) => {
       expiresAt: s.expiresAt,
       live: s.live
     }));
-  const maxSeats = resolved.error ? 3 : resolved.cfg.maxSeats;
+  const configured = resolved.error ? 3 : resolved.cfg.maxSeats;
   res.json({
     roomId,
     seats,
-    available: maxSeats - seats.length,
-    maxSeats
+    // `available` answers "can I get a seat", which is a question only a PAYER
+    // asks — guests never occupy one. Counting them against the configured cap
+    // is what made a room with a guest report negative availability.
+    available: Math.max(0, configured - payingSeatCount(roomId)),
+    // `maxSeats` answers "how many tiles are on screen", which rises with them.
+    maxSeats: effectiveMaxSeats(roomId, configured),
+    configuredMaxSeats: configured
   });
 });
 
@@ -2397,7 +2454,11 @@ app.get('/api/rooms/public', (req, res) => {
       handle: cfg.handle || null,
       live,
       waiting,
-      maxSeats: cfg.maxSeats,
+      // The cap in force, not the configured one: a room running a whitelisted
+      // guest genuinely has more tiles on screen, and a card that says
+      // otherwise tells a viewer a full room has space.
+      maxSeats: effectiveMaxSeats(r.id, cfg.maxSeats),
+      configuredMaxSeats: cfg.maxSeats,
       passkeyTickPrice: cfg.passkeyTickPrice,
       passkeyTickSeconds: cfg.passkeyTickSeconds,
       paymentTokenSymbol: cfg.paymentTokenSymbol,
