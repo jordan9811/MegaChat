@@ -40,7 +40,9 @@
        remaining tiles can smoothly slide up when one is removed. */
     .tile {
       position: absolute;
-      right: 0;
+      /* No hard-coded side. placeBox() sets all four insets from the layout's
+         axis, so a horizontal stack can actually grow along x — with `right: 0`
+         pinned here every direction rendered as a downward column. */
       background: transparent;        /* no opaque backdrop */
       border-radius: 10px;
       overflow: hidden;
@@ -52,8 +54,8 @@
         0 0 0 1px color-mix(in oklab, var(--neon-cyan) 16%, transparent),
         0 6px 22px rgba(0, 0, 0, 0.35);
       /* CHANGE 3 — slide-up reflow: animating `top` closes the gap smoothly. */
-      transition: top 300ms cubic-bezier(.2, .8, .2, 1);
-      will-change: top, clip-path, transform, opacity;
+      transition: top 300ms cubic-bezier(.2, .8, .2, 1), left 300ms cubic-bezier(.2, .8, .2, 1);
+      will-change: top, left, clip-path, transform, opacity;
     }
 
     .tile iframe {
@@ -245,6 +247,14 @@
     #bounty-badge .bb-code { display: none; }
     #bounty-badge.too-small .bb-code { display: inline; }
     #bounty-badge.too-small #bounty-matrix { display: none; }
+    /* MATRIX LIB MISSING. The fallback wrote the code into .bb-code, which is
+       display:none outside .too-small — so a failed code-matrix.cjs rendered a
+       badge with NO readable code and an unsized 300x150 canvas (162px tall,
+       2.5x the real badge). Both halves mattered: the streamer earned nothing
+       with no way to see why, and the box blew past any size a layout could
+       reserve for it. This class makes that state legible and bounded. */
+    #bounty-badge.legacy-code .bb-code { display: inline; font-family: 'Courier New', monospace; letter-spacing: .18em; }
+    #bounty-badge.legacy-code #bounty-matrix { display: none; }
     #bounty-badge .bb-code-legacy {
       font-family: 'Courier New', monospace;
       font-size: 22px;
@@ -469,7 +479,11 @@
     <span class="bb-mark">MEGACHAT</span>
     <!-- machine-readable: 5x7 dot-matrix in a white registration ring, drawn
          from the SAME font table the verifier reads with (code-matrix.js) -->
-    <canvas id="bounty-matrix"></canvas>
+    <!-- Sized to the real matrix (a 7-char code at dot=4 is 47x13 dots) so an
+         UNDRAWN canvas already has the right box. The HTML default is 300x150,
+         which made the badge 404x162 — two and a half times its true height —
+         for any frame between .show and the first draw. -->
+    <canvas id="bounty-matrix" width="188" height="52"></canvas>
     <span class="bb-code" id="bounty-code"></span>
   </div>
   <script src="/code-matrix.cjs"></script>
@@ -490,6 +504,21 @@
     const TILE_W = () => layout.tile.w;
     const TILE_H = () => layout.tile.h;
     const GAP = () => layout.tile.gap;
+    /* The badge's inset from whichever corner it takes. Matches the 16px the
+       CSS rule used when the corner was hard-coded, and is the same number
+       rooms-store.js reserves for it when refusing a colliding layout — keep
+       the two in step or a layout can be accepted that covers the badge. */
+    const BADGE_INSET = 16;
+
+    /** Place one tile in slot i, honouring the layout's axis and growth edge. */
+    function placeBox(box, i) {
+      const vert = isVertical();
+      const along = vert ? (layout.direction === 'down' ? 'top' : 'bottom')
+        : (layout.direction === 'right' ? 'left' : 'right');
+      box.style.top = box.style.bottom = box.style.left = box.style.right = '';
+      box.style[along] = slotOffset(i) + 'px';
+      box.style[vert ? 'left' : 'top'] = '0px';
+    }
     // THE CAP COMES FROM THE SERVER. It was a hardcoded 3, which meant the
     // overlay silently refused to draw a fourth tile no matter what the room
     // was configured for — so a whitelisted guest, who RAISES the cap, was
@@ -1105,9 +1134,15 @@
           // corpus measures exactly where legibility dies.
           const mtx = document.getElementById('bounty-matrix');
           if (mtx && window.MCCodeMatrix) {
+            badge.classList.remove('legacy-code');
             window.MCCodeMatrix.drawMatrix(mtx.getContext('2d'), data.code, 4);
           } else {
-            codeEl.textContent = data.code; // matrix lib failed to load — legacy text
+            // Matrix lib failed to load. The text needs its own class to be
+            // visible at all — .bb-code is display:none by default — and the
+            // class also hides the unsized canvas so the badge keeps a bounded
+            // box. Without it this branch rendered nothing readable.
+            badge.classList.add('legacy-code');
+            codeEl.textContent = data.code;
           }
 
           // Measure AFTER paint so the rect reflects the rendered code.
@@ -1274,7 +1309,7 @@
       box.style.width = TILE_W() + 'px';
       box.style.height = TILE_H() + 'px';
       // Place it in its final slot BEFORE insertion so it doesn't slide on add.
-      box.style.top = slotOffset(liveCount()) + 'px';
+      placeBox(box, liveCount());
 
       // Tile CONTENT: LiveKit <video> for livekit rooms, vdo iframe otherwise.
       let content;
@@ -1362,7 +1397,7 @@
       box.dataset.flyOut = (letter.flyOut && FLY_OUTS[letter.flyOut]) ? letter.flyOut : '';
       box.style.width = TILE_W() + 'px';
       box.style.height = TILE_H() + 'px';
-      box.style.top = slotOffset(liveCount()) + 'px';
+      placeBox(box, liveCount());
 
       const video = document.createElement('video');
       video.src = letter.mediaUrl;
@@ -1434,20 +1469,79 @@
      * and nobody already placed has to move. That is the whole requirement:
      * seat N keeps slot N, the new one goes on the end.
      */
-    function slotOffset(i) {
-      return i * (TILE_H() + GAP());
+    function isVertical() {
+      return layout.direction === 'down' || layout.direction === 'up';
     }
 
-    /** Anchor the stack to the streamer's chosen corner and growth direction. */
+    function slotOffset(i) {
+      return i * ((isVertical() ? TILE_H() : TILE_W()) + GAP());
+    }
+
+    /**
+     * Anchor the stack the way the LAYOUT EDITOR'S PREVIEW draws it, because
+     * that preview is the contract the streamer was shown: `origin` picks the
+     * cross-axis side and `direction` picks the edge the stack grows from
+     * (see place() in layout-editor.tsx). A vertical stack therefore takes its
+     * left/right from the origin and its top/bottom from the direction; a
+     * horizontal stack the other way round.
+     *
+     * Before this, direction was read only to choose flexDirection on a #stage
+     * that is not display:flex, and relayout() offset tiles by `top` alone —
+     * so 'right' and 'left' rendered as a downward column and the broadcast
+     * disagreed with the preview. Nobody had seen it because the layout never
+     * reached the overlay at all (server.js sent `?.config?.layout`, which is
+     * undefined on the flat object resolveRoomConfig returns).
+     */
     function applyStageAnchor() {
       const m = layout.margin + 'px';
-      const vertical = layout.direction === 'down' || layout.direction === 'up';
-      stage.style.top = stage.style.bottom = stage.style.left = stage.style.right = '';
-      stage.style[layout.origin.startsWith('top') ? 'top' : 'bottom'] = m;
-      stage.style[layout.origin.endsWith('left') ? 'left' : 'right'] = m;
-      // A horizontal stack grows along x, so the stage is as wide as the row.
-      stage.style.width = vertical ? TILE_W() + 'px' : '';
-      stage.style.flexDirection = vertical ? 'column' : 'row';
+      const vert = isVertical();
+      // 'auto', not '' — clearing an inline value falls back to the #stage rule,
+      // which still pins top:20px/right:20px, so a bottom-anchored row kept its
+      // top edge as well and stretched the stage across the canvas.
+      stage.style.top = stage.style.bottom = stage.style.left = stage.style.right = 'auto';
+      if (vert) {
+        stage.style[layout.direction === 'down' ? 'top' : 'bottom'] = m;
+        stage.style[layout.origin.endsWith('left') ? 'left' : 'right'] = m;
+      } else {
+        stage.style[layout.direction === 'right' ? 'left' : 'right'] = m;
+        stage.style[layout.origin.startsWith('top') ? 'top' : 'bottom'] = m;
+      }
+      applyBadgeAnchor();
+    }
+
+    /**
+     * THE BADGE TAKES THE CORNER DIAGONALLY OPPOSITE THE STACK.
+     *
+     * Its CSS pins it bottom-left, which is the corner a bottom-left stack
+     * starts in — so the tiles covered the one thing the verifier reads, and
+     * an honest streamer would not have been paid. The corner is derived from
+     * where the stack ACTUALLY lands (direction's edge, origin's side), not
+     * from `origin` alone: origin top-left + direction up puts the stack at
+     * the bottom-left, so the badge belongs top-right.
+     *
+     * A layout whose stack would still reach the badge is refused at save
+     * time (layoutCollision in rooms-store.js) rather than fixed up here —
+     * the overlay must never quietly move the badge somewhere the streamer
+     * did not agree to.
+     */
+    function applyBadgeAnchor() {
+      const badgeEl = document.getElementById('bounty-badge');
+      if (!badgeEl) return;
+      const vert = isVertical();
+      const stackVert = vert ? (layout.direction === 'down' ? 'top' : 'bottom')
+        : (layout.origin.startsWith('top') ? 'top' : 'bottom');
+      const stackHoriz = vert ? (layout.origin.endsWith('left') ? 'left' : 'right')
+        : (layout.direction === 'right' ? 'left' : 'right');
+      // All four are set explicitly — two to the inset, two to `auto`. Clearing
+      // an inline value falls back to the CSS rule, which still pins
+      // left/bottom, and a fixed box with all four sides set STRETCHES to fill
+      // the canvas instead of shrink-wrapping. The gate caught exactly that:
+      // the badge measured 1888x1048 and covered everything.
+      const vSide = stackVert === 'top' ? 'bottom' : 'top';
+      const hSide = stackHoriz === 'left' ? 'right' : 'left';
+      badgeEl.style.top = badgeEl.style.bottom = badgeEl.style.left = badgeEl.style.right = 'auto';
+      badgeEl.style[vSide] = BADGE_INSET + 'px';
+      badgeEl.style[hSide] = BADGE_INSET + 'px';
     }
 
     /**
@@ -1469,13 +1563,16 @@
     }
 
     function relayout() {
+      const vert = isVertical();
       let i = 0;
       for (const box of videoBoxes.values()) {
         if (box.classList.contains('leaving')) continue; // keeps its current spot
-        box.style.top = slotOffset(i) + 'px';
+        placeBox(box, i);
         i++;
       }
-      stage.style.height = i > 0 ? (i * (TILE_H() + GAP()) - GAP()) + 'px' : '0px';
+      const span = i > 0 ? i * ((vert ? TILE_H() : TILE_W()) + GAP()) - GAP() : 0;
+      stage.style.height = (vert ? span : (i > 0 ? TILE_H() : 0)) + 'px';
+      stage.style.width = (vert ? TILE_W() : span) + 'px';
     }
 
     // (The old 10s-block countdown chip is gone: per-second metering made the
@@ -1487,6 +1584,20 @@
       addSeat: (seat) => addVideoBox(seat),
       removeSeat: (seatId) => removeVideoBox(seatId),
       count: () => videoBoxes.size,
+      // Layout geometry is measured by a gate against the REAL rendered boxes;
+      // these let it sweep every origin/direction without a reconnect per
+      // combination. The delivery path itself (server -> ws -> applyLayout) is
+      // asserted separately in _gate-overlay-layout.mjs, because that is the
+      // half that was broken and a hook would have hidden it.
+      applyLayout: (next) => applyLayout(next),
+      layout: () => JSON.parse(JSON.stringify(layout)),
+      // The cap is normally the server's (initial_state/seat_added). A gate
+      // measuring the geometry AT THE CEILING has to raise it the same way a
+      // whitelisted guest does, without standing up ten real seats.
+      setMaxSeats: (n) => { maxSeats = n; },
+      // Hard reset, bypassing the leave animation: an animating tile keeps its
+      // .tile class for 300ms and would be measured as a live one.
+      clear: () => { for (const b of videoBoxes.values()) b.remove(); videoBoxes.clear(); relayout(); },
     };
 
     // ─── CHANGE 6 — best-effort SFX ──────────────────────────────────────────

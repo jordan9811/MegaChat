@@ -37,8 +37,15 @@ const CANVAS_H = 1080
 const SCALE = 0.25
 
 export function LayoutEditor() {
-  const { draft, updateDraft, room } = useRoom()
+  const { draft, updateDraft, room, saveState, saveError } = useRoom()
   const layout = draft.layout
+  // The server refuses a layout that would bury the verification badge, and
+  // the reason rides back on the failed save. Surfaced HERE as well as in the
+  // status line, because this is the card the streamer is looking at when the
+  // refusal happens — a rejection they have to go hunting for is a rejection
+  // with no reason. The check itself is server-side only, on the write path,
+  // so there is one implementation and it cannot be bypassed by the API.
+  const layoutRefused = saveState === 'error' && /layout refused/i.test(saveError || '')
   const seats = Math.max(1, Number(draft.maxSeats) || 3)
 
   const set = (patch: Partial<RoomLayout>) => updateDraft({ layout: { ...layout, ...patch } })
@@ -168,6 +175,10 @@ export function LayoutEditor() {
           </>
         ) : null}
       </div>
+
+      {layoutRefused ? (
+        <p role="alert" className="mcc-error">{saveError}</p>
+      ) : null}
 
       <small className="mcc-preview-note">
         {room?.active

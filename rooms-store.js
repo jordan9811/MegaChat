@@ -186,6 +186,118 @@ export function resolveLayout(raw) {
   };
 }
 
+/**
+ * The tile ceiling, and the one place it is defined.
+ *
+ * server.js derives the seat cap from it (`effectiveMaxSeats`) and the layout
+ * refusal below reserves space against it, so the two cannot drift: a layout
+ * accepted for 3 tiles but rendered with 10 (a whitelisted guest raises the
+ * cap mid-stream) is exactly the case that would bury the badge after the
+ * streamer had already agreed to the layout.
+ */
+/** A layout that would bury the verification badge. Carries a streamer-facing
+ *  reason, because a refusal with no reason is the same silent denial the
+ *  review builder's own comment warns about. */
+export class LayoutRefused extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'LayoutRefused';
+    this.code = 'layout_refused';
+  }
+}
+
+export function maxEffectiveSeats() {
+  return Math.max(1, Number(process.env.MEGACHAT_MAX_SEATS) || 10);
+}
+
+/** The canvas the overlay is designed against. Matches the editor's preview. */
+const CANVAS_W = 1920;
+const CANVAS_H = 1080;
+
+/**
+ * The box the bounty badge needs, INCLUDING its inset from the corner.
+ *
+ * Derived, not guessed. The badge is a row of: 3px border-left + 12px padding
+ * + the "MEGACHAT" mark + an 8px gap + the dot-matrix canvas + 12px padding.
+ * The canvas is drawMatrix(code, dot=4) on a 7-char code, i.e. 47x13 dots =
+ * 188x52 css px (code-matrix.cjs matrixSize; bounty-watermark.js always emits
+ * `NN-XXXX`), so the default badge is about 293x64. The `.too-small` and
+ * `.legacy-code` states swap the canvas for text and are wider but far
+ * shorter (~337x25). 360x80 covers every state with margin, and BADGE_INSET
+ * matches the 16px the overlay pins it at.
+ */
+const BADGE_INSET = 16;
+const BADGE_W = 360;
+const BADGE_H = 80;
+
+const rectsOverlap = (a, b) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/** A rect anchored `margin` in from the named corner of the canvas. */
+function anchored(vert, horiz, w, h, margin) {
+  return {
+    x: horiz === 'left' ? margin : CANVAS_W - margin - w,
+    y: vert === 'top' ? margin : CANVAS_H - margin - h,
+    w,
+    h,
+  };
+}
+
+/**
+ * Where the seat stack actually lands, and where the badge goes because of it.
+ *
+ * `origin` picks the cross-axis side and `direction` picks the edge the stack
+ * grows from — the semantics the layout editor's preview has always drawn and
+ * that the overlay now matches (see applyStageAnchor in public/overlay.html).
+ * The badge takes the diagonally opposite corner of wherever the stack ends up,
+ * which is NOT simply the opposite of `origin`: origin top-left with direction
+ * up puts the stack bottom-left, so the badge belongs top-right.
+ */
+export function layoutGeometry(layout, seats) {
+  const l = resolveLayout(layout);
+  const n = Math.max(1, Number(seats) || 1);
+  const vert = l.direction === 'down' || l.direction === 'up';
+  const stackVert = vert ? (l.direction === 'down' ? 'top' : 'bottom')
+    : (l.origin.startsWith('top') ? 'top' : 'bottom');
+  const stackHoriz = vert ? (l.origin.endsWith('left') ? 'left' : 'right')
+    : (l.direction === 'right' ? 'left' : 'right');
+  const span = n * ((vert ? l.tile.h : l.tile.w) + l.tile.gap) - l.tile.gap;
+  const tiles = anchored(stackVert, stackHoriz,
+    vert ? l.tile.w : span, vert ? span : l.tile.h, l.margin);
+  const badgeVert = stackVert === 'top' ? 'bottom' : 'top';
+  const badgeHoriz = stackHoriz === 'left' ? 'right' : 'left';
+  const badge = anchored(badgeVert, badgeHoriz, BADGE_W, BADGE_H, BADGE_INSET);
+  const clip = l.clip.follow ? null : anchored(
+    l.clip.origin.startsWith('top') ? 'top' : 'bottom',
+    l.clip.origin.endsWith('left') ? 'left' : 'right',
+    l.clip.w, l.clip.h, l.clip.margin);
+  return { layout: l, seats: n, vertical: vert, tiles, badge, clip, badgeCorner: `${badgeVert}-${badgeHoriz}` };
+}
+
+/**
+ * Refuse a layout that would bury the badge. Returns a reason, or null.
+ *
+ * Checked at the CEILING, not at the room's configured seat count: a guest can
+ * raise the cap mid-stream, and a layout that only collides at the tenth tile
+ * would fail on the one broadcast the streamer cared about. An occluded badge
+ * is a clip that genuinely aired reading as unverifiable, which is the failure
+ * this project weighs heaviest — so this refuses the save rather than quietly
+ * relocating the badge to a corner the streamer never chose.
+ */
+export function layoutCollision(layout, seats = maxEffectiveSeats()) {
+  const g = layoutGeometry(layout, seats);
+  if (rectsOverlap(g.tiles, g.badge)) {
+    return `This layout covers the verification badge at ${g.seats} tiles. `
+      + `The badge sits ${g.badgeCorner.replace('-', ' ')}; your tiles reach it. `
+      + 'Use a smaller tile, a smaller gap, or the opposite corner.';
+  }
+  if (g.clip && rectsOverlap(g.clip, g.badge)) {
+    return 'The MegaChat clip corner covers the verification badge. '
+      + 'Move the clip, shrink it, or let it follow the seat stack.';
+  }
+  return null;
+}
+
 function resolveGates(raw) {
   const g = raw || {};
   return {
@@ -588,6 +700,13 @@ export function createRoom(name, config = {}, passwordHash = null) {
       maxSeats: Math.min(3, Math.max(1, Number(config.maxSeats ?? defaults.maxSeats))),
     },
   };
+  // The other write path. Guarding only updateRoom would let a room be born
+  // with a layout that buries the badge — account defaults carry `layout`
+  // into the create payload, so this is reachable without touching the editor.
+  if (config.layout) {
+    const why = layoutCollision(rec.config.layout);
+    if (why) throw new LayoutRefused(why);
+  }
   store.rooms[id] = rec;
   saveStore(store);
   return resolveRoomConfig(id);
@@ -647,10 +766,20 @@ export function updateRoom(roomId, patch) {
   if (patch.name != null) rec.name = String(patch.name).slice(0, 64);
   if (patch.active != null) rec.active = !!patch.active;
   if (patch.config) {
-    rec.config = { ...(rec.config || {}), ...patch.config };
-    if (rec.config.maxSeats != null) {
-      rec.config.maxSeats = Math.min(3, Math.max(1, Number(rec.config.maxSeats)));
+    const merged = { ...(rec.config || {}), ...patch.config };
+    if (merged.maxSeats != null) {
+      merged.maxSeats = Math.min(3, Math.max(1, Number(merged.maxSeats)));
     }
+    // REFUSE BEFORE WRITING, not at read time. resolveLayout clamps on read,
+    // so a layout that buries the badge would otherwise be stored verbatim and
+    // simply read back clamped — accepted, persisted, and wrong on the
+    // broadcast. This is the single choke point every layout write funnels
+    // through, so the HTTP route cannot be bypassed by calling the API direct.
+    if (patch.config.layout) {
+      const why = layoutCollision(merged.layout);
+      if (why) throw new LayoutRefused(why);
+    }
+    rec.config = merged;
   }
   saveStore(store);
   return resolveRoomConfig(id);

@@ -155,6 +155,9 @@ export function attachDashboardRoutes(app, deps) {
         room = resolveRoomConfig(room.id);
       }
     } catch (err) {
+      if (err.code === 'layout_refused') {
+        return res.status(400).json({ error: 'Layout refused', hint: err.message, code: err.code });
+      }
       return res.status(400).json({ error: err.message });
     }
     console.log(`[dashboard:create] room ${room.id} (${room.name}) created — ${identity ? 'owned by ' + roomOwnerKey(identity) : 'password-only'}`);
@@ -299,7 +302,18 @@ export function attachDashboardRoutes(app, deps) {
         return res.status(err.code === 'handle_taken' ? 409 : 400).json({ error: err.message });
       }
     }
-    const room = updateRoom(req.roomId, body);
+    let room;
+    try {
+      room = updateRoom(req.roomId, body);
+    } catch (err) {
+      // A layout that would bury the verification badge is refused, not
+      // clamped — with the reason, so the editor can say why rather than
+      // silently saving something the broadcast would render wrong.
+      if (err.code === 'layout_refused') {
+        return res.status(400).json({ error: 'Layout refused', hint: err.message, code: err.code });
+      }
+      throw err;
+    }
     if (!room) return res.status(404).json({ error: 'Room not found' });
     console.log(`[dashboard] updated room ${room.id}`);
     res.json({ room });

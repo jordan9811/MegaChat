@@ -26,6 +26,7 @@ import {
   joinStreamGatesFor,
   pruneOrphanRooms,
   updateRoom,
+  maxEffectiveSeats,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
 import { getLiveByLogins, twitchApiConfigured } from './twitch-api.js';
@@ -761,7 +762,10 @@ function broadcastMeterUpdate(seat, payload) {
  * MEGACHAT_MAX_SEATS overrides it for a bigger canvas, since both halves of
  * the derivation scale with canvas height.
  */
-const MAX_EFFECTIVE_SEATS = Math.max(1, Number(process.env.MEGACHAT_MAX_SEATS) || 10);
+// ONE definition, in rooms-store.js, because the layout refusal reserves the
+// badge against this same number — see layoutCollision(). Two copies would
+// drift the moment MEGACHAT_MAX_SEATS is set.
+const MAX_EFFECTIVE_SEATS = maxEffectiveSeats();
 
 function effectiveMaxSeats(roomId, configuredMax) {
   let guests = 0;
@@ -787,10 +791,10 @@ function sendInitialState(ws) {
     room: roomId,
     // The overlay renders to THIS, never to a literal. It rises when a
     // whitelisted guest is on, and falls again when they leave.
-    maxSeats: effectiveMaxSeats(roomId, resolveRoomConfig(roomId)?.config?.maxSeats ?? 3),
+    maxSeats: effectiveMaxSeats(roomId, resolveRoomConfig(roomId)?.maxSeats ?? 3),
     // Layout rides the same message as the cap so the overlay never renders a
     // frame with one and not the other.
-    layout: resolveRoomConfig(roomId)?.config?.layout || null,
+    layout: resolveRoomConfig(roomId)?.layout || null,
     seats: Array.from(activeSeats.values()).filter((s) => s.live && s.streamRoomId === roomId).map((s) => ({
       id: s.id,
       username: s.username,
@@ -947,8 +951,8 @@ function activateSeatLive(seatId, ws) {
     // The cap as of THIS seat. A guest raises it, so an already-connected
     // overlay has to be told at the moment it changes — learning on reconnect
     // is exactly the window a guest joining a full room falls into.
-    maxSeats: effectiveMaxSeats(seat.streamRoomId, resolveRoomConfig(seat.streamRoomId)?.config?.maxSeats ?? 3),
-    layout: resolveRoomConfig(seat.streamRoomId)?.config?.layout || null,
+    maxSeats: effectiveMaxSeats(seat.streamRoomId, resolveRoomConfig(seat.streamRoomId)?.maxSeats ?? 3),
+    layout: resolveRoomConfig(seat.streamRoomId)?.layout || null,
     seat: {
       id: seat.id,
       username: seat.username,
