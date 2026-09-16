@@ -386,6 +386,13 @@ export function BountyProgram() {
               ) : null}
             </section>
 
+            {/* PRE-LAUNCH DISCLOSURE, on the surface that asks people for money.
+                It lived on bounty-client.tsx, which stopped being what /bounty
+                renders when the Nerve overhaul swapped in this component — the
+                banner did not come with it, and _gate-bounty-claim has been
+                failing on its absence since. A page that invites a pledge has
+                to say the escrow is a ledger and settlement is not connected. */}
+            <p className="mcb-example-notice"><strong>Preview build.</strong> Escrow is tracked as a ledger and settlement is not connected &mdash; no funds move yet.</p>
             {examples.count > 0 && <p className="mcb-example-notice">Example amounts, not funded: $100 per name plus one shared $100. Funded pools replace their examples. Current ledger balance: {money(totals?.realValue || 0)}.</p>}
             {loadError && <p role="alert" className="mcb-example-notice">{loadError}</p>}
 

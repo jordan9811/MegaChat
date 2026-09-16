@@ -11,6 +11,7 @@ import { formatDollars } from '@/lib/display-format'
 import { roomPresentation } from '@/lib/room-browse'
 import './booth.css'
 import { BrandText } from '@/components/brand-text'
+import { RecentRail } from './recent-rail'
 
 const ROOM_POLL_MS = 5000
 const POOL_POLL_MS = 30000
@@ -410,6 +411,7 @@ export function Booth({
           </div>
 
           <BountyBoard pools={topPools.slice(0, 5)} />
+          <RecentRail />
         </div>
       </main>
     </div>

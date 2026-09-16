@@ -1404,6 +1404,8 @@ async function tryWhitelistJoin(req, res) {
 
 // ─── LiveKit transport (default once configured; vdo is the backup) ────────
 import { createLivekitService } from './livekit.js';
+import fs from 'node:fs';
+import { posterPathFor } from './room-poster.js';
 const livekit = createLivekitService();
 if (livekit) console.log('[livekit] transport available at', livekit.url, '— now the default');
 
@@ -2588,6 +2590,20 @@ function twitchLiveCached(channel) {
 //
 // Rooms that opted out of the board stay out of it here too: unlisted means
 // unlisted, and a room's history is no less the room.
+// The poster JPEG itself. One file per room, extracted once at air-session
+// close and deliberately NOT in bounty-captures/ — that directory is swept at
+// 14 days, and a recent rail that goes blank after two weeks is worse than one
+// that never had pictures.
+app.get('/api/rooms/:roomId/poster.jpg', (req, res) => {
+  const id = normalizeRoomId(req.params.roomId);
+  if (!id) return res.status(400).end();
+  const file = posterPathFor(id);
+  if (!fs.existsSync(file)) return res.status(404).end();
+  res.type('jpeg');
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  fs.createReadStream(file).pipe(res);
+});
+
 app.get('/api/rooms/recent', (req, res) => {
   const limit = Math.max(1, Math.min(24, Number(req.query.limit) || 12));
   const byId = new Map(listRooms().map((r) => [r.id, r]));
@@ -2607,6 +2623,10 @@ app.get('/api/rooms/recent', (req, res) => {
       durationMs: Math.max(0, (a.endedAt || a.startedAt) - a.startedAt),
       vodUrl: a.vodUrl,
       captureRef: a.captureRef,
+      // Read straight off the room record — the same single-source rule
+      // effectiveMaxSeats follows. `kind` is what tells the card whether to
+      // draw a photograph or a generated card; it must never guess.
+      poster: room.config.poster || null,
       // Where a card should start playing, and what its thumbnail is of.
       moments: a.moments.map((m) => ({ kind: m.kind, label: m.label, offsetMs: m.offsetMs })),
     });

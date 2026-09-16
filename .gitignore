@@ -46,3 +46,10 @@ data/bounty-ledger.jsonl
 # local browser-testing identity minter — never ships (see the P0 note: it
 # forges cookies prod currently honors via the fallback secret)
 dev-auth.mjs
+
+# Stale agent worktrees and tool scratch. A `git add -A` in this repo swept
+# 1292 files of a .codex-worktrees COPY OF THE REPO into a commit once; these
+# three lines are why it cannot happen twice.
+.codex-worktrees/
+.playwright-mcp/
+.claude/worktrees/

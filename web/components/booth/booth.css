@@ -603,3 +603,121 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
     gap: 14px;
   }
 }
+
+/* ── recently aired ─────────────────────────────────────────────────────
+   Two kinds of card and they must not be confusable: a real frame is a
+   photograph, a generated card is obviously a graphic. `.mcr-recent-card` is
+   deliberately flat and typographic — no video treatment, no fake bokeh. */
+
+.mcr-recent-rail {
+  margin-top: 20px;
+}
+
+.mcr-recent-rail h2 {
+  margin: 0 0 12px;
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.mcr-recent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mcr-recent {
+  display: block;
+  background: var(--mcb-panel);
+  border: 1px solid var(--mcb-line);
+  border-top: 2px solid var(--mcb-dim);
+}
+
+.mcr-recent:hover {
+  border-top-color: var(--mcb-accent);
+}
+
+.mcr-recent-stage {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #07090f;
+}
+
+.mcr-recent-stage img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.85);
+}
+
+.mcr-recent-card {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  text-align: center;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 10px),
+    var(--mcb-panel-up);
+}
+
+.mcr-recent-card b {
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 34px;
+  font-weight: 800;
+  color: var(--mcb-off);
+}
+
+.mcr-recent-card em {
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-style: normal;
+  color: var(--mcb-dim);
+}
+
+.mcr-recent-tag {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 3px 7px;
+  background: rgba(5, 6, 9, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mcb-dim);
+}
+
+.mcr-recent-meta {
+  display: block;
+  padding: 9px 11px 11px;
+}
+
+.mcr-recent-meta strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcr-recent-meta small {
+  display: block;
+  margin-top: 2px;
+  color: var(--mcb-dim);
+  font-size: 11px;
+}
+
+@media (max-width: 700px) {
+  .mcr-recent-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

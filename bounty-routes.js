@@ -28,6 +28,9 @@ import { readIdentityFromRequest } from './auth.js';
 import settlement from './bounty-settlement.js';
 import { policyFor, authorize, TIER, platformLoginFor } from './bounty-auth.js';
 import * as capture from './bounty-capture.js';
+import { buildPoster, buildCard } from './room-poster.js';
+import { listAirings, attachRecording } from './airings-store.js';
+import { resolveRoomConfig, updateRoom } from './rooms-store.js';
 
 /**
  * Identity verification is STUBBED in Run A — real OAuth is Run B.
@@ -1410,6 +1413,38 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       // artifacts at all.
       const settled = await capture.awaitPendingFreezes(req.params.id);
       if (settled.length) log.log?.(`[capture] settled ${settled.length} pending freeze(s) before closing`);
+
+      // POSTER THE ROOM, here and not at clip end. A freeze is scheduled
+      // ~51s AFTER its clip ends, so at clip end the media a poster would read
+      // is still being written; this is the first moment every capture for the
+      // session exists on disk, and the last moment before the 14-day sweep or
+      // a pledge refund can take any of them away. Extract once, keep the
+      // JPEG, let the source be purged on schedule.
+      //
+      // Never allowed to fail the close: a streamer must be able to end a
+      // session whether or not we managed to make a picture of it.
+      try {
+        const sess = store.getAirSession(req.params.id);
+        const roomId = sess?.roomId;
+        if (roomId) {
+          const records = capture.captureRecordsFor(req.params.id, { log });
+          const airing = listAirings(roomId, { limit: 1 })[0] || null;
+          const poster = buildPoster(roomId, records, { log })
+            || buildCard(airing, { title: resolveRoomConfig(roomId)?.config?.name || null });
+          const cfg = resolveRoomConfig(roomId)?.config;
+          if (cfg) updateRoom(roomId, { config: { ...cfg, poster } });
+          // The airing gets its recording reference too — this is the caller
+          // attachRecording() never had, and the reason every airing until now
+          // carried a null captureRef.
+          if (airing && poster.kind === 'frame') {
+            attachRecording(airing.id, { captureRef: `poster:${roomId}` });
+          }
+          log.log?.(`[poster] room ${roomId}: ${poster.kind}${poster.kind === 'frame' ? ` from playback ${poster.playbackId}` : ''}`);
+        }
+      } catch (e) {
+        log.warn?.(`[poster] could not poster the room: ${e?.message}`);
+      }
+
       capture.stopCapture(req.params.id, { log });
       const patch = { status: 'CLOSED', endedAt: Date.now() };
       if (prev) {

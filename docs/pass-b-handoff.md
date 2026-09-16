@@ -82,9 +82,43 @@ That is the seam between the two systems. Bounty captures are keyed to air
 sessions; airings are keyed to rooms. A room with both has two records of the
 same broadcast and nothing joins them.
 
+## Pass B, Run 1 — SHIPPED
+
+Posters exist now. `room-poster.js` extracts one JPEG per room at air-session
+close and writes it to **`data/room-posters/`** — deliberately not
+`bounty-captures/`, which is swept at 14 days and emptied per session on a
+pledge refund. `_gate-room-poster.mjs` holds that: it ages a capture to 30 days,
+runs `purgeExpiredCaptures`, and asserts the poster survives.
+
+**The frame is the midpoint of the longest clip playback.** The brief preferred
+peak seat count; it is not derivable from what we store. `moments` records joins
+and not leaves, so the running count is monotonic and "peak" degenerates to "the
+last person who joined". Recording a `seat_leave` moment would make the
+preferred rule available — one line in the seat teardown, deliberately not done.
+
+**`attachRecording()` has its caller.** Air-session close, after
+`awaitPendingFreezes`: a freeze is scheduled ~51s after its clip ends, so at
+clip end the media is still being written. Close is the first moment every
+capture exists and the last before anything can be purged.
+
+**Rooms with no capture get a card, not a fake frame.** Capture only runs during
+a bounty air session, so a plain MegaChat or live-seat room has no picture and
+never will. `buildCard` freezes a snapshot (title, up to four guest labels,
+duration) onto the room record at close, and the rail draws it flat and
+typographic with a `NO RECORDING` tag. `poster.kind` is the contract; the rail
+never infers which to draw.
+
+What the next pass inherits: `poster` is on the room record, the rail reads that
+one field, and `vodUrl` is still null on every airing — nothing resolves a VOD.
+The VOD path would only ever be a second source for a poster we can already get
+from capture, which is why it stayed unbuilt.
+
 ## Explicitly not built
 
-**No thumbnails.** Nothing generates, stores or serves a still as a persistent
+**No VOD resolution.** `attachRecording()` now has a caller for captures;
+nothing resolves a platform VOD onto an airing, so `vodUrl` remains null.
+
+**No thumbnails beyond the one poster per room.** Nothing generates, stores or serves a still as a persistent
 artifact. `frame-sources.js` makes them transiently for the verifier and
 discards them. If Pass B wants a thumbnail on a card, that is new work — and
 the natural place to hang it is an airing's `moments[].offsetMs`, which is

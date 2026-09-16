@@ -48,6 +48,38 @@ export type RewardsConfig = {
 
 /** Where the overlay puts the tiles. Lives on the room record, versioned so a
  *  mid-stream edit is one integer away from detectable. */
+/** What a finished room shows on the recent rail.
+ *
+ *  `kind` is the whole contract: 'frame' is a real photograph pulled from the
+ *  capture at the deepest point of the longest clip playback; 'card' is a
+ *  frozen snapshot of room state for a room that never had a capture to pull
+ *  from. They are drawn differently on purpose — a generated card must never
+ *  be mistakable for a picture of something that happened. */
+export type RoomPoster =
+  | { kind: 'frame'; at: number; source: 'capture'; playbackId: string | null; offsetMs: number; spanMs: number; bytes: number }
+  | { kind: 'card'; at: number; source: null; title: string | null; guests: string[]; momentCount: number; durationMs: number | null }
+
+export type RecentAiring = {
+  airingId: string
+  roomId: string
+  name: string
+  handle: string | null
+  platform: string
+  channel: string | null
+  startedAt: number
+  endedAt: number
+  durationMs: number
+  vodUrl: string | null
+  captureRef: string | null
+  moments: { kind: string; label: string | null; offsetMs: number }[]
+  poster: RoomPoster | null
+}
+
+/** Finished broadcasts with something to show. */
+export function listRecentAirings(limit = 12) {
+  return request<{ airings: RecentAiring[] }>(`/api/rooms/recent?limit=${limit}`)
+}
+
 export type RoomLayout = {
   version: number
   origin: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
