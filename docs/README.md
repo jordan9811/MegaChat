@@ -19,7 +19,7 @@ And one way to get a streamer's attention before they have ever heard of you: a 
 |---|---|
 | Understand the ideas the product is built on | [Concepts](concepts/README.md) |
 | See what each feature does, how it works, and what it does **not** do | [Features](features/README.md) |
-| Know how a bounty is verified, and what verification cannot prove | [Verification](verification/README.md) — the hard page |
+| Know how a bounty is verified, and what verification does not prove | [Verification](verification/README.md) — the hard page |
 | Run it, contribute, or audit it | [Technical](technical/README.md) |
 | Know what is shipped versus specced versus an idea | [Internal](internal/README.md) — the owner's half |
 

@@ -1,0 +1,30 @@
+{
+  "authored": [
+    "README.md",
+    "concepts/README.md",
+    "concepts/rooms-and-seats.md",
+    "concepts/megachats.md",
+    "concepts/the-overlay.md",
+    "concepts/identity-and-handles.md",
+    "concepts/money-and-metering.md",
+    "concepts/bounties.md",
+    "concepts/airings-and-evidence.md",
+    "features/README.md",
+    "features/live-seats.md",
+    "features/megachats.md",
+    "features/create-room-and-layout.md",
+    "features/obs-setup.md",
+    "features/follow-my-stream.md",
+    "features/guest-whitelist.md",
+    "features/bounty-program.md",
+    "features/recent-rooms.md",
+    "features/platform-support.md",
+    "verification/README.md",
+    "verification/limitations.md",
+    "technical/README.md",
+    "internal/README.md",
+    "internal/needs-a-status-call.md",
+    "_snippets/pre-launch.md"
+  ],
+  "sources": {}
+}

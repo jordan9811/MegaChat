@@ -4,15 +4,32 @@
 
 ## Concepts
 * [Concepts](concepts/README.md)
+  * [Airings and evidence](concepts/airings-and-evidence.md)
+  * [Bounties](concepts/bounties.md)
+  * [Identity and handles](concepts/identity-and-handles.md)
+  * [MegaChats](concepts/megachats.md)
+  * [Money and metering](concepts/money-and-metering.md)
+  * [Rooms and seats](concepts/rooms-and-seats.md)
+  * [The overlay](concepts/the-overlay.md)
 
 ## Features
 * [Features](features/README.md)
+  * [Bounty program](features/bounty-program.md)
+  * [Create a room, set rates, arrange the overlay](features/create-room-and-layout.md)
+  * [Follow my stream](features/follow-my-stream.md)
+  * [Guest whitelist](features/guest-whitelist.md)
+  * [Live seats](features/live-seats.md)
+  * [MegaChats — record and send](features/megachats.md)
+  * [OBS setup](features/obs-setup.md)
+  * [Platform support](features/platform-support.md)
+  * [Recent rooms — finished broadcasts with a poster](features/recent-rooms.md)
 
 ## Technical
 * [Technical](technical/README.md)
 
 ## Verification
 * [Verification](verification/README.md)
+  * [Limitations of verification](verification/limitations.md)
 
 ## Notes
 * [Notes](notes/README.md)

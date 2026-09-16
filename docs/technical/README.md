@@ -7,7 +7,7 @@ The system is one Node process: an Express server (`server.js`) that owns every 
 Pages in this section:
 
 - **Architecture** — the layers, the seams between them, what runs where.
-- **Interfaces** — the contracts, embedded from source so they cannot drift.
+- **Interfaces** — the contracts, embedded from source by `scripts/docs-sync.mjs` so they do not drift.
 - **Data model** — every store, and the list of what is deliberately not stored.
 - **Key flows** — a paid seat join, a bounty from pledge to release, a whitelisted guest, OBS one-click.
 - **Testing methodology** — the gate scripts, what they proved, and why they exist.

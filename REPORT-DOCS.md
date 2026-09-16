@@ -105,4 +105,22 @@ Internal (`docs/internal/`):
 
 ## 4. Run log
 
-(filled per gate below)
+### Gate 0 — layout (1 iteration) — committed 625a117
+
+`.gitbook.yaml` (root ./docs/, structure block, empty redirects). `scripts/docs-summary.mjs`: merge semantics as specified — preserves every existing entry, repairs a dead link only when exactly one same-named page exists, appends missing pages to their group, `--public-only`, `--check`.
+
+Decision: the seven pre-existing docs/ directories and four root-level record files are grouped under Internal IN PLACE (one set, `INTERNAL_DIRS`) rather than moved, because OPEN-ISSUES.md, AGENTS.md, DECISIONS.md and the pages themselves link to those paths and this pass does not edit pages it did not write. This deviates from "one directory, trivially separable"; stated in docs/internal/README.md, and a later `git mv` plus editing the set restores it. Notes are excluded from `--public-only` as well as Internal (owner scratch should not leak by default).
+
+Exit: SUMMARY lists every page, `--check` current, both variants valid, assets dir present.
+
+### Gate 1 — public docs (1 iteration)
+
+25 authored pages: landing, 7 concepts, 9 features, the verification hard page and its limitations, section indexes, the shared pre-launch snippet. Every feature page carries one status tag and a "What this does NOT do" section; money pages carry the snippet between `<!-- snippet:pre-launch -->` markers. GitBook has no include directive, so `docs:sync --write` re-stamps the markers from `docs/_snippets/pre-launch.md` — removal at launch is one edit plus one command. ASSUMPTION: GitBook preserves HTML comments on sync; not verifiable offline.
+
+`scripts/docs-check.mjs` was written early to enforce this gate's exit. First run: 5 uncited claims in authored pages (four cited, one nav-table label rephrased) and 194 advisory hits across the 46 pre-existing record pages (never failures; collapsed to one line per page, `--verbose` lists them).
+
+Found while citing: the tail of the `captureFreezeDelayMs` comment in `bounty-claim.config.js` still described the 90s/60s pair that Pass A replaced with 75s/51s, and claimed 60s "survives D = 0" — at 75s/51s the right bound at zero delay is 45s, so it does not. Comment corrected, including the honest statement that the zero-delay stubs pass only because their clips are short. Comment only; no behaviour change.
+
+Dead links at this commit: 9, all into internal pages Gate 3 creates (outstanding, limitations-register, launch-readiness, work-history, roadmap). Gate 3 resolves them.
+
+Status calls raised: U1 (which seat payment route is live — narrowed by source to "is /api/join/mpp reachable from any UI"; the join page calls only /api/join/passkey), U2 (Kick VOD wording).

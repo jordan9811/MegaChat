@@ -281,14 +281,21 @@ export const bountyConfig = {
    * EMPTY. No freeze delay was correct across the range, 30s included: at
    * D = 45 a 30s wait freezes before the clip's last 15s has even aired.
    * Fixing F alone cannot help; the window has to grow first, which is why
-   * `captureWindowMs` is now 90s (window ≥ L + D_max − D_min = 63s).
+   * `captureWindowMs` is 75s (window ≥ L + D_max − D_min = 63s).
    *
-   * At 90s the band is 45 ≤ F ≤ 72, and 60s takes margin at BOTH ends: 15s of
-   * delay past the 45s budget (35s past the worst delay ever measured) before
-   * a tail goes missing, and 12s of head still held before one falls off the
-   * front. It is also exactly the F that survives D = 0 — the delay every HLS
-   * stub publishes at, 90 − 30 + 0 = 60 — so the stub gates exercise the same
-   * number production runs, instead of a band they sit comfortably inside.
+   * At 75s the band is 45 ≤ F ≤ 57, and 51s splits the 12s of slack evenly:
+   * 6s of delay past the 45s budget before a tail goes missing, and 6s of
+   * head still held before one falls off the front. Both margins are against
+   * numbers this file already budgets, not against a wider spread nobody has
+   * measured.
+   *
+   * WHAT 51s DOES NOT COVER: D = 0. The right bound at zero delay is
+   * 75 − 30 + 0 = 45, so a 30s clip published with no delay at all loses its
+   * first 6s. No real platform has measured under the 12s floor, but every
+   * HLS stub in the gates publishes at D ≈ 0 — they pass because their clips
+   * are far shorter than 24s (`_gate-self-capture.mjs` holds a 10s window),
+   * not because the band covers them. A gate that plays a 30s clip through a
+   * zero-delay stub would be the first to see this, and should.
    *
    * If the clip cap moves (rooms-store.js), or `captureWindowMs` or
    * `liveBroadcastDelayMs` changes, re-derive BOTH values — the pair of
