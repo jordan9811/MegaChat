@@ -24,6 +24,7 @@ import {
 import { shortAddr, useAccount } from '@/lib/use-account'
 import { formatDollars } from '@/lib/display-format'
 import { BrandText } from '@/components/brand-text'
+import { docsUrl } from '@/lib/docs-url.mjs'
 
 const PROVIDER_LABEL: Record<string, string> = {
   twitch: 'Twitch',
@@ -146,6 +147,7 @@ export function AccountPage() {
             <a href="/app">Rooms</a>
             <a href="/bounty">Bounties</a>
             <a href="/how-it-works">How it works</a>
+            {docsUrl() ? <a href={docsUrl() as string}>Docs</a> : null}
           </nav>
           <span className="mcc-product-actions">
             <a href="/dashboard">Create room</a>

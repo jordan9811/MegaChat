@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { docsUrl } from '@/lib/docs-url.mjs'
 
 // One nav, everywhere: hero strip, page footer, and the standalone pages.
 // Contact points at an X/Twitter URL read from CONTACT_URL at request time
@@ -30,6 +31,13 @@ export function FooterNav({
           {l.label}
         </a>
       ))}
+      {/* The handbook, only when a docs URL was set at build time — no
+          placeholder and no dead link when it was not (docs-url.mjs). */}
+      {docsUrl() ? (
+        <a href={docsUrl() as string} className="transition-colors hover:text-foreground">
+          Docs
+        </a>
+      ) : null}
       <a
         href={contactHref}
         target="_blank"

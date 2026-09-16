@@ -1,6 +1,7 @@
 # Table of contents
 
 * [MegaChat](README.md)
+* [Glossary](glossary.md)
 
 ## Concepts
 * [Concepts](concepts/README.md)

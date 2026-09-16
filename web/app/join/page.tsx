@@ -4,6 +4,7 @@ import { AccountChip } from '@/components/account-chip'
 import { JoinClient } from '@/components/join/join-client'
 import './join.css'
 import { BrandText } from '@/components/brand-text'
+import { docsUrl } from '@/lib/docs-url.mjs'
 
 // One UI face across the app, loaded per route — there is no site-wide
 // provider. Same call as the room board and the create page.
@@ -38,6 +39,7 @@ export default function JoinPage() {
             <a href="/app">Rooms</a>
             <a href="/bounty">Bounties</a>
             <a href="/how-it-works">How it works</a>
+            {docsUrl() ? <a href={docsUrl() as string}>Docs</a> : null}
           </nav>
           <span className="mcj-product-actions">
             <a href="/dashboard">Create room</a>

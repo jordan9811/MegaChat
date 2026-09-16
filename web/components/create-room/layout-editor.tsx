@@ -15,6 +15,7 @@
 
 import { useRoom } from '@/components/room-provider'
 import type { RoomLayout } from '@/lib/api'
+import { docsUrl } from '@/lib/docs-url.mjs'
 
 const ORIGINS: { value: RoomLayout['origin']; label: string }[] = [
   { value: 'top-left', label: 'Top left' },
@@ -172,6 +173,11 @@ export function LayoutEditor() {
         {room?.active
           ? 'Saving while you are live moves the tiles on the next overlay tick — seat 1 stays seat 1, only its position changes.'
           : 'Tile sizes have a floor: the bounty badge rides in the tile, and below it a clip that genuinely aired can stop being verifiable.'}
+        {/* The page that explains the floor and the ceiling, only when the
+            handbook is configured (docs-url.mjs returns null otherwise). */}
+        {docsUrl('create-room-and-layout') ? (
+          <> <a href={docsUrl('create-room-and-layout') as string} target="_blank" rel="noreferrer">How the layout works</a></>
+        ) : null}
       </small>
     </section>
   )

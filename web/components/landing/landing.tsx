@@ -13,6 +13,7 @@ import type { PublicRoomCard } from '@/lib/api'
 import type { BountyPool } from '@/lib/bounty-api'
 import { formatDollars } from '@/lib/display-format'
 import { BrandText } from '@/components/brand-text'
+import { docsUrl } from '@/lib/docs-url.mjs'
 import { PoolThumb } from './pool-thumb'
 import { LandingHero } from './landing-hero'
 import './landing.css'
@@ -145,6 +146,7 @@ export function Landing({
           <Link href="/bounty">Bounties</Link>
           <Link href="/how-it-works">How it works</Link>
           <Link href="/roadmap">Roadmap</Link>
+          {docsUrl() ? <a href={docsUrl() as string}>Docs</a> : null}
           <Link href="/legacy">Legacy site</Link>
           <a href={contactHref} target="_blank" rel="noreferrer">Contact</a>
         </nav>

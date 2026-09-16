@@ -23,6 +23,50 @@ One process, one port, JSON on a volume. Everything below is read from `server.j
         ↕ LiveKit (media)      ↕ Tempo RPC (payments)      ↕ Twitch / Kick / YouTube / pump.fun / X APIs
 ```
 
+The same picture as a diagram GitBook renders (Mermaid; text-sourced so it diffs):
+
+```mermaid
+flowchart LR
+  subgraph browser["Browser / OBS"]
+    OV[public/overlay.html<br/>OBS browser source]
+    JP[web/ join page]
+    DB[web/ dashboard + account]
+  end
+  subgraph proc["One Node process — server.js"]
+    EX[Express routes<br/>/api/config /api/join/* /api/seats<br/>/api/rooms/* /api/livekit/* /auth/*]
+    WS[WebSocket on /<br/>seat + MegaChat events]
+    NX[Next.js fall-through<br/>pages + assets]
+    LOOPS[tickAllMeters 1 s<br/>followTick 60 s]
+    MODS[bounty · dashboard · whitelist<br/>letters · rewards · auth]
+  end
+  subgraph stores["DATA_DIR (Railway volume)"]
+    RJ[(rooms.json)]
+    IJ[(identities.json)]
+    AJ[(airings.json)]
+    GJ[(guest-whitelist.json)]
+    BJ[(bounty.json)]
+    LEDGER[(bounty-ledger.jsonl<br/>append-only)]
+    EVID[(bounty-evidence.jsonl<br/>append-only)]
+    CAP[(bounty-captures/ · room-posters/)]
+  end
+  LK((LiveKit SFU))
+  CHAIN((Tempo RPC))
+  PLAT((Twitch · Kick · YouTube<br/>Rumble · X · pump.fun))
+
+  OV <--> WS
+  OV <--> LK
+  JP --> EX
+  JP <--> LK
+  DB --> EX
+  EX --> MODS
+  EX --> NX
+  LOOPS --> CHAIN
+  MODS --> RJ & IJ & AJ & GJ & BJ & LEDGER & EVID & CAP
+  LOOPS --> PLAT
+  MODS --> PLAT
+  LK -- signed webhooks --> EX
+```
+
 **Express owns the process.** `server.js` builds the app, creates the HTTP server and a `noServer` WebSocket server (`server.js`, `createServer(app)`, `new WebSocketServer({ noServer: true })`), attaches the feature modules in a fixed order — auth, letters, rewards, then bounty, dashboard, whitelist (`attachAuth`, `attachLetters`, `attachRewards`, `attachBountyRoutes`, `attachDashboardRoutes`, `attachWhitelistRoutes`) — and finally mounts Next as the fall-through handler for anything no Express route claimed (`app.use((req, res) => nextHandle(req, res))`).
 
 **Next is a guest in the process.** `createNextApp({ dev: nextDev, dir: NEXT_DIR })` runs in dev mode unless `--prod` or `NODE_ENV=production`; in prod it serves `web/.next` as built. The Next dev server lazily attaches its own `upgrade` listener and destroys sockets it does not recognise, which would kill every app WebSocket — so `server.js` traps upgrade listeners added after its own and hands them `/_next/*` traffic only (`server.js`, "CAUTION: Next dev lazily attaches its OWN 'upgrade' listener"). Anything else upgrading on `/` is the app WebSocket.

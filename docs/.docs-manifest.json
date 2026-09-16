@@ -51,7 +51,8 @@
     "internal/work-history/2026-08-29-09-06-ui-overhaul.md",
     "internal/work-history/2026-09-05-guest-whitelist.md",
     "internal/work-history/2026-09-11-14-follow-and-airings.md",
-    "internal/work-history/2026-09-15-16-pass-a-and-pass-b.md"
+    "internal/work-history/2026-09-15-16-pass-a-and-pass-b.md",
+    "glossary.md"
   ],
   "sources": {
     "README.md": {
@@ -316,7 +317,7 @@
       "run-b-verification.md": "c5d02b0e574a4dd1",
       "AGENTS.md": "f3fc72a43a90585e",
       "DECISIONS.md": "dbde521a508f17da",
-      "scripts/docs-summary.mjs": "c550ec103dbd0324"
+      "scripts/docs-summary.mjs": "36a7eba457b18d7c"
     },
     "internal/needs-a-status-call.md": {
       "server.js": "11b2597c8103f14e",
@@ -336,9 +337,9 @@
       "internal/limitations-register.md": "3c4ce8c37ca17280",
       "internal/roadmap.md": "cb0d09f8c8b69e0a",
       "megachat-pass-b-and-docs.md": "5f1e63dffeb62667",
-      "scripts/docs-summary.mjs": "c550ec103dbd0324",
+      "scripts/docs-summary.mjs": "36a7eba457b18d7c",
       "internal/README.md": "4e3fbf82600772c9",
-      "REPORT-DOCS.md": "459c9cb6d8fb0b78",
+      "REPORT-DOCS.md": "0def6ca04f29146d",
       "bounty-stream-context.js": "929a3a0bd1796d73"
     },
     "_snippets/pre-launch.md": {
@@ -444,7 +445,7 @@
       "privy-identity.js": "4d7acfaa345d093e",
       "moderation.js": "4f879cccd6226bd3",
       "rooms-store.js": "0d9a96895126a773",
-      "REPORT-DOCS.md": "459c9cb6d8fb0b78",
+      "REPORT-DOCS.md": "0def6ca04f29146d",
       "AGENTS.md": "f3fc72a43a90585e",
       "_gate-helpers.mjs": "ea67cd122ebe051e",
       "OPEN-ISSUES.md": "7180273d14d20a6a",
@@ -518,7 +519,7 @@
     },
     "internal/launch-readiness.md": {
       "AGENTS.md": "f3fc72a43a90585e",
-      "REPORT-DOCS.md": "459c9cb6d8fb0b78",
+      "REPORT-DOCS.md": "0def6ca04f29146d",
       "megachat-pass-b-and-docs.md": "5f1e63dffeb62667",
       "OPEN-ISSUES.md": "7180273d14d20a6a",
       "_gate-tempo-phase2.mjs": "c7217b9e96256e95",
@@ -571,7 +572,7 @@
       "OPEN-ISSUES.md": "7180273d14d20a6a",
       "_migrate-whitelist-identity.mjs": "79f76084a13087a0",
       "docs/decisions/sub3s-residual.md": "6c147662a0f6acfd",
-      "REPORT-DOCS.md": "459c9cb6d8fb0b78",
+      "REPORT-DOCS.md": "0def6ca04f29146d",
       "_smoke-obs-overlay.mjs": "b11d082f0e9abb7e",
       "_rehearsal-kick.mjs": "34a1e83da2ea43a1",
       "_rehearsal-pumpfun.mjs": "e734d8b3b1d705d0",
@@ -761,12 +762,46 @@
       "megachat-pass-b-and-docs.md": "5f1e63dffeb62667",
       "OPEN-ISSUES.md": "7180273d14d20a6a",
       "docs/pass-b-handoff.md": "a74bc22437eeb972",
-      "REPORT-DOCS.md": "459c9cb6d8fb0b78",
+      "REPORT-DOCS.md": "0def6ca04f29146d",
       "bounty-store.js": "b1a328cc9762a2e3",
       "_gate-missed-code-authoritative.mjs": "8492a426ac933e6c",
       "bounty-escrow.js": "5e39fc6ec4111db1",
       "room-poster.js": "7ed900ee3105194b",
       "_gate-room-poster.mjs": "479ba36b19830984"
+    },
+    "glossary.md": {
+      "rooms-store.js": "0d9a96895126a773",
+      "server.js": "11b2597c8103f14e",
+      "letters.js": "7da1aa39ea3cfaea",
+      "public/overlay.html": "ddd137c0353cd41e",
+      "livekit-lazy.config.js": "e4e98ebfa82ab90b",
+      "livekit-breaker.js": "e3a2e6ea46fb6b0e",
+      "identity-store.js": "ecf754212b6f0e6e",
+      "auth.js": "6de226c69ea3561b",
+      "guest-whitelist.js": "3be089d3db7db684",
+      "airings-store.js": "fce62fd7adf1036e",
+      "room-poster.js": "7ed900ee3105194b",
+      "bounty-store.js": "b1a328cc9762a2e3",
+      "bounty-escrow.js": "5e39fc6ec4111db1",
+      "bounty-capture.js": "b29610ea03342a1a",
+      "bounty-watermark.js": "b9400152f07ce8f8",
+      "public/code-matrix.cjs": "a23a22e8473d135f",
+      "frame-sources.js": "1ddf0a2446092914",
+      "bounty-claim.config.js": "32e4ab78805de4ad",
+      "bounty-timeline-calibration.js": "e049e15564e3951e",
+      "bounty-verifier.js": "82bee5de494e07c3",
+      "bounty-confidence.js": "fa13fe34c6c74409",
+      "bounty-stream-context.js": "929a3a0bd1796d73",
+      "bounty-evidence.js": "88f32d584d3e4e7a",
+      "bounty-ledger.js": "42cd7e8879dc3596",
+      "bounty-settlement.js": "9f9fd94d1bb771f7",
+      "_gate-bounty-claim.mjs": "9097ffc503f466d3",
+      "web/lib/obs-oneclick.mjs": "784b32ae38d09845",
+      "web/lib/obs-scene-check.mjs": "885cf51804f7f9f6",
+      "AGENTS.md": "f3fc72a43a90585e",
+      "megachat-pass-a-prompt.md": "43a43975d2ca210d",
+      "DECISIONS.md": "dbde521a508f17da",
+      "scripts/docs-check.mjs": "a81b3c07b43500d4"
     }
   }
 }

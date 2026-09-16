@@ -41,12 +41,13 @@ const NON_PAGE_DIRS = new Set(['.gitbook', '_snippets']);
 // docs:gitbook-check. Moving them under internal/ later is a `git mv` plus
 // removing them from this set.
 const INTERNAL_DIRS = new Set(['internal', 'briefs', 'decisions', 'design', 'legacy', 'reference', 'ui-overhaul']);
+// The four root-level engineering records that predate the handbook. Named
+// explicitly so a new root-level page (the glossary) is public by default.
+const INTERNAL_ROOT_FILES = new Set(['obs-oneclick-checklist.md', 'pass-b-handoff.md', 'platform-feasibility.md', 'run-b-verification.md']);
 const NOTES_DIR = 'notes';
 export const isInternalPath = (relPath) => {
   const top = relPath.includes('/') ? relPath.split('/')[0] : '';
-  // A root-level page other than README.md is a pre-existing engineering doc
-  // (pass-b-handoff, run-b-verification, ...): internal.
-  return top === '' ? relPath !== 'README.md' : INTERNAL_DIRS.has(top);
+  return top === '' ? INTERNAL_ROOT_FILES.has(relPath) : INTERNAL_DIRS.has(top);
 };
 
 const args = process.argv.slice(2);

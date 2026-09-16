@@ -5,6 +5,7 @@
 // them walk into every room this streamer opens.
 
 import { useCallback, useEffect, useState } from 'react'
+import { docsUrl } from '@/lib/docs-url.mjs'
 import {
   addGuest,
   getGuestWhitelist,
@@ -87,6 +88,11 @@ export function GuestWhitelist({ myHandle }: { myHandle: string | null }) {
         <div>
           <span className="mcc-coordinate">Guest list</span>
           <h2>Let your regulars walk in.</h2>
+          {/* Deep link to the handbook page for this feature; renders nothing
+              when NEXT_PUBLIC_DOCS_URL was not set at build time. */}
+          {docsUrl('guest-whitelist') ? (
+            <small><a href={docsUrl('guest-whitelist') as string} target="_blank" rel="noreferrer">How the guest list works</a></small>
+          ) : null}
           <p>
             Anyone here takes a camera seat in any of your rooms free — no
             per-second charge, no waiting for a seat. It applies to every room

@@ -144,3 +144,27 @@ FOUND WHILE WRITING, and filed: **the bounty badge does not follow the layout or
 The honesty check ran on every authored page; hits fixed by citing. Advisory hits on the 46 pre-existing record pages remain advisory.
 
 Exit: docs:check green on authored pages; every source document has a work-history page (the migration-era `*_TEST.md` records are covered by one page and say so); the outstanding list reconciles against OPEN-ISSUES.md.
+
+### Gate 4 — currency by construction (1 iteration) — committed 6946671
+
+`scripts/docs-sync.mjs` (written in Gate 2 for the Interfaces page) is the mechanism: citation hashes over normalised source sections in `docs/.docs-manifest.json`; `<!-- source:file#Symbol -->` regions refreshed from source; `<!-- snippet:name -->` regions re-stamped from `docs/_snippets/`. **Proven to detect a deliberate edit:** one comment line appended to `room-poster.js` → `docs:sync` flagged the six pages that cite it (airings-and-evidence, recent-rooms, data-model, running-it, roadmap, the Pass A/B history page); reverted byte-for-byte → cleared. Embedded regions proven in Gate 2 (15 refreshed on first `--write`). `npm run docs:verify` = check + sync + gitbook-check, added to the chain and to AGENTS.md. `CONTRIBUTING-DOCS.md` written, including the four-step stealth exit. Runtime data files named in prose (`rooms.json`, …) are excluded from drift, and a bare basename cite is resolved against docs/ and the citing page's directory as well as the repo root.
+
+### Gate 5 — GitBook connection readiness (1 iteration) — committed f3ff572
+
+`scripts/docs-gitbook-check.mjs`: .gitbook.yaml (minimal reader), SUMMARY resolution both ways, images under .gitbook/assets, the public→internal boundary (one set shared with docs:summary), relative links, and the deep-link slug registry against SUMMARY. First run found 11 public pages linking into the internal half (Outstanding, the status-call page, the limitations register) — all rewritten as plain references; the public limitations page now links nowhere internal and the features index links the public limitations page instead of the register. Result: 0 errors, 2 advisory warnings (`docs/design/README.md`, pre-existing, links to files outside docs/ that GitBook cannot serve). `CONNECTING-GITBOOK.md` written with the eight steps, the branch to sync, and both warnings.
+
+### Gate 6 — link the docs from the app (1 iteration)
+
+`NEXT_PUBLIC_DOCS_URL` added to `.env.example` with the comment that it is a BUILD-time value (Next inlines `NEXT_PUBLIC_*`), unset by this pass. `web/lib/docs-url.mjs` (+ `.d.mts`, the obs-client pattern so a Node gate imports the real module): `docsUrl(slug?)` returns null when unset or for an unknown slug — never a guess. `web/lib/docs-slugs.json` maps 12 slugs to pages; `docs:gitbook-check` cross-checks them against SUMMARY. Placement matches the existing chrome rather than inventing furniture: the shared `FooterNav` (site-footer.tsx), the product headers on the account, how-it-works and join pages, `ProductShell`, and the landing footer — each a "Docs" link rendered only behind a null check. Two deep links where a page exists for the concept being explained in prose: the layout editor's floor/ceiling hint → `features/create-room-and-layout`; the guest-list card → `features/guest-whitelist`.
+
+**Asserted, not described.** `_gate-docs-link.mjs` (27/0): layer A imports the real helper — unset → null for root and every slug; set → every slug under the base, README folds into its section, unknown slug still null, whitespace-only is unset. Layer B: every slug is a SUMMARY entry; every surface's `docsUrl` use is behind a guard and no placeholder href exists. Layer C, the build-time truth: built WITH the fixture URL, the href is in 14 server-bundle files; built WITHOUT, none in 343 files scanned. `web/.next` was left in the WITHOUT state, which is what production is. `tsc --noEmit` 0.
+
+ASSUMPTION carried into the code comment and CONNECTING-GITBOOK step 8: GitBook page URLs follow file paths under Git Sync; confirm one deep link after the first sync and add a redirect if not.
+
+### Call options (2 of 3 taken)
+
+**B. Glossary** — `docs/glossary.md`: 42 project terms with the file where each is real, and 17 git/agent terms the owner asked to have explained (ahead/behind, fast-forward, silent revert, stash, worktree, gate, fail-open, discrimination, commit ≠ ship, owner action, status call). Public, root-level; `docs-summary.mjs` now names the four pre-existing root-level record files explicitly so a new root page is public by default.
+
+**A. Diagrams** — one Mermaid flowchart on the architecture page (browser/OBS → the one process → the stores, with LiveKit, Tempo and the platforms), text-sourced beside the ASCII version. Not extended to the flow pages: each flow is already a step table with a source per row, and a diagram would restate it without adding a citation.
+
+**C. Public-only branch** — not taken. `docs:summary --public-only --out` produces the seed; creating and maintaining a second branch is the owner's call once a space exists (U5 asks whether Notes belong in it).

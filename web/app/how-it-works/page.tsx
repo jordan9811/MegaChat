@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { AccountChip } from '@/components/account-chip'
 import { contactUrl } from '@/components/site-footer'
+import { docsUrl } from '@/lib/docs-url.mjs'
 import './how-it-works.css'
 import { BrandText } from '@/components/brand-text'
 
@@ -205,6 +206,7 @@ export default function HowItWorksPage() {
             <a href="/app">Rooms</a>
             <a href="/bounty">Bounties</a>
             <a href="/how-it-works" aria-current="page">How it works</a>
+            {docsUrl() ? <a href={docsUrl() as string}>Docs</a> : null}
           </nav>
           <span className="mch-product-actions">
             <a href="/dashboard">Create room</a>
@@ -272,6 +274,7 @@ export default function HowItWorksPage() {
             <a href="/bounty">Bounties</a>
             <a href="/dashboard">Dashboard</a>
             <a href="/roadmap">Roadmap</a>
+            {docsUrl() ? <a href={docsUrl() as string}>Docs</a> : null}
             <a href={contactHref} target="_blank" rel="noopener noreferrer">Contact</a>
           </nav>
         </div>
