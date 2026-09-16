@@ -62,6 +62,53 @@ and its own comment says "stdio 'ignore' is what hid the original failure. Pipe
 and KEEP it." This gate predates that helper and still uses the pattern the
 helper exists to replace.
 
+### GATE: section G reported GREEN AGAINST A STALE BUILD, and the line it checked encoded a retired decision (2026-09-16, FIXED)
+
+Two findings from reconciling Pass A's gate history, both real, neither the
+flakiness above.
+
+**1. The 101/0 in Pass A Part 2 was judged on pre-merge HTML.** `server.js
+--prod` serves `web/.next` as it sits on disk. Part 2 ran
+`_gate-bounty-claim` twice (95/1 on the 404 race, then 101/0) BEFORE the first
+post-merge `npm run build`; the `.next` under test was built from
+`feat/real-broadcast` at d35599d, whose `bounty-program.tsx` still carried
+"no real funds move yet". The merged SOURCE had already lost that line (see 2),
+so section G's "the preview build states no funds move" passed against a page
+the merged tree does not produce. Every server-side section of that run stands
+(they import the modules directly); only section G was judging the past. Parts
+3–6 never ran this gate, so their green claims are unaffected. Fix:
+`_gate-bounty-claim.mjs` now has G0 — it compares `web/.next/BUILD_ID`'s mtime
+against the newest file under `web/app`, `web/components` and `web/lib` and
+REFUSES to run section G against an older build (exit 1, sections skipped and
+said so). Proven to discriminate: run against the stale build it reported
+`95 pass, 1 fail — G0` and skipped G; after `npm run build` it ran G.
+
+**2. The disclosure the gate demanded had been removed on purpose.** 6386a2c
+(2026-09-01, prod): "Preview-build disclosure removed at the user's explicit
+call … the page does not launch until settlement is real, so a line saying no
+funds move describes a state nobody will ever see it in" — recorded in
+`docs/design/copy-bank.md`. The gate assertion (a295cd4, 07-25) was never
+updated, so it had no source backing on prod from 09-01. When the stale build
+finally turned over in Pass B Run 1 and G went red, I fixed the wrong side: I
+put the line back into `bounty-program.tsx` and shipped it (d4cae00), calling
+it a "pre-existing loss" from the Nerve overhaul. It was not a loss; it was the
+owner's decision, and the earlier claim that it had "been red since 2a0cd60"
+was also wrong (2a0cd60 was merely the last commit to touch the file). Fix: the
+line is out again, and the G assertion now holds the decision (`!/no (real
+)?funds move/`, citing 6386a2c) so a re-add is a deliberate flip of the gate,
+not a silent regression in either direction.
+
+**Standing rule this leaves:** a gate that drives a browser is only as fresh
+as the last build, and a green it reports before a rebuild is a claim about
+the previous tree. G0 enforces it for this gate only. Eleven other gates
+spawn `server.js --prod` and drive puppeteer against it — `_gate-browse-deck`,
+`_gate-browse-thumb`, `_gate-cam-autoswitch`, `_gate-cohost-booth`,
+`_gate-free-megachat`, `_gate-lazy-connect`, `_gate-lk-phase1/2/3`,
+`_gate-p1-features`, `_gate-polish` — and every one of them has the same
+exposure. Not wired in this pass (each is a multi-minute run to re-verify);
+lift G0 into `_gate-helpers.mjs` and adopt it before any of their greens is
+cited across a merge.
+
 # OPEN ISSUES
 
 Running list of stubs, deferrals, and known gaps. Append, don't rewrite.

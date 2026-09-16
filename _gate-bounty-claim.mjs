@@ -723,6 +723,35 @@ const launch = (port, env) => spawn(process.execPath, ['server.js', '--prod'], {
   stdio: 'ignore', cwd: process.cwd(),
 });
 
+// ── G0. the build under test is newer than the source it claims to serve ──
+// server.js --prod serves web/.next as it is on disk. In Pass A (Part 2) this
+// gate ran before the post-merge `npm run build`, so section G judged HTML
+// from the PRE-merge tree and reported green on a line the merge had removed.
+// A stale build makes every G assertion below a statement about the past;
+// refuse rather than report it.
+{
+  const newest = (dir) => {
+    let t = 0;
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name === '.next') continue;
+      const p = path.join(dir, e.name);
+      t = Math.max(t, e.isDirectory() ? newest(p) : fsSync.statSync(p).mtimeMs);
+    }
+    return t;
+  };
+  const buildId = path.join('web', '.next', 'BUILD_ID');
+  const built = fsSync.existsSync(buildId) ? fsSync.statSync(buildId).mtimeMs : 0;
+  const source = Math.max(...['web/app', 'web/components', 'web/lib'].map(newest));
+  const fresh = built > 0 && built >= source;
+  ok('G0. web/.next is newer than web/app, web/components and web/lib', fresh,
+    built ? `built ${new Date(built).toISOString()}, newest source ${new Date(source).toISOString()}` : 'no BUILD_ID — run npm run build');
+  if (!fresh) {
+    console.log('\n  section G skipped: it would judge a page the current source does not produce.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
+
 const browser = await puppeteer.launch({
   executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: 'new',
 });
@@ -765,7 +794,14 @@ try {
   await sleep(2000);
   const txt = await page.evaluate(() => document.body.innerText);
   ok('G. flag on: the board renders the real pool', /gateshow/i.test(txt), txt.slice(0, 80).replace(/\n/g, ' '));
-  ok('G. flag on: the preview build states no funds move', /no (real )?funds move/i.test(txt));
+  // The preview-build disclosure was RETIRED at the owner's call (6386a2c,
+  // 2026-09-01; docs/design/copy-bank.md): the page does not launch until
+  // settlement is real, so a line saying no funds move describes a state
+  // nobody will see it in. This assertion used to demand the line, and passed
+  // for two weeks against a .next built before the retirement (see G0). It
+  // now holds the decision, so putting the line back is a deliberate flip
+  // here, not a silent regression in either direction.
+  ok('G. flag on: the retired preview-build disclosure stays retired (6386a2c)', !/no (real )?funds move/i.test(txt));
   await page.close();
 } finally { on.kill(); }
 
