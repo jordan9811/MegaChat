@@ -227,14 +227,17 @@ export const bountyConfig = {
    * broadcast up to the 45s this very file budgets for broadcast delay in
    * `liveBroadcastDelayMs`. That is 30 + 45 − 12 = 63s — so the old 60s window
    * admitted NO valid F at all across that range, whatever number was written
-   * below it. 90s clears the 63s floor by 27s, and F splits that slack between
-   * the two bounds.
+   * below it. 75s clears the 63s floor by 12s and F splits that slack evenly,
+   * 6s on each bound. A wider window buys margin only against numbers we do
+   * not have: D_min is measured and D_max is already this file's generous
+   * budget, so paying for a 0s-delay platform we have never seen would be
+   * buying memory to cover an assumption.
    *
-   * ~34MB at 720p/3Mbps per open session, up from ~22MB at 60s (3 Mbit/s ×
-   * 90s ÷ 8). That is per CONCURRENT open session, and it is the price of
+   * ~28MB at 720p/3Mbps per open session, up from ~22MB at 60s (3 Mbit/s ×
+   * 75s ÷ 8). That is per CONCURRENT open session, and it is the price of
    * covering the delay spread rather than one point in it.
    */
-  captureWindowMs: num(process.env.BOUNTY_CAPTURE_WINDOW_MS, 90_000),
+  captureWindowMs: num(process.env.BOUNTY_CAPTURE_WINDOW_MS, 75_000),
   /** How often to re-read the media playlist for new segments. */
   capturePollMs: num(process.env.BOUNTY_CAPTURE_POLL_MS, 2_000),
   /**
@@ -293,7 +296,7 @@ export const bountyConfig = {
    * only while the window spans the delay spread, and it is easy to violate by
    * changing a neighbour.
    */
-  captureFreezeDelayMs: num(process.env.BOUNTY_CAPTURE_FREEZE_DELAY_MS, 60_000),
+  captureFreezeDelayMs: num(process.env.BOUNTY_CAPTURE_FREEZE_DELAY_MS, 51_000),
   /**
    * How long to keep retrying the capture-start resolve while a channel is
    * not yet live. THE ORDER THAT MADE THIS NECESSARY: a streamer claims their
