@@ -135,7 +135,17 @@ export function getClaim(id: string) {
 }
 
 export function startAirSession(claimId: string, platform: string, roomId?: string) {
-  return req<{ ok: boolean; airSession: AirSession; code: { code: string } | null }>(
+  return req<{
+    ok: boolean
+    airSession: AirSession
+    code: { code: string } | null
+    /** The room the session was bound to — given, owned, or created (E37). */
+    roomId: string
+    /** The stable overlay address to paste into OBS. Carries `room` so the
+     *  overlay renders MegaChats, and `bountyRoom` so the badge survives the
+     *  next stream. */
+    overlayPath: string
+  }>(
     '/api/bounty/air-session',
     { method: 'POST', body: { claimId, platform, roomId } },
   )

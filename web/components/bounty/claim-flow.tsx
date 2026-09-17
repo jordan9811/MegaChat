@@ -68,7 +68,13 @@ export function ClaimFlow({
       }
       const s = await startAirSession(id, pool.platform)
       setAirSessionId(s.airSession.id)
-      setOverlayUrl(`${window.location.origin}/overlay?bounty=${encodeURIComponent(s.airSession.id)}`)
+      // E37 — the STABLE address, built by the server when it bound this
+       // session to a room. `?room=` is what subscribes the overlay to the
+       // room, so approved MegaChats actually render; `?bountyRoom=` resolves
+       // the badge code by room, so the same URL keeps working next stream.
+       // The old `?bounty=<airSessionId>` form pinned one session and went
+       // dead the next time they went live.
+      setOverlayUrl(`${window.location.origin}${s.overlayPath}`)
       setStage('setup')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Claim failed')

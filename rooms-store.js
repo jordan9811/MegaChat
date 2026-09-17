@@ -733,6 +733,19 @@ export function setRoomOwner(roomId, ownerKey) {
   return rec.ownerKey;
 }
 
+/**
+ * Who owns this room, or null if nobody does.
+ *
+ * `isRoomOwnedBy` answers false for BOTH "someone else owns it" and "nobody
+ * owns it", which is the wrong shape for a caller that has to refuse the
+ * first and allow the second — binding a bounty air session to a room
+ * (E37) is exactly that caller.
+ */
+export function roomOwnerOf(roomId) {
+  const rec = getRoomRecord(roomId);
+  return rec?.ownerKey || null;
+}
+
 export function isRoomOwnedBy(roomId, ownerKey) {
   if (!ownerKey) return false;
   const rec = getRoomRecord(roomId);

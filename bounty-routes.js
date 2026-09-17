@@ -24,7 +24,7 @@ import { youtubeApiConfigured, getVideoLiveDetails, extractVideoId } from './you
 import { rumbleApiConfigured, getRumbleLiveStatus } from './rumble-api.js';
 import { getStreamByMint } from './pumpfun-api.js';
 import { resolveAvatars, avatarKey } from './platform-avatars.js';
-import { readIdentityFromRequest } from './auth.js';
+import { readIdentityFromRequest, roomOwnerKey } from './auth.js';
 import settlement from './bounty-settlement.js';
 import { policyFor, authorize, TIER, platformLoginFor } from './bounty-auth.js';
 import * as capture from './bounty-capture.js';
@@ -33,7 +33,10 @@ import * as seatEscrow from './seat-escrow.js';
 import { hiddenWindows } from './overlay-visibility.js';
 import { buildPoster, buildCard } from './room-poster.js';
 import { listAirings, attachRecording } from './airings-store.js';
-import { resolveRoomConfig, updateRoom } from './rooms-store.js';
+import {
+  resolveRoomConfig, updateRoom, normalizeRoomId,
+  createRoom, setRoomOwner, roomOwnerOf, roomsOwnedBy,
+} from './rooms-store.js';
 
 /**
  * Identity verification is STUBBED in Run A — real OAuth is Run B.
@@ -220,6 +223,13 @@ export function makeClipHooks({ log = console } = {}) {
       if (r && !r.code) {
         log.warn(`[bounty] clip ${clipId} is ${durationS}s — below the ${bountyConfig.minClipSeconds}s sampling floor, it will not be payable`);
       }
+      // E37 — THE CLIP IS ON AIR, SO RECORD THAT IT PLAYED. This is the one
+      // place where a pledged clip demonstrably reaches the overlay, so it is
+      // the only honest place to call markPlayed. It is a no-op for a plain
+      // letter id (no clip record), and it is what takes a first airing out of
+      // the candidate list so the dispatcher does not offer it again.
+      try { clips.markPlayed(clipId, s.id); }
+      catch (e) { log.warn(`[bounty] markPlayed failed for ${clipId}: ${e.message}`); }
       // Viewer count + broadcast start, captured together while the channel
       // is provably live. See captureBroadcastObservation.
       captureBroadcastObservation(s, { playbackId: r?.playbackId || null, clipId, log });
@@ -1143,6 +1153,23 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     return out;
   }
 
+  /**
+   * E37 — the dispatcher tick. Banked replays used to ride the 10-minute
+   * pledge sweeper, which is far too slow for a FIRST airing: a streamer who
+   * approves a clip mid-stream should see it within a drain interval, not ten
+   * minutes. Runs at the drain interval itself, which is also the rate limit,
+   * so a tick can dispatch at most one clip per room.
+   */
+  const airDispatcher = setInterval(() => {
+    try {
+      const started = bank.drain();
+      for (const x of started) {
+        log.log(`[bounty] ${x.kind === 'first' ? 'first airing' : 'replay'}: clip ${x.clipId} → room ${x.roomId}`);
+      }
+    } catch (e) { log.warn(`[bounty] air dispatch failed: ${e.message}`); }
+  }, bountyConfig.bankDrainIntervalMs);
+  if (airDispatcher.unref) airDispatcher.unref();
+
   const pledgeSweeper = setInterval(() => {
     try {
       const swept = escrow.sweepExpiredPledges({ settlement });
@@ -1337,7 +1364,59 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
           error: 'YouTube sessions need your watch URL (the youtube.com/watch?v=… link for this stream)',
         });
       }
-      const s = store.createAirSession({ claimId, roomId, platform, watchUrl });
+      /**
+       * E37 — A SESSION WITHOUT A ROOM CANNOT PUT A CLIP ON AIR.
+       *
+       * `roomId` has been an optional field nothing filled: the claim page
+       * called startAirSession(claimId, platform) and every production
+       * session carried roomId: null. That made three things impossible at
+       * once — the room-keyed code route found no session, the letters hook
+       * (which matches s.roomId === roomId) never fired, and an approved clip
+       * had nowhere to be queued. Gates never caught it because a gate has to
+       * pass a roomId to set a scene up.
+       *
+       * So a session is always bound to a room now: the one asked for, else
+       * the claimant's newest, else one created for them. A bounty claimant is
+       * by definition a streamer who was not on MegaChat, so "none yet" is the
+       * normal case, not an edge.
+       */
+      const ownerKey = roomOwnerKey(readIdentityFromRequest(req));
+      // normalizeRoomId(undefined) answers DEFAULT_ROOM_ID, so normalising an
+      // absent id would have bound every claim-page session to the SHARED
+      // demo room — fans' clips airing into a room the claimant does not own.
+      // Only a room the caller actually named gets normalised.
+      let boundRoomId = (typeof roomId === 'string' && roomId.trim())
+        ? normalizeRoomId(roomId)
+        : null;
+      // A room that does not exist has no config, so it has no letters queue
+      // and nothing for an overlay to subscribe to — binding to it would look
+      // like success and air nothing. Fall back rather than fail: the streamer
+      // still gets a working session, and it is never someone else's room.
+      if (boundRoomId && !resolveRoomConfig(boundRoomId)) {
+        log.warn?.(`[bounty] air session asked for room ${boundRoomId}, which does not exist — binding to this streamer's own room instead`);
+        boundRoomId = null;
+      }
+      if (boundRoomId) {
+        // Never let a session point at a room somebody else owns — the clips
+        // would play into a stranger's broadcast. An UNOWNED room (legacy,
+        // demo, harness) is allowed: there is nobody to take it from.
+        const owner = roomOwnerOf(boundRoomId);
+        if (owner && owner !== ownerKey) {
+          return res.status(403).json({ error: 'That room belongs to someone else', reason: 'room_not_yours' });
+        }
+      }
+      if (!boundRoomId && ownerKey) {
+        boundRoomId = roomsOwnedBy(ownerKey)[0]?.id || null;
+      }
+      if (!boundRoomId) {
+        const handle = store.getReservedHandleByKey(claim.handleKey)?.handle || 'bounty';
+        const room = createRoom(`${handle} on MegaChat`, {});
+        if (ownerKey) setRoomOwner(room.id, ownerKey);
+        boundRoomId = room.id;
+        log.log?.(`[bounty] created room ${room.id} for ${claim.handleKey} — a claimant needs one to air clips`);
+      }
+
+      const s = store.createAirSession({ claimId, roomId: boundRoomId, platform, watchUrl });
       // SELF-CAPTURE STARTS WITH THE SESSION AND ONLY WITH THE SESSION. This
       // is the boundary that makes it a verification capture rather than a
       // recording of someone's broadcast — enforced here, not promised in copy.
@@ -1352,7 +1431,16 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       // through store.createAirSession() directly rather than through this
       // route — so the route threw on its first real use and the mechanic was
       // dead the moment a streamer tried to go live.
-      res.json({ ok: true, airSession: store.getAirSession(s.id), code: null });
+      res.json({
+        ok: true, airSession: store.getAirSession(s.id), code: null,
+        // The STABLE overlay address. `?room=` subscribes the overlay to the
+        // room, which is what makes tiles and MegaChats render at all;
+        // `?bountyRoom=` resolves the badge code by room, so the same URL
+        // keeps working next stream. The by-id form rots — public/overlay.html
+        // records that costing three debugging sessions.
+        roomId: boundRoomId,
+        overlayPath: `/overlay?room=${encodeURIComponent(boundRoomId)}&bountyRoom=${encodeURIComponent(boundRoomId)}`,
+      });
     } catch (e) { fail(res, e); }
   });
 

@@ -1,6 +1,23 @@
 /**
- * CREATOR BOUNTY — BANKING (Pass C Part 3a).
+ * CREATOR BOUNTY — PUTTING A PLEDGED CLIP ON AIR, and banking it when that
+ * fails (Pass C Part 3a, extended by E37).
  *
+ * This module owns the answer to "which pledged clip goes on the overlay
+ * next, and when". Two sources feed one dispatcher, one rate limit and one
+ * bridge to the play queue:
+ *
+ *   FIRST AIRINGS  an approved, paid-for clip that has never aired.
+ *                  Added by E37: until then nothing anywhere turned an
+ *                  APPROVED clip into a playback, `markPlayed` had no caller,
+ *                  and the fan-facing status promised "waits for the streamer
+ *                  to play it on air" with no mechanism behind it.
+ *   REPLAYS        a clip that DID air, into a hidden overlay, and was banked
+ *                  by the state machine below.
+ *
+ * Replays go first: that money is already spent into a bury and the fan has
+ * been waiting longer.
+ *
+ * ── Banking ───────────────────────────────────────────────────────────────
  * A fan paid for a clip to air. It aired while the overlay was hidden — the
  * streamer had switched scenes, or a BRB card was on top — so nobody saw it
  * and the verifier could not have read it. Before this module that clip was
@@ -303,76 +320,206 @@ export function _transitionForTests(contributionId, to, { clipId = 'seed', handl
   });
 }
 
-// ── drain ──────────────────────────────────────────────────────────────────
+// ── dispatch: first airings and replays ────────────────────────────────────
 
 let replayer = null;
 /**
- * How a banked clip gets back on air. Wired by the server to the letters
- * queue (enqueueStoredClip); gates wire a fake. Contract:
+ * How a pledged clip gets on air — its FIRST airing or a replay. Wired by
+ * the server to the letters queue (enqueueStoredClip); gates wire a fake.
+ * Contract:
  *   replayer({ roomId, clipId, contributionId, durationS, airSessionId })
  *     → { ok: boolean, reason?: string }
+ *
+ * Named `replayer` because replays were built first (Pass C Session 2). E37
+ * found that first airings had no path at all, and a first airing is the same
+ * mechanical act minus the bank — so it reuses this bridge rather than
+ * growing a second one.
  */
 export function setReplayer(fn) { replayer = fn; }
 
 /**
- * Replay at a PACED rate, only while the overlay is back.
+ * Dispatch pacing, per room, across BOTH sources.
  *
- * Per room: at most one QUEUED → DRAINING per bankDrainIntervalMs, oldest
- * first, and only when the room's latest signal is overlay_visible and the
- * air session is still OPEN. A clip the play queue will not take goes back
- * to QUEUED and the interval still applies, so a refusing queue cannot spin.
+ * Replays carry their own durable clock on the ledger (`lastDrainAt`). A first
+ * airing writes no bank row — it is not banked — so its dispatch time is held
+ * here. Losing this map on restart can let one extra clip into the play queue,
+ * which costs nothing: the letters scheduler plays one clip at a time and
+ * holds the rest, so PLAYBACK pacing is enforced there regardless. A ledger
+ * row for a non-money event would put dispatch bookkeeping in the escrow
+ * ledger, which is a worse trade.
+ */
+const lastDispatchAt = new Map();
+
+/** Test seam — gates reset pacing between scenes. */
+export function _resetDispatchPacing() { lastDispatchAt.clear(); }
+
+/**
+ * Approved, paid-for clips that have never aired, for the OPEN session in
+ * this room. This is the population E37 found had no path to the overlay.
+ *
+ * A clip qualifies when the streamer approved it (approval is their consent,
+ * and the queue treats an unmoderated clip as reviewable, so there is no
+ * path around it), its pledge is still HELD, it has never played, and the
+ * bank has no record of it — a banked clip is the replay path's business.
+ *
+ * Oldest APPROVAL first. Ordering beyond that is a product decision nobody
+ * has made; filed rather than invented.
+ */
+export function firstAiringCandidates(roomId, { now = Date.now() } = {}) {
+  const session = store.listAirSessions()
+    .filter((s) => s.roomId === roomId && s.status === 'OPEN')
+    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+  if (!session) return [];
+  const claim = store.getClaim(session.claimId);
+  if (!claim) return [];
+  return clips.listClips(claim.handleKey)
+    .filter((c) => c.approval?.state === 'APPROVED')
+    .filter((c) => !c.playCount)
+    .filter((c) => c.contributionId && store.getContribution(c.contributionId)?.status === 'HELD')
+    .filter((c) => !bankRecord(c.contributionId))
+    .map((c) => ({
+      contributionId: c.contributionId, clipId: c.clipId, durationS: c.durationS,
+      handleKey: c.handleKey, roomId, airSessionId: session.id,
+      approvedAt: c.approval?.at ?? c.storedAt,
+    }))
+    .sort((a, b) => a.approvedAt - b.approvedAt);
+}
+
+/**
+ * Is the overlay known to be hidden right now?
+ *
+ * A FIRST AIRING requires only that the overlay is not known-hidden, while a
+ * REPLAY requires a positive `overlay_visible`. The asymmetry is deliberate
+ * and load-bearing:
+ *
+ *   - a manual-paste streamer emits NO visibility signal, ever. Requiring a
+ *     positive signal before a first airing would mean their fans' clips
+ *     never air at all — the visibility check would have become a hard
+ *     requirement to run obs-websocket, which the whole feature refuses to be.
+ *     Nothing is lost: the letters scheduler still refuses to play into a room
+ *     with no overlay connected (`hasOverlay`), which is the real guard.
+ *   - a replay is a clip we already spent once into a bury. Before spending it
+ *     again we want positive confirmation the overlay is back, and a room that
+ *     banked a clip is by definition a room that reports.
+ */
+function knownHidden(roomId) {
+  const latest = latestFor(roomId);
+  return !!latest && latest.signal === 'overlay_hidden';
+}
+
+/** Hand one clip to the play queue. Returns { accepted, why }. */
+function handOff({ roomId, clipId, contributionId, durationS, airSessionId }) {
+  if (!replayer) return { accepted: false, why: 'no replayer wired' };
+  try {
+    const r = replayer({ roomId, clipId, contributionId, durationS, airSessionId });
+    return { accepted: !!(r && r.ok !== false), why: r?.reason || null };
+  } catch (e) {
+    return { accepted: false, why: e?.message || String(e) };
+  }
+}
+
+/**
+ * Put pledged clips on air at a PACED rate — first airings and replays, one
+ * dispatcher, one rate limit, one bridge.
+ *
+ * Per room, per bankDrainIntervalMs, at most one clip is handed to the play
+ * queue. REPLAYS go first: a banked clip is money already spent into a bury
+ * and the fan has been waiting longest. Within each source, oldest first.
+ *
+ * A replay moves QUEUED → DRAINING before the hand-off and back to QUEUED if
+ * the queue refuses, so a refusing queue cannot spin. A first airing writes
+ * no bank row at all — it is not banked, and `markPlayed` at playback start
+ * is what takes it out of the candidate list.
  */
 export function drain({ now = Date.now(), actor = 'system' } = {}) {
   const started = [];
-  const byRoom = new Map();
+  const rooms = new Set();
+  const bankedByRoom = new Map();
   for (const r of bankRecords({ state: 'QUEUED' })) {
-    if (!byRoom.has(r.roomId)) byRoom.set(r.roomId, []);
-    byRoom.get(r.roomId).push(r);
+    if (!bankedByRoom.has(r.roomId)) bankedByRoom.set(r.roomId, []);
+    bankedByRoom.get(r.roomId).push(r);
+    rooms.add(r.roomId);
   }
-  for (const [roomId, queued] of byRoom) {
-    const latest = latestFor(roomId);
-    if (!latest || latest.signal !== 'overlay_visible') continue;
-    const lastDrain = Math.max(0, ...bankRecords({ roomId }).map((r) => r.lastDrainAt || 0));
+  for (const s of store.listAirSessions()) {
+    if (s.status === 'OPEN' && s.roomId) rooms.add(s.roomId);
+  }
+
+  for (const roomId of rooms) {
+    // The rate limit spans both sources, so a room cannot dispatch a replay
+    // and a first airing in the same instant.
+    const lastDrain = Math.max(
+      0,
+      lastDispatchAt.get(roomId) || 0,
+      ...bankRecords({ roomId }).map((r) => r.lastDrainAt || 0),
+    );
     if (now - lastDrain < bountyConfig.bankDrainIntervalMs) continue;
-    const next = queued.sort((a, b) => (a.lastQueuedAt || 0) - (b.lastQueuedAt || 0))[0];
-    const s = store.getAirSession(next.airSessionId);
-    if (!s || s.status !== 'OPEN') continue; // nowhere to replay to — expiry takes it
-    const clip = clips.getClipRecord(next.clipId);
-    if (!clip || clip.purgedAt) continue;
-    const n = next.replays + 1;
-    const d = write(next, 'DRAINING', {
-      ...ids(next), actor,
-      reason: `overlay back — replay ${n} of ${bountyConfig.bankMaxReplays}`,
-      idempotencyKey: `bank:drain:${next.contributionId}:${n}`,
-      now, meta: { attempt: n },
-    });
-    if (d.deduped) continue;
-    let accepted = false;
-    let why = 'no replayer wired';
-    if (replayer) {
-      try {
-        const r = replayer({ roomId, clipId: next.clipId, contributionId: next.contributionId, durationS: clip.durationS, airSessionId: next.airSessionId });
-        accepted = !!(r && r.ok !== false);
-        why = r?.reason || null;
-      } catch (e) {
-        why = e?.message || String(e);
+
+    // ── replays first ──
+    //
+    // An INELIGIBLE replay must not consume the room's tick. The first cut
+    // `continue`d the whole room whenever the banked clip could not go, so a
+    // room holding one banked clip could never air anything else again —
+    // including, on a manual-paste room with no signal at all, every clip that
+    // had never aired. A replay that cannot go is skipped; the room falls
+    // through to its first airings.
+    const queued = (bankedByRoom.get(roomId) || [])
+      .sort((a, b) => (a.lastQueuedAt || 0) - (b.lastQueuedAt || 0));
+    const next = queued[0];
+    const session = next ? store.getAirSession(next.airSessionId) : null;
+    const banked = next ? clips.getClipRecord(next.clipId) : null;
+    const replayReady = !!next
+      // A replay needs a POSITIVE all-clear — see knownHidden's header.
+      && latestFor(roomId)?.signal === 'overlay_visible'
+      && session?.status === 'OPEN' // nowhere to replay to — expiry takes it
+      && !!banked && !banked.purgedAt;
+    let tickSpent = false;
+    if (replayReady) {
+      const n = next.replays + 1;
+      const d = write(next, 'DRAINING', {
+        ...ids(next), actor,
+        reason: `overlay back — replay ${n} of ${bountyConfig.bankMaxReplays}`,
+        idempotencyKey: `bank:drain:${next.contributionId}:${n}`,
+        now, meta: { attempt: n },
+      });
+      // A DEDUPED write means this exact attempt already ran. Returning here
+      // would hand the room's tick to a replay that is not going to move,
+      // every tick, forever — so it falls through to a first airing instead.
+      if (!d.deduped) {
+        tickSpent = true; // attempted: the tick is spent either way, so a
+                          // refusing play queue cannot spin.
+        lastDispatchAt.set(roomId, now);
+        const { accepted, why } = handOff({
+          roomId, clipId: next.clipId, contributionId: next.contributionId,
+          durationS: banked.durationS, airSessionId: next.airSessionId,
+        });
+        if (accepted) {
+          started.push({ kind: 'replay', contributionId: next.contributionId, clipId: next.clipId, roomId, attempt: n });
+        } else {
+          write(bankRecord(next.contributionId), 'QUEUED', {
+            ...ids(next), actor,
+            reason: `replay not accepted: ${why} — back in the queue`,
+            idempotencyKey: `bank:requeue:${next.contributionId}:${n}`,
+            now, meta: { attempt: n, playbackId: null },
+          });
+        }
       }
     }
-    if (!accepted) {
-      write(bankRecord(next.contributionId), 'QUEUED', {
-        ...ids(next), actor,
-        reason: `replay not accepted: ${why} — back in the queue`,
-        idempotencyKey: `bank:requeue:${next.contributionId}:${n}`,
-        now, meta: { attempt: n, playbackId: null },
-      });
-      continue;
-    }
-    started.push({ contributionId: next.contributionId, clipId: next.clipId, roomId, attempt: n });
+    if (tickSpent) continue;
+
+    // ── then a first airing (E37) ──
+    if (knownHidden(roomId)) continue; // it would bank on the spot; wait instead
+    const first = firstAiringCandidates(roomId, { now })[0];
+    if (!first) continue;
+    const { accepted } = handOff(first);
+    if (!accepted) continue; // nothing written: it is still a candidate next tick
+    lastDispatchAt.set(roomId, now);
+    started.push({ kind: 'first', contributionId: first.contributionId, clipId: first.clipId, roomId, attempt: 1 });
   }
   return started;
 }
 
-/** Hook: a room's visibility changed. Only `overlay_visible` drains. */
+/** Hook: a room's visibility changed. Only `overlay_visible` dispatches —
+ *  a first airing into a room that just went dark would bank immediately. */
 export function onSignal(roomId, signal, opts = {}) {
   if (signal !== 'overlay_visible') return [];
   return drain(opts);
