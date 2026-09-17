@@ -42,6 +42,19 @@ Contributions sit against a reserved handle for up to 90 days (`reservationTtlMs
 - Three fan-facing components render in the pre-overhaul skin (`OPEN-ISSUES.md`, "THE BOUNTY COMPONENTS LOST THE NERVE SKIN") — a front-end task, not a behaviour defect.
 - The example pools disappeared once when every seeded pool had been refunded; the condition that hid them was removed in `7ee7426`.
 
+## Going on air — how an approved clip reaches the broadcast
+
+When the streamer opens an air session, it is bound to a room: the one they asked for, the one they already own, or one created for them (`bounty-routes.js`, the air-session route). A bounty claimant is by definition a streamer who was not on MegaChat yet, so "none yet" is the normal case. The session hands back the overlay address to paste into OBS — `/overlay?room=<id>&bountyRoom=<id>` — which does two jobs at once: `room` subscribes the overlay to the room so MegaChats render as tiles, and `bountyRoom` resolves the badge code by room so the same URL still works next stream (`public/overlay.html`).
+
+From there a clip the streamer has approved airs on its own:
+
+1. The dispatcher offers one clip per room per 20 s (`bountyConfig.bankDrainIntervalMs`), oldest approval first, and only while the overlay is not known to be hidden (`bounty-bank.js`, `firstAiringCandidates` and `drain`).
+2. It is handed to the same queue every MegaChat plays through (`letters.js`, `enqueueStoredClip`), which plays one clip at a time and refuses to play into a room with no overlay connected.
+3. Playback opens a window with a fresh per-playback code and marks the clip played, which is what stops it being offered again (`bounty-watermark.js`, `startClipPlayback`; `bounty-clips.js`, `markPlayed`).
+4. Verification counts that playback like any other, and the pledge pays once (`_gate-first-airing.mjs`, C1–C11).
+
+A streamer with no obs-websocket connected emits no visibility signal at all, and their clips still air: the check is "not known hidden", never "known visible", so this can never become a requirement to run obs-websocket in order to be paid.
+
 ## Banking — when a pledged clip aired while the overlay was hidden
 
 Pass C Part 3a. A clip that played while the overlay was not on the broadcast used to be simply lost: unverified, unpaid, and eventually refunded at pledge expiry. Now it is **banked** and replayed when the overlay comes back (`bounty-bank.js`).
@@ -57,7 +70,7 @@ The bank's state is folded from `BANK` rows in the escrow ledger, never stored, 
 ## What this does NOT do
 
 - **It does not pay.** Release and refund are ledger rows and recorded intents; there is no signer and no transfer anywhere in the seventeen `bounty-*.js` modules (Gate H, `_gate-bounty-claim.mjs`; extended to the bank, the seat escrow and the visibility path in `_gate-bank-and-seats.mjs`, I1).
-- **It does not put an approved pledged clip on air the first time.** `bounty-clips.markPlayed` is called by nothing; the only path that plays a stored clip is the bank's replay bridge. The initial play still has no UI or route (`OPEN-ISSUES.md`, 2026-09-16 Session 2).
+- **It does not let the streamer choose the ORDER clips air in.** Approved clips air oldest-approval-first; skip, hold and reorder are unbuilt (`bounty-bank.js`, `firstAiringCandidates`; internal outstanding list E40).
 - **It does not take a fan's money.** `POST /api/bounty/contribute` and `/pledge` write the ledger; no payment method is invoked (Gate H).
 - **It does not run unless switched on.** `BOUNTY_CLAIM` defaults off and, off, mounts nothing (`attachBountyRoutes`, `bounty-routes.js`).
 - **It does not auto-verify on a warning.** A verification whose signals disagree, or that reads well but misses a required code, routes to a person (`bounty-confidence.js`, tier 4; `bounty-verifier.js`, `NOT_SHOWN`).

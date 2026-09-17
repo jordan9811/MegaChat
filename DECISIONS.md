@@ -556,3 +556,50 @@ reason than "the API is expensive".
   the sweeper), seat clawback and seat SOURCE_UNAVAILABLE (seat ledger flags,
   listed beside the bounty reviews). A verdict with no cause is a silent
   denial. Undo: n/a (rule).
+
+## E37 — giving an approved pledged clip a way to air (2026-09-17)
+
+- **First airings reuse the bank's replay bridge rather than getting their own
+  path** — a first airing is the same mechanical act as a replay minus the
+  bank, so one dispatcher owns both, with one rate limit and one route to the
+  play queue. The alternative was a second path that could drift from the
+  first. Undo: n/a (rule).
+- **Replays are dispatched before first airings** — that money is already spent
+  into a bury and the fan has waited longer. Undo: swap the two branches in
+  `drain`.
+- **A first airing needs only "not known hidden"; a replay needs a positive
+  `overlay_visible`** — a manual-paste streamer emits no signal ever, so
+  requiring a positive one would mean their fans' clips never air at all, and
+  the visibility check would have quietly become a requirement to run
+  obs-websocket. A replay is different: it is a clip already spent once, so it
+  waits for confirmation. The letters scheduler's own `hasOverlay` check is the
+  real guard in both cases. Undo: use `knownHidden` in both branches.
+- **An ineligible replay does not consume the room's dispatch tick, but a
+  refused one does** — otherwise a single banked clip could stop a room airing
+  anything ever again; and a queue that keeps refusing must not spin. Undo:
+  n/a (bugfix, caught by the new gate).
+- **An air session is always bound to a room: the one asked for, else the
+  claimant's newest, else one created for them** — a bounty claimant is by
+  definition a streamer who was not on MegaChat, so "no room yet" is the normal
+  case rather than an error to report. Undo: make the room a required field and
+  return 400, which moves the problem to the claim page.
+- **Only an explicitly named room id is normalised.** `normalizeRoomId(undefined)`
+  answers `DEFAULT_ROOM_ID`, so normalising an absent one bound every
+  claim-page session to the SHARED DEMO ROOM. Caught by the new gate before it
+  shipped. Undo: n/a (bugfix).
+- **A room owned by someone else is refused; an unowned one is allowed** —
+  pointing a session at a stranger's room would air a fan's clip into a
+  stranger's broadcast. Unowned rooms (legacy, demo, harness) have nobody to
+  take them from. Undo: n/a (security).
+- **The claim page hands out `/overlay?room=<id>&bountyRoom=<id>`** — the
+  by-id form pins one session and dies on the next stream, which
+  `public/overlay.html` records as having cost three debugging sessions.
+  Undo: n/a (bugfix).
+- **`markPlayed` is called from the playback-start hook, for replays as well as
+  first airings** — that hook is the one place a clip demonstrably reaches the
+  overlay. `playCount` therefore counts airings, which is what the fan-facing
+  status has always claimed to show. Payment dedupe is separate and unchanged
+  (`payablePlaybacks`). Undo: n/a (the function had no caller at all).
+- **Queue order is oldest-approved-first and nothing else** — skip, hold and
+  reorder are a product surface nobody has specified. Filed as E40 rather than
+  invented. Undo: n/a (deferral).

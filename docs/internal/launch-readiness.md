@@ -60,6 +60,9 @@ Every path that touches escrow, settlement, payout, verification, the whitelist,
 | 31 | **Manual-paste hold:** a room with no visibility signal sweeps at stream end + 10 min, capped at 24 h, and the manage page says why | `_gate-bank-and-seats.mjs` G7; `web/components/overlay-health-card.tsx` | fixture | ☐ |
 | 32 | **Review causes:** banked, scaled-below-floor (own words), bank expiry, seat clawback and seat could-not-look are each named, never silent | `_gate-bank-and-seats.mjs` H6, H9–H11 | real HTTP | ☐ |
 | 33 | **Gate H, extended:** zero transfer-shaped calls across the bounty modules, the bank, the seat escrow and the visibility path; settlement still the stub | `_gate-bank-and-seats.mjs` I1–I3; `_gate-bounty-claim.mjs` H | static scan | ☐ |
+| 34 | **First airing (E37):** an approved pledged clip reaches a REAL overlay with only the dispatcher driving it, opens a window with a fresh per-playback nonce, `markPlayed` fires, and verification counts the playback | `_gate-first-airing.mjs` C1–C8 (real browser overlay on the room-keyed URL) | real browser | ☐ |
+| 35 | **The session is bound to a room:** opened the way the claim page opens it (no room id) it still binds — to the streamer's own room, never the shared default — and a room owned by someone else is refused | `_gate-first-airing.mjs` B1–B4 | real HTTP | ☐ |
+| 36 | **A first airing into a hidden overlay banks** rather than vanishing, and the pledge still pays exactly once however it got on air | `_gate-first-airing.mjs` D3, C11, E1–E2 | real browser + HTTP | ☐ |
 
 ## What leaving stealth changes in these docs
 

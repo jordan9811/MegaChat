@@ -339,6 +339,97 @@ WHAT IS NOT PROVEN, said plainly:
 - The z-order assumption (L30) now also bounds the bank: a missed occlusion
   is a clip that was not banked, never one banked wrongly.
 
+### E37 CLOSED — an approved pledged clip can now air (2026-09-17)
+
+**The defect:** `markPlayed` had no caller. Nothing turned an APPROVED clip
+into a playback, so the bounty mechanic could take a fan's money, store their
+recording, let the streamer approve it — and then had no way to put it on
+screen. The fan-facing status said "Approved — waits for the streamer to play
+it on air", and there was nothing for the streamer to press.
+
+**Never built, not removed.** `markPlayed` appears in exactly two commits in
+the whole history: `9cf5c8c` (2026-07-27, the clip-storage commit) which added
+it with no caller in the same diff, and the Pass C Session 2 docs commit that
+recorded it as uncalled.
+
+But the halves around it WERE built, deliberately and with reasons written
+down: `GET /api/bounty/room/:roomId/code` exists so that "`/overlay?room=<id>`
+works for every future session in that room", and `public/overlay.html`
+supports `?bountyRoom=` because the by-id form rotting "happened three times in
+one testing session and read as a capture bug every time". What was never built
+is the middle — and it was three joins, not one:
+
+1. **The session was never bound to a room.** `startAirSession(claimId, platform, roomId?)`
+   takes an optional room and the claim page called it with two arguments, so
+   every production session carried `roomId: null`. That alone broke three
+   things: the room-keyed code route found no session, the letters hook (which
+   matches `s.roomId === roomId`) never fired, and an approved clip had nowhere
+   to be queued.
+2. **The claim page handed out the rotting URL** (`?bounty=<airSessionId>`),
+   not the stable room form its own overlay code prefers.
+3. **Nothing made an approved clip eligible to air.**
+
+**Why every gate missed it.** `makeClipHooks` finds a session by
+`s.roomId === roomId`, and every gate and rehearsal creates its air session
+*with* a room id, because a test has to set the scene up. The product path was
+the only caller that passed none — so the single join the product depended on
+was the one join nothing exercised. `_gate-first-airing.mjs` now opens its
+session the way the claim page does, with no room id, and lets the server bind
+it.
+
+**Two further defects the new gate caught, both in this pass's own code:**
+
+- `normalizeRoomId(undefined)` returns `DEFAULT_ROOM_ID`, so the first cut of
+  the binding sent every claim-page session to the **shared demo room** — fans'
+  clips airing into a room the claimant does not own. Only an explicitly named
+  room is normalised now.
+- The dispatcher's replay branch `continue`d the whole room when the banked
+  clip could not go, so one banked clip could stop a room airing anything ever
+  again — including, on a manual-paste room with no visibility signal at all,
+  every clip that had never aired.
+
+**What shipped:** first airings and replays now share one dispatcher, one rate
+limit and one bridge to the play queue (`bounty-bank.js`); the air session is
+always bound to a room (given, owned, or created for the claimant); the claim
+page hands out `/overlay?room=<id>&bountyRoom=<id>`; and `markPlayed` is called
+where a playback actually starts. Gate: `_gate-first-airing.mjs`, 31/0,
+including a real browser overlay rendering a clip that was only ever approved.
+
+**Open, and filed rather than invented:** queue ORDER is oldest-approved-first.
+Whether a streamer should be able to reorder, skip or hold their queue is a
+product decision nobody has made, and this pass deliberately did not invent one
+(E40).
+
+### FOUND IN PASSING — `_gate-bounty-program.mjs` has been red since the demo board landed (2026-09-17)
+
+38 pass, 2 fail on a fresh build, and neither failure is a product defect:
+
+    A. platform totals: REAL value counts each escrow once — real=1010 (expects 110)
+    C. platform real value is unchanged by the race              — real=1035
+
+The arithmetic names the cause exactly. `attachBountyRoutes` seeds a demo board
+on the first boot that finds no pools: eight `DEMO_TARGETS` at 100 each, plus
+one contested pledge of 100 across the first three. That is 900. The gate
+expects 110 — its own two pledges — and gets 1010.
+
+Dates settle it. The `realValue === 110` expectation was written on 2026-07-27
+(`87185e2`); the demo board seeding was added on 2026-09-01 (`c8431b3`, "Seed
+the demo board on boot, so it needs no admin key"). The gate has been failing
+since that day and nothing noticed, which is T2 again: no single entry point,
+so a gate outside whatever list a pass happens to run is simply not run.
+
+NOT the E37 pass's doing, and checked rather than assumed: the gate contains no
+air-session call at all, so the room-binding change cannot execute in it, and
+`markPlayed` fires only from a letters playback, which needs a room and a
+connected overlay — that gate has neither.
+
+The fix is one line in the gate (clear the seed with
+`POST /api/bounty/admin/seed-clear`, which exists for exactly this, or assert
+against the delta rather than the absolute). Left undone deliberately: this
+pass was scoped to one defect, and a gate expectation is a claim about what the
+product should do, which is worth changing on purpose rather than in passing.
+Filed as E41 alongside the five UI-drift gates from E35.
+
 # OPEN ISSUES
 
 Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
