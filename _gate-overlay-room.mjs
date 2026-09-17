@@ -33,8 +33,20 @@ import puppeteer from 'puppeteer-core';
 
 const PORT = 3317;
 const APP = `http://localhost:${PORT}`;
-const ROOM = 'gateoverlayroom';
 const HANDLE = 'gatestreamer';
+
+// A REAL room, created before the server boots.
+//
+// This used to be the bare string 'gateoverlayroom'. An air session would
+// store it happily, because nothing checked, and the room-keyed code route
+// matches on the string alone — so the gate passed against a room that did
+// not exist. E37 made a session bind only to a room that does, since a room
+// with no config has no letters queue and no overlay to subscribe to, and
+// this setup stopped being realistic the moment that was true.
+const DATA_DIR = mkdtempSync(path.join(tmpdir(), 'mc-ovlroom-'));
+process.env.DATA_DIR = DATA_DIR;
+const roomsStore = await import('./rooms-store.js');
+const ROOM = roomsStore.createRoom('gate overlay room', {}).id;
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = '') => {
@@ -45,7 +57,7 @@ const ok = (n, c, x = '') => {
 const { startGateServer } = await import('./_gate-helpers.mjs');
 const { bountyConfig } = await import('./bounty-claim.config.js');
 const srv = await startGateServer({
-  port: PORT, dataDir: mkdtempSync(path.join(tmpdir(), 'mc-ovlroom-')),
+  port: PORT, dataDir: DATA_DIR,
   label: 'overlay-room', bountyAuth: { handles: [`kick:${HANDLE}`] },
   env: { BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '0', KEEP_ORPHAN_ROOMS: 'true' },
   readyTimeoutMs: 180_000,
