@@ -2,7 +2,8 @@
 /**
  * Viewer join-page logic (Tempo mainnet).
  *
- * Originally ported verbatim from the Arc-era public/index.html; the camera
+ * Originally ported verbatim from the Arc-era viewer page (public/index.html,
+ * deleted 2026-09-17 — it carried a client-signed Gateway deposit); the camera
  * lifecycle, WS transport, seat state machine, and rewards client are
  * unchanged. The WALLET + PAYMENT layer was rebuilt for Tempo:
  *   - Privy embedded wallets (email/social/passkey) via the window.MegaWallet
@@ -1175,7 +1176,8 @@ async function joinSeat() {
 }
 
 // ─── Inline camera-publish stage ────────────────────────────────────────
-// Vdo.ninja's official IFRAME API — see public/index.html for the full notes.
+// Vdo.ninja's official IFRAME API — the full notes lived in the retired
+// public/index.html (deleted 2026-09-17); see git history for them.
 const VDO_ORIGIN = 'https://vdo.ninja';
 let lastJoinData = null;
 let cameraLiveFired = false;

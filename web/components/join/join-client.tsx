@@ -1,7 +1,7 @@
 'use client'
 
 // Viewer join page — app-skin markup around the UNCHANGED legacy join logic
-// (lib/join-page.ts, ported verbatim from public/index.html). Element IDs must
+// (lib/join-page.ts, ported verbatim from the since-deleted public/index.html). Element IDs must
 // match what that script expects, and the classes it toggles (.show, .success,
 // .error, .live, .addr, .adv-only/.simple-only) are styled in join.css.
 

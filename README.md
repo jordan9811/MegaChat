@@ -55,8 +55,8 @@ Now when people join, video boxes appear automatically on your stream.
 ## Files
 
 - `server.js` - Backend (seat management, VDO.Ninja room generation, WebSocket)
-- `public/index.html` - User page (where they pay/join)
 - `public/overlay.html` - OBS overlay (just video boxes, transparent background)
+- `web/` - the Next.js app: the join page, dashboard, browse and bounty surfaces. The Arc-era `public/index.html` viewer page was deleted on 2026-09-17: it still carried a client-signed Circle Gateway deposit, and nothing routed to it.
 
 ## What's Working
 
