@@ -91,6 +91,17 @@ const upload = (url, durationS, bytes = 4096) => fetch(`${APP}${url}?durationS=$
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 
 try {
+  // E41 — the demo board seeds 900 of escrow on the first boot that finds no
+  // pools (eight targets at 100 plus a contested 100), and this gate's totals
+  // were written before that existed, so it was red from 2026-09-01 without
+  // anyone noticing. Clear the seed through the route that exists for exactly
+  // this, so the gate measures its OWN contribution. The seeding is untouched.
+  {
+    const cleared = await post('/api/bounty/admin/seed-clear', {}, 'expirer');
+    ok('E41 the demo board is cleared before anything is measured',
+      cleared.status === 200, `HTTP ${cleared.status}, ${cleared.body.cleared?.length ?? '?'} seeded pledge(s) cleared`);
+  }
+
   // ── A. one escrow across N targets ───────────────────────────────────────
   const t3 = [
     { platform: 'twitch', handle: 'raceanchor' },

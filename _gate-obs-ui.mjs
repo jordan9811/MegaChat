@@ -198,7 +198,8 @@ try {
   ok('...and says the password stays in this browser',
     /stays in this browser/i.test(setupText));
   ok('the manual fallback is rendered FIRST-CLASS alongside, not behind a failure',
-    setupText.includes('Manual setup (works everywhere)') && setupText.includes('/overlay?bounty='));
+    // E37: the claim page hands out the stable room-keyed overlay address.
+    setupText.includes('Manual setup (works everywhere)') && setupText.includes('/overlay?room='));
 
   // ── wrong password → named failure, manual road still there ──────────────
   await page.type('input[type="password"]', 'wrong-password');
@@ -236,8 +237,11 @@ try {
     JSON.stringify(input?.settings || {}).slice(0, 110));
   ok('...with monitor-and-output audio by default',
     input?.monitorType === 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT', input?.monitorType);
-  ok('the overlay URL handed to OBS is THIS session\'s overlay',
-    /\/overlay\?bounty=/.test(input?.settings?.url || ''), input?.settings?.url);
+  // E37 (2026-09-17): the by-id form (`/overlay?bounty=<session>`) rots on the
+  // next stream, so the page hands OBS the room-keyed address with the bounty
+  // room pinned to the same room.
+  ok('the overlay URL handed to OBS is the stable ROOM-keyed overlay, bounty room pinned to the same room',
+    /\/overlay\?room=([0-9a-f]+)&bountyRoom=\1$/.test(input?.settings?.url || ''), input?.settings?.url);
 
   // ── the password stayed home ─────────────────────────────────────────────
   ok('the password never appears in ANY request to our server', leaks.length === 0,

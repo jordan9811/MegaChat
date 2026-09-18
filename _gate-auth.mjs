@@ -100,9 +100,11 @@ try {
   if (!cfg.roomId) fail('viewer config broken');
   else ok('viewer /api/config still public (no password)');
 
-  const bundle = await fetch(`${BASE}/passkey-wallet.bundle.js`);
-  if (bundle.status !== 200) fail('passkey bundle missing');
-  else ok('join page assets still served');
+  // The passkey bundle went with the Arc-era viewer page (deleted 2026-09-18,
+  // E38); the join page itself is the public asset this assertion was about.
+  const joinPage = await fetch(`${BASE}/join?room=${cfg.roomId}`);
+  if (joinPage.status !== 200) fail(`join page not served (${joinPage.status})`);
+  else ok('join page still served');
 
 } catch (e) {
   fail('HTTP: ' + e.message);

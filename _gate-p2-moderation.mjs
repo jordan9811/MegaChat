@@ -1,14 +1,20 @@
 /**
- * GATE — POLISH P2: AI moderation for MegaChats. Real payments, mock
+ * GATE — POLISH P2: AI moderation for MegaChats. REAL MAINNET PAYMENTS —
+ * three 0.01 USDC MegaChats from TEST_VIEWER_KEY per run, this gate spends
+ * dust — against a mock
  * moderation API (OpenAI-shaped, mode-switchable) via MODERATION_API_BASE —
  * the REAL pipeline code runs end to end.
  *  A. no key   → identical to today (immediate queue, no reviewing state)
  *  B. pass mode → status 'reviewing' → queued + letter_play in <10s
  *  C. flag mode → pending_approval with the flagged reason in the dashboard
- *     list; reject → on-chain refund (auto-refund default on)
+ *     list; reject → the refund is recorded at the settlement door as a
+ *     PENDING intent (E38: paid by the flush once PLATFORM_SETTLEMENT_KEY is
+ *     set; no gate sets one)
  *  D. autoRefundOnReject=false → reject keeps the payment
  */
 import { createServer } from 'http';
+import { readFileSync, existsSync } from 'fs';
+import path from 'path';
 import { spawn } from 'child_process';
 import WebSocket from 'ws';
 import puppeteer from 'puppeteer-core';
@@ -198,12 +204,25 @@ try {
   ok('C: flagged clip lands in the approve queue with the reason',
     !!held && /violence \(93%\)/.test(held.flaggedReason || ''), held?.flaggedReason);
   const balBefore = await balance();
-  await fetch(`http://localhost:3222/api/dashboard/rooms/${roomB.id}/letters/${c.letterId}/reject`, {
+  const rejC = await (await fetch(`http://localhost:3222/api/dashboard/rooms/${roomB.id}/letters/${c.letterId}/reject`, {
     method: 'POST', headers: { 'X-Room-Password': 'p2-gate' },
-  });
+  })).json();
   await sleep(6000);
   const net = Number(formatUnits(balBefore - await balance(), 6));
-  ok('C: reject refunded on-chain (balance recovered the 0.01)', net < -0.009, `delta ${(-net).toFixed(6)} back`);
+  // E38 (2026-09-18) — the refund is an INTENT at the settlement door, not an
+  // immediate transfer. With no PLATFORM_SETTLEMENT_KEY in this gate's
+  // environment (no gate may set one) it is recorded, PENDING, for exactly
+  // the 0.01, and nothing moves on chain. The old assertion — the viewer's
+  // balance recovered the 0.01 within 6 s — is now a claim only a funded
+  // payout key can make good; Part 4 owns it.
+  const doorPath = path.join(moddedSrv.dataDir, 'settlement.jsonl');
+  const doorRows = existsSync(doorPath)
+    ? readFileSync(doorPath, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.ref === `letter:${c.letterId}:refund`)
+    : [];
+  ok('C: reject records the refund at the door as a PENDING intent for exactly the 0.01',
+    rejC.refunded === true && doorRows.some((r) => r.type === 'INTENT' && r.kind === 'refund' && r.amountAtomic === '10000'),
+    `refunded=${rejC.refunded} rows=${doorRows.map((r) => `${r.type}:${r.amountAtomic}:${r.to}`).join(',') || 'none'}`);
+  ok('C: ...and nothing moved on chain without the payout key', Math.abs(net) < 0.001, `delta ${net.toFixed(6)}`);
 
   // ── D. autoRefundOnReject = false ──────────────────────────────────────────
   const roomD = await mk('http://localhost:3222', 'NoRefund', {
