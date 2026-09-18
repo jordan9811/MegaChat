@@ -3,8 +3,10 @@
  * docs:gitbook-check — is the repo side ready for GitBook Git Sync?
  *
  * Dry-run validator, no network. Asserts:
- *   1. .gitbook.yaml parses and points at a root whose README.md and
- *      SUMMARY.md exist (a minimal YAML reader — the file has four keys).
+ *   1. The two files that actually govern site-level Git Sync parse and
+ *      agree: gitbook-docs.yaml at the repo root (the site, and the directory
+ *      each space maps to) and, inside that directory, the space's own
+ *      .gitbook.yaml (content root, landing page, sidebar, redirects).
  *   2. Every SUMMARY.md entry resolves to a file.
  *   3. Every markdown page under docs/ is listed in SUMMARY.md (non-page
  *      directories — .gitbook, _snippets — are exempt; GitBook does not show
@@ -37,28 +39,164 @@ const manifest = fs.existsSync(path.join(DOCS, '.docs-manifest.json'))
   ? JSON.parse(fs.readFileSync(path.join(DOCS, '.docs-manifest.json'), 'utf8')) : { authored: [] };
 const authored = new Set(manifest.authored || []);
 
-// ── 1. .gitbook.yaml ─────────────────────────────────────────────────────
-const yamlPath = path.join(ROOT, '.gitbook.yaml');
-if (!fs.existsSync(yamlPath)) fail('.gitbook.yaml is missing at the repo root');
-else {
-  const y = fs.readFileSync(yamlPath, 'utf8').split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith('#'));
-  const top = {}; let section = null;
-  for (const line of y) {
-    const m = line.match(/^(\s*)([\w-]+):\s*(.*)$/);
-    if (!m) { fail(`.gitbook.yaml: cannot read line "${line}"`); continue; }
-    const [, indent, key, val] = m;
-    if (!indent) { section = key; top[key] = val.trim() === '' ? {} : val.trim(); }
-    else if (section && typeof top[section] === 'object') top[section][key] = val.trim();
+/**
+ * A strict reader for the YAML subset these two configs use: comments,
+ * `key: value` maps nested by indentation, `- ` sequences of maps, plain and
+ * quoted scalars, booleans, and `{}`. Anything else — an anchor, a flow
+ * collection, a block scalar, a tab — is reported as an error naming the
+ * line, never silently mis-read: a validator that mis-reads a config is
+ * worse than no validator. Exported so it can be exercised directly.
+ */
+export function parseYaml(text, label = 'yaml') {
+  const errs = [];
+  const root = {};
+  const stack = [{ indent: 0, container: root, parent: null, key: null }];
+  const scalar = (v, ln) => {
+    if (v === '{}') return {};
+    if (v === '[]') return [];
+    if (v === 'true') return true;
+    if (v === 'false') return false;
+    if (v === 'null' || v === '~') return null;
+    if (/^-?\d+$/.test(v)) return Number(v);
+    const q = v.match(/^'([^']*)'$/) || v.match(/^"([^"]*)"$/);
+    if (q) return q[1];
+    if (/^[[{&*!|>]/.test(v)) { errs.push(`${label} line ${ln}: unsupported YAML construct "${v}"`); return null; }
+    return v;
+  };
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const ln = i + 1;
+    const rawLine = lines[i];
+    if (!rawLine.trim() || /^\s*#/.test(rawLine)) continue;
+    if (rawLine.includes('\t')) { errs.push(`${label} line ${ln}: tab character (YAML forbids tabs for indentation)`); continue; }
+    const ind = rawLine.match(/^ */)[0].length;
+    let body = rawLine.slice(ind).replace(/\s+#.*$/, '').trim();
+    if (!body) continue;
+    const isItem = /^-\s+/.test(body);
+
+    while (stack.length > 1 && stack[stack.length - 1].indent !== null && ind < stack[stack.length - 1].indent) stack.pop();
+    const frame = stack[stack.length - 1];
+    if (frame.indent === null) {
+      // A key whose block starts here — unless this line is no deeper than
+      // the frame that key itself sits in, in which case it had no block at
+      // all and the key's value is empty.
+      const outer = stack[stack.length - 2];
+      if (outer && outer.indent !== null && ind <= outer.indent) {
+        frame.parent[frame.key] = null;
+        stack.pop();
+        i--;
+        continue;
+      }
+      frame.indent = ind;
+      frame.container = isItem ? [] : {};
+      frame.parent[frame.key] = frame.container;
+    }
+    if (ind !== frame.indent) { errs.push(`${label} line ${ln}: unexpected indentation`); continue; }
+
+    let target = frame.container;
+    if (isItem) {
+      if (!Array.isArray(target)) { errs.push(`${label} line ${ln}: list item where a mapping was expected`); continue; }
+      const lead = body.match(/^-(\s+)/)[1].length;
+      const obj = {};
+      target.push(obj);
+      stack.push({ indent: ind + 1 + lead, container: obj, parent: null, key: null });
+      body = body.slice(1 + lead);
+      target = obj;
+    } else if (Array.isArray(target)) { errs.push(`${label} line ${ln}: mapping where a list item was expected`); continue; }
+
+    const m = body.match(/^([A-Za-z$][\w$-]*):(?:\s+(.*))?$/);
+    if (!m) { errs.push(`${label} line ${ln}: cannot read "${body}"`); continue; }
+    const [, key, valRaw] = m;
+    const val = (valRaw ?? '').trim();
+    if (val === '') stack.push({ indent: null, container: null, parent: target, key });
+    else target[key] = scalar(val, ln);
   }
-  const root = String(top.root || '').replace(/^\.\//, '').replace(/\/+$/, '');
-  if (root !== 'docs') fail(`.gitbook.yaml root is "${top.root}", expected ./docs/`);
-  else ok('.gitbook.yaml root → ./docs/');
-  const readme = top.structure?.readme || 'README.md', summary = top.structure?.summary || 'SUMMARY.md';
-  for (const f of [readme, summary]) {
-    if (!fs.existsSync(path.join(DOCS, f))) fail(`.gitbook.yaml structure names ${f}, which does not exist under docs/`);
+  return { data: root, errs };
+}
+
+// ── 1a. gitbook-docs.yaml — the SITE config ───────────────────────────────
+// Site-level Git Sync reads this from the Git Sync PROJECT DIRECTORY, left as
+// ./ here, so it belongs at the repo root; its absence is the literal
+// "gitbook-docs.yaml does not exist on this branch" sync failure. Schema:
+// https://api.gitbook.com/gitbook-docs.yaml
+const SITE_YAML = 'gitbook-docs.yaml';
+let mappedDir = null;
+const sitePath = path.join(ROOT, SITE_YAML);
+if (!fs.existsSync(sitePath)) {
+  fail(`${SITE_YAML} is missing at the repo root — site-level Git Sync fails with "gitbook-docs.yaml does not exist on this branch"`);
+} else {
+  const { data, errs } = parseYaml(fs.readFileSync(sitePath, 'utf8'), SITE_YAML);
+  errs.forEach(fail);
+  const site = data.site;
+  if (!site || typeof site !== 'object' || Array.isArray(site)) fail(`${SITE_YAML}: no "site" block`);
+  else {
+    if (!site.title) fail(`${SITE_YAML}: site.title is required`);
+    if (!Array.isArray(site.structure) || !site.structure.length) fail(`${SITE_YAML}: site.structure must be a non-empty list`);
+    else {
+      const spaces = site.structure.filter((n) => n && n.type === 'space');
+      if (spaces.length !== site.structure.length) fail(`${SITE_YAML}: site.structure holds a node that is not a space — this repo maps one space and nothing else`);
+      if (spaces.length !== 1) fail(`${SITE_YAML}: expected exactly one space, found ${spaces.length}`);
+      const defaults = spaces.filter((s) => s.default === true);
+      if (defaults.length !== 1) fail(`${SITE_YAML}: exactly one top-level space must carry "default: true" (found ${defaults.length}) — a site with no sections needs one`);
+      for (const s of spaces) {
+        for (const k of ['type', 'key', 'title', 'path']) if (!s[k]) fail(`${SITE_YAML}: space is missing the required field "${k}"`);
+        if (s.key && s.key !== 'docs') {
+          fail(`${SITE_YAML}: space key is "${s.key}", expected "docs" — the key is the space's permanent identity; changing it does not rename the space, it creates a NEW one with a new ID and detaches the old`);
+        }
+        const dir = s.content && s.content.directory;
+        if (!dir) { fail(`${SITE_YAML}: space "${s.key}" has no content.directory`); continue; }
+        if (String(dir).includes('..')) { fail(`${SITE_YAML}: content.directory "${dir}" escapes the project directory`); continue; }
+        mappedDir = String(dir).replace(/^\.?\//, '').replace(/\/+$/, '');
+        if (!fs.existsSync(path.join(ROOT, mappedDir))) { fail(`${SITE_YAML}: content.directory "${dir}" does not exist`); mappedDir = null; }
+        else ok(`${SITE_YAML} → site "${site.title}", space "${s.key}" ← ${mappedDir}/`);
+      }
+    }
   }
-  if (top.redirects !== undefined && top.redirects !== '{}' && typeof top.redirects !== 'object') fail('.gitbook.yaml redirects is not a map');
-  ok('.gitbook.yaml structure → README.md + SUMMARY.md');
+}
+// Everything below this point validates docs/ specifically, so a remapped
+// space would leave the rest of this check grading the wrong tree.
+if (mappedDir && mappedDir !== 'docs') {
+  fail(`${SITE_YAML}: the space maps ${mappedDir}/, but the rest of this check is written against docs/ — update both together`);
+  mappedDir = null;
+}
+
+// ── 1b. the SPACE config, inside the mapped directory ─────────────────────
+// Paths inside it resolve from the mapped directory, not the repo root, so
+// the old `root: ./docs/` would now mean docs/docs/ and sync an empty space.
+if (fs.existsSync(path.join(ROOT, '.gitbook.yaml'))) {
+  fail('.gitbook.yaml at the repo root configures a SPACE, not the site; under site-level sync it belongs in that space\'s mapped directory');
+}
+if (mappedDir) {
+  const spaceYamlPath = path.join(ROOT, mappedDir, '.gitbook.yaml');
+  let contentRoot = path.join(ROOT, mappedDir);
+  let readme = 'README.md', summary = 'SUMMARY.md';
+  if (!fs.existsSync(spaceYamlPath)) {
+    ok(`${mappedDir}/.gitbook.yaml absent — GitBook's defaults apply (root ./, README.md, SUMMARY.md)`);
+  } else {
+    const { data, errs } = parseYaml(fs.readFileSync(spaceYamlPath, 'utf8'), `${mappedDir}/.gitbook.yaml`);
+    errs.forEach(fail);
+    const declared = String(data.root ?? './').replace(/^\.\//, '').replace(/\/+$/, '');
+    contentRoot = path.join(ROOT, mappedDir, declared);
+    const shown = toPosix(path.relative(ROOT, contentRoot)) || '.';
+    if (declared === mappedDir) {
+      fail(`${mappedDir}/.gitbook.yaml root is "${data.root}", which resolves to ${shown}/ — paths resolve from the MAPPED DIRECTORY, not the repo root; use "./"`);
+    } else if (!fs.existsSync(contentRoot)) {
+      fail(`${mappedDir}/.gitbook.yaml root "${data.root}" resolves to ${shown}/, which does not exist`);
+    } else ok(`${mappedDir}/.gitbook.yaml root → ${shown}/`);
+    if (data.structure && typeof data.structure === 'object' && !Array.isArray(data.structure)) {
+      readme = data.structure.readme || readme;
+      summary = data.structure.summary || summary;
+    }
+    if (data.redirects !== undefined && (data.redirects === null || typeof data.redirects !== 'object' || Array.isArray(data.redirects))) {
+      fail(`${mappedDir}/.gitbook.yaml redirects is not a map`);
+    }
+  }
+  let missing = 0;
+  for (const [what, f] of [['landing page', readme], ['sidebar', summary]]) {
+    const p = path.join(contentRoot, String(f).replace(/^\.\//, ''));
+    if (!fs.existsSync(p)) { missing++; fail(`the space's ${what} "${f}" does not exist at ${toPosix(path.relative(ROOT, p))}`); }
+  }
+  if (!missing) ok(`space structure → ${readme} + ${summary}`);
 }
 
 // ── pages and SUMMARY ─────────────────────────────────────────────────────

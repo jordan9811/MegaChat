@@ -1,0 +1,44 @@
+# GitBook SITE-level Git Sync configuration.
+#
+# This is the file site-level sync reads. It lives in the Git Sync PROJECT
+# DIRECTORY, which is left as `./` in the GitBook panel, so it belongs at the
+# repository root. Without it the site sync fails outright with
+# "gitbook-docs.yaml does not exist on this branch".
+#
+# It names the site and maps the site's spaces onto directories in this
+# repository. The per-space settings — content root, landing page, sidebar,
+# redirects — live in that space's own `.gitbook.yaml`, inside its mapped
+# directory: here, `docs/.gitbook.yaml`.
+#
+# Schema: https://api.gitbook.com/gitbook-docs.yaml
+# Docs:   gitbook.com/docs/docs-as-code/git-sync/content-configuration
+#         gitbook.com/docs/docs-as-code/git-sync/monorepos
+#
+# `key` IS THE IDENTITY, and it is permanent. GitBook matches an entry to an
+# existing space by key, never by title, path or directory. Changing `docs` to
+# anything else does not rename this space — it creates a NEW space with a new
+# space ID, imports the content into it, and leaves the old one detached from
+# the site; every link and API call using the old ID stops resolving, and
+# putting the old key back makes a third space rather than undoing it. Rename
+# with `title`, re-path with `path`, move with `content.directory`. Never the
+# key. `docs:gitbook-check` asserts it for that reason.
+#
+# Connecting this repo to a site is the owner's action — see
+# CONNECTING-GITBOOK.md at the repo root.
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+
+site:
+  title: MegaChat Docs
+  structure:
+    # One space. A site with no sections must mark exactly one of its
+    # top-level spaces `default: true` — that is the space that opens when the
+    # site is visited without a space path.
+    - type: space
+      key: docs
+      title: MegaChat Docs
+      path: docs
+      default: true
+      content:
+        # Resolved from the project directory (`./`), so this reads `docs/`.
+        # A leading slash would escape to the repository root instead.
+        directory: ./docs

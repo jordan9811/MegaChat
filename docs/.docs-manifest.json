@@ -64,7 +64,7 @@
       "bounty-settlement.js": "9f9fd94d1bb771f7",
       "_gate-bounty-claim.mjs": "6c55919942032e78",
       "docs/internal/launch-readiness.md": "296927a1f9acc076",
-      "CONTRIBUTING-DOCS.md": "18e8f4321ecc8c87"
+      "CONTRIBUTING-DOCS.md": "991eb3cbe0792169"
     },
     "concepts/README.md": {},
     "concepts/rooms-and-seats.md": {
@@ -175,7 +175,7 @@
     "features/megachats.md": {
       "_gate-free-megachat.mjs": "8f2a54ab9b7654d3",
       "_gate-phase3-letters.mjs": "11bb094082fb28ec",
-      "_gate-p2-moderation.mjs": "6b954aee8120b26c",
+      "_gate-p2-moderation.mjs": "bc27292408d62c24",
       "docs/internal/launch-readiness.md": "296927a1f9acc076",
       "server.js": "2ebd61ab616799c0",
       "letters.js": "9513493b4acec3f3",
@@ -202,7 +202,7 @@
     },
     "features/obs-setup.md": {
       "_gate-obs-protocol.mjs": "bd09a2d4adfed4f0",
-      "_gate-obs-ui.mjs": "aad906ef42cc5a36",
+      "_gate-obs-ui.mjs": "48a2aa7f6856fbf9",
       "docs/obs-oneclick-checklist.md": "4a5080171f0022f4",
       "OPEN-ISSUES.md": "9c2672a8a7eefcd5",
       "_smoke-obs-overlay.mjs": "b11d082f0e9abb7e",
@@ -450,7 +450,7 @@
       "megachat-pass-a-prompt.md": "43a43975d2ca210d",
       "scripts/docs-check.mjs": "a81b3c07b43500d4",
       "scripts/docs-sync.mjs": "86aaecc976b2130e",
-      "scripts/docs-gitbook-check.mjs": "22727e22d17156d3",
+      "scripts/docs-gitbook-check.mjs": "2771490faf88a6b2",
       "package.json": "66f9a6be9b2864ca",
       "_gate-meter-pause.mjs": "22cf57f9c0fa7c64"
     },
@@ -532,7 +532,7 @@
       "bounty-confidence.js": "fa13fe34c6c74409",
       "_gate-obs-protocol.mjs": "bd09a2d4adfed4f0",
       "_gate-mock-obs.mjs": "9ff2406118dd3a82",
-      "_gate-obs-ui.mjs": "aad906ef42cc5a36",
+      "_gate-obs-ui.mjs": "48a2aa7f6856fbf9",
       "_verify-obs-oneclick.mjs": "a9d18a950a1a1f99",
       "_smoke-obs-overlay.mjs": "b11d082f0e9abb7e",
       "OPEN-ISSUES.md": "9c2672a8a7eefcd5"
@@ -572,7 +572,7 @@
       "_gate-first-airing.mjs": "66630fda33a27e62",
       "_gate-meter-pause.mjs": "22cf57f9c0fa7c64",
       "docs/_snippets/pre-launch.md": "d9e9d5223d02aa17",
-      "CONTRIBUTING-DOCS.md": "18e8f4321ecc8c87"
+      "CONTRIBUTING-DOCS.md": "991eb3cbe0792169"
     },
     "internal/roadmap.md": {
       "ROADMAP.md": "8793325fde34a102",
@@ -721,7 +721,7 @@
       "ops-alerts.js": "7b5c240a4439021c",
       "bounty-clips.js": "eeb5e94a1b78e5f0",
       "_verify-no-dead-calls.mjs": "23ce80e507470fee",
-      "_gate-p2-moderation.mjs": "6b954aee8120b26c"
+      "_gate-p2-moderation.mjs": "bc27292408d62c24"
     },
     "internal/work-history/2026-07-28-run-b-verification.md": {
       "DECISIONS.md": "b0a3aceacf169360",
@@ -732,7 +732,7 @@
       "bounty-ocr.js": "138bb5ff57f6deba",
       "frame-sources.js": "1ddf0a2446092914",
       "_gate-run-b-pipeline.mjs": "3a7d4cc08816acca",
-      "_gate-p2-moderation.mjs": "6b954aee8120b26c",
+      "_gate-p2-moderation.mjs": "bc27292408d62c24",
       "_gate-helpers.mjs": "9470aadade693993"
     },
     "internal/work-history/2026-07-29-prove-calibrate-obs.md": {

@@ -1,17 +1,26 @@
-# GitBook Git Sync configuration.
+# GitBook SPACE-level configuration for the `docs` space.
 #
-# `root` is the directory GitBook treats as the space. Everything under it that
-# is listed in SUMMARY.md becomes a page; anything not listed does not exist to
-# GitBook. Assets must live under docs/.gitbook/assets or they will not resolve.
+# Under site-level Git Sync this file lives in the space's MAPPED DIRECTORY —
+# the one `gitbook-docs.yaml` gives as `content.directory` — not at the
+# repository root, and every path in it resolves relative to that directory.
 #
-# Connecting this repo to a space is the owner's action — see
-# CONNECTING-GITBOOK.md at the repo root.
-root: ./docs/
+# That is why `root` is `./` and not `./docs/`: this file already sits in
+# `docs/`, so `./docs/` would resolve to `docs/docs/` and the space would sync
+# empty. It was `./docs/` while this file lived at the repo root under the
+# older space-level setup, and it moved here with the site-level switch.
+#
+# Every one of these keys is GitBook's default (root `./`, README.md,
+# SUMMARY.md), so the file is not strictly required — it is kept because
+# `redirects` has nowhere else to live, and a page that moves needs one.
+#
+# Docs: gitbook.com/docs/docs-as-code/git-sync/content-configuration
+root: ./
 
 structure:
   readme: README.md
   summary: SUMMARY.md
 
-# Old → new page paths, if a page is ever moved. Keys are the old path relative
-# to `root` (without .md), values the new one. Empty until something moves.
+# Old → new page paths, if a page is ever moved. Keys are the old path
+# relative to `root` (without .md), values the new one. Redirects declared
+# here apply within this space only. Empty until something moves.
 redirects: {}
