@@ -644,3 +644,49 @@ reason than "the API is expensive".
 - **Points seats tick in points (E42) — a fix, not a policy.** The join had
   always priced points seats in whole points; only the seat record disagreed.
   Undo: n/a (bugfix, caught by the new fixture).
+
+## Escrow contract, Session 1 (2026-09-18)
+
+- **`attest` reports consumed seconds as well as hidden seconds.** The prompt's
+  `attest(id, hiddenSeconds)` cannot express "unspent returns to the viewer":
+  the deposit is the session cap, and only the server knows how much of it was
+  consumed. Both figures are viewer-ward only — the paid-seconds figure a later
+  attestation implies may never rise. Undo: drop `consumedSeconds` and accept
+  that an early-leaving viewer forfeits the cap unless the streamer refunds.
+- **Out-of-range attestations are clamped, not refused.** Consumed clamps to
+  the cap, hidden to consumed. A refusal would let a slightly-wrong figure
+  block a refund the viewer is owed; a clamp can never overpay the streamer.
+  Undo: replace the two clamps with reverts.
+- **`deposit` is operator-only.** A permissionless deposit lets anyone lock a
+  viewer's standing allowance against a streamer of the attacker's choosing
+  and collect it at the deadline. Undo: n/a (security); the trade is that the
+  viewer trusts the operator to name the room's real payout address.
+- **The viewer never calls the contract; the server pays the gas.** A call to
+  a non-TIP-20 contract defaults its fee token to pathUSD, which no viewer
+  holds. The viewer's one signature stays the TIP-20 `approve`. Undo: fee
+  sponsorship (`feePayer`) — unverified for Privy wallets.
+- **Three hard bounds are constants: MAX_HOLD 14 days, MAX_EXTENSION 7 days
+  once, MAX_FEE_BPS 10%.** Parameters can be tuned; bounds cannot, because a
+  bound the owner can move is not a bound. Undo: redeploy — the contract is
+  immutable by decision.
+- **The extension a session is granted is snapshotted at escalation.** Tuning
+  the parameter afterwards must not lengthen a hold already in force. Undo:
+  read the live parameter at finalize.
+- **Signatures recover through the TIP-1020 verifier precompile, not raw
+  `ecrecover`.** Same gas for secp256k1, and passkey (P256/WebAuthn) viewers
+  can flag; future Tempo signature schemes verify without a redeploy. Undo:
+  swap `_recover` back to `ecrecover`.
+- **A contract used as the streamer is allowed.** TIP-20 transfers carry no
+  receiver hook, proven by a sink contract whose code ran zero times while
+  receiving its payout; refusing contracts would refuse multisig streamers for
+  no safety gain. Undo: `require(streamer.code.length == 0)`.
+- **The Moderato rehearsal deployment is administered by nobody.** Its roles
+  are ephemeral keys discarded at exit, so it is a proof, not an operational
+  asset. Undo: redeploy with held keys — cheap, and Session 2 does it on
+  mainnet anyway.
+- **solc-js is a devDependency; Foundry is not installed.** The repo's gates are
+  Node scripts, the tests must run against Moderato rather than anvil, and a
+  pure-npm compiler avoids a Windows toolchain install. Undo: `forge build`
+  against the same source; the artifact records compiler and EVM version.
+- **`.deployContract(` joins Gate H's Tier 3 pin, and `contracts/` is scanned.**
+  Deploying code is a signing action. Undo: n/a.

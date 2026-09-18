@@ -1,3 +1,85 @@
+### THE ESCROW CONTRACT, SESSION 1 — WRITTEN, DEPLOYED TO MODERATO, 60/0 (2026-09-18, `feat/real-broadcast`)
+
+**Verdict:** the non-custodial seat escrow exists as a contract, holds and
+releases by rules the server cannot override, and refuses every adversarial
+move the prompt listed — on Tempo's real precompiles, not a fork. Nothing in
+the app calls it yet and it is not on mainnet; that is Session 2. Full page:
+`docs/internal/escrow-contract.md`.
+
+**What shipped.** `contracts/MegaChatEscrow.sol` (Solidity ^0.8.30, compiled
+for Osaka by `contracts/escrow-build.mjs` with solc-js 0.8.37, now a
+devDependency); the committed artifact with immutable references so an
+address can be checked against its bytecode; `scripts/deploy-escrow.mjs`,
+which refuses mainnet without every role given explicitly, the deployer key in
+the environment and an explicit flag, and appends every deployment to
+`contracts/deployments.json`; `_gate-escrow-contract.mjs`, which funds
+thirteen throwaway keys from the Moderato faucet, deploys through the real
+deploy script, and runs the adversarial suite with real testnet tokens —
+balances asserted against the seat ledger's arithmetic to the atomic unit.
+Recorded rehearsal deployment: `0xedd9ec3906c1865908af64e9434dd1cdf07e225b`
+on chain 42431 (block 35865884), every role an ephemeral key, discarded.
+`ESCROW_ATTEST_KEY` and `ESCROW_CONTRACT_ADDRESS` documented in
+`.env.example`, unset. Gate H Tier 3 now scans `contracts/` and pins
+`.deployContract(` as a signing action.
+
+**Every adversarial case and its result** (all PASS, `_gate-escrow-contract.mjs`):
+finalize before the deadline → `TooEarly`; attest after finalize →
+`AlreadyFinalized`; hidden beyond the session length → CLAMPED (consumed to
+the cap, hidden to consumed; a clamp cannot overpay the streamer, a refusal
+could block a refund); an attestation that would raise the streamer's share
+→ `AttestationWouldFavourStreamer`, and the only state-changing entry points
+are deposit, attest, finalize, streamerRefund, flag, setEscalation; deposit
+twice for one id → `EscrowExists`; streamerRefund above the deposit →
+`RefundExceedsRemaining`; from a non-streamer → `NotStreamer`; a flag from an
+address with no deposit in the session, or a deposit in another session →
+rejected, zero weight; the same address twice → counted once; the threshold
+met twice → extended once, and a later parameter change does not move an
+extension already granted; forged signatures (random bytes, wrong length, a
+valid signature over another session) → rejected by the TIP-1020 verifier;
+finalize by a stranger after the deadline → succeeds, streamer paid; the
+server never attests or finalizes → a stranger's finalize pays the streamer
+the whole earnable cap and the sub-second dust goes back to the viewer,
+nothing stranded; reentrancy → every transferring function is
+`nonReentrant` and checks-effects-interactions, and a CONTRACT used as the
+streamer received its tokens with its code executed zero times, because
+TIP-20 transfers carry no receiver hook; the full lifecycle → deposit,
+attest 600/120, a stranger finalizes, streamer +480,000, viewer refunded
+3,120,000, fee 0, contract 0. Plus the bounds the contract adds: a deadline
+past 14 days, a fee above 10%, an amount below one second, the contract
+itself as streamer, all refused; three flaggers holding 3% of a session do
+not escalate (the value threshold is the brigade defence); a 5% declared fee
+comes out of the streamer share and never the viewer refund.
+
+**Where the built contract deviates from the prompt.** `attest` carries
+`consumedSeconds` as well as `hiddenSeconds` — the prompt's signature cannot
+express "unspent returns to the viewer", because the deposit is the cap and
+only the server knows the seconds consumed; both figures are viewer-ward
+only. `deposit` carries `rate` and `sessionId`. Deposit is operator-only,
+because a permissionless one lets anyone lock a viewer's allowance against an
+attacker's streamer. Signatures go through the TIP-1020 verifier rather than
+raw `ecrecover`, which the prompt asked for and which also admits passkey
+signers. All in `DECISIONS.md`.
+
+**The small-room question.** With three distinct flaggers required, a room
+with one or two paying viewers cannot escalate. Acceptable for launch: the
+streamer's refund covers the honest case at any size, and escalation only
+ever delays. The smallest path if it needs closing is unanimity when a
+session has fewer than `minFlaggers` depositors — four lines, the depositor
+count is already tracked. Filed as O16, not built.
+
+**Found on the way.** Tempo's gas: `attest` costs 282,884 and `finalize`
+332,357 — roughly 250k more than an Ethereum-priced update of an existing
+slot — so a full lifecycle is 2.45M gas (~$0.0015 on mainnet at 0.6 gwei),
+a little above the scoping estimate and still nothing. And the TIP-20
+`approve` a viewer sends did not deduct its fee from the token being approved
+in the gate's runs; the fee cascade's stated default did not show up in the
+balances, which the gate now measures around rather than through.
+
+**Open:** Session 2 (mainnet deployment, deposit-at-join, the availability
+fallback, the E47 wiring); O16; O17 (which keys hold the operator and attester
+roles on mainnet); L41–L43.
+
+
 ### E38 — THE MONEY AUDIT, THE SETTLEMENT DOOR, AND WHAT THE FIXTURE FOUND (2026-09-18, `feat/real-broadcast`)
 
 **Verdict:** every server-signed transfer now executes only against a recorded
