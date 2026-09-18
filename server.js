@@ -52,7 +52,8 @@ import {
   validatePaymentToken,
 } from './token-utils.js';
 import { createMppMeter, toWebRequest } from './meter-mpp.js';
-import { createWalletClient, createPublicClient, http, erc20Abi } from 'viem';
+import { createWalletClient, createPublicClient, http } from 'viem';
+import { createSettlement, viemChainAdapter } from './settlement.js';
 import { privateKeyToAccount } from 'viem/accounts';
 
 // Load .env if present (Node >=20.6 native loader). Never throws if missing.
@@ -192,6 +193,52 @@ if (SELLER_PRIVATE_KEY && /^0x[0-9a-fA-F]{64}$/.test(SELLER_PRIVATE_KEY)) {
   console.warn('[refund] SELLER_PRIVATE_KEY not set — unused-balance refunds disabled.');
 }
 
+// ─── THE SETTLEMENT DOOR ─────────────────────────────────────────────────────
+// Every on-chain write this process makes goes through settlement.js and is
+// recorded there as an intent first (Gate H, Tier 1). Two keys, deliberately:
+// the seller key PULLS ticks into the platform wallet (already live), and
+// PLATFORM_SETTLEMENT_KEY moves money OUT of it — streamer shares, holdback
+// releases, refunds, clawbacks. Unset, outbound intents are recorded and
+// stay PENDING; nothing is lost and the ledger says who is owed what. It must
+// be the key for SELLER_WALLET_ADDRESS, because that is where the pulled
+// money sits; any other address is refused here, not discovered on chain.
+const PLATFORM_SETTLEMENT_KEY = process.env.PLATFORM_SETTLEMENT_KEY || '';
+let platformWalletClient = null;
+if (/^0x[0-9a-fA-F]{64}$/.test(PLATFORM_SETTLEMENT_KEY)) {
+  try {
+    const payoutAccount = privateKeyToAccount(PLATFORM_SETTLEMENT_KEY);
+    if (payoutAccount.address.toLowerCase() === String(SELLER_WALLET_ADDRESS).toLowerCase()) {
+      platformWalletClient = createWalletClient({ account: payoutAccount, chain: tempoViemChain, transport: http(RPC_URL) });
+      console.log(`[settlement] payout signer ready: ${payoutAccount.address}`);
+    } else {
+      console.error(`[settlement] PLATFORM_SETTLEMENT_KEY resolves to ${payoutAccount.address}, not SELLER_WALLET_ADDRESS — payouts DISABLED: money would be sent from a wallet that does not hold it`);
+    }
+  } catch (err) {
+    console.error('[settlement] PLATFORM_SETTLEMENT_KEY unusable — payouts DISABLED:', err.message);
+  }
+} else {
+  console.warn('[settlement] PLATFORM_SETTLEMENT_KEY not set — outbound intents are recorded and stay PENDING');
+}
+let rewardPoolWalletClient = null;
+if (/^0x[0-9a-fA-F]{64}$/.test(process.env.REWARD_POOL_PRIVATE_KEY || '')) {
+  try {
+    rewardPoolWalletClient = createWalletClient({ account: privateKeyToAccount(process.env.REWARD_POOL_PRIVATE_KEY), chain: tempoViemChain, transport: http(RPC_URL) });
+  } catch (err) {
+    console.warn('[settlement] REWARD_POOL_PRIVATE_KEY unusable — reward payouts stay PENDING:', err.message);
+  }
+}
+const settlement = createSettlement({
+  chain: viemChainAdapter({
+    pull: sellerWalletClient,
+    platform: platformWalletClient,
+    rewardPool: rewardPoolWalletClient,
+    publicClient: createPublicClient({ chain: tempoViemChain, transport: http(RPC_URL) }),
+  }),
+  platformAddress: SELLER_WALLET_ADDRESS,
+});
+seatEscrow.setSettlement(settlement);
+console.log(`[settlement] door open — pull:${!!sellerWalletClient} payout:${!!platformWalletClient} rewardPool:${!!rewardPoolWalletClient}`);
+
 // ─── Phase 2: MPP session meter (TIP-1034 payment channels) ─────────────────
 // The primary meter on Tempo. null when no seller key is configured — MPP
 // joins then 503 and the legacy allowance path still works.
@@ -200,6 +247,7 @@ const mppMeter = createMppMeter({
   rpcUrl: RPC_URL,
   chainId: CHAIN_ID,
   feeToken: USDC_ADDRESS,
+  settlement,
 });
 if (mppMeter) console.log('[meter:mpp] TIP-1034 session meter ready');
 else console.warn('[meter:mpp] disabled (no SELLER_PRIVATE_KEY) — falling back to allowance meter only');
@@ -277,30 +325,16 @@ async function refundSeat(seat) {
   }
   seat.refunded = true; // guard against double refund
 
-  if (!sellerWalletClient) {
-    console.warn(`[refund] seat ${seat.id}: refunds disabled — would return ${atomicToUsdc(refundAtomic)} USDC to ${to}`);
-    return;
-  }
-
-  const transfer = async () => sellerWalletClient.writeContract({
-    address: USDC_ADDRESS,
-    abi: erc20Abi,
-    functionName: 'transfer',
-    args: [to, refundAtomic]
+  // E38 — THROUGH THE DOOR. The refund is an intent settlement.js executes on
+  // its next flush. Idempotent on the seat, so a double removal cannot refund
+  // twice; recorded whether or not a payout key is configured, so a missing
+  // key is a visible PENDING row rather than a refund that never happened.
+  const r = settlement.refund({
+    to, amountAtomic: refundAtomic.toString(),
+    token: { address: seat.paymentTokenAddress || USDC_ADDRESS, decimals: seat.paymentTokenDecimals ?? 6, symbol: seat.paymentTokenSymbol || 'USDC' },
+    ref: `seat:${seat.id}:unused-refund`, meta: { roomId: seat.streamRoomId, paymentMode: seat.paymentMode },
   });
-
-  try {
-    const tx = await transfer();
-    console.log(`[refund] seat ${seat.id}: returned ${atomicToUsdc(refundAtomic)} USDC to ${to} (tx ${tx})`);
-  } catch (err) {
-    console.warn(`[refund] seat ${seat.id}: refund failed, retrying once — ${err.message}`);
-    try {
-      const tx2 = await transfer();
-      console.log(`[refund] seat ${seat.id}: refund retry ok, returned ${atomicToUsdc(refundAtomic)} USDC to ${to} (tx ${tx2})`);
-    } catch (err2) {
-      console.error(`[refund] seat ${seat.id}: refund retry FAILED — ${err2.message}`);
-    }
-  }
+  console.log(`[refund] seat ${seat.id}: ${atomicToUsdc(refundAtomic)} USDC to ${to} ${r.deduped ? 'already ' : ''}recorded as intent ${r.row.ref} — ${settlement.hasSigner('platform') ? 'pays on the next settlement flush' : 'PENDING until PLATFORM_SETTLEMENT_KEY is set'}`);
 }
 
 function b64encodeJson(obj) {
@@ -391,7 +425,7 @@ app.use((req, res, next) => {
   next();
 });
 // Never cache the frontend during development — guarantees the browser always
-// runs the latest index.html / overlay.html / rewards.js (no stale-bundle bugs).
+// runs the latest overlay.html / rewards.js (no stale-bundle bugs).
 // Next.js assets (/_next/*) manage their own caching (immutable hashed chunks).
 app.use((req, res, next) => {
   if (!req.path.startsWith('/_next/')) {
@@ -408,8 +442,10 @@ function staticJsHeaders(res, filePath) {
   }
 }
 
-// index: false — the app root (/) is owned by the Next.js frontend below; the
-// legacy viewer page stays reachable at /index.html as a fallback.
+// index: false — the app root (/) is owned by the Next.js frontend below. The
+// Arc-era viewer page that used to sit at /index.html was deleted on
+// 2026-09-17: it still carried a client-signed Circle Gateway deposit that the
+// server could not refuse. Nothing serves an index from public/ any more.
 app.use(express.static('public', {
   index: false,
   etag: false,
@@ -887,8 +923,10 @@ function addParticipant(username, meta = {}) {
     gatewayTickSeconds: roomCfg.tickSeconds,
     gatewayTickPriceAtomic: atomics.tickPriceAtomic,
     passkeyTickSeconds: roomCfg.passkeyTickSeconds,
-    passkeyTickPriceAtomic: atomics.passkeyTickPriceAtomic,
-    maxSessionAtomic: atomics.maxSessionAtomic,
+    // E42 — a points seat is priced in whole points (0 decimals), not the
+    // room's USDC tick price; the credit join passes its own atomics.
+    passkeyTickPriceAtomic: meta.passkeyTickPriceAtomic ?? atomics.passkeyTickPriceAtomic,
+    maxSessionAtomic: meta.maxSessionAtomic ?? atomics.maxSessionAtomic,
     paymentTokenAddress: roomCfg.paymentTokenAddress,
     paymentTokenSymbol: meta.paymentTokenSymbol ?? roomCfg.paymentTokenSymbol,
     paymentTokenDecimals: meta.paymentTokenDecimals ?? roomCfg.paymentTokenDecimals,
@@ -914,7 +952,13 @@ function addParticipant(username, meta = {}) {
       seatEscrow.open({
         seatId, roomId: streamRoomId, viewer: seat.viewerAddress || seat.payer || null,
         streamer: seat.payoutAddress || null,
-        token: { symbol: seat.paymentTokenSymbol || 'USDC', decimals: seat.paymentTokenDecimals ?? 6 },
+        // E43 — a credit- or points-funded seat pulled nothing on chain, so its
+        // bucket carries no token address and the door RETAINS every intent
+        // for it: that credit lives in the reward pool, not the platform wallet.
+        token: {
+          symbol: seat.paymentTokenSymbol || 'USDC', decimals: seat.paymentTokenDecimals ?? 6,
+          address: (seat.paymentMode === 'credit_stream' || seat.paymentMode === 'points_stream') ? null : (seat.paymentTokenAddress || USDC_ADDRESS),
+        },
         tickMs: (seat.passkeyTickSeconds ?? seat.gatewayTickSeconds ?? 1) * 1000, at: now,
       });
     } catch (e) { console.warn(`[seat-escrow] open failed for ${seatId}: ${e.message}`); }
@@ -984,7 +1028,7 @@ function activateSeatLive(seatId, ws) {
   const modeLabel = seat.paymentMode === 'passkey_stream' ? 'stream meter' : 'prepaid meter';
   console.log(
     `[seat] ${seat.id} (room ${seat.streamRoomId}): camera live — ${modeLabel} `
-    + `(${atomicToUsdc(seat.remainingAtomic)} USDC cap)`
+    + `(${fromAtomic(seat.remainingAtomic, seat.paymentTokenDecimals ?? 6)} ${seat.paymentTokenSymbol || 'USDC'} cap)`
   );
   return true;
 }
@@ -1105,20 +1149,25 @@ async function tickPasskeyStreamSeat(seat) {
       console.log(
         `[meter:credit] seat ${seat.id}: tick ${fromAtomic(tickPrice, tokenDec)} ${tokenSym}`
       );
-    } else if (sellerWalletClient) {
-      const tx = await sellerWalletClient.writeContract({
-        address: tokenAddress,
-        abi: erc20Abi,
-        functionName: 'transferFrom',
-        args: [seat.viewerAddress, seat.payoutAddress || SELLER_WALLET_ADDRESS, tickPrice]
-      });
-      console.log(
-        `[meter:passkey] seat ${seat.id}: pulled ${fromAtomic(tickPrice, tokenDec)} ${tokenSym} (tx ${tx})`
-      );
     } else {
-      console.log(
-        `[meter:passkey] seat ${seat.id}: DRY pull ${fromAtomic(tickPrice, tokenDec)} ${tokenSym}`
-      );
+      // E38 — THE TICK LANDS IN THE PLATFORM WALLET, NOT THE PAYOUT ADDRESS.
+      // It used to go straight to seat.payoutAddress, which made the seat
+      // escrow (holdback, buried-second refunds, clawback) bookkeeping about
+      // money that had already left. Now the pull credits the platform-held
+      // balance and the seat ledger's ACCRUE row is the intent; the escrow's
+      // sweeps, maturities and refunds pay out through the same door. A pull
+      // with no seller key is recorded DRY, exactly as the meter has always
+      // behaved without one.
+      seat.tickSeq = (seat.tickSeq || 0) + 1;
+      const pulled = await settlement.pull({
+        from: seat.viewerAddress, to: SELLER_WALLET_ADDRESS,
+        token: { address: tokenAddress, decimals: tokenDec, symbol: tokenSym },
+        amountAtomic: tickPrice, ref: `seat:${seat.id}:tick:${seat.tickSeq}`,
+        meta: { roomId: seat.streamRoomId, payoutAddress: seat.payoutAddress || null },
+      });
+      console.log(pulled.dry
+        ? `[meter:passkey] seat ${seat.id}: DRY pull ${fromAtomic(tickPrice, tokenDec)} ${tokenSym}`
+        : `[meter:passkey] seat ${seat.id}: pulled ${fromAtomic(tickPrice, tokenDec)} ${tokenSym} into the platform wallet (tx ${pulled.txHash})`);
     }
 
     if (!applyStreamTick(seat, tickPrice)) {
@@ -1221,6 +1270,17 @@ const seatSweepInterval = setInterval(() => {
   } catch (e) { console.warn(`[seat-escrow] sweep failed: ${e.message}`); }
 }, seatEscrow.seatConfig.sweepMs);
 if (typeof seatSweepInterval.unref === 'function') seatSweepInterval.unref();
+
+// ─── Settlement flush ────────────────────────────────────────────────────────
+// Executes recorded intents through the door: one at a time, receipt-checked,
+// idempotent on ref. With no payout key it finds nothing it can sign and
+// leaves every intent PENDING.
+const settlementFlush = setInterval(() => {
+  settlement.flush()
+    .then((o) => { if (o.sent.length || o.done.length || o.failed.length) console.log(`[settlement] flush: sent ${o.sent.length}, done ${o.done.length}, failed ${o.failed.length}, pending ${o.skipped}`); })
+    .catch((e) => console.warn(`[settlement] flush failed: ${e.message}`));
+}, 15_000);
+if (typeof settlementFlush.unref === 'function') settlementFlush.unref();
 if (typeof meterInterval.unref === 'function') meterInterval.unref();
 
 // Seat-owner sockets get a reconnect grace window before the seat is freed:
@@ -1329,8 +1389,7 @@ let rewardsSvc = null;
 try {
   rewardsSvc = attachRewards(wss, {
     getRoomConfig: resolveRoomConfig,
-    poolPrivateKey: process.env.REWARD_POOL_PRIVATE_KEY || null,
-    rpcUrl: RPC_URL,
+    settlement,
     usdcAddress: USDC_ADDRESS,
   });
 } catch (err) {
@@ -1769,6 +1828,7 @@ try {
     hasOverlay,
     activeSeats,
     sellerAddress: SELLER_WALLET_ADDRESS,
+    settlement,
     getWatchSeconds: (roomId, wallet) =>
       (rewardsSvc ? rewardsSvc.getWatchSeconds(roomId, wallet) : 0),
     // Creator bounty: the watermark that proves a clip aired is minted from
@@ -1800,8 +1860,7 @@ try {
 // Routes
 
 // Root is served by the Next.js frontend (fallthrough handler below). Old
-// viewer links of the form /?room=<id> redirect to the new join page; the
-// legacy Express viewer page itself remains available at /index.html?room=<id>.
+// viewer links of the form /?room=<id> redirect to the new join page.
 app.get('/', (req, res, next) => {
   if (req.query.room) {
     return res.redirect(`/join?room=${encodeURIComponent(String(req.query.room))}`);
@@ -1923,10 +1982,13 @@ app.post('/api/join/passkey', async (req, res) => {
       let paymentMode = 'credit_stream';
       let tokenDec = cfg.paymentTokenDecimals;
       let tokenSym = cfg.paymentTokenSymbol;
+      // E42 — the seat must tick in the units it was funded in.
+      let seatAtomics = {};
 
       if (rw.rewardType === 'points') {
         const tickAtomic = toAtomic(cfg.passkeyTickPrice, 0);
         const maxAtomic = toAtomic(cfg.maxSession, 0);
+        seatAtomics = { passkeyTickPriceAtomic: tickAtomic, maxSessionAtomic: maxAtomic };
         sessionAtomic = credit.atomic < maxAtomic ? credit.atomic : maxAtomic;
         if (sessionAtomic < tickAtomic) {
           return res.status(402).json({
@@ -1977,6 +2039,7 @@ app.post('/api/join/passkey', async (req, res) => {
         streamRoomId: roomId,
         paymentTokenDecimals: tokenDec,
         paymentTokenSymbol: tokenSym,
+        ...seatAtomics,
         flyIn: req.body.flyIn,
         flyOut: req.body.flyOut,
       });
@@ -2412,8 +2475,12 @@ app.all('/api/meter/tick', async (req, res) => {
       currency: cfg.paymentTokenAddress,
       decimals: cfg.paymentTokenDecimals,
       unitType: 'tick',
-      // Session settlements pay the streamer's payout wallet directly.
-      recipient: cfg.payoutAddress || SELLER_WALLET_ADDRESS,
+      // E38 — the channel pays the PLATFORM wallet, like every other tick, so
+      // the seat escrow can refund buried seconds and hold back a share from
+      // money it actually holds. The streamer's share reaches their payout
+      // address through the settlement door on sweep. (Channels already open
+      // keep the payee they were opened with; none exist in stealth.)
+      recipient: SELLER_WALLET_ADDRESS,
       suggestedDeposit: seat
         ? fromAtomic(seat.sessionCapAtomic, cfg.paymentTokenDecimals)
         : cfg.maxSession,
@@ -2428,6 +2495,16 @@ app.all('/api/meter/tick', async (req, res) => {
       // '8000' for 8 ticks of 0.001 with 6 decimals) — never re-scale it.
       let spentAtomic = 0n;
       try { spentAtomic = BigInt(receipt.spent ?? '0'); } catch { spentAtomic = seat.spentAtomic; }
+      // E39 — MPP seats now feed the seat bucket too. The voucher is
+      // cumulative, so the delta since the last receipt is what accrued. A
+      // hidden overlay pauses this seat as bookkeeping (PAUSED + a buried
+      // refund at resume) rather than by refusing the voucher, which would
+      // trip the stale-kick and end the seat instead of pausing it.
+      const spentBefore = seat.spentAtomic ?? 0n;
+      if (spentAtomic > spentBefore) {
+        try { seatEscrow.accrue(seat.id, spentAtomic - spentBefore, { at: Date.now() }); }
+        catch (e) { console.warn(`[seat-escrow] mpp accrue failed: ${e.message}`); }
+      }
       seat.spentAtomic = spentAtomic;
       seat.remainingAtomic = seat.sessionCapAtomic > spentAtomic
         ? seat.sessionCapAtomic - spentAtomic

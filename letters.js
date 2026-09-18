@@ -20,7 +20,6 @@
  */
 import express from 'express';
 import { randomUUID } from 'crypto';
-import { erc20Abi } from 'viem';
 import {
   resolveRoomConfig,
   normalizeRoomId,
@@ -52,6 +51,15 @@ export function attachLetters(app, deps) {
     hasOverlay = () => true,
     activeSeats,
     sellerAddress,
+    /**
+     * THE SETTLEMENT DOOR. A MegaChat refund used to be a transfer this file
+     * signed itself with the meter's wallet client. Money now leaves only
+     * through settlement.js, against a recorded intent, so a refund here is
+     * an intent the door executes on its next flush. No signer wired means
+     * the intent waits, visibly, rather than the refund silently not
+     * happening.
+     */
+    settlement = null,
     getWatchSeconds = () => 0,
     /**
      * Creator-bounty playback hooks. The watermark code that proves a clip
@@ -165,15 +173,17 @@ export function attachLetters(app, deps) {
     letter.status = 'refunding';
     try {
       const cfg = resolveRoomConfig(letter.roomId);
-      const hash = await mppMeter.walletClient.writeContract({
-        address: cfg.paymentTokenAddress,
-        abi: erc20Abi,
-        functionName: 'transfer',
-        args: [letter.payer, toAtomic(letter.price, cfg.paymentTokenDecimals)],
+      if (!settlement) throw new Error('no settlement door wired');
+      const r = settlement.refund({
+        to: letter.payer,
+        amountAtomic: toAtomic(letter.price, cfg.paymentTokenDecimals).toString(),
+        token: { address: cfg.paymentTokenAddress, decimals: cfg.paymentTokenDecimals, symbol: cfg.paymentTokenSymbol },
+        ref: `letter:${letter.id}:refund`,
+        meta: { reason, roomId: letter.roomId },
       });
-      log.log(`[letters] refunded ${letter.price} to ${letter.payer} (${reason}) tx ${hash}`);
+      log.log(`[letters] refund of ${letter.price} to ${letter.payer} (${reason}) ${r.deduped ? 'already recorded' : 'recorded'} as intent ${r.row.ref} — ${settlement.hasSigner('platform') ? 'pays on the next settlement flush' : 'PENDING until PLATFORM_SETTLEMENT_KEY is set'}`);
     } catch (err) {
-      log.warn(`[letters] refund failed for ${letter.id} (${reason}): ${err.shortMessage || err.message}`);
+      log.warn(`[letters] refund could not be recorded for ${letter.id} (${reason}): ${err.shortMessage || err.message}`);
     }
     removeLetter(letter);
   }

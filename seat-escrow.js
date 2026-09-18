@@ -239,6 +239,8 @@ export function _transitionForTests(seatId, to, { idempotencyKey } = {}) {
 
 /** A metered seat opened. Free and whitelisted seats never come here. */
 export function open({ seatId, roomId, viewer = null, streamer = null, token = null, tickMs = 1000, at = Date.now() }) {
+  // The token now travels with the seat — address included — because the
+  // settlement door needs it to move the money this ledger says is owed.
   if (!seatId || !roomId) throw new Error('open requires seatId and roomId');
   return append(null, { type: 'SEAT_OPEN', seatId, roomId, viewer, streamer, token, tickMs, at },
     { to: 'OPEN', idempotencyKey: `seat:open:${seatId}` });
@@ -335,7 +337,7 @@ export function refundBuried(seatId, from, to, { at = Date.now() } = {}) {
   }, { idempotencyKey: `seat:refund-buried:${seatId}:${from}` });
   if (r.deduped) return { ...r, split: null };
   if (total > 0n) {
-    settlement.refund({ to: rec.viewer, amount: fmtAtomic(total, rec.token.decimals), ref: `seat:${seatId}:buried:${from}` });
+    settlement.refund({ to: rec.viewer, amount: fmtAtomic(total, rec.token.decimals), amountAtomic: total.toString(), token: rec.token, ref: `seat:${seatId}:buried:${from}`, meta: { seatId, fromStreamer: fromStreamer.toString(), fromPlatform: fromPlatform.toString() } });
   }
   return { ...r, split: { fromStreamer: fromStreamer.toString(), fromPlatform: fromPlatform.toString(), total: total.toString() } };
 }
@@ -359,7 +361,7 @@ export function sweep(seatId, { at = Date.now(), reason = 'sweep' } = {}) {
   }, { idempotencyKey: `seat:sweep:${seatId}:${at}` });
   if (r.deduped) return { ...r, released: null, heldBack: null };
   if (released > 0n) {
-    settlement.release({ to: rec.streamer, amount: fmtAtomic(released, rec.token.decimals), bucket: 'streamer', ref: r.row.id || `seat:${seatId}:sweep:${at}` });
+    settlement.release({ to: rec.streamer, amount: fmtAtomic(released, rec.token.decimals), amountAtomic: released.toString(), token: rec.token, bucket: 'streamer', ref: `seat:${seatId}:sweep:${at}`, meta: { seatId } });
   }
   return { ...r, released: released.toString(), heldBack: heldBack.toString() };
 }
@@ -419,7 +421,7 @@ export function clawback(seatId, { at = Date.now(), cause = 'CLAWBACK', detail =
   const r = append(seatRecord(seatId), { type: 'SEAT_CLAWBACK', at, amount: amount.toString(), cause, detail },
     { to: 'CLAWED', idempotencyKey: `seat:clawback:${seatId}` });
   if (r.deduped) return { ...r, amount: null };
-  if (amount > 0n) settlement.refund({ to: rec.viewer, amount: fmtAtomic(amount, rec.token.decimals), ref: `seat:${seatId}:clawback` });
+  if (amount > 0n) settlement.refund({ to: rec.viewer, amount: fmtAtomic(amount, rec.token.decimals), amountAtomic: amount.toString(), token: rec.token, ref: `seat:${seatId}:clawback`, meta: { seatId, cause } });
   return { ...r, amount: amount.toString() };
 }
 
@@ -443,7 +445,7 @@ export function mature(seatId, { at = Date.now() } = {}) {
   const r = append(rec, { type: 'SEAT_MATURE', at, amount: amount.toString(), carried: carry.toString(), platformShortfall: platformShortfall.toString() },
     { to: 'SETTLED', idempotencyKey: `seat:mature:${seatId}` });
   if (r.deduped) return { ...r, amount: null };
-  if (amount > 0n) settlement.release({ to: rec.streamer, amount: fmtAtomic(amount, rec.token.decimals), bucket: 'holdback', ref: `seat:${seatId}:mature` });
+  if (amount > 0n) settlement.release({ to: rec.streamer, amount: fmtAtomic(amount, rec.token.decimals), amountAtomic: amount.toString(), token: rec.token, bucket: 'holdback', ref: `seat:${seatId}:mature`, meta: { seatId } });
   return { ...r, amount: amount.toString(), platformShortfall: platformShortfall.toString() };
 }
 

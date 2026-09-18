@@ -53,7 +53,7 @@ export async function sendWebResponse(res, webResponse) {
  * Build the meter. Returns null when no seller key is configured (MPP joins
  * are then disabled with a clear error instead of a crash).
  */
-export function createMppMeter({ account, rpcUrl, chainId, feeToken, log = console }) {
+export function createMppMeter({ account, rpcUrl, chainId, feeToken, settlement = null, log = console }) {
   if (!account) return null;
 
   const walletClient = createWalletClient({
@@ -155,15 +155,17 @@ export function createMppMeter({ account, rpcUrl, chainId, feeToken, log = conso
     async settleChannel(channelId, reason = 'seat_ended') {
       if (!channelId) return null;
       try {
-        // feeToken must be explicit here: the method-level feeToken only
-        // covers SCHEDULED settlements, and the resolver otherwise prefers
-        // the chain default fee token (pathUSD) which this account may not
-        // hold (mainnet lesson: "total cost exceeds the balance").
-        const txHash = await tempo.session.settle(store, walletClient, channelId, {
-          account,
-          feeToken,
+        // THROUGH THE DOOR. The SDK still signs the settle with this meter's
+        // wallet client, but the call is made — and recorded, idempotently on
+        // the channel id — by settlement.js, so Gate H Tier 1 can see every
+        // on-chain write in one file. feeToken stays explicit for the same
+        // mainnet reason it always was (see settlement.js).
+        if (!settlement) throw new Error('no settlement door wired');
+        const r = await settlement.settleChannel({
+          channelId, ref: `channel:${channelId}:settle`, store, walletClient, account, feeToken, meta: { reason },
         });
-        log.log(`[meter:mpp] settled channel ${channelId} (${reason}) tx ${txHash}`);
+        const txHash = r.txHash;
+        log.log(`[meter:mpp] settled channel ${channelId} (${reason}) ${r.deduped ? 'already recorded' : ''}tx ${txHash}`);
         return txHash;
       } catch (err) {
         // Cooperative client close may have landed first — that's success.

@@ -1,7 +1,4 @@
 // ─── Optional rewards primitive (isolated — never breaks pay-to-join) ────────
-import { createWalletClient, http, erc20Abi } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
-import { tempo as tempoChain } from 'viem/chains';
 import { creditViewer, parseRewardAmount, formatRewardAmount, getCredit } from './reward-credits.js';
 import { toAtomic } from './token-utils.js';
 
@@ -21,28 +18,18 @@ function atomicToUsdc(atomic) {
  */
 export function attachRewards(wss, opts = {}) {
   const getRoomConfig = opts.getRoomConfig || (() => null);
-  const RPC_URL = opts.rpcUrl || 'https://rpc.tempo.xyz';
   // Real USDC payouts on Tempo are a plain TIP-20 transfer from the pool
-  // wallet (fees paid from the same stablecoin balance). The Circle Gateway
-  // deposit path from the Arc build is gone.
+  // wallet. This module used to hold that wallet and sign the transfer
+  // itself; it now records an INTENT with the settlement door, which is the
+  // only place a key signs anything (settlement.js). The reward-pool signer
+  // is the door's `rewardPool` slot, from REWARD_POOL_PRIVATE_KEY.
   const usdcAddress = opts.usdcAddress || null;
-
-  let poolWalletClient = null;
-  let poolDryRun = true;
-  if (opts.poolPrivateKey && /^0x[0-9a-fA-F]{64}$/.test(opts.poolPrivateKey) && usdcAddress) {
-    try {
-      poolWalletClient = createWalletClient({
-        account: privateKeyToAccount(opts.poolPrivateKey),
-        chain: tempoChain,
-        transport: http(RPC_URL),
-      });
-      poolDryRun = false;
-    } catch (err) {
-      console.warn('[rewards] pool client init failed — credits accrue locally only:', err.message);
-    }
-  } else {
-    console.warn('[rewards] REWARD_POOL_PRIVATE_KEY not set — local credit mode (join balance still works).');
+  const settlement = opts.settlement || null;
+  const poolDryRun = !(settlement && settlement.hasSigner('rewardPool') && usdcAddress);
+  if (poolDryRun) {
+    console.warn('[rewards] no reward-pool signer at the settlement door — local credit mode (join balance still works).');
   }
+  let payoutSeq = 0;
 
   const sessions = new Map();
 
@@ -109,14 +96,18 @@ export function attachRewards(wss, opts = {}) {
 
     state.crediting = true;
     let txHash = null;
+    let intentRef = null;
     try {
-      if (meta.type === 'usdc' && poolWalletClient && !poolDryRun) {
-        txHash = await poolWalletClient.writeContract({
-          address: usdcAddress,
-          abi: erc20Abi,
-          functionName: 'transfer',
-          args: [state.wallet, amountAtomic],
+      if (meta.type === 'usdc' && settlement && usdcAddress) {
+        // Intent first, transfer on the door's flush. The in-app credit is
+        // the balance the viewer can spend on a seat regardless.
+        const r = settlement.release({
+          signer: 'rewardPool', to: state.wallet, amountAtomic: amountAtomic.toString(),
+          token: { address: usdcAddress, decimals: 6, symbol: 'USDC' }, bucket: 'reward',
+          ref: `reward:${state.roomId}:${state.wallet}:${Date.now()}:${payoutSeq++}`,
+          meta: { roomId: state.roomId },
         });
+        intentRef = r.row.ref;
       }
       creditViewer(state.roomId, state.wallet, amountAtomic, meta);
       state.sessionEarned += amountAtomic;
@@ -130,6 +121,7 @@ export function attachRewards(wss, opts = {}) {
         joinBalance: formatRewardAmount(bal.atomic, meta.decimals),
         symbol: meta.symbol,
         txHash,
+        intentRef,
         capped: state.sessionEarned >= capAtomic,
         dryRun: poolDryRun || meta.type !== 'usdc',
       });
