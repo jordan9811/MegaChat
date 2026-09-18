@@ -1,0 +1,26 @@
+[
+  {
+    "chain": "moderato",
+    "chainId": 42431,
+    "address": "0xedd9ec3906c1865908af64e9434dd1cdf07e225b",
+    "txHash": "0x26bd08ac318d044db46b10f5fcdb53ee4bb60065476efc813561e4b14e4d6e31",
+    "blockNumber": "35865884",
+    "gasUsed": "10307215",
+    "deployer": "0xDd5e55EE3042FB638960111337C74D819337a01E",
+    "ephemeralDeployer": true,
+    "token": "0x20c0000000000000000000000000000000000001",
+    "tokenSymbol": "AlphaUSD",
+    "roles": {
+      "operator": "0xDd5e55EE3042FB638960111337C74D819337a01E",
+      "attester": "0xDd5e55EE3042FB638960111337C74D819337a01E",
+      "owner": "0xDd5e55EE3042FB638960111337C74D819337a01E",
+      "feeRecipient": "0xDd5e55EE3042FB638960111337C74D819337a01E"
+    },
+    "compiler": "solc 0.8.37+commit.f401782d.Emscripten.clang",
+    "evmVersion": "osaka",
+    "sourceHash": "c7cbfb3c5ff5de52a5a18761cf9f2097a7bb15d41a10c8149d98390c1b103a88",
+    "deployedBytecodeSha256": "9f4101f1a31db48bc3d3055b86ba3f265f87507400c16cb8ba6289669a6f9e6b",
+    "onChainBytecodeMatchesArtifact": true,
+    "deployedAt": "2026-09-18T17:12:00.471Z"
+  }
+]
