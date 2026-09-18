@@ -11,14 +11,18 @@
  * method is exactly the kind of change that should be looked at.
  *
  * WHAT IT SCANS. The browser sources (web/lib, web/components, web/app, src,
- * public), the operator scripts (scripts/), and every root `_*.mjs` gate or
+ * public), the operator scripts (scripts/), the contract tooling (contracts/,
+ * whose build script signs nothing and whose deploy path lives in scripts/),
+ * and every root `_*.mjs` gate or
  * verifier other than the money gate itself. Not the server modules — those are Tier 1, mediated by
  * settlement.js — and not node_modules or build output.
  */
 import fs from 'fs';
 import path from 'path';
 
-export const TIER3_RE = /eth_sendTransaction|eth_signTransaction|eth_sendRawTransaction|sendUserOperation\(|\.writeContract\(|\.sendTransaction\(|\.signTransaction\(|session\.settle\(/g;
+// `.deployContract(` is pinned too: putting new code on the chain is a signing
+// action, and the escrow contract (contracts/) made deploy scripts a surface.
+export const TIER3_RE = /eth_sendTransaction|eth_signTransaction|eth_sendRawTransaction|sendUserOperation\(|\.writeContract\(|\.deployContract\(|\.sendTransaction\(|\.signTransaction\(|session\.settle\(/g;
 
 const SKIP_DIRS = /^(node_modules|\.next|\.git|\.codex-worktrees|dist)$/;
 
@@ -34,7 +38,7 @@ function walk(dir, out) {
 /** Count hits per file, comments excluded. `text` overrides let the gate feed a synthetic offender. */
 export function countTier3({ root = '.', extraFiles = {} } = {}) {
   const files = [];
-  for (const d of ['web/lib', 'web/components', 'web/app', 'src', 'public', 'scripts']) walk(path.join(root, d), files);
+  for (const d of ['web/lib', 'web/components', 'web/app', 'src', 'public', 'scripts', 'contracts']) walk(path.join(root, d), files);
   // Every root gate and verifier except the money gate and this scanner:
   // their regexes name every signing method on purpose.
   for (const f of fs.readdirSync(root)) if (/^_.*\.mjs$/.test(f) && f !== '_gate-money.pins.mjs' && f !== '_gate-money.mjs') files.push(path.join(root, f));

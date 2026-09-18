@@ -238,6 +238,7 @@ function tier2Offenders(texts) {
 // number, by running `node _gate-money.pins.mjs`. A diff here means someone
 // added, removed or moved a place that names a signing method.
 const PINNED = {
+  '_gate-escrow-contract.mjs': 3,   // writeContract ×2 (approve, send), deployContract ×1 (the reentrancy sink) — Moderato only
   '_gate-gas-floor.mjs': 2,
   '_gate-guest-whitelist.mjs': 4,
   '_gate-mpp-clientpath.mjs': 9,
@@ -245,6 +246,7 @@ const PINNED = {
   '_gate-polish.mjs': 3,
   '_gate-stability.mjs': 4,
   '_verify-join.mjs': 5,
+  'scripts/deploy-escrow.mjs': 1,   // deployContract — the escrow's one deploy path
   'scripts/probe-tempo-write.mjs': 1,
   'src/passkey-wallet.mjs': 1,
   'web/lib/join-page.ts': 5,
