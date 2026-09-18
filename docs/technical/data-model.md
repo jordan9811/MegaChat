@@ -57,7 +57,7 @@ Things the system does not store, each with the reason the code gives:
 - **Recordings of broadcasts.** Capture runs only inside an air session and keeps only the windows around clip playbacks (`bounty-capture.js`).
 - **A copy of a platform VOD.** Frames are extracted transiently by ffmpeg and discarded (`frame-sources.js`; `docs/pass-b-handoff.md`).
 - **Self-reported LiveKit consumption as the cost record.** The authoritative session record comes from signed webhooks (`livekit-webhooks.js`).
-- **Any settlement transaction.** There is no signer, no contract address, no transfer path (`bounty-settlement.js`; Gate H).
+- **A bounty settlement transaction.** The bounty program's settlement is still the stub (`bounty-settlement.js`; Gate H, legacy section). The app's own money — seat ticks, seat and MegaChat refunds, reward payouts, the MPP channel settle — does move, and only through `settlement.js`, which signs nothing that is not first a recorded intent in `data/settlement.jsonl` (`_gate-money.mjs`, Tier 1). No balance read from the chain is ever stored; every amount is folded from a ledger.
 - **Owner notes or docs state.** Nothing in `docs/` is read by the app.
 
 ## Where the shape is defined

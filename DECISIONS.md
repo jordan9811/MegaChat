@@ -603,3 +603,44 @@ reason than "the API is expensive".
 - **Queue order is oldest-approved-first and nothing else** — skip, hold and
   reorder are a product surface nobody has specified. Filed as E40 rather than
   invented. Undo: n/a (deferral).
+
+## E38 — the money audit and the settlement door (2026-09-18)
+
+- **One door, not several doors with the same rule.** Every server-signed
+  transfer executes inside `settlement.js` against a recorded intent. The
+  alternative — each caller keeping its own signer and merely recording an
+  intent first — leaves five places to get the rule wrong and a scan that can
+  only check the recording. Undo: n/a (Gate H Tier 1 pins it; a call moved out
+  of the door fails the gate).
+- **Ticks land in the platform wallet, not the payout address.** The seat
+  escrow's holdback, buried-seconds refunds and clawbacks were bookkeeping
+  about money that had already left; now the bucket's intents ARE the money.
+  Undo: point the pull in `tickPasskeyStreamSeat` back at `seat.payoutAddress`
+  and accept that the escrow is accounting again.
+- **The payout key must be the platform wallet's key, or payouts are off.**
+  `PLATFORM_SETTLEMENT_KEY` is checked at boot against `SELLER_WALLET_ADDRESS`;
+  a mismatch disables outbound signing rather than paying from a wallet the
+  ledger does not describe. Undo: n/a (safety).
+- **No payout key means recorded and PENDING, never dropped.** The first flush
+  after the key lands pays each intent exactly once (`_gate-money.mjs` K).
+  Undo: n/a.
+- **Amounts come from the ledger, never from a balance read.** A balance read
+  is a claim about the world at one instant; the ledger is the intent. Undo:
+  n/a.
+- **MPP seats feed the seat bucket (E39).** Their vouchers accrue like any
+  tick, so buried seconds are refunded for them. They still cannot pause
+  (L34). Undo: remove the `seatEscrow.accrue` in the MPP tick handler.
+- **Credit- and points-funded intents are RETAINED, not paid.** The platform
+  wallet never received that money; paying it out would be paying out of thin
+  air. Who pays the streamer for those seats is O15. Undo: give those buckets
+  a token address and a signer — after O15.
+- **The legacy viewer page is deleted, not 404-routed.** A page that can be
+  served can be linked; a refusing route can be removed by accident. Deleting
+  is the version the gate can prove (`_gate-money.mjs` P). Undo: `git revert`
+  the deletion commit.
+- **Tier 3 pins names, not behaviour, and says so.** A count of transfer-shaped
+  names per file is the strongest static claim available for calls the server
+  cannot mediate. Undo: n/a (register L37).
+- **Points seats tick in points (E42) — a fix, not a policy.** The join had
+  always priced points seats in whole points; only the seat record disagreed.
+  Undo: n/a (bugfix, caught by the new fixture).

@@ -1,3 +1,88 @@
+### E38 — THE MONEY AUDIT, THE SETTLEMENT DOOR, AND WHAT THE FIXTURE FOUND (2026-09-18, `feat/real-broadcast`)
+
+**Verdict:** every server-signed transfer now executes only against a recorded
+intent, through one file; nothing has paid out, because the payout key is
+unset — and building the one fixture this project lacked found two defects in
+the seat meter that no gate had ever exercised.
+
+**What the last 24 hours established, recorded here because none of it was
+written down anywhere the next reader would look:**
+
+- **Gate H only ever scanned `bounty-*.js`.** Every green Gate H in this file,
+  the briefs and the work history meant one thing — the bounty feature is
+  inert — and said nothing about the seat tick, seat and MegaChat refunds,
+  reward payouts or the MPP channel settle. The testing-methodology row that
+  implied more is corrected; the old scan is kept as the LEGACY section of
+  `_gate-money.mjs`.
+- **The transfer inventory is eleven paths, not two.** Tier 1, server-signed:
+  the per-tick `transferFrom` pull, `refundSeat`, `refundLetter`, the reward
+  payout, the MPP channel settle. Tier 2, autonomous: the MPP SDK's
+  `settlementSchedule` — no call site in our source. Tier 3, client-signed
+  and operator-run: the viewer's session-cap approve, the channel open and
+  deposit, the legacy `/index.html` approve + deposit (now deleted),
+  `scripts/probe-tempo-write.mjs`, and four dust-spending gates.
+- **The legacy `/index.html` was an Arc-era client-signed Gateway deposit page
+  with nothing routing to it.** Deleted with its `passkey-wallet.bundle.js`
+  rather than 404-routed: a page that can still be served can still be
+  linked. `_gate-money.mjs` P asserts both answer 404 on the default config.
+- **There is no Tempo testnet stage.** Arc testnet went straight to Tempo
+  mainnet (4217, real USDC.e); no Moderato addresses, RPC or wallet layer exist
+  in the tree, and overriding `TEMPO_CHAIN_ID` would not make them exist.
+  Register L38.
+- **Two sweeps remain open (E44):** Arc references in comments and helpers, and
+  testnet framing in prose about a mainnet app.
+
+**What shipped:**
+
+- `settlement.js` — the door. `enqueue` (idempotent on `ref`; RETAINED when
+  the payee is the platform wallet, the amount is zero, or the token has no
+  address), `pull` (the tick, recorded even when DRY), `settleChannel`,
+  `flush` (reconcile SENT by receipt first, then send PENDING oldest-first,
+  one at a time). Two keys: `SELLER_PRIVATE_KEY` pulls INTO the platform
+  wallet; `PLATFORM_SETTLEMENT_KEY` pays OUT of it and must resolve to
+  `SELLER_WALLET_ADDRESS` or payouts are disabled at boot. Amounts are always
+  the ledger's, never a balance read. Ledger: `data/settlement.jsonl`, the same
+  append-only primitive as the bounty and seat ledgers.
+- Ticks land in the platform wallet, not the payout address, so the seat
+  bucket's sweeps, refunds, clawbacks and maturities are the money — the gap
+  `seat-escrow.js`'s header called E38 is closed. MPP seats feed the bucket
+  too (the E39 accrue).
+- `letters.js`, `rewards.js`, `meter-mpp.js` route through the door;
+  `erc20Abi` has no use outside it.
+- `_gate-money.mjs` (36/0): the three tiers, every discrimination proven on a
+  synthetic offender; `_gate-money.pins.mjs` prints the Tier 3 map.
+- `_gate-meter-pause.mjs` (14/0): the L35 fixture. `_gate-bounty-program.mjs`
+  clears the seeded board first (E41, 41/0). `_gate-auth.mjs` re-pointed off
+  the deleted bundle.
+
+**What the fixture found — E42, FIXED.** A points-funded seat was created with
+the room's USDC tick price in 6-decimal atomic units (`'1'` → 1,000,000)
+against a whole-point balance (100). Its first tick hit
+`remainingAtomic < tickPrice` and kicked it `out_of_funds`, then refunded the
+100 PTS. Every points seat, every time. The gate's first run is the trace:
+
+    [seat] 3e1ad85c (room f79b2596): camera live — prepaid meter (0.0001 USDC cap)
+    [lk-activity] f79b2596: grace started (60000ms, seat-vacated)
+    [refund] credit seat 3e1ad85c: returned 100 PTS to earned balance
+
+`createSeat` now honours the atomics the credit join computes in the seat's
+own units. Discrimination: the same gate, same step — 0 ticks before, 3 after,
+and the seat is still seated at the end.
+
+**What the door made visible — E43, FIXED.** Credit- and points-funded seats
+opened escrow buckets carrying the room's USDC address. While settlement was a
+stub that was bookkeeping; with a door it would have been a real platform-
+wallet intent for money that never entered the platform wallet (the credit
+lives in the reward pool). Those buckets now carry no token address and the
+door RETAINS every intent for them, with the reason on the row. Asserted at
+the door (`_gate-money.mjs` T1) and on disk after a real pause
+(`_gate-meter-pause.mjs` 5b). Who should pay the streamer for such seats is
+O15 — retained, not invented.
+
+**Open:** the funded run (Part 4: fork first, capped mainnet second); O15;
+E44–E46; L36–L40.
+
+
 ### A HANDLE IS NOT AN AUTHORIZATION TOKEN (identity-store, 2026-09-16)
 
 Filed against `identity-store.js`, NOT against the guest whitelist, because the

@@ -79,7 +79,7 @@ flowchart LR
 |---|---|---|
 | Browser ↔ server | JSON over HTTP; seat and MegaChat events over one WebSocket on `/` | `server.js` routes; `wss` |
 | Server ↔ media | LiveKit tokens minted per seat; participant kicks; webhooks in | `livekit.js`, `livekit-webhooks.js` |
-| Server ↔ chain | per-tick `transferFrom` pulls, MPP channel settle, MegaChat refunds | `tickPasskeyStreamSeat` in `server.js`, `meter-mpp.js`, `letters.js` |
+| Server ↔ chain | every server-signed transfer, through one door: per-tick `transferFrom` pulls into the platform wallet, seat sweeps and refunds, MegaChat refunds, reward payouts, the MPP channel settle — each executed only against a recorded intent | `settlement.js` (`createSettlement`, `viemChainAdapter`); its callers in `server.js`, `seat-escrow.js`, `letters.js`, `rewards.js`, `meter-mpp.js` |
 | Server ↔ platforms | Helix liveness (batched), thumbnails, VOD discovery, live HLS | `twitch-api.js`, `kick-api.js`, `youtube-api.js`, `rumble-api.js`, `pumpfun-api.js`, `frame-sources.js` |
 | Bounty ↔ room | one call at air-session close attaches a poster reference to the airing | `bounty-routes.js` → `attachRecording`, `airings-store.js` |
 | Verification ↔ money | a verdict becomes a ledger row; a ledger row becomes a recorded intent | `bounty-verifier.js` → `release()` in `bounty-escrow.js` → `StubSettlement` |

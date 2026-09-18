@@ -40,4 +40,4 @@ Gates 0–3 of `megachat-pass-b-and-docs.md`; the run log is in `REPORT-DOCS.md`
 
 ## Verification result
 
-Pass A: `_gate-bounty-claim` 101/0 (see the reconciliation — G judged a stale build), `_gate-missed-code-authoritative` 16/0, `_gate-guest-whitelist` 63/0, `_gate-follow-stream` 18/0, overlay gates, Gate H 0 offenders, `tsc` 0, build clean, live at `3bdef1b`. Pass B: `_gate-room-poster` 20/0, `_gate-bounty-claim` 102/0 on a fresh build, live at `e0fda49`.
+Pass A: `_gate-bounty-claim` 101/0 (see the reconciliation — G judged a stale build), `_gate-missed-code-authoritative` 16/0, `_gate-guest-whitelist` 63/0, `_gate-follow-stream` 18/0, overlay gates, Gate H 0 offenders (the bounty-module scan only — it said nothing about the seat, MegaChat, reward or MPP transfer paths; see E38), `tsc` 0, build clean, live at `3bdef1b`. Pass B: `_gate-room-poster` 20/0, `_gate-bounty-claim` 102/0 on a fresh build, live at `e0fda49`.

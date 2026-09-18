@@ -42,7 +42,7 @@ Every term this project invented or reuses oddly, one line each, with the file w
 | **Evidence chain** | The append-only log everything a payout is computed from is written to. | `bounty-evidence.js` |
 | **Ledger** | The append-only money history with a checksum chain; pools are folded from it. | `bounty-ledger.js` |
 | **Settlement (stub)** | The interface that would pay; the only implementation records an intent and moves nothing. | `bounty-settlement.js` |
-| **Gate H** | The scan that requires zero transfer-shaped calls in the sixteen bounty modules. | `_gate-bounty-claim.mjs` |
+| **Gate H** | The gate that requires every transfer to be accounted for: one settlement door for server-signed transfers, a config pin for the autonomous MPP settle, a call-site pin for client-signed paths — and, as its legacy section, zero transfer-shaped calls in the bounty modules. | `_gate-money.mjs`; `_gate-bounty-claim.mjs` section H |
 | **NOT_SHOWN** | A playback whose required code was never observed; outranks any confidence number. | `bounty-verifier.js` |
 | **SOURCE_UNAVAILABLE** | "We could not look" — routed to review, never a denial. | `frame-sources.js` |
 | **Review queue** | Where ambiguous or disputed verifications wait for a person; blocks release. | `bounty-store.js`, `createReview` |

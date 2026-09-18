@@ -38,8 +38,10 @@ untracked scratch file in a side worktree.
 - **Env vars: names only, never values, in anything written down.**
 - **Do not resolve anything in `docs/internal/needs-a-status-call.md`.** Those are the
   owner's calls.
-- **Settlement is stub-only unless a prompt explicitly permits otherwise**, and Gate H
-  (zero transfer calls across the sixteen `bounty-*.js` modules) stays green either way.
+- **Bounty settlement is stub-only unless a prompt explicitly permits otherwise.** The
+  app's own money moves only through `settlement.js`, against a recorded intent (E38,
+  2026-09-18), and Gate H — `_gate-money.mjs`, three tiers plus the legacy bounty scan —
+  stays green either way.
 
 ## Where the record lives
 
