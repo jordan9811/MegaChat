@@ -113,3 +113,4 @@
     * [2026-09-11 → 09-14 — The preview, the booth camera, follow my stream, airings](internal/work-history/2026-09-11-14-follow-and-airings.md)
     * [2026-09-15 → 09-16 — Pass A, Pass B, and the gate history reconciled](internal/work-history/2026-09-15-16-pass-a-and-pass-b.md)
   * [The seat escrow contract](internal/escrow-contract.md)
+  * [The account model](internal/account-model.md)

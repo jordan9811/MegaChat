@@ -1,3 +1,86 @@
+### THE IDENTITY LAYER — CANONICAL ACCOUNTS, LINKS, ATTRIBUTES, CLASSIFIER (2026-09-19, `feat/real-broadcast`)
+
+**Verdict:** a person is now an account with its own id and a list of linked
+platforms; everything that used to key on a platform login keys on the account
+id; attributes are captured inside the OAuth round trip the person is already
+in, and a classifier reads them without any feature consuming it yet. The
+handle-squatting hole is closed. 49 assertions, 0 failures
+(`_gate-identity-account.mjs`), and the full suite is unchanged. Page:
+`docs/internal/account-model.md`.
+
+**What the existing identity layer actually was, against the prompt's
+description of it.** The prompt said "today an identity is
+`provider:platformId`, one provider per account." True of the schema, and
+misleading about the app: **Privy has been the front door since the Tempo
+migration**, a sign-in is a Privy DID, and `privy-identity.js` already read the
+socials someone had linked there over raw REST. So a canonical account with
+several platforms half-existed — but those names arrive **without platform
+ids**, which is why they could never carry attributes or prove anything. They
+are kept as `platformLogins` and shown on the account page; connecting the same
+platform through our own OAuth upgrades one into a real link with an id and
+attributes. Our own Twitch/X OAuth still exists and is the only path that
+yields a token, which is why it is the only path that can capture attributes.
+
+**What shipped.** `accounts.js` (the store: accounts, links, handles, one link
+per provider per account, one account per platform login, `link_taken` on a
+login already used elsewhere); `identity-store.js` rewritten as the legacy
+identity VIEW over it, so `auth.js`, `privy-identity.js`, `whitelist-routes.js`
+and `dashboard-routes.js` read unchanged; `roomOwnerKey` returns the account id;
+the sealed cookie carries `{accountId}` and still resolves the older
+`{provider, platformId}` shape; the OAuth callback attaches to the signed-in
+account instead of minting a second person, and refuses a login already linked
+elsewhere; `attestation/` (the one attribute shape, the trust ordering, live
+`x-api` and `twitch-helix` adapters, `opacity` and `reclaim` as stubs at a
+marked SDK boundary); `classifier.js` + `recognized-accounts.json`; the account
+page's Platforms and How-you-read sections; `_migrate-accounts.mjs` (reports by
+default, `--write` to act); `_gate-identity-account.mjs`.
+
+**The handle-squatting hole, closed.** `identity-store.js` used to free a
+handle the moment its owner claimed another one, so a name a whitelist entry or
+a room link still referred to could be taken by a stranger. A handle now maps
+to an account id forever: `claimHandle` leaves the old name RESERVED to the
+same account, `isHandleFree` treats reserved as taken, and `releaseHandle` is
+the only way out and cannot release the current handle. The gate proves it and
+replays the old rule beside it to show the two disagree.
+
+**Found by looking at the page rather than the gate — and fixed.**
+`/api/auth/me` read the cookie by hand (`getIdentity(sess.provider,
+sess.platformId)`), so an account-id session came back `{identity: null}` and a
+signed-in account rendered as signed OUT — while every other route accepted the
+same cookie. The API gate had missed it because it reads `/api/account`. It now
+goes through `readIdentityFromRequest` like everything else, and the gate
+asserts both cookie shapes resolve there.
+
+**Thresholds, and that they are guesses.** `recognized`: on the allowlist, or
+verified **and** ≥100k followers (an X checkmark is purchasable; that pairing is
+not), or Twitch partner (reviewed, unbuyable). `plausible`: ≥730 days old, or
+≥180 days **and** ≥50 followers, or Twitch affiliate, or verified. `suspect`:
+following ≥1,000 **and** <30 days old, or following ≥500 with a
+followers/following ratio under 0.02. Missing signals give `ambiguous`, never
+`suspect` — absence of evidence is not evidence of a bot. Every number is a
+judgement call with no user data behind it; `THRESHOLDS` is exported so they can
+be argued with rather than hunted for.
+
+**The zkTLS question, answered against the sources rather than the
+assumption.** Reclaim publishes SDKs for a NodeJS webapp, **Flutter, React
+Native, Kotlin and Swift** — mobile *and* web. Opacity ships mobile/native-first
+wrappers around a Rust core (`opacity-ios`, `opacity-android`,
+`react-native-opacity`, `flutter-opacity-core`, `capacitor-opacity`) with no
+first-party browser-JS SDK, and its documentation site was returning a
+Cloudflare DNS error, so its integration contract could not be read at all. So
+"Opacity is mobile, Reclaim is web" is wrong: both cover mobile, Reclaim also
+covers web, and Reclaim is the only one of the two whose docs could be read.
+
+**Gates that had to move with it.** `mintBountyAuth` wrote `identities.json`
+with a row per platform login; it now writes `accounts.json` and exposes
+`accountIdFor(handle)`, and the five gates that built `provider:platformId`
+owner keys by hand use that instead. `_gate-guest-whitelist` and
+`_gate-bounty-auth` seeded the old store directly and were migrated the same
+way — both back to 63/0 and 19/0.
+
+**Open:** E51–E53; L48–L50; O18.
+
+
 ### LIVE SEATS ON THE ESCROW, ON MAINNET — SESSION 2, 29/0 WITH DUST (2026-09-19, `feat/real-broadcast`)
 
 **Verdict:** a paid seat's money now sits in `contracts/MegaChatEscrow.sol`

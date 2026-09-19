@@ -735,3 +735,62 @@ reason than "the API is expensive".
 - **Privy users were not re-routed.** The prompt said `/api/join/mpp` stays as
   it is; it does, and the consequence is filed rather than fixed (E48). Undo:
   one condition in `joinSeat`.
+
+## The identity layer — canonical accounts (2026-09-19)
+
+- **An account has its own id; the owner key is that id.** `provider:platformId`
+  made one person per platform and would have split someone across their own
+  logins the moment linking shipped. An account id survives adding, removing and
+  re-primarying every link. Undo: n/a (the whole point).
+- **`identity-store.js` became a VIEW, not a second store.** Rewriting its
+  exports over `accounts.js` kept four callers untouched while moving the truth
+  to one place. Two stores would have split handle ownership, which is the bug
+  being fixed. Undo: n/a.
+- **A handle is owned by an account and never auto-freed.** Moving to a new
+  handle leaves the old one reserved; only an explicit release frees it, and the
+  current one cannot be released. Undo: n/a (security, `OPEN-ISSUES.md`).
+- **A platform login already linked elsewhere is refused, not merged.** There is
+  nobody to merge — zero users — and a merge flow nobody needs is a security
+  surface nobody reviewed. Undo: build a merge flow when there is something to
+  merge.
+- **Attributes are fetched in the OAuth round trip and never asked for.** The
+  constraint that overrides everything: an important person connecting one
+  account experiences nothing beyond the round trip they are already in. A
+  failed fetch stores `attributes: null` and the link still succeeds. Undo: n/a.
+- **No access token is stored, so refresh is a re-authorisation.** The account
+  page's Refresh sends the person through the platform's sign-in again, which an
+  app they have already authorised does not question. The alternative is holding
+  refresh tokens for a metrics call. Undo: store tokens and poll — don't.
+- **Twitch's follower total is attempted and its absence is normal.** The total
+  needs `moderator:read:followers`, and adding a scope changes what the consent
+  screen says at sign-in. The classifier works without it. Undo: add the scope
+  and accept the louder consent screen.
+- **Trust: platform API 100, zkTLS 60, manual 10.** A platform is definitionally
+  correct about its own data over a channel we opened; a zkTLS proof is strong
+  but arrives through a third party and a verifier we did not write; a typed
+  number is not evidence. Ties break on freshness. Undo: reorder in
+  `attestation/index.js`, one object.
+- **Opacity and Reclaim are stubs, deliberately.** Opacity's docs were
+  unreachable (Cloudflare DNS error), so its contract could not be read from the
+  source of truth, and neither is needed for anything this pass ships. Each file
+  is the entire boundary. Undo: fill in one file.
+- **The classifier is pure and consumed by nothing.** `classify(account, {
+  allowlist, now })` takes its allowlist and its clock as arguments so it can be
+  tested without a disk. No feature reads it; it is shown to the account holder
+  only. Undo: n/a.
+- **Missing signals mean `ambiguous`, never `suspect`.** A false `recognized` is
+  cheap; a false `suspect` insults a real person. Undo: n/a.
+- **The allowlist holds platform IDS, not handles**, because handles change
+  hands and ids do not; and it is checked first, unconditionally. A copy in
+  `DATA_DIR` overrides the repo file so production is editable without a deploy.
+  Undo: n/a.
+- **Kick and TikTok stay "coming soon" even when credentials exist.** The
+  account route mirrors `/api/auth/providers`, including its two hard `false`s.
+  Offering a button the product has not shipped is worse than not offering one.
+  Undo: read `configured(p)` for all four.
+- **`/api/auth/me` resolves through `readIdentityFromRequest`.** Reading the
+  cookie by hand there made a signed-in account render as signed out. Undo: n/a
+  (bugfix, caught by looking at the page).
+- **A no-op migration script ships anyway.** There is nobody to migrate, but the
+  shape has to exist before the day somebody needs it, and that day is a bad day
+  to write it. Undo: n/a.
