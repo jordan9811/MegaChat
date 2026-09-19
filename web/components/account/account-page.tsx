@@ -16,9 +16,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { AccountChip } from '@/components/account-chip'
 import { GuestWhitelist } from '@/components/account/guest-whitelist'
 import {
+  disconnectAccountLink,
   getAccountDefaults,
+  getAccountOverview,
   listLinkedAccounts,
   saveAccountDefaults,
+  setAccountPrimary,
+  type AccountOverview,
+  type AccountTier,
   type LinkedAccount,
 } from '@/lib/api'
 import { shortAddr, useAccount } from '@/lib/use-account'
@@ -41,6 +46,21 @@ const PROVIDER_LABEL: Record<string, string> = {
 
 function providerLabel(type: string) {
   return PROVIDER_LABEL[type] || type
+}
+
+// The classifier in plain language. Shown to the account holder and nobody
+// else — no feature reads it yet, so this is the only place it surfaces.
+const TIER_COPY: Record<AccountTier, { title: string; blurb: string }> = {
+  recognized: { title: 'Recognised', blurb: 'We can tell who you are on sight. Nothing here will ever ask you to prove it.' },
+  plausible: { title: 'Looks like a person', blurb: 'Your linked accounts read as a real person. Nothing here will ask you to prove it.' },
+  ambiguous: { title: 'Not enough to tell', blurb: 'Not much to go on yet. Connecting another account is the quickest way to fill this in.' },
+  suspect: { title: 'Reads as automated', blurb: 'The numbers on your linked accounts look automated. Connecting another account is the way to change that.' },
+  unknown: { title: 'Nothing fetched yet', blurb: 'No profile details have been read from your linked accounts.' },
+}
+
+function whenLinked(iso: string) {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 // Human summary of a saved defaults blob — only fields worth glancing at.
@@ -89,6 +109,8 @@ export function AccountPage() {
   const [copied, setCopied] = useState(false)
   const [origin, setOrigin] = useState('')
   const [section, setSection] = useState<'overview' | 'defaults' | 'guests' | 'connections'>('overview')
+  const [overview, setOverview] = useState<AccountOverview | null>(null)
+  const [linkBusy, setLinkBusy] = useState<string | null>(null)
 
   useEffect(() => setOrigin(window.location.origin), [])
 
@@ -103,7 +125,42 @@ export function AccountPage() {
       .then((d) => setDefaults(d.defaults))
       .catch(() => {})
       .finally(() => setDefaultsLoaded(true))
+    getAccountOverview()
+      .then(setOverview)
+      .catch(() => setOverview(null))
   }, [identity])
+
+  const reloadOverview = useCallback(() => {
+    getAccountOverview().then(setOverview).catch(() => {})
+  }, [])
+
+  const makePrimary = useCallback(async (provider: string) => {
+    setLinkBusy(provider)
+    setNote(null)
+    try {
+      await setAccountPrimary(provider)
+      reloadOverview()
+      setNote(`${providerLabel(provider)} now supplies your display name — your handle and links are unchanged`)
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Could not switch')
+    } finally {
+      setLinkBusy(null)
+    }
+  }, [reloadOverview])
+
+  const disconnect = useCallback(async (provider: string) => {
+    setLinkBusy(provider)
+    setNote(null)
+    try {
+      await disconnectAccountLink(provider)
+      reloadOverview()
+      setNote(`${providerLabel(provider)} disconnected`)
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Could not disconnect')
+    } finally {
+      setLinkBusy(null)
+    }
+  }, [reloadOverview])
 
   const clearDefaults = useCallback(async () => {
     setBusy(true)
@@ -325,6 +382,61 @@ export function AccountPage() {
                       ))}
                     </ul>
                   )}
+
+                  {/* The account's own links: the ones we hold a platform id
+                      for, so they carry attributes and can be made primary.
+                      A sign-in an aggregator reports but we have no id for is
+                      shown above and upgrades by connecting it here. */}
+                  {overview && overview.account.links.length > 0 ? (
+                    <div className="mcc-links-zone">
+                      <header><span className="mcc-coordinate">Platforms</span><h3>Connected platforms</h3><p>One account, one handle — @{overview.account.handle}. Adding a platform or changing which one names you never moves your link or your room.</p></header>
+                      <ul id="account-links" className="mcc-connections-list">
+                        {overview.account.links.map((l) => (
+                          <li key={l.provider}>
+                            <span className="mcc-provider">{l.label.charAt(0)}</span>
+                            <span>
+                              <strong>{l.label}{overview.account.primary === l.provider ? ' · primary' : ''}</strong>
+                              <small>
+                                {l.username ? `@${l.username}` : 'Connected'} · linked {whenLinked(l.linkedAt)}
+                                {l.attributeCount > 0 ? ` · ${l.attributeCount} profile details` : ' · no profile details'}
+                              </small>
+                            </span>
+                            <span className="mcc-link-actions">
+                              {overview.account.primary === l.provider ? null : (
+                                <button type="button" className="btn-ghost" disabled={linkBusy === l.provider} onClick={() => void makePrimary(l.provider)}>Make primary</button>
+                              )}
+                              <a className="btn-ghost" href={l.refreshUrl}>Refresh</a>
+                              {overview.account.links.length > 1 ? (
+                                <button type="button" className="btn-ghost" disabled={linkBusy === l.provider} onClick={() => void disconnect(l.provider)}>Disconnect</button>
+                              ) : null}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      {overview.connectable.length > 0 ? (
+                        <div className="mcc-connect-row">
+                          {overview.connectable.map((c) => (
+                            c.configured
+                              ? <a key={c.provider} className="btn-ghost" href={c.connectUrl}>Connect {c.label}</a>
+                              : <button key={c.provider} type="button" className="btn-ghost" disabled title="Coming soon">Connect {c.label}</button>
+                          ))}
+                        </div>
+                      ) : null}
+                      <p className="hint">Refreshing sends you through that platform&rsquo;s sign-in once more — it is how the numbers update, and an app you have already authorised will not ask you anything.</p>
+                    </div>
+                  ) : null}
+
+                  {/* The classifier, to the account holder only. Nothing reads
+                      it yet; it is shown so a person can see what we think. */}
+                  {overview ? (
+                    <div className="mcc-standing-zone">
+                      <header><span className="mcc-coordinate">How you read</span><h3>{TIER_COPY[overview.classification.tier].title}</h3><p>{TIER_COPY[overview.classification.tier].blurb}</p></header>
+                      <ul className="mcc-standing-reasons">
+                        {overview.classification.reasons.map((r, i) => <li key={i}>{r}</li>)}
+                      </ul>
+                      <p className="hint">Only you can see this. Nothing on MegaChat uses it yet.</p>
+                    </div>
+                  ) : null}
                   <div className="mcc-wallet-line">
                     <span><strong>Payment balance</strong><small>{wallet.address ? shortAddr(wallet.address) : 'Not connected'}</small></span>
                     {!wallet.address ? <button type="button" className="btn-ghost" onClick={() => void connectBalance()} disabled={!wallet.configured || connectingBalance}>Connect</button> : <b>Connected</b>}

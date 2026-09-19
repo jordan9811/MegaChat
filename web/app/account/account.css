@@ -539,3 +539,21 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   .mcc-guests-list li { grid-template-columns: minmax(0, 1fr) auto; }
   .mcc-guests-meta { grid-column: 1 / -1; flex-direction: row; gap: 14px; text-align: left; }
 }
+
+/* ── Platforms + standing (the identity layer) ──────────────────────────────
+   Same furniture as the connections list above: no new visual language, just
+   room for the per-link actions and the classifier's reasons. */
+.mcc-links-zone,
+.mcc-standing-zone { margin-top: 28px; }
+.mcc-links-zone > header h3,
+.mcc-standing-zone > header h3 { font-size: 1.05rem; margin: 4px 0 2px; }
+.mcc-link-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mcc-link-actions .btn-ghost { font-size: .78rem; padding: 5px 10px; text-decoration: none; }
+.mcc-connect-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.mcc-connect-row .btn-ghost { text-decoration: none; }
+.mcc-standing-reasons { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 6px; }
+.mcc-standing-reasons li { font-size: .85rem; line-height: 1.5; padding-left: 14px; position: relative; }
+.mcc-standing-reasons li::before { content: '·'; position: absolute; left: 4px; }
+@media (max-width: 640px) {
+  .mcc-link-actions { width: 100%; justify-content: flex-start; }
+}

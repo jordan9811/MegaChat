@@ -421,6 +421,56 @@ export function getAccountDefaults() {
   return request<{ defaults: Record<string, unknown> | null }>('/api/account/defaults')
 }
 
+// ── The canonical account: links, attributes, classification ────────────────
+
+export type AccountLink = {
+  provider: string
+  label: string
+  username: string | null
+  linkedAt: string
+  attributeCount: number
+  attributesFetchedAt: string | null
+  /** Re-authorising is how attributes refresh — no access token is stored. */
+  refreshUrl: string
+}
+export type AccountAttribute = { value: number | string | boolean; source: string; trust: number; fetchedAt: string }
+export type AccountTier = 'recognized' | 'plausible' | 'ambiguous' | 'suspect' | 'unknown'
+export type AccountOverview = {
+  account: {
+    id: string
+    handle: string | null
+    primary: string
+    createdAt: string
+    reservedHandles: string[]
+    platformLogins: Record<string, string>
+    links: AccountLink[]
+  }
+  attributes: Record<string, AccountAttribute>
+  connectable: { provider: string; label: string; configured: boolean; connectUrl: string }[]
+  classification: { tier: AccountTier; reasons: string[] }
+}
+
+/** The whole account. Cookie-authed: there is no route for anyone else's. */
+export function getAccountOverview() {
+  return request<AccountOverview>('/api/account')
+}
+
+/** Which link supplies the display name. Never moves the canonical handle. */
+export function setAccountPrimary(provider: string) {
+  return request<{ ok: true; primary: string; handle: string }>('/api/account/primary', {
+    method: 'POST',
+    body: { provider },
+  })
+}
+
+/** Disconnect a platform. The last link is the way back in and cannot go. */
+export function disconnectAccountLink(provider: string) {
+  return request<{ ok: true; links: string[]; primary: string }>(
+    `/api/account/links/${encodeURIComponent(provider)}`,
+    { method: 'DELETE' },
+  )
+}
+
 // ── Guest whitelist (per streamer, not per room) ────────────────────────────
 
 export type GuestEntry = {
