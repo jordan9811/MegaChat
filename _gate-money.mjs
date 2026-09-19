@@ -60,19 +60,27 @@ console.log('\n── Gate H: every transfer is accounted for ──────
 
 // ── TIER 1: one door ───────────────────────────────────────────────────────
 const TIER1_RE = /\.writeContract\(|\.sendTransaction\(|\.signTransaction\(|\.sendUserOperation\(|session\.settle\(|functionName:\s*['"]transfer(From)?['"]/;
+// Session 2: two doors, each accounted for. settlement.js moves platform-wallet
+// money against recorded intents; escrow-chain.js moves seat money into and out
+// of contracts/MegaChatEscrow.sol against its own ledger. Nothing else may.
+const TIER1_ALLOWED = new Set(['settlement.js', 'escrow-chain.js']);
 function tier1Offenders(texts) {
-  return Object.entries(texts).filter(([name, text]) => name !== 'settlement.js' && TIER1_RE.test(strip(text))).map(([n]) => n);
+  return Object.entries(texts).filter(([name, text]) => !TIER1_ALLOWED.has(name) && TIER1_RE.test(strip(text))).map(([n]) => n);
 }
 const serverModules = Object.fromEntries(
   readdirSync('.').filter((f) => /^[a-z][a-z0-9-]*\.(js|mjs)$/.test(f) && !f.startsWith('_')).map((f) => [f, readFileSync(f, 'utf8')]),
 );
 {
   const offenders = tier1Offenders(serverModules);
-  ok('T1. every server-side transfer-shaped call lives in settlement.js',
+  ok('T1. every server-side transfer-shaped call lives in settlement.js or escrow-chain.js',
     offenders.length === 0, offenders.join(', ') || `${Object.keys(serverModules).length} modules scanned`);
   const door = strip(serverModules['settlement.js'] || '');
   ok('T1. ...and settlement.js actually contains them (the door is not empty)',
     /\.writeContract\(/.test(door) && /session\.settle\(/.test(door) && /functionName:\s*'transferFrom'/.test(door) && /functionName:\s*'transfer'/.test(door));
+  const escrowDoor = strip(serverModules['escrow-chain.js'] || '');
+  ok('T1. ...and escrow-chain.js contains the escrow writes, through ONE function, with the fee token explicit',
+    (escrowDoor.match(/\.writeContract\(/g) || []).length === 1 && /feeToken: fee/.test(escrowDoor) && /functionName, args, feeToken/.test(escrowDoor));
+  ok('T1. server.js itself never signs: it asks a door', !TIER1_RE.test(strip(serverModules['server.js'] || '')));
   // Discrimination: a transfer added anywhere else fails the scan.
   const synthetic = { ...serverModules, 'rooms-store.js': serverModules['rooms-store.js'] + "\nexport async function leak(w){ return w.writeContract({ functionName: 'transfer' }); }\n" };
   ok('T1. DISCRIMINATES: a writeContract added to another module is flagged',
@@ -239,6 +247,7 @@ function tier2Offenders(texts) {
 // added, removed or moved a place that names a signing method.
 const PINNED = {
   '_gate-escrow-contract.mjs': 3,   // writeContract ×2 (approve, send), deployContract ×1 (the reentrancy sink) — Moderato only
+  '_gate-escrow-seat.mjs': 1,       // the viewer's approve — MAINNET dust, the Session 2 proof
   '_gate-gas-floor.mjs': 2,
   '_gate-guest-whitelist.mjs': 4,
   '_gate-mpp-clientpath.mjs': 9,
@@ -247,6 +256,7 @@ const PINNED = {
   '_gate-stability.mjs': 4,
   '_verify-join.mjs': 5,
   'scripts/deploy-escrow.mjs': 1,   // deployContract — the escrow's one deploy path
+  'scripts/fund-escrow-roles.mjs': 1, // a capped USDC.e transfer to a role wallet for gas, mainnet, flag-guarded
   'scripts/probe-tempo-write.mjs': 1,
   'src/passkey-wallet.mjs': 1,
   'web/lib/join-page.ts': 5,
