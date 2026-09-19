@@ -22,5 +22,29 @@
     "deployedBytecodeSha256": "9f4101f1a31db48bc3d3055b86ba3f265f87507400c16cb8ba6289669a6f9e6b",
     "onChainBytecodeMatchesArtifact": true,
     "deployedAt": "2026-09-18T17:12:00.471Z"
+  },
+  {
+    "chain": "mainnet",
+    "chainId": 4217,
+    "address": "0x432bb6c62503711ad4e70a91247a110e61779213",
+    "txHash": "0xda7eb6d7a3366d5c63e1dc8eeb42697cb646dfd8a544ab25bb5c401d03024b2d",
+    "blockNumber": "40299066",
+    "gasUsed": "10057299",
+    "deployer": "0xBda93161Cca91A8e7953Ee5AF8807e9752Fcb55E",
+    "ephemeralDeployer": false,
+    "token": "0x20c000000000000000000000b9537d11c60e8b50",
+    "tokenSymbol": "USDC.e",
+    "roles": {
+      "operator": "0x96271dF58d86418aA77A7f7517d75708b5B639BB",
+      "attester": "0x19711b9CC0869273aBcF1f8bc8dF39654036937A",
+      "owner": "0xBda93161Cca91A8e7953Ee5AF8807e9752Fcb55E",
+      "feeRecipient": "0xBda93161Cca91A8e7953Ee5AF8807e9752Fcb55E"
+    },
+    "compiler": "solc 0.8.37+commit.f401782d.Emscripten.clang",
+    "evmVersion": "osaka",
+    "sourceHash": "c7cbfb3c5ff5de52a5a18761cf9f2097a7bb15d41a10c8149d98390c1b103a88",
+    "deployedBytecodeSha256": "9f4101f1a31db48bc3d3055b86ba3f265f87507400c16cb8ba6289669a6f9e6b",
+    "onChainBytecodeMatchesArtifact": true,
+    "deployedAt": "2026-09-19T20:17:38.029Z"
   }
 ]

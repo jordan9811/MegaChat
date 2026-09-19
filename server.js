@@ -54,6 +54,8 @@ import {
 import { createMppMeter, toWebRequest } from './meter-mpp.js';
 import { createWalletClient, createPublicClient, http } from 'viem';
 import { createSettlement, viemChainAdapter } from './settlement.js';
+import { createEscrowChain, defaultContractAddress } from './escrow-chain.js';
+import { tempo as tempoChainDef, tempoModerato as tempoModeratoChainDef } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 
 // Load .env if present (Node >=20.6 native loader). Never throws if missing.
@@ -166,13 +168,24 @@ function resolveRoomFromRequest(body, query) {
 // transfer via viem. NOTE: the Arc 1-gwei priority-fee floor was Arc-specific
 // and is deliberately NOT ported — Tempo takes standard fee estimation and
 // charges fees in the sender's stablecoin (TEMPO_NOTES.md).
-const tempoViemChain = {
-  id: CHAIN_ID,
-  name: 'Tempo',
-  network: NETWORK,
-  nativeCurrency: { name: 'USD', symbol: 'USD', decimals: 6 },
-  rpcUrls: { default: { http: [RPC_URL] }, public: { http: [RPC_URL] } }
-};
+// The chain object every server-side signer uses. It is built from viem's OWN
+// Tempo definition because that is what carries the Tempo TRANSACTION
+// serializer: through a bare object, a `feeToken` is silently dropped, the
+// write goes out as EIP-1559, and a non-TIP-20 call — or any call from a
+// wallet without a default fee token — has its fee charged in pathUSD, which
+// no wallet of ours holds ("insufficient funds … have 0", the Session 2 dust
+// gate). Only the RPC is ours.
+const tempoChainBase = CHAIN_ID === tempoChainDef.id ? tempoChainDef
+  : CHAIN_ID === tempoModeratoChainDef.id ? tempoModeratoChainDef : null;
+const tempoViemChain = tempoChainBase
+  ? { ...tempoChainBase, rpcUrls: { default: { http: [RPC_URL] }, public: { http: [RPC_URL] } } }
+  : {
+      id: CHAIN_ID,
+      name: 'Tempo',
+      network: NETWORK,
+      nativeCurrency: { name: 'USD', symbol: 'USD', decimals: 6 },
+      rpcUrls: { default: { http: [RPC_URL] }, public: { http: [RPC_URL] } }
+    };
 
 let sellerAccount = null;
 let sellerWalletClient = null;
@@ -237,6 +250,65 @@ const settlement = createSettlement({
   platformAddress: SELLER_WALLET_ADDRESS,
 });
 seatEscrow.setSettlement(settlement);
+
+// ─── The seat escrow contract (Session 2) ───────────────────────────────────
+// A paid seat's cap is deposited into contracts/MegaChatEscrow.sol at join and
+// resolved there: the seat ledger meters, one attestation carries its figures
+// to the contract, finalize pays the streamer and refunds the viewer. The
+// platform wallet holds no seat money. Two keys, both separate from every
+// payout key (escrow-chain.js); the address comes from the env or the recorded
+// deployment for this chain (contracts/deployments.json).
+const escrowChain = createEscrowChain({
+  chain: tempoViemChain, rpcUrl: RPC_URL,
+  contractAddress: process.env.ESCROW_CONTRACT_ADDRESS || defaultContractAddress(CHAIN_ID),
+  token: { address: USDC_ADDRESS, decimals: 6, symbol: 'USDC' },
+  operatorKey: process.env.ESCROW_OPERATOR_KEY, attesterKey: process.env.ESCROW_ATTEST_KEY,
+  feeToken: USDC_ADDRESS,
+  tailMs: Number(process.env.SEAT_ESCROW_TAIL_MS || seatEscrow.seatConfig.manualTailMs),
+  reviewMs: Number(process.env.SEAT_ESCROW_REVIEW_MS ?? 24 * 60 * 60_000),
+});
+if (escrowChain.enabled) {
+  escrowChain.preflight({ force: true }).then((s) => console.log(s.ready
+    ? `[escrow] ready — ${escrowChain.address} (operator ${escrowChain.operatorAddress}, attester ${escrowChain.attesterAddress}, tail ${escrowChain.tailMs} ms, review ${escrowChain.reviewMs} ms)`
+    : `[escrow] NOT ready — ${s.reason}; paid seats fall back to direct viewer→streamer payment`));
+} else {
+  console.warn(`[escrow] disabled — ${escrowChain.status().reason}; paid seats use direct viewer→streamer payment`);
+}
+
+/**
+ * The seat ledger's figures, as the contract wants them: consumed units are
+ * the ticks accrued, hidden units are the buried ticks charged to the
+ * streamer plus any clawback, both in TICK units at the seat's tick price.
+ * Viewer-ward only by construction: a later call can only report more hidden.
+ */
+async function attestSeatFromLedger(seatId, { extraHiddenAtomic = 0n } = {}) {
+  const rec = seatEscrow.seatRecord(seatId);
+  if (!rec || rec.mode !== 'escrow' || !escrowChain.enabled) return null;
+  const seat = activeSeats.get(seatId);
+  const rate = seat?.passkeyTickPriceAtomic ?? (rec.ticks[0] ? BigInt(rec.ticks[0].amount) : null);
+  if (!rate || rate <= 0n) return null;
+  const consumedUnits = rec.ticks.length;
+  const hiddenAtomic = rec.refundedFromStreamer + rec.clawed + extraHiddenAtomic;
+  const hiddenUnits = Number((hiddenAtomic + rate - 1n) / rate); // never under-refund by rounding
+  return escrowChain.attest({ seatId, consumedUnits, hiddenUnits });
+}
+seatEscrow.setEscrowHook((kind, seatId, rec, amount) => {
+  if (kind === 'clawback') attestSeatFromLedger(seatId, { extraHiddenAtomic: 0n }).catch((e) => console.warn(`[escrow] clawback attestation failed for ${seatId}: ${e.message}`));
+});
+
+/**
+ * Which money mode a paid seat in this room gets right now, and which address
+ * the viewer must approve. A room with NO payout address is a hard refusal in
+ * every mode: money must never fall back to the platform wallet.
+ */
+function escrowTermsFor(cfg) {
+  const payout = cfg.payoutAddress;
+  if (!payout || !/^0x[0-9a-fA-F]{40}$/.test(payout)) return { error: 'no_payout_address' };
+  const m = escrowChain.mode();
+  return m.mode === 'escrow'
+    ? { mode: 'escrow', spender: escrowChain.address, contract: escrowChain.address, payoutAddress: payout, reason: null }
+    : { mode: 'direct', spender: SELLER_WALLET_ADDRESS, contract: null, payoutAddress: payout, reason: m.reason };
+}
 console.log(`[settlement] door open — pull:${!!sellerWalletClient} payout:${!!platformWalletClient} rewardPool:${!!rewardPoolWalletClient}`);
 
 // ─── Phase 2: MPP session meter (TIP-1034 payment channels) ─────────────────
@@ -298,8 +370,9 @@ async function refundSeat(seat) {
     seat.refunded = true;
     if (seat.remainingAtomic > 0n) {
       if (seat.paymentMode === 'passkey_stream') {
-        console.log(
-          `[refund] stream seat ${seat.id}: ${atomicToUsdc(seat.remainingAtomic)} USDC was never pulled — remains in viewer wallet`
+        console.log(seat.escrowMode === 'escrow'
+          ? `[refund] escrow seat ${seat.id}: ${atomicToUsdc(seat.remainingAtomic)} USDC unspent returns from the contract at finalize`
+          : `[refund] stream seat ${seat.id}: ${atomicToUsdc(seat.remainingAtomic)} USDC was never pulled — remains in viewer wallet`
         );
       } else {
         const dec = seat.paymentTokenDecimals ?? 6;
@@ -357,13 +430,15 @@ async function getOnChainTokenBalance(tokenAddress, address, decimals = 6) {
 }
 
 // Verify passkey stream join: on-chain allowance (primary) + optional approve tx receipt.
-async function verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash, tokenAddress) {
+async function verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash, tokenAddress, spender = SELLER_WALLET_ADDRESS) {
   if (!/^0x[0-9a-fA-F]{40}$/.test(payer || '')) {
     return { ok: false, reason: 'invalid_payer' };
   }
 
+  // SESSION 2 — the spender is the escrow contract for an escrow seat and the
+  // seller key for a direct one; the terms said which, the client approved it.
   const readAllowance = async () => readTokenAllowance(
-    tokenAddress, payer, SELLER_WALLET_ADDRESS, RPC_URL, CHAIN_ID
+    tokenAddress, payer, spender, RPC_URL, CHAIN_ID
   );
 
   let allowance;
@@ -606,6 +681,8 @@ app.get('/api/config', (req, res) => {
     rewards: cfg.rewards,
     // MPP session meter (TIP-1034 channels) — primary on Tempo.
     meterMode: mppMeter ? 'mpp_session' : 'allowance',
+    // SESSION 2 — the seat escrow contract, and whether paid seats use it now.
+    escrow: (() => { const s = escrowChain.status(); return { enabled: s.enabled, address: s.address, mode: s.mode, reason: s.reason || null, chainId: CHAIN_ID }; })(),
     // Legacy key kept null so the old Arc pages degrade cleanly if opened.
     modularWallets: null,
     privy: PRIVY_APP_ID ? { appId: PRIVY_APP_ID } : null
@@ -931,6 +1008,9 @@ function addParticipant(username, meta = {}) {
     paymentTokenSymbol: meta.paymentTokenSymbol ?? roomCfg.paymentTokenSymbol,
     paymentTokenDecimals: meta.paymentTokenDecimals ?? roomCfg.paymentTokenDecimals,
     payoutAddress: roomCfg.payoutAddress || null,
+    // SESSION 2 — where this seat's money is: 'escrow' (the contract), 'direct'
+    // (viewer → streamer per tick), or 'platform' (points/credit: the door).
+    escrowMode: meta.escrowMode || 'platform',
     lastMeterAt: 0,
     _tickInFlight: false,
     flyIn: sanitizeStinger(meta.flyIn, FLY_IN_STINGERS),
@@ -960,6 +1040,7 @@ function addParticipant(username, meta = {}) {
           address: (seat.paymentMode === 'credit_stream' || seat.paymentMode === 'points_stream') ? null : (seat.paymentTokenAddress || USDC_ADDRESS),
         },
         tickMs: (seat.passkeyTickSeconds ?? seat.gatewayTickSeconds ?? 1) * 1000, at: now,
+        mode: seat.escrowMode,
       });
     } catch (e) { console.warn(`[seat-escrow] open failed for ${seatId}: ${e.message}`); }
   }
@@ -1092,6 +1173,10 @@ function removeParticipant(seatId, reason = 'left') {
   // PASS C PART 3b — the seat's pending bucket closes with it: swept now for
   // an obs-websocket room, held until stream end + tail for a manual-paste one.
   try { seatEscrow.close(seat.id, { reason }); } catch (e) { console.warn(`[seat-escrow] close failed for ${seat.id}: ${e.message}`); }
+  // SESSION 2 — an escrow seat's ledger figures go to the contract once, now.
+  if (seat.escrowMode === 'escrow' && reason !== 'escrow_deposit_failed') {
+    attestSeatFromLedger(seat.id).catch((e) => console.warn(`[escrow] attestation failed for ${seat.id}: ${e.message}`));
+  }
 
   // Refund the unused prepaid USDC (fire-and-forget; never blocks removal).
   refundSeat(seat).catch((e) => console.error('[refund] unexpected error:', e));
@@ -1150,24 +1235,36 @@ async function tickPasskeyStreamSeat(seat) {
         `[meter:credit] seat ${seat.id}: tick ${fromAtomic(tickPrice, tokenDec)} ${tokenSym}`
       );
     } else {
-      // E38 — THE TICK LANDS IN THE PLATFORM WALLET, NOT THE PAYOUT ADDRESS.
-      // It used to go straight to seat.payoutAddress, which made the seat
-      // escrow (holdback, buried-second refunds, clawback) bookkeeping about
-      // money that had already left. Now the pull credits the platform-held
-      // balance and the seat ledger's ACCRUE row is the intent; the escrow's
-      // sweeps, maturities and refunds pay out through the same door. A pull
-      // with no seller key is recorded DRY, exactly as the meter has always
-      // behaved without one.
-      seat.tickSeq = (seat.tickSeq || 0) + 1;
-      const pulled = await settlement.pull({
-        from: seat.viewerAddress, to: SELLER_WALLET_ADDRESS,
-        token: { address: tokenAddress, decimals: tokenDec, symbol: tokenSym },
-        amountAtomic: tickPrice, ref: `seat:${seat.id}:tick:${seat.tickSeq}`,
-        meta: { roomId: seat.streamRoomId, payoutAddress: seat.payoutAddress || null },
-      });
-      console.log(pulled.dry
-        ? `[meter:passkey] seat ${seat.id}: DRY pull ${fromAtomic(tickPrice, tokenDec)} ${tokenSym}`
-        : `[meter:passkey] seat ${seat.id}: pulled ${fromAtomic(tickPrice, tokenDec)} ${tokenSym} into the platform wallet (tx ${pulled.txHash})`);
+      // SESSION 2 — THE TICK PAYS NOBODY. For an escrow seat the cap is already
+      // in the contract: a tick is a ledger row, and the contract learns the
+      // total once, at the end (attestSeatFromLedger). For a direct seat — the
+      // availability fallback — the viewer pays the STREAMER per tick from the
+      // allowance they granted the seller key. Never the platform wallet: a
+      // room with no payout address was refused at join and is refused again
+      // here, ending the seat rather than paying anyone else.
+      if (seat.escrowMode === 'direct') {
+        if (!seat.payoutAddress || !/^0x[0-9a-fA-F]{40}$/.test(seat.payoutAddress)) {
+          console.error(`[meter:passkey] seat ${seat.id}: no payout address — ending the seat, not paying the platform`);
+          removeParticipant(seat.id, 'no_payout_address');
+          return;
+        }
+        seat.tickSeq = (seat.tickSeq || 0) + 1;
+        const pulled = await settlement.pull({
+          from: seat.viewerAddress, to: seat.payoutAddress,
+          token: { address: tokenAddress, decimals: tokenDec, symbol: tokenSym },
+          amountAtomic: tickPrice, ref: `seat:${seat.id}:tick:${seat.tickSeq}`,
+          meta: { roomId: seat.streamRoomId, mode: 'direct' },
+        });
+        console.log(pulled.dry
+          ? `[meter:passkey] seat ${seat.id}: DRY pull ${fromAtomic(tickPrice, tokenDec)} ${tokenSym}`
+          : `[meter:passkey] seat ${seat.id}: pulled ${fromAtomic(tickPrice, tokenDec)} ${tokenSym} to the streamer ${seat.payoutAddress} (tx ${pulled.txHash})`);
+      } else if (seat.escrowMode !== 'escrow') {
+        // A paid passkey seat is escrow or direct since Session 2; anything
+        // else here is a wiring bug, and it must not become a platform pull.
+        console.error(`[meter:passkey] seat ${seat.id}: paid seat in mode ${seat.escrowMode} — ending it`);
+        removeParticipant(seat.id, 'bad_money_mode');
+        return;
+      }
     }
 
     if (!applyStreamTick(seat, tickPrice)) {
@@ -1270,6 +1367,19 @@ const seatSweepInterval = setInterval(() => {
   } catch (e) { console.warn(`[seat-escrow] sweep failed: ${e.message}`); }
 }, seatEscrow.seatConfig.sweepMs);
 if (typeof seatSweepInterval.unref === 'function') seatSweepInterval.unref();
+
+// ─── Escrow sweep (Session 2) ────────────────────────────────────────────────
+// Reconciles sent escrow transactions by receipt and finalizes every deposit
+// whose deadline has passed. finalize is permissionless on-chain; doing it
+// here just means the streamer is paid the minute it is due.
+const escrowSweep = setInterval(() => {
+  if (!escrowChain.enabled) return;
+  escrowChain.preflight().catch(() => {});
+  escrowChain.finalizeDue()
+    .then((o) => { if (o.finalized.length || o.failed.length || o.reconciled) console.log(`[escrow] sweep: finalized ${o.finalized.length}, reconciled ${o.reconciled}, failed ${o.failed.length}, waiting ${o.skipped}`); })
+    .catch((e) => console.warn(`[escrow] sweep failed: ${e.message}`));
+}, Number(process.env.SEAT_ESCROW_SWEEP_MS || 30_000));
+if (typeof escrowSweep.unref === 'function') escrowSweep.unref();
 
 // ─── Settlement flush ────────────────────────────────────────────────────────
 // Executes recorded intents through the door: one at a time, receipt-checked,
@@ -1929,6 +2039,10 @@ function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
     paymentMode: mode,
     paymentTokenSymbol: sym,
     payment,
+    // SESSION 2 — where the money is for this seat.
+    escrowMode: seat.escrowMode || 'platform',
+    escrow: seat.escrow || null,
+    payoutAddress: seat.payoutAddress || null,
   };
 }
 
@@ -2168,12 +2282,22 @@ app.post('/api/join/passkey', async (req, res) => {
         + `${cfg.passkeyTickPrice} ${sym} / ${cfg.passkeyTickSeconds}s stream meter`
       );
 
+      // SESSION 2 — who the viewer approves depends on the money mode, and a
+      // room with no payout address gets no paid seat at all.
+      const escrowTerms = escrowTermsFor(cfg);
+      if (escrowTerms.error) {
+        return res.status(409).json({
+          error: 'This room has no payout address, so paid seats are off until the streamer sets one',
+          reason: 'no_payout_address', roomId,
+        });
+      }
       return res.json({
         needsApprove: true,
         roomId,
         sessionAmount: fromAtomic(onChainSession, cfg.paymentTokenDecimals),
         sessionAmountAtomic: onChainSession.toString(),
-        payTo: SELLER_WALLET_ADDRESS,
+        payTo: escrowTerms.spender,
+        escrow: escrowTerms,
         paymentTokenAddress: cfg.paymentTokenAddress,
         paymentTokenSymbol: sym,
         paymentTokenDecimals: cfg.paymentTokenDecimals,
@@ -2216,8 +2340,29 @@ app.post('/api/join/passkey', async (req, res) => {
       });
     }
 
+    // SESSION 2 — the spender the client approved decides the money mode. Only
+    // the escrow contract or the seller key are ever acceptable spenders, and
+    // a room with no payout address is refused in both modes.
+    const escrowTerms = escrowTermsFor(cfg);
+    if (escrowTerms.error) {
+      return res.status(409).json({ error: 'This room has no payout address, so paid seats are off until the streamer sets one', reason: 'no_payout_address', roomId });
+    }
+    const approvedSpender = String(modPay.seller || SELLER_WALLET_ADDRESS);
+    const isEscrowSpender = escrowChain.enabled && approvedSpender.toLowerCase() === String(escrowChain.address).toLowerCase();
+    const isSellerSpender = approvedSpender.toLowerCase() === String(SELLER_WALLET_ADDRESS).toLowerCase();
+    if (!isEscrowSpender && !isSellerSpender) {
+      return res.status(400).json({ error: 'Unknown spender in payment authorization', reason: 'bad_spender', roomId });
+    }
+    if (isEscrowSpender && escrowTerms.mode !== 'escrow') {
+      // The escrow degraded between terms and join. The allowance the viewer
+      // granted the CONTRACT is useless to the seller key, so ask for a fresh
+      // authorization in direct mode rather than pulling on the wrong spender.
+      return res.status(503).json({ error: 'The seat escrow is unavailable right now — retry pays the streamer directly', reason: 'escrow_unavailable', retry: 'direct', detail: escrowTerms.reason, roomId });
+    }
+    const escrowMode = isEscrowSpender ? 'escrow' : 'direct';
+
     const verified = await verifyPasskeyStreamAllowance(
-      payer, sessionAtomic, txHash, cfg.paymentTokenAddress
+      payer, sessionAtomic, txHash, cfg.paymentTokenAddress, approvedSpender
     );
     if (!verified.ok) {
       return res.status(402).json({
@@ -2234,6 +2379,7 @@ app.post('/api/join/passkey', async (req, res) => {
       viewerAddress: payer,
       depositTx: verified.txHash,
       paymentMode: 'passkey_stream',
+      escrowMode,
       sessionCapAtomic: sessionAtomic,
       streamRoomId: roomId,
       flyIn: req.body.flyIn,
@@ -2249,8 +2395,28 @@ app.post('/api/join/passkey', async (req, res) => {
       });
     }
 
+    if (escrowMode === 'escrow') {
+      // The cap goes INTO the contract before the seat is confirmed. If the
+      // chain refuses or cannot be reached, nothing has moved: free the seat
+      // and tell the client to come back in direct mode.
+      try {
+        const airing = listAiringsForSeats(roomId, { limit: 1 })[0] || null;
+        const dep = await escrowChain.deposit({
+          seatId: result.seat.id, roomId, airingId: airing?.endedAt ? null : (airing?.id || null),
+          viewer: payer, streamer: escrowTerms.payoutAddress,
+          amountAtomic: sessionAtomic, rateAtomic: result.seat.passkeyTickPriceAtomic,
+          tickMs: (result.seat.passkeyTickSeconds ?? PASSKEY_TICK_SECONDS) * 1000, at: result.seat.joinedAt,
+        });
+        result.seat.escrow = { contract: escrowChain.address, txHash: dep.txHash, releaseAt: dep.releaseAt, escrowId: dep.escrowId };
+      } catch (e) {
+        removeParticipant(result.seat.id, 'escrow_deposit_failed');
+        console.warn(`[join:passkey] room ${roomId}: escrow deposit failed for ${payer} — ${e.escrow?.message || e.message}`);
+        return res.status(503).json({ error: 'The seat escrow refused the deposit — retry pays the streamer directly', reason: 'escrow_deposit_failed', retry: 'direct', detail: e.escrow?.kind || 'error', roomId });
+      }
+    }
+
     schedulePendingCameraTimeout(result.seat.id);
-    console.log(`[join:passkey] room ${roomId} admitted seat ${result.seat.id} for ${username} (${payer})`);
+    console.log(`[join:passkey] room ${roomId} admitted seat ${result.seat.id} for ${username} (${payer}) — ${escrowMode}${escrowMode === 'escrow' ? ` (release ${new Date(result.seat.escrow.releaseAt * 1000).toISOString()})` : ` to ${escrowTerms.payoutAddress}`}`);
     return res.json(passkeyJoinSuccessResponse(result.seat, verified, cfg));
   } catch (error) {
     console.error('[join:passkey] error:', error);

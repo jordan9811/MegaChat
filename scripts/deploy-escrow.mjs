@@ -50,7 +50,7 @@ function arg(name, fallback = undefined) {
   return v && !v.startsWith('--') ? v : true;
 }
 
-export async function deployEscrow({ chainName, token, operator, attester, owner, feeRecipient, deployerKey, ephemeral = false, record = true, log = console }) {
+export async function deployEscrow({ chainName, token, operator, attester, owner, feeRecipient, deployerKey, ephemeral = false, record = true, feeToken = null, log = console }) {
   const cfg = CHAINS[chainName];
   if (!cfg) throw new Error(`unknown chain "${chainName}" (moderato | mainnet)`);
   const pub = createPublicClient({ chain: cfg.chain, transport: http() });
@@ -87,7 +87,12 @@ export async function deployEscrow({ chainName, token, operator, attester, owner
   log.log(`[deploy-escrow] deployer ${deployer.address}${ephemeral ? ' (ephemeral, discarded on exit)' : ''}`);
   log.log(`[deploy-escrow] operator ${roles.operator} attester ${roles.attester} owner ${roles.owner} feeRecipient ${roles.feeRecipient}`);
 
-  const hash = await wallet.deployContract({ abi: art.abi, bytecode: art.bytecode, args: [tokenAddr, roles.operator, roles.attester, roles.owner, roles.feeRecipient] });
+  // On mainnet the deployer holds USDC.e, not pathUSD, and a contract creation
+  // is a non-TIP-20 call whose fee token would otherwise default to pathUSD.
+  // The fee token is therefore explicit (a Tempo transaction), defaulting to
+  // the escrow token itself on mainnet.
+  const fee = feeToken || (chainName === 'mainnet' ? tokenAddr : null);
+  const hash = await wallet.deployContract({ abi: art.abi, bytecode: art.bytecode, args: [tokenAddr, roles.operator, roles.attester, roles.owner, roles.feeRecipient], ...(fee ? { feeToken: fee } : {}) });
   const rcpt = await pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
   if (rcpt.status !== 'success' || !rcpt.contractAddress) throw new Error(`deployment reverted: ${hash}`);
   const code = await pub.getBytecode({ address: rcpt.contractAddress });
@@ -124,6 +129,7 @@ if (isMain) {
     chainName, ephemeral,
     token: arg('token') || undefined, operator: arg('operator') || undefined, attester: arg('attester') || undefined,
     owner: arg('owner') || undefined, feeRecipient: arg('fee-recipient') || undefined,
+    feeToken: arg('fee-token') || undefined,
     deployerKey: process.env.ESCROW_DEPLOYER_KEY || undefined,
   }).then(() => process.exit(0)).catch((e) => { console.error('[deploy-escrow] failed:', e.shortMessage || e.message); process.exit(1); });
 }

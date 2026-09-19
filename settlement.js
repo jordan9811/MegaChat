@@ -73,11 +73,16 @@ export function viemChainAdapter({ pull = null, platform = null, rewardPool = nu
   const wallets = { pull, platform, rewardPool };
   return {
     has(slot) { return !!wallets[slot]; },
+    // The fee token is explicit on both transfers and is the token being
+    // moved. Our wallets hold USDC.e and no pathUSD; a transfer that left the
+    // fee token to the chain's default failed on mainnet with "insufficient
+    // funds … have 0" (Session 2). The wallet clients must be built on viem's
+    // Tempo chain for the field to reach the wire — server.js does that.
     async transferFrom({ token, from, to, amountAtomic }) {
       if (!wallets.pull) throw new Error('no pull signer');
       return wallets.pull.writeContract({
         address: token.address, abi: erc20Abi, functionName: 'transferFrom',
-        args: [from, to, big(amountAtomic)],
+        args: [from, to, big(amountAtomic)], feeToken: token.address,
       });
     },
     async transfer({ signer, token, to, amountAtomic }) {
@@ -85,7 +90,7 @@ export function viemChainAdapter({ pull = null, platform = null, rewardPool = nu
       if (!w) throw new Error(`no ${signer} signer`);
       return w.writeContract({
         address: token.address, abi: erc20Abi, functionName: 'transfer',
-        args: [to, big(amountAtomic)],
+        args: [to, big(amountAtomic)], feeToken: token.address,
       });
     },
     async settleChannel({ store, walletClient, channelId, account, feeToken }) {

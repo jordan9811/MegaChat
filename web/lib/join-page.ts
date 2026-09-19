@@ -1026,7 +1026,7 @@ async function joinSeatMpp(username) {
 // Unified metered join (fallback: MetaMask + servers without the MPP meter):
 // fetch session terms, authorize the session cap with ONE approve, then the
 // server pulls per tick via transferFrom.
-async function joinSeatMetered(username) {
+async function joinSeatMetered(username, { retry = false } = {}) {
   const SEL_APPROVE = '0x095ea7b3'; // approve(address,uint256)
 
   setJoinState('busy', '⏳ Requesting session terms…');
@@ -1101,6 +1101,12 @@ async function joinSeatMetered(username) {
   const data = await paid.json();
   if (paid.ok && data.success) {
     onJoinSuccess(data);
+  } else if (!retry && data.retry === 'direct') {
+    // SESSION 2 — the seat escrow could not take the deposit (chain refused or
+    // unreachable). Nothing moved. Fetch terms again: they now name the seller
+    // key as spender, and the viewer pays the streamer directly per tick.
+    setJoinState('busy', '⏳ Escrow unavailable — paying the streamer directly…');
+    await joinSeatMetered(username, { retry: true });
   } else {
     throw new Error(data.reason || data.error || 'Join was not accepted');
   }

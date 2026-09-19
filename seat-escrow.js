@@ -132,6 +132,11 @@ function L() {
 let settlement = new StubSettlement({ log: { log() {} } });
 /** Gates swap in their own stub to count intents. Never a real one. */
 export function setSettlement(s) { settlement = s; }
+// SESSION 2 — a seat whose money sits in the escrow CONTRACT resolves there,
+// not through the door. The server registers a hook so a clawback on such a
+// seat becomes an attestation (more hidden units) instead of a door refund.
+let escrowHook = null;
+export function setEscrowHook(fn) { escrowHook = fn; }
 export function settlementIntents() { return settlement.pending(); }
 
 export function verifySeatLedgerIntegrity() { return L().load(); }
@@ -162,6 +167,10 @@ function fold() {
       seats.set(r.seatId, {
         seatId: r.seatId, roomId: r.roomId, viewer: r.viewer || null, streamer: r.streamer || null,
         token: r.token || { symbol: 'USDC', decimals: 6 }, tickMs: r.tickMs || 1000,
+        // 'platform': the door pays from the platform wallet (points/credit, legacy).
+        // 'escrow':   the cap is in contracts/MegaChatEscrow.sol; finalize pays.
+        // 'direct':   viewer pays the streamer per tick; no escrow, no mediation.
+        mode: r.mode || 'platform',
         state: 'OPEN', openedAt: r.at, closedAt: null, pausedAt: null, pauses: [],
         accrued: 0n, refundedFromStreamer: 0n, refundedFromPlatform: 0n,
         released: 0n, heldBack: 0n, matured: 0n, clawed: 0n,
@@ -238,11 +247,14 @@ export function _transitionForTests(seatId, to, { idempotencyKey } = {}) {
 // ── lifecycle ──────────────────────────────────────────────────────────────
 
 /** A metered seat opened. Free and whitelisted seats never come here. */
-export function open({ seatId, roomId, viewer = null, streamer = null, token = null, tickMs = 1000, at = Date.now() }) {
+export function open({ seatId, roomId, viewer = null, streamer = null, token = null, tickMs = 1000, mode = 'platform', at = Date.now() }) {
   // The token now travels with the seat — address included — because the
   // settlement door needs it to move the money this ledger says is owed.
+  // `mode` says WHERE the money is (see fold): it decides which of this
+  // ledger's rows become door intents and which are accounting only.
   if (!seatId || !roomId) throw new Error('open requires seatId and roomId');
-  return append(null, { type: 'SEAT_OPEN', seatId, roomId, viewer, streamer, token, tickMs, at },
+  if (!['platform', 'escrow', 'direct'].includes(mode)) throw new Error(`unknown seat money mode: ${mode}`);
+  return append(null, { type: 'SEAT_OPEN', seatId, roomId, viewer, streamer, token, tickMs, mode, at },
     { to: 'OPEN', idempotencyKey: `seat:open:${seatId}` });
 }
 
@@ -336,9 +348,18 @@ export function refundBuried(seatId, from, to, { at = Date.now() } = {}) {
     fromStreamer: fromStreamer.toString(), fromPlatform: fromPlatform.toString(),
   }, { idempotencyKey: `seat:refund-buried:${seatId}:${from}` });
   if (r.deduped) return { ...r, split: null };
-  if (total > 0n) {
+  if (total > 0n && rec.mode === 'platform') {
     settlement.refund({ to: rec.viewer, amount: fmtAtomic(total, rec.token.decimals), amountAtomic: total.toString(), token: rec.token, ref: `seat:${seatId}:buried:${from}`, meta: { seatId, fromStreamer: fromStreamer.toString(), fromPlatform: fromPlatform.toString() } });
+  } else if (fromPlatform > 0n && rec.mode === 'escrow') {
+    // SESSION 2 — the streamer's part of a bury is attested to the contract
+    // (hidden units) and comes out of the streamer's share there. The
+    // detection LAG is the platform's cost to carry, and the contract has no
+    // platform pocket, so that part alone stays a door intent from the
+    // platform wallet: the viewer is made whole for both, by two payers.
+    settlement.refund({ to: rec.viewer, amount: fmtAtomic(fromPlatform, rec.token.decimals), amountAtomic: fromPlatform.toString(), token: rec.token, ref: `seat:${seatId}:buried:${from}:lag`, meta: { seatId, fromPlatform: fromPlatform.toString(), mode: 'escrow' } });
   }
+  // 'direct': viewer paid the streamer per tick; no escrow, no mediation. The
+  // row above still records what a refund WOULD have been.
   return { ...r, split: { fromStreamer: fromStreamer.toString(), fromPlatform: fromPlatform.toString(), total: total.toString() } };
 }
 
@@ -360,7 +381,9 @@ export function sweep(seatId, { at = Date.now(), reason = 'sweep' } = {}) {
     released: released.toString(), heldBack: heldBack.toString(), pendingBefore: rec.pending.toString(),
   }, { idempotencyKey: `seat:sweep:${seatId}:${at}` });
   if (r.deduped) return { ...r, released: null, heldBack: null };
-  if (released > 0n) {
+  // Only a platform-mode seat is paid from the platform wallet. An escrow
+  // seat is paid by the contract at finalize; a direct seat was paid per tick.
+  if (released > 0n && rec.mode === 'platform') {
     settlement.release({ to: rec.streamer, amount: fmtAtomic(released, rec.token.decimals), amountAtomic: released.toString(), token: rec.token, bucket: 'streamer', ref: `seat:${seatId}:sweep:${at}`, meta: { seatId } });
   }
   return { ...r, released: released.toString(), heldBack: heldBack.toString() };
@@ -421,7 +444,8 @@ export function clawback(seatId, { at = Date.now(), cause = 'CLAWBACK', detail =
   const r = append(seatRecord(seatId), { type: 'SEAT_CLAWBACK', at, amount: amount.toString(), cause, detail },
     { to: 'CLAWED', idempotencyKey: `seat:clawback:${seatId}` });
   if (r.deduped) return { ...r, amount: null };
-  if (amount > 0n) settlement.refund({ to: rec.viewer, amount: fmtAtomic(amount, rec.token.decimals), amountAtomic: amount.toString(), token: rec.token, ref: `seat:${seatId}:clawback`, meta: { seatId, cause } });
+  if (amount > 0n && rec.mode === 'platform') settlement.refund({ to: rec.viewer, amount: fmtAtomic(amount, rec.token.decimals), amountAtomic: amount.toString(), token: rec.token, ref: `seat:${seatId}:clawback`, meta: { seatId, cause } });
+  else if (amount > 0n && rec.mode === 'escrow' && escrowHook) escrowHook('clawback', seatId, seatRecord(seatId), amount);
   return { ...r, amount: amount.toString() };
 }
 
@@ -445,7 +469,7 @@ export function mature(seatId, { at = Date.now() } = {}) {
   const r = append(rec, { type: 'SEAT_MATURE', at, amount: amount.toString(), carried: carry.toString(), platformShortfall: platformShortfall.toString() },
     { to: 'SETTLED', idempotencyKey: `seat:mature:${seatId}` });
   if (r.deduped) return { ...r, amount: null };
-  if (amount > 0n) settlement.release({ to: rec.streamer, amount: fmtAtomic(amount, rec.token.decimals), amountAtomic: amount.toString(), token: rec.token, bucket: 'holdback', ref: `seat:${seatId}:mature`, meta: { seatId } });
+  if (amount > 0n && rec.mode === 'platform') settlement.release({ to: rec.streamer, amount: fmtAtomic(amount, rec.token.decimals), amountAtomic: amount.toString(), token: rec.token, bucket: 'holdback', ref: `seat:${seatId}:mature`, meta: { seatId } });
   return { ...r, amount: amount.toString(), platformShortfall: platformShortfall.toString() };
 }
 
