@@ -721,7 +721,8 @@ export async function createRoomWithPassword(name, config, password) {
 }
 
 // ─── Room ownership (by signed-in identity) ─────────────────────────────────
-// ownerKey is `${provider}:${platformId}` — stable per Privy account. Lets the
+// ownerKey is the ACCOUNT id (`acct_…`) — stable across every platform login
+// linked to that person, and set by `roomOwnerKey` in auth.js. Lets the
 // owner manage without a password, and powers the dashboard "your rooms" list.
 export function setRoomOwner(roomId, ownerKey) {
   const id = normalizeRoomId(roomId);

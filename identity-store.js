@@ -1,160 +1,124 @@
 /**
- * OAuth identities — platform account ↔ MegaChat handle. JSON persistence,
- * same zero-infra pattern as rooms-store. IDENTITY ONLY: no watch-time
- * verification, no platform drops (roadmap).
+ * identity-store.js — the legacy identity SHAPE, over the canonical account.
+ *
+ * An "identity" used to be the record: `provider:platformId`, one row per
+ * platform login, its own handle registry. It is now a VIEW of an account
+ * (accounts.js) through one of its links, kept because half a dozen callers
+ * speak this shape and none of them should have to care that a person can now
+ * carry several platforms.
+ *
+ * WHAT MOVED. The store of record is `accounts.json`. The handle registry
+ * moved with it, and with it the squatting hole this file used to have: a
+ * handle is owned by an account id and is never freed by a re-claim, only by
+ * an explicit release (accounts.js explains the attack). `identityKey` — what
+ * rooms, the whitelist and the sealed cookie key on — is now the ACCOUNT ID,
+ * exposed here as `identity.accountId` and returned by `roomOwnerKey`.
+ *
+ * WHAT DID NOT MOVE. Every exported name and signature below, so `auth.js`,
+ * `privy-identity.js`, `whitelist-routes.js` and `dashboard-routes.js` read
+ * exactly as they did.
  */
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { sanitizeHandle, getRoomByHandle } from './rooms-store.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Same persistent-volume override as rooms-store — identities being wiped on
-// every deploy is what made OAuth re-show the claim screen "every time".
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const STORE_PATH = path.join(DATA_DIR, 'identities.json');
-
-let cache = null;
-
-function load() {
-  if (cache) return cache;
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  try {
-    cache = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
-  } catch {
-    cache = { identities: {}, handles: {} };
-  }
-  if (!cache.identities) cache.identities = {};
-  if (!cache.handles) cache.handles = {};
-  return cache;
-}
-
-function save() {
-  fs.writeFileSync(STORE_PATH, JSON.stringify(cache, null, 2));
-}
-
-const key = (provider, platformId) => `${provider}:${platformId}`;
-
-export function getIdentity(provider, platformId) {
-  const store = load();
-  return store.identities[key(provider, platformId)] || null;
-}
+import {
+  accountForLink, accountByCanonicalHandle, isHandleTakenByAccount, isHandleFree as accountsHandleFree,
+  suggestHandle as accountsSuggestHandle, upsertAccountForLink, claimHandle, setAccountDefaults,
+  setAccountPlatformLogins, getAccount, displayNameFor, _resetAccountsForTests, listAccounts,
+} from './accounts.js';
+import { sanitizeHandle } from './rooms-store.js';
 
 /**
- * Handle -> identity. The whitelist names people by handle, so adding a guest
- * has to prove the name resolves to a real account before it goes on the list;
- * a typo that silently never matches is worse than a rejection.
+ * Render an account as the legacy identity shape, seen through `provider`
+ * (its primary link when no provider is named).
  */
+export function identityView(account, provider = null) {
+  if (!account) return null;
+  const link = account.links.find((l) => l.provider === (provider || account.primary)) || account.links[0];
+  return {
+    accountId: account.id,
+    provider: link?.provider || account.primary,
+    platformId: link?.platformId || null,
+    username: link?.username || displayNameFor(account) || account.handle,
+    handle: account.handle,
+    createdAt: account.createdAt,
+    primary: account.primary,
+    links: account.links,
+    ...(account.roomDefaults ? { roomDefaults: account.roomDefaults } : {}),
+    ...(account.platformLogins ? { platformLogins: account.platformLogins } : {}),
+  };
+}
+
+export function getIdentity(provider, platformId) {
+  return identityView(accountForLink(provider, platformId), provider);
+}
+
+/** Handle -> identity. Only the CANONICAL handle resolves; a reserved one does not. */
 export function getIdentityByHandle(handle) {
-  const store = load();
-  const h = sanitizeHandle(handle);
-  if (!h) return null;
-  const k = store.handles[h];
-  return k ? store.identities[k] || null : null;
+  return identityView(accountByCanonicalHandle(handle));
 }
 
 export function isHandleTakenByIdentity(handle) {
-  const store = load();
-  return !!store.handles[handle];
+  return isHandleTakenByAccount(handle);
 }
 
-/** Free across BOTH registries (identities + room handles). */
-export function isHandleFree(handle) {
-  const h = sanitizeHandle(handle);
-  if (!h) return false;
-  return !isHandleTakenByIdentity(h) && !getRoomByHandle(h);
-}
-
-/** First free variant of the platform username: name, name2 … name_99. */
-export function suggestHandle(platformUsername) {
-  const base = sanitizeHandle(platformUsername) ||
-    sanitizeHandle('user_' + String(platformUsername).replace(/[^a-z0-9]/gi, '').slice(0, 10)) ||
-    'user_' + Math.random().toString(36).slice(2, 8);
-  if (isHandleFree(base)) return base;
-  for (let i = 2; i < 100; i++) {
-    const alt = sanitizeHandle(`${base.slice(0, 17)}_${i}`);
-    if (alt && isHandleFree(alt)) return alt;
-  }
-  return sanitizeHandle(base.slice(0, 12) + '_' + Math.random().toString(36).slice(2, 6));
-}
+export const isHandleFree = accountsHandleFree;
+export const suggestHandle = accountsSuggestHandle;
 
 /**
- * Bind an identity to a handle. Existing identity keeps its handle unless a
- * new (free) one is chosen. Throws { code: 'handle_taken' } on conflicts.
+ * Sign-in from a platform. Creates the account on first sight, or moves the
+ * canonical handle when an existing account asks for a different (free) one.
+ * Throws `{ code: 'handle_taken' | 'invalid_handle' }` exactly as before.
  */
 export function claimIdentity({ provider, platformId, username, handle }) {
-  const store = load();
-  const k = key(provider, platformId);
-  const existing = store.identities[k];
   const wanted = sanitizeHandle(handle);
   if (!wanted) {
     const err = new Error('Invalid handle: 3-20 chars, letters/numbers/underscore');
     err.code = 'invalid_handle';
     throw err;
   }
-  if (existing && existing.handle === wanted) return existing;
-  if (!isHandleFree(wanted)) {
+  const existing = accountForLink(provider, platformId);
+  if (existing) {
+    if (existing.handle === wanted) return identityView(existing, provider);
+    return identityView(claimHandle(existing.id, wanted), provider);
+  }
+  if (!accountsHandleFree(wanted)) {
     const err = new Error('Handle already taken');
     err.code = 'handle_taken';
     throw err;
   }
-  if (existing) delete store.handles[existing.handle];
-  const identity = {
-    provider,
-    platformId: String(platformId),
-    username: String(username).slice(0, 40),
-    handle: wanted,
-    createdAt: existing?.createdAt || new Date().toISOString(),
-    // saved room defaults ride the identity — re-claiming a handle must not
-    // wipe them
-    ...(existing?.roomDefaults ? { roomDefaults: existing.roomDefaults } : {}),
-    // Platform logins survive re-claims for the same reason defaults do.
-    ...(existing?.platformLogins ? { platformLogins: existing.platformLogins } : {}),
-  };
-  store.identities[k] = identity;
-  store.handles[wanted] = k;
-  save();
-  return identity;
+  return identityView(upsertAccountForLink({ provider, platformId, username, handle: wanted }), provider);
 }
 
-/**
- * Per-identity room defaults — the create form starts from these instead of
- * blank. Display/prefill data only; every room still validates its own
- * config on create. `null` clears.
- */
+/** Room-create prefill. `null` clears. */
 export function setIdentityDefaults(provider, platformId, defaults) {
-  const store = load();
-  const identity = store.identities[key(provider, platformId)];
-  if (!identity) return null;
-  if (defaults === null) delete identity.roomDefaults;
-  else identity.roomDefaults = defaults;
-  save();
-  return identity;
+  const acct = accountForLink(provider, platformId);
+  if (!acct) return null;
+  return identityView(setAccountDefaults(acct.id, defaults), provider);
 }
 
 /**
- * Per-platform OAuth logins for identities whose provider is an AGGREGATOR
- * (Privy). identity.username is the DISPLAY ladder's pick — for someone with
- * Twitch and X linked it is their Twitch name, so it can never serve as X
- * ownership proof. This map holds what each platform's own OAuth said:
- * { twitch: 'name', x: 'name' }. Written on every sign-in, so linking a new
- * platform takes effect the next time the streamer signs in.
+ * What each platform's OWN login says this person is called, as reported by an
+ * AGGREGATOR (Privy). These are names without platform ids, so they are not
+ * links — they cannot carry attributes and cannot be proven to be this person.
+ * Connecting the same platform through our own OAuth turns one into a real
+ * link with an id and attributes. Ownership checks read this map; the display
+ * name ladder does not.
  */
 export function setPlatformLogins(provider, platformId, logins) {
-  const store = load();
-  const identity = store.identities[key(provider, platformId)];
-  if (!identity) return null;
+  const acct = accountForLink(provider, platformId);
+  if (!acct) return null;
   const clean = {};
   for (const [k, v] of Object.entries(logins || {})) {
     if (typeof v === 'string' && v.trim()) clean[String(k).toLowerCase()] = v.trim().slice(0, 60);
   }
-  if (Object.keys(clean).length) identity.platformLogins = clean;
-  else delete identity.platformLogins;
-  save();
-  return identity;
+  return identityView(setAccountPlatformLogins(acct.id, clean), provider);
 }
 
-/** Test helper. */
 export function _resetIdentitiesForTests() {
-  cache = null;
+  _resetAccountsForTests();
 }
+
+/** Every account, as identity views. The migration script and the gate read it. */
+export function _allIdentities() {
+  return listAccounts().map((a) => identityView(a));
+}
+
+export { getAccount };

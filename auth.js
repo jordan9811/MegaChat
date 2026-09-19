@@ -10,7 +10,13 @@
  * local mock IdP through the REAL code path.
  */
 import { createHmac, randomBytes, createHash } from 'crypto';
-import { claimIdentity, getIdentity, suggestHandle, setIdentityDefaults } from './identity-store.js';
+import { claimIdentity, getIdentity, suggestHandle, setIdentityDefaults, identityView } from './identity-store.js';
+import {
+  getAccount, accountForLink, attachLink, detachLink, setPrimary,
+  setLinkAttributes, LINKABLE_PROVIDERS, PROVIDER_LABELS,
+} from './accounts.js';
+import { fetchForProvider, bestAttributes, accountAttributes } from './attestation/index.js';
+import { classify, loadAllowlist } from './classifier.js';
 import { createPrivyIdentity } from './privy-identity.js';
 import { verifyRoomPassword, isRoomOwnedBy } from './rooms-store.js';
 
@@ -92,12 +98,20 @@ const unseal = (sealed) => {
 export function readIdentityFromRequest(req) {
   const sess = unseal(readCookies(req).mc_identity);
   if (!sess) return null;
+  // The cookie carries the ACCOUNT id now; the older {provider, platformId}
+  // shape still resolves, so a session minted before this layer keeps working.
+  if (sess.accountId) return identityView(getAccount(sess.accountId));
   return getIdentity(sess.provider, sess.platformId);
 }
 
-/** Stable per-account owner key for a room. */
+/**
+ * Stable owner key for a room, a whitelist entry, a bounty — the ACCOUNT id.
+ * It used to be `provider:platformId`, which made one person per platform and
+ * would have split someone across their own logins the moment linking shipped.
+ * An account id survives adding, removing and re-primarying every link.
+ */
 export function roomOwnerKey(identity) {
-  return identity ? `${identity.provider}:${identity.platformId}` : null;
+  return identity?.accountId || null;
 }
 
 /**
@@ -180,7 +194,7 @@ export function attachAuth(app, { log = console } = {}) {
     }
     try {
       const identity = await privyIdentity.identityFromToken(token);
-      setCookie(res, 'mc_identity', seal({ provider: identity.provider, platformId: identity.platformId }), { maxAge: 30 * 86400 });
+      setCookie(res, 'mc_identity', seal({ accountId: identity.accountId }), { maxAge: 30 * 86400 });
       res.json({
         ok: true,
         identity: {
@@ -194,9 +208,11 @@ export function attachAuth(app, { log = console } = {}) {
   });
 
   app.get('/api/auth/me', (req, res) => {
-    const sess = unseal(readCookies(req).mc_identity);
-    if (!sess) return res.json({ identity: null });
-    const identity = getIdentity(sess.provider, sess.platformId);
+    // Through readIdentityFromRequest, so BOTH cookie shapes resolve — an
+    // account-id session and a pre-account-layer {provider, platformId} one.
+    // Reading the cookie by hand here is what made a signed-in account look
+    // signed out on the account page.
+    const identity = readIdentityFromRequest(req);
     res.json({ identity: identity ? {
       provider: identity.provider, username: identity.username, handle: identity.handle,
     } : null });
@@ -250,6 +266,78 @@ export function attachAuth(app, { log = console } = {}) {
     res.json({ accounts });
   });
 
+  /**
+   * The whole account: links, which one is primary, the attributes each link
+   * carries, and the classifier's read of them. The tier and its reasons are
+   * shown to the ACCOUNT HOLDER only — this route requires their cookie and
+   * there is no route that returns anyone else's.
+   */
+  app.get('/api/account', (req, res) => {
+    const identity = readIdentityFromRequest(req);
+    if (!identity) return res.status(401).json({ error: 'Sign in first' });
+    const account = getAccount(identity.accountId);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+    const best = bestAttributes(accountAttributes(account));
+    res.json({
+      account: {
+        id: account.id,
+        handle: account.handle,
+        primary: account.primary,
+        createdAt: account.createdAt,
+        reservedHandles: account.reservedHandles || [],
+        platformLogins: account.platformLogins || {},
+        links: account.links.map((l) => ({
+          provider: l.provider,
+          label: PROVIDER_LABELS[l.provider] || l.provider,
+          username: l.username,
+          linkedAt: l.linkedAt,
+          attributeCount: (l.attributes || []).length,
+          attributesFetchedAt: l.attributesFetchedAt,
+          // Re-authorising is how attributes refresh: no token is stored, and
+          // an app the person already authorised does not ask them again.
+          refreshUrl: `/auth/${l.provider}?returnTo=/account`,
+        })),
+      },
+      attributes: Object.fromEntries(Object.entries(best).map(([k, v]) => [k, { value: v.value, source: v.source, trust: v.trust, fetchedAt: v.fetchedAt }])),
+      // `configured` mirrors /api/auth/providers exactly, including its two
+      // hard `false`s: Kick and TikTok stay "coming soon" whether or not
+      // credentials happen to exist in the environment. Offering a button the
+      // product has not shipped is worse than not offering one.
+      connectable: LINKABLE_PROVIDERS.filter((p) => !account.links.some((l) => l.provider === p))
+        .map((p) => ({
+          provider: p,
+          label: PROVIDER_LABELS[p],
+          configured: (p === 'twitch' || p === 'x') ? configured(p) : false,
+          connectUrl: `/auth/${p}?returnTo=/account`,
+        })),
+      classification: classify(account, { allowlist: loadAllowlist() }),
+    });
+  });
+
+  /** Which link supplies the display name. Never moves the canonical handle. */
+  app.post('/api/account/primary', (req, res) => {
+    const identity = readIdentityFromRequest(req);
+    if (!identity) return res.status(401).json({ error: 'Sign in first' });
+    try {
+      const account = setPrimary(identity.accountId, String(req.body?.provider || ''));
+      res.json({ ok: true, primary: account.primary, handle: account.handle });
+    } catch (err) {
+      res.status(err.code === 'not_linked' ? 400 : 500).json({ error: err.message, reason: err.code });
+    }
+  });
+
+  /** Disconnect a platform. The last link is the way back in and cannot go. */
+  app.delete('/api/account/links/:provider', (req, res) => {
+    const identity = readIdentityFromRequest(req);
+    if (!identity) return res.status(401).json({ error: 'Sign in first' });
+    try {
+      const account = detachLink(identity.accountId, String(req.params.provider));
+      res.json({ ok: true, links: account.links.map((l) => l.provider), primary: account.primary });
+    } catch (err) {
+      res.status(err.code === 'last_link' ? 409 : 400).json({ error: err.message, reason: err.code });
+    }
+  });
+
   // ── Start ──────────────────────────────────────────────────────────────────
   app.get('/auth/:provider', (req, res) => {
     const p = req.params.provider;
@@ -301,7 +389,10 @@ export function attachAuth(app, { log = console } = {}) {
     }
     if (!req.query.code) return res.status(400).send('Missing authorization code.');
     try {
-      let username, platformId;
+      // The access token is kept only for the length of this request: it is
+      // what lets the attribute fetch below happen inside the round trip the
+      // person is already in, and it is never stored.
+      let username, platformId, accessToken = null;
       if (p === 'twitch') {
         const tokenRes = await fetch(`${cfg.authBase()}/token`, {
           method: 'POST',
@@ -324,6 +415,7 @@ export function attachAuth(app, { log = console } = {}) {
         if (!u) throw new Error('could not read Twitch user');
         username = u.login;
         platformId = u.id;
+        accessToken = token.access_token;
       } else if (p === 'kick') {
         // OAuth 2.1 token exchange: credentials ride the BODY (Kick does not
         // take Basic auth here, unlike X below), PKCE verifier mandatory,
@@ -365,6 +457,7 @@ export function attachAuth(app, { log = console } = {}) {
           username = String(u.name || '').toLowerCase();
         }
         if (!username) throw new Error('could not resolve Kick channel slug');
+        accessToken = token.access_token;
       } else {
         const pk = unseal(cookies[`mc_pkce_${p}`]);
         if (!pk) throw new Error('missing PKCE verifier');
@@ -390,15 +483,58 @@ export function attachAuth(app, { log = console } = {}) {
         if (!me?.data?.username) throw new Error('could not read X user');
         username = me.data.username;
         platformId = me.data.id;
+        accessToken = token.access_token;
       }
+
+      /**
+       * The attributes this platform already returns, fetched in the SAME
+       * round trip. Nothing is shown, nothing is asked for, and a failure is
+       * not an error: the link succeeds with `attributes: null` rather than
+       * letting a metrics call stand between someone and their account.
+       */
+      const grabAttributes = async () => {
+        const r = await fetchForProvider(p, { accessToken, platformId, username, log });
+        if (!r.ok) log.log?.(`[auth] ${p} attributes unavailable (${r.error}) — linking anyway`);
+        return r.ok && r.records.length ? r.records : null;
+      };
 
       // Land back where the login button was clicked, not on a random room's
       // checkout page. The header chip flipping to @handle is the receipt.
       const back = safeReturnTo(st.back) || '/';
+
+      // LINKING. Signed in already? This platform attaches to THAT account —
+      // it never mints a second person. A login already linked to a different
+      // account is refused outright: there is nobody to merge, and a merge
+      // flow nobody needs is a security surface nobody reviewed.
+      const current = readIdentityFromRequest(req);
+      const ownerOfLink = accountForLink(p, platformId);
+      if (current && (!ownerOfLink || ownerOfLink.id === current.accountId)) {
+        const attributes = await grabAttributes();
+        try {
+          attachLink(current.accountId, { provider: p, platformId: String(platformId), username, attributes: attributes ?? null });
+        } catch (err) {
+          if (err.code === 'provider_linked') {
+            // Same provider, same account, different platform id: refresh the
+            // attributes we hold rather than pretending nothing happened.
+            if (attributes) setLinkAttributes(current.accountId, p, attributes);
+          } else if (err.code !== 'link_taken') {
+            throw err;
+          }
+        }
+        log.log(`[auth] linked ${p} (@${username}) to account ${current.accountId}`);
+        return res.redirect(302, `${back}${back.includes('?') ? '&' : '?'}linked=${encodeURIComponent(p)}`);
+      }
+      if (current && ownerOfLink && ownerOfLink.id !== current.accountId) {
+        log.warn(`[auth] refused to link ${p}:${platformId} — already on account ${ownerOfLink.id}`);
+        return res.redirect(302, `${back}${back.includes('?') ? '&' : '?'}link_error=${encodeURIComponent('already_linked')}`);
+      }
+
       // Already claimed → straight back in, no ceremony.
       const existing = getIdentity(p, platformId);
       if (existing) {
-        setCookie(res, 'mc_identity', seal({ provider: p, platformId }), { maxAge: 30 * 86400 });
+        const attributes = await grabAttributes();
+        if (attributes) { try { setLinkAttributes(existing.accountId, p, attributes); } catch { /* link vanished */ } }
+        setCookie(res, 'mc_identity', seal({ accountId: existing.accountId }), { maxAge: 30 * 86400 });
         return res.redirect(302, withWelcome(back, existing.handle));
       }
       // First sign-in: claim the platform username DIRECTLY — you're signing
@@ -408,7 +544,9 @@ export function attachAuth(app, { log = console } = {}) {
         const identity = claimIdentity({
           provider: p, platformId: String(platformId), username, handle: username,
         });
-        setCookie(res, 'mc_identity', seal({ provider: p, platformId: identity.platformId }), { maxAge: 30 * 86400 });
+        const attributes = await grabAttributes();
+        if (attributes) { try { setLinkAttributes(identity.accountId, p, attributes); } catch { /* link vanished */ } }
+        setCookie(res, 'mc_identity', seal({ accountId: identity.accountId }), { maxAge: 30 * 86400 });
         return res.redirect(302, withWelcome(back, identity.handle));
       } catch {
         /* handle taken or invalid → fall through to the picker */
@@ -439,7 +577,7 @@ export function attachAuth(app, { log = console } = {}) {
         handle: (req.body && req.body.handle) || pending.username,
       });
       setCookie(res, 'mc_pending_identity', '', { maxAge: 0 });
-      setCookie(res, 'mc_identity', seal({ provider: identity.provider, platformId: identity.platformId }), { maxAge: 30 * 86400 });
+      setCookie(res, 'mc_identity', seal({ accountId: identity.accountId }), { maxAge: 30 * 86400 });
       res.json({
         ok: true,
         identity: { provider: identity.provider, username: identity.username, handle: identity.handle },

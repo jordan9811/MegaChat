@@ -258,12 +258,17 @@ export function makeClipHooks({ log = console } = {}) {
 }
 
 /**
- * The stable account behind a request — provider + platform id, which the
- * streamer cannot change without a new platform account. Strikes key on this.
+ * The stable account behind a request. Strikes, pledges and contribution
+ * history key on this.
+ *
+ * It used to build `provider:platformId` here, inline — which made a person
+ * per platform login, so the same human collected separate strike records by
+ * signing in a different way. Since the account layer the stable thing is the
+ * ACCOUNT id, which survives adding, removing and re-primarying every link,
+ * and `roomOwnerKey` is the one place that says so.
  */
 function accountKey(req) {
-  const id = readIdentityFromRequest(req);
-  return id ? `${id.provider}:${id.platformId}` : null;
+  return roomOwnerKey(readIdentityFromRequest(req));
 }
 
 /**
