@@ -1,3 +1,75 @@
+### LIVE SEATS ON THE ESCROW, ON MAINNET — SESSION 2, 29/0 WITH DUST (2026-09-19, `feat/real-broadcast`)
+
+**Verdict:** a paid seat's money now sits in `contracts/MegaChatEscrow.sol`
+from join to finalize, the platform wallet holds none of it, and the whole
+path — deposit, metering, a bury, the attestation, the sweeper's finalize,
+balances to the atomic unit — ran on Tempo mainnet with dust and matched the
+ledger. Mainnet deployment `0x432bb6c62503711ad4e70a91247a110e61779213`
+(`contracts/deployments.json`). Full page: `docs/internal/escrow-contract.md`,
+"How live seats use it".
+
+**What shipped.** `escrow-chain.js` (the app's side of the contract: preflight,
+deposit, attest, finalize sweeper, its own append-only ledger, one write
+function with the fee token explicit); the passkey join's terms now name the
+spender and the money mode, the server pulls the cap into the contract before
+confirming a seat, and a refused deposit frees the seat and sends the client
+back for direct-mode terms (`web/lib/join-page.ts`, one retry);
+`tickPasskeyStreamSeat` pays nobody for an escrow seat and, for a direct one,
+pulls each tick to the streamer's payout address and ends the seat if that
+address is ever missing; the seat ledger carries a money mode per seat and
+routes only platform-mode rows to the door; `_gate-escrow-seat.mjs` (mainnet
+dust, two servers, the escrow path and the fallback and the hard stop); Gate H
+Tier 1 admits two doors and still discriminates (38/0); `ESCROW_OPERATOR_KEY`,
+`SEAT_ESCROW_TAIL_MS`, `SEAT_ESCROW_REVIEW_MS` documented.
+
+**The deadline.** Stream end is unknown at join, so `releaseAt` is
+joinedAt + cap × tick + tail (10 min) + review (24 h), never past the
+contract's 14-day hold. The streamer is paid about a day after the seat's cap
+would have run out; a human has that long to attest more hidden time. Fixed at
+deposit — L45.
+
+**What the dust run found — E49, FIXED, and it was never about the escrow.**
+The first escrow deposit died with `insufficient funds for gas × price + value:
+have 0 want 2655`; the operator wallet held 3.00 USDC.e. The node's own words
+pointed at the fee token: the server's hand-rolled `tempoViemChain` carries no
+Tempo transaction serializer, so `feeToken` was silently dropped, the write
+went out as EIP-1559, and the fee was charged in pathUSD, which no wallet of
+ours holds. Then the direct fallback's first pull died the same way — through
+`settlement.js`. Every door transfer since E38 (pulls, platform payouts,
+reward payouts) would have failed on mainnet; none had ever flushed, so
+nothing noticed, including the hours the payout key was set. Every server
+signer is now built on viem's Tempo chain and every transfer names its fee
+token. Filed E50: Gate H should assert it.
+
+**Where row 25a is load-bearing** (built against the signals as specified,
+which a real OBS has never produced): the pause on `overlay_hidden` is what
+keeps buried seconds off the streamer's bill at all; `hiddenSeconds` is
+derived from the ledger's buried rows, which exist only when `overlay_visible`
+follows a pause; `obs_disconnected` is treated as blindness, not a bury. On the
+mainnet run the bury produced a pause and `hidden` stayed 0 — the nonzero
+attestation is proven on Moderato only. L46.
+
+**What the prompt got wrong, and I had got wrong first.** MPP is not
+unreachable from the UI: `joinSeat` sends every Privy wallet — the wallet
+layer — to `/api/join/mpp` whenever the server has the MPP meter, and
+production does. The scoping pass's contrary claim came from a grep cut off by
+`head -5`. So the session wired the escrow into the path MetaMask users take;
+Privy users still pay into channels whose payee E38 set to the platform
+wallet. One client condition would change that (E48, L44); the prompt said
+`/api/join/mpp` stays as it is, and it does.
+
+**Amounts (mainnet, 2026-09-19).** Escrow: cap 0.05 USDC.e, 10 ticks, 0 hidden,
+streamer +0.010, viewer refunded 0.040, contract 0 after, approve fee
+0.000167. Direct: 7 ticks, 0.007 viewer → streamer, seller wallet unchanged.
+Whole run: −0.017 USDC.e on the test viewer wallet, nothing into the platform
+wallet. Attester funding: 0.10 from the seller wallet
+(`scripts/fund-escrow-roles.mjs`). Deploy: 10.06M gas from the seller wallet.
+
+**Open:** E48 (Privy users), E50 (the Gate H assertion), L44–L47; row 25a
+against a real OBS; MegaChats on the escrow need a persistence layer that
+does not exist.
+
+
 ### THE ESCROW CONTRACT, SESSION 1 — WRITTEN, DEPLOYED TO MODERATO, 60/0 (2026-09-18, `feat/real-broadcast`)
 
 **Verdict:** the non-custodial seat escrow exists as a contract, holds and

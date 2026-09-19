@@ -690,3 +690,48 @@ reason than "the API is expensive".
   against the same source; the artifact records compiler and EVM version.
 - **`.deployContract(` joins Gate H's Tier 3 pin, and `contracts/` is scanned.**
   Deploying code is a signing action. Undo: n/a.
+
+## Escrow contract, Session 2 — wiring live seats (2026-09-19)
+
+- **The deadline is joinedAt + cap × tick + tail + review, fixed at deposit.**
+  Stream end is unknown at join; the seat cannot outlive its cap; the tail is
+  the ledger's own manual-paste tail; the review margin (24 h) is the time a
+  human has to attest more hidden time. Undo: shorten `SEAT_ESCROW_REVIEW_MS`;
+  a streamer-signed early release would need a contract change.
+- **The contract's "seconds" are the seat's tick units.** Rate is the tick
+  price, the cap in units is deposit / rate, consumed is the ticks accrued.
+  Exact for any tick length. Undo: n/a.
+- **The lag part of a bury stays a door intent from the platform wallet.** The
+  ledger charges detection lag to the platform; the contract has no platform
+  pocket; so the streamer's part is attested and the platform's part is paid
+  by the platform. Undo: attest the whole bury and let the streamer carry the
+  lag.
+- **A clawback on an escrow seat becomes an attestation, never a door refund.**
+  Undo: n/a (the alternative pays a refund from money the platform never held).
+- **Escrow and direct seats produce no door payouts.** Their ledger sweeps,
+  maturities and refunds are accounting; only platform-mode seats (points,
+  credit) reach the door. Undo: n/a (the alternative double-pays).
+- **The money mode is decided at terms and carried by the spender the viewer
+  approved.** Only the contract or the seller key are acceptable spenders; a
+  spender that no longer matches the mode is answered with a retry in direct
+  mode, never pulled on. Undo: n/a.
+- **A room with no payout address is refused in every mode.** Undo: n/a
+  (decided before this session).
+- **The fallback pulls to the payout address and ends the seat if it is ever
+  missing.** Rewritten, not reverted: the pre-E38 path chose the recipient
+  server-side and fell back to the platform wallet. Undo: n/a.
+- **A refused or unreachable deposit degrades the escrow for ten minutes and
+  retries once first.** A retry after a send that landed is safe: the contract
+  refuses the second deposit. Undo: drop the retry.
+- **Every server signer is built on viem's Tempo chain and every transfer
+  names its fee token.** The bare chain object dropped `feeToken`; the
+  alternative is holding pathUSD in every wallet. Undo: n/a (E49).
+- **`ESCROW_OPERATOR_KEY` and `ESCROW_ATTEST_KEY` are accepted with or without
+  0x.** They were stored without it; refusing them would have been a worse
+  outcome than normalising. Undo: n/a.
+- **The contract address comes from `contracts/deployments.json` for the
+  chain, `ESCROW_CONTRACT_ADDRESS` overriding.** No variable had to be set on
+  the service for the deployment to be used. Undo: set the variable.
+- **Privy users were not re-routed.** The prompt said `/api/join/mpp` stays as
+  it is; it does, and the consequence is filed rather than fixed (E48). Undo:
+  one condition in `joinSeat`.

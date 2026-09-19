@@ -39,9 +39,11 @@ untracked scratch file in a side worktree.
 - **Do not resolve anything in `docs/internal/needs-a-status-call.md`.** Those are the
   owner's calls.
 - **Bounty settlement is stub-only unless a prompt explicitly permits otherwise.** The
-  app's own money moves only through `settlement.js`, against a recorded intent (E38,
-  2026-09-18), and Gate H — `_gate-money.mjs`, three tiers plus the legacy bounty scan —
-  stays green either way.
+  app's own money moves only through two doors — `settlement.js` for the platform wallet
+  and `escrow-chain.js` for the seat escrow contract — each against its own recorded
+  intent (E38, 2026-09-18; Session 2, 2026-09-19), and Gate H — `_gate-money.mjs`, three
+  tiers plus the legacy bounty scan — stays green either way. Every server signer is built
+  on viem's Tempo chain and names its fee token; a bare chain object drops it (E49).
 
 ## Where the record lives
 
