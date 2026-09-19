@@ -37,7 +37,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 console.log('\n── L35: the meter pause, driven ────────────────────────────');
 
 const rooms = await import('./rooms-store.js');
-const { roomOwnerKey } = await import('./auth.js');
 const { startGateServer, mintBountyAuth } = await import('./_gate-helpers.mjs');
 
 // Seed BEFORE boot: a room that pays points for watching and charges points
@@ -47,7 +46,7 @@ const room = rooms.createRoom('meter pause room', {
   passkeyTickPrice: '1', passkeyTickSeconds: 1, maxSession: '500', maxSeats: 3,
   rewards: { enabled: true, earnInterval: 1, earnAmount: '50', earnCap: '500', rewardType: 'points' },
 });
-rooms.setRoomOwner(room.id, roomOwnerKey({ provider: 'twitch', platformId: '1000' }));
+rooms.setRoomOwner(room.id, auth.accountIdFor('pausehost'));
 
 const srv = await startGateServer({
   port: PORT, dataDir: SCRATCH, label: 'meter-pause',

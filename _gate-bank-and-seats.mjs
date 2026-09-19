@@ -489,12 +489,12 @@ function play(sessionId, clipId, at, durMs = 10_000) {
 {
   const { startGateServer, mintBountyAuth } = await import('./_gate-helpers.mjs');
   const rooms = await import('./rooms-store.js');
-  const { roomOwnerKey } = await import('./auth.js');
+  // Owner keys are ACCOUNT ids now; the minter knows them.
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // Seed BEFORE boot: the server reads its stores once at start.
   const auth = mintBountyAuth({ handles: ['p3http'], dataDir: SCRATCH });
   const room = rooms.createRoom('p3-http-room', { maxSeats: 2 });
-  rooms.setRoomOwner(room.id, roomOwnerKey({ provider: 'twitch', platformId: '1000' }));
+  rooms.setRoomOwner(room.id, auth.accountIdFor('p3http'));
   const sc = scene('http', { pledges: 2, roomId: room.id });
   const sessionB = store.createAirSession({ claimId: sc.claim.id, roomId: room.id, platform: 'twitch' });
   const [cA, cB] = sc.items;

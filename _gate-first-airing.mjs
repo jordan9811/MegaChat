@@ -49,18 +49,18 @@ const clips = await import('./bounty-clips.js');
 const bank = await import('./bounty-bank.js');
 const vis = await import('./overlay-visibility.js');
 const rooms = await import('./rooms-store.js');
-const { roomOwnerKey } = await import('./auth.js');
 const { startGateServer, mintBountyAuth } = await import('./_gate-helpers.mjs');
 const { StubSettlement } = await import('./bounty-settlement.js');
 store.verifyEvidenceIntegrity();
 const quiet = new StubSettlement({ log: { log() {} } });
 
 // 0 = the streamer, 1 = a second streamer (for the ownership refusal),
-// 2 = the fan whose money this is. mintBountyAuth numbers them from 1000.
+// 2 = the fan whose money this is. Owner keys are ACCOUNT ids since the
+// identity layer, and the minter is what knows them.
 const auth = mintBountyAuth({ handles: ['e37host', 'e37other', 'e37fan'], dataDir: SCRATCH });
-const OWNER = roomOwnerKey({ provider: 'twitch', platformId: '1000' });
-const OTHER = roomOwnerKey({ provider: 'twitch', platformId: '1001' });
-const FAN = 'twitch:1002'; // the account key the fan's cookie resolves to
+const OWNER = auth.accountIdFor('e37host');
+const OTHER = auth.accountIdFor('e37other');
+const FAN = auth.accountIdFor('e37fan'); // the account the fan's cookie resolves to
 
 /** A claimed handle with N paid-for clips, approving the first `approve` of them. */
 function pledged(handle, { n = 1, approve = n, contributor = FAN } = {}) {

@@ -75,14 +75,13 @@ if (v0 < parseUnits('0.13', 6)) { console.log('\nRESULT: aborted — fund TEST_V
 const DIR_A = mkdtempSync(path.join(tmpdir(), 'mc-escrow-a-')), DIR_B = mkdtempSync(path.join(tmpdir(), 'mc-escrow-b-'));
 process.env.DATA_DIR = DIR_A;
 const rooms = await import('./rooms-store.js');
-const { roomOwnerKey } = await import('./auth.js');
 const { startGateServer, mintBountyAuth } = await import('./_gate-helpers.mjs');
 
 const authA = mintBountyAuth({ handles: ['escrowhost'], dataDir: DIR_A });
 const authB = mintBountyAuth({ handles: ['escrowhost'], dataDir: DIR_B });
 const paidRoom = rooms.createRoom('escrow seat room', { passkeyTickPrice: '0.001', passkeyTickSeconds: 1, maxSession: '0.05', maxSeats: 3, payoutAddress: STREAMER });
-// mintBountyAuth numbers its identities from 1000; the first handle is the owner.
-rooms.setRoomOwner(paidRoom.id, roomOwnerKey({ provider: 'twitch', platformId: '1000' }));
+// Owner keys are ACCOUNT ids since the identity layer; the minter knows them.
+rooms.setRoomOwner(paidRoom.id, authA.accountIdFor('escrowhost'));
 const orphanRoom = rooms.createRoom('no payout room', { passkeyTickPrice: '0.001', passkeyTickSeconds: 1, maxSession: '0.05', maxSeats: 3 });
 const roomsA = { paid: paidRoom, orphan: orphanRoom }, roomsB = roomsA;
 copyFileSync(path.join(DIR_A, 'rooms.json'), path.join(DIR_B, 'rooms.json'));

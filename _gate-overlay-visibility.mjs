@@ -182,8 +182,7 @@ const overlayItem = (extra = {}) => ({ sceneItemId: 1, sourceName: OVERLAY, enab
   const auth = mintBountyAuth({ handles: ['visgate'], dataDir: SCRATCH });
   const rooms = await import('./rooms-store.js');
   const room = rooms.createRoom('visibility-gate', { maxSeats: 2 });
-  const { roomOwnerKey } = await import('./auth.js');
-  rooms.setRoomOwner(room.id, roomOwnerKey({ provider: 'twitch', platformId: '1000' }));
+  rooms.setRoomOwner(room.id, auth.accountIdFor('visgate'));
 
   const srv = await startGateServer({
     port: APP_PORT, dataDir: SCRATCH, env: { ...auth.env, KEEP_ORPHAN_ROOMS: 'true' }, label: 'visibility',

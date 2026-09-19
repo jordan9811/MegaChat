@@ -136,28 +136,55 @@ export function assertFreshBuild({ watch = DEFAULT_WATCH, requireNextBuild = tru
  * does; a test-only escape hatch in the auth path is the thing that later
  * turns out to be reachable in production.
  */
+/**
+ * Mint gate credentials: one ACCOUNT per handle, written to accounts.json in
+ * the store's own shape, plus a sealed cookie for each.
+ *
+ * It used to write `identities.json` with one `provider:platformId` row per
+ * handle, because that was the identity. Since the account layer, a person is
+ * an account with links and everything owner-keyed carries the ACCOUNT ID —
+ * so a gate that needs an owner key asks `accountIdFor(handle)` instead of
+ * building `provider:platformId` itself. The cookie still seals
+ * `{provider, platformId}`, which `readIdentityFromRequest` resolves through
+ * the link table exactly as it resolves a real one.
+ */
 export function mintBountyAuth({ handles = [], dataDir }) {
   const authSecret = `gate-auth-${randomUUID()}`;
   const adminKey = `gate-admin-${randomUUID()}`;
-  const identities = {};
+  const accounts = {};
+  const handleMap = {};
+  const links = {};
   const cookies = {};
+  const accountIds = {};
   handles.forEach((raw, i) => {
     // "handle" or "platform:handle"; platform defaults to twitch.
     const [platform, handle] = raw.includes(':') ? raw.split(':') : ['twitch', raw];
     const platformId = String(1000 + i);
-    identities[`${platform}:${platformId}`] = {
-      provider: platform, platformId, username: handle, handle: null, createdAt: Date.now(),
+    const accountId = `acct_gate${String(i).padStart(4, '0')}${randomUUID().replace(/-/g, '').slice(0, 8)}`;
+    const now = new Date().toISOString();
+    accounts[accountId] = {
+      id: accountId,
+      handle,
+      primary: platform,
+      createdAt: now,
+      links: [{ provider: platform, platformId, username: handle, handle, linkedAt: now, attributes: null, attributesFetchedAt: null }],
+      reservedHandles: [],
     };
+    handleMap[handle] = accountId;
+    links[`${platform}:${platformId}`] = accountId;
+    accountIds[raw] = accountId;
     const payload = Buffer.from(JSON.stringify({ provider: platform, platformId })).toString('base64url');
     const sig = createHmac('sha256', authSecret).update(payload).digest('base64url');
     cookies[raw] = `mc_identity=${encodeURIComponent(`${payload}.${sig}`)}`;
   });
-  writeFileSync(path.join(dataDir, 'identities.json'),
-    JSON.stringify({ identities, handles: {} }));
+  writeFileSync(path.join(dataDir, 'accounts.json'),
+    JSON.stringify({ accounts, handles: handleMap, links }, null, 2));
   const first = handles[0];
   const cookieFor = (h) => cookies[h] ?? cookies[first] ?? '';
   return {
     authSecret, adminKey, cookieFor,
+    /** The owner key for `handle` — what rooms, whitelists and bounties store. */
+    accountIdFor: (h) => accountIds[h] ?? accountIds[first] ?? null,
     env: { AUTH_SECRET: authSecret, BOUNTY_ADMIN_KEY: adminKey },
     /** Spread into a fetch's headers to act as `handle` (default: the first). */
     headers: (h) => ({ Cookie: cookieFor(h), 'x-bounty-admin-key': adminKey }),

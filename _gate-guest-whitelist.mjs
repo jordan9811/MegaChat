@@ -114,20 +114,32 @@ const PEOPLE = {
   extra4:   { provider: 'twitch', platformId: '9008', handle: 'gateextra_fou' },
   filler:   { provider: 'twitch', platformId: '9007', handle: 'gatefiller' },
 };
+/**
+ * Seed one ACCOUNT per person, in accounts.json. This used to write
+ * identities.json with a `provider:platformId` row each; since the identity
+ * layer an account has its own id and a list of links, and everything
+ * owner-keyed — including the whitelist's `identityKey` pin — carries that id.
+ * The sealed cookie still names a link, which resolves through `links` below.
+ */
 function seedIdentities(dataDir) {
-  const identities = {};
+  const accounts = {};
   const handles = {};
+  const links = {};
   for (const p of Object.values(PEOPLE)) {
-    const key = `${p.provider}:${p.platformId}`;
-    identities[key] = {
-      provider: p.provider, platformId: p.platformId,
-      username: p.handle, handle: p.handle,
-      createdAt: new Date().toISOString(),
+    const accountId = `acct_gw${p.platformId}`;
+    const now = new Date().toISOString();
+    accounts[accountId] = {
+      id: accountId, handle: p.handle, primary: p.provider, createdAt: now,
+      links: [{ provider: p.provider, platformId: p.platformId, username: p.handle, handle: p.handle, linkedAt: now, attributes: null, attributesFetchedAt: null }],
+      reservedHandles: [],
     };
-    handles[p.handle] = key;
+    handles[p.handle] = accountId;
+    links[`${p.provider}:${p.platformId}`] = accountId;
   }
-  writeFileSync(path.join(dataDir, 'identities.json'), JSON.stringify({ identities, handles }, null, 2));
+  writeFileSync(path.join(dataDir, 'accounts.json'), JSON.stringify({ accounts, handles, links }, null, 2));
 }
+/** The owner key a seeded person carries — their ACCOUNT id. */
+const accountIdOf = (who) => `acct_gw${PEOPLE[who].platformId}`;
 const as = (who) => ({ Cookie: cookieFor(PEOPLE[who].provider, PEOPLE[who].platformId) });
 
 // ─── HTTP helpers ──────────────────────────────────────────────────────────

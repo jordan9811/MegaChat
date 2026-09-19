@@ -73,20 +73,30 @@ const { ROUTE_POLICY, TIER, SUBJECT, assertPolicyCoversRoutes } = await import('
 }
 
 // ── the server ────────────────────────────────────────────────────────────
-// Seed the identity store so readIdentityFromRequest resolves a USERNAME.
-// The cookie only carries provider+platformId; the username that must equal
-// the handle lives here, which is the whole point of the ownership check.
+// Seed the account store so readIdentityFromRequest resolves a USERNAME.
+// The cookie only names a link (provider + platformId); the username that must
+// equal the channel handle lives on that link, which is the whole point of the
+// ownership check. No MegaChat handle is claimed here — these people have an
+// account and a platform login, and nothing else, which is the state a fan
+// arrives in.
 const dataDir = mkdtempSync(path.join(tmpdir(), 'mc-bauth-'));
-const ident = (provider, platformId, username) => ([`${provider}:${platformId}`,
-  { provider, platformId, username, handle: null, createdAt: Date.now() }]);
-writeFileSync(path.join(dataDir, 'identities.json'), JSON.stringify({
-  identities: Object.fromEntries([
-    ident('twitch', '1', 'gatestreamer'),
-    ident('twitch', '2', 'someoneelse'),
-    ident('kick', '3', 'gatestreamer'),
-  ]),
-  handles: {},
-}));
+const seeded = [
+  ['twitch', '1', 'gatestreamer'],
+  ['twitch', '2', 'someoneelse'],
+  ['kick', '3', 'gatestreamer'],
+];
+const accounts = {}, links = {};
+for (const [provider, platformId, username] of seeded) {
+  const id = `acct_bauth${provider}${platformId}`;
+  const now = new Date().toISOString();
+  accounts[id] = {
+    id, handle: null, primary: provider, createdAt: now,
+    links: [{ provider, platformId, username, handle: null, linkedAt: now, attributes: null, attributesFetchedAt: null }],
+    reservedHandles: [],
+  };
+  links[`${provider}:${platformId}`] = id;
+}
+writeFileSync(path.join(dataDir, 'accounts.json'), JSON.stringify({ accounts, handles: {}, links }, null, 2));
 
 const { startGateServer } = await import('./_gate-helpers.mjs');
 const srv = await startGateServer({
