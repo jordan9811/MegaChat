@@ -1,0 +1,7 @@
+{
+  "_comment": "Platform IDS of accounts recognised on sight. NOT handles — handles change hands, ids do not. The classifier checks this first and returns `recognized` with zero friction, forever. Empty by default. Find an X id at https://api.x.com/2/users/by/username/<name> or any id lookup; a Twitch id via https://api.twitch.tv/helix/users?login=<name>. A copy of this file in DATA_DIR overrides this one, so production can be edited without a deploy (classifier.js, loadAllowlist).",
+  "x": [],
+  "twitch": [],
+  "kick": [],
+  "tiktok": []
+}
