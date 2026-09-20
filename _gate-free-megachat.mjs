@@ -99,6 +99,10 @@ try {
   const btnText = await page.evaluate(() => document.getElementById('letterBtn')?.textContent || 'NO BUTTON');
   console.log('letter CTA:', JSON.stringify(btnText));
 
+  // The join page PRE-FILLS a suggested guest name (`guestName()`), so typing
+  // alone APPENDS to it and the 20-char cap then eats the tail. Select the
+  // field first, the way a fan replacing the suggestion would.
+  await page.evaluate(() => { const el = document.getElementById('username'); el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); });
   await page.type('#username', 'diag-sender');
   await page.evaluate(() => document.getElementById('letterBtn').click());
   await sleep(1200);

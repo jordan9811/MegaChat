@@ -2808,3 +2808,48 @@ sections A–H, all green.
   calls**; and the cap section filled the list to exactly the limit without
   ever attempting the add that should be refused. Both now assert positively —
   section H records 9 real calls and asserts none of them move money.
+
+## MegaChat producer mode (2026-09-19)
+
+- **P1 — A held clip ties up the payer's money for up to 6 hours.**
+  `LETTER_HOLD_TTL_MS` defaults to 6 h and the refund is automatic, so nothing
+  is lost — but a fan who paid at the top of a broadcast and whose clip is
+  never aired waits that long to be made whole. The number is a guess at a
+  show's length, not a measurement. It is one env var to change.
+- **P2 — `ready` has no cap of its own.** `QUEUE_MAX_PER_ROOM` (10) is checked
+  at submit against the play queue, so a producer can accumulate held clips
+  past ten. That is deliberate — a desk wants a deep bench — but nothing bounds
+  it except the global byte ceiling (`GLOBAL_MAX_BYTES`, 120 MB) and the 6 h
+  expiry. If a room ever holds hundreds, the dashboard card is the thing that
+  breaks first.
+- **P3 — Restart recovery for a clip interrupted mid-playback is a judgment
+  call, not a proven-correct one.** `restoreFromDisk()` brings a `playing` clip
+  back as held (`ready` in an approve room, `queued` otherwise) rather than
+  replaying it, because half a clip on stream is worse than a late one. Nobody
+  has watched this happen on a real broadcast; it is gated against a seeded
+  `meta.json`, not against a deploy landing mid-clip.
+- **P4 — The producer surface was verified in a browser, not on a stream.** The
+  approve → hold → air loop was driven through the real dashboard against a
+  real server (three clips, restart in the middle, all three restored), but no
+  OBS overlay was connected. The "Air it" path and the overlay-offline banner
+  are asserted from the dashboard's side only. Row 25a — the obs-websocket
+  signals against real OBS — remains open and is the same gap.
+
+### Fragility this exposed (pre-existing, NOT caused by this work)
+
+- **P5 — `_gate-free-megachat.mjs` typed into a field the product pre-fills.**
+  The join page seeds `#username` with a suggested guest name (`guestName()`,
+  `web/lib/display-format.ts`, shipped in `e4c8587`); the gate called
+  `page.type` without clearing, so the sender's name arrived as
+  `RapidRaven95diag-sen` — the suggestion, the typed name, and the 20-char cap
+  eating the tail. The gate had been asserting on a name the product never
+  saw. Fixed by clearing the field first; 11/1 → 12/0. Worth noting that the
+  product has the same sharp edge for a human: the suggestion is not selected
+  on focus, so a fan who clicks and types appends to it.
+- **P6 — `_gate-meter-pause.mjs` failed once under load and did not say why.**
+  Its server stopped answering ~10 s in and the gate died on `fetch failed`
+  with no server output, because the stderr dump was behind `if (fail)` and no
+  assertion had failed yet. It has since passed four consecutive runs alone;
+  with 17 node processes alive on the machine it did not. The dump now also
+  fires when the gate throws, so the next occurrence is diagnosable rather than
+  a mystery.

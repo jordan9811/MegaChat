@@ -59,23 +59,24 @@
     "README.md": {
       "server.js": "04bfa8ebc2d99d4c",
       "web/app/layout.tsx": "9b2f751bf4eef41d",
-      "letters.js": "9513493b4acec3f3",
+      "letters.js": "6dcb0ef372876829",
       "bounty-escrow.js": "2ba311326a0d064c",
       "bounty-settlement.js": "9f9fd94d1bb771f7",
       "_gate-bounty-claim.mjs": "6c55919942032e78",
-      "docs/internal/launch-readiness.md": "2a96202f95c59c7f",
+      "docs/internal/launch-readiness.md": "2adba324d16e6c0a",
       "CONTRIBUTING-DOCS.md": "991eb3cbe0792169"
     },
     "concepts/README.md": {},
     "concepts/rooms-and-seats.md": {
-      "data/rooms.json": "995fae161a9bf95e",
+      "data/rooms.json": "e0afadfb6c9affe4",
       "rooms-store.js": "6e946d1c508b94ff",
       "server.js": "04bfa8ebc2d99d4c",
       "auth.js": "cc09e0c9a1215faf",
       "room-auth.js": "0ae798891333d79c"
     },
     "concepts/megachats.md": {
-      "letters.js": "9513493b4acec3f3",
+      "letters.js": "6dcb0ef372876829",
+      "letter-store.js": "ce657cf964b049a5",
       "bounty-clips.js": "eeb5e94a1b78e5f0",
       "rooms-store.js": "6e946d1c508b94ff",
       "moderation.js": "4f879cccd6226bd3",
@@ -83,7 +84,7 @@
     },
     "concepts/the-overlay.md": {
       "public/overlay.html": "29516a5ed29a1f20",
-      "letters.js": "9513493b4acec3f3",
+      "letters.js": "6dcb0ef372876829",
       "public/code-matrix.cjs": "a23a22e8473d135f",
       "docs/run-b-verification.md": "c5d02b0e574a4dd1",
       "rooms-store.js": "6e946d1c508b94ff",
@@ -104,13 +105,13 @@
       "rooms-store.js": "6e946d1c508b94ff",
       "guest-whitelist.js": "3be089d3db7db684",
       "dashboard-routes.js": "2486db2447af64a0",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "_migrate-whitelist-identity.mjs": "79f76084a13087a0",
       "server.js": "04bfa8ebc2d99d4c",
       "_gate-x-claims.mjs": "7b1da351ecac3ebf"
     },
     "concepts/money-and-metering.md": {
-      "docs/internal/launch-readiness.md": "2a96202f95c59c7f",
+      "docs/internal/launch-readiness.md": "2adba324d16e6c0a",
       "rooms-store.js": "6e946d1c508b94ff",
       "server.js": "04bfa8ebc2d99d4c",
       "web/app/how-it-works/page.tsx": "4b9262194cb57800",
@@ -118,7 +119,7 @@
       "reward-credits.js": "2d45ea5073aa6241",
       "meter-mpp.js": "63d735f5023bc7e9",
       "web/app/layout.tsx": "9b2f751bf4eef41d",
-      "letters.js": "9513493b4acec3f3",
+      "letters.js": "6dcb0ef372876829",
       "seat-escrow.js": "4684e54d793f44a9",
       "bounty-settlement.js": "9f9fd94d1bb771f7",
       "_gate-tempo-phase2.mjs": "c7217b9e96256e95",
@@ -127,7 +128,7 @@
     },
     "concepts/bounties.md": {
       "bounty-claim.config.js": "0a9b57ad24185641",
-      "docs/internal/launch-readiness.md": "2a96202f95c59c7f",
+      "docs/internal/launch-readiness.md": "2adba324d16e6c0a",
       "bounty-store.js": "b1a328cc9762a2e3",
       "HANDOFF-BOUNTY.md": "05d42da30bd52151",
       "bounty-escrow.js": "2ba311326a0d064c",
@@ -160,8 +161,8 @@
       "_gate-tempo-phase3.mjs": "41d6eab473971475",
       "_gate-lk-phase1.mjs": "bc8248055bd123de",
       "_gate-cohost-booth.mjs": "3f0c5b7fe5e8c3a3",
-      "_gate-free-megachat.mjs": "8f2a54ab9b7654d3",
-      "docs/internal/launch-readiness.md": "2a96202f95c59c7f",
+      "_gate-free-megachat.mjs": "2cbfa82076c6ae98",
+      "docs/internal/launch-readiness.md": "2adba324d16e6c0a",
       "rooms-store.js": "6e946d1c508b94ff",
       "server.js": "04bfa8ebc2d99d4c",
       "web/lib/join-page.ts": "9fa0022e667c562d",
@@ -173,15 +174,17 @@
       "web/components/overlay-health-card.tsx": "02f3b938a7896246"
     },
     "features/megachats.md": {
-      "_gate-free-megachat.mjs": "8f2a54ab9b7654d3",
+      "_gate-free-megachat.mjs": "2cbfa82076c6ae98",
       "_gate-phase3-letters.mjs": "11bb094082fb28ec",
       "_gate-p2-moderation.mjs": "bc27292408d62c24",
-      "docs/internal/launch-readiness.md": "2a96202f95c59c7f",
+      "_gate-megachat-producer.mjs": "c62b609ebbebfb47",
+      "docs/internal/launch-readiness.md": "2adba324d16e6c0a",
       "server.js": "04bfa8ebc2d99d4c",
-      "letters.js": "9513493b4acec3f3",
-      "web/lib/api.ts": "9162fa58413e253f",
+      "letters.js": "6dcb0ef372876829",
+      "web/lib/api.ts": "6d71577e37890ece",
       "dashboard-routes.js": "2486db2447af64a0",
       "moderation.js": "4f879cccd6226bd3",
+      "letter-store.js": "ce657cf964b049a5",
       "web/lib/join-page.ts": "9fa0022e667c562d",
       "rooms-store.js": "6e946d1c508b94ff",
       "bounty-clips.js": "eeb5e94a1b78e5f0"
@@ -196,15 +199,15 @@
       "web/components/create-room/layout-editor.tsx": "2e3288209b7a4f83",
       "public/overlay.html": "29516a5ed29a1f20",
       "server.js": "04bfa8ebc2d99d4c",
-      "web/lib/api.ts": "9162fa58413e253f",
+      "web/lib/api.ts": "6d71577e37890ece",
       "docs/ui-overhaul/baseline/ideal-paths-local.md": "2b6000cb5b17801d",
-      "OPEN-ISSUES.md": "443adb56957cce8e"
+      "OPEN-ISSUES.md": "e48d98a731734e41"
     },
     "features/obs-setup.md": {
       "_gate-obs-protocol.mjs": "bd09a2d4adfed4f0",
       "_gate-obs-ui.mjs": "48a2aa7f6856fbf9",
       "docs/obs-oneclick-checklist.md": "4a5080171f0022f4",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "_smoke-obs-overlay.mjs": "b11d082f0e9abb7e",
       "web/lib/obs-scene-check.mjs": "4ea8b4f24376fa75",
       "web/lib/obs-oneclick.mjs": "784b32ae38d09845",
@@ -222,7 +225,7 @@
       "guest-whitelist.js": "3be089d3db7db684",
       "whitelist-routes.js": "292f0ee80bc65562",
       "server.js": "04bfa8ebc2d99d4c",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "_migrate-whitelist-identity.mjs": "79f76084a13087a0",
       "auth.js": "cc09e0c9a1215faf"
     },
@@ -234,7 +237,7 @@
       "_gate-run-b-pipeline.mjs": "3a7d4cc08816acca",
       "bounty-settlement.js": "9f9fd94d1bb771f7",
       "bounty-claim.config.js": "0a9b57ad24185641",
-      "docs/internal/launch-readiness.md": "2a96202f95c59c7f",
+      "docs/internal/launch-readiness.md": "2adba324d16e6c0a",
       "web/components/bounty/bounty-program.tsx": "23128443a2dcddca",
       "platform-avatars.js": "8ea2d92b35586256",
       "web/lib/bounty-examples.ts": "98bb91ba1251b53e",
@@ -247,10 +250,10 @@
       "bounty-escrow.js": "2ba311326a0d064c",
       "bounty-auth.js": "e162edef71b366c0",
       "docs/design/copy-bank.md": "eac49aaa97c87df6",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "public/overlay.html": "29516a5ed29a1f20",
       "bounty-bank.js": "ad73e2e89f1d6247",
-      "letters.js": "9513493b4acec3f3",
+      "letters.js": "6dcb0ef372876829",
       "bounty-clips.js": "eeb5e94a1b78e5f0",
       "_gate-first-airing.mjs": "58f7d67df76d13a2",
       "_gate-bank-and-seats.mjs": "3a4a7c985fc96df0",
@@ -269,7 +272,7 @@
     },
     "features/platform-support.md": {
       "bounty-claim.config.js": "0a9b57ad24185641",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "docs/platform-feasibility.md": "dc00743b94fe162c",
       "bounty-capture.js": "b29610ea03342a1a",
       "_gate-x-claims.mjs": "7b1da351ecac3ebf",
@@ -277,7 +280,7 @@
       "frame-sources.js": "1ddf0a2446092914"
     },
     "verification/README.md": {
-      "docs/internal/launch-readiness.md": "2a96202f95c59c7f",
+      "docs/internal/launch-readiness.md": "2adba324d16e6c0a",
       "frame-sources.js": "1ddf0a2446092914",
       "bounty-watermark.js": "b9400152f07ce8f8",
       "bounty-claim.config.js": "0a9b57ad24185641",
@@ -292,15 +295,15 @@
       "_gate-missed-code-authoritative.mjs": "8492a426ac933e6c",
       "bounty-settlement.js": "9f9fd94d1bb771f7",
       "bounty-confidence.js": "fa13fe34c6c74409",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "web/lib/obs-oneclick.mjs": "784b32ae38d09845",
       "_gate-stale-capture.mjs": "c78c7b59bdf007f7"
     },
     "verification/limitations.md": {
       "bounty-confidence.js": "fa13fe34c6c74409",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "_gate-run-b-pipeline.mjs": "3a7d4cc08816acca",
-      "docs/internal/launch-readiness.md": "2a96202f95c59c7f",
+      "docs/internal/launch-readiness.md": "2adba324d16e6c0a",
       "bounty-claim.config.js": "0a9b57ad24185641",
       "web/lib/obs-scene-check.mjs": "4ea8b4f24376fa75",
       "_gate-stale-capture.mjs": "c78c7b59bdf007f7",
@@ -322,13 +325,13 @@
       "scripts/docs-sync.mjs": "86aaecc976b2130e"
     },
     "internal/README.md": {
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "obs-oneclick-checklist.md": "4a5080171f0022f4",
       "pass-b-handoff.md": "a74bc22437eeb972",
       "platform-feasibility.md": "dc00743b94fe162c",
       "run-b-verification.md": "c5d02b0e574a4dd1",
       "AGENTS.md": "f3fc72a43a90585e",
-      "DECISIONS.md": "8561dedf86df7b03",
+      "DECISIONS.md": "6cc1d67b6c202c14",
       "scripts/docs-summary.mjs": "36a7eba457b18d7c"
     },
     "internal/needs-a-status-call.md": {
@@ -337,16 +340,16 @@
       "web/lib/join-page.ts": "9fa0022e667c562d",
       "concepts/money-and-metering.md": "7214ac49b56741d0",
       "features/live-seats.md": "c06a902579e5a01d",
-      "internal/launch-readiness.md": "2a96202f95c59c7f",
+      "internal/launch-readiness.md": "2adba324d16e6c0a",
       "bounty-claim.config.js": "0a9b57ad24185641",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "features/platform-support.md": "1830f3b91be8066e",
       "_gate-theme.mjs": "4dfa57aaba347f87",
       "internal/work-history/2026-08-29-09-06-ui-overhaul.md": "b4e566d39a37b9fd",
-      "internal/outstanding.md": "83c30f54dae275fc",
+      "internal/outstanding.md": "6ae0a501367778eb",
       "ROADMAP.md": "8793325fde34a102",
       "public/overlay.html": "29516a5ed29a1f20",
-      "internal/limitations-register.md": "5f118189a7b09737",
+      "internal/limitations-register.md": "6439973d2653eda9",
       "internal/roadmap.md": "cb0d09f8c8b69e0a",
       "megachat-pass-b-and-docs.md": "5f1e63dffeb62667",
       "scripts/docs-summary.mjs": "36a7eba457b18d7c",
@@ -355,7 +358,7 @@
       "bounty-stream-context.js": "929a3a0bd1796d73"
     },
     "_snippets/pre-launch.md": {
-      "docs/internal/launch-readiness.md": "2a96202f95c59c7f"
+      "docs/internal/launch-readiness.md": "2adba324d16e6c0a"
     },
     "technical/architecture.md": {
       "server.js": "04bfa8ebc2d99d4c",
@@ -364,7 +367,7 @@
       "livekit-webhooks.js": "8ecd92cff7d1c5df",
       "settlement.js": "5938310e1b9c5b96",
       "seat-escrow.js": "4684e54d793f44a9",
-      "letters.js": "9513493b4acec3f3",
+      "letters.js": "6dcb0ef372876829",
       "rewards.js": "b8649685643934db",
       "meter-mpp.js": "63d735f5023bc7e9",
       "twitch-api.js": "1af0dee10e92f679",
@@ -392,7 +395,7 @@
       "web/components/booth/recent-rail.tsx": "72078868643f6597",
       "bounty-escrow.js": "2ba311326a0d064c",
       "auth.js": "cc09e0c9a1215faf",
-      "letters.js": "9513493b4acec3f3",
+      "letters.js": "6dcb0ef372876829",
       "dashboard-routes.js": "2486db2447af64a0",
       "whitelist-routes.js": "292f0ee80bc65562",
       "bounty-routes.js": "00eae5c422f94fca",
@@ -413,7 +416,7 @@
       "bounty-clips.js": "eeb5e94a1b78e5f0",
       "bounty-capture.js": "b29610ea03342a1a",
       "room-poster.js": "7ed900ee3105194b",
-      "letters.js": "9513493b4acec3f3",
+      "letters.js": "6dcb0ef372876829",
       "reward-credits.js": "2d45ea5073aa6241",
       "bounty-settlement.js": "9f9fd94d1bb771f7",
       "room-auth.js": "0ae798891333d79c",
@@ -427,7 +430,7 @@
       "docs/pass-b-handoff.md": "a74bc22437eeb972",
       "settlement.js": "5938310e1b9c5b96",
       "_gate-money.mjs": "0fc3ac1de195e13e",
-      "web/lib/api.ts": "9162fa58413e253f"
+      "web/lib/api.ts": "6d71577e37890ece"
     },
     "technical/testing-methodology.md": {
       "AGENTS.md": "f3fc72a43a90585e",
@@ -435,7 +438,7 @@
       "_gate-tempo-phase2.mjs": "c7217b9e96256e95",
       "_gate-room-poster.mjs": "479ba36b19830984",
       "_gate-helpers.mjs": "da8aacc5eb33c145",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "_gate-bounty-claim.mjs": "6c55919942032e78",
       "_gate-missed-code-authoritative.mjs": "8492a426ac933e6c",
       "_gate-decoder-codes.mjs": "7d85cc779d71b583",
@@ -455,7 +458,7 @@
       "scripts/docs-sync.mjs": "86aaecc976b2130e",
       "scripts/docs-gitbook-check.mjs": "2771490faf88a6b2",
       "package.json": "36856ad1c2fd3ba4",
-      "_gate-meter-pause.mjs": "c431659d1b2930e8"
+      "_gate-meter-pause.mjs": "2d7e098ebad2347b"
     },
     "technical/running-it.md": {
       "web/package.json": "8e693599125ef104",
@@ -471,7 +474,7 @@
       "REPORT-DOCS.md": "fa10f8ab449dd05c",
       "AGENTS.md": "f3fc72a43a90585e",
       "_gate-helpers.mjs": "da8aacc5eb33c145",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "megachat-pass-a-prompt.md": "43a43975d2ca210d",
       "livekit-lazy.config.js": "e4e98ebfa82ab90b",
       "_gate-mock-obs.mjs": "9ff2406118dd3a82"
@@ -516,7 +519,7 @@
       "_gate-stream-context-http.mjs": "6c994fce1b03b5b4",
       "_gate-confidence-split.mjs": "18fc4ef26965d1fe",
       "_gate-missed-code-authoritative.mjs": "8492a426ac933e6c",
-      "OPEN-ISSUES.md": "443adb56957cce8e"
+      "OPEN-ISSUES.md": "e48d98a731734e41"
     },
     "technical/flows/whitelisted-guest-join.md": {
       "whitelist-routes.js": "292f0ee80bc65562",
@@ -538,13 +541,13 @@
       "_gate-obs-ui.mjs": "48a2aa7f6856fbf9",
       "_verify-obs-oneclick.mjs": "a9d18a950a1a1f99",
       "_smoke-obs-overlay.mjs": "b11d082f0e9abb7e",
-      "OPEN-ISSUES.md": "443adb56957cce8e"
+      "OPEN-ISSUES.md": "e48d98a731734e41"
     },
     "internal/launch-readiness.md": {
       "AGENTS.md": "f3fc72a43a90585e",
       "REPORT-DOCS.md": "fa10f8ab449dd05c",
       "megachat-pass-b-and-docs.md": "5f1e63dffeb62667",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "_gate-tempo-phase2.mjs": "c7217b9e96256e95",
       "_gate-tempo-phase3.mjs": "41d6eab473971475",
       "_gate-p1-features.mjs": "b8674e0e93607188",
@@ -554,7 +557,7 @@
       "bounty-verifier.js": "13aa19f2d30f5821",
       "_gate-confidence-split.mjs": "18fc4ef26965d1fe",
       "_gate-rewards-part-b.mjs": "617355bf3e4b3d27",
-      "_gate-free-megachat.mjs": "8f2a54ab9b7654d3",
+      "_gate-free-megachat.mjs": "2cbfa82076c6ae98",
       "_gate-guest-whitelist.mjs": "d76bca058adefcfe",
       "_migrate-whitelist-identity.mjs": "79f76084a13087a0",
       "_gate-capture-hardening.mjs": "cd2c8a3715a5191e",
@@ -573,18 +576,19 @@
       "_gate-bank-and-seats.mjs": "3a4a7c985fc96df0",
       "web/components/overlay-health-card.tsx": "02f3b938a7896246",
       "_gate-first-airing.mjs": "58f7d67df76d13a2",
-      "_gate-meter-pause.mjs": "c431659d1b2930e8",
+      "_gate-meter-pause.mjs": "2d7e098ebad2347b",
       "_gate-escrow-contract.mjs": "0b1f45438fde3acb",
       "_gate-escrow-seat.mjs": "5ea24679e0bc5708",
       "escrow-chain.js": "739c7e6d1620c56a",
       "server.js": "04bfa8ebc2d99d4c",
       "_gate-identity-account.mjs": "538e6efd429b3c71",
+      "_gate-megachat-producer.mjs": "c62b609ebbebfb47",
       "docs/_snippets/pre-launch.md": "d9e9d5223d02aa17",
       "CONTRIBUTING-DOCS.md": "991eb3cbe0792169"
     },
     "internal/roadmap.md": {
       "ROADMAP.md": "8793325fde34a102",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "docs/pass-b-handoff.md": "a74bc22437eeb972",
       "bounty-settlement.js": "9f9fd94d1bb771f7",
       "HANDOFF-BOUNTY.md": "05d42da30bd52151",
@@ -596,8 +600,8 @@
       "server.js": "04bfa8ebc2d99d4c",
       "docs/ui-overhaul/baseline/ideal-paths-local.md": "2b6000cb5b17801d",
       "room-poster.js": "7ed900ee3105194b",
-      "DECISIONS.md": "8561dedf86df7b03",
-      "letters.js": "9513493b4acec3f3",
+      "DECISIONS.md": "6cc1d67b6c202c14",
+      "letters.js": "6dcb0ef372876829",
       "rewards.js": "b8649685643934db",
       "reward-credits.js": "2d45ea5073aa6241",
       "auth.js": "cc09e0c9a1215faf",
@@ -606,7 +610,7 @@
       "megachat-pass-b-and-docs.md": "5f1e63dffeb62667"
     },
     "internal/outstanding.md": {
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "_migrate-whitelist-identity.mjs": "79f76084a13087a0",
       "docs/decisions/sub3s-residual.md": "6c147662a0f6acfd",
       "docs/obs-oneclick-checklist.md": "4a5080171f0022f4",
@@ -630,7 +634,7 @@
       "bounty-bank.js": "ad73e2e89f1d6247",
       "_gate-money.mjs": "0fc3ac1de195e13e",
       "web/package.json": "8e693599125ef104",
-      "_gate-meter-pause.mjs": "c431659d1b2930e8",
+      "_gate-meter-pause.mjs": "2d7e098ebad2347b",
       "_gate-escrow-seat.mjs": "5ea24679e0bc5708",
       "web/lib/join-page.ts": "9fa0022e667c562d",
       "attestation/opacity.js": "23488e1b73cc95b0",
@@ -651,11 +655,11 @@
       "docs/ui-overhaul/baseline/ideal-paths-local.md": "2b6000cb5b17801d"
     },
     "internal/limitations-register.md": {
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "_gate-run-b-pipeline.mjs": "3a7d4cc08816acca",
       "bounty-claim.config.js": "0a9b57ad24185641",
       "web/lib/obs-scene-check.mjs": "4ea8b4f24376fa75",
-      "DECISIONS.md": "8561dedf86df7b03",
+      "DECISIONS.md": "6cc1d67b6c202c14",
       "bounty-confidence.js": "fa13fe34c6c74409",
       "_gate-stale-capture.mjs": "c78c7b59bdf007f7",
       "bounty-ocr.js": "138bb5ff57f6deba",
@@ -680,7 +684,7 @@
       "web/lib/obs-visibility.mjs": "6f83066c9bb1e5de",
       "_gate-mock-obs.mjs": "9ff2406118dd3a82",
       "_gate-money.mjs": "0fc3ac1de195e13e",
-      "_gate-meter-pause.mjs": "c431659d1b2930e8",
+      "_gate-meter-pause.mjs": "2d7e098ebad2347b",
       "meter-mpp.js": "63d735f5023bc7e9",
       "_gate-money.pins.mjs": "6d79b4f3db627bc3",
       "docs/internal/escrow-contract.md": "1a8ed08423c86780",
@@ -694,11 +698,14 @@
       "auth.js": "cc09e0c9a1215faf",
       "accounts.js": "983a1a2edd3cadc3",
       "privy-identity.js": "4d7acfaa345d093e",
+      "letters.js": "6dcb0ef372876829",
+      "airings-store.js": "fce62fd7adf1036e",
+      "letter-store.js": "ce657cf964b049a5",
       "scripts/docs-check.mjs": "a81b3c07b43500d4"
     },
     "internal/work-history/README.md": {
-      "DECISIONS.md": "8561dedf86df7b03",
-      "OPEN-ISSUES.md": "443adb56957cce8e"
+      "DECISIONS.md": "6cc1d67b6c202c14",
+      "OPEN-ISSUES.md": "e48d98a731734e41"
     },
     "internal/work-history/2026-07-migration-era.md": {
       "MIGRATION_TEMPO.md": "7aeee38ad137a55f",
@@ -712,20 +719,20 @@
       "UX_REPORT.md": "b49dd8c2f606682f",
       "LIVEKIT_NOTES.md": "f8ad529406a70132",
       "DESIGN.md": "1cac2d01f8055cf8",
-      "DECISIONS.md": "8561dedf86df7b03",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "DECISIONS.md": "6cc1d67b6c202c14",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "server.js": "04bfa8ebc2d99d4c",
-      "data/rooms.json": "995fae161a9bf95e",
+      "data/rooms.json": "e0afadfb6c9affe4",
       "rooms-store.js": "6e946d1c508b94ff"
     },
     "internal/work-history/2026-07-24-browse-deck.md": {
-      "DECISIONS.md": "8561dedf86df7b03",
+      "DECISIONS.md": "6cc1d67b6c202c14",
       "HANDOFF.md": "5319dfd10c9c48a3",
       "_gate-browse-deck.mjs": "dd89fcf13e2582c7"
     },
     "internal/work-history/2026-07-25-lazy-connect-and-bounty-run-a.md": {
-      "DECISIONS.md": "8561dedf86df7b03",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "DECISIONS.md": "6cc1d67b6c202c14",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "HANDOFF-LAZY-CONNECT.md": "213e117ddcaed141",
       "HANDOFF-BOUNTY.md": "05d42da30bd52151",
       "LIVEKIT-AUDIT.md": "f176ec8782b12db2",
@@ -734,8 +741,8 @@
       "bounty-settlement.js": "9f9fd94d1bb771f7"
     },
     "internal/work-history/2026-07-26-27-hardening-and-bounty-program.md": {
-      "DECISIONS.md": "8561dedf86df7b03",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "DECISIONS.md": "6cc1d67b6c202c14",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "docs/briefs/2026-07-26.md": "db5038b3a332a491",
       "docs/briefs/2026-07-27.md": "fe0b298426b0701d",
       "docs/briefs/2026-07-27-evening.md": "862516a819b01d0d",
@@ -751,8 +758,8 @@
       "_gate-p2-moderation.mjs": "bc27292408d62c24"
     },
     "internal/work-history/2026-07-28-run-b-verification.md": {
-      "DECISIONS.md": "8561dedf86df7b03",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "DECISIONS.md": "6cc1d67b6c202c14",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "docs/run-b-verification.md": "c5d02b0e574a4dd1",
       "docs/briefs/2026-07-28.md": "4300f435f5f6666e",
       "public/code-matrix.cjs": "a23a22e8473d135f",
@@ -763,8 +770,8 @@
       "_gate-helpers.mjs": "da8aacc5eb33c145"
     },
     "internal/work-history/2026-07-29-prove-calibrate-obs.md": {
-      "DECISIONS.md": "8561dedf86df7b03",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "DECISIONS.md": "6cc1d67b6c202c14",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "docs/briefs/2026-07-29.md": "53f5098770c8ec2d",
       "docs/briefs/2026-07-29-calibration.md": "8238867a554968c4",
       "docs/briefs/2026-07-29-obs-oneclick.md": "72cca587c5b24fbb",
@@ -777,8 +784,8 @@
       "bounty-stream-context.js": "929a3a0bd1796d73"
     },
     "internal/work-history/2026-08-24-25-parity-and-capture-hardening.md": {
-      "DECISIONS.md": "8561dedf86df7b03",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "DECISIONS.md": "6cc1d67b6c202c14",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "docs/platform-feasibility.md": "dc00743b94fe162c",
       "docs/briefs/2026-08-24-platform-parity.md": "34d29fc0d8d5b5d3",
       "docs/briefs/2026-08-25.md": "731d3e8c3ca25e46",
@@ -789,8 +796,8 @@
       "_gate-capture-hardening.mjs": "cd2c8a3715a5191e"
     },
     "internal/work-history/2026-08-26-09-03-real-broadcasts.md": {
-      "DECISIONS.md": "8561dedf86df7b03",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "DECISIONS.md": "6cc1d67b6c202c14",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "docs/briefs/2026-08-26.md": "5dd16fa8496753ba",
       "docs/briefs/2026-08-26-real-broadcast.md": "06e3f489b58926a3",
       "_gate-record-flow.mjs": "899473c84c061e2d",
@@ -804,7 +811,7 @@
       "docs/design/copy-bank.md": "eac49aaa97c87df6",
       "docs/legacy/README.md": "d5da700a5f8f6c80",
       "DESIGN.md": "1cac2d01f8055cf8",
-      "DECISIONS.md": "8561dedf86df7b03",
+      "DECISIONS.md": "6cc1d67b6c202c14",
       "docs/ui-overhaul/baseline/ideal-paths.md": "3a86e44a44caba99",
       "dashboard-routes.js": "2486db2447af64a0",
       "docs/ui-overhaul/baseline/ideal-paths-local.md": "2b6000cb5b17801d",
@@ -813,8 +820,8 @@
       "_gate-theme.mjs": "4dfa57aaba347f87"
     },
     "internal/work-history/2026-09-05-guest-whitelist.md": {
-      "DECISIONS.md": "8561dedf86df7b03",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "DECISIONS.md": "6cc1d67b6c202c14",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "docs/briefs/2026-09-05.md": "c901bce532d4c35d",
       "megachat-guest-whitelist-prompt.md": "cf8d9a5e2529bc0f",
       "guest-whitelist.js": "3be089d3db7db684",
@@ -828,14 +835,14 @@
       "web/components/host-cam-card.tsx": "e9e7960f989ffc15",
       "_gate-follow-stream.mjs": "7beca495450a0792",
       "_gate-cohost-booth.mjs": "3f0c5b7fe5e8c3a3",
-      "DECISIONS.md": "8561dedf86df7b03",
-      "OPEN-ISSUES.md": "443adb56957cce8e"
+      "DECISIONS.md": "6cc1d67b6c202c14",
+      "OPEN-ISSUES.md": "e48d98a731734e41"
     },
     "internal/work-history/2026-09-15-16-pass-a-and-pass-b.md": {
       "megachat-pass-a-prompt.md": "43a43975d2ca210d",
       "megachat-pass-a-finish.md": "70c3d2383dd07f0f",
       "megachat-pass-b-and-docs.md": "5f1e63dffeb62667",
-      "OPEN-ISSUES.md": "443adb56957cce8e",
+      "OPEN-ISSUES.md": "e48d98a731734e41",
       "docs/pass-b-handoff.md": "a74bc22437eeb972",
       "REPORT-DOCS.md": "fa10f8ab449dd05c",
       "bounty-store.js": "b1a328cc9762a2e3",
@@ -847,7 +854,7 @@
     "glossary.md": {
       "rooms-store.js": "6e946d1c508b94ff",
       "server.js": "04bfa8ebc2d99d4c",
-      "letters.js": "9513493b4acec3f3",
+      "letters.js": "6dcb0ef372876829",
       "public/overlay.html": "29516a5ed29a1f20",
       "livekit-lazy.config.js": "e4e98ebfa82ab90b",
       "livekit-breaker.js": "e3a2e6ea46fb6b0e",
@@ -876,7 +883,7 @@
       "web/lib/obs-scene-check.mjs": "4ea8b4f24376fa75",
       "AGENTS.md": "f3fc72a43a90585e",
       "megachat-pass-a-prompt.md": "43a43975d2ca210d",
-      "DECISIONS.md": "8561dedf86df7b03",
+      "DECISIONS.md": "6cc1d67b6c202c14",
       "scripts/docs-check.mjs": "a81b3c07b43500d4"
     },
     "features/overlay-visibility.md": {

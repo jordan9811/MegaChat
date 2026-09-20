@@ -61,6 +61,7 @@ const accrues = () => (existsSync(ledgerPath) ? readFileSync(ledgerPath, 'utf8')
 const rowsOf = (type) => (existsSync(ledgerPath) ? readFileSync(ledgerPath, 'utf8').split('\n').filter((l) => l.includes(`"${type}"`)).length : 0);
 
 let ws = null;
+let crashed = null;
 try {
   // ── 1. earn a balance by watching ─────────────────────────────────────────
   ws = new WebSocket(`ws://127.0.0.1:${PORT}`);
@@ -132,11 +133,14 @@ try {
   const seats = await fetch(`${APP}/api/seats?room=${room.id}`).then((r) => r.json()).catch(() => ({}));
   const still = (seats.seats || []).some((s) => s.id === seatId || s.seatId === seatId);
   ok('6. a paused seat was never kicked — pausing is not out_of_funds', still, still ? 'still seated' : JSON.stringify(seats).slice(0, 120));
+} catch (e) {
+  crashed = e;
 } finally {
   try { ws?.close(); } catch { /* gone */ }
-  if (fail) { console.log(`--- server output (tail) ---`); console.log(srv.stderr().slice(-4000)); }
+  if (fail || crashed) { console.log(`--- server output (tail) ---`); console.log(srv.stderr().slice(-6000)); }
   srv.kill();
 }
+if (crashed) { console.log(`\nGATE CRASHED: ${crashed.stack || crashed}`); process.exit(1); }
 
 console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

@@ -794,3 +794,53 @@ reason than "the API is expensive".
 - **A no-op migration script ships anyway.** There is nobody to migrate, but the
   shape has to exist before the day somebody needs it, and that day is a bad day
   to write it. Undo: n/a.
+
+## MegaChat producer mode (2026-09-19)
+
+- **Approving holds; it does not air.** The owner asked for the ESPN-desk
+  shape: a mod picks what goes on screen and when. So `moderation: 'approve'`
+  now sends an approved clip to a new `ready` status that the scheduler
+  deliberately skips, and a mod airs it with an explicit press. The alternative
+  — approve means play-when-a-tile-frees — is what `auto` already does, and
+  collapsing the two would have left no way to run a show to a rundown.
+  Undo: delete the `ready` branch in the approve route; `ready` becomes
+  `queued` and the two modes converge.
+- **`ready` reuses `/play`, it does not get a route of its own.** "Air it" and
+  "Play now" are the same action — put this clip on screen now, whatever the
+  overlay thinks — so `/play` was widened to accept `['queued', 'ready']`
+  rather than grown a sibling. One route, one set of guards.
+  Undo: narrow the array.
+- **Held clips expire into a refund rather than waiting forever.** A held clip
+  is held money. Six hours (`LETTER_HOLD_TTL_MS`) is a guess at the outer edge
+  of a broadcast, chosen so a forgotten clip resolves the same day. The two
+  reasons are kept apart — `review_expired` (nobody looked) and `never_aired`
+  (approved, then dropped) — because they are different failures of the room
+  and a single reason would hide which one happened.
+  Undo: set the env var high; the mechanism stays.
+- **Clips went to disk, which reverses a documented invariant.** Both handbook
+  pages said a MegaChat lives in memory and never on disk. That was true and
+  it was also the reason a deploy between "a fan paid" and "it played" silently
+  destroyed a paid clip — and producer mode makes that window hours long
+  instead of seconds. `letter-store.js` writes media to
+  `DATA_DIR/letters/media/<id>` and metadata to `letters/meta.json` (tmp +
+  rename), and restores both at boot. One-shot is unchanged: media is still
+  dropped about a minute after playback. Undo: drop the store and the
+  `restoreFromDisk` call; the in-memory map still works on its own.
+- **A clip interrupted mid-playback comes back HELD, not replayed.** Half a
+  clip on stream is worse than a late one, and a replay charges the room's
+  attention twice for one purchase. Undo: change the `playing` branch of
+  `restoreFromDisk`.
+- **A restored row whose media is gone is refunded, not resurrected.** The
+  metadata file and the media directory can disagree — a partial disk, a
+  half-finished write. The row is the claim; the bytes are the goods. No bytes,
+  no airing, money back. Undo: n/a.
+- **The producer gate spends nothing.** Every room in
+  `_gate-megachat-producer.mjs` prices MegaChats at 0, which skips the payment
+  handshake entirely; the one PAID clip it needs (to prove refund-on-expiry) is
+  seeded straight into `meta.json` before boot. A gate that needs mainnet dust
+  to prove a moderation rule would not be run often enough to be worth having.
+  Undo: n/a.
+- **The gate proves it discriminates.** The same clip is run through an `auto`
+  room and an `approve` room; the first airs it unaided and the second does
+  not. Without that pair, "it did not play" is indistinguishable from "the
+  scheduler was not running". Undo: n/a.

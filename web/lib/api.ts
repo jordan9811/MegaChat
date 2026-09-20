@@ -367,11 +367,19 @@ export type LetterAdminItem = {
   username: string
   durationS: number
   price: string
-  status: 'reviewing' | 'pending_approval' | 'queued' | 'playing' | string
+  /**
+   * `ready` is approve-mode only: approved by a human and HELD — the scheduler
+   * never drains it, so nothing reaches the stream until a mod airs it.
+   */
+  status: 'reviewing' | 'pending_approval' | 'ready' | 'queued' | 'playing' | string
   uploadedAt: number | null
   /** Set when the AI review flagged it (category + confidence + transcript snippet). */
   flaggedReason: string | null
   mediaUrl: string | null
+  /** When the clip started waiting on a person (review or ready), else null. */
+  heldSince: number | null
+  /** When an unaired held clip is refunded to its payer, else null. */
+  expiresAt: number | null
 }
 
 export function listLetters(roomId: string, password: string) {

@@ -8,9 +8,10 @@ From the protocol comment at the top of `letters.js`:
 
 1. The viewer pays — one flat charge at the room's letter price, on the same payment machinery a live seat uses (`POST /api/letter/submit`).
 2. The viewer uploads the recording within a grace window (`PUT /api/letter/upload/:id`, ≤ 25 MB, 90 s after payment — `LETTER_MAX_BYTES`, `UPLOAD_GRACE_MS`).
-3. When the room has a free tile, the scheduler broadcasts `letter_play`; the overlay draws the clip in a tile with the same entrance and exit treatment a live seat gets; `letter_end` follows and the media is dropped shortly after.
+3. The clip reaches its resting state — straight into the play queue, or held for a person, depending on the room's moderation setting (below).
+4. When the room has a free tile, the scheduler broadcasts `letter_play`; the overlay draws the clip in a tile with the same entrance and exit treatment a live seat gets; `letter_end` follows and the media is dropped shortly after.
 
-Clips are **one-shot by design**: they live in memory, never on disk, and the buffer is released about a minute after playback (`MEDIA_TTL_MS`, `letters.js`). The exception is the bounty program, which keeps fan clips durably because there the clip *is* the promise — see [Bounties](bounties.md) and `bounty-clips.js`.
+Clips are **one-shot by design**: each plays once and its media is released about a minute after playback (`MEDIA_TTL_MS`, `letters.js`). They are not, however, ephemeral against a restart. A paid clip is written to `DATA_DIR/letters/media/<id>` with its row in `letters/meta.json`, and `letter-store.js` reads both back at boot (`createLetterStore`), because a deploy landing between "a fan paid" and "it played" used to destroy a paid clip with no record that it had existed. The exception that keeps clips *permanently* is still the bounty program, where the clip *is* the promise — see [Bounties](bounties.md) and `bounty-clips.js`.
 
 ## Length and price
 
@@ -23,7 +24,10 @@ Both come from `resolveLetters()` in `rooms-store.js`:
 
 Two independent controls, both on the room's `letters` config (`resolveLetters`, `rooms-store.js`):
 
-- `moderation: 'approve'` — clips wait in a queue the streamer (or a moderator with the room password) approves or rejects from the dashboard. A rejection refunds the payer (`autoRefundOnReject`, default on).
+- `moderation: 'auto'` (default) — no person is in the loop. A clip goes to the play queue on arrival and the scheduler airs it at the next free tile.
+- `moderation: 'approve'` — **producer mode**. Clips wait in a queue the streamer (or a moderator with the room password) approves or rejects from the dashboard. Approving does **not** put a clip on screen: it moves to `ready`, which the scheduler never drains, and a mod airs it explicitly when the show wants it — the pattern a broadcast desk uses to read out posts between plays. A rejection refunds the payer (`autoRefundOnReject`, default on).
+
+  Nothing may sit held forever, because the payer's money is held with it. Any clip waiting on a person — `pending_approval` or `ready` — is refunded automatically once `LETTER_HOLD_TTL_MS` elapses (default 6 h), with the reason recorded as `review_expired` or `never_aired` so the two cases stay distinguishable (`letters.js`).
 - **AI moderation** — when the server has `MODERATION_API_KEY`, every clip is transcribed and scored before it plays (`moderation.js`). `aiStrictness` decides whether only high-confidence violations are flagged (`severe`, default) or anything the model marks (`borderline`). The pipeline fails *open* on error and never fakes a verdict when the key is absent (`moderation.js`, "Fail-open on any error or timeout, and a verdict is NEVER faked when the API key is absent").
 
 ## Stingers
@@ -32,6 +36,7 @@ The entrance and exit animation on the broadcast — the viewer picks it on the 
 
 ## What this does NOT do
 
-- It does not store your clip. Outside the bounty program, a MegaChat exists in server memory from upload to about a minute after it plays, then it is gone (`letters.js`, `MEDIA_TTL_MS`).
+- It does not keep your clip. Outside the bounty program a MegaChat lives from upload to about a minute after it plays, then its media is deleted (`letters.js`, `MEDIA_TTL_MS`). It survives a server restart in the meantime, which is durability against a deploy, not storage.
+- It does not air a held clip by itself. In producer mode an approved clip sits in `ready` until a mod airs it; the scheduler will not pick it up (`letters.js`).
 - It does not guarantee playback time. A clip plays when the scheduler finds a free tile; a busy room queues it (`QUEUE_MAX_PER_ROOM`, `letters.js`).
 - It does not moderate without a key. With no `MODERATION_API_KEY` the AI step reports itself unconfigured and the streamer's own approve/reject setting is the only filter (`moderation.js`).

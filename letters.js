@@ -10,13 +10,35 @@
  *      within UPLOAD_GRACE_MS of payment) → queued (or pending approval).
  *   3. Scheduler: when the room has a free tile slot, broadcast letter_play →
  *      the overlay renders a <video> tile with the same stinger treatment →
- *      letter_end → media deleted shortly after. One-shot by design: letters
- *      live in memory only, never on disk.
+ *      letter_end → media deleted shortly after. One-shot by design.
  *
- * Moderation: rooms set letters.moderation = 'approve' → letters wait in a
- * password-gated queue; reject (or upload expiry) refunds the payer with a
- * plain TIP-20 transfer from the PLATFORM wallet (payout-wallet rooms: the
- * platform absorbs the refund — documented in MEGA_CHECKLIST).
+ * TWO MODES, AND THE DIFFERENCE IS WHO DECIDES WHEN.
+ *
+ *   moderation: 'auto'     AI screens, the clip QUEUES, and the scheduler
+ *                          airs it as soon as a tile frees. Hands-off.
+ *   moderation: 'approve'  every clip waits for a human. Approving does NOT
+ *                          air it — it moves the clip to READY, a held pile
+ *                          the scheduler never touches. A mod airs each one
+ *                          explicitly. This is the broadcast-producer model:
+ *                          a pile of submissions and somebody choosing what
+ *                          goes on screen and when.
+ *
+ * Approving used to mean "committed to air", because approve pushed straight
+ * into the same FIFO the scheduler drains. That gave a reviewer a veto and no
+ * timing, which is not what producing a show is.
+ *
+ * DURABLE. Letters used to live in memory only — a deploy mid-show dropped
+ * every clip waiting for a decision, and each one was money somebody paid.
+ * Metadata and video now live under DATA_DIR (letter-store.js) and are
+ * restored on boot; a clip whose media did not survive is refunded rather
+ * than resurrected empty.
+ *
+ * A HELD CLIP DOES NOT WAIT FOREVER. Anything left in review or ready past
+ * LETTER_HOLD_TTL_MS is refunded, because a fan who paid and never aired is
+ * owed their money, not an indefinite maybe.
+ *
+ * Moderation refunds (reject, upload expiry, hold expiry) leave through the
+ * settlement door as recorded intents — never a transfer signed here.
  */
 import express from 'express';
 import { randomUUID } from 'crypto';
@@ -30,11 +52,20 @@ import { moderateMedia } from './moderation.js';
 import { toWebRequest } from './meter-mpp.js';
 import { toAtomic, fromAtomic } from './token-utils.js';
 import { addMoment } from './airings-store.js';
+import { createLetterStore } from './letter-store.js';
 
 const LETTER_MAX_BYTES = 25 * 1024 * 1024; // per letter
-const GLOBAL_MAX_BYTES = 120 * 1024 * 1024; // all rooms combined
+const GLOBAL_MAX_BYTES = 120 * 1024 * 1024; // all rooms combined, now on disk
 const QUEUE_MAX_PER_ROOM = 10;
 const UPLOAD_GRACE_MS = 90_000; // paid → upload deadline
+/**
+ * How long a clip may sit waiting for a human — in review or approved-and-held
+ * — before the payer is refunded. Six hours covers a long broadcast; past that
+ * the fan is owed their money rather than an open-ended maybe.
+ */
+const HOLD_TTL_MS = Math.max(60_000, Number(process.env.LETTER_HOLD_TTL_MS) || 6 * 60 * 60_000);
+/** Statuses that are waiting on a person rather than on a tile. */
+const HELD = new Set(['pending_approval', 'ready']);
 const MEDIA_TTL_MS = 60_000; // after playback, before the buffer is dropped
 const STINGER_BUFFER_MS = 2600; // fly-in + fly-out allowance on playback
 
@@ -74,9 +105,16 @@ export function attachLetters(app, deps) {
 
   /** roomId → { queue: Letter[], playing: Letter|null } */
   const rooms = new Map();
-  /** letterId → Letter (any status) */
+  /** letterId → Letter (any status). `media` is a MARKER; the bytes are on disk. */
   const byId = new Map();
+  const store = createLetterStore({ maxBytes: GLOBAL_MAX_BYTES, log });
   let globalBytes = 0;
+
+  /** Write the metadata of everything worth remembering. Cheap; small file. */
+  const persist = () => {
+    try { store.saveMeta([...byId.values()]); }
+    catch (e) { log.warn?.(`[letters] could not persist: ${e.message}`); }
+  };
 
   const roomState = (roomId) => {
     if (!rooms.has(roomId)) rooms.set(roomId, { queue: [], playing: null });
@@ -93,8 +131,11 @@ export function attachLetters(app, deps) {
 
   function dropMedia(letter) {
     if (letter.media) {
-      globalBytes -= letter.media.length;
-      letter.media = null;
+      globalBytes -= letter.bytes || store.mediaSize(letter.id);
+      if (globalBytes < 0) globalBytes = 0;
+      store.deleteMedia(letter.id);
+      letter.media = false;
+      letter.bytes = 0;
     }
   }
 
@@ -104,6 +145,7 @@ export function attachLetters(app, deps) {
     const state = roomState(letter.roomId);
     state.queue = state.queue.filter((l) => l.id !== letter.id);
     if (state.playing?.id === letter.id) state.playing = null;
+    persist();
   }
 
   // ─── AI moderation (recorded clips ONLY — never the live path) ────────────
@@ -151,7 +193,9 @@ export function attachLetters(app, deps) {
     } else {
       letter.status = cfg.letters.moderation === 'approve' ? 'pending_approval' : 'queued';
     }
+    if (HELD.has(letter.status)) letter.heldSince = Date.now();
     if (letter.status === 'queued') roomState(letter.roomId).queue.push(letter);
+    persist();
     broadcastToRoom(letter.roomId, {
       type: 'letter_queued',
       letterId: letter.id,
@@ -316,7 +360,15 @@ export function attachLetters(app, deps) {
         void refundLetter(letter, 'server_full');
         return res.status(507).json({ error: 'MegaChat storage full — payment refunded' });
       }
-      letter.media = body;
+      try {
+        store.writeMedia(letter.id, body);
+      } catch (e) {
+        log.warn(`[letters] could not store media for ${letter.id}: ${e.message}`);
+        void refundLetter(letter, 'storage_failed');
+        return res.status(507).json({ error: 'MegaChat storage unavailable — payment refunded' });
+      }
+      letter.media = true;
+      letter.bytes = body.length;
       globalBytes += body.length;
       letter.uploadedAt = Date.now();
       const cfg = resolveRoomConfig(letter.roomId);
@@ -357,9 +409,11 @@ export function attachLetters(app, deps) {
   app.get('/api/letter/media/:id', (req, res) => {
     const letter = byId.get(req.params.id);
     if (!letter || !letter.media) return res.status(404).json({ error: 'Gone' });
+    const bytes = store.readMedia(letter.id);
+    if (!bytes) return res.status(404).json({ error: 'Gone' });
     res.setHeader('Content-Type', letter.mime);
     res.setHeader('Cache-Control', 'no-store');
-    res.send(letter.media);
+    res.send(bytes);
   });
 
   // ── Moderation auth: owner identity OR room password (dashboard scheme) ──
@@ -378,27 +432,35 @@ export function attachLetters(app, deps) {
     const roomId = await requirePassword(req, res);
     if (!roomId) return;
     const list = [...byId.values()]
-      .filter((l) => l.roomId === roomId && ['reviewing', 'pending_approval', 'queued', 'playing'].includes(l.status))
+      .filter((l) => l.roomId === roomId && ['reviewing', 'pending_approval', 'ready', 'queued', 'playing'].includes(l.status))
       .map((l) => ({
         id: l.id, username: l.username, durationS: l.durationS, price: l.price,
         status: l.status, uploadedAt: l.uploadedAt || null,
         flaggedReason: l.flaggedReason || null,
         mediaUrl: l.media ? `/api/letter/media/${l.id}` : null,
+        // A held clip is waiting on a person, and it is not waiting forever:
+        // the dashboard shows how long is left before the payer is refunded.
+        heldSince: l.heldSince || null,
+        expiresAt: HELD.has(l.status) && l.heldSince ? l.heldSince + HOLD_TTL_MS : null,
       }));
     // overlayLive tells the dashboard WHY queued clips are holding — the
     // #1 confusion was a clip "just sitting there" with no explanation.
     res.json({ letters: list, overlayLive: hasOverlay(roomId) });
   });
 
-  // Streamer override: play a queued clip NOW, overlay-detection be damned
-  // (they can see their own OBS; detection can't). Slot rules still apply —
-  // playing into a full tile stack would burn the one-shot invisibly.
+  // AIR IT. The producer's one button: put this clip on screen now.
+  //
+  // Accepts a READY clip (approved and held, in approve mode) as well as a
+  // QUEUED one (auto mode, jumping the scheduler's FIFO). Overlay detection is
+  // deliberately bypassed — a mod can see their own OBS and detection cannot —
+  // but the slot rules still apply, because airing into a full tile stack
+  // burns a one-shot invisibly.
   app.post('/api/dashboard/rooms/:roomId/letters/:id/play', async (req, res) => {
     const roomId = await requirePassword(req, res);
     if (!roomId) return;
     const letter = byId.get(req.params.id);
-    if (!letter || letter.roomId !== roomId || letter.status !== 'queued' || !letter.media) {
-      return res.status(404).json({ error: 'MegaChat not found or not queued' });
+    if (!letter || letter.roomId !== roomId || !['queued', 'ready'].includes(letter.status) || !letter.media) {
+      return res.status(404).json({ error: 'MegaChat not found, or not ready to air' });
     }
     const state = roomState(roomId);
     if (state.playing) return res.status(409).json({ error: 'Another MegaChat is already playing' });
@@ -407,10 +469,17 @@ export function attachLetters(app, deps) {
       return res.status(409).json({ error: 'All camera tiles are busy — try when a slot frees up' });
     }
     state.queue = state.queue.filter((l) => l.id !== letter.id);
-    playLetter(roomId, state, letter, 'forced by streamer');
+    playLetter(roomId, state, letter, 'aired by a mod');
     res.json({ success: true });
   });
 
+  /**
+   * Approve. In APPROVE mode this does NOT air the clip: it moves to `ready`,
+   * a held pile the scheduler never drains, and a mod airs it when the show
+   * wants it. In auto mode approval is only ever reached by an AI-flagged
+   * clip, and letting the scheduler have it is the behaviour that room asked
+   * for — so there it still queues.
+   */
   app.post('/api/dashboard/rooms/:roomId/letters/:id/approve', async (req, res) => {
     const roomId = await requirePassword(req, res);
     if (!roomId) return;
@@ -418,17 +487,29 @@ export function attachLetters(app, deps) {
     if (!letter || letter.roomId !== roomId || letter.status !== 'pending_approval') {
       return res.status(404).json({ error: 'MegaChat not found or not pending' });
     }
-    letter.status = 'queued';
-    roomState(roomId).queue.push(letter);
-    log.log(`[letters] ${letter.id} approved`);
-    res.json({ success: true });
+    const cfg = resolveRoomConfig(roomId);
+    const producer = cfg?.letters?.moderation === 'approve';
+    letter.approvedAt = Date.now();
+    if (producer) {
+      letter.status = 'ready';
+      letter.heldSince = Date.now();
+      log.log(`[letters] ${letter.id} approved → ready (held until a mod airs it)`);
+    } else {
+      letter.status = 'queued';
+      letter.heldSince = null;
+      roomState(roomId).queue.push(letter);
+      log.log(`[letters] ${letter.id} approved → queued`);
+    }
+    persist();
+    broadcastToRoom(roomId, { type: 'letter_queued', letterId: letter.id, status: letter.status, username: letter.username, flagged: false, overlayLive: hasOverlay(roomId) });
+    res.json({ success: true, status: letter.status });
   });
 
   app.post('/api/dashboard/rooms/:roomId/letters/:id/reject', async (req, res) => {
     const roomId = await requirePassword(req, res);
     if (!roomId) return;
     const letter = byId.get(req.params.id);
-    if (!letter || letter.roomId !== roomId || !['pending_approval', 'queued'].includes(letter.status)) {
+    if (!letter || letter.roomId !== roomId || !['pending_approval', 'ready', 'queued'].includes(letter.status)) {
       return res.status(404).json({ error: 'MegaChat not found or not rejectable' });
     }
     const cfg = resolveRoomConfig(roomId);
@@ -448,6 +529,12 @@ export function attachLetters(app, deps) {
     for (const letter of byId.values()) {
       if (letter.status === 'awaiting_upload' && now - letter.paidAt > UPLOAD_GRACE_MS) {
         void refundLetter(letter, 'upload_expired');
+      }
+      // Waiting on a person, and nobody came. The fan is owed their money
+      // rather than an indefinite maybe — see HOLD_TTL_MS.
+      if (HELD.has(letter.status) && letter.heldSince && now - letter.heldSince > HOLD_TTL_MS) {
+        log.log(`[letters] ${letter.id} expired after ${Math.round((now - letter.heldSince) / 60_000)} min ${letter.status === 'ready' ? 'ready to air' : 'in review'} — refunding`);
+        void refundLetter(letter, letter.status === 'ready' ? 'never_aired' : 'review_expired');
       }
     }
     for (const [roomId, state] of rooms.entries()) {
@@ -470,6 +557,9 @@ export function attachLetters(app, deps) {
   function playLetter(roomId, state, letter, why = '') {
     state.playing = letter;
     letter.status = 'playing';
+    letter.airedAt = Date.now();
+    letter.heldSince = null;
+    persist();
     // The most interesting second in a broadcast: somebody paid to be on the
     // stream and here they are. A "recently aired" card opens its replay
     // here rather than at zero. No-op when the room is not on air.
@@ -523,19 +613,86 @@ export function attachLetters(app, deps) {
     const state = roomState(roomId);
     if (state.queue.length >= QUEUE_MAX_PER_ROOM) return { ok: false, reason: 'queue full' };
     if (globalBytes + media.length > GLOBAL_MAX_BYTES) return { ok: false, reason: 'server full' };
+    try {
+      store.writeMedia(clipId, media);
+    } catch (e) {
+      log.warn(`[letters] could not store bounty replay ${clipId}: ${e.message}`);
+      return { ok: false, reason: 'storage failed' };
+    }
     const letter = {
       id: clipId, roomId, username: username ? String(username).slice(0, 20) : null,
       payer: null, price: '0', durationS: Math.ceil(Number(durationS) || 0), mime: String(mime || 'video/webm'),
-      flyIn: null, flyOut: null, status: 'queued', media, paidAt: Date.now(), uploadedAt: Date.now(),
+      flyIn: null, flyOut: null, status: 'queued', media: true, bytes: media.length,
+      paidAt: Date.now(), uploadedAt: Date.now(),
       bounty: true,
     };
     byId.set(letter.id, letter);
     globalBytes += media.length;
     state.queue.push(letter);
+    persist();
     log.log(`[letters] bounty replay ${clipId} queued in room ${roomId} (${letter.durationS}s, position ${state.queue.length})`);
     return { ok: true, position: state.queue.length };
   }
 
-  log.log('[letters] letter mode attached (one-shot, in-memory)');
-  return { _byId: byId, enqueueStoredClip }; // _byId exposed for tests
+  /**
+   * What the last process left behind. Runs once, at attach.
+   *
+   * The rules, and why each is the safe direction:
+   *   · media gone          → refund. A playable clip with nothing to play is
+   *                           worse than money returned.
+   *   · mid-AI-review       → send to a HUMAN, flagged as interrupted. Never
+   *                           auto-queue something no review finished.
+   *   · mid-air             → back to its resting state. The fan paid for it
+   *                           to air and it did not finish; a mod decides.
+   *   · queued / ready /    → restored exactly, queue order preserved.
+   *     pending_approval
+   *
+   * A restored held clip keeps its ORIGINAL heldSince, so a deploy does not
+   * quietly restart somebody's refund clock.
+   */
+  function restoreFromDisk() {
+    let loaded;
+    try { loaded = store.load(); } catch (e) { log.warn(`[letters] restore failed: ${e.message}`); return; }
+    const byRoomQueued = new Map();
+    for (const row of loaded.restored) {
+      const letter = { ...row, media: row.status !== 'awaiting_upload', bytes: store.mediaSize(row.id), frames: undefined };
+      if (letter.status === 'reviewing') {
+        letter.status = 'pending_approval';
+        letter.flaggedReason = letter.flaggedReason || 'AI review was interrupted by a restart — decide by watching it';
+        letter.heldSince = letter.heldSince || Date.now();
+      } else if (letter.status === 'playing') {
+        const cfg = resolveRoomConfig(letter.roomId);
+        letter.status = cfg?.letters?.moderation === 'approve' ? 'ready' : 'queued';
+        letter.heldSince = letter.status === 'ready' ? (letter.heldSince || Date.now()) : null;
+        letter.airedAt = null;
+      }
+      byId.set(letter.id, letter);
+      globalBytes += letter.bytes || 0;
+      if (letter.status === 'queued') {
+        if (!byRoomQueued.has(letter.roomId)) byRoomQueued.set(letter.roomId, []);
+        byRoomQueued.get(letter.roomId).push(letter);
+      }
+    }
+    for (const [roomId, list] of byRoomQueued) {
+      list.sort((a, b) => (a.uploadedAt || a.paidAt || 0) - (b.uploadedAt || b.paidAt || 0));
+      roomState(roomId).queue = list;
+    }
+    // Media that did not survive: the payer gets their money back. The door is
+    // idempotent on the ref, so a repeated boot cannot refund twice.
+    for (const row of loaded.orphaned) {
+      const letter = { ...row, media: false, bytes: 0 };
+      byId.set(letter.id, letter);
+      log.warn(`[letters] ${letter.id} lost its media across a restart — refunding`);
+      void refundLetter(letter, 'media_lost');
+    }
+    if (byId.size) {
+      const held = [...byId.values()].filter((l) => HELD.has(l.status)).length;
+      log.log(`[letters] restored ${byId.size} MegaChat(s) — ${held} waiting on a person, ${Math.round(globalBytes / 1024)}KB on disk`);
+    }
+    persist();
+  }
+  restoreFromDisk();
+
+  log.log(`[letters] letter mode attached (durable; hold TTL ${Math.round(HOLD_TTL_MS / 60_000)} min)`);
+  return { _byId: byId, enqueueStoredClip, _store: store }; // _byId exposed for tests
 }
