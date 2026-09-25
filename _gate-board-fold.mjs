@@ -128,7 +128,8 @@ const measure = (page) => page.evaluate(() => {
   const feat = document.querySelector('.mcr-feat');
   const rail = document.querySelector('.mcr-recent-rail');
   const grid = document.querySelector('.mcr-grid');
-  const shown = [...document.querySelectorAll('.mcr-recent')].filter((c) => getComputedStyle(c).display !== 'none');
+  const all = [...document.querySelectorAll('.mcr-recent')];
+  const shown = all.filter((c) => getComputedStyle(c).display !== 'none');
   const recent = shown.map(box);
   const firstRoom = grid?.querySelector('.mcr-card');
   const cards = [...document.querySelectorAll('.mcr-card, .mcr-recent, .mcr-open')].filter((c) => getComputedStyle(c).display !== 'none').map((c) => c.getBoundingClientRect().width);
@@ -139,6 +140,7 @@ const measure = (page) => page.evaluate(() => {
     featLive: !!feat?.classList.contains('is-live'),
     rail: box(rail),
     recent,
+    recentAvailable: all.length,
     recentRows: new Set(recent.map((b) => Math.round(b.y))).size,
     recentLowest: Math.max(0, ...recent.map((b) => b.bottom)),
     grid: box(grid),
@@ -169,9 +171,11 @@ try {
     ok(`F1 ${tag} nothing live → Recently aired directly under the featured card, above the rooms`,
       !!m.rail && !!m.feat && m.railBeforeGrid && m.rail.y >= m.feat.bottom && m.rail.y - m.feat.bottom < 40,
       m.rail ? `feat ends ${Math.round(m.feat?.bottom)}, rail starts ${Math.round(m.rail.y)}` : 'no rail');
+    // As many as fit in one row — or as many as exist, when fewer do (a
+    // deployed board may have one finished broadcast; the local run seeds six).
     ok(`F2 ${tag} one row of recent cards, as many as fit, all above the fold`,
-      m.recent.length === Math.min(6, m.cols) && m.recentRows === 1 && m.recentLowest <= m.fold,
-      `${m.recent.length} shown for ${m.cols} columns, ${m.recentRows} row(s), lowest ${Math.round(m.recentLowest)} / fold ${m.fold}`);
+      m.recent.length === Math.min(m.recentAvailable, m.cols) && m.recentRows === 1 && m.recentLowest <= m.fold,
+      `${m.recent.length} shown of ${m.recentAvailable} for ${m.cols} columns, ${m.recentRows} row(s), lowest ${Math.round(m.recentLowest)} / fold ${m.fold}`);
     ok(`F3 ${tag} every recent card is a real picture that loaded`, m.imgs.length > 0 && m.imgs.every(Boolean), JSON.stringify(m.imgs));
     ok(`F4 ${tag} the first room is above the fold`, !!m.firstRoom && m.firstRoom.bottom <= m.fold,
       m.firstRoom ? `ends ${Math.round(m.firstRoom.bottom)} / fold ${m.fold}` : 'no room card in the grid');

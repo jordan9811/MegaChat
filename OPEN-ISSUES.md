@@ -3099,6 +3099,9 @@ sections A–H, all green.
   → U8. `_gate-board-fold.mjs --base https://megachat.fun` against the build
   before this change: F1, F2, F3, F5, F6 red at both sizes (rail at 950/815,
   no picture, widest tile 738/498px, rail not in the first HTML).
+  After the deploy (0bdcc31) the same run against megachat.fun: 26/0 — the
+  owner's broadcast on the rail with its picture, above the fold at all four
+  sizes, and the sweep had attached recording 2883213924 within two minutes.
 - **R6 — Not measured on a real broadcast yet:** the 12 KB floor was set from
   three measured frames (black 3–5 KB, offline placeholder 6.8 KB, real
   25–45 KB); a genuinely dark scene could be refused. Twitch refreshes a preview
