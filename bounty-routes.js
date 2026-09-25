@@ -31,8 +31,10 @@ import * as capture from './bounty-capture.js';
 import * as bank from './bounty-bank.js';
 import * as seatEscrow from './seat-escrow.js';
 import { hiddenWindows } from './overlay-visibility.js';
-import { buildPoster, buildCard } from './room-poster.js';
+import fs from 'node:fs';
+import { buildPoster, buildCard, posterPathFor } from './room-poster.js';
 import { listAirings, attachRecording } from './airings-store.js';
+import { saveAiringPoster } from './airing-posters.js';
 import {
   resolveRoomConfig, updateRoom, normalizeRoomId,
   createRoom, setRoomOwner, roomOwnerOf, roomsOwnedBy,
@@ -1596,15 +1598,26 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         if (roomId) {
           const records = capture.captureRecordsFor(req.params.id, { log });
           const airing = listAirings(roomId, { limit: 1 })[0] || null;
+          // resolveRoomConfig() is FLAT (name, handle, …) — it has no `.config`.
+          // Both lines here used to read `.config` off it, so the title was
+          // always null and the poster was never written at all.
           const poster = buildPoster(roomId, records, { log })
-            || buildCard(airing, { title: resolveRoomConfig(roomId)?.config?.name || null });
-          const cfg = resolveRoomConfig(roomId)?.config;
-          if (cfg) updateRoom(roomId, { config: { ...cfg, poster } });
-          // The airing gets its recording reference too — this is the caller
-          // attachRecording() never had, and the reason every airing until now
-          // carried a null captureRef.
+            || buildCard(airing, { title: resolveRoomConfig(roomId)?.name || null });
+          // updateRoom merges into the RAW record. Never spread the resolved
+          // view back in — that would write every default into rooms.json.
+          updateRoom(roomId, { config: { poster } });
+          // The airing gets its recording reference, and — since the board
+          // shows pictures per airing — the frame itself. Our own capture
+          // outranks any Twitch preview or thumbnail (airing-posters.js RANK).
           if (airing && poster.kind === 'frame') {
             attachRecording(airing.id, { captureRef: `poster:${roomId}` });
+            try {
+              saveAiringPoster(airing.id, fs.readFileSync(posterPathFor(roomId)), {
+                source: 'capture', playbackId: poster.playbackId || null, offsetMs: poster.offsetMs,
+              }, { log });
+            } catch (e) {
+              log.warn?.(`[poster] airing ${airing.id} kept its earlier picture: ${e.message}`);
+            }
           }
           log.log?.(`[poster] room ${roomId}: ${poster.kind}${poster.kind === 'frame' ? ` from playback ${poster.playbackId}` : ''}`);
         }

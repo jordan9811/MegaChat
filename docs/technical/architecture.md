@@ -47,7 +47,7 @@ flowchart LR
     BJ[(bounty.json)]
     LEDGER[(bounty-ledger.jsonl<br/>append-only)]
     EVID[(bounty-evidence.jsonl<br/>append-only)]
-    CAP[(bounty-captures/ · room-posters/)]
+    CAP[(bounty-captures/ · room-posters/ · airing-posters/)]
   end
   LK((LiveKit SFU))
   CHAIN((Tempo RPC))
@@ -81,7 +81,7 @@ flowchart LR
 | Server ↔ media | LiveKit tokens minted per seat; participant kicks; webhooks in | `livekit.js`, `livekit-webhooks.js` |
 | Server ↔ chain | every server-signed transfer, through one door: per-tick `transferFrom` pulls into the platform wallet, seat sweeps and refunds, MegaChat refunds, reward payouts, the MPP channel settle — each executed only against a recorded intent | `settlement.js` (`createSettlement`, `viemChainAdapter`); its callers in `server.js`, `seat-escrow.js`, `letters.js`, `rewards.js`, `meter-mpp.js` |
 | Server ↔ platforms | Helix liveness (batched), thumbnails, VOD discovery, live HLS | `twitch-api.js`, `kick-api.js`, `youtube-api.js`, `rumble-api.js`, `pumpfun-api.js`, `frame-sources.js` |
-| Bounty ↔ room | one call at air-session close attaches a poster reference to the airing | `bounty-routes.js` → `attachRecording`, `airings-store.js` |
+| Bounty ↔ room | one call at air-session close attaches a poster reference to the airing, and saves the capture frame as its poster | `bounty-routes.js` → `attachRecording`, `saveAiringPoster` |
 | Verification ↔ money | a verdict becomes a ledger row; a ledger row becomes a recorded intent | `bounty-verifier.js` → `release()` in `bounty-escrow.js` → `StubSettlement` |
 
 ## What runs where

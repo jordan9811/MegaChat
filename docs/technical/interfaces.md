@@ -8,7 +8,7 @@ The contracts a contributor or integrator meets, embedded **from source** by `np
 
 <!-- source:web/lib/api.ts#Room -->
 ```typescript
-// web/lib/api.ts — Room (lines 92–123), embedded by docs:sync
+// web/lib/api.ts — Room (lines 99–130), embedded by docs:sync
 export type Room = {
   id: string
   name: string
@@ -48,7 +48,7 @@ export type Room = {
 
 <!-- source:web/lib/api.ts#RoomLayout -->
 ```typescript
-// web/lib/api.ts — RoomLayout (lines 83–90), embedded by docs:sync
+// web/lib/api.ts — RoomLayout (lines 90–97), embedded by docs:sync
 export type RoomLayout = {
   version: number
   origin: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
@@ -66,7 +66,7 @@ What `/api/seats` and the dashboard's session view carry per seat. `paymentMode`
 
 <!-- source:web/lib/api.ts#Seat -->
 ```typescript
-// web/lib/api.ts — Seat (lines 125–140), embedded by docs:sync
+// web/lib/api.ts — Seat (lines 132–147), embedded by docs:sync
 export type Seat = {
   id: string
   username: string
@@ -90,7 +90,7 @@ export type Seat = {
 
 <!-- source:web/lib/api.ts#RoomSession -->
 ```typescript
-// web/lib/api.ts — RoomSession (lines 142–151), embedded by docs:sync
+// web/lib/api.ts — RoomSession (lines 149–158), embedded by docs:sync
 export type RoomSession = {
   room: Room
   seats: Seat[]
@@ -110,16 +110,21 @@ export type RoomSession = {
 
 <!-- source:web/lib/api.ts#RoomPoster -->
 ```typescript
-// web/lib/api.ts — RoomPoster (lines 58–60), embedded by docs:sync
+// web/lib/api.ts — RoomPoster (lines 60–67), embedded by docs:sync
 export type RoomPoster =
-  | { kind: 'frame'; at: number; source: 'capture'; playbackId: string | null; offsetMs: number; spanMs: number; bytes: number }
+  | {
+      kind: 'frame'
+      at: number
+      source: 'capture' | 'twitch-vod' | 'twitch-preview' | 'twitch-vod-thumbnail'
+      url: string
+    }
   | { kind: 'card'; at: number; source: null; title: string | null; guests: string[]; momentCount: number; durationMs: number | null }
 ```
 <!-- /source -->
 
 <!-- source:web/lib/api.ts#RecentAiring -->
 ```typescript
-// web/lib/api.ts — RecentAiring (lines 62–76), embedded by docs:sync
+// web/lib/api.ts — RecentAiring (lines 69–83), embedded by docs:sync
 export type RecentAiring = {
   airingId: string
   roomId: string
@@ -142,7 +147,7 @@ export type RecentAiring = {
 
 <!-- source:web/lib/api.ts#GuestEntry -->
 ```typescript
-// web/lib/api.ts — GuestEntry (lines 484–489), embedded by docs:sync
+// web/lib/api.ts — GuestEntry (lines 491–496), embedded by docs:sync
 export type GuestEntry = {
   handle: string
   addedAt: string
@@ -154,7 +159,7 @@ export type GuestEntry = {
 
 <!-- source:web/lib/api.ts#GuestList -->
 ```typescript
-// web/lib/api.ts — GuestList (lines 492–497), embedded by docs:sync
+// web/lib/api.ts — GuestList (lines 499–504), embedded by docs:sync
 export type GuestList = {
   enabled: boolean
   explicit: boolean | null
@@ -414,6 +419,6 @@ export function attachRecording(airingId, { vodId = null, vodUrl = null, capture
 
 ## HTTP surface
 
-The routes `server.js` registers directly, in source order: `GET /r/:handle`, `GET /r/:handle/overlay`, `GET /api/health/platforms`, `GET /api/health`, `GET /api/config`, `GET /api/balance/:address`, `POST /api/livekit/webhook`, `GET /api/livekit/burn`, `POST /api/livekit/burn/purge-foreign`, `POST /api/livekit/burn/test-alert`, `POST|DELETE /api/livekit/burn/override`, `POST /api/livekit/prewarm[/progress|/cancel]`, `POST /api/livekit/overlay/beat`, `GET /api/livekit/overlay/health`, `GET /api/livekit/sessions`, `POST /api/livekit/token`, `POST /api/seat/quality`, `GET /`, `GET /overlay`, `POST /api/join/passkey`, `POST /api/join/mpp`, `ALL /api/meter/tick`, `POST /api/join` (501, retired), `POST /api/leave/:seatId`, `GET /api/seats`, `GET /api/rooms/:roomId/poster.jpg`, `GET /api/rooms/recent`, `GET /api/rooms/public`, `GET /favicon.ico`, `GET /:handle`, `GET /:handle/overlay`.
+The routes `server.js` registers directly, in source order: `GET /r/:handle`, `GET /r/:handle/overlay`, `GET /api/health/platforms`, `GET /api/health`, `GET /api/config`, `GET /api/balance/:address`, `POST /api/livekit/webhook`, `GET /api/livekit/burn`, `POST /api/livekit/burn/purge-foreign`, `POST /api/livekit/burn/test-alert`, `POST|DELETE /api/livekit/burn/override`, `POST /api/livekit/prewarm[/progress|/cancel]`, `POST /api/livekit/overlay/beat`, `GET /api/livekit/overlay/health`, `GET /api/livekit/sessions`, `POST /api/livekit/token`, `POST /api/seat/quality`, `GET /`, `GET /overlay`, `POST /api/join/passkey`, `POST /api/join/mpp`, `ALL /api/meter/tick`, `POST /api/join` (501, retired), `POST /api/leave/:seatId`, `GET /api/seats`, `GET /api/rooms/:roomId/poster.jpg`, `GET /api/airings/:airingId/poster.jpg`, `GET /api/rooms/recent`, `GET /api/rooms/public`, `GET /favicon.ico`, `GET /:handle`, `GET /:handle/overlay`.
 
 Attached modules add their own: `/auth/*` (`auth.js`), `/api/letter/*` (`letters.js`), `/api/dashboard/*` (`dashboard-routes.js`), `/api/whitelist/*` (`whitelist-routes.js`), and — only with `BOUNTY_CLAIM=1` — the `/api/bounty/*` set listed by path in `bounty-routes.js` (`guarded.get`/`guarded.post`), every one of which is looked up in `bounty-auth.js`'s policy table at registration.

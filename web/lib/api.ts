@@ -48,15 +48,22 @@ export type RewardsConfig = {
 
 /** Where the overlay puts the tiles. Lives on the room record, versioned so a
  *  mid-stream edit is one integer away from detectable. */
-/** What a finished room shows on the recent rail.
+/** What a finished broadcast shows on the recent rail.
  *
- *  `kind` is the whole contract: 'frame' is a real photograph pulled from the
- *  capture at the deepest point of the longest clip playback; 'card' is a
- *  frozen snapshot of room state for a room that never had a capture to pull
- *  from. They are drawn differently on purpose — a generated card must never
- *  be mistakable for a picture of something that happened. */
+ *  `kind` is the whole contract: 'frame' is a real photograph of THAT
+ *  broadcast (airing-posters.js — our own capture, a frame of the recording,
+ *  Twitch's live preview kept while a guest was on, or the recording's
+ *  thumbnail, in that order of preference); 'card' is a snapshot of the
+ *  airing for one with no picture at all. They are drawn differently on
+ *  purpose — a generated card must never be mistakable for a picture of
+ *  something that happened. */
 export type RoomPoster =
-  | { kind: 'frame'; at: number; source: 'capture'; playbackId: string | null; offsetMs: number; spanMs: number; bytes: number }
+  | {
+      kind: 'frame'
+      at: number
+      source: 'capture' | 'twitch-vod' | 'twitch-preview' | 'twitch-vod-thumbnail'
+      url: string
+    }
   | { kind: 'card'; at: number; source: null; title: string | null; guests: string[]; momentCount: number; durationMs: number | null }
 
 export type RecentAiring = {

@@ -8,10 +8,10 @@ One JSON file each, loaded into a module cache, rewritten whole on mutation. Saf
 
 | File | Module | Holds | Keyed by |
 |---|---|---|---|
-| `rooms.json` | `rooms-store.js` | room records: id, name, `active`, `passwordHash` (scrypt), `ownerKey`, `handle`, `config` (prices, seats, `letters`, `joinStream`, `rewards`, `layout`, `poster`, `twitchChannel`, `transport`, …) | room id; handle → id |
+| `rooms.json` | `rooms-store.js` | room records: id, name, `active`, `passwordHash` (scrypt), `ownerKey`, `handle`, `config` (prices, seats, `letters`, `joinStream`, `rewards`, `layout`, `poster` (bounty capture only; the board reads `airing-posters/`), `twitchChannel`, `transport`, …) | room id; handle → id |
 | `identities.json` | `identity-store.js` | OAuth/Privy identities and the handles they reserved | `provider:platformId`; handle |
 | `guest-whitelist.json` | `guest-whitelist.js` | per-streamer guest lists: handle, `identityKey`, `enabled`, join counts | owner key |
-| `airings.json` | `airings-store.js` | per room, the last 20 airings with `moments[]` (`seat`, `seat_leave`, `megachat`), `vodUrl`, `captureRef` | room id → airing id |
+| `airings.json` | `airings-store.js` | per room, the last 20 airings with `moments[]` (`seat`, `seat_leave`, `megachat`, `restart` — written at boot into open airings), `vodUrl`, `captureRef` | room id → airing id |
 | `bounty.json` | `bounty-store.js` | reserved handles, contributions, pledges, claims, air sessions, verifications, reviews, strikes | ids |
 | `livekit-webhook-state.json` | `livekit-webhooks.js` | replay-rejection window for signed LiveKit events | event id |
 | `livekit-sessions.json` | `livekit-activity.js` | connect/disconnect ledger for lazy connect (append-style records, rewritten file) | — |
@@ -31,7 +31,9 @@ One JSON file each, loaded into a module cache, rewritten whole on mutation. Saf
 |---|---|---|
 | `bounty-captures/*.ts` | `bounty-capture.js` | one MPEG-TS window per clip playback, named `<airSessionId>__<playbackId>.ts`; swept at `captureRetentionMs` (14 d) and purged with the pledge |
 | `bounty-clips/` media | `bounty-clips.js` | fan-recorded clips for the bounty program, until claimed and played or the reservation expires (`reservationTtlMs`, 90 d) |
-| `room-posters/<roomId>.jpg` | `room-poster.js` | one 640-px poster per room; nothing sweeps it |
+| `room-posters/<roomId>.jpg` | `room-poster.js` | one 640-px poster per room from a bounty capture; nothing sweeps it |
+| `airing-posters/<airingId>.jpg` + `.json` | `airing-posters.js` | the picture a finished broadcast shows, and what it is (`source`, `at`); removed with its airing or its room |
+| `airing-posters/candidates/<airingId>/<t>.jpg` | `airing-posters.js` | Twitch live previews kept while a broadcast is up (owned rooms only, 3,000 at most across all); cleared an hour after the end |
 
 ## Memory only (lost on restart)
 

@@ -16,14 +16,16 @@ Alongside the chain, **self-capture** holds a rolling window of the public strea
 
 ## The seam
 
-A room with both has two records of one broadcast: an airing keyed to the room, and evidence plus captures keyed to the air session. `attachRecording()` on an airing is the only bridge, and today it is called once — at air-session close, to note that a poster frame was extracted from the capture (`bounty-routes.js`, the air-session `end` handler; `docs/pass-b-handoff.md`, "attachRecording() has its caller"). Nothing resolves a platform VOD onto an airing; `vodUrl` is null on every airing written so far (`docs/pass-b-handoff.md`, "Explicitly not built").
+A room with both has two records of one broadcast: an airing keyed to the room, and evidence plus captures keyed to the air session. `attachRecording()` on an airing is the bridge: at air-session close it notes that a poster frame was extracted from the capture, and that frame becomes the airing's poster (`bounty-routes.js`, the air-session `end` handler). Since 2026-09-25 the poster sweep also resolves the Twitch recording of every finished broadcast that had a seat or a MegaChat and sets `vodUrl` (`airing-posters.js`, `resolveFromRecording`).
 
 ## What is kept, in one table
 
 | Record | Where | Keyed to | Lifetime | Written by |
 |---|---|---|---|---|
 | Airing + moments | `data/airings.json` | room | last 20 per room | follow loop, seat lifecycle, MegaChat playback |
-| Poster frame | `data/room-posters/<roomId>.jpg` | room | not swept | air-session close (`room-poster.js`) |
+| Poster (per broadcast) | `data/airing-posters/<airingId>.jpg` + `.json` | airing | removed with its airing or its room | close of the broadcast, the sweep, air-session close (`airing-posters.js`) |
+| Live previews | `data/airing-posters/candidates/<airingId>/` | airing | an hour after the end | the follow loop, while live (`snapshotLivePreview`) |
+| Poster frame (bounty, legacy) | `data/room-posters/<roomId>.jpg` | room | not swept | air-session close (`room-poster.js`) |
 | Evidence chain | `data/bounty-evidence.jsonl` | air session | append-only | every verification-relevant event |
 | Capture windows | `data/bounty-captures/*.ts` | air session | 14 days, or the pledge's life | clip end + freeze delay |
 | Escrow ledger | `data/bounty-ledger.jsonl` | pool | append-only | every money movement (intent) |

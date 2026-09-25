@@ -1,4 +1,4 @@
-import type { PublicRoomCard } from '@/lib/api'
+import type { PublicRoomCard, RecentAiring } from '@/lib/api'
 import type { BountyPool } from '@/lib/bounty-api'
 import { withBountyExamples } from '@/lib/bounty-examples'
 
@@ -26,6 +26,20 @@ export async function loadInitialRooms(): Promise<PublicRoomCard[]> {
     // breadcrumb — otherwise an outage looks exactly like a quiet night.
     console.warn('[landing] could not load rooms:', (err as Error).message)
     return []
+  }
+}
+
+// Recently aired, in the first HTML rather than after a client fetch: on a
+// quiet night it is the board's main content, and a section that pops in a
+// beat after load shoves everything under it down the page.
+export async function loadRecentAirings(limit = 8): Promise<RecentAiring[]> {
+  try {
+    const res = await fetch(`${backendBase()}/api/rooms/recent?limit=${limit}`, { cache: 'no-store' })
+    if (!res.ok) return []
+    const data = (await res.json()) as { airings?: RecentAiring[] }
+    return data.airings ?? []
+  } catch {
+    return [] // a rail that cannot load is a quiet rail, never an error
   }
 }
 

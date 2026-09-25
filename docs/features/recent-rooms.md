@@ -1,26 +1,27 @@
-# Recent rooms — finished broadcasts with a poster
+# Recent rooms — finished broadcasts with a real picture
 
-**Status: `SHIPPED`** — Pass B Run 1, `d4cae00` (2026-09-16), with `seat_leave` moments added in `e0fda49`. Gated by `_gate-room-poster.mjs` (20 assertions: frame choice, a real ffmpeg extraction from a fixture, the poster surviving the capture purge, and the no-capture card).
+**Status: `SHIPPED`** — Pass B Run 1, `d4cae00` (2026-09-16); real pictures for ordinary broadcasts and the board's placement, 2026-09-25. Gated by `_gate-airing-poster.mjs` (the frame choice, restarts, the recording fallback, cleanup, owner-only previews), `_gate-board-fold.mjs` (placement and size in a real browser at 1920x927 and 1440x900) and `_gate-room-poster.mjs` (the bounty capture frame and the no-picture card).
 
 ## What it does
 
-The browse board's job is to look alive with few streamers, so under the live rooms it shows rooms that aired recently, each with a picture of what the room looked like while somebody was on — not a placeholder and not the last frame of the stream, which is an end card or black (`web/components/booth/recent-rail.tsx`, header; `room-poster.js`, header).
+The board's job is to look alive with few streamers, and a room that was busy an hour ago is more interesting than an empty grid cell. So when nothing is live, **Recently aired sits directly under the featured card, above the rooms**, one row of it, above the fold; when something is live it follows the rooms (`web/components/booth/booth.tsx`, "WHAT FILLS THE BOARD, IN ORDER"). Each card is a picture of that broadcast from when a guest was on camera or a MegaChat was playing — the owner's rule — never a placeholder and never the last frame, which is an end card or black (`airing-posters.js`, header).
 
 ## How it works
 
-- **The record** is the airing ([Airings and evidence](../concepts/airings-and-evidence.md)); `/api/rooms/recent` lists closed airings with content, newest first, and reads the poster straight off the room record — no second query, no derivation from a seat list (`server.js`, `/api/rooms/recent`, "the same single-source rule effectiveMaxSeats follows").
-- **The frame** comes from self-capture, when there is one: at air-session close, `buildPoster()` picks the **midpoint of the longest clip playback** and extracts one 640-px-wide JPEG with ffmpeg (`room-poster.js`, `chooseFrame`, `buildPoster`; the caller is the air-session `end` handler in `bounty-routes.js`). The brief preferred peak seat count; it was not derivable when the feature shipped and is now — `seat_leave` moments exist — but the rule has not been switched, because nothing has measured whether the two rules pick different seconds on a real capture (`room-poster.js`, "WHICH FRAME").
-- **Where it lives** is `data/room-posters/`, a directory nothing sweeps — deliberately not `bounty-captures/`, which is purged at 14 days and emptied per session on a refund. A rail that goes blank after two weeks is worse than one that never had pictures (`room-poster.js`, "WHERE THE POSTER LIVES"; `_gate-room-poster.mjs`, section C).
-- **Rooms with no capture get a card, not a fake frame.** Capture runs only during a bounty air session, so a plain MegaChat or live-seat room has no picture and never will. `buildCard()` freezes a snapshot — title, up to four guest labels, duration — onto the room record, and the rail draws it flat and typographic with a *No recording* tag. `poster.kind` (`frame` | `card`) is the contract; the rail never infers which to draw (`room-poster.js`, `buildCard`; `web/components/booth/recent-rail.tsx`).
-- **Moments** on the card count MegaChat plays and seat joins; leaves are bookkeeping for the seat count and are filtered off the wire (`server.js`, `/api/rooms/recent`; `buildCard`, `room-poster.js`).
+- **The record** is the airing ([Airings and evidence](../concepts/airings-and-evidence.md)). `/api/rooms/recent` lists finished airings that had a seat or a MegaChat (or our own capture), newest first; a broadcast nobody joined is not board content, even with a recording attached (`airings-store.js`, `recentAirings`).
+- **The picture is per airing**, not per room — a room airs many times (`airing-posters.js`; `GET /api/airings/:airingId/poster.jpg`). Best first: our own capture from a bounty air session; a frame of the recording at a chosen second (written by hand today — production has no ffmpeg); **Twitch's live preview, kept while the stream was up** and picked at close from while a guest was on; the recording's own thumbnail as a last resort for a broadcast that had guests but no usable preview. A poster is only ever replaced by one as good or better.
+- **While live**, the follow loop keeps each refresh of Twitch's preview image — deduplicated, and never the offline placeholder or a near-black frame — for rooms somebody signed in to own (`server.js`, `followTick`; `snapshotLivePreview`).
+- **Which frame**: the middle of the longest stretch with the most guests on camera, or with no seats the first MegaChat; a preview fetched at T shows the stream some time in the five minutes before T, so only previews that could show that stretch are eligible, and ones from the opening or closing minutes only when no other could (`pickCandidate`). A restart ends every seat — seats live in memory — so the server marks one in each open airing at boot (`markRestart`).
+- **After the end**, a sweep attaches the Twitch recording, falls back to its thumbnail when needed, and clears previews an hour after the end, plus anything left by airings the store no longer keeps or whose room is gone (`sweepAiringPosters`). A stream that ended while the server was down is closed at the last moment it was known up (`lastEvidenceAt`).
+- **A broadcast with no picture gets a card, not a fake frame**: title, guests, duration, drawn flat and typographic (`buildCard`, `room-poster.js`; `web/components/booth/recent-rail.tsx`). `poster.kind` (`frame` | `card`) is the contract; the rail never infers which to draw.
 
 ## How to use it
 
-Nothing to configure. A room that follows a Twitch channel gets an airing when it goes live and a card when it goes dark; a room that ran a bounty air session gets a real frame.
+Nothing to configure. A room that follows a Twitch channel records each broadcast; one where a guest took a seat or a MegaChat played shows up on the board with a picture minutes after it ends. `AIRING_POSTERS=0` turns the pictures off (previews, picks and the sweep) and leaves the cards.
 
 ## What this does NOT do
 
-- **It does not resolve a platform VOD.** `attachRecording()` records a capture reference only; `vodUrl` is null on every airing (`docs/pass-b-handoff.md`, "Explicitly not built"). A card links to the room, not into a replay.
-- **It does not produce a frame for rooms outside the bounty program** — there is no capture to read (`bounty-capture.js`, "CAPTURE RUNS ONLY WHILE AN AIR SESSION IS OPEN").
-- **It does not show airings with nothing in them.** `recentAirings({ withContent: true })` filters airings with no moments, no replay and no capture (`airings-store.js`).
-- **It does not show a room its owner unlisted or paused** — the rail is built from airings, but the link is to the room, and a paused room refuses joins ([Rooms and seats](../concepts/rooms-and-seats.md)).
+- **It does not pull a frame from the recording in production** — there is no ffmpeg or extractor on the host. The `twitch-vod` rank exists for a frame written by hand; the owner's 2026-09-24 stream was backfilled that way (`OPEN-ISSUES.md`, R4).
+- **It does not show broadcasts nobody joined** (`airings-store.js`, `recentAirings`; `DECISIONS.md`, "The board's order and its pictures").
+- **It does not keep previews for a room nobody signed in to own**, so a password-only room naming someone else's channel cannot fill the volume (`server.js`, `followTick`; `_gate-airing-poster.mjs`, L3).
+- **It does not show a room its owner unlisted**, and it links to the room, not into the replay (`server.js`, `/api/rooms/recent`; `web/components/booth/recent-rail.tsx`).

@@ -1,5 +1,10 @@
 /**
- * ROOM POSTERS — the frame a finished room shows on the recent rail.
+ * ROOM POSTERS — the frame our own bounty capture yields at air-session close.
+ *
+ * Since 2026-09-25 the board shows pictures per AIRING (airing-posters.js);
+ * this frame is saved there too, at the top rank ("capture"). The per-room
+ * file below is kept for the room record and the /api/rooms/:id/poster.jpg
+ * route; nothing on the board reads it any more.
  *
  * A recent-room card should show what the room looked like when somebody was
  * actually on camera, not a placeholder and not the last frame of the stream
@@ -93,21 +98,23 @@ export function buildPoster(roomId, records, { log = console } = {}) {
 }
 
 /**
- * The no-capture case: a SNAPSHOT of the room at close, not a screenshot.
+ * The no-picture case: a SNAPSHOT of the airing, not a screenshot.
  *
- * Capture only runs during a bounty air session, so a plain MegaChat room or a
- * live-seat room has no real frame and never will. Rendering something
- * photographic would be a lie about what we have, so the card is explicitly a
- * card — the rail draws it in the house style with no video treatment, and the
- * `kind` field is what tells it which to draw.
+ * Most broadcasts now get a real picture from Twitch (airing-posters.js); this
+ * is for the ones that do not — no preview could show a guest and there is no
+ * recording. Rendering something photographic would be a lie about what we
+ * have, so the card is explicitly a card — the rail draws it in the house
+ * style with no video treatment, and the `kind` field is what tells it which
+ * to draw. /api/rooms/recent builds it per request (airingPosterView).
  *
  * The values are FROZEN HERE rather than derived at render time, so the rail
  * reads one field off the room record and never walks a seat list: the same
  * single-source rule effectiveMaxSeats follows.
  */
 export function buildCard(airing, { title = null } = {}) {
-  // Leaves are bookkeeping for the seat count, never a moment in their own right.
-  const shown = (airing?.moments || []).filter((m) => m.kind !== 'seat_leave');
+  // Leaves and restarts are bookkeeping for the seat count, never a moment in
+  // their own right: a card shows seats and MegaChats.
+  const shown = (airing?.moments || []).filter((m) => m.kind === 'seat' || m.kind === 'megachat');
   const guests = [];
   for (const m of shown) {
     if (m.label && !guests.includes(m.label)) guests.push(m.label);

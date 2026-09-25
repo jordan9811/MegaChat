@@ -1,25 +1,22 @@
-'use client'
-
-// RECENT ROOMS — finished broadcasts with something to show.
+// RECENTLY AIRED — finished broadcasts, each with a picture of itself.
 //
 // The board's job is to look alive with few streamers, and a room that was
-// busy an hour ago is more interesting than an empty grid cell. Each card
-// shows what the room looked like WHILE SOMEBODY WAS ON, not a placeholder and
-// not the last frame of the stream (which is an end card or black).
+// busy an hour ago is more interesting than an empty grid cell. So when
+// nothing is live this row sits directly under the featured room, above the
+// idle rooms (booth.tsx), and it arrives in the first HTML rather than after a
+// client fetch — on a quiet night it IS the board.
 //
 // TWO KINDS OF CARD, AND THEY LOOK DIFFERENT ON PURPOSE. `poster.kind` decides
-// which, and it is read off the room record rather than inferred here:
+// which, and it is read off the airing rather than inferred here:
 //
-//   'frame' — a real photograph, extracted from the self-capture at the
-//             deepest point of the longest clip playback.
-//   'card'  — a room that never had a capture to pull from (capture only runs
-//             during a bounty air session). Drawn as an obvious graphic with
-//             no video treatment, because a generated card that could pass for
-//             a screenshot is a lie about what we have.
+//   'frame' — a real photograph of that broadcast (airing-posters.js): our own
+//             capture, a frame of the recording, Twitch's live preview kept
+//             while a guest was on, or the recording's thumbnail.
+//   'card'  — a broadcast with no picture at all. Drawn as an obvious graphic
+//             with no video treatment, because a generated card that could
+//             pass for a screenshot is a lie about what we have.
 
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
-import { listRecentAirings, type RecentAiring } from '@/lib/api'
+import type { RecentAiring } from '@/lib/api'
 
 function ago(ms: number): string {
   const mins = Math.max(1, Math.round((Date.now() - ms) / 60000))
@@ -29,66 +26,67 @@ function ago(ms: number): string {
   return `${Math.round(hrs / 24)}d ago`
 }
 
-function mins(ms: number | null): string {
+function length(ms: number | null): string {
   if (!ms) return ''
-  return `${Math.max(1, Math.round(ms / 60000))} min`
+  const mins = Math.max(1, Math.round(ms / 60000))
+  if (mins < 60) return `${mins} min`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m ? `${h}h ${m}m` : `${h}h`
+}
+
+/** Distinct people who took a seat — what "moments" meant to a viewer. */
+function guestCount(a: RecentAiring): number {
+  return new Set(a.moments.filter((m) => m.kind === 'seat').map((m) => m.label || '')).size
 }
 
 function RecentCard({ a }: { a: RecentAiring }) {
+  // A plain anchor, never next/link: /<handle> is served by Express, and a
+  // client-side route to it is the 404 5993024 fixed on the room cards.
   const href = a.handle ? `/${a.handle}` : `/join?room=${encodeURIComponent(a.roomId)}`
   const p = a.poster
+  const guests = guestCount(a)
   return (
-    <Link href={href} className="mcr-recent" aria-label={a.name}>
+    <a href={href} className="mcr-recent" aria-label={`${a.name}, aired ${ago(a.endedAt)}`}>
       <span className="mcr-recent-stage">
         {p?.kind === 'frame' ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={`/api/rooms/${encodeURIComponent(a.roomId)}/poster.jpg`} alt="" loading="lazy" />
+          <img src={p.url} alt="" loading="lazy" decoding="async" />
         ) : (
           <span className="mcr-recent-card" aria-hidden="true">
             <b>{(p?.kind === 'card' ? p.title : a.name)?.trim().charAt(0).toUpperCase() || '?'}</b>
-            {p?.kind === 'card' && p.guests.length ? (
-              <em>{p.guests.slice(0, 3).join(' · ')}</em>
-            ) : null}
+            {p?.kind === 'card' && p.guests.length ? <em>{p.guests.slice(0, 3).join(' · ')}</em> : null}
           </span>
         )}
-        <span className="mcr-scan" aria-hidden="true" />
+        {p?.kind === 'frame' ? <span className="mcr-scan" aria-hidden="true" /> : null}
         <span className="mcr-recent-tag">
-          {p?.kind === 'frame' ? 'Aired' : 'No recording'}
+          {p?.kind === 'frame' ? 'Aired' : a.vodUrl ? 'Recorded' : 'No recording'}
         </span>
+        {a.durationMs ? <span className="mcr-recent-len">{length(a.durationMs)}</span> : null}
       </span>
       <span className="mcr-recent-meta">
         <strong>{a.name}</strong>
-        <small>
+        {/* "11h ago" is computed on both sides of hydration; a minute boundary
+            between them is not a bug worth a console error. */}
+        <small suppressHydrationWarning>
           {ago(a.endedAt)}
-          {a.durationMs ? ` · ${mins(a.durationMs)}` : ''}
-          {a.moments.length ? ` · ${a.moments.length} moment${a.moments.length === 1 ? '' : 's'}` : ''}
+          {guests ? ` · ${guests} guest${guests === 1 ? '' : 's'} on camera` : ''}
         </small>
       </span>
-    </Link>
+    </a>
   )
 }
 
-export function RecentRail() {
-  const [rows, setRows] = useState<RecentAiring[] | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    listRecentAirings(8)
-      .then((d) => { if (alive) setRows(d.airings || []) })
-      // A rail that cannot load is a quiet rail, never an error on the board.
-      .catch(() => { if (alive) setRows([]) })
-    return () => { alive = false }
-  }, [])
-
-  if (!rows || rows.length === 0) return null
-
+export function RecentRail({ airings }: { airings: RecentAiring[] }) {
+  if (!airings.length) return null
   return (
     <section className="mcr-recent-rail" aria-label="Recently aired">
-      <h2>Recently aired</h2>
+      <h2 className="mcr-sec-h">Recently aired</h2>
       <div className="mcr-recent-grid">
-        {rows.map((a) => <RecentCard key={a.airingId} a={a} />)}
+        {airings.map((a) => (
+          <RecentCard key={a.airingId} a={a} />
+        ))}
       </div>
     </section>
   )
 }
-

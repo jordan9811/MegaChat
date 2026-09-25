@@ -962,3 +962,30 @@ reason than "the API is expensive".
 - **No OBS upgrade, no credentialed test stream, unattended.** Both were within
   "whatever you need"; neither was needed to prove the change, and both carry
   risk the operator should choose (W4, W10). Undo: n/a.
+
+## The board's order and its pictures (2026-09-25)
+
+- **Nothing live → Recently aired directly under the featured card, above the
+  rooms; something live → after them.** The server's own comment calls it
+  "what the board shows when nothing is live", the rail's header says a busy
+  room an hour ago beats an empty grid cell, and the owner asked for it "on the
+  main page not scrolling". Undo: `quiet` in `booth.tsx`.
+- **Tiles are a fixed ~236px, not a fraction of the screen; the featured card
+  448px; the rail one row.** The owner: "it also shouldn't be so big"; 9676405:
+  "bigger than its neighbours was the point; four times bigger was not".
+  Undo: `booth.css` (`.mcr-grid`, `.mcr-feat`, the `recent` container queries).
+- **A picture comes from when a seat or a MegaChat was up, or not at all; a
+  broadcast with neither is not board content, even with a recording.** The
+  owner's rule. Consequence: the owner's solo streams do not appear on the
+  board. Undo: `recentAirings` in `airings-store.js`, `posterTarget` in
+  `airing-posters.js`.
+- **The recording's own thumbnail is the last resort for a broadcast that had
+  guests but no preview that could show them.** It is Twitch's choice of
+  frame, so it is not strictly "from when the seat was up"; chosen over the
+  grey card because the owner asked for "a real thumbnail". Undo: the
+  thumbnail step in `resolveFromRecording`.
+- **Live previews only for a room somebody signed in to own.** Anyone can make
+  a password-only room naming any channel; nothing it follows should fill the
+  volume. Undo: the `roomOwnerOf` check in `followTick`.
+- **The owner's 2026-09-24 broadcast was given its picture by hand** (OPEN-ISSUES
+  R4). Undo: delete `/data/airing-posters/db1f8abd-6d48-4bf4-9a37-4605163baf2f.*`.

@@ -3051,3 +3051,68 @@ sections A–H, all green.
 - **W11 — The dashboard scrolls sideways at 390 px wide.** Seen while
   screenshotting the booth card; the card itself fits (360 px). Origin not
   traced.
+
+## Recently aired: real pictures, and the board's order back (2026-09-25)
+
+- **R1 — What the owner saw, and the three causes.** On megachat.fun/app the
+  morning after a 4-hour stream, Recently aired started at y=950 on a 927px
+  screen, an idle room was a 738px tile, and the one card was a letter on grey
+  marked "No recording" while Twitch held two recordings of it. (1) The rail was
+  added in d4cae00 as a third child of the board's two-column grid, so it
+  auto-placed under the whole left column. (2) cd118e7 (2026-09-06) replaced the
+  room-count layout and its 340px cap with two fluid columns, so tiles grew
+  with the window. (3) Nothing made a picture for an ordinary broadcast, and
+  `/api/rooms/recent` read `room.config.poster` off the RESOLVED config, which
+  never carries it — every airing, bounty captures included, came back
+  `poster: null`. The bounty close handler also read `.config` off
+  `resolveRoomConfig()` (flat), so it never wrote the room poster either.
+- **R2 — The board's order is written down and restored** (`booth.tsx`, "WHAT
+  FILLS THE BOARD, IN ORDER"): featured = live, else demo, else hottest;
+  nothing live → Recently aired directly under it, above the rooms; live rooms
+  first; Open a room last; something live → Recently aired after the rooms.
+  Tiles are ~236px auto-fill tracks (six across at 1920, four at 1440, one on a
+  phone), the featured card 448px, the rail one row at any width, and it is in
+  the first HTML. `_gate-board-fold.mjs` 29/0, measured at 1920x927, 1903x927,
+  1440x900, 1423x900 (the last two: a Windows scrollbar) and 390x844.
+- **R3 — Pictures are per airing** (`airing-posters.js`): our capture > a frame
+  of the recording > Twitch's live preview kept while the stream was up >
+  the recording's thumbnail; replaced only by as good or better. Previews are
+  kept for rooms somebody signed in to own, deduplicated, never the offline
+  placeholder or a frame under 12 KB, 150 per airing and 3,000 in all, cleared
+  an hour after the end. The pick follows the owner's rule — from when a seat
+  or a MegaChat was up — and a broadcast with neither gets no picture and is
+  not board content (a recording no longer counts). A `restart` moment at boot
+  ends every seat; a stream that ended while the server was down is closed at
+  the last moment it was known up. `_gate-airing-poster.mjs` 28/0.
+- **R4 — The owner's 2026-09-24 broadcast (GM DOERR, airing db1f8abd) was
+  backfilled by hand.** Production has no ffmpeg or yt-dlp, and the previews
+  that would have made its picture were never kept (this did not exist yet).
+  The frame was pulled locally from Twitch recording 2883213924 at 6,790s —
+  LuckyFalcon18 on camera, inside the seat 02:24:35–02:26:35Z — and written to
+  `/data/airing-posters/` as `source: 'twitch-vod'`. The first guest's seat
+  (SolarFalcon54, 6.5 min, recording 2883204530) was mostly a black screen and
+  was not used.
+- **R5 — Discrimination, recorded.** `_gate-airing-poster.mjs` with each fix
+  broken in turn, restored byte-for-byte after: old API line → R3, R5 red
+  (24/2); no close after a restart → 8 red; no restart marker → R1; previews
+  for unowned rooms → L3; pick = newest preview → U1, U6, U7, R3; rank ignored
+  → U8. `_gate-board-fold.mjs --base https://megachat.fun` against the build
+  before this change: F1, F2, F3, F5, F6 red at both sizes (rail at 950/815,
+  no picture, widest tile 738/498px, rail not in the first HTML).
+- **R6 — Not measured on a real broadcast yet:** the 12 KB floor was set from
+  three measured frames (black 3–5 KB, offline placeholder 6.8 KB, real
+  25–45 KB); a genuinely dark scene could be refused. Twitch refreshes a preview
+  about every five minutes, so a guest on for less than that may leave no
+  preview that shows them — that broadcast then gets the recording thumbnail.
+- **R7 — Open: the bounty capture lands on the room's newest airing**
+  (`listAirings(roomId, {limit: 1})` at air-session close). Right whenever the
+  session closes during or just after its broadcast; wrong if a newer airing
+  opened first. No gate runs a bounty session to close with a capture, and
+  production cannot make the frame anyway (no ffmpeg).
+- **R8 — Open: airings of deleted rooms stay in `airings.json`.** Their pictures
+  and previews are removed by the sweep and the board skips them; the records
+  themselves are only pruned per room (20).
+- **R9 — Review.** An adversarial review with a verification pass found 37
+  issues, 25 real; all are fixed except R7. The known-red board gates are
+  unchanged by this: `_gate-browse-thumb` 6/2/1 and `_gate-browse-deck` (pins a
+  zero-diff check against a July commit), as recorded on 2026-09-16.

@@ -1,6 +1,11 @@
 import type { PublicRoomCard } from './api'
 import { formatDollars } from './display-format'
 
+/** How many finished broadcasts the board asks for — the SAME number on the
+ *  server render and the client poll, or the rail changes a minute after load
+ *  with nothing having happened. At most one row of them is ever shown. */
+export const BOARD_RECENT_CAP = 6
+
 export function roomPresentation(room: PublicRoomCard) {
   const onAir = room.live > 0 || room.twitchLive
   const demo = room.isDemo || room.handle === 'demo'

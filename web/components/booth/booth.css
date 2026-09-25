@@ -156,6 +156,22 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   inset: 10px 10px auto 10px;
 }
 
+/* A tile-sized card: tighter tags, and the rate wraps under the state rather
+   than being cut to "$0.001 /SE". */
+@container (max-width: 320px) {
+  .mcr-card .mcr-tags {
+    inset: 8px 8px auto 8px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+    gap: 6px;
+  }
+  .mcr-card .mcr-tag {
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    padding: 3px 6px;
+  }
+}
+
 .mcr-tag {
   font-family: var(--font-code), ui-monospace, monospace;
   font-size: 10.5px;
@@ -191,9 +207,12 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 
 /* ── featured room ──────────────────────────────────────────────────── */
 
+/* 448, not 520: the featured card is meant to be bigger than its neighbours,
+   not to eat the fold (9676405 — "bigger was the point; four times bigger was
+   not"). At 520 the rows under it slid past the fold at 1920x927. */
 .mcr-feat {
   display: grid;
-  grid-template-columns: 520px minmax(0, 1fr);
+  grid-template-columns: 448px minmax(0, 1fr);
   margin-bottom: 16px;
   background: var(--mcb-panel);
   border: 1px solid var(--mcb-line);
@@ -290,19 +309,29 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 
 /* ── the grid ───────────────────────────────────────────────────────── */
 
-.mcr-grid {
+/* TILES ARE A FIXED SIZE, NOT A FRACTION OF THE SCREEN. The grid used to be
+   two 1fr columns, so one idle room took half of a 1478px column — a 732x480
+   dead box at 1920 — and the rows under it fell below the fold. auto-fill
+   keeps the empty tracks, so one room is one ~240px tile at any width:
+   six across at 1920, four at 1440, one on a phone. The rail below uses the
+   same tracks so the two sections line up. */
+.mcr-grid,
+.mcr-recent-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: 12px;
 }
 
-@media (max-width: 700px) {
-  .mcr-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.mcr-sec-h {
+  margin: 0 0 10px;
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .mcr-card {
+  container-type: inline-size;
   display: block;
   background: var(--mcb-panel);
   border: 1px solid var(--mcb-line);
@@ -325,8 +354,18 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 .mcr-card-body {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+/* A tile-sized card has room for the name and what the room does, not for a
+   monogram and a button as well — the whole card is already the link. They
+   come back wherever a card is wide (a phone's single column). */
+@container (max-width: 320px) {
+  .mcr-card-body .mcr-mono,
+  .mcr-card-body .mcr-ghost {
+    display: none;
+  }
 }
 
 .mcr-card-body .mcr-t {
@@ -382,7 +421,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   justify-content: center;
   gap: 6px;
   min-height: 100%;
-  padding: 28px 20px;
+  padding: 20px 16px;
   border: 1px dashed var(--mcb-line2);
   text-align: center;
   color: var(--mcb-muted);
@@ -395,7 +434,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 
 .mcr-open strong {
   font-family: var(--font-display), var(--font-ui), sans-serif;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
   color: var(--mcb-accent);
 }
@@ -609,22 +648,37 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
    photograph, a generated card is obviously a graphic. `.mcr-recent-card` is
    deliberately flat and typographic — no video treatment, no fake bokeh. */
 
+/* Placed by booth.tsx: straight under the featured card when nothing is live,
+   after the rooms when something is. Tracks are shared with .mcr-grid. */
 .mcr-recent-rail {
-  margin-top: 20px;
+  container: recent / inline-size;
+  margin-bottom: 16px;
 }
 
-.mcr-recent-rail h2 {
-  margin: 0 0 12px;
-  font-family: var(--font-display), var(--font-ui), sans-serif;
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
+.mcr-grid + .mcr-recent-rail,
+.mcr-empty + .mcr-recent-rail {
+  margin-top: 16px;
 }
 
-.mcr-recent-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+/* ONE ROW, whatever the width. On a quiet night this row sits ABOVE the rooms,
+   so a second row would push them off the screen — and on a phone six cards
+   stacked are ~1,600px before the first room. The column count of the
+   auto-fill tracks is floor((width + 12) / 248); past it, cards are not shown
+   (display:none, so they are not in the tab order either). */
+@container recent (width < 484px) {
+  .mcr-recent:nth-child(n + 2) { display: none; }
+}
+@container recent (width < 732px) {
+  .mcr-recent:nth-child(n + 3) { display: none; }
+}
+@container recent (width < 980px) {
+  .mcr-recent:nth-child(n + 4) { display: none; }
+}
+@container recent (width < 1228px) {
+  .mcr-recent:nth-child(n + 5) { display: none; }
+}
+@container recent (width < 1476px) {
+  .mcr-recent:nth-child(n + 6) { display: none; }
 }
 
 .mcr-recent {
@@ -695,6 +749,17 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   color: var(--mcb-dim);
 }
 
+.mcr-recent-len {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 6px;
+  background: rgba(5, 6, 9, 0.78);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 10px;
+  color: #fff;
+}
+
 .mcr-recent-meta {
   display: block;
   padding: 9px 11px 11px;
@@ -716,8 +781,3 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   font-size: 11px;
 }
 
-@media (max-width: 700px) {
-  .mcr-recent-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}

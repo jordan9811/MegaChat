@@ -27,10 +27,13 @@ import {
   pruneOrphanRooms,
   updateRoom,
   maxEffectiveSeats,
+  roomOwnerOf,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
-import { getLiveByLogins, twitchApiConfigured } from './twitch-api.js';
-import { openAiring, closeAiring, addMoment, recentAirings, listAirings } from './airings-store.js';
+import { getLiveByLogins, twitchApiConfigured, helix } from './twitch-api.js';
+import { openAiring, openAiringFor, closeAiring, addMoment, recentAirings, listAirings, allAiringIds, airingRefs, attachRecording, markRestart } from './airings-store.js';
+import { snapshotLivePreview, finalizeAiringPoster, readAiringPoster, posterFileFor, sweepAiringPosters, lastEvidenceAt } from './airing-posters.js';
+import { buildCard } from './room-poster.js';
 import { createActivityManager } from './livekit-activity.js';
 import { createWebhookTracker, verifyWebhookJwt, reconcile } from './livekit-webhooks.js';
 import { createBreaker, breakerConfig } from './livekit-breaker.js';
@@ -2784,7 +2787,10 @@ async function refreshTwitchLive(login) {
     // 440x248 answers 200 with no redirect at all — which fell through to the
     // "served directly" branch below and reported a dark channel as LIVE. The
     // card then painted Twitch's gray placeholder as if it were the stream.
-    const url = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(login)}-640x360.jpg`;
+    // TWITCH_PREVIEW_BASE is the same test override airing-posters.js reads;
+    // nothing in production sets it.
+    const base = (process.env.TWITCH_PREVIEW_BASE || 'https://static-cdn.jtvnw.net').replace(/\/$/, '');
+    const url = `${base}/previews-ttv/live_user_${encodeURIComponent(login)}-640x360.jpg`;
     const r = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(4000) });
     const loc = r.headers.get('location') || '';
     if (loc) live = !/404_preview|ttv-static/i.test(loc); // offline placeholder → not live
@@ -2824,6 +2830,9 @@ async function refreshTwitchLive(login) {
 const FOLLOW_POLL_MS = Number(process.env.FOLLOW_POLL_MS) || 60_000;
 const FOLLOW_OFF_CONFIRM_MS = Number(process.env.FOLLOW_OFF_CONFIRM_MS) || 5 * 60_000;
 const followState = new Map(); // roomId -> { live: boolean, offSince: number|null }
+// AIRING_POSTERS=0 turns off every part of the recent-rail pictures at once:
+// keeping previews, picking at close, and the sweep (airing-posters.js).
+const AIRING_POSTERS_ON = process.env.AIRING_POSTERS !== '0';
 
 function followsBroadcast(cfg) {
   return !!(cfg && cfg.twitchAuto !== false && cfg.twitchChannel);
@@ -2870,6 +2879,13 @@ async function followTick() {
           console.log(`[follow] ${r.id} (${login}) went live → room active`);
         }
       }
+      // Keep Twitch's live preview while the broadcast is up: it is the only
+      // real picture of an ordinary stream we can have without ffmpeg, and it
+      // is gone the moment the stream ends. Throttled inside; never awaited.
+      // Only for a room somebody signed in to own: a password-only room can
+      // name any channel, and nothing it follows should fill the volume.
+      const open = openAiringFor(r.id);
+      if (open && AIRING_POSTERS_ON && roomOwnerOf(r.id)) void snapshotLivePreview(open, login).catch(() => {});
       continue;
     }
 
@@ -2878,7 +2894,20 @@ async function followTick() {
       // Closed at the moment it went dark, not when the room eventually
       // pauses — the confirm window is a hedge about pausing, and stamping it
       // into history would put five minutes of nothing on the end of a replay.
-      closeAiring(r.id, offSince);
+      const closed = closeAiring(r.id, offSince);
+      // The poster is picked now, from the previews kept while it was live.
+      if (closed && AIRING_POSTERS_ON) finalizeAiringPoster(closed);
+    } else if (!prev) {
+      // First look since a restart, and the broadcast is dark — but an airing
+      // is still open: the stream ended while the server was down. Close it at
+      // the last moment we KNOW it was up; left open, it would swallow the
+      // next broadcast into the same card.
+      const stale = openAiringFor(r.id);
+      if (stale) {
+        const closed = closeAiring(r.id, lastEvidenceAt(stale));
+        console.log(`[follow] ${r.id} (${login}) ended while the server was down → airing closed`);
+        if (closed && AIRING_POSTERS_ON) finalizeAiringPoster(closed);
+      }
     }
     followState.set(r.id, { live: false, offSince });
     // Hidden from discovery already, by hiddenByBroadcast. The room itself only
@@ -2911,10 +2940,9 @@ function twitchLiveCached(channel) {
 //
 // Rooms that opted out of the board stay out of it here too: unlisted means
 // unlisted, and a room's history is no less the room.
-// The poster JPEG itself. One file per room, extracted once at air-session
-// close and deliberately NOT in bounty-captures/ — that directory is swept at
-// 14 days, and a recent rail that goes blank after two weeks is worse than one
-// that never had pictures.
+// The bounty capture's poster, one file per room (room-poster.js). The board
+// no longer reads it — cards use /api/airings/:airingId/poster.jpg below — but
+// the route stays for anything that linked it.
 app.get('/api/rooms/:roomId/poster.jpg', (req, res) => {
   const id = normalizeRoomId(req.params.roomId);
   if (!id) return res.status(400).end();
@@ -2925,11 +2953,44 @@ app.get('/api/rooms/:roomId/poster.jpg', (req, res) => {
   fs.createReadStream(file).pipe(res);
 });
 
+// A finished broadcast's own picture (airing-posters.js). The URL a card uses
+// carries the poster's timestamp, so a better poster replacing a worse one is a
+// new URL and the long cache is safe.
+app.get('/api/airings/:airingId/poster.jpg', (req, res) => {
+  const id = String(req.params.airingId || '');
+  if (!/^[a-f0-9-]{36}$/i.test(id)) return res.status(400).end();
+  // Only an airing the store keeps: a public URL must not do disk or memo
+  // work for ids nobody ever aired.
+  if (!allAiringIds().includes(id) || !readAiringPoster(id)) return res.status(404).end();
+  const file = posterFileFor(id);
+  if (!fs.existsSync(file)) return res.status(404).end();
+  res.type('jpeg');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  fs.createReadStream(file).pipe(res);
+});
+
+/** What a recent card shows: the airing's real picture when there is one,
+ *  otherwise a card frozen from the airing itself — never a guess. */
+function airingPosterView(a, roomName) {
+  const frame = readAiringPoster(a.id);
+  if (frame) {
+    return {
+      kind: 'frame',
+      source: frame.source,
+      at: frame.at,
+      url: `/api/airings/${encodeURIComponent(a.id)}/poster.jpg?v=${frame.at}`,
+    };
+  }
+  return buildCard(a, { title: roomName || null });
+}
+
 app.get('/api/rooms/recent', (req, res) => {
   const limit = Math.max(1, Math.min(24, Number(req.query.limit) || 12));
   const byId = new Map(listRooms().map((r) => [r.id, r]));
   const out = [];
-  for (const a of recentAirings({ limit: limit * 2 })) {
+  // Scan wide: airings of deleted or unlisted rooms are skipped below, and a
+  // fixed small window would let them crowd real ones off the rail.
+  for (const a of recentAirings({ limit: 500 })) {
     const room = byId.get(a.roomId);
     if (!room || !room.config || room.config.unlisted) continue;
     out.push({
@@ -2944,14 +3005,16 @@ app.get('/api/rooms/recent', (req, res) => {
       durationMs: Math.max(0, (a.endedAt || a.startedAt) - a.startedAt),
       vodUrl: a.vodUrl,
       captureRef: a.captureRef,
-      // Read straight off the room record — the same single-source rule
-      // effectiveMaxSeats follows. `kind` is what tells the card whether to
-      // draw a photograph or a generated card; it must never guess.
-      poster: room.config.poster || null,
+      // Per AIRING, not per room: a room airs many times, and each card shows
+      // its own broadcast. `kind` tells the card whether to draw a photograph
+      // or a generated card; it must never guess. (This used to read
+      // room.config.poster off the RESOLVED config, which never carries it —
+      // so every card said "No recording", bounty captures included.)
+      poster: airingPosterView(a, room.config.name),
       // Where a card should start playing, and what its thumbnail is of.
       // Leaves are bookkeeping for the seat count, not something to show or
       // count; the rail never sees them.
-      moments: a.moments.filter((m) => m.kind !== 'seat_leave').map((m) => ({ kind: m.kind, label: m.label, offsetMs: m.offsetMs })),
+      moments: a.moments.filter((m) => m.kind === 'seat' || m.kind === 'megachat').map((m) => ({ kind: m.kind, label: m.label, offsetMs: m.offsetMs })),
     });
     if (out.length >= limit) break;
   }
@@ -3050,6 +3113,13 @@ await migrateLegacyRoomPasswords();
 // the same thing by themselves: getLiveByLogins answers null and the tick
 // changes nothing, so a deploy without them degrades to the old behaviour
 // rather than pausing everybody's rooms.
+// Every seat on camera before this boot is gone (seats live in memory): say so
+// in each open airing before the follow loop reads them (airings-store.js).
+{
+  const marked = markRestart();
+  if (marked) console.log(`[airings] restart marked in ${marked} open airing(s) — their seats ended here`);
+}
+
 const followEnabled = process.env.FOLLOW_STREAM !== '0' && twitchApiConfigured();
 if (followEnabled) {
   const followTimer = setInterval(() => { void followTick(); }, FOLLOW_POLL_MS);
@@ -3059,6 +3129,25 @@ if (followEnabled) {
 } else {
   console.log('[follow] off — room state stays manual'
     + (process.env.FOLLOW_STREAM === '0' ? ' (FOLLOW_STREAM=0)' : ' (no TWITCH_CLIENT_ID/SECRET)'));
+}
+
+// Pictures for finished broadcasts: finish any pick a restart interrupted,
+// attach the Twitch recording, fall back to its thumbnail, tidy the previews.
+// Runs whether or not the follow loop does — the recording lookup is simply
+// skipped without Twitch credentials.
+const POSTER_SWEEP_MS = Number(process.env.POSTER_SWEEP_MS) || 10 * 60_000;
+if (AIRING_POSTERS_ON) {
+  const sweep = () => sweepAiringPosters({
+    airings: recentAirings({ limit: 500, withContent: false }),
+    allAirings: airingRefs,
+    roomIds: () => listRooms().map((r) => r.id),
+    helix,
+    apiConfigured: twitchApiConfigured(),
+    attachRecording,
+  }).catch((e) => console.warn(`[poster] sweep failed: ${e.message}`));
+  const posterTimer = setInterval(sweep, POSTER_SWEEP_MS);
+  posterTimer.unref?.();
+  setTimeout(sweep, Math.min(60_000, POSTER_SWEEP_MS)).unref?.();
 }
 
 // ─── Boot cleanup: dump orphan rooms ────────────────────────────────────────

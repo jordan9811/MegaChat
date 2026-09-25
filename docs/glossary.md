@@ -25,7 +25,7 @@ Every term this project invented or reuses oddly, one line each, with the file w
 | **Follow my stream** | The room hides from discovery on the first dark reading and pauses after five minutes; resumes on live. | `followTick`, `server.js` |
 | **Airing** | One record per broadcast a room went through, with moments (seat, seat_leave, megachat). | `airings-store.js` |
 | **Moment** | The second something worth opening at happened, stored as absolute time plus offset. | `addMoment`, `airings-store.js` |
-| **Poster** | One JPEG per room from the midpoint of the longest clip playback, or a typographic card when there is no capture. | `room-poster.js` |
+| **Poster** | The picture a finished broadcast shows on Recently aired: one JPEG per AIRING, from while a guest was on or a MegaChat played (our capture, a recording frame, a kept live preview, or the recording thumbnail, best first), or a typographic card when there is none. | `airing-posters.js` |
 | **Bounty / pool** | Money fans pool against a reserved handle, folded from the ledger on every read. | `bounty-store.js`, `bounty-escrow.js` |
 | **Pledge** | One fan's money across up to three streamers, claimable by whichever goes live first. | `pledge`, `bounty-escrow.js` |
 | **Reserved handle** | A streamer's name a pool sits against before they have claimed it. | `reserveHandle`, `bounty-store.js` |

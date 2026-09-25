@@ -177,16 +177,53 @@ export function listAirings(roomId, { limit = KEEP_PER_ROOM } = {}) {
  * Board content: finished airings across all rooms, newest first.
  *
  * `withContent` is the default because the board's job is to look alive. An
- * airing with no moment and no recording has nothing to put on a card, and
- * showing it would be the empty board wearing a costume.
+ * airing where nobody took a seat and no MegaChat played has nothing on it the
+ * owner's rule lets a card show, and showing it would be the empty board
+ * wearing a costume. A RECORDING DOES NOT COUNT: until 2026-09-25 nothing set
+ * vodUrl, so this rule never saw one; now the poster sweep attaches the Twitch
+ * recording of every broadcast, and counting it would put every solo stream of
+ * every following room on the board.
  */
 export function recentAirings({ limit = 12, withContent = true } = {}) {
   load();
   return state.airings
     .filter((a) => a.endedAt != null)
-    .filter((a) => (withContent ? a.moments.length > 0 || a.vodUrl || a.captureRef : true))
+    .filter((a) => (withContent
+      ? a.moments.some((m) => m.kind === 'seat' || m.kind === 'megachat') || !!a.captureRef
+      : true))
     .sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0))
     .slice(0, limit);
+}
+
+/**
+ * At boot: every seat that was on camera is gone — seats live in memory and a
+ * restart drops them without a seat_leave. Mark it in each open airing so a
+ * guest who sat for five minutes before a deploy does not "stay on" for the
+ * rest of the broadcast (airing-posters.js seatSpans). Returns how many.
+ */
+export function markRestart(at = Date.now()) {
+  load();
+  let n = 0;
+  for (const a of state.airings) {
+    if (a.endedAt != null || a.moments.length >= MAX_MOMENTS) continue;
+    a.moments.push({ at, kind: 'restart', label: null, offsetMs: Math.max(0, at - a.startedAt) });
+    n++;
+  }
+  if (n) persist();
+  return n;
+}
+
+/** Every airing id the store still keeps, open or closed — what a poster may
+ *  belong to. Anything on disk for an id not in here was pruned with its airing. */
+export function allAiringIds() {
+  load();
+  return state.airings.map((a) => a.id);
+}
+
+/** Every airing the store keeps, open or closed, with its room. */
+export function airingRefs() {
+  load();
+  return state.airings.map((a) => ({ id: a.id, roomId: a.roomId }));
 }
 
 /** Test seam — the gates run several servers against one process-wide module. */

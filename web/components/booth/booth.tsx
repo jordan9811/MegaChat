@@ -2,19 +2,20 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { listPublicRooms, type PublicRoomCard } from '@/lib/api'
+import { listPublicRooms, listRecentAirings, type PublicRoomCard, type RecentAiring } from '@/lib/api'
 import { listBountyPools, type BountyPool } from '@/lib/bounty-api'
 import { AccountChip } from '@/components/account-chip'
 import { PlatformPip } from '@/components/platform-pip'
 import { TwitchPreview } from '@/components/twitch-preview'
 import { formatDollars } from '@/lib/display-format'
-import { roomPresentation } from '@/lib/room-browse'
+import { BOARD_RECENT_CAP, roomPresentation } from '@/lib/room-browse'
 import './booth.css'
 import { BrandText } from '@/components/brand-text'
 import { RecentRail } from './recent-rail'
 
 const ROOM_POLL_MS = 5000
 const POOL_POLL_MS = 30000
+const AIRING_POLL_MS = 60000
 const GRID_CAP = 8
 
 // Filters over the rooms, not over the page: bounties keep their own rail on
@@ -241,17 +242,21 @@ function BountyBoard({ pools }: { pools: BountyPool[] }) {
 export function Booth({
   initialRooms,
   initialPools,
+  initialAirings = [],
 }: {
   initialRooms: PublicRoomCard[]
   initialPools: BountyPool[]
+  initialAirings?: RecentAiring[]
 }) {
   const [rooms, setRooms] = useState<PublicRoomCard[]>(initialRooms)
   const [pools, setPools] = useState<BountyPool[]>(initialPools)
+  const [airings, setAirings] = useState<RecentAiring[]>(initialAirings)
   const [chip, setChip] = useState<ChipKey>('all')
   const [showAll, setShowAll] = useState(false)
 
-  // Entering the app marks the visitor as returning — the landing page
-  // forwards them straight back here next time (?stay=1 opts out).
+  // Entering the app marks the visitor as returning. Nothing reads the flag
+  // since the landing's returning-visitor bypass was removed (98b6429,
+  // landing-hero.tsx); it is kept so bringing the bypass back needs no data.
   useEffect(() => {
     try {
       window.localStorage.setItem('mc-entered', '1')
@@ -295,12 +300,47 @@ export function Booth({
     }
   }, [])
 
+  // A broadcast that just ended should reach the board without a reload.
+  useEffect(() => {
+    let alive = true
+    const tick = async () => {
+      try {
+        const data = await listRecentAirings(BOARD_RECENT_CAP)
+        if (alive) setAirings(data.airings || [])
+      } catch {
+        /* keep last good data */
+      }
+    }
+    // The first HTML carries them; ask now only if it came without any (the
+    // server's own fetch can fail), rather than leaving the rail out for 60s.
+    if (!initialAirings.length) void tick()
+    const t = setInterval(tick, AIRING_POLL_MS)
+    return () => {
+      alive = false
+      clearInterval(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const onAirCount = useMemo(() => rooms.filter(onAir).length, [rooms])
   const visible = useMemo(() => rooms.filter((r) => matches(r, chip)), [rooms, chip])
   const topPools = useMemo(() => [...pools].sort((a, b) => b.remaining - a.remaining), [pools])
 
-  // What earns the big card: whatever is live, else the demo — the room a
-  // first-time visitor can actually try — else whatever is hottest.
+  // WHAT FILLS THE BOARD, IN ORDER. This is the hierarchy the board has had
+  // since 43b169f and lost pieces of in the cd118e7 rebuild; keep it written
+  // down here so the next rebuild keeps it too.
+  //   1. The featured card: whatever is live, else the demo — the room a
+  //      first-time visitor can actually try — else whatever is hottest.
+  //   2. Nothing live? Recently aired comes next, above the idle rooms: a room
+  //      that was busy an hour ago is more interesting than an empty grid
+  //      cell (server.js "what the board shows when nothing is live").
+  //   3. The rooms, live ones first, then the server's order (most on camera,
+  //      most waiting, newest), capped with a "show all".
+  //   4. Open a room, always the last tile.
+  //   5. Something live? Recently aired follows the rooms instead.
+  //   The bounty board rides alongside all of it. Every tile is small enough
+  //   that the featured card, a row of each section and the bounty board fit
+  //   above the fold at 1440x900 — no single room gets half the screen.
   const featured = useMemo(() => {
     return (
       visible.find(onAir) ??
@@ -309,11 +349,17 @@ export function Booth({
       null
     )
   }, [visible])
-  const rest = useMemo(
-    () => (featured ? visible.filter((r) => r.id !== featured.id) : visible),
-    [visible, featured],
-  )
+  const rest = useMemo(() => {
+    const others = featured ? visible.filter((r) => r.id !== featured.id) : visible
+    return [...others.filter(onAir), ...others.filter((r) => !onAir(r))]
+  }, [visible, featured])
   const shown = showAll ? rest : rest.slice(0, GRID_CAP)
+  // Recent broadcasts are not rooms, so the chips that pick KINDS of room
+  // (seats, MegaChats, free) do not show them; "All" and "Live now" do —
+  // "nothing is on air, here is what just was" is the answer to both.
+  const recent =
+    chip === 'all' || chip === 'live' ? <RecentRail airings={airings.slice(0, BOARD_RECENT_CAP)} /> : null
+  const quiet = onAirCount === 0
 
   return (
     <div className="mc-booth dark flex min-h-dvh flex-col">
@@ -373,6 +419,8 @@ export function Booth({
             {featured ? (
               <>
                 <FeaturedRoom room={featured} />
+                {quiet ? recent : null}
+                {quiet && airings.length > 0 && recent ? <h2 className="mcr-sec-h">Rooms</h2> : null}
                 <div className="mcr-grid">
                   {shown.map((room) => (
                     <RoomCard key={room.id} room={room} />
@@ -384,6 +432,7 @@ export function Booth({
                     </button>
                   ) : null}
                 </div>
+                {quiet ? null : recent}
               </>
             ) : (
               <div className="mcr-empty">
@@ -408,10 +457,10 @@ export function Booth({
                 </span>
               </div>
             )}
+            {featured ? null : recent}
           </div>
 
           <BountyBoard pools={topPools.slice(0, 5)} />
-          <RecentRail />
         </div>
       </main>
     </div>
