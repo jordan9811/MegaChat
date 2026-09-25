@@ -229,6 +229,32 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* THE FEATURED TIER's big sizes (booth.tsx FeatureSize). A big stream —
+   server's BOARD_BIG_VIEWERS — gets the old big card: the stage takes most of
+   the row. Two big streams at once share the row, each a full-width stage
+   with its copy under it. Only ever for a live stream with an audience; a
+   quiet night keeps the 448px card above. */
+/* Never smaller than the normal card's 448px picture: a big stream must not
+   get a smaller picture than a small one on a laptop. */
+@media (min-width: 901px) {
+  .mcr-feat.is-big {
+    grid-template-columns: minmax(448px, 62%) minmax(0, 1fr);
+  }
+}
+
+/* Two side by side while each can be 448px or more; stacked below that. */
+.mcr-feat-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(448px, 100%), 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.mcr-feat-pair > .mcr-feat {
+  grid-template-columns: minmax(0, 1fr);
+  margin-bottom: 0;
+}
+
 .mcr-feat-body {
   display: flex;
   flex-direction: column;
@@ -655,9 +681,80 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   margin-bottom: 16px;
 }
 
-.mcr-grid + .mcr-recent-rail,
+.mcr-rooms + .mcr-recent-rail,
 .mcr-empty + .mcr-recent-rail {
   margin-top: 16px;
+}
+
+/* THE SPARSE STRIP — a quiet board. With a handful of tiles (SPARSE_MAX in
+   booth.tsx) Recently aired and the rooms share ONE row and split it evenly,
+   up to 520px a tile, instead of sitting as stamps on an empty page. Each
+   section spans its own tiles (--k of the strip's --n columns) and lays them
+   on the strip's tracks through subgrid, so a heading sits over its own tiles
+   and every tile is the same size. On a phone the sections stack. */
+.mcr-strip {
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  column-gap: 12px;
+  max-width: calc(var(--n) * 520px + (var(--n) - 1) * 12px);
+  margin-bottom: 16px;
+}
+
+.mcr-strip > section {
+  grid-column: span var(--k);
+  display: grid;
+  grid-template-columns: subgrid;
+  align-content: start;
+  margin: 0;
+  /* Everything in the strip fits by construction: switch off the rail's
+     one-row cap (the `recent` container queries need a size container). */
+  container-type: normal;
+}
+
+.mcr-strip > section > .mcr-sec-h {
+  grid-column: 1 / -1;
+}
+
+.mcr-strip .mcr-grid,
+.mcr-strip .mcr-recent-grid {
+  display: contents;
+}
+
+/* In the strip, Recently aired sits level with Rooms whichever comes first —
+   the adjacency margin above is for stacked sections only. */
+.mcr-strip > section.mcr-recent-rail {
+  margin: 0;
+}
+
+/* THE STRIP ONLY WHEN IT MAKES THE TILES BIG. Every tile must get 300px or
+   more; where the column cannot give n of them (a laptop, a tablet, a phone),
+   the strip steps back to the busy layout — auto-fill tiles, the rail capped
+   to one row — so a quiet board never gets SMALLER tiles than a busy one.
+   Thresholds: n × 300 + (n − 1) × 12. */
+.mcr-main {
+  container: board / inline-size;
+  min-width: 0;
+}
+@container board (width < 612px) {
+  .mcr-strip[data-n='2'] { display: block; max-width: none; }
+  .mcr-strip[data-n='2'] > section { display: block; margin: 0 0 16px; }
+  .mcr-strip[data-n='2'] > .mcr-recent-rail { container-type: inline-size; }
+  .mcr-strip[data-n='2'] .mcr-grid,
+  .mcr-strip[data-n='2'] .mcr-recent-grid { display: grid; }
+}
+@container board (width < 924px) {
+  .mcr-strip[data-n='3'] { display: block; max-width: none; }
+  .mcr-strip[data-n='3'] > section { display: block; margin: 0 0 16px; }
+  .mcr-strip[data-n='3'] > .mcr-recent-rail { container-type: inline-size; }
+  .mcr-strip[data-n='3'] .mcr-grid,
+  .mcr-strip[data-n='3'] .mcr-recent-grid { display: grid; }
+}
+@container board (width < 1236px) {
+  .mcr-strip[data-n='4'] { display: block; max-width: none; }
+  .mcr-strip[data-n='4'] > section { display: block; margin: 0 0 16px; }
+  .mcr-strip[data-n='4'] > .mcr-recent-rail { container-type: inline-size; }
+  .mcr-strip[data-n='4'] .mcr-grid,
+  .mcr-strip[data-n='4'] .mcr-recent-grid { display: grid; }
 }
 
 /* ONE ROW, whatever the width. On a quiet night this row sits ABOVE the rooms,

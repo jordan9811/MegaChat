@@ -38,6 +38,32 @@ function parseStreamRoomFromUrl() {
   return 'default';
 }
 
+/**
+ * MetaMask's own provider, via EIP-6963 (each extension announces itself), or
+ * null. Unlike window.ethereum — which Phantom takes over when both are
+ * installed, and answers with its "Which extension?" chooser — calling this
+ * provider only ever talks to MetaMask.
+ */
+function findMetaMask(timeoutMs = 600) {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') return resolve(null);
+    let done = false;
+    const finish = (p) => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('eip6963:announceProvider', onAnnounce);
+      resolve(p);
+    };
+    function onAnnounce(e) {
+      const d = e && e.detail;
+      if (d && d.info && d.info.rdns === 'io.metamask' && d.provider) finish(d.provider);
+    }
+    window.addEventListener('eip6963:announceProvider', onAnnounce);
+    window.dispatchEvent(new Event('eip6963:requestProvider'));
+    setTimeout(() => finish(null), timeoutMs);
+  });
+}
+
 // Safe provider accessor: never throws, returns null when no injected wallet.
 function getProvider() {
   try {
@@ -562,6 +588,7 @@ async function connectWallet() {
     }
     account = accounts[0];
     walletMode = 'metamask';
+    watchWalletAccount(eth);
     await ensureTempoChain();
     renderWallet();
     // Let the isolated watch-to-earn module know which wallet to credit.
@@ -1415,25 +1442,36 @@ function showMessage(html, type) {
 
 // ─── Init (runs after all state is initialized) ──────────────────────────
 function initWallet() {
-  const eth = getProvider();
-  hasWallet = !!eth;
-  if (eth && typeof eth.on === 'function') {
-    try {
-      // Reflect account/network changes once a wallet is connected.
-      eth.on('accountsChanged', (accs) => {
-        if (walletMode === 'privy') return;
-        account = (accs && accs[0]) || null;
-        if (account) walletMode = 'metamask';
-        renderWallet();
-        if (account) refreshBalance();
-      });
-      eth.on('chainChanged', () => { /* user can re-trigger via actions */ });
-    } catch (e) {
-      console.warn('wallet listener setup failed', e);
-    }
-  }
+  // Only whether an extension EXISTS — never a call into it. Subscribing and
+  // reading accounts wait for an explicit Connect (watchWalletAccount): with
+  // two wallet extensions installed, the first call into window.ethereum pops
+  // Phantom's "Which extension?" chooser at someone who only opened a room.
+  hasWallet = !!getProvider();
   // Note: account stays null here on purpose — we only read it on Connect.
   renderWallet();
+}
+
+// Reflect account changes once — and only once — the visitor has connected.
+let watchingWallet = false;
+function watchWalletAccount(eth) {
+  if (watchingWallet || !eth || typeof eth.on !== 'function') return;
+  watchingWallet = true;
+  try {
+    eth.on('accountsChanged', (accs) => {
+      if (walletMode === 'privy') return;
+      account = (accs && accs[0]) || null;
+      if (account) walletMode = 'metamask';
+      renderWallet();
+      if (account) {
+        refreshBalance();
+        // The watch-to-earn module credits whichever wallet this announces.
+        window.dispatchEvent(new CustomEvent('wallet:connected', { detail: { account } }));
+      }
+    });
+    eth.on('chainChanged', () => { /* user can re-trigger via actions */ });
+  } catch (e) {
+    console.warn('wallet listener setup failed', e);
+  }
 }
 
 // ─── Delayed spectate surface (Twitch embed) ────────────────────────────────
@@ -2256,14 +2294,23 @@ function initRewardsClient(wsUrl) {
 
   window.addEventListener('stream:room', () => registerWallet(), { signal: abort.signal });
 
-  if (window.ethereum) {
-    window.ethereum.request({ method: 'eth_accounts' })
+  // NEVER window.ethereum here. This used to ask it for accounts the moment the
+  // page loaded — and with more than one wallet extension installed (MetaMask +
+  // Phantom), window.ethereum is Phantom's proxy and ANY call on it pops "Which
+  // extension do you want to connect with?" at a visitor who only clicked a
+  // room. A returning MetaMask viewer is still registered silently, so their
+  // watch time counts from page load as it always did — but through
+  // MetaMask's OWN provider, found via EIP-6963, where eth_accounts never
+  // prompts and Phantom's chooser is not involved.
+  void findMetaMask().then((mm) => {
+    if (!mm || abort.signal.aborted) return;
+    mm.request({ method: 'eth_accounts' })
       .then((accts) => { if (accts && accts[0]) setWallet(accts[0]); })
       .catch(() => {});
-    window.ethereum.on && window.ethereum.on('accountsChanged', (accts) => {
-      if (accts && accts[0]) setWallet(accts[0]);
-    });
-  }
+    try {
+      mm.on && mm.on('accountsChanged', (accts) => { if (accts && accts[0]) setWallet(accts[0]); });
+    } catch { /* a provider without events is still a provider */ }
+  });
 
   connect();
 

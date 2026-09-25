@@ -347,6 +347,14 @@ export function TempoWalletProvider({ children }: { children: React.ReactNode })
         accentColor: '#e91e8c' as `#${string}`,
         walletChainType: 'ethereum-only' as const,
       },
+      // DO NOT set externalWallets.disableAllExternalWallets here. It looks
+      // like the fix for Phantom's "Which extension?" popup and is not: Privy
+      // then never initializes its connectors, useWallets().ready stays false
+      // forever, and every new sign-in hangs on "still loading" (found in
+      // review, 2026-09-25). Privy finds extensions through EIP-6963 — each
+      // wallet's own provider — which never shows Phantom's chooser; the popup
+      // came from the join page calling window.ethereum on load
+      // (_gate-no-wallet-prompt.mjs).
       // Silent signing: per-second session vouchers can't pop a modal each tick.
       embeddedWallets: {
         showWalletUIs: false,

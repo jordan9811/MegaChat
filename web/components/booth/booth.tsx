@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { listPublicRooms, listRecentAirings, type PublicRoomCard, type RecentAiring } from '@/lib/api'
 import { listBountyPools, type BountyPool } from '@/lib/bounty-api'
 import { AccountChip } from '@/components/account-chip'
@@ -17,6 +17,8 @@ const ROOM_POLL_MS = 5000
 const POOL_POLL_MS = 30000
 const AIRING_POLL_MS = 60000
 const GRID_CAP = 8
+// Up to this many tiles (recent + rooms + Open a room) share one big row.
+const SPARSE_MAX = 4
 
 // Filters over the rooms, not over the page: bounties keep their own rail on
 // the right, so a chip that swapped the grid to bounties would just show the
@@ -116,10 +118,17 @@ function Stage({
   )
 }
 
-function FeaturedRoom({ room }: { room: PublicRoomCard }) {
+type FeatureSize = 'normal' | 'big' | 'half'
+
+/** A section's share of the sparse strip (booth.css .mcr-strip). */
+function spanStyle(k: number): CSSProperties {
+  return { ['--k' as string]: k } as CSSProperties
+}
+
+function FeaturedRoom({ room, size = 'normal' }: { room: PublicRoomCard; size?: FeatureSize }) {
   const { action, capabilities, full } = roomPresentation(room)
   return (
-    <div className={`mcr-feat ${onAir(room) ? 'is-live' : ''}`}>
+    <div className={`mcr-feat ${onAir(room) ? 'is-live' : ''} ${size === 'normal' ? '' : `is-${size}`}`}>
       <Stage room={room} hero linked />
       <div className="mcr-feat-body">
         <h2>
@@ -127,6 +136,7 @@ function FeaturedRoom({ room }: { room: PublicRoomCard }) {
         </h2>
         <span className="mcr-meta">
           {capabilities}
+          {room.viewers ? ` · ${room.viewers.toLocaleString('en-US')} watching` : ''}
           {room.live > 0 ? ` · ${room.live} on camera` : ''}
           {room.waiting > 0 ? ` · ${room.waiting} waiting` : ''}
         </span>
@@ -329,8 +339,12 @@ export function Booth({
   // WHAT FILLS THE BOARD, IN ORDER. This is the hierarchy the board has had
   // since 43b169f and lost pieces of in the cd118e7 rebuild; keep it written
   // down here so the next rebuild keeps it too.
-  //   1. The featured card: whatever is live, else the demo — the room a
-  //      first-time visitor can actually try — else whatever is hottest.
+  //   1. THE FEATURED TIER. A big stream (live on Twitch with the server's
+  //      BOARD_BIG_VIEWERS or more) gets the big card — the stage takes most
+  //      of the row; two big streams at once get two big cards side by side.
+  //      Otherwise one card at the normal size: whatever is live (most
+  //      viewers, then most on camera), else the demo — the room a first-time
+  //      visitor can actually try — else whatever is hottest.
   //   2. Nothing live? Recently aired comes next, above the idle rooms: a room
   //      that was busy an hour ago is more interesting than an empty grid
   //      cell (server.js "what the board shows when nothing is live").
@@ -338,28 +352,57 @@ export function Booth({
   //      most waiting, newest), capped with a "show all".
   //   4. Open a room, always the last tile.
   //   5. Something live? Recently aired follows the rooms instead.
-  //   The bounty board rides alongside all of it. Every tile is small enough
-  //   that the featured card, a row of each section and the bounty board fit
-  //   above the fold at 1440x900 — no single room gets half the screen.
-  const featured = useMemo(() => {
-    return (
-      visible.find(onAir) ??
-      visible.find((r) => r.isDemo || r.handle === 'demo') ??
-      visible[0] ??
-      null
-    )
-  }, [visible])
+  //   TILE SIZE FOLLOWS HOW FULL THE BOARD IS. With a handful of tiles
+  //   (SPARSE_MAX) they share ONE row and split it — big, up to 520px each —
+  //   so a quiet board does not look like three stamps on an empty page. Past
+  //   that they drop to ~236px tiles, six across at 1920, so a busy board
+  //   still fits a row of each section above the fold at 1440x900.
+  //   The bounty board rides alongside all of it.
+  const liveRanked = useMemo(
+    () => visible.filter(onAir).sort((a, b) => (b.viewers ?? 0) - (a.viewers ?? 0) || b.live - a.live),
+    [visible],
+  )
+  const featuredList = useMemo(() => {
+    const big = liveRanked.filter((r) => r.bigStream)
+    if (big.length) return big.slice(0, 2)
+    const one = liveRanked[0] ?? visible.find((r) => r.isDemo || r.handle === 'demo') ?? visible[0]
+    return one ? [one] : []
+  }, [liveRanked, visible])
+  const featuredSize: FeatureSize =
+    featuredList.length === 2 ? 'half' : featuredList[0]?.bigStream ? 'big' : 'normal'
   const rest = useMemo(() => {
-    const others = featured ? visible.filter((r) => r.id !== featured.id) : visible
+    const ids = new Set(featuredList.map((r) => r.id))
+    const others = visible.filter((r) => !ids.has(r.id))
     return [...others.filter(onAir), ...others.filter((r) => !onAir(r))]
-  }, [visible, featured])
+  }, [visible, featuredList])
   const shown = showAll ? rest : rest.slice(0, GRID_CAP)
   // Recent broadcasts are not rooms, so the chips that pick KINDS of room
   // (seats, MegaChats, free) do not show them; "All" and "Live now" do —
   // "nothing is on air, here is what just was" is the answer to both.
-  const recent =
-    chip === 'all' || chip === 'live' ? <RecentRail airings={airings.slice(0, BOARD_RECENT_CAP)} /> : null
+  const recentAirings = chip === 'all' || chip === 'live' ? airings.slice(0, BOARD_RECENT_CAP) : []
   const quiet = onAirCount === 0
+  const tiles = recentAirings.length + shown.length + 1 // + Open a room
+  const sparse = tiles <= SPARSE_MAX && rest.length <= GRID_CAP
+  const recentSection = recentAirings.length ? (
+    <RecentRail key="recent" airings={recentAirings} span={recentAirings.length} />
+  ) : null
+  const roomsSection = (
+    <section key="rooms" className="mcr-rooms" style={spanStyle(shown.length + 1)}>
+      {recentSection ? <h2 className="mcr-sec-h">Rooms</h2> : null}
+      <div className="mcr-grid">
+        {shown.map((room) => (
+          <RoomCard key={room.id} room={room} />
+        ))}
+        <OpenRoomCard />
+        {rest.length > GRID_CAP ? (
+          <button type="button" className="mcr-more" onClick={() => setShowAll(!showAll)}>
+            {showAll ? 'Show fewer rooms' : `Show all ${rest.length + 1} rooms`}
+          </button>
+        ) : null}
+      </div>
+    </section>
+  )
+  const sections = quiet ? [recentSection, roomsSection] : [roomsSection, recentSection]
 
   return (
     <div className="mc-booth dark flex min-h-dvh flex-col">
@@ -415,24 +458,25 @@ export function Booth({
         </div>
 
         <div className="mcr-cols">
-          <div>
-            {featured ? (
+          <div className="mcr-main">
+            {featuredList.length ? (
               <>
-                <FeaturedRoom room={featured} />
-                {quiet ? recent : null}
-                {quiet && airings.length > 0 && recent ? <h2 className="mcr-sec-h">Rooms</h2> : null}
-                <div className="mcr-grid">
-                  {shown.map((room) => (
-                    <RoomCard key={room.id} room={room} />
-                  ))}
-                  <OpenRoomCard />
-                  {rest.length > GRID_CAP ? (
-                    <button type="button" className="mcr-more" onClick={() => setShowAll(!showAll)}>
-                      {showAll ? 'Show fewer rooms' : `Show all ${rest.length + 1} rooms`}
-                    </button>
-                  ) : null}
-                </div>
-                {quiet ? null : recent}
+                {featuredSize === 'half' ? (
+                  <div className="mcr-feat-pair">
+                    {featuredList.map((room) => (
+                      <FeaturedRoom key={room.id} room={room} size="half" />
+                    ))}
+                  </div>
+                ) : (
+                  <FeaturedRoom room={featuredList[0]} size={featuredSize} />
+                )}
+                {sparse ? (
+                  <div className="mcr-strip" data-n={tiles} style={{ ['--n' as string]: tiles } as CSSProperties}>
+                    {sections}
+                  </div>
+                ) : (
+                  sections
+                )}
               </>
             ) : (
               <div className="mcr-empty">
@@ -457,7 +501,7 @@ export function Booth({
                 </span>
               </div>
             )}
-            {featured ? null : recent}
+            {featuredList.length ? null : recentSection}
           </div>
 
           <BountyBoard pools={topPools.slice(0, 5)} />

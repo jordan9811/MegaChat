@@ -16,6 +16,7 @@
 //             with no video treatment, because a generated card that could
 //             pass for a screenshot is a lie about what we have.
 
+import type { CSSProperties } from 'react'
 import type { RecentAiring } from '@/lib/api'
 
 function ago(ms: number): string {
@@ -77,10 +78,15 @@ function RecentCard({ a }: { a: RecentAiring }) {
   )
 }
 
-export function RecentRail({ airings }: { airings: RecentAiring[] }) {
+/** `span`: how many of the sparse strip's columns this section takes (booth.css .mcr-strip). */
+export function RecentRail({ airings, span }: { airings: RecentAiring[]; span?: number }) {
   if (!airings.length) return null
   return (
-    <section className="mcr-recent-rail" aria-label="Recently aired">
+    <section
+      className="mcr-recent-rail"
+      aria-label="Recently aired"
+      style={span ? ({ ['--k' as string]: span } as CSSProperties) : undefined}
+    >
       <h2 className="mcr-sec-h">Recently aired</h2>
       <div className="mcr-recent-grid">
         {airings.map((a) => (

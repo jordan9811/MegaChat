@@ -147,7 +147,7 @@ export type RecentAiring = {
 
 <!-- source:web/lib/api.ts#GuestEntry -->
 ```typescript
-// web/lib/api.ts — GuestEntry (lines 491–496), embedded by docs:sync
+// web/lib/api.ts — GuestEntry (lines 495–500), embedded by docs:sync
 export type GuestEntry = {
   handle: string
   addedAt: string
@@ -159,7 +159,7 @@ export type GuestEntry = {
 
 <!-- source:web/lib/api.ts#GuestList -->
 ```typescript
-// web/lib/api.ts — GuestList (lines 499–504), embedded by docs:sync
+// web/lib/api.ts — GuestList (lines 503–508), embedded by docs:sync
 export type GuestList = {
   enabled: boolean
   explicit: boolean | null

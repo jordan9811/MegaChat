@@ -30,7 +30,8 @@ import {
   roomOwnerOf,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
-import { getLiveByLogins, twitchApiConfigured, helix } from './twitch-api.js';
+import { getAccount, platformLoginsFor } from './accounts.js';
+import { getStreamsByLogins, twitchApiConfigured, helix } from './twitch-api.js';
 import { openAiring, openAiringFor, closeAiring, addMoment, recentAirings, listAirings, allAiringIds, airingRefs, attachRecording, markRestart } from './airings-store.js';
 import { snapshotLivePreview, finalizeAiringPoster, readAiringPoster, posterFileFor, sweepAiringPosters, lastEvidenceAt } from './airing-posters.js';
 import { buildCard } from './room-poster.js';
@@ -2833,6 +2834,36 @@ const followState = new Map(); // roomId -> { live: boolean, offSince: number|nu
 // AIRING_POSTERS=0 turns off every part of the recent-rail pictures at once:
 // keeping previews, picking at close, and the sweep (airing-posters.js).
 const AIRING_POSTERS_ON = process.env.AIRING_POSTERS !== '0';
+// A "big stream" for the board's featured tier: live on Twitch with at least
+// this many viewers (DECISIONS.md, "The board's featured tier"). A stream stays
+// big until it drops under 80% of it, so one hovering at the line does not
+// resize the board every poll.
+const BOARD_BIG_VIEWERS = Number(process.env.BOARD_BIG_VIEWERS) > 0 ? Number(process.env.BOARD_BIG_VIEWERS) : 100;
+const BIG_STAYS_ABOVE = 0.8;
+
+/** Has the room's OWNER proved the channel it follows is theirs — their
+ *  linked Twitch login is that channel? Anyone can type any channel into a
+ *  room; only a proven one may borrow its live state, its viewer count or the
+ *  big featured card (a room naming a famous channel would otherwise take the
+ *  biggest spot on the board with somebody else's stream). */
+function ownerProvesChannel(roomId, channel) {
+  const login = String(channel || '').trim().replace(/^@/, '').toLowerCase();
+  const key = roomOwnerOf(roomId);
+  if (!login || !key) return false;
+  const acct = getAccount(key);
+  if (!acct) return false;
+  const names = [platformLoginsFor(acct).twitch, acct.platformLogins?.twitch]
+    .filter(Boolean).map((n) => String(n).trim().replace(/^@/, '').toLowerCase());
+  return names.includes(login);
+}
+
+/** What the follow loop last learned about a room — only while it is fresh.
+ *  followTick changes nothing when Twitch cannot be asked, so an old answer
+ *  must not keep a finished stream "live" through a Helix outage. */
+function freshFollow(roomId) {
+  const st = followState.get(roomId);
+  return st && Date.now() - (st.at || 0) < 2 * FOLLOW_POLL_MS + 15_000 ? st : null;
+}
 
 function followsBroadcast(cfg) {
   return !!(cfg && cfg.twitchAuto !== false && cfg.twitchChannel);
@@ -2855,8 +2886,9 @@ async function followTick() {
   }
   if (!following.length) return;
   const logins = following.map((r) => String(r.config.twitchChannel).trim().replace(/^@/, '').toLowerCase());
-  const liveByLogin = await getLiveByLogins(logins);
-  if (!liveByLogin) return; // could not ask — change nothing
+  const streams = await getStreamsByLogins(logins);
+  if (!streams) return; // could not ask — change nothing
+  const liveByLogin = new Map([...streams].map(([l, st]) => [l, st.live]));
 
   const now = Date.now();
   for (const r of following) {
@@ -2866,7 +2898,11 @@ async function followTick() {
     const prev = followState.get(r.id);
 
     if (live) {
-      followState.set(r.id, { live: true, offSince: null });
+      // Viewers ride along from the same call: the board gives a big
+      // streamer the big featured card (BOARD_BIG_VIEWERS, with hysteresis).
+      const viewers = streams.get(login)?.viewers ?? 0;
+      const big = prev?.big ? viewers >= BOARD_BIG_VIEWERS * BIG_STAYS_ABOVE : viewers >= BOARD_BIG_VIEWERS;
+      followState.set(r.id, { live: true, offSince: null, viewers, big, at: now });
       // Rising edge, or the first thing we ever saw. Both mean the same thing
       // to the owner: their broadcast is up and their room is not.
       if (!prev || !prev.live) {
@@ -2909,7 +2945,7 @@ async function followTick() {
         if (closed && AIRING_POSTERS_ON) finalizeAiringPoster(closed);
       }
     }
-    followState.set(r.id, { live: false, offSince });
+    followState.set(r.id, { live: false, offSince, at: now });
     // Hidden from discovery already, by hiddenByBroadcast. The room itself only
     // pauses once the dark has held for the full window.
     if (r.active && now - offSince >= FOLLOW_OFF_CONFIRM_MS) {
@@ -3040,6 +3076,7 @@ app.get('/api/rooms/public', (req, res) => {
       if (s.streamRoomId !== r.id) continue;
       if (s.live) live++; else waiting++;
     }
+    const followLive = cfg.twitchChannel && ownerProvesChannel(r.id, cfg.twitchChannel) ? freshFollow(r.id) : null;
     rooms.push({
       id: r.id,
       name: cfg.name,
@@ -3062,7 +3099,21 @@ app.get('/api/rooms/public', (req, res) => {
       // public broadcast, so no viewer-privacy concern. twitchLive gates the
       // client from rendering Twitch's gray offline placeholder.
       twitchChannel: cfg.twitchChannel || null,
-      twitchLive: cfg.twitchChannel ? twitchLiveCached(cfg.twitchChannel) : false,
+      // A room whose owner PROVED the channel, and that the follow loop saw
+      // live within the last two polls, is live — no waiting on the preview
+      // probe's 90s cache, which left a streamer who had just gone live as
+      // "no live signal" (and never a big stream) for a minute and a half.
+      // Anything else keeps the probe's answer, as before.
+      twitchLive: cfg.twitchChannel
+        ? (followLive?.live === true) || twitchLiveCached(cfg.twitchChannel)
+        : false,
+      // Who is watching on Twitch right now, and whether that makes it a big
+      // stream — the board's featured tier gives those the big card, two side
+      // by side when two are live. Only for a proven channel (see
+      // ownerProvesChannel); the threshold lives here so it can move without
+      // a rebuild.
+      viewers: followLive?.live ? (followLive.viewers ?? null) : null,
+      bigStream: !!(followLive?.live && followLive.big),
       createdAt: r.createdAt,
     });
   }
@@ -3110,7 +3161,7 @@ await migrateLegacyRoomPasswords();
 // "Follow my stream status" is only real if something asks. FOLLOW_STREAM=0
 // turns the loop off and leaves every room's paused/active state manual, the
 // way it behaved before this existed. Unconfigured Twitch app credentials do
-// the same thing by themselves: getLiveByLogins answers null and the tick
+// the same thing by themselves: getStreamsByLogins answers null and the tick
 // changes nothing, so a deploy without them degrades to the old behaviour
 // rather than pausing everybody's rooms.
 // Every seat on camera before this boot is gone (seats live in memory): say so

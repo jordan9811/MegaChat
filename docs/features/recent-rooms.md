@@ -4,7 +4,7 @@
 
 ## What it does
 
-The board's job is to look alive with few streamers, and a room that was busy an hour ago is more interesting than an empty grid cell. So when nothing is live, **Recently aired sits directly under the featured card, above the rooms**, one row of it, above the fold; when something is live it follows the rooms (`web/components/booth/booth.tsx`, "WHAT FILLS THE BOARD, IN ORDER"). Each card is a picture of that broadcast from when a guest was on camera or a MegaChat was playing — the owner's rule — never a placeholder and never the last frame, which is an end card or black (`airing-posters.js`, header).
+The board's job is to look alive with few streamers, and a room that was busy an hour ago is more interesting than an empty grid cell. So when nothing is live, **Recently aired sits directly under the featured card, above the rooms**, one row of it, above the fold; when something is live it follows the rooms. Tile size follows how full the board is: four tiles or fewer share one row at 300–520px each, more than that drop to ~236px tiles. Above it all, a big stream (the server's `BOARD_BIG_VIEWERS` Twitch viewers, on a channel its owner has linked) gets the big featured card, and two big streams share the row (`web/components/booth/booth.tsx`, "WHAT FILLS THE BOARD, IN ORDER"; `_gate-board-fold.mjs`). Each card is a picture of that broadcast from when a guest was on camera or a MegaChat was playing — the owner's rule — never a placeholder and never the last frame, which is an end card or black (`airing-posters.js`, header).
 
 ## How it works
 

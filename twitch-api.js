@@ -129,6 +129,18 @@ export async function getStreamByLogin(login, { log = console } = {}) {
  *   this answer has to treat null as "leave it alone".
  */
 export async function getLiveByLogins(logins, { log = console } = {}) {
+  const streams = await getStreamsByLogins(logins, { log });
+  return streams ? new Map([...streams].map(([l, s]) => [l, s.live])) : null;
+}
+
+/**
+ * The same ONE batched call, keeping what /helix/streams already says about
+ * each live channel: how many people are watching. The board uses it to give
+ * a big streamer the big featured card. Same null contract as getLiveByLogins.
+ *
+ * @returns {Promise<Map<string,{live: boolean, viewers: number}>|null>}
+ */
+export async function getStreamsByLogins(logins, { log = console } = {}) {
   if (!twitchApiConfigured()) return null;
   const list = [...new Set(
     (logins || []).map((l) => String(l || '').trim().replace(/^@/, '').toLowerCase()).filter(Boolean),
@@ -136,9 +148,9 @@ export async function getLiveByLogins(logins, { log = console } = {}) {
   if (!list.length) return new Map();
   try {
     const j = await helix(`/streams?${list.map((l) => `user_login=${encodeURIComponent(l)}`).join('&')}`);
-    const out = new Map(list.map((l) => [l, false]));
+    const out = new Map(list.map((l) => [l, { live: false, viewers: 0 }]));
     for (const s of j.data || []) {
-      if (s?.user_login) out.set(String(s.user_login).toLowerCase(), true);
+      if (s?.user_login) out.set(String(s.user_login).toLowerCase(), { live: true, viewers: Number(s.viewer_count) || 0 });
     }
     return out;
   } catch (e) {

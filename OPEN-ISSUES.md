@@ -3119,3 +3119,57 @@ sections A–H, all green.
   issues, 25 real; all are fixed except R7. The known-red board gates are
   unchanged by this: `_gate-browse-thumb` 6/2/1 and `_gate-browse-deck` (pins a
   zero-diff check against a July commit), as recorded on 2026-09-16.
+
+## The board sized by how full it is, a featured tier, and the wallet popup (2026-09-25)
+
+- **D1 — Tile size now follows how full the board is.** After the 236px tiles
+  shipped, the owner: "thumbnails are too small now … they should be a bit
+  bigger since page isn't populated, then can be this small when more usage".
+  With four tiles or fewer under the featured card (recent + rooms + Open a
+  room) they share ONE row, split evenly, 300–520px each; past four, or where
+  the column cannot give each tile 300px (a laptop, a tablet, a phone), the
+  busy layout's auto-fill tiles return. Production today (3 tiles) at 1920:
+  ~488px; at 1440: ~328px. `_gate-board-fold.mjs` 108/0 over four boards
+  (busy, 4-tile quiet, 3-tile quiet, live) at 1920/1903/1440/1423/1280/1101
+  and a phone.
+- **D2 — The featured tier.** A big stream — live on Twitch with
+  BOARD_BIG_VIEWERS (default 100) or more — gets the big card (the stage 62% of
+  the row, never under 448px); two at once get two cards side by side, stacked
+  where each would be under 448px. It stays big until it drops under 80% of the
+  threshold. Viewer counts ride the follow loop's existing Helix call
+  (`getStreamsByLogins`).
+- **D3 — Only a proven channel gets a viewer count, the big card, or the follow
+  loop's live state.** Anyone can type any channel into a password-only room;
+  the review showed a room naming a famous channel would have taken the
+  biggest spot on the board with "40,000 watching". Now the room's owner must
+  have that Twitch login linked (`ownerProvesChannel`); other rooms keep the
+  preview probe only. Gate B0.
+- **D4 — A just-live streamer shows as live within one follow poll**, not after
+  the preview probe's 90s cache — but only while the follow loop's answer is
+  fresh (two polls), so a Helix outage cannot keep a finished stream "live".
+- **D5 — The Phantom popup: the join page, not Privy.** With MetaMask and
+  Phantom installed, window.ethereum is Phantom's proxy and any call on it
+  pops "Which extension do you want to connect with?". The join page called
+  eth_accounts (and subscribed) on it at load. Now it never touches
+  window.ethereum before an explicit Connect. A first attempt also set Privy's
+  `externalWallets.disableAllExternalWallets`; the review caught that it
+  leaves `useWallets().ready` false forever — every new sign-in would have hung
+  — and a realistic fake (EIP-6963 providers plus the chooser proxy) showed
+  Privy never uses the proxy anyway. Reverted, with a comment at the spot.
+  `_gate-no-wallet-prompt.mjs` 8/0 locally; the production build before this
+  fails W1 and W3 there.
+- **D6 — A returning MetaMask viewer is still registered silently**, so watch
+  time counts from page load — through MetaMask's own EIP-6963 provider, where
+  eth_accounts never prompts. Other injected wallets (Coinbase, Rabby, …) are
+  now registered at Connect rather than at load.
+- **D7 — Not checkable from localhost: Privy readiness** (W4). Privy answers
+  only the origins its app allows; the gate runs W4 against the deployed site.
+- **D8 — Discrimination, recorded.** Without the ownership check: B0 red (the
+  impostor featured with 90,000 viewers). Without the width floor and the
+  alignment fix: F5 red at 1280/1101 (215px tiles, smaller than the busy
+  layout's 329) and F10 red (Recently aired 16px low). With the Privy flag on:
+  W2 red locally (under the simple fake). Against the pre-change production
+  build: W1 and W3 red.
+- **D9 — Flake seen once:** `_gate-lazy-connect.mjs` failed one run with
+  ERR_CONNECTION_REFUSED on its restarted server, then passed 66/0 three times
+  on the same tree. Not related to the board.

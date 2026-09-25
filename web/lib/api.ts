@@ -247,6 +247,10 @@ export type PublicRoomCard = {
   /** True only when that channel is actually live (server-verified) — Twitch
    *  serves a gray placeholder for offline channels, so gate on this. */
   twitchLive: boolean
+  /** Watching on Twitch now, for a room that follows its broadcast; null when unknown. */
+  viewers?: number | null
+  /** Live with enough viewers to earn the big featured card (server's BOARD_BIG_VIEWERS). */
+  bigStream?: boolean
   createdAt: string
   letters?: Pick<LettersConfig, 'enabled' | 'price' | 'maxSeconds'>
   joinStream?: Pick<JoinStreamConfig, 'enabled'>

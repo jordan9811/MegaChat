@@ -989,3 +989,19 @@ reason than "the API is expensive".
   volume. Undo: the `roomOwnerOf` check in `followTick`.
 - **The owner's 2026-09-24 broadcast was given its picture by hand** (OPEN-ISSUES
   R4). Undo: delete `/data/airing-posters/db1f8abd-6d48-4bf4-9a37-4605163baf2f.*`.
+
+## The board's featured tier and its density (2026-09-25)
+
+- **A big stream is BOARD_BIG_VIEWERS = 100 Twitch viewers or more**, with
+  hysteresis (stays big until under 80). A judgement call with no traffic data
+  behind it — "big" on a young platform. Undo or tune: set BOARD_BIG_VIEWERS
+  (a very large value turns the tier off).
+- **The big card and viewer counts only for a channel the owner has linked.**
+  Undo: `ownerProvesChannel` in `server.js`.
+- **Four tiles or fewer share one row at 300–520px; otherwise ~236px tiles.**
+  The owner: bigger while the page is sparse, small once it fills. Undo:
+  SPARSE_MAX in `booth.tsx`; the thresholds in `booth.css` (`@container board`).
+- **Nothing touches window.ethereum before a click.** Returning MetaMask
+  viewers are recognised through MetaMask's own provider (EIP-6963). Undo: n/a.
+- **Never Privy's disableAllExternalWallets.** It stops Privy ever becoming
+  ready (new sign-ins hang) and was not the popup's cause. Undo: n/a.
