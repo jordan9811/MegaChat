@@ -381,19 +381,22 @@ export const PLATFORM_PROFILES = {
 
 <!-- source:airings-store.js#addMoment -->
 ```javascript
-// airings-store.js — addMoment (lines 138–153), embedded by docs:sync
+// airings-store.js — addMoment (lines 138–156), embedded by docs:sync
 /**
  * Record something worth seeking to. Silently does nothing when the room is
  * not on air — a seat taken in a room whose owner never streams is a normal
  * thing that happens, not an error, and this must never be in a position to
  * throw inside a seat or letter path.
  */
-export function addMoment(roomId, { kind, label = null, at = Date.now() }) {
+export function addMoment(roomId, { kind, label = null, at = Date.now(), ref = null }) {
   load();
   const a = openAiringFor(roomId);
   if (!a) return null;
   if (a.moments.length >= MAX_MOMENTS) return null;
   const moment = { at, kind, label, offsetMs: Math.max(0, at - a.startedAt) };
+  // What the moment is OF, when there is a thing: a MegaChat's letter id, so
+  // the replay can play that clip (aired-clips.js) when the recording cannot.
+  if (ref) moment.ref = String(ref);
   a.moments.push(moment);
   persist();
   return moment;
@@ -403,14 +406,21 @@ export function addMoment(roomId, { kind, label = null, at = Date.now() }) {
 
 <!-- source:airings-store.js#attachRecording -->
 ```javascript
-// airings-store.js — attachRecording (lines 156–165), embedded by docs:sync
-export function attachRecording(airingId, { vodId = null, vodUrl = null, captureRef = null }) {
+// airings-store.js — attachRecording (lines 158–174), embedded by docs:sync
+/**
+ * Attach a replay to an airing once something has resolved one. `recordings`
+ * is EVERY platform recording that overlaps the airing, with when each
+ * started — one broadcast can be two Twitch VODs (a drop inside the resume
+ * window), and a moment can only be opened in the one that covers it.
+ */
+export function attachRecording(airingId, { vodId = null, vodUrl = null, captureRef = null, recordings = null }) {
   load();
   const a = state.airings.find((x) => x.id === airingId);
   if (!a) return null;
   if (vodId !== null) a.vodId = vodId;
   if (vodUrl !== null) a.vodUrl = vodUrl;
   if (captureRef !== null) a.captureRef = captureRef;
+  if (Array.isArray(recordings)) a.recordings = recordings;
   persist();
   return a;
 }
@@ -419,6 +429,6 @@ export function attachRecording(airingId, { vodId = null, vodUrl = null, capture
 
 ## HTTP surface
 
-The routes `server.js` registers directly, in source order: `GET /r/:handle`, `GET /r/:handle/overlay`, `GET /api/health/platforms`, `GET /api/health`, `GET /api/config`, `GET /api/balance/:address`, `POST /api/livekit/webhook`, `GET /api/livekit/burn`, `POST /api/livekit/burn/purge-foreign`, `POST /api/livekit/burn/test-alert`, `POST|DELETE /api/livekit/burn/override`, `POST /api/livekit/prewarm[/progress|/cancel]`, `POST /api/livekit/overlay/beat`, `GET /api/livekit/overlay/health`, `GET /api/livekit/sessions`, `POST /api/livekit/token`, `POST /api/seat/quality`, `GET /`, `GET /overlay`, `POST /api/join/passkey`, `POST /api/join/mpp`, `ALL /api/meter/tick`, `POST /api/join` (501, retired), `POST /api/leave/:seatId`, `GET /api/seats`, `GET /api/rooms/:roomId/poster.jpg`, `GET /api/airings/:airingId/poster.jpg`, `GET /api/rooms/recent`, `GET /api/rooms/public`, `GET /favicon.ico`, `GET /:handle`, `GET /:handle/overlay`.
+The routes `server.js` registers directly, in source order: `GET /r/:handle`, `GET /r/:handle/overlay`, `GET /api/health/platforms`, `GET /api/health`, `GET /api/config`, `GET /api/balance/:address`, `POST /api/livekit/webhook`, `GET /api/livekit/burn`, `POST /api/livekit/burn/purge-foreign`, `POST /api/livekit/burn/test-alert`, `POST|DELETE /api/livekit/burn/override`, `POST /api/livekit/prewarm[/progress|/cancel]`, `POST /api/livekit/overlay/beat`, `GET /api/livekit/overlay/health`, `GET /api/livekit/sessions`, `POST /api/livekit/token`, `POST /api/seat/quality`, `GET /`, `GET /overlay`, `POST /api/join/passkey`, `POST /api/join/mpp`, `ALL /api/meter/tick`, `POST /api/join` (501, retired), `POST /api/leave/:seatId`, `GET /api/seats`, `GET /api/rooms/:roomId/poster.jpg`, `GET /api/airings/:airingId/poster.jpg`, `GET /api/rooms/:roomId/replay`, `GET /api/aired-clips/:id`, `DELETE /api/dashboard/rooms/:roomId/aired-clips/:id`, `GET /api/rooms/recent`, `GET /api/rooms/public`, `GET /favicon.ico`, `GET /:handle`, `GET /:handle/overlay`.
 
 Attached modules add their own: `/auth/*` (`auth.js`), `/api/letter/*` (`letters.js`), `/api/dashboard/*` (`dashboard-routes.js`), `/api/whitelist/*` (`whitelist-routes.js`), and — only with `BOUNTY_CLAIM=1` — the `/api/bounty/*` set listed by path in `bounty-routes.js` (`guarded.get`/`guarded.post`), every one of which is looked up in `bounty-auth.js`'s policy table at registration.

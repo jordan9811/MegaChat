@@ -1492,17 +1492,179 @@ function syncPreviewIdle() {
   idle.style.display = showing ? 'none' : '';
 }
 
+// Bumped by every mount and every hide: a replay lookup that comes back after
+// the preview was removed (the viewer took a live seat — echo safety) must
+// not put a player back.
+let previewGen = 0;
+
 function mountStreamPreview() {
   const wrap = document.getElementById('streamPreview');
   const mount = document.getElementById('streamPreviewMount');
   if (!wrap || !mount) return;
+  const gen = ++previewGen;
+  // An OFFLINE room shows the replay of a broadcast — the one a "Recently
+  // aired" card asked for (?replay=), else its latest — instead of Twitch's
+  // "is offline / Watch Latest Stream", which leaves the site. A live room,
+  // or one with nothing to replay, gets the live embed exactly as before.
+  const roomId = (CONFIG && CONFIG.roomId) || streamRoomId;
+  const want = new URLSearchParams(location.search).get('replay') || '';
+  fetch(`/api/rooms/${encodeURIComponent(roomId)}/replay${want ? `?airing=${encodeURIComponent(want)}` : ''}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null)
+    .then((replay) => {
+      if (gen !== previewGen) return; // hidden or re-mounted meanwhile
+      // A replay needs something to show: a moment to open, or — once the
+      // recording has been looked up and is gone — the broadcast's picture.
+      // "Not looked up yet" (minutes after the end) keeps Twitch's own embed.
+      const playable = replay && !replay.live && replay.airing
+        && (replay.start >= 0 || (replay.recordingsResolved && replay.airing.poster?.kind === 'frame'));
+      if (playable) {
+        mountReplay(wrap, mount, replay);
+        watchForLive(gen, roomId);
+      } else {
+        mountLivePreview(wrap, mount);
+      }
+    });
+}
+
+// While a replay is up, keep asking whether the room went live: the replay was
+// chosen once, and a viewer who opened it before the stream must not stay on
+// yesterday's broadcast after it starts.
+function watchForLive(gen, roomId) {
+  const t = setInterval(() => {
+    if (gen !== previewGen) { clearInterval(t); return; }
+    fetch(`/api/rooms/${encodeURIComponent(roomId)}/replay`)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((j) => {
+        if (!j || !j.live || gen !== previewGen) return;
+        clearInterval(t);
+        const wrap = document.getElementById('streamPreview');
+        const mount = document.getElementById('streamPreviewMount');
+        if (wrap && mount) { mount.innerHTML = ''; mountLivePreview(wrap, mount); }
+      });
+  }, 45_000);
+}
+
+/** Twitch's `time` parameter: 1h2m3s. */
+function twitchTime(totalS) {
+  const s = Math.max(0, Math.floor(totalS));
+  return `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}m${s % 60}s`;
+}
+
+function clockText(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
+function agoText(ms) {
+  const mins = Math.max(1, Math.round((Date.now() - ms) / 60000));
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  return hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs / 24)}d ago`;
+}
+
+/**
+ * The replay: the broadcast's recording opened `leadS` before the moment (a
+ * MegaChat first, else a guest going on camera), a button for every other
+ * moment, and — for a moment the recording cannot show any more — the kept
+ * MegaChat clip. With nothing playable at all, the broadcast's picture.
+ */
+function mountReplay(wrap, mount, replay) {
+  const label = document.getElementById('streamPreviewLabel');
+  const list = document.getElementById('streamReplayMoments');
+  const moments = replay.moments || [];
+  const describe = (m) => `${m.kind === 'megachat' ? 'MegaChat' : 'On camera'} · ${m.label || 'guest'}`;
+  const play = (i) => {
+    const m = moments[i];
+    mount.innerHTML = '';
+    if (m.vod) {
+      const iframe = document.createElement('iframe');
+      iframe.src =
+        'https://player.twitch.tv/?video=v' + encodeURIComponent(m.vod.vodId) +
+        '&parent=' + encodeURIComponent(location.hostname) +
+        '&time=' + twitchTime(m.vod.offsetS) +
+        '&autoplay=true&muted=true';
+      iframe.allow = 'autoplay; fullscreen';
+      iframe.allowFullscreen = true;
+      iframe.title = 'Replay';
+      mount.appendChild(iframe);
+    } else if (m.clip) {
+      const v = document.createElement('video');
+      v.className = 'stream-replay-clip';
+      v.controls = true;
+      v.autoplay = true;
+      v.muted = true;
+      v.playsInline = true;
+      const src = document.createElement('source');
+      src.src = m.clip.url;
+      src.type = m.clip.mime || 'video/webm';
+      // A browser that cannot play it (Safari and a webm) shows the
+      // broadcast's picture instead of a dead player.
+      src.addEventListener('error', () => showPoster('This clip cannot play in this browser'));
+      v.appendChild(src);
+      mount.appendChild(v);
+    }
+    if (label) {
+      label.textContent = m.vod
+        ? `Replay · aired ${agoText(replay.airing.endedAt)} · from ${replay.leadS}s before ${describe(m)}`
+        : `The MegaChat · ${m.label || 'guest'} · aired ${agoText(replay.airing.endedAt)} (the recording is gone)`;
+    }
+    if (list) list.querySelectorAll('button').forEach((b, j) => b.setAttribute('aria-pressed', String(j === i)));
+  };
+  function showPoster(why) {
+    mount.innerHTML = '';
+    if (replay.airing.poster?.kind === 'frame') {
+      const img = document.createElement('img');
+      img.className = 'stream-replay-poster';
+      img.src = replay.airing.poster.url;
+      img.alt = '';
+      mount.appendChild(img);
+    }
+    if (label) label.textContent = `Aired ${agoText(replay.airing.endedAt)} · ${why}`;
+  }
+  if (list) {
+    list.innerHTML = '';
+    if (moments.length > 1) {
+      // The first dozen: the row scrolls sideways (join.css), never grows.
+      moments.slice(0, 12).forEach((m, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = `${describe(m)} · ${clockText(m.offsetMs)}${m.vod ? '' : ' · clip'}`;
+        b.addEventListener('click', () => play(i));
+        list.appendChild(b);
+      });
+      list.hidden = false;
+    } else {
+      list.hidden = true;
+    }
+  }
+  if (replay.start >= 0) {
+    play(replay.start);
+  } else {
+    // Nothing left to play: the picture the board showed, and why.
+    showPoster('the recording is no longer available');
+  }
+  wrap.style.display = '';
+  syncPreviewIdle();
+}
+
+function mountLivePreview(wrap, mount) {
   const channel = CONFIG && CONFIG.twitchChannel;
   if (!channel) {
     wrap.style.display = 'none';
     syncPreviewIdle();
     return;
   }
-  if (!mount.querySelector('iframe')) {
+  const label = document.getElementById('streamPreviewLabel');
+  if (label) label.textContent = 'Stream preview · slight delay';
+  const list = document.getElementById('streamReplayMoments');
+  if (list) list.hidden = true;
+  if (!mount.querySelector('iframe[src*="channel="]')) {
+    mount.innerHTML = '';
     const iframe = document.createElement('iframe');
     iframe.src =
       'https://player.twitch.tv/?channel=' + encodeURIComponent(channel) +
@@ -1522,9 +1684,10 @@ function mountStreamPreview() {
 }
 
 function hideStreamPreview() {
+  previewGen++; // a replay lookup still in flight must not mount afterwards
   const wrap = document.getElementById('streamPreview');
   const mount = document.getElementById('streamPreviewMount');
-  if (mount) mount.innerHTML = ''; // iframe removed → guaranteed silent
+  if (mount) mount.innerHTML = ''; // iframe (live or replay) removed → guaranteed silent
   if (wrap) wrap.style.display = 'none';
   syncPreviewIdle();
 }

@@ -1005,3 +1005,16 @@ reason than "the API is expensive".
   viewers are recognised through MetaMask's own provider (EIP-6963). Undo: n/a.
 - **Never Privy's disableAllExternalWallets.** It stops Privy ever becoming
   ready (new sign-ins hang) and was not the popup's cause. Undo: n/a.
+
+## MegaChat replays (2026-09-25)
+
+- **An offline room's page plays its broadcast's recording, 20s before its
+  first MegaChat (else first guest).** The owner's ask. Undo: `mountStreamPreview`
+  in `join-page.ts` back to the live embed only; `REPLAY_LEAD_S` in `server.js`.
+- **An aired MegaChat is kept for its broadcast's replay, up to 30 days — a
+  change to "one-shot".** The owner asked for the clip as the fallback when the
+  recording is gone. Guarded: completed plays only, proven channels only, not
+  while the overlay reported hidden, never bounty clips, deleted on refund,
+  removable by the owner, and the fan is told before sending. Undo:
+  AIRED_CLIPS=0 (keeps none; existing copies age out), and restore the send
+  screen's "Your clip plays once on the broadcast." (`join-client.tsx`).

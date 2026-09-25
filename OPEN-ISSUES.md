@@ -3173,3 +3173,49 @@ sections A–H, all green.
 - **D9 — Flake seen once:** `_gate-lazy-connect.mjs` failed one run with
   ERR_CONNECTION_REFUSED on its restarted server, then passed 66/0 three times
   on the same tree. Not related to the board.
+
+## The replay of a broadcast, on the room page (2026-09-25)
+
+- **P1 — An offline room plays its broadcast's recording on the page.** The
+  owner: "i can't watch the vod in here … embed the vod or pull the clip … as
+  fallback … open to the timestamp say 20 seconds before the megachat". Before,
+  an offline room showed Twitch's "is offline — Watch Latest Stream", which
+  leaves the site. Now `GET /api/rooms/:roomId/replay` gives the page each
+  moment (a MegaChat first, else a guest going on camera) as a Twitch VOD and a
+  second — `(at − recording start + 16s skew) − 20s` — in the recording that
+  covers it, and the page plays it in a Twitch player with a button per moment
+  (`join-page.ts`, mountReplay). A "Recently aired" card opens its own
+  broadcast (`?replay=`). A broadcast can be two recordings; each moment opens
+  in its own (`airing.recordings`, filled by the poster sweep — including,
+  after the deploy, the owner's 2026-09-24 broadcast, which spans two).
+- **P2 — The fallback: the MegaChat itself.** A MegaChat's media is deleted a
+  minute after it plays, so the fallback is a copy kept when it airs
+  (`aired-clips.js`): only when the play COMPLETED on a recorded broadcast of
+  a room whose owner proved the channel, the overlay not reported hidden,
+  never a bounty clip. 30 days at most, 100 MB per room, 400 MB in all; a
+  refund deletes it; the room's owner can remove one
+  (`DELETE /api/dashboard/rooms/:roomId/aired-clips/:id`). The fan is told on
+  the send screen ("stays in that stream's replay for up to 30 days").
+  AIRED_CLIPS=0 keeps none.
+- **P3 — Review found, and this fixed before shipping:** a stored-XSS path
+  (the clip's Content-Type came from the sender; "video/webm,text/html" passed
+  a prefix check — now anchored, normalised to one of two types, nosniff, and
+  the existing letter media route fixed the same way); a room whose handle
+  spelled another room's id could answer for that room's replay (ids now
+  resolved first); a replay that never switched to the live stream when it
+  started (the page re-asks every 45s; an open airing counts as live); a
+  just-ended broadcast claiming its recording was gone before it had been
+  looked up; a live room waiting on a Twitch lookup it did not need; clip
+  copies kept for refunded, interrupted, bounty and anonymous-room clips.
+- **P4 — Open: removing a kept clip has no dashboard button yet** — the route
+  exists (owner or room password) but nothing in the UI calls it.
+- **P5 — Open: a VOD the streamer deleted on purpose and one that expired look
+  the same** — both fall back to the kept clip. The owner's remove route and
+  the 30-day limit are the answer for now.
+- **P6 — Not checkable here: Twitch's player embed** (it needs the real
+  player.twitch.tv and a real VOD). The gate asserts the embed URL — video,
+  time, parent — and the prod check after deploy asserts the owner's broadcast.
+- **P7 — Discrimination, recorded.** `_gate-replay.mjs` 23/0; with the clip hook
+  removed E1–E2 red; with no lead R1–R2 red; with any room keeping copies E3
+  red; with handles resolved before ids X3 red. The stale clip-ref cache bug
+  (a just-aired clip 404ing for 30s) was found by E2 itself.

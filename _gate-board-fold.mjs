@@ -267,8 +267,6 @@ try {
     await follow('Small Streamer', 'smallchan', 'smallchan');
     await follow('Big Streamer', 'bigchan', 'bigchan');
     await follow('Other Big Streamer', 'bigchan2', 'bigchan2');
-    // Anyone can TYPE a famous channel into a password-only room.
-    await follow('Totally Famous Streamer', 'famouschan', null);
     const liveBoard = async (want, tag) => {
       const page = await browser.newPage();
       await page.setViewport({ width: 1920, height: 927 });
@@ -280,16 +278,18 @@ try {
     };
 
     liveViewers.set('smallchan', 20);
-    let m = await liveBoard((x) => x.feats[0]?.live, 'small');
+    // Settled: rooms created a moment ago stay listed until the follow loop has
+    // looked at them once (nothing is hidden on a guess), then leave.
+    let m = await liveBoard((x) => x.feats[0]?.live && x.strip, 'small');
     ok('F8 a small live stream is featured at the NORMAL size, and Recently aired follows the rooms',
       m.feats.length === 1 && m.feats[0].live && !m.feats[0].big && !!m.rail && !m.railBeforeRooms,
       JSON.stringify({ feats: m.feats.map((f) => ({ big: f.big, half: f.half, live: f.live })), railBeforeRooms: m.railBeforeRooms }));
 
-    if (m.tileTops[0] != null && m.strip) {
-      ok('F10 live: in the one row, Rooms and Recently aired start level', m.tileTops[0] === m.tileTops[1], JSON.stringify(m.tileTops));
-    }
+    ok('F10 live: in the one row, Rooms and Recently aired start level', m.strip && m.tileTops[0] != null && m.tileTops[0] === m.tileTops[1], JSON.stringify({ strip: m.strip, tops: m.tileTops }));
 
     // An impostor room naming a famous channel, live with 90,000 viewers.
+    // Anyone can TYPE a famous channel into a password-only room.
+    await follow('Totally Famous Streamer', 'famouschan', null);
     liveViewers.set('famouschan', 90000);
     await sleep(3000);
     const pub = (await (await fetch(`${APP}/api/rooms/public`)).json()).rooms || [];

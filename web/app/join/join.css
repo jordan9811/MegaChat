@@ -504,6 +504,48 @@ a.addr {
   height: 100%;
   border: 0;
 }
+/* The replay of an offline room's last broadcast: a kept MegaChat clip plays
+   in the frame like the recording would, and the moments sit under it. */
+.stream-preview-mount video.stream-replay-clip,
+.stream-preview-mount img.stream-replay-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+/* One row that scrolls sideways: the media stage has a fixed height, and a
+   wrapping list would squeeze the player to nothing on a phone. */
+.stream-replay-moments {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin-top: 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.stream-replay-moments button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.stream-replay-moments[hidden] {
+  display: none;
+}
+.stream-replay-moments button {
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mcj-faint);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  cursor: pointer;
+}
+.stream-replay-moments button:hover,
+.stream-replay-moments button[aria-pressed='true'] {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.5);
+}
 .stream-preview-caption {
   display: flex;
   align-items: center;

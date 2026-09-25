@@ -141,25 +141,34 @@ export function closeAiring(roomId, endedAt = Date.now()) {
  * thing that happens, not an error, and this must never be in a position to
  * throw inside a seat or letter path.
  */
-export function addMoment(roomId, { kind, label = null, at = Date.now() }) {
+export function addMoment(roomId, { kind, label = null, at = Date.now(), ref = null }) {
   load();
   const a = openAiringFor(roomId);
   if (!a) return null;
   if (a.moments.length >= MAX_MOMENTS) return null;
   const moment = { at, kind, label, offsetMs: Math.max(0, at - a.startedAt) };
+  // What the moment is OF, when there is a thing: a MegaChat's letter id, so
+  // the replay can play that clip (aired-clips.js) when the recording cannot.
+  if (ref) moment.ref = String(ref);
   a.moments.push(moment);
   persist();
   return moment;
 }
 
-/** Attach a replay to an airing once something has resolved one. */
-export function attachRecording(airingId, { vodId = null, vodUrl = null, captureRef = null }) {
+/**
+ * Attach a replay to an airing once something has resolved one. `recordings`
+ * is EVERY platform recording that overlaps the airing, with when each
+ * started — one broadcast can be two Twitch VODs (a drop inside the resume
+ * window), and a moment can only be opened in the one that covers it.
+ */
+export function attachRecording(airingId, { vodId = null, vodUrl = null, captureRef = null, recordings = null }) {
   load();
   const a = state.airings.find((x) => x.id === airingId);
   if (!a) return null;
   if (vodId !== null) a.vodId = vodId;
   if (vodUrl !== null) a.vodUrl = vodUrl;
   if (captureRef !== null) a.captureRef = captureRef;
+  if (Array.isArray(recordings)) a.recordings = recordings;
   persist();
   return a;
 }
@@ -218,6 +227,14 @@ export function markRestart(at = Date.now()) {
 export function allAiringIds() {
   load();
   return state.airings.map((a) => a.id);
+}
+
+/** Every moment that names a thing (a MegaChat's letter id), with its room. */
+export function momentRefs() {
+  load();
+  const out = [];
+  for (const a of state.airings) for (const m of a.moments) if (m.ref) out.push({ ref: m.ref, roomId: a.roomId });
+  return out;
 }
 
 /** Every airing the store keeps, open or closed, with its room. */

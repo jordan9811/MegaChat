@@ -32,8 +32,10 @@ import {
 import { attachDashboardRoutes } from './dashboard-routes.js';
 import { getAccount, platformLoginsFor } from './accounts.js';
 import { getStreamsByLogins, twitchApiConfigured, helix } from './twitch-api.js';
-import { openAiring, openAiringFor, closeAiring, addMoment, recentAirings, listAirings, allAiringIds, airingRefs, attachRecording, markRestart } from './airings-store.js';
-import { snapshotLivePreview, finalizeAiringPoster, readAiringPoster, posterFileFor, sweepAiringPosters, lastEvidenceAt } from './airing-posters.js';
+import { openAiring, openAiringFor, closeAiring, addMoment, recentAirings, listAirings, allAiringIds, airingRefs, attachRecording, markRestart, momentRefs } from './airings-store.js';
+import { snapshotLivePreview, finalizeAiringPoster, readAiringPoster, posterFileFor, sweepAiringPosters, lastEvidenceAt, hasContent } from './airing-posters.js';
+import { readAiredClip, airedClipFile, sweepAiredClips, removeAiredClip } from './aired-clips.js';
+import { hiddenWindows } from './overlay-visibility.js';
 import { buildCard } from './room-poster.js';
 import { createActivityManager } from './livekit-activity.js';
 import { createWebhookTracker, verifyWebhookJwt, reconcile } from './livekit-webhooks.js';
@@ -1950,6 +1952,16 @@ try {
     // are one artifact instead of two that can disagree. No-ops when the
     // BOUNTY_CLAIM flag is off.
     ...makeClipHooks(),
+    // A copy of an aired MegaChat is kept for the broadcast's replay only for
+    // a room whose owner proved the channel, and only when the overlay did not
+    // report itself hidden or too small during the play (aired-clips.js).
+    // AIRED_CLIPS=0 keeps none.
+    canKeepAiredClip: (roomId, { from, to }) => {
+      if (process.env.AIRED_CLIPS === '0') return false;
+      const cfg = resolveRoomConfig(roomId);
+      if (!cfg?.twitchChannel || !ownerProvesChannel(roomId, cfg.twitchChannel)) return false;
+      return !hiddenWindows(roomId).some((w) => w.startedAt <= to && (w.endedAt == null || w.endedAt >= from));
+    },
   });
   // PASS C PART 3a — a BANKED clip replays through the letters queue, as a
   // synthetic already-paid letter whose id is the clip id, so the watermark
@@ -3020,6 +3032,141 @@ function airingPosterView(a, roomName) {
   return buildCard(a, { title: roomName || null });
 }
 
+// ── the replay of a finished broadcast ────────────────────────────────────
+// A "Recently aired" card opens the room, and an offline room's page used to
+// show only Twitch's "is offline — Watch Latest Stream", which leaves the site.
+// This says what the page can play instead: the broadcast's own recording,
+// opened REPLAY_LEAD_S before each moment worth seeing (a MegaChat first, else
+// a guest going on camera), or — when the recording is gone — the MegaChat
+// clip itself (aired-clips.js). The owner, 2026-09-25.
+const REPLAY_LEAD_S = 20;
+const vodAvailability = new Map(); // vodId → { ok, at }
+const vodChecking = new Map(); // key → Promise, so a burst of pages shares one Helix call
+const VOD_CHECK_MS = 30 * 60_000;
+
+/** Which of these Twitch recordings still exist. "Could not ask" is yes —
+ *  a replay that tries and fails beats one that is never offered. */
+async function vodsAvailable(ids) {
+  const now = Date.now();
+  if (!twitchApiConfigured()) return new Map(ids.map((id) => [id, true]));
+  const need = ids.filter((id) => { const c = vodAvailability.get(id); return !c || now - c.at > VOD_CHECK_MS; });
+  if (need.length) {
+    const key = [...need].sort().join(',');
+    if (!vodChecking.has(key)) {
+      vodChecking.set(key, checkVods(need).finally(() => vodChecking.delete(key)));
+    }
+    await vodChecking.get(key);
+  }
+  return new Map(ids.map((id) => [id, vodAvailability.get(id)?.ok !== false]));
+}
+
+async function checkVods(need) {
+  const now = Date.now();
+  {
+    try {
+      const j = await helix(`/videos?${need.map((id) => `id=${encodeURIComponent(id)}`).join('&')}`);
+      const found = new Set((j?.data || []).map((v) => String(v.id)));
+      for (const id of need) vodAvailability.set(id, { ok: found.has(id), at: now });
+    } catch (e) {
+      // Helix answers 404 when none of the ids exists any more.
+      const gone = / 404$/.test(String(e.message || ''));
+      for (const id of need) vodAvailability.set(id, { ok: !gone, at: gone ? now : now - VOD_CHECK_MS + 5 * 60_000 });
+    }
+  }
+}
+
+app.get('/api/rooms/:roomId/replay', async (req, res) => {
+  // A room id, or a handle — the room page may ask before /api/config has
+  // resolved its handle to an id. The ID FIRST, as resolveRoomFromRequest
+  // does: a room whose handle spells another room's id must not answer for it.
+  const byId = normalizeRoomId(req.params.roomId);
+  const id = (byId && resolveRoomConfig(byId) ? byId : null) || getRoomByHandle(req.params.roomId)?.id || null;
+  if (!id) return res.status(400).json({ error: 'Invalid room id' });
+  const room = listRooms().find((r) => r.id === id);
+  if (!room || !room.config || room.config.unlisted) return res.status(404).json({ error: 'No such room' });
+  const cfg = room.config;
+  const followLive = cfg.twitchChannel && ownerProvesChannel(id, cfg.twitchChannel) ? freshFollow(id) : null;
+  // A proven, fresh follow answer decides both ways — the preview probe's 90s
+  // cache would otherwise keep a stream that just ended 'live', and hide its replay.
+  // An airing still open means the follow loop saw the broadcast live and has
+  // not seen it end — live, whatever a cold probe cache says after a deploy.
+  const live = !!cfg.twitchChannel && (!!openAiringFor(id)
+    || (followLive ? followLive.live === true : twitchLiveCached(cfg.twitchChannel)));
+  if (live) return res.json({ live: true, airing: null, moments: [], start: -1, leadS: REPLAY_LEAD_S });
+  const ended = listAirings(id).filter((a) => a.endedAt != null && hasContent(a));
+  const want = String(req.query.airing || '');
+  const a = (want && ended.find((x) => x.id === want)) || ended[0] || null;
+  if (!a) return res.json({ live, airing: null, moments: [], start: -1, leadS: REPLAY_LEAD_S });
+  const recs = Array.isArray(a.recordings) ? a.recordings : [];
+  const avail = await vodsAvailable(recs.map((r) => r.vodId));
+  const skewMs = bountyConfig.vodTimelineSkewMs; // a VOD's timeline runs this far behind our clock
+  const moments = [];
+  for (const m of a.moments) {
+    if (m.kind !== 'seat' && m.kind !== 'megachat') continue;
+    const rec = recs.find((r) => m.at >= r.startMs && m.at <= r.startMs + r.durationS * 1000);
+    const vod = rec && avail.get(rec.vodId)
+      ? { vodId: rec.vodId, offsetS: Math.max(0, Math.round((m.at - rec.startMs + skewMs) / 1000) - REPLAY_LEAD_S) }
+      : null;
+    const clipMeta = m.kind === 'megachat' && m.ref && process.env.AIRED_CLIPS !== '0' ? readAiredClip(m.ref) : null;
+    const clip = clipMeta ? { url: `/api/aired-clips/${encodeURIComponent(m.ref)}`, mime: clipMeta.mime || 'video/webm' } : null;
+    if (vod || clip) moments.push({ kind: m.kind, label: m.label, at: m.at, offsetMs: Math.max(0, m.at - a.startedAt), vod, clip });
+  }
+  // Open at the first MegaChat that can be played, else the first guest.
+  const firstChat = moments.findIndex((m) => m.kind === 'megachat');
+  res.json({
+    live,
+    airing: {
+      id: a.id, name: cfg.name, startedAt: a.startedAt, endedAt: a.endedAt,
+      durationMs: Math.max(0, a.endedAt - a.startedAt), poster: airingPosterView(a, cfg.name),
+    },
+    moments,
+    start: firstChat >= 0 ? firstChat : moments.length ? 0 : -1,
+    leadS: REPLAY_LEAD_S,
+    // False until the sweep has looked the recording up (minutes after the
+    // end): "nothing to play" then means "not yet", not "gone".
+    recordingsResolved: Array.isArray(a.recordings),
+  });
+});
+
+// An aired MegaChat's kept copy — only one a kept broadcast of a listed room
+// refers to, so the URL cannot be used to read anything else.
+let clipRefCache = { at: 0, refs: new Set() };
+// Cached, but a MISS rebuilds (at most every 2s): a clip that aired a moment
+// ago is offered by the replay at once and must not 404 for half a minute.
+function servableClipRefs(id) {
+  const age = Date.now() - clipRefCache.at;
+  if (age < 30_000 && (clipRefCache.refs.has(id) || age < 2_000)) return clipRefCache.refs;
+  const listed = new Set(listRooms().filter((r) => r.config && !r.config.unlisted).map((r) => r.id));
+  clipRefCache = { at: Date.now(), refs: new Set(momentRefs().filter((r) => listed.has(r.roomId)).map((r) => r.ref)) };
+  return clipRefCache.refs;
+}
+app.get('/api/aired-clips/:id', (req, res) => {
+  const id = String(req.params.id || '');
+  if (!/^[a-f0-9-]{36}$/i.test(id)) return res.status(400).end();
+  if (!servableClipRefs(id).has(id)) return res.status(404).end();
+  const meta = readAiredClip(id);
+  if (!meta) return res.status(404).end();
+  res.type(meta.mime);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.sendFile(path.resolve(airedClipFile(id))); // honours Range, so the player can seek
+});
+
+// The room's owner (or anyone with its password) removes one kept MegaChat —
+// a takedown needs to be possible for a single clip, not only for the room.
+app.delete('/api/dashboard/rooms/:roomId/aired-clips/:id', async (req, res) => {
+  const roomId = normalizeRoomId(req.params.roomId);
+  const clipId = String(req.params.id || '');
+  if (!roomId || !/^[a-f0-9-]{36}$/i.test(clipId)) return res.status(400).json({ error: 'Invalid id' });
+  const access = await verifyRoomAccess(req, roomId);
+  if (!access.ok) return res.status(401).json({ error: 'Unauthorized' });
+  const meta = readAiredClip(clipId);
+  if (!meta || meta.roomId !== roomId) return res.status(404).json({ error: 'No such clip in this room' });
+  removeAiredClip(clipId);
+  clipRefCache = { at: 0, refs: new Set() };
+  res.json({ ok: true });
+});
+
 app.get('/api/rooms/recent', (req, res) => {
   const limit = Math.max(1, Math.min(24, Number(req.query.limit) || 12));
   const byId = new Map(listRooms().map((r) => [r.id, r]));
@@ -3103,9 +3250,10 @@ app.get('/api/rooms/public', (req, res) => {
       // live within the last two polls, is live — no waiting on the preview
       // probe's 90s cache, which left a streamer who had just gone live as
       // "no live signal" (and never a big stream) for a minute and a half.
-      // Anything else keeps the probe's answer, as before.
+      // It decides both ways: a stream it saw end is not live, whatever the
+      // probe's cache still says. Anything else keeps the probe, as before.
       twitchLive: cfg.twitchChannel
-        ? (followLive?.live === true) || twitchLiveCached(cfg.twitchChannel)
+        ? (followLive ? followLive.live === true : twitchLiveCached(cfg.twitchChannel))
         : false,
       // Who is watching on Twitch right now, and whether that makes it a big
       // stream — the board's featured tier gives those the big card, two side
@@ -3199,6 +3347,21 @@ if (AIRING_POSTERS_ON) {
   const posterTimer = setInterval(sweep, POSTER_SWEEP_MS);
   posterTimer.unref?.();
   setTimeout(sweep, Math.min(60_000, POSTER_SWEEP_MS)).unref?.();
+}
+
+// Kept MegaChat copies go with the broadcasts that refer to them, and after
+// 30 days — whether or not AIRING_POSTERS is on (aired-clips.js).
+{
+  const clipSweep = () => {
+    try {
+      const rooms = new Set(listRooms().map((r) => r.id));
+      sweepAiredClips(momentRefs().filter((r) => rooms.has(r.roomId)).map((r) => r.ref));
+    } catch (e) {
+      console.warn(`[aired-clips] sweep failed: ${e.message}`);
+    }
+  };
+  setInterval(clipSweep, POSTER_SWEEP_MS).unref?.();
+  setTimeout(clipSweep, Math.min(60_000, POSTER_SWEEP_MS)).unref?.();
 }
 
 // ─── Boot cleanup: dump orphan rooms ────────────────────────────────────────

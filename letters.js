@@ -52,6 +52,7 @@ import { moderateMedia } from './moderation.js';
 import { toWebRequest } from './meter-mpp.js';
 import { toAtomic, fromAtomic } from './token-utils.js';
 import { addMoment } from './airings-store.js';
+import { archiveAiredClip, removeAiredClip, cleanVideoMime } from './aired-clips.js';
 import { createLetterStore } from './letter-store.js';
 
 const LETTER_MAX_BYTES = 25 * 1024 * 1024; // per letter
@@ -80,6 +81,13 @@ export function attachLetters(app, deps) {
     // instead of burning clips into the void. Default true keeps standalone/
     // test wiring (and any host without the hook) on the old behavior.
     hasOverlay = () => true,
+    /**
+     * May this room keep a copy of a MegaChat that just aired, for the
+     * broadcast's replay (aired-clips.js)? The server answers: only a room
+     * whose owner proved the channel, and not while its overlay reported
+     * itself hidden. Default no — standalone and test wiring keep nothing.
+     */
+    canKeepAiredClip = () => false,
     activeSeats,
     sellerAddress,
     /**
@@ -209,6 +217,8 @@ export function attachLetters(app, deps) {
 
   /** Refund the flat price to the payer from the PLATFORM wallet. */
   async function refundLetter(letter, reason) {
+    // A refunded MegaChat is not kept for any replay (aired-clips.js).
+    removeAiredClip(letter.id);
     // Free letters: nothing was paid, nothing to send (payer may even be null).
     if (!(parseFloat(letter.price) > 0) || !letter.payer) {
       removeLetter(letter);
@@ -269,7 +279,9 @@ export function attachLetters(app, deps) {
           hint: `Shorter clips can't be reliably verified on stream, so we don't charge for them. Record at least ${cfg.letters.minSeconds}s.`,
         });
       }
-      if (!/^video\/(webm|mp4)/.test(String(mime || ''))) {
+      // The WHOLE value, not a prefix: "video/webm,text/html" passed the old
+      // check and was echoed back as the clip's Content-Type.
+      if (!/^video\/(webm|mp4)(;[^,]*)?$/i.test(String(mime || ''))) {
         return res.status(400).json({ error: 'Unsupported recording format' });
       }
       // Per-feature reputation gate (MegaChats' own gates — Join Stream may
@@ -316,7 +328,7 @@ export function attachLetters(app, deps) {
         payer: hasAddress ? address : null,
         price,
         durationS: Math.ceil(dur),
-        mime: String(mime),
+        mime: cleanVideoMime(mime),
         flyIn: FLY_IN_OK.has(flyIn) ? flyIn : null,
         flyOut: FLY_OUT_OK.has(flyOut) ? flyOut : null,
         status: 'awaiting_upload',
@@ -411,7 +423,8 @@ export function attachLetters(app, deps) {
     if (!letter || !letter.media) return res.status(404).json({ error: 'Gone' });
     const bytes = store.readMedia(letter.id);
     if (!bytes) return res.status(404).json({ error: 'Gone' });
-    res.setHeader('Content-Type', letter.mime);
+    res.setHeader('Content-Type', cleanVideoMime(letter.mime));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'no-store');
     res.send(bytes);
   });
@@ -563,8 +576,9 @@ export function attachLetters(app, deps) {
     // The most interesting second in a broadcast: somebody paid to be on the
     // stream and here they are. A "recently aired" card opens its replay
     // here rather than at zero. No-op when the room is not on air.
+    let moment = null;
     try {
-      addMoment(roomId, { kind: 'megachat', label: letter.username || null });
+      moment = addMoment(roomId, { kind: 'megachat', label: letter.username || null, ref: letter.id });
     } catch (e) {
       log.warn?.(`[airings] megachat moment failed: ${e.message}`);
     }
@@ -587,6 +601,20 @@ export function attachLetters(app, deps) {
     setTimeout(() => {
       letter.status = 'done';
       state.playing = null;
+      // The play COMPLETED: keep a copy for the broadcast's replay, whose own
+      // media is deleted minutes from now (aired-clips.js). Here, not at the
+      // start — a play a restart cut off never reaches this line. Never a
+      // bounty clip (it has its own retention and refund purge), only when the
+      // moment was recorded on a broadcast, and only when the server says the
+      // room may (a proven channel, the overlay not reported hidden).
+      try {
+        if (moment && !letter.bounty && letter.media && canKeepAiredClip(roomId, { from: letter.airedAt, to: Date.now() })) {
+          const bytes = store.readMedia(letter.id);
+          if (bytes) archiveAiredClip({ id: letter.id, roomId, username: letter.username || null, mime: letter.mime, durationS: letter.durationS, at: moment.at }, bytes, { log });
+        }
+      } catch (e) {
+        log.warn?.(`[aired-clips] could not keep ${letter.id}: ${e.message}`);
+      }
       broadcastToRoom(roomId, { type: 'letter_end', letterId: letter.id });
       try { onClipEnd(roomId, { clipId: letter.id }); }
       catch (e) { log.warn(`[letters] bounty onClipEnd failed: ${e.message}`); }
@@ -621,7 +649,7 @@ export function attachLetters(app, deps) {
     }
     const letter = {
       id: clipId, roomId, username: username ? String(username).slice(0, 20) : null,
-      payer: null, price: '0', durationS: Math.ceil(Number(durationS) || 0), mime: String(mime || 'video/webm'),
+      payer: null, price: '0', durationS: Math.ceil(Number(durationS) || 0), mime: cleanVideoMime(mime),
       flyIn: null, flyOut: null, status: 'queued', media: true, bytes: media.length,
       paidAt: Date.now(), uploadedAt: Date.now(),
       bounty: true,

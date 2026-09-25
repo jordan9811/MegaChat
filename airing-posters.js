@@ -384,9 +384,23 @@ export async function resolveFromRecording(airing, { helix, attachRecording, log
     const e = s + parseTwitchDuration(v.duration) * 1000;
     return { v, s, e, overlap: Math.min(e, end) - Math.max(s, airing.startedAt - 5 * 60_000) };
   }).filter((x) => Number.isFinite(x.s) && x.overlap > 0);
-  if (!overlapping.length) return 'none';
+  if (!overlapping.length) {
+    // Looked up, and Twitch has none (VODs off, or not yet): say so, so the
+    // replay can fall back to the kept clip or the picture instead of waiting
+    // on a lookup forever. The sweep keeps retrying on its backoff.
+    if (!Array.isArray(airing.recordings)) attachRecording(airing.id, { recordings: [] });
+    return 'none';
+  }
   const longest = overlapping.reduce((a, b) => (b.overlap > a.overlap ? b : a));
-  if (!airing.vodUrl) attachRecording(airing.id, { vodId: String(longest.v.id), vodUrl: longest.v.url });
+  // Every overlapping recording, with its start: the replay opens each moment
+  // in the one that covers it (/api/rooms/:id/replay).
+  const recordings = overlapping
+    .sort((a, b) => a.s - b.s)
+    .map((x) => ({ vodId: String(x.v.id), url: x.v.url, startMs: x.s, durationS: Math.round((x.e - x.s) / 1000) }));
+  attachRecording(airing.id, {
+    ...(airing.vodUrl ? {} : { vodId: String(longest.v.id), vodUrl: longest.v.url }),
+    recordings,
+  });
   if (readAiringPoster(airing.id)) return 'attached';
   // The recording that covers the moment the poster should show, if any.
   // Its thumbnail is Twitch's choice of frame, NOT one from that moment — the
@@ -432,7 +446,9 @@ export async function sweepAiringPosters({ airings, allAirings, roomIds, helix, 
       // Nothing the rule lets us show happened on it: no recording lookup, no
       // thumbnail, and it never reaches the board (airings-store recentAirings).
       if (!content) continue;
-      const needsRecording = !a.vodUrl || !readAiringPoster(a.id);
+      // `recordings` came later than vodUrl: an airing resolved before it has
+      // a link but not the starts a replay needs to open a moment.
+      const needsRecording = !a.vodUrl || !Array.isArray(a.recordings) || !readAiringPoster(a.id);
       if (!needsRecording || !apiConfigured || !a.channel || now - a.endedAt < VOD_WAIT_MS) continue;
       const r = retry.get(a.id) || { tries: 0, next: 0 };
       if (now < r.next || r.tries > RETRY_STEPS_MS.length) continue;

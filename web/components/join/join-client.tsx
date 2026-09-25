@@ -75,11 +75,14 @@ export function JoinClient() {
               <div id="streamPreviewMount" className="stream-preview-mount" />
             </div>
             <div className="stream-preview-caption">
-              <span className="stream-preview-label">Stream preview · slight delay</span>
+              <span id="streamPreviewLabel" className="stream-preview-label">Stream preview · slight delay</span>
               <span id="streamPreviewDrops" className="stream-preview-drops" style={{ display: 'none' }}>
                 Watching earns drops in this room
               </span>
             </div>
+            {/* An offline room plays the replay of its last broadcast here, and
+                these jump to its moments (join-page.ts mountReplay). */}
+            <div id="streamReplayMoments" className="stream-replay-moments" hidden />
           </div>
 
           <div id="previewIdle" className="join-preview-idle">
@@ -127,7 +130,7 @@ export function JoinClient() {
             </section>
 
             <section id="megachatAction" className="join-mode-zone is-record" style={{ display: 'none' }}>
-              <header><h2>Record a MegaChat</h2><p>Review before sending. Your clip plays once on the broadcast.</p></header>
+              <header><h2>Record a MegaChat</h2><p>Review before sending. Your clip plays once on the broadcast, and stays in that stream’s replay for up to 30 days.</p></header>
               <button id="letterBtn" type="button" className={primaryBtn} style={{ display: 'none' }}>
                 Send a MegaChat
               </button>

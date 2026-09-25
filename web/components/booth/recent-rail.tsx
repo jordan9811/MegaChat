@@ -44,7 +44,10 @@ function guestCount(a: RecentAiring): number {
 function RecentCard({ a }: { a: RecentAiring }) {
   // A plain anchor, never next/link: /<handle> is served by Express, and a
   // client-side route to it is the 404 5993024 fixed on the room cards.
-  const href = a.handle ? `/${a.handle}` : `/join?room=${encodeURIComponent(a.roomId)}`
+  // ?replay= opens THIS broadcast's replay on the room page (while the room
+  // is offline), at its MegaChat or first guest (/api/rooms/:id/replay).
+  const replay = `replay=${encodeURIComponent(a.airingId)}`
+  const href = a.handle ? `/${a.handle}?${replay}` : `/join?room=${encodeURIComponent(a.roomId)}&${replay}`
   const p = a.poster
   const guests = guestCount(a)
   return (

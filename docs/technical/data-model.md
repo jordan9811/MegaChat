@@ -33,6 +33,7 @@ One JSON file each, loaded into a module cache, rewritten whole on mutation. Saf
 | `bounty-clips/` media | `bounty-clips.js` | fan-recorded clips for the bounty program, until claimed and played or the reservation expires (`reservationTtlMs`, 90 d) |
 | `room-posters/<roomId>.jpg` | `room-poster.js` | one 640-px poster per room from a bounty capture; nothing sweeps it |
 | `airing-posters/<airingId>.jpg` + `.json` | `airing-posters.js` | the picture a finished broadcast shows, and what it is (`source`, `at`); removed with its airing or its room |
+| `aired-clips/<letterId>.clip` + `.json` | `aired-clips.js` | a MegaChat that completed on a recorded broadcast, kept for that broadcast's replay: 30 days at most, 100 MB per room, 400 MB in all; deleted on refund, by the room's owner, or with its broadcast |
 | `airing-posters/candidates/<airingId>/<t>.jpg` | `airing-posters.js` | Twitch live previews kept while a broadcast is up (owned rooms only, 3,000 at most across all); cleared an hour after the end |
 
 ## Memory only (lost on restart)
@@ -40,7 +41,7 @@ One JSON file each, loaded into a module cache, rewritten whole on mutation. Saf
 | State | Module | Why memory |
 |---|---|---|
 | `activeSeats` | `server.js` | a seat is a live connection; a restart ends it |
-| MegaChat clips awaiting or after playback | `letters.js` | one-shot by design; dropped ~60 s after playback |
+| MegaChat clips awaiting or after playback | `letters.js` | one-shot by design; dropped ~60 s after playback (a copy of one that completed on a recorded broadcast goes to `aired-clips/` for its replay — see the files table) |
 | earned reward credits per room and wallet | `reward-credits.js` | `new Map()`; isolated from pay-to-join |
 | capture rolling buffers | `bounty-capture.js` | ~28 MB per open air session; only frozen windows reach disk |
 | Twitch liveness cache | `server.js`, `twitchLiveCache` | a TTL cache over a public probe |
