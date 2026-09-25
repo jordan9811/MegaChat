@@ -2956,3 +2956,98 @@ sections A–H, all green.
   each time, minting a new element per call — two stacked copies of every guest
   in OBS. Fixed: one element per seat, a new track attached to it in place. The
   gate asserts exactly one.
+
+## Where the streamer hears guests: the "robotic" defect found, This tab stays the default (2026-09-25)
+
+- **W1 — The build live on 2026-09-24 played the FIRST guest twice to the
+  streamer; fixed.** The booth connects when the first guest goes live, and a
+  guest has already published by then (their preview is up at "hit GO LIVE"),
+  so the overlay received the first guest's audio before it had a tile for
+  them. `addVideoBox` attached it to the tile before the tile was in the page
+  (ab8a5f9 `public/overlay.html`: `lkAttach` at the top, `box.appendChild`
+  24 lines later): an `<audio>` element that played, but that no mute could
+  reach — created before any booth claim existed, so unmuted. With the booth
+  playing the same guest, the streamer heard every first guest from the booth
+  tab AND from OBS monitoring: two WebRTC receivers tens of milliseconds
+  apart, which comb-filters a voice into the "robotic and weird" he reported.
+  Reproduced against the ab8a5f9 overlay by `_gate-overlay-first-guest.mjs`:
+  F2/F3 FAIL (`{"attached":2,"outsidePage":1,"audible":1}`); on this build 4/0
+  (one element, in the page, muted). Nothing recorded what he heard that night,
+  so this is a mechanism that produces that sound, not proof it was the cause
+  (E65 is the live check). The same copy also reached the stream through the
+  overlay's output and OBS 31's Desktop-Audio double count (W4).
+- **W2 — "Whole PC" (echoCancellation:'all') was built as the default and
+  demoted after measuring what it does to the streamer's voice.** It cancels
+  another app's playback by 49.7–50.0 dB on the operator's machine where
+  `true` manages 0.9 dB (`_probe-aec-loopback.mjs`; Chromium 154.0.8037.57:
+  kSystemLoopbackAsAecReference ENABLED_BY_DEFAULT, GetSystemWideAec →
+  kLoopbackBased on Windows 11). But `_probe-aec-doubletalk.mjs` — real
+  speech through Chrome's canceller while a separate process plays a
+  game-like bed into the MV7 headphones endpoint, compared with the known
+  speech in 50 ms slices — shows it GATES the voice while the PC plays
+  anything loud. Dropouts (slices knocked >10 dB under the row's median), with
+  the booth's real settings: 24% with the game as loud as the voice in the
+  mic, 10% on headphones (the game in the canceller's reference only — the mic
+  never hears it), 2% with the game 20 dB under the voice. "This tab": 0–1% in
+  every case. Measurement check: no processing reads −0.2 dB, 0% dropouts. So
+  Whole PC buys the streamer's half by spending the guests' half — the
+  opposite of the owner's ask ("audio for them the way it is now"). It stays,
+  renamed "OBS · speakers", with the cost printed on the card.
+- **W3 — Three choices; This tab is the default.** "This tab": the booth plays
+  the guests and the ordinary canceller removes them (Discord's arrangement);
+  each guest reaches the stream once, through Desktop Audio. "OBS · headphones"
+  (new): the overlay plays guests to OBS as before 2026-09-24, the booth plays
+  nobody, and the mic keeps the ordinary canceller — headphones leave nothing
+  to cancel, so nothing is gated; on speakers guests would hear themselves,
+  and the card says so. "OBS · speakers": Whole PC (W2). Not picked
+  automatically from the output device's name: a combo jack reads
+  "Speakers/Headphones", and a wrong guess on speakers is the echo the owner
+  reported. `_gate-booth-audio.mjs` 52/0 (S1–S3b cover the three modes and
+  every handover between them).
+- **W4 — OBS 31 puts every guest (and every stinger) on stream TWICE in either
+  OBS mode.** The overlay is Monitor and Output to the Default device and
+  Desktop Audio records that same device; OBS stopped double-counting this in
+  32.0 ("Prevent audio duplication when sources are set to 'Monitor and
+  Output' while the monitoring device is also being captured"). The operator
+  runs 31.1.0. This tab avoids it (the overlay is muted for the seats the
+  booth plays). Both OBS modes say "Needs OBS 32 or newer" on the card. Not
+  upgraded unattended — an OBS upgrade the night before launch can break a
+  scene collection, and installing software is the operator's call.
+- **W5 — OBS · speakers adds ~170 ms to the streamer's voice, unmeasured in a
+  real conversation.** Chromium delays the captured mic by a fixed
+  `added_delay_ms` (170, a field-trial parameter) so the loopback reference
+  arrives first. The other two modes have no such delay.
+- **W6 — On stream, the first guest is now ONE copy where last night there
+  could be three** (the unmutable overlay copy, its OBS 31 double, and the
+  booth's playback through Desktop Audio). Guests may sound quieter on stream
+  than last night: raise Desktop Audio (This tab) or "MegaChat Overlay" (OBS
+  modes) if so.
+- **W7 — Found on the operator's machine, not fixed (all operator-side):** the
+  OBS virtual camera had never been started (OBS writes "==== Virtual Camera
+  Start ====" and no log contains it), which is the whole of "they can't see
+  me"; a second OBS browser source named "Browser" loads the same overlay in
+  other scenes and stays connected; the Megachat scene's "Audio Input Capture"
+  points at a device that no longer exists ("failed to start", OBS log
+  20:30:42) and Mic/Aux was last saved muted, so the streamer's own voice may
+  not be reaching his stream; Windows' default playback was the ASUS monitor's
+  HDMI audio during the stream (so the original echo most likely came from
+  speakers) and became "Headphones (3- Shure MV7)" at 00:36:51, after it.
+- **W8 — Per-seat claims replace the all-or-nothing one.** With two guests in
+  This tab, a booth element that stopped used to leave the global claim
+  standing and the overlay muted BOTH guests — the stopped one silent on
+  stream. The booth now claims exactly the seats it is playing
+  (mc.guestAudioSeats) and the overlay mutes only those (gate S7). A booth tab
+  from before this deploy still says only mc.guestAudio='booth', which the
+  overlay reads as every seat, as it always did.
+- **W9 — The booth never receives guest video, and receives guest audio only in
+  This tab.** It never showed guest video, but with autoSubscribe on it
+  downloaded and decoded every guest's full stream — CPU on the machine that
+  is also running the game and OBS. Measured by inbound packet flow (gate S1:
+  1 audio, 0 video; S2/S2b: 0 audio, 0 video).
+- **W10 — Not done, on purpose: a test stream with the operator's credentials.**
+  Offered by the owner. Entering logins or stream keys is not something done on
+  his behalf; the routing is gated end to end and the canceller is measured on
+  his machine.
+- **W11 — The dashboard scrolls sideways at 390 px wide.** Seen while
+  screenshotting the booth card; the card itself fits (360 px). Origin not
+  traced.

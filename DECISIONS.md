@@ -929,3 +929,36 @@ reason than "the API is expensive".
   turn it off. Undo: default `mc-booth-hear` to '0'.
 - **`mc.guestAudio` rides the same host-only attribute grant as `mc.picture`.**
   No new permission. Undo: n/a.
+
+## Where the streamer hears guests (2026-09-25)
+
+- **Default "This tab": the booth plays the guests, the ordinary canceller.**
+  The guests' half survives only here — 0–1% of the streamer's speech
+  dropped, against 10–24% under Whole PC while a game plays
+  (`_probe-aec-doubletalk.mjs`) — each guest reaches the stream once on OBS
+  31, there is no added delay, and the "robotic" sound the streamer heard in
+  it traces to a defect now fixed (OPEN-ISSUES W1). Undo: default
+  `mc-booth-aec` to 'phones' or 'system' in `web/components/host-cam-card.tsx`.
+- **"OBS · headphones" added.** Through OBS as before, nothing gated, no delay:
+  both halves of the owner's ask for a streamer on headphones. Not chosen
+  automatically from the output device's name — a combo jack reads
+  "Speakers/Headphones", and a wrong guess on speakers is the echo the owner
+  reported. Undo: drop 'phones' from AEC_PREFS.
+- **"OBS · speakers" (Whole PC) kept, not default, with its cost on the card.**
+  It is the only way to hear guests through OBS on speakers without an echo.
+  Undo: drop 'system' from AEC_PREFS.
+- **The mic is restarted with the FULL option set, never a partial one, and
+  only when the canceller has to change.** LiveKit's restartTrack does not
+  merge its defaults, and its own track-ended recovery restarts with only a
+  device id — which silently drops 'all' and noise suppression alike. Moving
+  between This tab and Headphones does not restart it at all (a restart is an
+  audible blip). Undo: n/a.
+- **Claims are per seat.** mc.guestAudioSeats names exactly the seats playing in
+  the booth; '-' means none, because an empty attribute value is never sent.
+  mc.guestAudio stays for overlays loaded before this change. Undo: n/a.
+- **A replaced booth tab stands down.** On DUPLICATE_IDENTITY it disarms and
+  says so instead of reconnecting; two re-armed tabs would otherwise evict each
+  other on every guest. Undo: n/a.
+- **No OBS upgrade, no credentialed test stream, unattended.** Both were within
+  "whatever you need"; neither was needed to prove the change, and both carry
+  risk the operator should choose (W4, W10). Undo: n/a.

@@ -14,7 +14,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Radio, RefreshCw, VideoOff } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import { useRoom } from '@/components/room-provider'
-import type { Room as LiveKitRoom, RemoteParticipant, RemoteTrack } from 'livekit-client'
+import type {
+  AudioCaptureOptions,
+  DisconnectReason,
+  LocalAudioTrack,
+  Room as LiveKitRoom,
+  RemoteParticipant,
+  RemoteTrack,
+} from 'livekit-client'
 
 // Falling-edge grace: a guest reconnect (or a back-to-back second guest)
 // must not churn the camera off/on.
@@ -38,6 +45,48 @@ const LIVE_AFTER = 2 // consecutive differing samples before the picture is show
 const STILL_AFTER = 4 // consecutive identical samples before it is taken away (~2s)
 const OBS_AFTER = 2 // consecutive samples that ARE OBS's placeholder (~1s)
 type Picture = 'checking' | 'live' | 'obs' | 'still'
+
+// ECHO CANCELLATION — how the streamer hears guests, and how guests are kept
+// from hearing themselves.
+//  'tab' (the default): the booth plays the guests, so the ordinary canceller
+//    has its reference; the overlay mutes exactly those guests
+//    (mc.guestAudioSeats) and their voices reach the stream once, through OBS
+//    Desktop Audio. Discord's arrangement. Works on speakers and headphones.
+//  'phones': the overlay plays the guests to OBS, as before 2026-09-24, and the
+//    booth plays nobody. The ordinary canceller has nothing to cancel because
+//    headphones do not reach the mic — on speakers, guests hear themselves.
+//  'system': as 'phones', but the mic asks Chrome 154 for
+//    echoCancellation:'all', which cancels EVERYTHING this PC plays, so
+//    speakers are fine (_probe-aec-loopback.mjs: another app's playback cut by
+//    50 dB, where `true` managed 1 dB). The price, measured on the operator's
+//    machine (_probe-aec-doubletalk.mjs): while the PC plays something loud
+//    the canceller gates the streamer's voice for guests — 10% of speech
+//    knocked down >10 dB on headphones, 24% with the game as loud as the
+//    voice — plus ~170ms on the voice (Chromium's fixed capture delay).
+//    Falls back to 'tab' whenever Chrome will not grant 'all' — the page
+//    checks what it got, every time, because a field trial, an older Chrome
+//    or Windows 10 can refuse it.
+type AecMode = 'pending' | 'tab' | 'phones' | 'system'
+type AecPref = Exclude<AecMode, 'pending'>
+const AEC_PREFS: AecPref[] = ['tab', 'phones', 'system']
+const AEC_LABEL: Record<AecPref, string> = { tab: 'This tab', phones: 'OBS · headphones', system: 'OBS · speakers' }
+// Passed whole on every (re)start: restartTrack() does not merge LiveKit's
+// defaults, so leaving these out would silently drop noise suppression too.
+const MIC_TAB = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, voiceIsolation: true }
+const MIC_SYSTEM = { ...MIC_TAB, echoCancellation: 'all' } as unknown as AudioCaptureOptions
+const MIC_DEAD = 'Your microphone stopped and could not be restarted. Reload this tab to get it back.'
+
+// Whole PC is offered only where it is measured: Chrome on Windows (11+; on
+// Windows 10 Chrome declines 'all' and the booth falls back by itself). On a Mac
+// Chrome grants 'all' too, but nobody has measured that it cancels anything.
+function wholePcSupported() {
+  if (typeof navigator === 'undefined') return false
+  // userAgentData where Chrome fills it in; the UA string otherwise (headless
+  // and some embedded Chromes leave the platform empty). Firefox on Windows
+  // passes here, asks for 'all', is not granted it, and falls back by itself.
+  const platform = (navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform
+  return platform ? platform === 'Windows' : /Windows/.test(navigator.userAgent)
+}
 /** Flat regions of data/obs-plugins/win-dshow/placeholder.png on a 16×9 grid,
  *  with their colours. Flat so the browser's downscale filter cannot move
  *  them; mirroring is irrelevant because the canvas reads the raw frame. */
@@ -70,29 +119,27 @@ export function HostCamCard() {
   const [picture, setPicture] = useState<Picture>('checking')
   // Bumped on every camera change, so a new camera starts at 'checking' too.
   const [pictureEpoch, setPictureEpoch] = useState(0)
-  // ECHO CANCELLATION. The browser's canceller (on by default for every mic
-  // here) can only subtract what THIS page played. Guests used to reach the
-  // streamer through OBS monitoring the overlay, the booth mic heard them in
-  // the room, and guests heard themselves — while Discord, which plays AND
-  // records in one app, had no echo. So the booth plays the guests itself:
-  // the canceller gets its reference, and their voices reach the stream through
-  // OBS Desktop Audio, exactly as a Discord call does. While it does, the
-  // overlay mutes guest voices (overlay.html, mc.guestAudio) so they are never
-  // on stream twice. On by default; off hands guest voices back to the overlay.
-  const [hearHere, setHearHere] = useState<boolean>(() => {
+  // Echo cancellation (see AecMode): what the streamer chose, and what Chrome
+  // actually granted for the session on air.
+  const [aecPref, setAecPref] = useState<AecPref>(() => {
     try {
-      return localStorage.getItem('mc-booth-hear') !== '0'
+      const v = localStorage.getItem('mc-booth-aec')
+      return v === 'phones' || v === 'system' ? v : 'tab'
     } catch {
-      return true
+      return 'tab'
     }
   })
-  const hearHereRef = useRef(hearHere)
-  hearHereRef.current = hearHere
-  // True only while a guest's voice is ACTUALLY playing in this tab. The
-  // overlay mutes guests on this claim alone, so it must never run ahead of
-  // playback — a blocked autoplay would otherwise silence guests on stream.
-  const [carrying, setCarrying] = useState(false)
+  const aecPrefRef = useRef(aecPref)
+  aecPrefRef.current = aecPref
+  const [aecMode, setAecMode] = useState<AecMode>('pending')
+  const aecModeRef = useRef<AecMode>('pending')
+  const reapplyingRef = useRef(false)
+  // The seats whose voice is ACTUALLY playing in this tab. The overlay mutes
+  // exactly these — so the claim can never run ahead of playback, and a second
+  // guest this tab is not playing stays on stream.
+  const [playingSeats, setPlayingSeats] = useState<string[]>([])
   const [audioBlocked, setAudioBlocked] = useState(false)
+  const [boothNote, setBoothNote] = useState<string | null>(null)
   const guestAudioBoxRef = useRef<HTMLDivElement>(null)
   const guestAudioRef = useRef(new Map<string, { track: RemoteTrack; el: HTMLMediaElement }>())
   // Camera choice. The default cam is usually the one OBS already owns —
@@ -122,29 +169,248 @@ export function HostCamCard() {
   const liveCount = seats.filter((s) => s.live).length
   const liveCountRef = useRef(0)
   liveCountRef.current = liveCount
+  // The seats that are LIVE, as LiveKit identities. Only these are ever played
+  // here: a guest still at "Camera ready — hit GO LIVE" is not on the show.
+  const liveSeatKey = seats
+    .filter((s) => s.live)
+    .map((s) => `seat:${s.id}`)
+    .sort()
+    .join(',')
+  const liveSeatsRef = useRef(new Set<string>())
+  liveSeatsRef.current = new Set(liveSeatKey ? liveSeatKey.split(',') : [])
+  // The room from the moment it exists until teardown — lkRef is only set once
+  // fully on air, so a start in progress is visible here, and nowhere else.
+  const sessionRef = useRef<LiveKitRoom | null>(null)
+  const [session, setSession] = useState<LiveKitRoom | null>(null)
+  // The mic OBJECT for the session (see micTrack).
+  const micRef = useRef<LocalAudioTrack | null>(null)
+  // Bumped by teardown and by each start: a start whose number is no longer
+  // current is stale and hangs itself up.
+  const genRef = useRef(0)
+  // Everything this booth has told the room, so a reconnect can say it again.
+  const attrsRef = useRef<Record<string, string>>({})
 
   const active = mode === 'managing' && room?.transport === 'livekit'
   const storageKey = room ? `mc-booth-armed:${room.id}` : null
 
-  function recomputeCarrying() {
-    const r = lkRef.current
-    const els = [...guestAudioRef.current.values()].map((g) => g.el)
-    const allowed = !!r && r.canPlaybackAudio
-    setCarrying(hearHereRef.current && allowed && els.some((el) => !el.paused && !el.ended))
-    setAudioBlocked(hearHereRef.current && !!r && !allowed && els.length > 0)
+  function applyMode(m: AecMode) {
+    aecModeRef.current = m
+    setAecMode(m)
   }
 
-  // Seats only: the overlay never publishes, and nobody else is in the room.
+  function setAttrs(r: LiveKitRoom, attrs: Record<string, string>) {
+    Object.assign(attrsRef.current, attrs)
+    return r.localParticipant.setAttributes(attrs).catch(() => {
+      /* a token without the grant: the room falls back to showing what arrives */
+    })
+  }
+
+  // The seats whose voice is really playing in this tab, as the claim string.
+  function playingNow(): string[] {
+    const s = new Set<string>()
+    for (const [key, g] of guestAudioRef.current) {
+      if (!g.el.paused && !g.el.ended) s.add(key.split('/')[0])
+    }
+    return [...s].sort()
+  }
+  function sendClaim(r: LiveKitRoom) {
+    const seats = playingNow().join(',') || '-'
+    return setAttrs(r, { 'mc.guestAudioSeats': seats, 'mc.guestAudio': seats === '-' ? 'overlay' : 'booth' })
+  }
+
+  function recomputePlaying() {
+    const r = sessionRef.current
+    const next = playingNow()
+    setPlayingSeats((prev) => (prev.join(',') === next.join(',') ? prev : next))
+    setAudioBlocked(aecModeRef.current === 'tab' && !!r && !r.canPlaybackAudio && guestAudioRef.current.size > 0)
+  }
+
+  // Seat AUDIO is subscribed only while this tab plays it ('tab'), and only for
+  // seats that are LIVE — playing a guest who has not gone live yet would put
+  // their mic test on stream through Desktop Audio. Seat VIDEO is never
+  // subscribed: the booth never shows it, and decoding a guest's 720p only to
+  // throw it away is CPU the streamer's game and OBS need.
+  function syncSubscriptions(r: LiveKitRoom) {
+    const wantAudio = aecModeRef.current === 'tab'
+    for (const p of r.remoteParticipants.values()) {
+      if (!p.identity.startsWith('seat:')) continue
+      const live = liveSeatsRef.current.has(p.identity)
+      for (const pub of p.trackPublications.values()) {
+        const want = pub.kind === 'audio' && wantAudio && live
+        if (pub.isSubscribed !== want) pub.setSubscribed(want)
+      }
+    }
+  }
+
+  // The mic OBJECT, not the publication map: a full reconnect unpublishes the
+  // mic, restarts it (keeping 'all', and emitting Restarted) and republishes it
+  // only after a round trip — the map is empty in between, the object is not.
+  function micTrack(r: LiveKitRoom) {
+    const published = [...r.localParticipant.audioTrackPublications.values()][0]?.track as
+      | LocalAudioTrack
+      | undefined
+    return published ?? (sessionRef.current === r ? micRef.current ?? undefined : undefined)
+  }
+  function micEcho(r: LiveKitRoom): unknown {
+    try {
+      return (micTrack(r)?.mediaStreamTrack.getSettings() as { echoCancellation?: unknown } | undefined)
+        ?.echoCancellation
+    } catch {
+      return undefined
+    }
+  }
+  function micLive(r: LiveKitRoom) {
+    const t = micTrack(r)?.mediaStreamTrack
+    return !!t && t.readyState === 'live'
+  }
+
+  // Every mic restart goes through here. LiveKit's restart() stops the running
+  // mic BEFORE it asks for the new one and restores nothing if that throws: the
+  // sender is left on a dead track while LiveKit still reports it unmuted. So
+  // check the mic is live afterwards and, if not, bring back a plain one —
+  // echo-safe, because the caller then hands the guests to this tab. False only
+  // if even that failed.
+  async function restartMic(r: LiveKitRoom, opts: AudioCaptureOptions): Promise<boolean> {
+    const t = micTrack(r)
+    if (!t) return false
+    reapplyingRef.current = true
+    try {
+      try {
+        await t.restartTrack(opts)
+      } catch (e) {
+        console.warn('[booth] mic restart failed', e)
+      }
+      if (micLive(r)) return true
+      try {
+        await t.restartTrack(MIC_TAB)
+      } catch (e) {
+        console.warn('[booth] plain mic restart failed too', e)
+      }
+      return micLive(r)
+    } finally {
+      reapplyingRef.current = false
+    }
+  }
+
+  // Asks for whole-PC cancellation when preferred (and offered here) and reports
+  // what Chrome actually granted. Never gives up a working mic for it.
+  async function enableMic(r: LiveKitRoom, pref: AecPref): Promise<AecPref> {
+    if (pref === 'system' && wholePcSupported()) {
+      try {
+        await r.localParticipant.setMicrophoneEnabled(true, MIC_SYSTEM)
+        return micEcho(r) === 'all' ? 'system' : 'tab'
+      } catch (e) {
+        console.warn('[booth] whole-PC echo cancellation refused — this tab will play the guests', e)
+      }
+    }
+    await r.localParticipant.setMicrophoneEnabled(true)
+    return pref === 'phones' ? 'phones' : 'tab'
+  }
+
+  // Move the session to whatever the streamer picked now. Called when the pick
+  // changes, and by a switch that finds the pick changed while it worked.
+  function reconcile(r: LiveKitRoom) {
+    if (sessionRef.current !== r || aecModeRef.current === 'pending') return
+    const pref = aecPrefRef.current
+    if (pref === 'tab') {
+      if (aecModeRef.current !== 'tab') void switchToTabByChoice(r)
+    } else if (aecModeRef.current !== pref) {
+      void switchToOverlay(r, pref)
+    }
+  }
+
+  function switchToTab(r: LiveKitRoom) {
+    applyMode('tab')
+    syncSubscriptions(r)
+    attachAllGuestAudio(r)
+  }
+
+  // Through OBS (Headphones or Whole PC): get the mic right FIRST — 'all' for
+  // Whole PC, the ordinary canceller for Headphones (restarted only if it is
+  // not that already: a restart is an audible blip). Only then hand the guests
+  // to the overlay — withdraw the claim and wait for the SFU to confirm it,
+  // THEN stop playing them here — so no guest is ever played by neither side.
+  async function switchToOverlay(r: LiveKitRoom, target: 'phones' | 'system') {
+    const wantAll = target === 'system'
+    if (wantAll && !wholePcSupported()) {
+      if (aecModeRef.current !== 'tab') switchToTab(r) // not offered here: this tab, as the card says
+      return
+    }
+    if (wantAll ? micEcho(r) !== 'all' : micEcho(r) === 'all') {
+      const alive = await restartMic(r, wantAll ? MIC_SYSTEM : MIC_TAB)
+      if (sessionRef.current !== r) return
+      if (!alive) {
+        switchToTab(r)
+        setError(MIC_DEAD)
+        return
+      }
+    }
+    if (aecPrefRef.current !== target) return reconcile(r) // re-picked while Chrome reopened the mic
+    if (wantAll && micEcho(r) !== 'all') {
+      // Refused: this tab carries the guests (safe on speakers), and the card says why.
+      if (aecModeRef.current !== 'tab') switchToTab(r)
+      return
+    }
+    await setAttrs(r, { 'mc.guestAudioSeats': '-', 'mc.guestAudio': 'overlay' })
+    if (sessionRef.current !== r) return
+    if (aecPrefRef.current !== target) {
+      void sendClaim(r) // changed our mind mid-handover: claim what is still playing here
+      return reconcile(r)
+    }
+    applyMode(target)
+    detachGuestAudio()
+    syncSubscriptions(r)
+  }
+
+  // This tab, by choice: play the guests here first, then — coming from Whole
+  // PC — drop the 170ms by going back to the ordinary canceller (which cancels
+  // what this tab plays).
+  async function switchToTabByChoice(r: LiveKitRoom) {
+    switchToTab(r)
+    if (micEcho(r) === 'all') {
+      const alive = await restartMic(r, MIC_TAB)
+      if (sessionRef.current !== r) return
+      if (!alive) {
+        setError(MIC_DEAD)
+        return
+      }
+    }
+    if (aecPrefRef.current !== 'tab') reconcile(r) // clicked away meanwhile
+  }
+
+  // LiveKit's own recovery restarts a mic that dropped out (USB hiccup, audio
+  // engine restart) with ONLY { deviceId: 'default' }, which silently loses
+  // 'all' — guests would get their echo back while the card still said "Whole
+  // PC". Put 'all' back; if Chrome will not, hand the guests to this tab.
+  async function onMicRestarted(r: LiveKitRoom) {
+    if (sessionRef.current !== r || reapplyingRef.current) return
+    if (aecModeRef.current !== 'system') return
+    const echo = micEcho(r)
+    if (echo === 'all' || echo === undefined) return // fine, or nothing to judge yet
+    const alive = await restartMic(r, MIC_SYSTEM)
+    if (sessionRef.current !== r) return
+    if (!alive) {
+      switchToTab(r)
+      setError(MIC_DEAD)
+    } else if (micEcho(r) !== 'all') {
+      switchToTab(r)
+      setBoothNote('Your mic restarted without whole-PC echo cancellation, so your guests now play in this tab.')
+    }
+  }
+
+  // Seats only (the overlay never publishes), live seats only, This tab only.
   function attachGuestAudio(track: RemoteTrack, participant: RemoteParticipant) {
-    if (!hearHereRef.current || track.kind !== 'audio' || !participant.identity.startsWith('seat:')) return
+    if (aecModeRef.current !== 'tab' || track.kind !== 'audio' || !participant.identity.startsWith('seat:')) return
+    if (!liveSeatsRef.current.has(participant.identity)) return
     const key = `${participant.identity}/${track.sid}`
     if (guestAudioRef.current.has(key)) return
     const el = track.attach()
-    el.addEventListener('playing', recomputeCarrying)
-    el.addEventListener('pause', recomputeCarrying)
+    el.dataset.seat = participant.identity // which guest this is, for the claim and for tests
+    el.addEventListener('playing', recomputePlaying)
+    el.addEventListener('pause', recomputePlaying)
     guestAudioBoxRef.current?.appendChild(el)
     guestAudioRef.current.set(key, { track, el })
-    recomputeCarrying()
+    recomputePlaying()
   }
 
   function attachAllGuestAudio(r: LiveKitRoom) {
@@ -153,7 +419,7 @@ export function HostCamCard() {
         if (pub.track) attachGuestAudio(pub.track, p)
       }
     }
-    recomputeCarrying()
+    recomputePlaying()
   }
 
   function detachGuestAudio(match?: (key: string) => boolean) {
@@ -163,16 +429,21 @@ export function HostCamCard() {
       g.el.remove()
       guestAudioRef.current.delete(key)
     }
-    recomputeCarrying()
+    recomputePlaying()
   }
 
   function teardown() {
+    genRef.current++ // a start still in flight is now stale and hangs itself up
     if (offTimerRef.current) {
       clearTimeout(offTimerRef.current)
       offTimerRef.current = null
     }
-    const r = lkRef.current
+    const r = lkRef.current ?? sessionRef.current
     lkRef.current = null
+    sessionRef.current = null
+    micRef.current = null
+    attrsRef.current = {}
+    setSession(null)
     detachGuestAudio()
     if (r) {
       try {
@@ -182,9 +453,13 @@ export function HostCamCard() {
       }
       void r.disconnect()
     }
+    connectingRef.current = false
+    applyMode('pending')
     setOnAir(false)
     setConnecting(false)
     setMicOnly(false)
+    setPicture('checking') // a new session starts unproven, not with the last one's 'live'
+    setBoothNote(null)
   }
 
   function scheduleOff() {
@@ -196,39 +471,98 @@ export function HostCamCard() {
   }
 
   async function publish() {
-    if (connectingRef.current || lkRef.current) return
+    if (connectingRef.current || lkRef.current || sessionRef.current) return
     connectingRef.current = true
+    const gen = ++genRef.current
+    // A disarm, a replaced tab or a hang-up during the start bumps genRef; this
+    // start is then stale and must leave the room itself.
+    const stale = () => gen !== genRef.current || !armedRef.current
     setConnecting(true)
     setError(null)
+    setBoothNote(null)
+    let started: LiveKitRoom | null = null
+    const bail = () => {
+      const r = started
+      if (!r) return
+      if (sessionRef.current === r) {
+        sessionRef.current = null
+        micRef.current = null
+        setSession(null)
+      }
+      if (lkRef.current !== r) {
+        try {
+          for (const pub of r.localParticipant.trackPublications.values()) pub.track?.stop()
+        } catch {
+          /* already stopped */
+        }
+        void r.disconnect()
+      }
+    }
     try {
       const grant = await hostToken()
+      if (stale()) return
       const lk = await import('livekit-client')
+      if (stale()) return
       const lkRoom = new lk.Room({
         dynacast: true,
         publishDefaults: { simulcast: true },
       })
-      await lkRoom.connect(grant.url, grant.token)
-      if (!armedRef.current) {
-        // disarmed mid-connect — hang up before publishing anything
-        void lkRoom.disconnect()
-        return
-      }
-      // Guests hear "checking" BEFORE anything is published: their page holds
-      // the host's picture back until this booth says it is really a person.
-      await lkRoom.localParticipant
-        .setAttributes({ 'mc.picture': 'checking', 'mc.guestAudio': 'overlay' })
-        .catch(() => {})
+      started = lkRoom
+      sessionRef.current = lkRoom
       lkRoom.on(lk.RoomEvent.TrackSubscribed, (track, _pub, participant) => attachGuestAudio(track, participant))
       lkRoom.on(lk.RoomEvent.TrackUnsubscribed, (track, _pub, participant) =>
         detachGuestAudio((k) => k === `${participant.identity}/${track.sid}`))
       lkRoom.on(lk.RoomEvent.ParticipantDisconnected, (participant) =>
         detachGuestAudio((k) => k.startsWith(`${participant.identity}/`)))
-      lkRoom.on(lk.RoomEvent.AudioPlaybackStatusChanged, recomputeCarrying)
+      lkRoom.on(lk.RoomEvent.TrackPublished, () => syncSubscriptions(lkRoom))
+      lkRoom.on(lk.RoomEvent.ParticipantConnected, () => syncSubscriptions(lkRoom))
+      lkRoom.on(lk.RoomEvent.AudioPlaybackStatusChanged, recomputePlaying)
+      lkRoom.on(lk.RoomEvent.Reconnected, () => {
+        if (sessionRef.current !== lkRoom) return
+        // A full reconnect rejoins with the token alone: say everything again,
+        // and re-check the mic (it was restarted on the way).
+        void lkRoom.localParticipant.setAttributes({ ...attrsRef.current }).catch(() => {})
+        syncSubscriptions(lkRoom)
+        void onMicRestarted(lkRoom)
+      })
+      lkRoom.on(lk.RoomEvent.Disconnected, (reason?: DisconnectReason) => {
+        if (sessionRef.current !== lkRoom) return // our own hang-up, or a stale start
+        teardown()
+        if (reason === lk.DisconnectReason.DUPLICATE_IDENTITY) {
+          // Another tab armed this booth and took the host seat. Reconnecting
+          // would evict it, and it would evict us, on every guest. Stand down.
+          setArmed(false)
+          setBoothNote('Your booth is running in another tab, so this one stepped aside.')
+        } else if (armedRef.current && liveCountRef.current > 0) {
+          setTimeout(() => {
+            if (armedRef.current && liveCountRef.current > 0 && !sessionRef.current) void publish()
+          }, 2000)
+        }
+      })
+      // Subscriptions are chosen per mode (syncSubscriptions), never automatic.
+      await lkRoom.connect(grant.url, grant.token, { autoSubscribe: false })
+      if (stale()) return bail()
+      // Guests hear "checking" BEFORE anything is published: their page holds
+      // the host's picture back until this booth says it is really a person.
+      await setAttrs(lkRoom, {
+        'mc.picture': 'checking',
+        'mc.guestAudio': 'overlay',
+        'mc.guestAudioSeats': '-',
+        'mc.aec': 'pending',
+      })
+      if (stale()) return bail()
+      setSession(lkRoom)
       // MIC FIRST, on its own — the old enableCameraAndMicrophone() asked
       // for both in ONE getUserMedia, so an OBS-held webcam failed the
       // whole call and the "mic-only" fallback was doing all the work
       // (guests heard the streamer but never saw them).
-      await lkRoom.localParticipant.setMicrophoneEnabled(true)
+      const requested = aecPrefRef.current
+      const granted = await enableMic(lkRoom, requested)
+      if (stale()) return bail()
+      micRef.current = micTrack(lkRoom) ?? null
+      micRef.current?.on(lk.TrackEvent.Restarted, () => void onMicRestarted(lkRoom))
+      applyMode(granted)
+      syncSubscriptions(lkRoom)
       let camOk = true
       try {
         await lkRoom.localParticipant.setCameraEnabled(
@@ -247,6 +581,7 @@ export function HostCamCard() {
           console.warn('[booth] camera failed, going on air MIC ONLY', chosenErr, defaultErr)
         }
       }
+      if (stale()) return bail()
       if (camOk) {
         const pub = [...lkRoom.localParticipant.videoTrackPublications.values()][0]
         if (pub?.track && videoRef.current) pub.track.attach(videoRef.current)
@@ -255,20 +590,31 @@ export function HostCamCard() {
       attachAllGuestAudio(lkRoom) // guests already here when we connected
       setMicOnly(!camOk)
       setOnAir(true)
+      // The setting may have been flipped before the mode was known, when the
+      // effect that applies it had nothing to act on. Catch up now — but never
+      // retry 'all' straight after Chrome refused it (the pick is unchanged).
+      if (aecPrefRef.current !== requested) reconcile(lkRoom)
       // guests may all have left while we connected — let the grace timer run
       if (liveCountRef.current === 0) scheduleOff()
     } catch (e) {
+      // A start that failed after connecting must not stay in the room as the
+      // host — it would sit there until the retry's join evicted it.
+      bail()
+      if (gen !== genRef.current) return // torn down meanwhile: nothing to report
+      applyMode('pending')
       setError(e instanceof Error ? e.message : 'Could not go on air')
       // one spaced retry per guest-arrival (covers a cold token/SFU hiccup)
       if (!retriedRef.current) {
         retriedRef.current = true
         setTimeout(() => {
-          if (armedRef.current && liveCountRef.current > 0 && !lkRef.current) void publish()
+          if (armedRef.current && liveCountRef.current > 0 && !sessionRef.current) void publish()
         }, 4000)
       }
     } finally {
-      connectingRef.current = false
-      setConnecting(false)
+      if (gen === genRef.current) {
+        connectingRef.current = false
+        setConnecting(false)
+      }
     }
   }
 
@@ -346,35 +692,54 @@ export function HostCamCard() {
     return () => clearInterval(t)
   }, [onAir, micOnly, pictureEpoch])
 
-  // Who carries guest voices. 'booth' only while they are really playing here.
-  const guestAudio = !onAir ? null : carrying ? 'booth' : 'overlay'
+  // Which seats this tab is really playing — the overlay mutes exactly these.
+  // Sent from the moment the booth is connected, not from "on air": in This tab
+  // mode guests start playing while the camera is still opening, and the claim
+  // must never lag behind them. '-' means none (an empty value is never sent);
+  // mc.guestAudio is kept for overlays loaded before per-seat claims existed.
+  const seatsClaim = !session ? null : playingSeats.join(',') || '-'
   useEffect(() => {
-    const r = lkRef.current
-    if (!r || !guestAudio) return
-    r.localParticipant.setAttributes({ 'mc.guestAudio': guestAudio }).catch(() => {})
-  }, [guestAudio])
+    const r = sessionRef.current
+    if (!r || !seatsClaim) return
+    void setAttrs(r, { 'mc.guestAudioSeats': seatsClaim, 'mc.guestAudio': seatsClaim === '-' ? 'overlay' : 'booth' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seatsClaim, session])
+
+  // The effective mode, for the overlay's logs and for anyone diagnosing a call.
+  useEffect(() => {
+    const r = sessionRef.current
+    if (!r || aecMode === 'pending') return
+    void setAttrs(r, { 'mc.aec': aecMode })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aecMode, session])
+
+  // Seats going live or leaving: follow them (subscribe, play, stop).
+  useEffect(() => {
+    const r = sessionRef.current
+    if (!r) return
+    syncSubscriptions(r)
+    detachGuestAudio((k) => !liveSeatsRef.current.has(k.split('/')[0]))
+    attachAllGuestAudio(r)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveSeatKey])
 
   useEffect(() => {
     try {
-      localStorage.setItem('mc-booth-hear', hearHere ? '1' : '0')
+      localStorage.setItem('mc-booth-aec', aecPref)
     } catch {
       /* preference just won't persist */
     }
-    const r = lkRef.current
-    if (!r) return
-    if (hearHere) attachAllGuestAudio(r)
-    else detachGuestAudio()
+    const r = sessionRef.current
+    if (r) reconcile(r)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hearHere])
+  }, [aecPref])
 
   // What guests are told. Mic-only counts as "still": there is no picture.
   const guestPicture = !onAir ? null : micOnly ? 'still' : picture === 'obs' ? 'still' : picture
   useEffect(() => {
     const r = lkRef.current
     if (!r || !guestPicture) return
-    r.localParticipant.setAttributes({ 'mc.picture': guestPicture }).catch(() => {
-      /* a token without the grant: guests fall back to showing what arrives */
-    })
+    void setAttrs(r, { 'mc.picture': guestPicture })
   }, [guestPicture])
 
   // Autopilot: guest presence drives the publish. Rising edge (0 → >0)
@@ -634,25 +999,47 @@ export function HostCamCard() {
         </label>
 
         {armed ? (
-          <label
-            htmlFor="booth-hear"
-            className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-input/20 px-4 py-3"
-          >
-            <input
-              type="checkbox"
-              id="booth-hear"
-              className="mt-0.5 size-4 accent-[var(--neon-lime)]"
-              checked={hearHere}
-              onChange={(e) => setHearHere(e.target.checked)}
-            />
-            <span className="flex-1">
-              <span className="block text-sm font-semibold">Echo cancellation</span>
-              <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-                Your guests play in this tab, so your mic cancels them out, like Discord. They
-                reach your stream through OBS Desktop Audio.
-              </span>
-            </span>
-          </label>
+          <div className="flex flex-col gap-2 rounded-xl border border-border bg-input/20 px-4 py-3">
+            <span className="text-sm font-semibold">Where you hear guests</span>
+            <div
+              role="radiogroup"
+              aria-label="Where you hear guests"
+              className="flex rounded-lg border border-border bg-input/40 p-0.5 text-xs font-semibold"
+            >
+              {AEC_PREFS.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  id={`booth-aec-${v}`}
+                  aria-checked={aecPref === v}
+                  onClick={() => setAecPref(v)}
+                  className={
+                    'flex-1 rounded-md px-2 py-1 transition-colors ' +
+                    (aecPref === v
+                      ? 'bg-[var(--neon-lime)]/15 text-[var(--neon-lime)]'
+                      : 'text-muted-foreground hover:text-foreground')
+                  }
+                >
+                  {AEC_LABEL[v]}
+                </button>
+              ))}
+            </div>
+            <p id="boothAecNote" data-mode={aecMode} className="text-xs leading-relaxed text-muted-foreground">
+              {aecPref === 'tab'
+                ? 'Your guests play in this tab and your mic cancels them, like Discord. They reach your stream once, through OBS Desktop Audio. Fine on speakers or headphones.'
+                : aecPref === 'phones'
+                  ? 'You hear guests through OBS — the MegaChat overlay in your live scene — as before. Headphones only: on speakers your mic picks them up and they hear themselves.'
+                  : !wholePcSupported()
+                    ? 'Cancelling everything this PC plays needs Chrome on Windows, so your guests play in this tab and your mic cancels them.'
+                    : aecMode === 'tab'
+                      ? 'Chrome didn’t allow cancelling everything this PC plays, so your guests play in this tab and your mic cancels them.'
+                      : 'You hear guests through OBS, and your mic cancels everything this PC plays, so speakers are fine. While your game is loud your voice can cut out for guests, and it reaches them about 0.2s later.'}
+              {aecPref !== 'tab' && aecMode !== 'tab'
+                ? ' Needs OBS 32 or newer — older versions can put your guests on stream twice.'
+                : null}
+            </p>
+          </div>
         ) : null}
 
         {/* Camera picker — the default cam is usually the one OBS already
@@ -719,7 +1106,7 @@ export function HostCamCard() {
           <button
             type="button"
             id="boothHearGuests"
-            onClick={() => void lkRef.current?.startAudio().then(recomputeCarrying)}
+            onClick={() => void lkRef.current?.startAudio().then(recomputePlaying)}
             className="h-9 rounded-lg border border-[var(--neon-lime)]/60 bg-[var(--neon-lime)]/10 px-3 text-sm font-bold text-[var(--neon-lime)] transition-colors hover:bg-[var(--neon-lime)]/20"
           >
             Click to hear your guests
@@ -780,11 +1167,16 @@ export function HostCamCard() {
             {error}
           </p>
         ) : null}
+        {boothNote ? (
+          <p id="boothNote" className="text-xs text-muted-foreground">
+            {boothNote}
+          </p>
+        ) : null}
         {onAir ? (
           <p className="text-xs text-muted-foreground">
-            {hearHere
+            {aecMode === 'tab'
               ? 'Keep this tab open while streaming — it carries your camera and your guests’ voices.'
-              : 'Keep this tab open while streaming — it carries your camera. Headphones on: guests hear your mic.'}
+              : 'Keep this tab open while streaming — it carries your camera and your mic.'}
           </p>
         ) : null}
         <div ref={guestAudioBoxRef} data-guest-audio hidden />

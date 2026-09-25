@@ -638,7 +638,16 @@
     // The streamer's booth identity, host:<room id> — the id, not the handle in
     // this page's URL, so it is read from /api/config once the room resolves.
     let lkHostIdentity = null;
-    let lkGuestsCarried = false;
+    // identity → THE one <audio> for that seat. Kept here rather than found by a
+    // DOM query, and only ever created for a tile that is already in the page:
+    // an element minted for a detached tile played, but no query could reach it
+    // to mute it.
+    const lkAudioEls = new Map();
+    // Which seats the booth is ACTUALLY playing — muted here, and only those.
+    let lkCarriedSeats = new Set();
+    let lkCarriedAll = false; // a booth from before per-seat claims: every seat
+    let lkCarriedSummary = 'none';
+    function seatCarried(identity) { return lkCarriedAll || lkCarriedSeats.has(identity); }
     const lkTracks = new Map(); // identity → { video, audio }
     const lkTileEls = new Map(); // identity → video element awaiting a track
 
@@ -698,17 +707,20 @@
       const r = revealRecord(identity);
       r.el = el;
       if (tr.video) tr.video.attach(el);
-      if (tr.audio) {
+      if (tr.audio && el.isConnected) {
         // lkAttach runs once per track that arrives (audio AND video), and used
         // to attach() the audio each time — a NEW element every call, so every
         // guest played twice in OBS, stacked. One element per seat; a new track
-        // (reconnect) is attached to it in place.
-        const existing = el.parentElement && el.parentElement.querySelector(`audio[data-lk-seat="${identity}"]`);
-        const a = existing ? tr.audio.attach(existing) : tr.audio.attach();
+        // (reconnect) is attached to it in place. Never for a tile not yet in
+        // the page (see lkAudioEls).
+        let a = lkAudioEls.get(identity);
+        if (a && !a.isConnected) { tr.audio.detach(a); a = null; }
+        a = a ? tr.audio.attach(a) : tr.audio.attach();
         a.style.display = 'none';
         a.dataset.lkSeat = identity;
-        a.muted = lkGuestsCarried;
-        if (!existing && el.parentElement) el.parentElement.appendChild(a);
+        a.muted = seatCarried(identity);
+        if (!a.isConnected) el.parentElement.appendChild(a);
+        lkAudioEls.set(identity, a);
       }
       if (!tr.video) return;
       if (r.revealed) {
@@ -834,24 +846,43 @@
       if (pin) pin.dataset.state = state;
     }
 
-    // ECHO: while the streamer's booth is ACTUALLY playing the guests (its
-    // participant says mc.guestAudio = 'booth'), their voices reach the stream
-    // through OBS Desktop Audio — so this page mutes them, or they would be on
-    // stream twice and OBS monitoring would loop them back into the booth mic.
-    // Anything else — no booth, booth closed, autoplay blocked, setting off —
-    // and this page plays them, exactly as before. Stingers and MegaChat clips
-    // are not seat audio and are never touched.
+    // ECHO: a seat whose voice the streamer's booth is ACTUALLY playing reaches
+    // the stream through OBS Desktop Audio, so this page mutes that seat — or
+    // it would be on stream twice and OBS monitoring would loop it back into
+    // the booth mic. The booth names those seats in mc.guestAudioSeats (a comma
+    // list, '-' for none); every other seat plays here, exactly as before. In
+    // the booth's whole-PC mode it plays nobody, so every seat plays here and
+    // the streamer hears them through OBS. A booth from before per-seat claims
+    // says only mc.guestAudio = 'booth', which meant every seat. Stingers and
+    // MegaChat clips are not seat audio and are never touched.
     function applyGuestAudio(leaving) {
       // `leaving`: a participant mid-disconnect may still be listed; never trust it.
       const host = lkOverlayRoom && lkHostIdentity && leaving !== lkHostIdentity
         ? [...lkOverlayRoom.remoteParticipants.values()].find((p) => p.identity === lkHostIdentity)
         : null;
-      const carried = !!(host && host.attributes && host.attributes['mc.guestAudio'] === 'booth');
-      document.querySelectorAll('audio[data-lk-seat]').forEach((a) => { a.muted = carried; });
-      if (carried !== lkGuestsCarried) {
-        console.log(`[overlay] guest voices ${carried ? 'carried by the booth — muted here' : 'played here'}`);
+      // A booth whose link the SFU reports LOST (tab crashed, network gone) is
+      // not playing anybody any more, but its claim would stand until the SFU
+      // times it out — tens of seconds of guests silent on stream. Stop
+      // trusting it the moment the SFU says so.
+      const LK = window.LivekitClient;
+      const hostLost = !!(host && LK && LK.ConnectionQuality && host.connectionQuality === LK.ConnectionQuality.Lost);
+      const attrs = (host && !hostLost && host.attributes) || {};
+      const list = attrs['mc.guestAudioSeats'];
+      lkCarriedAll = false;
+      lkCarriedSeats = new Set();
+      if (host && !hostLost) {
+        if (typeof list === 'string') {
+          if (list && list !== '-') lkCarriedSeats = new Set(list.split(','));
+        } else if (attrs['mc.guestAudio'] === 'booth') {
+          lkCarriedAll = true;
+        }
       }
-      lkGuestsCarried = carried;
+      document.querySelectorAll('audio[data-lk-seat]').forEach((a) => { a.muted = seatCarried(a.dataset.lkSeat); });
+      const summary = lkCarriedAll ? 'every seat' : ([...lkCarriedSeats].join(', ') || 'none');
+      if (summary !== lkCarriedSummary) {
+        console.log(`[overlay] seats the booth plays (muted here): ${summary}; booth echo mode: ${attrs['mc.aec'] || 'unknown'}${hostLost ? ' (booth link lost — playing every seat here)' : ''}`);
+        lkCarriedSummary = summary;
+      }
     }
 
     async function lkConnect(reason) {
@@ -897,6 +928,9 @@
           lkAttach(id);
         });
         lkOverlayRoom.on(LK.RoomEvent.ParticipantAttributesChanged, () => applyGuestAudio());
+        lkOverlayRoom.on(LK.RoomEvent.ConnectionQualityChanged, (q, p) => {
+          if (p && p.identity === lkHostIdentity) applyGuestAudio();
+        });
         lkOverlayRoom.on(LK.RoomEvent.ParticipantConnected, () => applyGuestAudio());
         lkOverlayRoom.on(LK.RoomEvent.ParticipantDisconnected, (p) => applyGuestAudio(p && p.identity));
         lkOverlayRoom.on(LK.RoomEvent.ParticipantDisconnected, (p) => {
@@ -1355,7 +1389,9 @@
         content.playsInline = true;
         content.style.cssText = 'width:100%;height:100%;object-fit:cover;background:transparent;';
         lkTileEls.set('seat:' + seat.id, content);
-        lkAttach('seat:' + seat.id); // track may have arrived before the seat broadcast
+        // No lkAttach here: the tile is not in the page yet, and an audio
+        // element minted now would play where nothing can mute it. The attach
+        // after stage.appendChild(box) below covers "the track arrived first".
       } else {
         const iframe = document.createElement('iframe');
         iframe.src = buildOverlayViewUrl(seat.viewUrl);
@@ -1471,6 +1507,11 @@
 
     function removeVideoBox(seatId) {
       lkTileEls.delete('seat:' + seatId);
+      {
+        const a = lkAudioEls.get('seat:' + seatId);
+        const tr = lkTracks.get('seat:' + seatId);
+        if (a) { if (tr && tr.audio) tr.audio.detach(a); a.remove(); lkAudioEls.delete('seat:' + seatId); }
+      }
       const box = videoBoxes.get(seatId);
       if (!box || box.classList.contains('leaving')) return;
 
