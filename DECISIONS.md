@@ -904,3 +904,28 @@ reason than "the API is expensive".
   hiding a muted video risks the browser pausing it and the watch mistaking a
   paused frame for a frozen camera. On the guest page, which runs no detector,
   the video is simply hidden. Undo: n/a.
+
+## Echo: the booth carries the guests (2026-09-24)
+
+- **Discord's shape, not Discord's settings.** Echo cancellation, noise
+  suppression, auto gain and voice isolation were already on; what Discord has
+  and the booth lacked is that one app both plays the guest and records the
+  host, so the canceller has a reference. The booth now plays the guests.
+  Undo: the "Echo cancellation" setting off (per browser), or remove the
+  attach in `host-cam-card.tsx`.
+- **Guest voices reach the stream through Desktop Audio while the booth carries
+  them, and the overlay goes quiet.** Two paths would double them on stream;
+  the overlay's copy is the one OBS monitoring loops back into the mic, so it
+  is the one that yields. The overlay path returns the instant the booth stops
+  carrying (setting off, tab closed, booth off air). Undo: n/a.
+- **The overlay mutes on a claim, and the claim is earned.** `mc.guestAudio =
+  'booth'` only while a guest element is actually playing in the booth; any
+  other state — no booth, blocked playback, a booth from before this change —
+  leaves the overlay playing the guest. A guest silent on stream is the one
+  outcome worse than an echo. Undo: n/a.
+- **On by default.** The owner asked for the Discord-grade setting on by
+  default, and his OBS captures Desktop Audio. The setting's own copy says
+  where guest voices go, so a streamer without Desktop Audio can see why to
+  turn it off. Undo: default `mc-booth-hear` to '0'.
+- **`mc.guestAudio` rides the same host-only attribute grant as `mc.picture`.**
+  No new permission. Undo: n/a.

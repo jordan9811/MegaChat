@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Radio, RefreshCw, VideoOff } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import { useRoom } from '@/components/room-provider'
-import type { Room as LiveKitRoom } from 'livekit-client'
+import type { Room as LiveKitRoom, RemoteParticipant, RemoteTrack } from 'livekit-client'
 
 // Falling-edge grace: a guest reconnect (or a back-to-back second guest)
 // must not churn the camera off/on.
@@ -70,6 +70,31 @@ export function HostCamCard() {
   const [picture, setPicture] = useState<Picture>('checking')
   // Bumped on every camera change, so a new camera starts at 'checking' too.
   const [pictureEpoch, setPictureEpoch] = useState(0)
+  // ECHO CANCELLATION. The browser's canceller (on by default for every mic
+  // here) can only subtract what THIS page played. Guests used to reach the
+  // streamer through OBS monitoring the overlay, the booth mic heard them in
+  // the room, and guests heard themselves — while Discord, which plays AND
+  // records in one app, had no echo. So the booth plays the guests itself:
+  // the canceller gets its reference, and their voices reach the stream through
+  // OBS Desktop Audio, exactly as a Discord call does. While it does, the
+  // overlay mutes guest voices (overlay.html, mc.guestAudio) so they are never
+  // on stream twice. On by default; off hands guest voices back to the overlay.
+  const [hearHere, setHearHere] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mc-booth-hear') !== '0'
+    } catch {
+      return true
+    }
+  })
+  const hearHereRef = useRef(hearHere)
+  hearHereRef.current = hearHere
+  // True only while a guest's voice is ACTUALLY playing in this tab. The
+  // overlay mutes guests on this claim alone, so it must never run ahead of
+  // playback — a blocked autoplay would otherwise silence guests on stream.
+  const [carrying, setCarrying] = useState(false)
+  const [audioBlocked, setAudioBlocked] = useState(false)
+  const guestAudioBoxRef = useRef<HTMLDivElement>(null)
+  const guestAudioRef = useRef(new Map<string, { track: RemoteTrack; el: HTMLMediaElement }>())
   // Camera choice. The default cam is usually the one OBS already owns —
   // a picker turns "camera busy" from a dead end into a choice, and
   // selecting "OBS Virtual Camera" pipes the WHOLE OBS scene to guests.
@@ -101,6 +126,46 @@ export function HostCamCard() {
   const active = mode === 'managing' && room?.transport === 'livekit'
   const storageKey = room ? `mc-booth-armed:${room.id}` : null
 
+  function recomputeCarrying() {
+    const r = lkRef.current
+    const els = [...guestAudioRef.current.values()].map((g) => g.el)
+    const allowed = !!r && r.canPlaybackAudio
+    setCarrying(hearHereRef.current && allowed && els.some((el) => !el.paused && !el.ended))
+    setAudioBlocked(hearHereRef.current && !!r && !allowed && els.length > 0)
+  }
+
+  // Seats only: the overlay never publishes, and nobody else is in the room.
+  function attachGuestAudio(track: RemoteTrack, participant: RemoteParticipant) {
+    if (!hearHereRef.current || track.kind !== 'audio' || !participant.identity.startsWith('seat:')) return
+    const key = `${participant.identity}/${track.sid}`
+    if (guestAudioRef.current.has(key)) return
+    const el = track.attach()
+    el.addEventListener('playing', recomputeCarrying)
+    el.addEventListener('pause', recomputeCarrying)
+    guestAudioBoxRef.current?.appendChild(el)
+    guestAudioRef.current.set(key, { track, el })
+    recomputeCarrying()
+  }
+
+  function attachAllGuestAudio(r: LiveKitRoom) {
+    for (const p of r.remoteParticipants.values()) {
+      for (const pub of p.audioTrackPublications.values()) {
+        if (pub.track) attachGuestAudio(pub.track, p)
+      }
+    }
+    recomputeCarrying()
+  }
+
+  function detachGuestAudio(match?: (key: string) => boolean) {
+    for (const [key, g] of guestAudioRef.current) {
+      if (match && !match(key)) continue
+      g.track.detach(g.el)
+      g.el.remove()
+      guestAudioRef.current.delete(key)
+    }
+    recomputeCarrying()
+  }
+
   function teardown() {
     if (offTimerRef.current) {
       clearTimeout(offTimerRef.current)
@@ -108,6 +173,7 @@ export function HostCamCard() {
     }
     const r = lkRef.current
     lkRef.current = null
+    detachGuestAudio()
     if (r) {
       try {
         for (const pub of r.localParticipant.trackPublications.values()) pub.track?.stop()
@@ -149,7 +215,15 @@ export function HostCamCard() {
       }
       // Guests hear "checking" BEFORE anything is published: their page holds
       // the host's picture back until this booth says it is really a person.
-      await lkRoom.localParticipant.setAttributes({ 'mc.picture': 'checking' }).catch(() => {})
+      await lkRoom.localParticipant
+        .setAttributes({ 'mc.picture': 'checking', 'mc.guestAudio': 'overlay' })
+        .catch(() => {})
+      lkRoom.on(lk.RoomEvent.TrackSubscribed, (track, _pub, participant) => attachGuestAudio(track, participant))
+      lkRoom.on(lk.RoomEvent.TrackUnsubscribed, (track, _pub, participant) =>
+        detachGuestAudio((k) => k === `${participant.identity}/${track.sid}`))
+      lkRoom.on(lk.RoomEvent.ParticipantDisconnected, (participant) =>
+        detachGuestAudio((k) => k.startsWith(`${participant.identity}/`)))
+      lkRoom.on(lk.RoomEvent.AudioPlaybackStatusChanged, recomputeCarrying)
       // MIC FIRST, on its own — the old enableCameraAndMicrophone() asked
       // for both in ONE getUserMedia, so an OBS-held webcam failed the
       // whole call and the "mic-only" fallback was doing all the work
@@ -178,6 +252,7 @@ export function HostCamCard() {
         if (pub?.track && videoRef.current) pub.track.attach(videoRef.current)
       }
       lkRef.current = lkRoom
+      attachAllGuestAudio(lkRoom) // guests already here when we connected
       setMicOnly(!camOk)
       setOnAir(true)
       // guests may all have left while we connected — let the grace timer run
@@ -270,6 +345,27 @@ export function HostCamCard() {
     }, PICTURE_SAMPLE_MS)
     return () => clearInterval(t)
   }, [onAir, micOnly, pictureEpoch])
+
+  // Who carries guest voices. 'booth' only while they are really playing here.
+  const guestAudio = !onAir ? null : carrying ? 'booth' : 'overlay'
+  useEffect(() => {
+    const r = lkRef.current
+    if (!r || !guestAudio) return
+    r.localParticipant.setAttributes({ 'mc.guestAudio': guestAudio }).catch(() => {})
+  }, [guestAudio])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('mc-booth-hear', hearHere ? '1' : '0')
+    } catch {
+      /* preference just won't persist */
+    }
+    const r = lkRef.current
+    if (!r) return
+    if (hearHere) attachAllGuestAudio(r)
+    else detachGuestAudio()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hearHere])
 
   // What guests are told. Mic-only counts as "still": there is no picture.
   const guestPicture = !onAir ? null : micOnly ? 'still' : picture === 'obs' ? 'still' : picture
@@ -537,6 +633,28 @@ export function HostCamCard() {
           {busy ? <RefreshCw className="size-4 animate-spin text-muted-foreground" /> : null}
         </label>
 
+        {armed ? (
+          <label
+            htmlFor="booth-hear"
+            className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-input/20 px-4 py-3"
+          >
+            <input
+              type="checkbox"
+              id="booth-hear"
+              className="mt-0.5 size-4 accent-[var(--neon-lime)]"
+              checked={hearHere}
+              onChange={(e) => setHearHere(e.target.checked)}
+            />
+            <span className="flex-1">
+              <span className="block text-sm font-semibold">Echo cancellation</span>
+              <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                Your guests play in this tab, so your mic cancels them out, like Discord. They
+                reach your stream through OBS Desktop Audio.
+              </span>
+            </span>
+          </label>
+        ) : null}
+
         {/* Camera picker — the default cam is usually the one OBS already
             owns. Choosing "OBS Virtual Camera" here sends the FULL OBS scene
             to guests. Switches live mid-broadcast. */}
@@ -597,6 +715,17 @@ export function HostCamCard() {
           </div>
         ) : null}
 
+        {onAir && audioBlocked ? (
+          <button
+            type="button"
+            id="boothHearGuests"
+            onClick={() => void lkRef.current?.startAudio().then(recomputeCarrying)}
+            className="h-9 rounded-lg border border-[var(--neon-lime)]/60 bg-[var(--neon-lime)]/10 px-3 text-sm font-bold text-[var(--neon-lime)] transition-colors hover:bg-[var(--neon-lime)]/20"
+          >
+            Click to hear your guests
+          </button>
+        ) : null}
+
         <p id="boothStatus" aria-live="polite" className="text-xs text-muted-foreground">
           {status}
         </p>
@@ -653,10 +782,12 @@ export function HostCamCard() {
         ) : null}
         {onAir ? (
           <p className="text-xs text-muted-foreground">
-            Keep this tab open while streaming — it carries your camera. Headphones on:
-            guests hear your mic.
+            {hearHere
+              ? 'Keep this tab open while streaming — it carries your camera and your guests’ voices.'
+              : 'Keep this tab open while streaming — it carries your camera. Headphones on: guests hear your mic.'}
           </p>
         ) : null}
+        <div ref={guestAudioBoxRef} data-guest-audio hidden />
       </div>
     </GlassCard>
   )

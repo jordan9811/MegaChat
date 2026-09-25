@@ -635,6 +635,10 @@
     // stingers, labels, WS-driven lifecycle — is byte-identical.
     let lkMode = false;
     let lkOverlayRoom = null;
+    // The streamer's booth identity, host:<room id> — the id, not the handle in
+    // this page's URL, so it is read from /api/config once the room resolves.
+    let lkHostIdentity = null;
+    let lkGuestsCarried = false;
     const lkTracks = new Map(); // identity → { video, audio }
     const lkTileEls = new Map(); // identity → video element awaiting a track
 
@@ -695,9 +699,16 @@
       r.el = el;
       if (tr.video) tr.video.attach(el);
       if (tr.audio) {
-        const a = tr.audio.attach();
+        // lkAttach runs once per track that arrives (audio AND video), and used
+        // to attach() the audio each time — a NEW element every call, so every
+        // guest played twice in OBS, stacked. One element per seat; a new track
+        // (reconnect) is attached to it in place.
+        const existing = el.parentElement && el.parentElement.querySelector(`audio[data-lk-seat="${identity}"]`);
+        const a = existing ? tr.audio.attach(existing) : tr.audio.attach();
         a.style.display = 'none';
-        el.parentElement && el.parentElement.appendChild(a);
+        a.dataset.lkSeat = identity;
+        a.muted = lkGuestsCarried;
+        if (!existing && el.parentElement) el.parentElement.appendChild(a);
       }
       if (!tr.video) return;
       if (r.revealed) {
@@ -721,6 +732,7 @@
           return;
         }
         lkMode = true;
+        lkHostIdentity = 'host:' + (cfg.roomId || streamRoomId);
         transportResolved(); // livekit confirmed — buffered seats become <video> tiles
         lkLazy = cfg.lazyConnect || { enabled: false };
         await new Promise((resolve, reject) => {
@@ -822,6 +834,26 @@
       if (pin) pin.dataset.state = state;
     }
 
+    // ECHO: while the streamer's booth is ACTUALLY playing the guests (its
+    // participant says mc.guestAudio = 'booth'), their voices reach the stream
+    // through OBS Desktop Audio — so this page mutes them, or they would be on
+    // stream twice and OBS monitoring would loop them back into the booth mic.
+    // Anything else — no booth, booth closed, autoplay blocked, setting off —
+    // and this page plays them, exactly as before. Stingers and MegaChat clips
+    // are not seat audio and are never touched.
+    function applyGuestAudio(leaving) {
+      // `leaving`: a participant mid-disconnect may still be listed; never trust it.
+      const host = lkOverlayRoom && lkHostIdentity && leaving !== lkHostIdentity
+        ? [...lkOverlayRoom.remoteParticipants.values()].find((p) => p.identity === lkHostIdentity)
+        : null;
+      const carried = !!(host && host.attributes && host.attributes['mc.guestAudio'] === 'booth');
+      document.querySelectorAll('audio[data-lk-seat]').forEach((a) => { a.muted = carried; });
+      if (carried !== lkGuestsCarried) {
+        console.log(`[overlay] guest voices ${carried ? 'carried by the booth — muted here' : 'played here'}`);
+      }
+      lkGuestsCarried = carried;
+    }
+
     async function lkConnect(reason) {
       if (!lkMode || lkConnecting || lkOverlayRoom) return;
       lkConnecting = true;
@@ -864,6 +896,9 @@
           lkTracks.set(id, entry);
           lkAttach(id);
         });
+        lkOverlayRoom.on(LK.RoomEvent.ParticipantAttributesChanged, () => applyGuestAudio());
+        lkOverlayRoom.on(LK.RoomEvent.ParticipantConnected, () => applyGuestAudio());
+        lkOverlayRoom.on(LK.RoomEvent.ParticipantDisconnected, (p) => applyGuestAudio(p && p.identity));
         lkOverlayRoom.on(LK.RoomEvent.ParticipantDisconnected, (p) => {
           lkTracks.delete(p.identity);
           // tile removal stays WS-driven (seat_removed → stinger out)
@@ -887,6 +922,7 @@
           }
         });
         await lkOverlayRoom.connect(tok.url, tok.token);
+        applyGuestAudio(); // a booth already carrying guests when we joined
         lkRetryMs = 0;
         setLkStatus('live');
         beat(); // tell the server a billed session just opened

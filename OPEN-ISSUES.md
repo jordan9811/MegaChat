@@ -2925,3 +2925,34 @@ sections A–H, all green.
   visible until `OBS_AFTER` samples match — 861–969ms across three runs.
 - **B8 — A mic-only booth now reads to guests as "Host camera is off".** It used
   to leave them a black frame. Same signal, `mc.picture = still`.
+
+- **E3 — E1 is FIXED: the booth carries the guests, Discord-style.** The booth
+  plays every seat's voice in its own tab, so the browser's echo canceller —
+  already on — finally has the reference it needs, and the booth claims
+  `mc.guestAudio = 'booth'` while a guest element is really playing. The
+  overlay mutes seat audio on that claim alone, so guest voices are never on
+  stream twice and OBS monitoring no longer plays them into the booth mic. Guest
+  voices reach the stream through OBS Desktop Audio, as a Discord call does. On
+  by default ("Echo cancellation" in the booth); off hands them straight back to
+  the overlay. `_gate-booth-audio.mjs` 13/0: the booth plays the guest, claims
+  it, the overlay mutes; the setting off and on flips both; closing the booth
+  tab un-mutes the overlay at once.
+- **E4 — Two dependencies the gate cannot see.** (1) Guest voices reach the
+  stream only if OBS captures Desktop Audio on the device the booth plays to —
+  true for this operator (Desktop Audio = default, unmuted). A streamer without
+  it would lose guest voices on stream while the booth carries them; the setting
+  is the escape. (2) Whether Chrome's canceller removes a loud speaker cleanly
+  needs a room and a speaker. The routing is proven; the first live session is
+  the proof of the cancelling.
+- **E5 — The "Click to hear your guests" button is unreachable in practice.**
+  Measured: even under `--autoplay-policy=user-gesture-required`, with no
+  gesture after a reload, the booth's guest audio played — an on-air booth is
+  capturing the mic, and a capturing page may always play audio. The claim is
+  still gated on real playback, and the gate samples that invariant (0
+  violations); the button stays as a defence for a browser that behaves
+  otherwise.
+- **E6 — Pre-existing: the overlay played every guest TWICE.** `lkAttach` runs
+  once per arriving track (audio and video) and called `attach()` for the audio
+  each time, minting a new element per call — two stacked copies of every guest
+  in OBS. Fixed: one element per seat, a new track attached to it in place. The
+  gate asserts exactly one.
