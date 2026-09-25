@@ -24,6 +24,27 @@ const OFF_AIR_DEBOUNCE_MS = 5000
 // the booth, and getUserMedia on a busy device fails fast and cheaply.
 const CAM_RETRY_MS = 6000
 
+// "ON AIR" only ever proved a video track was PUBLISHED — not that it carried
+// a person. OBS Virtual Camera, selected here but never started in OBS, emits
+// OBS's own placeholder (logo + crossed-out camera) as an ordinary, healthy
+// 30fps track: the booth said "they see you in real time" while every guest
+// stared at a logo, and the operator only learned it from a guest. So the
+// booth watches its own outgoing picture. A real camera never produces two
+// byte-identical frames — sensor noise alone moves some pixel — so a run of
+// identical samples means a still image is going out.
+const STILL_SAMPLE_MS = 1000
+const STILL_AFTER = 4 // consecutive identical samples, ~4s
+/** Flat regions of data/obs-plugins/win-dshow/placeholder.png on a 16×9 grid,
+ *  with their colours. Flat so the browser's downscale filter cannot move
+ *  them; mirroring is irrelevant because the canvas reads the raw frame. */
+const OBS_PLACEHOLDER: [number, number, [number, number, number]][] = [
+  [14, 0, [33, 41, 84]], // navy, top right
+  [15, 2, [33, 41, 84]],
+  [2, 3, [35, 48, 108]], // blue band, left
+  [0, 8, [24, 26, 48]], // dark band, bottom
+  [13, 8, [24, 26, 48]],
+]
+
 function isDenied(e: unknown) {
   return (
     e instanceof DOMException &&
@@ -40,6 +61,9 @@ export function HostCamCard() {
   const [micOnly, setMicOnly] = useState(false)
   const [camBusyHint, setCamBusyHint] = useState(false) // preflight found the camera held elsewhere
   const [error, setError] = useState<string | null>(null)
+  // What guests actually see when it is NOT the operator: OBS's placeholder,
+  // or some other picture that has stopped moving. null = moving (or unknown).
+  const [stillPicture, setStillPicture] = useState<null | 'obs-placeholder' | 'frozen'>(null)
   // Camera choice. The default cam is usually the one OBS already owns —
   // a picker turns "camera busy" from a dead end into a choice, and
   // selecting "OBS Virtual Camera" pipes the WHOLE OBS scene to guests.
@@ -178,6 +202,50 @@ export function HostCamCard() {
     }, CAM_RETRY_MS)
     return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onAir, micOnly])
+
+  // The still-picture watch (see STILL_AFTER). Clears itself the moment the
+  // picture moves again — clicking Start Virtual Camera in OBS needs no re-arm.
+  useEffect(() => {
+    if (!onAir || micOnly) {
+      setStillPicture(null)
+      return
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = 64
+    canvas.height = 36
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    if (!ctx) return
+    ctx.imageSmoothingQuality = 'high'
+    let prev: Uint8ClampedArray | null = null
+    let same = 0
+    const t = setInterval(() => {
+      const v = videoRef.current
+      // A hidden tab stops painting video, and an unpainted frame compares
+      // equal to the last one — it would read as frozen. Judge only what is
+      // actually being drawn, and start counting again from scratch after.
+      if (!v || document.visibilityState === 'hidden' || v.paused || v.readyState < 2 || !v.videoWidth) {
+        prev = null
+        same = 0
+        return
+      }
+      ctx.drawImage(v, 0, 0, 64, 36)
+      const px = ctx.getImageData(0, 0, 64, 36).data
+      const last = prev
+      same = last && last.length === px.length && px.every((b, i) => b === last[i]) ? same + 1 : 0
+      prev = px
+      if (same < STILL_AFTER) {
+        setStillPicture(null)
+        return
+      }
+      const at = (x: number, y: number) => {
+        const i = ((y * 4 + 2) * 64 + (x * 4 + 2)) * 4
+        return [px[i], px[i + 1], px[i + 2]]
+      }
+      const obs = OBS_PLACEHOLDER.every(([x, y, rgb]) => at(x, y).every((c, k) => Math.abs(c - rgb[k]) <= 20))
+      setStillPicture(obs ? 'obs-placeholder' : 'frozen')
+    }, STILL_SAMPLE_MS)
+    return () => clearInterval(t)
   }, [onAir, micOnly])
 
   // Autopilot: guest presence drives the publish. Rising edge (0 → >0)
@@ -393,7 +461,9 @@ export function HostCamCard() {
       : onAir
         ? micOnly
           ? `🔴 ON AIR to ${guestNoun} — MIC ONLY. Your camera is held by another app (OBS?). Pick a different camera below; OBS Virtual Camera works great.`
-          : `🔴 ON AIR to ${guestNoun} — they see you in real time`
+          : stillPicture
+            ? `🔴 ON AIR to ${guestNoun} — they can hear you, but they see a still picture, not you`
+            : `🔴 ON AIR to ${guestNoun} — they see you in real time`
         : camBusyHint
           ? 'Armed, mic-only — your camera is held by another app (OBS?). Pick a different one below; OBS Virtual Camera works great.'
           : 'Armed — camera goes on air the moment a guest joins'
@@ -490,6 +560,28 @@ export function HostCamCard() {
           </div>
         ) : null}
 
+        {/* The sibling of the mic-only alert: sound going out, and a picture
+            that is not the operator. Same loudness, same reason. */}
+        {onAir && !micOnly && stillPicture ? (
+          <div
+            role="alert"
+            id="boothStillPicture"
+            data-still={stillPicture}
+            className="rounded-xl border border-[var(--neon-magenta)]/60 bg-[var(--neon-magenta)]/10 p-3"
+          >
+            <strong className="block text-sm font-bold text-[var(--neon-magenta)]">
+              {stillPicture === 'obs-placeholder'
+                ? `${guestNoun} ${liveCount === 1 ? 'sees' : 'see'} the OBS logo, not you`
+                : `${guestNoun} ${liveCount === 1 ? 'sees' : 'see'} a still picture, not you`}
+            </strong>
+            <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+              {stillPicture === 'obs-placeholder'
+                ? 'The camera going out is OBS Virtual Camera, and it isn’t started in OBS, so it is sending OBS’s placeholder. In OBS, click Start Virtual Camera (Controls, bottom right) — the picture switches over by itself, no need to re-arm. Or pick your webcam above.'
+                : 'Your camera has sent the exact same frame for several seconds. If that is not deliberate (a still BRB scene), the camera has frozen — pick another one above, or reconnect it.'}
+            </span>
+          </div>
+        ) : null}
+
         <p id="boothStatus" aria-live="polite" className="text-xs text-muted-foreground">
           {status}
         </p>
@@ -508,7 +600,9 @@ export function HostCamCard() {
             muted
             playsInline
             className="absolute inset-0 size-full object-cover"
-            style={{ transform: 'scaleX(-1)' }}
+            // A webcam self-view is mirrored like a selfie; an OBS scene is a
+            // produced picture — mirroring it reverses every word in it.
+            style={{ transform: camId && isObsVirtualCam(camId) ? undefined : 'scaleX(-1)' }}
           />
         </div>
 

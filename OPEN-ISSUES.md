@@ -2853,3 +2853,47 @@ sections A–H, all green.
   with 17 node processes alive on the machine it did not. The dump now also
   fires when the gate throws, so the next occurrence is diagnosable rather than
   a mystery.
+
+## The booth picture, the live block, and the guest's echo (2026-09-24)
+
+- **B1 — The booth said "they see you in real time" while every guest saw the
+  OBS logo. FIXED.** OBS Virtual Camera, picked in the booth but never started
+  in OBS, emits OBS's own placeholder (`data/obs-plugins/win-dshow/placeholder.png`
+  — byte for byte the image in the operator's screenshot) as a healthy 30fps
+  track. Every check the booth had passed: a camera was found, a video track was
+  published, the SFU listed it. The operator learned it from a guest. The booth
+  now watches its own outgoing picture: four byte-identical 64×36 samples in a
+  row mean a still image is going out, and five flat colour regions of OBS's
+  placeholder decide whether to name it. `_gate-booth-picture.mjs` 13/0 against
+  the real placeholder file, through a real on-air session on a local SFU.
+- **B2 — `_gate-cohost-booth.mjs` cannot pass as written.** It unlocks the
+  dashboard through `#manage-room-id` / `#manage-password`, which live in
+  `megachat-settings.tsx` — no longer mounted anywhere — and it types into the
+  guest's pre-filled `#username` (the P5 bug). Its on-air path is now covered by
+  `_gate-booth-picture.mjs`; its arm, silent re-arm, auto-off and denied-camera
+  sections (A, C, D, E) are uncovered until it is re-pointed.
+- **B3 — The still-picture watch has two known edges.** A deliberately static
+  picture (a BRB scene through OBS Virtual Camera) reads as "still picture";
+  the copy says "if that is not deliberate". And if OBS ever changes its
+  placeholder art, the OBS-specific message degrades to the generic one — never
+  to silence, because the frozen check does not depend on the fingerprint.
+- **B4 — The watch pauses while the booth tab is hidden.** A hidden tab stops
+  painting video, and an unpainted frame compares equal to the last one, so
+  judging it would cry "frozen" at every tab switch. The cost: an operator
+  looking at another tab gets the alert only when they come back — which is
+  also the only time they could read it.
+- **E1 — A guest hears their own voice back. NOT FIXED — needs a decision.**
+  Confirmed from this operator's OBS config: the `MegaChat Overlay` input is set
+  to Monitor and Output on the Default audio device, so a guest's voice reaches
+  the streamer through OBS, the booth mic hears it, and it goes back to the
+  guest. The "Discord settings" asked for are already on for every mic in the
+  app — livekit-client 2.20.1 defaults `echoCancellation`, `noiseSuppression`,
+  `autoGainControl` and `voiceIsolation` to true, and neither mic overrides
+  them. They cannot help: echo cancellation subtracts only what the same app
+  played, and OBS is not the browser. The structural fix is Discord's own shape
+  — the booth plays the guests, so the canceller has its reference, and OBS
+  stops monitoring the overlay — which changes how the streamer hears guests.
+- **E2 — A second route to the same symptom, out of reach.** A guest who still
+  has the Twitch stream open in another tab hears themselves on the broadcast
+  delay. The join page removes its own embed on go-live for exactly this reason
+  (`mountHostFeed` → `hideStreamPreview`); another tab it cannot touch.

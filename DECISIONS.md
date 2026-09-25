@@ -844,3 +844,37 @@ reason than "the API is expensive".
   room and an `approve` room; the first airs it unaided and the second does
   not. Without that pair, "it did not play" is indistinguishable from "the
   scheduler was not running". Undo: n/a.
+
+## The booth picture, and the live block on top (2026-09-24)
+
+- **The live block rises by CSS `order`, not by re-ordering the render.** The
+  right column is a flex column, so `order: -1` on the live block and the booth
+  slot moves them to the top with zero DOM moves. Re-ordering the JSX would
+  change `HostCamCard`'s place in the React tree and remount it; its unmount
+  hangs the booth up — on a guest, at the exact moment they arrive. The gate
+  marks the booth's checkbox node before the guest joins and finds the same node,
+  still armed, after. Cost: tab order no longer matches visual order while
+  someone is seated. Undo: drop `liveFirst`.
+- **"Someone joined" means any seat, not a live one.** The seat table lists
+  pending seats too, and the operator wants the controls up while the guest is
+  still in the camera stage, not after. Undo: `seats.some((s) => s.live)`.
+- **Frozen means byte-identical, not "similar".** A real camera never produces
+  two identical frames — sensor noise alone moves some pixel — so exact equality
+  over 64×36 has no threshold to tune and no false positive from a person
+  sitting still. OBS's placeholder, and any still image, is identical frame to
+  frame. Four samples a second apart before speaking. Undo: n/a.
+- **The fingerprint is read from OBS's own file, and the gate refuses to run
+  without it.** Five flat regions of `placeholder.png` on a 16×9 grid, ±20 per
+  channel, sampled from the raw frame so the self-view's mirroring cannot
+  matter. A synthetic lookalike would prove only that the code matches the code.
+  Undo: n/a.
+- **An OBS Virtual Camera self-view is no longer mirrored.** A webcam preview
+  is mirrored like a selfie; an OBS scene is a produced picture, and mirroring it
+  reversed every word in it — including OBS's own placeholder in the operator's
+  screenshot. Guests always received it unmirrored. Undo: restore the
+  unconditional `scaleX(-1)`.
+- **The "Discord sound settings" were not added, because they are already on.**
+  livekit-client 2.20.1 enables echo cancellation, noise suppression, auto gain
+  and voice isolation by default, and no mic in the app overrides them. Adding
+  toggles that default to on would change nothing and imply a fix. The echo is
+  recorded as E1 with its real cause.
