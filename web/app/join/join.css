@@ -564,6 +564,39 @@ a.addr {
   animation: hostLivePulse 1.2s ease-in-out infinite;
 }
 
+/* The host's picture held back (booth not confirmed yet, camera off, or no
+   host) — the same vocabulary as the stage's idle state, never a broken feed. */
+.host-feed-held {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  background: #050b12;
+}
+.host-feed-held > div {
+  max-width: 360px;
+  padding: 22px 26px;
+  border: 1px solid var(--mcj-rule);
+  background: rgba(5, 6, 9, 0.34);
+}
+.host-feed-held h2 {
+  margin: 10px 0 7px;
+  font-size: 20px;
+  font-weight: 750;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+.host-feed-held p {
+  margin: 0;
+  color: var(--mcj-faint);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
 /* True-live host feed — same frame, unmistakably LIVE. */
 .host-live-frame {
   border-color: rgba(184, 255, 69, 0.55);

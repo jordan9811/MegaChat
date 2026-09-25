@@ -11,7 +11,7 @@
 // transport === 'livekit'.
 
 import { useEffect, useRef, useState } from 'react'
-import { Radio, RefreshCw } from 'lucide-react'
+import { Radio, RefreshCw, VideoOff } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import { useRoom } from '@/components/room-provider'
 import type { Room as LiveKitRoom } from 'livekit-client'
@@ -28,12 +28,16 @@ const CAM_RETRY_MS = 6000
 // a person. OBS Virtual Camera, selected here but never started in OBS, emits
 // OBS's own placeholder (logo + crossed-out camera) as an ordinary, healthy
 // 30fps track: the booth said "they see you in real time" while every guest
-// stared at a logo, and the operator only learned it from a guest. So the
-// booth watches its own outgoing picture. A real camera never produces two
-// byte-identical frames — sensor noise alone moves some pixel — so a run of
-// identical samples means a still image is going out.
-const STILL_SAMPLE_MS = 1000
-const STILL_AFTER = 4 // consecutive identical samples, ~4s
+// stared at a logo. So no picture is SHOWN — not in this self-view, not on the
+// guest's page — until the booth has confirmed it moves; until then, and
+// whenever it stops, both sides get a designed state and the voice carries on.
+// A real camera never produces two byte-identical frames (sensor noise alone
+// moves some pixel), so identical samples mean a still image is going out.
+const PICTURE_SAMPLE_MS = 500
+const LIVE_AFTER = 2 // consecutive differing samples before the picture is shown (~1s)
+const STILL_AFTER = 4 // consecutive identical samples before it is taken away (~2s)
+const OBS_AFTER = 2 // consecutive samples that ARE OBS's placeholder (~1s)
+type Picture = 'checking' | 'live' | 'obs' | 'still'
 /** Flat regions of data/obs-plugins/win-dshow/placeholder.png on a 16×9 grid,
  *  with their colours. Flat so the browser's downscale filter cannot move
  *  them; mirroring is irrelevant because the canvas reads the raw frame. */
@@ -61,9 +65,11 @@ export function HostCamCard() {
   const [micOnly, setMicOnly] = useState(false)
   const [camBusyHint, setCamBusyHint] = useState(false) // preflight found the camera held elsewhere
   const [error, setError] = useState<string | null>(null)
-  // What guests actually see when it is NOT the operator: OBS's placeholder,
-  // or some other picture that has stopped moving. null = moving (or unknown).
-  const [stillPicture, setStillPicture] = useState<null | 'obs-placeholder' | 'frozen'>(null)
+  // What the outgoing picture is, as far as the booth can prove. Only 'live'
+  // is ever shown; everything else is a designed state on both sides.
+  const [picture, setPicture] = useState<Picture>('checking')
+  // Bumped on every camera change, so a new camera starts at 'checking' too.
+  const [pictureEpoch, setPictureEpoch] = useState(0)
   // Camera choice. The default cam is usually the one OBS already owns —
   // a picker turns "camera busy" from a dead end into a choice, and
   // selecting "OBS Virtual Camera" pipes the WHOLE OBS scene to guests.
@@ -141,6 +147,9 @@ export function HostCamCard() {
         void lkRoom.disconnect()
         return
       }
+      // Guests hear "checking" BEFORE anything is published: their page holds
+      // the host's picture back until this booth says it is really a person.
+      await lkRoom.localParticipant.setAttributes({ 'mc.picture': 'checking' }).catch(() => {})
       // MIC FIRST, on its own — the old enableCameraAndMicrophone() asked
       // for both in ONE getUserMedia, so an OBS-held webcam failed the
       // whole call and the "mic-only" fallback was doing all the work
@@ -204,13 +213,11 @@ export function HostCamCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onAir, micOnly])
 
-  // The still-picture watch (see STILL_AFTER). Clears itself the moment the
-  // picture moves again — clicking Start Virtual Camera in OBS needs no re-arm.
+  // The picture watch. Restarts at 'checking' whenever the camera goes on air
+  // or changes, and only ever moves to 'live' on proof that the picture moves.
   useEffect(() => {
-    if (!onAir || micOnly) {
-      setStillPicture(null)
-      return
-    }
+    if (!onAir || micOnly) return
+    setPicture('checking')
     const canvas = document.createElement('canvas')
     canvas.width = 64
     canvas.height = 36
@@ -219,34 +226,60 @@ export function HostCamCard() {
     ctx.imageSmoothingQuality = 'high'
     let prev: Uint8ClampedArray | null = null
     let same = 0
+    let moved = 0
+    let obsRun = 0
+    let verdict: Picture = 'checking'
     const t = setInterval(() => {
       const v = videoRef.current
       // A hidden tab stops painting video, and an unpainted frame compares
       // equal to the last one — it would read as frozen. Judge only what is
-      // actually being drawn, and start counting again from scratch after.
+      // actually being drawn; keep the last verdict meanwhile.
       if (!v || document.visibilityState === 'hidden' || v.paused || v.readyState < 2 || !v.videoWidth) {
         prev = null
         same = 0
+        moved = 0
+        obsRun = 0
         return
       }
       ctx.drawImage(v, 0, 0, 64, 36)
       const px = ctx.getImageData(0, 0, 64, 36).data
-      const last = prev
-      same = last && last.length === px.length && px.every((b, i) => b === last[i]) ? same + 1 : 0
-      prev = px
-      if (same < STILL_AFTER) {
-        setStillPicture(null)
-        return
-      }
       const at = (x: number, y: number) => {
         const i = ((y * 4 + 2) * 64 + (x * 4 + 2)) * 4
         return [px[i], px[i + 1], px[i + 2]]
       }
       const obs = OBS_PLACEHOLDER.every(([x, y, rgb]) => at(x, y).every((c, k) => Math.abs(c - rgb[k]) <= 20))
-      setStillPicture(obs ? 'obs-placeholder' : 'frozen')
-    }, STILL_SAMPLE_MS)
+      obsRun = obs ? obsRun + 1 : 0
+      const last = prev
+      if (last) {
+        const identical = last.length === px.length && px.every((b, i) => b === last[i])
+        same = identical ? same + 1 : 0
+        moved = identical ? 0 : moved + 1
+      }
+      prev = px
+      const next: Picture = obsRun >= OBS_AFTER
+        ? 'obs'
+        : same >= STILL_AFTER
+          ? 'still'
+          : moved >= LIVE_AFTER && !obs
+            ? 'live'
+            : verdict
+      if (next !== verdict) {
+        verdict = next
+        setPicture(next)
+      }
+    }, PICTURE_SAMPLE_MS)
     return () => clearInterval(t)
-  }, [onAir, micOnly])
+  }, [onAir, micOnly, pictureEpoch])
+
+  // What guests are told. Mic-only counts as "still": there is no picture.
+  const guestPicture = !onAir ? null : micOnly ? 'still' : picture === 'obs' ? 'still' : picture
+  useEffect(() => {
+    const r = lkRef.current
+    if (!r || !guestPicture) return
+    r.localParticipant.setAttributes({ 'mc.picture': guestPicture }).catch(() => {
+      /* a token without the grant: guests fall back to showing what arrives */
+    })
+  }, [guestPicture])
 
   // Autopilot: guest presence drives the publish. Rising edge (0 → >0)
   // connects; falling edge starts the grace timer instead of hanging up
@@ -397,6 +430,7 @@ export function HostCamCard() {
       const pub = [...r.localParticipant.videoTrackPublications.values()][0]
       if (pub?.track && videoRef.current) pub.track.attach(videoRef.current)
       setMicOnly(false)
+      setPictureEpoch((n) => n + 1)
       return true
     } catch {
       return false
@@ -447,6 +481,7 @@ export function HostCamCard() {
         await tryEnableCamera(id)
       } else if (id) {
         await r.switchActiveDevice('videoinput', id)
+        setPictureEpoch((n) => n + 1)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not switch camera')
@@ -461,9 +496,11 @@ export function HostCamCard() {
       : onAir
         ? micOnly
           ? `🔴 ON AIR to ${guestNoun} — MIC ONLY. Your camera is held by another app (OBS?). Pick a different camera below; OBS Virtual Camera works great.`
-          : stillPicture
-            ? `🔴 ON AIR to ${guestNoun} — they can hear you, but they see a still picture, not you`
-            : `🔴 ON AIR to ${guestNoun} — they see you in real time`
+          : picture === 'live'
+            ? `🔴 ON AIR to ${guestNoun} — they see you in real time`
+            : picture === 'checking'
+              ? `🔴 ON AIR to ${guestNoun}`
+              : `🔴 ON AIR to ${guestNoun} — voice only`
         : camBusyHint
           ? 'Armed, mic-only — your camera is held by another app (OBS?). Pick a different one below; OBS Virtual Camera works great.'
           : 'Armed — camera goes on air the moment a guest joins'
@@ -560,33 +597,13 @@ export function HostCamCard() {
           </div>
         ) : null}
 
-        {/* The sibling of the mic-only alert: sound going out, and a picture
-            that is not the operator. Same loudness, same reason. */}
-        {onAir && !micOnly && stillPicture ? (
-          <div
-            role="alert"
-            id="boothStillPicture"
-            data-still={stillPicture}
-            className="rounded-xl border border-[var(--neon-magenta)]/60 bg-[var(--neon-magenta)]/10 p-3"
-          >
-            <strong className="block text-sm font-bold text-[var(--neon-magenta)]">
-              {stillPicture === 'obs-placeholder'
-                ? `${guestNoun} ${liveCount === 1 ? 'sees' : 'see'} the OBS logo, not you`
-                : `${guestNoun} ${liveCount === 1 ? 'sees' : 'see'} a still picture, not you`}
-            </strong>
-            <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-              {stillPicture === 'obs-placeholder'
-                ? 'The camera going out is OBS Virtual Camera, and it isn’t started in OBS, so it is sending OBS’s placeholder. In OBS, click Start Virtual Camera (Controls, bottom right) — the picture switches over by itself, no need to re-arm. Or pick your webcam above.'
-                : 'Your camera has sent the exact same frame for several seconds. If that is not deliberate (a still BRB scene), the camera has frozen — pick another one above, or reconnect it.'}
-            </span>
-          </div>
-        ) : null}
-
         <p id="boothStatus" aria-live="polite" className="text-xs text-muted-foreground">
           {status}
         </p>
 
-        {/* mirrored self-view — only while the camera is actually publishing */}
+        {/* Self-view — only while the camera is publishing, and the PICTURE
+            only once it is proven to move. The tile sits over the video
+            rather than hiding it, so the watch keeps reading real frames. */}
         <div
           className="relative overflow-hidden rounded-xl border border-border bg-black"
           style={{
@@ -604,6 +621,29 @@ export function HostCamCard() {
             // produced picture — mirroring it reverses every word in it.
             style={{ transform: camId && isObsVirtualCam(camId) ? undefined : 'scaleX(-1)' }}
           />
+          {picture !== 'live' ? (
+            <div
+              id="boothPictureHeld"
+              data-state={picture}
+              className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-[#07090d] px-6 text-center"
+            >
+              {picture === 'checking' ? (
+                <RefreshCw className="size-4 animate-spin text-muted-foreground" />
+              ) : (
+                <VideoOff className="size-5 text-[var(--neon-magenta)]" />
+              )}
+              <p className="text-sm font-semibold text-foreground">
+                {picture === 'checking' ? 'Checking your camera' : 'Guests can’t see you'}
+              </p>
+              <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
+                {picture === 'checking'
+                  ? 'Guests see you the moment your picture comes through.'
+                  : picture === 'obs'
+                    ? 'OBS Virtual Camera isn’t started. In OBS, click Start Virtual Camera.'
+                    : 'Your camera stopped sending a picture. Pick another one above.'}
+              </p>
+            </div>
+          ) : null}
         </div>
 
         {error ? (

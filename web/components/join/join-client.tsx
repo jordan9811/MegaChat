@@ -50,6 +50,16 @@ export function JoinClient() {
           <div id="hostLiveFeed" className="stream-preview host-live" style={{ display: 'none' }}>
             <div className="stream-preview-frame host-live-frame">
               <div id="hostLiveMount" className="stream-preview-mount" />
+              {/* Shown instead of the host's picture until their booth confirms
+                  it is really them — never OBS's placeholder, never a frozen
+                  frame. The host's voice plays either way. */}
+              <div id="hostFeedHeld" className="host-feed-held" style={{ display: 'none' }}>
+                <div>
+                  <span className="join-coordinate">Host camera</span>
+                  <h2 id="hostFeedHeldTitle">Waiting for the host</h2>
+                  <p id="hostFeedHeldText">Their camera and voice come through here when they join you.</p>
+                </div>
+              </div>
             </div>
             <div className="stream-preview-caption">
               <span className="host-live-label">

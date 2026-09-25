@@ -878,3 +878,29 @@ reason than "the API is expensive".
   and voice isolation by default, and no mic in the app overrides them. Adding
   toggles that default to on would change nothing and imply a fix. The echo is
   recorded as E1 with its real cause.
+
+- **Show a picture only on proof, not hide it on suspicion.** The first form
+  showed whatever arrived and warned once it looked wrong, which guaranteed a
+  guest saw OBS's logo for the seconds it took to decide. Now the default on
+  both sides is the designed state, and `live` must be earned (two differing
+  samples). Cost: about a second of "Host camera starting" before a real camera
+  appears. Undo: treat `checking` as `live` on both sides.
+- **The warning card is gone; the explanation lives where the picture would
+  be.** One designed tile in the preview slot — what is wrong, one line on how
+  to fix it — instead of the picture plus a magenta card above it. The status
+  line claims only what is proven: "voice only" while held. Undo: n/a.
+- **Guests are told by a participant attribute, not by running the detector
+  themselves.** A received picture has been through an encoder, so "byte-
+  identical frames" no longer holds on the guest side; the booth, which reads
+  the raw capture, is the one place that can know. An attribute persists, so a
+  guest who joins late reads the current state. Undo: drop `mc.picture` and the
+  host grant together.
+- **`canUpdateOwnMetadata` is granted to the host token only.** The host route
+  is already owner/password-gated; a seat token still cannot label itself.
+  `canPublishData` stays false everywhere. Undo: remove the flag in
+  `livekit.js`.
+- **The held tile sits OVER the booth's video instead of hiding it.** The watch
+  reads frames from that element; covering it keeps real frames flowing, while
+  hiding a muted video risks the browser pausing it and the watch mistaking a
+  paused frame for a frozen camera. On the guest page, which runs no detector,
+  the video is simply hidden. Undo: n/a.

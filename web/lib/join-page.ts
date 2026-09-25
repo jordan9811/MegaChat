@@ -1559,10 +1559,64 @@ async function mountLivekitHostFeed(wrap, mount) {
     mount.appendChild(video);
   }
   const audioEls = [];
+
+  // The host's PICTURE is shown only once their booth says it is a person
+  // (mc.picture = 'live'). Until then — and whenever it is OBS's "virtual
+  // camera not started" logo, a frozen frame, or no camera at all — the guest
+  // gets a designed state. The host's VOICE plays regardless.
+  // A booth that predates the signal sends no attribute: if a host picture has
+  // been attached for LEGACY_SHOW_MS with no attribute, show it as before, so a
+  // dashboard tab opened before a deploy cannot hide the host forever.
+  const LEGACY_SHOW_MS = 2000;
+  const HELD = {
+    waiting: ['Waiting for the host', 'Their camera and voice come through here when they join you.'],
+    checking: ['Host camera starting', 'You can already hear the host.'],
+    still: ['Host camera is off', 'You can still hear the host.'],
+  };
+  const held = document.getElementById('hostFeedHeld');
+  const heldTitle = document.getElementById('hostFeedHeldTitle');
+  const heldText = document.getElementById('hostFeedHeldText');
+  let legacyShow = false;
+  let legacyTimer = null;
+  const hostNow = () => [...(lkRoom ? lkRoom.remoteParticipants.values() : [])].find((p) => p.identity === hostIdentity);
+  const applyHostPicture = () => {
+    const host = hostNow();
+    const signalled = host && host.attributes ? host.attributes['mc.picture'] : undefined;
+    const state = !host ? 'waiting' : signalled || (legacyShow ? 'live' : 'checking');
+    const show = state === 'live';
+    video.style.visibility = show ? '' : 'hidden';
+    if (!held) return;
+    held.style.display = show ? 'none' : '';
+    held.dataset.state = state;
+    const [title, text] = HELD[state] || HELD.still;
+    if (heldTitle) heldTitle.textContent = title;
+    if (heldText) heldText.textContent = text;
+  };
+  const onHostPresence = (participant) => {
+    if (participant && participant.identity !== hostIdentity) return;
+    if (!hostNow()) {
+      legacyShow = false;
+      if (legacyTimer) { clearTimeout(legacyTimer); legacyTimer = null; }
+    }
+    applyHostPicture();
+  };
+  const onHostAttributes = (changed, participant) => {
+    if (participant && participant.identity === hostIdentity) applyHostPicture();
+  };
+  applyHostPicture();
+
   const attachIfHost = (track, participant) => {
     if (participant.identity !== hostIdentity) return;
     console.log('[livekit] host feed: attaching', track.kind);
-    if (track.kind === 'video') track.attach(video);
+    if (track.kind === 'video') {
+      track.attach(video);
+      if (!legacyTimer && !(participant.attributes && participant.attributes['mc.picture'])) {
+        legacyTimer = setTimeout(() => {
+          const h = hostNow();
+          if (h && !(h.attributes && h.attributes['mc.picture'])) { legacyShow = true; applyHostPicture(); }
+        }, LEGACY_SHOW_MS);
+      }
+    }
     if (track.kind === 'audio') {
       const a = track.attach();
       a.style.display = 'none';
@@ -1586,8 +1640,20 @@ async function mountLivekitHostFeed(wrap, mount) {
   }
   const onSub = (track, pub, participant) => attachIfHost(track, participant);
   lkRoom.on(lk.RoomEvent.TrackSubscribed, onSub);
+  lkRoom.on(lk.RoomEvent.ParticipantAttributesChanged, onHostAttributes);
+  lkRoom.on(lk.RoomEvent.ParticipantConnected, onHostPresence);
+  lkRoom.on(lk.RoomEvent.ParticipantDisconnected, onHostPresence);
   lkHostFeedCleanup = () => {
-    try { lkRoom && lkRoom.off(lk.RoomEvent.TrackSubscribed, onSub); } catch { /* down */ }
+    try {
+      if (lkRoom) {
+        lkRoom.off(lk.RoomEvent.TrackSubscribed, onSub);
+        lkRoom.off(lk.RoomEvent.ParticipantAttributesChanged, onHostAttributes);
+        lkRoom.off(lk.RoomEvent.ParticipantConnected, onHostPresence);
+        lkRoom.off(lk.RoomEvent.ParticipantDisconnected, onHostPresence);
+      }
+    } catch { /* down */ }
+    if (legacyTimer) clearTimeout(legacyTimer);
+    if (held) held.style.display = 'none';
     audioEls.forEach((a) => a.remove());
   };
   wrap.style.display = '';

@@ -2897,3 +2897,31 @@ sections A–H, all green.
   has the Twitch stream open in another tab hears themselves on the broadcast
   delay. The join page removes its own embed on go-live for exactly this reason
   (`mountHostFeed` → `hideStreamPreview`); another tab it cannot touch.
+
+- **B5 — B1's first fix was the wrong fix, and was replaced the same day.** It
+  kept showing OBS's placeholder in the booth preview and put a warning on it.
+  The owner's verdict: "janky … I do not want this anywhere on the UI." The
+  requirement is that the picture is never RENDERED, not that it is explained.
+  Now no picture is shown on either side until the booth has confirmed it moves
+  (two differing samples, ~1s); until then, and whenever it turns into OBS's
+  placeholder or freezes, the booth preview and the guest's page each show a
+  designed state in their own page's vocabulary, and the voice carries on. The
+  booth tells guests through the LiveKit participant attribute `mc.picture`
+  (`checking` → `live` | `still`), set to `checking` BEFORE the camera is
+  published, which needed `canUpdateOwnMetadata` on the host token only.
+  `_gate-booth-picture.mjs` 20/0: across the whole placeholder phase the guest
+  page showed the host's picture 0 times over 44 probe ticks of a mounted feed,
+  and the booth exposed it 0 times; the same probe then counted 27 sightings of
+  the moving picture.
+- **B6 — The legacy fallback is reasoned, not gated.** A dashboard tab opened
+  before the deploy runs a booth that never sets `mc.picture`; the guest page
+  shows such a host's picture once it has been attached for 2s with no
+  attribute, so an old tab cannot hide the host forever. No harness here can run
+  the old booth against the new join page. Reloading the dashboard after a
+  deploy avoids depending on it.
+- **B7 — Mid-session, the placeholder can show for about a second.** From the
+  first frame it is never shown; but a picture that has been confirmed live and
+  THEN turns into OBS's placeholder (OBS Virtual Camera stopped mid-stream) is
+  visible until `OBS_AFTER` samples match — 861–969ms across three runs.
+- **B8 — A mic-only booth now reads to guests as "Host camera is off".** It used
+  to leave them a black frame. Same signal, `mc.picture = still`.

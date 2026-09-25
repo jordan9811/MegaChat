@@ -25,7 +25,7 @@ export function createLivekitService({ log = console } = {}) {
 
   const lkRoomName = (roomId) => `mc-${roomId}`;
 
-  async function mint({ identity, name, roomId, canPublish, canSubscribe, ttl = '2h' }) {
+  async function mint({ identity, name, roomId, canPublish, canSubscribe, canUpdateOwnMetadata = false, ttl = '2h' }) {
     const at = new AccessToken(apiKey, apiSecret, { identity, name, ttl });
     at.addGrant({
       roomJoin: true,
@@ -33,6 +33,7 @@ export function createLivekitService({ log = console } = {}) {
       canPublish,
       canSubscribe,
       canPublishData: false,
+      canUpdateOwnMetadata,
     });
     return at.toJwt();
   }
@@ -65,6 +66,11 @@ export function createLivekitService({ log = console } = {}) {
         roomId,
         canPublish: true,
         canSubscribe: true,
+        // The booth publishes `mc.picture` (checking | live | still) so a
+        // guest page shows the host only once the picture is confirmed to be
+        // a person — never OBS's "virtual camera not started" placeholder.
+        // Host only: a seat token cannot label itself.
+        canUpdateOwnMetadata: true,
         ttl: '12h',
       });
     },
