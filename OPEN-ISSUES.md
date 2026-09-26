@@ -3219,3 +3219,19 @@ sections A–H, all green.
   removed E1–E2 red; with no lead R1–R2 red; with any room keeping copies E3
   red; with handles resolved before ids X3 red. The stale clip-ref cache bug
   (a just-aired clip 404ing for 30s) was found by E2 itself.
+
+## Owner confirmations and the operator's machine (2026-09-25, evening)
+
+- **Confirmed by the owner:** the new front end, and NO wallet popup opening a
+  room with MetaMask and Phantom installed (closes E72; D5).
+- **OBS is 32.2.2** (log 2026-09-25 20:58): the version that stops counting a
+  "Monitor and Output" source twice when Desktop Audio records the monitoring
+  device — W4's doubled guests in the OBS booth modes no longer apply (E66).
+- **The Megachat scene's "Audio Input Capture" opens the Shure MV7** again (W7).
+- **Still on the machine, operator-side:** a source named "Browser" in scene
+  "Testing x402 2" loads https://megachat.fun/jordandotfun/overlay with
+  "shutdown when not visible" off, so it stays connected as a second overlay
+  of the owner's room whatever scene is live; "Megachat manual" in the live
+  Megachat scene points at a local rehearsal overlay (localhost:3310). And the
+  virtual camera had not been started in this OBS session — it has to be each
+  launch (or OBS started with --startvirtualcam).

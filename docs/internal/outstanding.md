@@ -109,13 +109,13 @@ Blocked-on codes: **owner** (a credential, an account, a dashboard toggle, a dec
 | E63 | A picture that turns into OBS's placeholder MID-session is visible for up to ~1s (`OBS_AFTER` samples) before both sides hold it | `OPEN-ISSUES.md` B7 |
 | E64 | The echo fix depends on OBS capturing Desktop Audio on the booth's output device, and whether Chrome's canceller cleanly removes a loud speaker is unmeasured — both need a live session | `OPEN-ISSUES.md` E4 |
 | E65 | Live check: does This tab now sound clean to the streamer? The double-copy defect is fixed and gated; nothing recorded the old sound | `OPEN-ISSUES.md` W1 |
-| E66 | OBS 31 doubles guests and stingers on stream in either OBS mode — update OBS to 32+ before choosing one (operator) | `OPEN-ISSUES.md` W4 |
+| E66 | **CLOSED 2026-09-25** — the operator is on OBS 32.2.2. (OBS 31 doubled guests and stingers on stream in either OBS booth mode.) | `OPEN-ISSUES.md` W4 |
 | E67 | OBS · speakers gates the streamer's voice for guests under loud playback (10–24% of speech) and adds ~170 ms, unmeasured in conversation | `OPEN-ISSUES.md` W2, W5 |
 | E68 | Operator-side: start OBS Virtual Camera; remove or shut down the second "Browser" overlay source; fix the dead "Audio Input Capture" and check Mic/Aux is unmuted | `OPEN-ISSUES.md` W7 |
 | E69 | Live check: the first real broadcast after this deploy gets a picture from its previews (12 KB floor, a short seat) | `OPEN-ISSUES.md` R6 |
 | E70 | The bounty capture frame lands on the room's newest airing, untested and unmakeable in production (no ffmpeg) | `OPEN-ISSUES.md` R7 |
 | E71 | Airings of deleted rooms stay in `airings.json` (their files are cleaned) | `OPEN-ISSUES.md` R8 |
-| E72 | Live check: with MetaMask and Phantom installed, opening a room shows no "Which extension?" chooser | `OPEN-ISSUES.md` D5 |
+| E72 | **CLOSED 2026-09-25** — confirmed by the owner: no "Which extension?" chooser opening a room with MetaMask and Phantom installed. | `OPEN-ISSUES.md` D5 |
 | E73 | BOARD_BIG_VIEWERS = 100 is a guess; tune once real streams use the board | `DECISIONS.md`, "The board's featured tier and its density" |
 | E74 | Injected wallets other than MetaMask are registered for watch time at Connect, not at load | `OPEN-ISSUES.md` D6 |
 | E75 | Live check: a Recently aired card opens the owner's 2026-09-24 broadcast in the Twitch player on the page | `OPEN-ISSUES.md` P1, P6 |
