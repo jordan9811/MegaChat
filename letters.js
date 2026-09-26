@@ -53,6 +53,7 @@ import { toWebRequest } from './meter-mpp.js';
 import { toAtomic, fromAtomic } from './token-utils.js';
 import { addMoment } from './airings-store.js';
 import { archiveAiredClip, removeAiredClip, cleanVideoMime } from './aired-clips.js';
+import { getSetting } from './site-settings.js';
 import { createLetterStore } from './letter-store.js';
 
 const LETTER_MAX_BYTES = 25 * 1024 * 1024; // per letter
@@ -252,7 +253,7 @@ export function attachLetters(app, deps) {
       if (!cfg.letters.enabled) return res.status(403).json({ error: 'MegaChats are not enabled in this room' });
       if (!cfg.active) return res.status(403).json({ error: 'Room is not accepting joins right now' });
 
-      const { username, address, durationS, mime, flyIn, flyOut } = req.body || {};
+      const { username, address, durationS, mime, flyIn, flyOut, replayKeepDays } = req.body || {};
       if (!username || typeof username !== 'string') {
         return res.status(400).json({ error: 'Username required' });
       }
@@ -331,6 +332,10 @@ export function attachLetters(app, deps) {
         mime: cleanVideoMime(mime),
         flyIn: FLY_IN_OK.has(flyIn) ? flyIn : null,
         flyOut: FLY_OUT_OK.has(flyOut) ? flyOut : null,
+        // How long the send screen said the clip stays in the replay (0: "plays
+        // once"). A copy is never kept longer (aired-clips.js). Absent — a page
+        // from before this was sent — it said 30.
+        replayKeepDays: Number.isInteger(replayKeepDays) && replayKeepDays >= 0 && replayKeepDays <= 90 ? replayKeepDays : 30,
         status: 'awaiting_upload',
         media: null,
         paidAt: Date.now(),
@@ -606,11 +611,14 @@ export function attachLetters(app, deps) {
       // start — a play a restart cut off never reaches this line. Never a
       // bounty clip (it has its own retention and refund purge), only when the
       // moment was recorded on a broadcast, and only when the server says the
-      // room may (a proven channel, the overlay not reported hidden).
+      // room may (a proven channel, the overlay not reported hidden). It
+      // carries the days the fan was told; the owner's setting caps them on
+      // every read and sweep (aired-clips.js keepMsFor), and off keeps none.
       try {
-        if (moment && !letter.bounty && letter.media && canKeepAiredClip(roomId, { from: letter.airedAt, to: Date.now() })) {
+        const keepDays = getSetting('replayKeepDays') > 0 ? (letter.replayKeepDays ?? 30) : 0;
+        if (keepDays > 0 && moment && !letter.bounty && letter.media && canKeepAiredClip(roomId, { from: letter.airedAt, to: Date.now() })) {
           const bytes = store.readMedia(letter.id);
-          if (bytes) archiveAiredClip({ id: letter.id, roomId, username: letter.username || null, mime: letter.mime, durationS: letter.durationS, at: moment.at }, bytes, { log });
+          if (bytes) archiveAiredClip({ id: letter.id, roomId, username: letter.username || null, mime: letter.mime, durationS: letter.durationS, at: moment.at, keepDays }, bytes, { log });
         }
       } catch (e) {
         log.warn?.(`[aired-clips] could not keep ${letter.id}: ${e.message}`);

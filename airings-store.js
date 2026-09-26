@@ -192,12 +192,15 @@ export function listAirings(roomId, { limit = KEEP_PER_ROOM } = {}) {
  * vodUrl, so this rule never saw one; now the poster sweep attaches the Twitch
  * recording of every broadcast, and counting it would put every solo stream of
  * every following room on the board.
+ *
+ * `include` replaces the rule: the board passes airing-posters.js isShowable,
+ * which also lets through quiet broadcasts when the owner shows them (/dev).
  */
-export function recentAirings({ limit = 12, withContent = true } = {}) {
+export function recentAirings({ limit = 12, withContent = true, include = null } = {}) {
   load();
   return state.airings
     .filter((a) => a.endedAt != null)
-    .filter((a) => (withContent
+    .filter((a) => (include ? include(a) : withContent
       ? a.moments.some((m) => m.kind === 'seat' || m.kind === 'megachat') || !!a.captureRef
       : true))
     .sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0))

@@ -33,8 +33,9 @@ import { attachDashboardRoutes } from './dashboard-routes.js';
 import { getAccount, platformLoginsFor } from './accounts.js';
 import { getStreamsByLogins, twitchApiConfigured, helix } from './twitch-api.js';
 import { openAiring, openAiringFor, closeAiring, addMoment, recentAirings, listAirings, allAiringIds, airingRefs, attachRecording, markRestart, momentRefs } from './airings-store.js';
-import { snapshotLivePreview, finalizeAiringPoster, readAiringPoster, posterFileFor, sweepAiringPosters, lastEvidenceAt, hasContent } from './airing-posters.js';
-import { readAiredClip, airedClipFile, sweepAiredClips, removeAiredClip } from './aired-clips.js';
+import { snapshotLivePreview, finalizeAiringPoster, readAiringPoster, posterFileFor, sweepAiringPosters, lastEvidenceAt, isListable, quietShown, isQuietBroadcast, setQuietEligibility } from './airing-posters.js';
+import { readAiredClip, airedClipFile, sweepAiredClips, removeAiredClip, airedClipStats } from './aired-clips.js';
+import { getSetting, siteSettingsView, updateSiteSettings, isSiteAdmin } from './site-settings.js';
 import { hiddenWindows } from './overlay-visibility.js';
 import { buildCard } from './room-poster.js';
 import { createActivityManager } from './livekit-activity.js';
@@ -672,6 +673,11 @@ app.get('/api/config', (req, res) => {
           price: letterPriceFor(cfg),
           moderation: cfg.letters.moderation,
           minWatchSeconds: cfg.letters.gates.minWatchSeconds,
+          // How long an aired MegaChat stays in this broadcast's replay — what
+          // the send screen tells the fan, and sends back with the clip. 0
+          // where no copy can be kept (the owner's /dev setting is off, or the
+          // room's owner has not proved the channel — canKeepAiredClip).
+          replayKeepDays: cfg.twitchChannel && ownerProvesChannel(roomId, cfg.twitchChannel) ? getSetting('replayKeepDays') : 0,
         }
       : { enabled: false },
     joinStream: {
@@ -1955,9 +1961,9 @@ try {
     // A copy of an aired MegaChat is kept for the broadcast's replay only for
     // a room whose owner proved the channel, and only when the overlay did not
     // report itself hidden or too small during the play (aired-clips.js).
-    // AIRED_CLIPS=0 keeps none.
+    // The owner's /dev setting at 0 (AIRED_CLIPS=0 by default) keeps none.
     canKeepAiredClip: (roomId, { from, to }) => {
-      if (process.env.AIRED_CLIPS === '0') return false;
+      if (getSetting('replayKeepDays') <= 0) return false;
       const cfg = resolveRoomConfig(roomId);
       if (!cfg?.twitchChannel || !ownerProvesChannel(roomId, cfg.twitchChannel)) return false;
       return !hiddenWindows(roomId).some((w) => w.startedAt <= to && (w.endedAt == null || w.endedAt >= from));
@@ -2847,10 +2853,11 @@ const followState = new Map(); // roomId -> { live: boolean, offSince: number|nu
 // keeping previews, picking at close, and the sweep (airing-posters.js).
 const AIRING_POSTERS_ON = process.env.AIRING_POSTERS !== '0';
 // A "big stream" for the board's featured tier: live on Twitch with at least
-// this many viewers (DECISIONS.md, "The board's featured tier"). A stream stays
-// big until it drops under 80% of it, so one hovering at the line does not
-// resize the board every poll.
-const BOARD_BIG_VIEWERS = Number(process.env.BOARD_BIG_VIEWERS) > 0 ? Number(process.env.BOARD_BIG_VIEWERS) : 100;
+// this many viewers (DECISIONS.md, "The board's featured tier") — the owner
+// sets it on /dev (site-settings.js bigStreamViewers; BOARD_BIG_VIEWERS, else
+// 100). A stream stays big until it drops under 80% of it, so one hovering at
+// the line does not resize the board every poll.
+const bigStreamViewers = () => getSetting('bigStreamViewers');
 const BIG_STAYS_ABOVE = 0.8;
 
 /** Has the room's OWNER proved the channel it follows is theirs — their
@@ -2868,6 +2875,10 @@ function ownerProvesChannel(roomId, channel) {
     .filter(Boolean).map((n) => String(n).trim().replace(/^@/, '').toLowerCase());
   return names.includes(login);
 }
+
+// A quiet broadcast is shown only for a channel its room's owner proved
+// (airing-posters.js setQuietEligibility).
+setQuietEligibility((a) => ownerProvesChannel(a.roomId, a.channel));
 
 /** What the follow loop last learned about a room — only while it is fresh.
  *  followTick changes nothing when Twitch cannot be asked, so an old answer
@@ -2911,9 +2922,10 @@ async function followTick() {
 
     if (live) {
       // Viewers ride along from the same call: the board gives a big
-      // streamer the big featured card (BOARD_BIG_VIEWERS, with hysteresis).
+      // streamer the big featured card (bigStreamViewers, with hysteresis).
       const viewers = streams.get(login)?.viewers ?? 0;
-      const big = prev?.big ? viewers >= BOARD_BIG_VIEWERS * BIG_STAYS_ABOVE : viewers >= BOARD_BIG_VIEWERS;
+      const threshold = bigStreamViewers();
+      const big = prev?.big ? viewers >= threshold * BIG_STAYS_ABOVE : viewers >= threshold;
       followState.set(r.id, { live: true, offSince: null, viewers, big, at: now });
       // Rising edge, or the first thing we ever saw. Both mean the same thing
       // to the owner: their broadcast is up and their room is not.
@@ -3093,7 +3105,7 @@ app.get('/api/rooms/:roomId/replay', async (req, res) => {
   const live = !!cfg.twitchChannel && (!!openAiringFor(id)
     || (followLive ? followLive.live === true : twitchLiveCached(cfg.twitchChannel)));
   if (live) return res.json({ live: true, airing: null, moments: [], start: -1, leadS: REPLAY_LEAD_S });
-  const ended = listAirings(id).filter((a) => a.endedAt != null && hasContent(a));
+  const ended = listAirings(id).filter((a) => a.endedAt != null && isListable(a));
   const want = String(req.query.airing || '');
   const a = (want && ended.find((x) => x.id === want)) || ended[0] || null;
   if (!a) return res.json({ live, airing: null, moments: [], start: -1, leadS: REPLAY_LEAD_S });
@@ -3107,9 +3119,15 @@ app.get('/api/rooms/:roomId/replay', async (req, res) => {
     const vod = rec && avail.get(rec.vodId)
       ? { vodId: rec.vodId, offsetS: Math.max(0, Math.round((m.at - rec.startMs + skewMs) / 1000) - REPLAY_LEAD_S) }
       : null;
-    const clipMeta = m.kind === 'megachat' && m.ref && process.env.AIRED_CLIPS !== '0' ? readAiredClip(m.ref) : null;
+    const clipMeta = m.kind === 'megachat' && m.ref ? readAiredClip(m.ref) : null; // null past its days, or with keeping off
     const clip = clipMeta ? { url: `/api/aired-clips/${encodeURIComponent(m.ref)}`, mime: clipMeta.mime || 'video/webm' } : null;
     if (vod || clip) moments.push({ kind: m.kind, label: m.label, at: m.at, offsetMs: Math.max(0, m.at - a.startedAt), vod, clip });
+  }
+  // A quiet broadcast the owner shows anyway (/dev) has no moment to open at:
+  // its recording, from the start.
+  const firstRec = recs.find((r) => avail.get(r.vodId));
+  if (!moments.length && quietShown(a) && firstRec) {
+    moments.push({ kind: 'start', label: null, at: a.startedAt, offsetMs: 0, vod: { vodId: firstRec.vodId, offsetS: 0 }, clip: null });
   }
   // Open at the first MegaChat that can be played, else the first guest.
   const firstChat = moments.findIndex((m) => m.kind === 'megachat');
@@ -3167,13 +3185,82 @@ app.delete('/api/dashboard/rooms/:roomId/aired-clips/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── The owner's /dev page (site-settings.js) ────────────────────────────────
+// Only the site's owner — a signed-in account whose linked Twitch login is on
+// SITE_ADMIN_TWITCH. Anyone else falls through to whatever answers a path that
+// does not exist, so neither the page nor this API admits to being here.
+function siteAdminOf(req) {
+  const identity = readIdentityFromRequest(req);
+  return isSiteAdmin(identity) ? identity : null;
+}
+
+function siteSettingsPayload() {
+  // Who is live right now and how many watch: what a threshold would feature.
+  const live = [];
+  for (const r of listRooms()) {
+    // The rooms the board lists (/api/rooms/public), nothing it hides.
+    if (!r.active || !r.config || r.config.unlisted) continue;
+    const st = freshFollow(r.id);
+    if (!st?.live || !r.config.twitchChannel) continue;
+    live.push({
+      name: r.config.name, handle: r.config.handle || null, channel: r.config.twitchChannel,
+      viewers: st.viewers ?? 0, big: !!st.big,
+      // Only a proven channel can be featured (ownerProvesChannel).
+      proven: ownerProvesChannel(r.id, r.config.twitchChannel),
+    });
+  }
+  live.sort((a, b) => b.viewers - a.viewers);
+  const listed = new Set(listRooms().filter((r) => r.config && !r.config.unlisted).map((r) => r.id));
+  // Every one, not a window: what switching quiet broadcasts on would add —
+  // on a proven channel, with its recording known (isListable).
+  const quiet = recentAirings({
+    limit: Infinity,
+    include: (a) => listed.has(a.roomId) && isQuietBroadcast(a) && ownerProvesChannel(a.roomId, a.channel)
+      && Array.isArray(a.recordings) && a.recordings.length > 0,
+  });
+  return {
+    ...siteSettingsView(),
+    live: live.slice(0, 20),
+    clips: airedClipStats(),
+    quiet: { count: quiet.length, latestEndedAt: quiet[0]?.endedAt ?? null },
+  };
+}
+
+app.get('/api/site-settings', (req, res, next) => {
+  if (!siteAdminOf(req)) return next();
+  res.set('Cache-Control', 'no-store');
+  res.json(siteSettingsPayload());
+});
+
+app.put('/api/site-settings', (req, res, next) => {
+  const admin = siteAdminOf(req);
+  if (!admin) return next();
+  res.set('Cache-Control', 'no-store');
+  const by = admin.handle || admin.username || admin.accountId || null;
+  const result = updateSiteSettings(req.body?.settings, { by });
+  if (!result.ok) return res.status(result.status || 400).json({ error: result.errors.join('; '), errors: result.errors });
+  for (const [k, c] of Object.entries(result.changed)) {
+    console.log(`[site-settings] ${k}: ${JSON.stringify(c.from)} → ${JSON.stringify(c.to)} by ${by}`);
+  }
+  // A new threshold applies to the streams live now, not at the next poll —
+  // straight, no hysteresis: the owner just drew a new line.
+  if (result.changed.bigStreamViewers) {
+    const t = getSetting('bigStreamViewers');
+    for (const st of followState.values()) if (st.live) st.big = (st.viewers ?? 0) >= t;
+  }
+  // A shorter keep (or off) is already refused by readAiredClip; delete the
+  // files now rather than at the next sweep.
+  if (result.changed.replayKeepDays) clipSweep();
+  res.json({ ...siteSettingsPayload(), changed: result.changed });
+});
+
 app.get('/api/rooms/recent', (req, res) => {
   const limit = Math.max(1, Math.min(24, Number(req.query.limit) || 12));
   const byId = new Map(listRooms().map((r) => [r.id, r]));
   const out = [];
   // Scan wide: airings of deleted or unlisted rooms are skipped below, and a
   // fixed small window would let them crowd real ones off the rail.
-  for (const a of recentAirings({ limit: 500 })) {
+  for (const a of recentAirings({ limit: 500, include: isListable })) {
     const room = byId.get(a.roomId);
     if (!room || !room.config || room.config.unlisted) continue;
     out.push({
@@ -3349,20 +3436,18 @@ if (AIRING_POSTERS_ON) {
   setTimeout(sweep, Math.min(60_000, POSTER_SWEEP_MS)).unref?.();
 }
 
-// Kept MegaChat copies go with the broadcasts that refer to them, and after
-// 30 days — whether or not AIRING_POSTERS is on (aired-clips.js).
-{
-  const clipSweep = () => {
-    try {
-      const rooms = new Set(listRooms().map((r) => r.id));
-      sweepAiredClips(momentRefs().filter((r) => rooms.has(r.roomId)).map((r) => r.ref));
-    } catch (e) {
-      console.warn(`[aired-clips] sweep failed: ${e.message}`);
-    }
-  };
-  setInterval(clipSweep, POSTER_SWEEP_MS).unref?.();
-  setTimeout(clipSweep, Math.min(60_000, POSTER_SWEEP_MS)).unref?.();
+// Kept MegaChat copies go with the broadcasts that refer to them, and past
+// their days — whether or not AIRING_POSTERS is on (aired-clips.js).
+function clipSweep() {
+  try {
+    const rooms = new Set(listRooms().map((r) => r.id));
+    sweepAiredClips(momentRefs().filter((r) => rooms.has(r.roomId)).map((r) => r.ref));
+  } catch (e) {
+    console.warn(`[aired-clips] sweep failed: ${e.message}`);
+  }
 }
+setInterval(clipSweep, POSTER_SWEEP_MS).unref?.();
+setTimeout(clipSweep, Math.min(60_000, POSTER_SWEEP_MS)).unref?.();
 
 // ─── Boot cleanup: dump orphan rooms ────────────────────────────────────────
 // Now that the volume persists data, junk test rooms would otherwise pile up

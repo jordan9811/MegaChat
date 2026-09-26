@@ -30,7 +30,7 @@ The names the tree reads, grouped by what they switch. Absent credentials degrad
 | Room defaults | `TICK_SECONDS`, `TICK_PRICE`, `PASSKEY_TICK_SECONDS`, `PASSKEY_TICK_PRICE`, `MAX_SESSION`, `MAX_SEATS`, `MEGACHAT_MAX_SEATS`, `ROOM_DEFAULT_PASSWORD`, `DEMO_ROOM_PASSWORD` | `getEnvDefaults()` values |
 | Identity | `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, `AUTH_SECRET`, `TWITCH_CLIENT_ID/SECRET`, `X_CLIENT_ID/SECRET`, `KICK_CLIENT_ID/SECRET`, `YOUTUBE_API_KEY` | sign-in surfaces disabled / 503 |
 | Media | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_SEAT_GRACE_S`, `LAZY_CONNECT`, `LAZY_*`, `LK_BREAKER`, `LK_*_BUDGET_MIN`, `OPS_ALERT_WEBHOOK` | vdo.ninja transport; breaker/alerts no-op |
-| Features | `BOUNTY_CLAIM`, `BOUNTY_*` (thresholds), `OBS_ONECLICK`, `FOLLOW_STREAM`, `FOLLOW_POLL_MS`, `FOLLOW_OFF_CONFIRM_MS`, `GUEST_WHITELIST_MAX`, `MODERATION_API_KEY`, `MODERATION_API_BASE`, `EARN_*`, `REWARD_POOL_*` | bounty off; one-click hidden; follow loop on; moderation unconfigured |
+| Features | `BOUNTY_CLAIM`, `BOUNTY_*` (thresholds), `OBS_ONECLICK`, `FOLLOW_STREAM`, `FOLLOW_POLL_MS`, `FOLLOW_OFF_CONFIRM_MS`, `SITE_ADMIN_TWITCH` (whose Twitch login may first claim `/dev`; default the owner's channel), `BOARD_BIG_VIEWERS` and `AIRED_CLIPS` (fallbacks for two `/dev` settings), `GUEST_WHITELIST_MAX`, `MODERATION_API_KEY`, `MODERATION_API_BASE`, `EARN_*`, `REWARD_POOL_*` | bounty off; one-click hidden; follow loop on; moderation unconfigured |
 | Docs | `NEXT_PUBLIC_DOCS_URL` | no docs links render anywhere |
 | Legacy (other branches) | `ARC_*`, `USDC_ADDRESS`, `GATEWAY_WALLET_ADDRESS`, `FACILITATOR_URL`, `CIRCLE_*` | ignored on this branch (`rooms-store.js`) |
 

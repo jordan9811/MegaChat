@@ -10,7 +10,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-export type Identity = { provider: string; username: string; handle: string } | null
+// siteAdmin: present (true) only for the site's owner — the account menu then
+// offers the hidden /dev page (site-settings.js).
+export type Identity = { provider: string; username: string; handle: string; siteAdmin?: boolean } | null
 
 export type WalletState = {
   configured: boolean

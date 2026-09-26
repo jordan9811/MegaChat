@@ -136,6 +136,13 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
           <a href="/dashboard" role="menuitem" className="block px-2.5 py-2 text-[13px] text-white hover:bg-white/10">
             Your room
           </a>
+          {/* The site owner's own settings page. Nobody else is ever told it
+              exists — the server sends siteAdmin only for them. */}
+          {identity?.siteAdmin ? (
+            <a href="/dev" role="menuitem" className="block px-2.5 py-2 text-[13px] text-[#ffd23d] hover:bg-white/10">
+              Site settings
+            </a>
+          ) : null}
           <button
             type="button"
             role="menuitem"

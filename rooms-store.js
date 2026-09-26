@@ -493,8 +493,9 @@ const RESERVED_HANDLES = new Set([
   // front end. Both are plain lowercase, so neither the dash-or-dot rule nor
   // anything else stops a handle from shadowing them — /:handle is matched
   // BEFORE the Next fallthrough, so claiming one would make the page
-  // unreachable. 'bounty' had the same gap.
-  'app', 'legacy', 'bounty',
+  // unreachable. 'bounty' had the same gap, and so did 'dev' — the site
+  // owner's settings page, a Next page behind the same fallthrough.
+  'app', 'legacy', 'bounty', 'dev',
   // plausible future routes — cheap to reserve now, painful to reclaim later
   'about', 'blog', 'browse', 'careers', 'channel', 'contact', 'docs',
   'explore', 'faq', 'help', 'home', 'jobs', 'legal', 'live', 'logout',

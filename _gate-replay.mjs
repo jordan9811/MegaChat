@@ -73,9 +73,9 @@ process.env.AIRED_CLIPS_MAX_BYTES = String(CLIP.length * 2 + 10);
 const clips = await import('./aired-clips.js');
 {
   const [a, b, c] = [randomUUID(), randomUUID(), randomUUID()];
-  clips.archiveAiredClip({ id: a, roomId: 'r', mime: 'video/webm', at: Date.now() - 3000 }, CLIP, { log: {} });
-  clips.archiveAiredClip({ id: b, roomId: 'r', mime: 'video/webm', at: Date.now() - 2000 }, CLIP, { log: {} });
-  clips.archiveAiredClip({ id: c, roomId: 'r', mime: 'video/webm', at: Date.now() - 1000 }, CLIP, { log: {} });
+  clips.archiveAiredClip({ id: a, roomId: 'r', mime: 'video/webm', at: Date.now() - 3000, keepDays: 30 }, CLIP, { log: {} });
+  clips.archiveAiredClip({ id: b, roomId: 'r', mime: 'video/webm', at: Date.now() - 2000, keepDays: 30 }, CLIP, { log: {} });
+  clips.archiveAiredClip({ id: c, roomId: 'r', mime: 'video/webm', at: Date.now() - 1000, keepDays: 30 }, CLIP, { log: {} });
   const kept = [a, b, c].map((x) => !!clips.readAiredClip(x));
   clips.sweepAiredClips([c], { log: {} });
   ok('U1 a kept clip reads back; past the budget the oldest goes; the sweep drops unreferenced ones',

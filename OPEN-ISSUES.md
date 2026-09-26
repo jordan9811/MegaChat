@@ -3235,3 +3235,79 @@ sections A–H, all green.
   Megachat scene points at a local rehearsal overlay (localhost:3310). And the
   virtual camera had not been started in this OBS session — it has to be each
   launch (or OBS started with --startvirtualcam).
+
+## The owner's settings page, /dev (2026-09-25)
+
+- **S1 — Three product calls, set live from a hidden page.** The owner: "can we
+  make a hidden dev tab or something for me and only me to set these settings
+  whenever?" — the big-streamer threshold, how long MegaChat clips are kept for
+  replays, and whether a broadcast where nothing happened appears in Recently
+  aired. `/dev` (`web/app/dev`, `web/components/dev/site-settings-panel.tsx`)
+  saves each one to `DATA_DIR/site-settings.json` (`site-settings.js`); a
+  saved value wins over the env var, which wins over the default, and a change
+  is live at once — no redeploy — but only once it is on disk. Each change is
+  kept in a short history (who, when, from what to what), shown on the page.
+- **S2 — Who gets in: the owner's ACCOUNT, pinned.** Until one is pinned, the
+  first signed-in account whose linked TWITCH login is on SITE_ADMIN_TWITCH
+  (default: the owner's channel) is pinned in the file; from then
+  on only that account id opens the page, whatever any Twitch name says — a
+  Twitch name can be given up and registered by someone else, an account id
+  cannot. A handle proves nothing (first come), and neither does a same-named
+  Kick or X login. For anyone else the page and `/api/site-settings` answer
+  exactly as a path that does not exist (a plain 404). The owner's account menu
+  shows "Site settings"; nobody else's does (`/api/auth/me` sends `siteAdmin`
+  only to the owner). The handle "dev" is reserved: a room holding it would
+  have taken the address over (the '/:handle' route runs before Next).
+- **S3 — Big streamer** (`bigStreamViewers`, was BOARD_BIG_VIEWERS / 100): a new
+  number applies to the streams live now, not at the next poll, and the follow
+  loop keeps reading it (with its 80% hold). The page lists who is live on the
+  board, how many watch, and whether each is — or at an edited number would
+  be — featured.
+- **S4 — MegaChat replays** (`replayKeepDays`, 0–90, was a fixed 30; 0 = off,
+  as AIRED_CLIPS=0 was, and now the saved value overrides AIRED_CLIPS): the send
+  screen tells the fan the current number and sends it back with the clip; the
+  copy carries those days, and the setting caps them on every read and sweep
+  (`letters.js`, `aired-clips.js` keepMsFor). So no clip is ever kept longer
+  than its fan was told; a shorter setting, or off, applies to every kept clip at
+  once and deletes the files. The page says how many a shorter setting — or a
+  Reset — would delete, and asks first. A room whose owner has not proved the
+  channel now tells its fans "plays once" — it never kept a copy, and the screen
+  used to say it would for 30 days.
+- **S5 — Quiet broadcasts** (`recentShowsQuiet`, off by default — the owner's
+  earlier rule): on, a finished broadcast of 5 minutes or more with no seat and
+  no MegaChat gets a Recently aired card and a replay from the start of its
+  recording — only on a channel its room's owner proved (as for the featured
+  card and kept clips: a room can type in anyone's channel), and only once its
+  recording is found (`airing-posters.js` isListable). Shorter ones never — a
+  test or a false start.
+- **S6 — Found while building:** `server.js` redirects 127.0.0.1 to localhost,
+  and a redirect to another origin drops the cookie — so a server-side page
+  calling its own API over 127.0.0.1 is signed out. `/dev` calls localhost and
+  never follows a redirect.
+- **S7 — Discrimination, recorded.** `_gate-site-settings.mjs` 37/0. Each planted
+  defect turned it red: no account pin (A4b), any platform's login counting
+  (A2), 'dev' not reserved (A4c), the fan's days ignored (C3), quiet broadcasts
+  on unproven channels (D3b), quiet cards with no recording (D3b), the threshold
+  not read by the follow loop (B2b — which the first version of the gate MISSED:
+  the save itself set the flag; B2b was added), the letter keeping the setting
+  instead of what the fan was told (C7), the send screen always saying 30
+  (C1, C2, C5–C8), and Reset deleting without asking (C3b).
+- **S8 — Review: 24 findings confirmed, fixed before shipping** — the 'dev'
+  handle; quiet broadcasts of unproven channels and with nothing to play; the
+  admin keyed on a reusable Twitch name (now pinned by account); Reset skipping
+  the delete confirmation; a blank days field saving as "off"; a failed write
+  leaving the new value live; an unreadable settings file cached as empty and
+  then overwritten; prototype names accepted as settings; the quiet count
+  capped at 500; the live list showing rooms the board hides and ignoring the
+  80% hold; a save resetting the other card's draft; stale clip ages in the
+  delete preview; server/browser time zones disagreeing; copy that overstated
+  what a longer setting does; and the record still saying "30 days".
+- **S9 — Open: a quiet broadcast that ended while the server was down** is closed
+  at its last evidence (`lastEvidenceAt`); with no preview kept it looks
+  shorter than it was and can fall under the 5-minute rule. Owned rooms keep a
+  preview every 2 minutes, so this needs a failed preview fetch as well.
+- **S10 — Open: the owner must be signed in with Twitch linked the first time.**
+  If the owner's account has no Twitch link (or a different login), `/dev` is a
+  404 for them too; linking Twitch on the Account page opens it. To move the
+  page to another account later, delete `adminAccountIds` from
+  `site-settings.json` on the volume.

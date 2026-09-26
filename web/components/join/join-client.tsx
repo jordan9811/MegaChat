@@ -130,7 +130,7 @@ export function JoinClient() {
             </section>
 
             <section id="megachatAction" className="join-mode-zone is-record" style={{ display: 'none' }}>
-              <header><h2>Record a MegaChat</h2><p>Review before sending. Your clip plays once on the broadcast, and stays in that stream’s replay for up to 30 days.</p></header>
+              <header><h2>Record a MegaChat</h2><p>Review before sending. Your clip plays once on the broadcast<span id="letterKeepNote" />.</p></header>
               <button id="letterBtn" type="button" className={primaryBtn} style={{ display: 'none' }}>
                 Send a MegaChat
               </button>

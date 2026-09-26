@@ -289,8 +289,21 @@ function joinStreamEnabled() {
   return !CONFIG || !CONFIG.joinStream || CONFIG.joinStream.enabled !== false;
 }
 
+// The days the send screen says a clip stays in the broadcast's replay — sent
+// with the clip, and the server never keeps it longer (aired-clips.js). 0 until
+// the room's config says otherwise: "plays once" is all the fan has been told.
+let shownKeepDays = 0;
+
+function updateReplayKeepNote() {
+  const note = document.getElementById('letterKeepNote');
+  const days = Number(CONFIG && CONFIG.letters && CONFIG.letters.replayKeepDays) || 0;
+  shownKeepDays = note ? days : 0;
+  if (note) note.textContent = days > 0 ? `, and stays in that stream’s replay for up to ${days} day${days === 1 ? '' : 's'}` : '';
+}
+
 function updatePriceDisplay() {
   if (!CONFIG) return;
+  updateReplayKeepNote();
   const amt = document.getElementById('priceAmount');
   const lbl = document.getElementById('priceLabel');
   const tickPrice = CONFIG.passkeyTickPrice || CONFIG.tickPrice;
@@ -1577,7 +1590,8 @@ function mountReplay(wrap, mount, replay) {
   const label = document.getElementById('streamPreviewLabel');
   const list = document.getElementById('streamReplayMoments');
   const moments = replay.moments || [];
-  const describe = (m) => `${m.kind === 'megachat' ? 'MegaChat' : 'On camera'} · ${m.label || 'guest'}`;
+  const describe = (m) => (m.kind === 'start' ? 'the start'
+    : `${m.kind === 'megachat' ? 'MegaChat' : 'On camera'} · ${m.label || 'guest'}`);
   const play = (i) => {
     const m = moments[i];
     mount.innerHTML = '';
@@ -1610,7 +1624,9 @@ function mountReplay(wrap, mount, replay) {
     }
     if (label) {
       label.textContent = m.vod
-        ? `Replay · aired ${agoText(replay.airing.endedAt)} · from ${replay.leadS}s before ${describe(m)}`
+        ? (m.kind === 'start'
+          ? `Replay · aired ${agoText(replay.airing.endedAt)} · from the start`
+          : `Replay · aired ${agoText(replay.airing.endedAt)} · from ${replay.leadS}s before ${describe(m)}`)
         : `The MegaChat · ${m.label || 'guest'} · aired ${agoText(replay.airing.endedAt)} (the recording is gone)`;
     }
     if (list) list.querySelectorAll('button').forEach((b, j) => b.setAttribute('aria-pressed', String(j === i)));
@@ -2231,6 +2247,7 @@ async function sendLetter() {
           address: account,
           durationS: letterDurationS,
           mime: letterBlob.type || 'video/webm',
+          replayKeepDays: shownKeepDays,
           ...stingerSelections(),
         }),
       },

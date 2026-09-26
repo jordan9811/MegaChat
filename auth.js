@@ -19,6 +19,7 @@ import { fetchForProvider, bestAttributes, accountAttributes } from './attestati
 import { classify, loadAllowlist } from './classifier.js';
 import { createPrivyIdentity } from './privy-identity.js';
 import { verifyRoomPassword, isRoomOwnedBy } from './rooms-store.js';
+import { isSiteAdmin } from './site-settings.js';
 
 const PROVIDERS = {
   twitch: {
@@ -215,6 +216,9 @@ export function attachAuth(app, { log = console } = {}) {
     const identity = readIdentityFromRequest(req);
     res.json({ identity: identity ? {
       provider: identity.provider, username: identity.username, handle: identity.handle,
+      // Only ever present for the site's owner: the account menu shows them
+      // the hidden /dev page (site-settings.js). Nobody else sees the key.
+      ...(isSiteAdmin(identity) ? { siteAdmin: true } : {}),
     } : null });
   });
 

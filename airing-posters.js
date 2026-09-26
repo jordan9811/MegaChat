@@ -48,6 +48,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { getSetting } from './site-settings.js';
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 export const AIRING_POSTER_DIR = path.join(DATA_DIR, 'airing-posters');
@@ -75,6 +76,9 @@ const MEGACHAT_SPAN_MS = 90_000; // a MegaChat is on screen for well under this
 const PREVIEW_WINDOW_MS = 5 * 60_000; // a preview shows the stream up to 5 min before it was fetched
 const EDGE_START_MS = 3 * 60_000; // starting screens
 const EDGE_END_MS = 5 * 60_000; // end cards
+// A quiet broadcast (no seat, no MegaChat) shorter than this is a test or a
+// false start, never a card, even when the owner shows quiet ones.
+const QUIET_MIN_MS = 5 * 60_000;
 const CANDIDATES_KEPT_AFTER_CLOSE_MS = 60 * 60_000; // a blip can reopen an airing; keep them that long
 const SWEEP_WINDOW_MS = 14 * 24 * 60 * 60_000;
 // Recordings appear minutes after the end. `??`, not `||`: a gate sets 0.
@@ -239,9 +243,42 @@ export async function snapshotLivePreview(airing, login, { now = Date.now(), log
 // ── choosing ───────────────────────────────────────────────────────────────
 
 /** Did anything happen on this broadcast that the owner's rule lets us show?
- *  A seat or a MegaChat, or our own capture. The board shows nothing else. */
+ *  A seat or a MegaChat, or our own capture. */
 export function hasContent(airing) {
   return !!airing && ((airing.moments || []).some((m) => m.kind === 'seat' || m.kind === 'megachat') || !!airing.captureRef);
+}
+
+/** A finished broadcast, at least QUIET_MIN_MS long, where nothing happened. */
+export function isQuietBroadcast(airing) {
+  return !!airing && airing.endedAt != null && !hasContent(airing)
+    && airing.endedAt - airing.startedAt >= QUIET_MIN_MS;
+}
+
+// Whose quiet broadcasts may be shown: server.js sets it to "the room's owner
+// proved the channel" (ownerProvesChannel). A card for a broadcast where
+// nothing happened is nothing but the follow loop's record of somebody's
+// stream, and a room can type in any channel — so, like the featured card and
+// a kept MegaChat, only a proven channel gets one.
+let quietEligible = () => true;
+export function setQuietEligibility(fn) { quietEligible = fn; }
+
+/** A quiet broadcast the owner has chosen to show anyway (the /dev page's
+ *  recentShowsQuiet; site-settings.js), on a proven channel. */
+export function quietShown(airing) {
+  return isQuietBroadcast(airing) && getSetting('recentShowsQuiet') === true && !!quietEligible(airing);
+}
+
+/** Is this finished broadcast worth a poster and a recording lookup? Something
+ *  happened on it — or it is a quiet one the owner shows. */
+export function isShowable(airing) {
+  return hasContent(airing) || quietShown(airing);
+}
+
+/** Does it get a Recently aired card and a replay? A quiet one only once its
+ *  recording is known — it has no moment to open at, only the recording's
+ *  start, and a card that opens onto nothing is worse than no card. */
+export function isListable(airing) {
+  return hasContent(airing) || (quietShown(airing) && Array.isArray(airing.recordings) && airing.recordings.length > 0);
 }
 
 /**
@@ -289,8 +326,9 @@ function megachatSpans(airing, end) {
 
 /**
  * The second the poster should show: the middle of the longest stretch with
- * the most people on camera; with no seats at all, the first MegaChat. Null
- * when neither happened — there is then nothing the rule lets us show.
+ * the most people on camera; with no seats at all, the first MegaChat. For a
+ * quiet broadcast the owner shows anyway, the middle of it. Null otherwise —
+ * there is then nothing the rule lets us show.
  */
 export function posterTarget(airing) {
   const end = airing?.endedAt ?? Date.now();
@@ -302,6 +340,7 @@ export function posterTarget(airing) {
   }
   const chats = megachatSpans(airing, end);
   if (chats.length) return { at: chats[0].from + (chats[0].to - chats[0].from) / 2, spans: chats };
+  if (quietShown(airing)) return { at: airing.startedAt + (end - airing.startedAt) / 2, spans: [{ from: airing.startedAt, to: end, count: 0 }] };
   return null;
 }
 
@@ -436,7 +475,7 @@ export async function sweepAiringPosters({ airings, allAirings, roomIds, helix, 
     for (const a of airings) {
       if (a.endedAt == null || now - a.endedAt > SWEEP_WINDOW_MS) continue;
       const cands = listCandidates(a.id);
-      const content = hasContent(a);
+      const content = isShowable(a);
       // A close finalizes at once; this catches one a crash interrupted.
       if (content && !readAiringPoster(a.id) && cands.length) finalizeAiringPoster(a, { log });
       // Previews are kept an hour past the end, in case a blip reopens it.
@@ -444,7 +483,7 @@ export async function sweepAiringPosters({ airings, allAirings, roomIds, helix, 
         try { fs.rmSync(candidateDirFor(a.id), { recursive: true, force: true }); } catch { /* next sweep */ }
       }
       // Nothing the rule lets us show happened on it: no recording lookup, no
-      // thumbnail, and it never reaches the board (airings-store recentAirings).
+      // thumbnail, and it never reaches the board (server.js /api/rooms/recent).
       if (!content) continue;
       // `recordings` came later than vodUrl: an airing resolved before it has
       // a link but not the starts a replay needs to open a moment.

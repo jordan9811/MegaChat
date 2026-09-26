@@ -33,7 +33,8 @@ One JSON file each, loaded into a module cache, rewritten whole on mutation. Saf
 | `bounty-clips/` media | `bounty-clips.js` | fan-recorded clips for the bounty program, until claimed and played or the reservation expires (`reservationTtlMs`, 90 d) |
 | `room-posters/<roomId>.jpg` | `room-poster.js` | one 640-px poster per room from a bounty capture; nothing sweeps it |
 | `airing-posters/<airingId>.jpg` + `.json` | `airing-posters.js` | the picture a finished broadcast shows, and what it is (`source`, `at`); removed with its airing or its room |
-| `aired-clips/<letterId>.clip` + `.json` | `aired-clips.js` | a MegaChat that completed on a recorded broadcast, kept for that broadcast's replay: 30 days at most, 100 MB per room, 400 MB in all; deleted on refund, by the room's owner, or with its broadcast |
+| `aired-clips/<letterId>.clip` + `.json` | `aired-clips.js` | a MegaChat that completed on a recorded broadcast, kept for that broadcast's replay: the days its fan was told, capped by the owner's setting (`site-settings.js`; 30 by default), 100 MB per room, 400 MB in all; deleted on refund, by the room's owner, or with its broadcast |
+| `site-settings.json` | `site-settings.js` | the owner's live settings from `/dev` (big-stream viewers, replay days, quiet broadcasts), the last 50 changes (who, when, from, to), and `adminAccountIds` — the account pinned as the owner |
 | `airing-posters/candidates/<airingId>/<t>.jpg` | `airing-posters.js` | Twitch live previews kept while a broadcast is up (owned rooms only, 3,000 at most across all); cleared an hour after the end |
 
 ## Memory only (lost on restart)

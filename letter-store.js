@@ -31,6 +31,9 @@ const PERSISTED = [
   'id', 'roomId', 'username', 'payer', 'price', 'durationS', 'mime',
   'flyIn', 'flyOut', 'status', 'paidAt', 'uploadedAt', 'flaggedReason',
   'bounty', 'approvedAt', 'airedAt', 'heldSince',
+  // The replay days the fan's page showed when sending (aired-clips.js): a
+  // restart must not turn "plays once" into a kept copy.
+  'replayKeepDays',
 ];
 
 export function createLetterStore({

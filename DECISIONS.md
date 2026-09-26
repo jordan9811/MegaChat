@@ -1018,3 +1018,29 @@ reason than "the API is expensive".
   removable by the owner, and the fan is told before sending. Undo:
   AIRED_CLIPS=0 (keeps none; existing copies age out), and restore the send
   screen's "Your clip plays once on the broadcast." (`join-client.tsx`).
+
+## The owner's settings page (2026-09-25)
+
+- **Who: the owner's account, pinned on first use by a linked Twitch login on
+  SITE_ADMIN_TWITCH (default the owner's channel, in code).** Twitch's sign-in
+  proves the first match; after that only the account id counts, because a
+  Twitch name can change hands. No Railway change was needed. Undo: delete
+  `adminAccountIds` from `DATA_DIR/site-settings.json` (the next matching
+  sign-in pins again); SITE_ADMIN_TWITCH empty stops any new pin.
+- **Hidden means "does not exist" for everyone else,** not "forbidden": the API
+  falls through to the not-found handler, the page is a plain 404, the handle
+  "dev" is reserved.
+- **A MegaChat is never kept longer than its fan was told.** The days the send
+  screen showed ride with the clip and are stored with the copy; the setting
+  caps them at every read and sweep. Lengthening never takes a clip past its
+  promise; shortening or off applies to all, at once. This supersedes the
+  "MegaChat replays" undo above: AIRED_CLIPS=0 is now only the fallback when
+  nothing is saved on /dev, and like 0 on /dev it deletes the kept clips at the
+  next sweep. Undo: `keepMsFor` in `aired-clips.js`.
+- **Quiet broadcasts: 5 minutes or more, a proven channel, a recording found.**
+  A false start never becomes a card, a room naming someone else's channel
+  never lists their streams, and a card never opens onto nothing. Undo:
+  QUIET_MIN_MS and isListable in `airing-posters.js`; the proof is
+  setQuietEligibility in `server.js`.
+- **A room with no proven channel says "plays once".** It never kept a copy;
+  the screen now says what happens. Undo: `replayKeepDays` in `/api/config`.
