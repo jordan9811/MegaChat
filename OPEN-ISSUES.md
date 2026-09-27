@@ -3311,3 +3311,80 @@ sections A–H, all green.
   404 for them too; linking Twitch on the Account page opens it. To move the
   page to another account later, delete `adminAccountIds` from
   `site-settings.json` on the volume.
+
+## The siren: feedback in This tab and OBS · headphones (2026-09-26)
+
+- **F1 — What happened, live.** The owner, streaming on the ASUS monitor's
+  speakers: "got the deafening siren thing on this tab and middle one. OBS
+  speakers fixed it but now im echoing to myself. still a bit of ringing
+  noise on their end". Evidence from the machine (read-only): OBS monitors the
+  'MegaChat Overlay' browser source to the Default device ("Monitor and
+  Output"), and Default — and Desktop Audio — is the ASUS VC239 (every OBS
+  session since 2026-09-11); a Windows audio-session read showed what plays
+  there. Discord joined a voice call at 21:34:28, AFTER the report: not the
+  cause of the siren, but a second app on the same speakers and mic since.
+- **F2 — Why (a 43-agent read of the code, each finding checked by a
+  skeptic).** OBS's monitored copy of the overlay never reaches Chrome's
+  ordinary canceller (`echoCancellation: true` subtracts only Chrome's own
+  playback). "OBS · headphones" played every guest that way — on speakers a
+  loop by design. "This tab" muted a guest in the overlay only once the
+  booth's per-seat claim landed, so the overlay played each guest into the
+  booth mic in every gap before it: a guest going live (0.2–1.2 s), a
+  reconnect, a switch of mode, a lagging seat list (up to ~5 s), a booth whose
+  link the SFU scored Lost. Those gaps are too short to sustain a howl alone;
+  the other candidate — Chrome's ordinary canceller failing on these speakers
+  at stream volume — has never been measured (E4). The old gate could not see
+  any of it: it scored "the overlay plays the guest alone" as correct and only
+  started sampling after "on air".
+- **F3 — The fix, needing nothing from the streamer.** (1) The overlay is
+  SILENT for every guest unless the booth says `mc.seatAudio = 'overlay'`,
+  which it sends only while its mic is confirmed on Chrome's 'all'; the host
+  token carries 'booth' from the first instant, and 'booth' goes out before
+  anything that could drop 'all'. No booth, or a booth with no mic 8 s after
+  joining: the overlay plays (nothing to loop through). OBS's monitoring
+  setting no longer matters in This tab. (2) "OBS · headphones" is retired —
+  on headphones This tab gives the same (nothing gated, no delay); a stored
+  choice reads as This tab; the OBS choice is now "Through OBS". (3) A howl
+  guard on the booth mic (`web/lib/howl-guard.ts`, an AudioWorklet, so a
+  background tab does not throttle it): a steady tone with no harmonics,
+  15 dB over its neighbours, for 0.5 s → the track guests receive is disabled;
+  collapses within 0.9 s → it was the loop (sent again after 1 s, counted);
+  does not → a real sound (sent again, that pitch ignored while it lasts). Two
+  confirmed in a minute → the card says "Feedback on your speakers", with
+  headphones or Through OBS as the cure; it never switches by itself. The
+  stream keeps the streamer's voice throughout (OBS records the mic itself).
+  (4) A live guest the booth has not played for 3 s is named on the card
+  with a one-click fix, and a paused guest element resumes by itself. (5) The
+  dashboard catches up on seats when its socket reconnects.
+- **F4 — Proof.** `_gate-booth-audio.mjs` 52/0, rewritten: ECHO (the overlay
+  audible while an un-'all' booth mic is open) is sampled from BEFORE the
+  first guest and must be zero — it is; the overlay put back on the old claim
+  rules turns it red (INV-ECHO 3 samples, S3's switch 1, S19). New: a stored
+  headphones choice (S0), a slowed switch back to This tab (S3), a booth whose
+  mic takes 14 s (S19), a paused guest resuming (S7), a held echo the sampler
+  must see (NEG-ECHO). `_gate-howl-guard.mjs` 11/0, with a loop that keeps
+  sounding for a 1 s round trip after the cut: speech never cut; a loop cut in
+  ~0.65 s — also while the streamer talks over it — and sent again once it
+  drained (~1.4 s); counted only when it builds again, the alert after two;
+  short whistles that stop by themselves never counted; a steady whistle cut
+  once, judged a room tone after 2.0 s by the guard's clock (the headless audio
+  thread ran ~1.5x slow against the wall under the live stream's load) and
+  left alone. Counting every cut as feedback — the pre-review logic — turns
+  H5 and H3 red. Also green: `_gate-overlay-first-guest` 4/0,
+  `_gate-booth-picture` 20/0, Gate H `_gate-money` 38/0. Still red for the
+  pre-existing reason (the dashboard unlock form they drive was replaced; E35,
+  E59): `_gate-cam-autoswitch`, `_gate-cohost-booth`.
+- **F5 — Review.** Review of the fix (18 agents): 8 findings confirmed. Fixed: the howl guard judged a loop with a round trip near 0.9 s a room tone and then ignored it for good (the window is now 2 s, and an ignored pitch is re-tested after 20 s); a whistle or beep that stopped by itself counted as feedback (now only a loop that builds again after the cut counts); a howl the streamer talked over kept restarting its timer (brief misses are tolerated and the running candidate is tracked); a reconnect during a switch to Through OBS left nobody playing the guests; a quick click back to Through OBS during a switch to This tab left the overlay playing into a plain mic. Left and recorded: a CRASHED booth leaves guests silent on stream until the SFU drops it (about 21 s in S11) — silence chosen over echo; a booth that loses its mic publication after a reconnect while still playing guests lets the overlay play them too (doubled, not looped); the 8 s no-mic grace is timed from when the overlay first saw the booth.
+- **F6 — Not fixed by any of this.** The streamer's own voice coming back
+  inside a guest's audio (a guest on speakers whose canceller leaks, or with
+  the Twitch stream playing); a Discord call on the same speakers and mic;
+  OBS's own mic capture hearing guests from the speakers (the stream gets a
+  roomy second copy — only headphones fix that); the steady low ring 'all'
+  may leave in Through OBS. The guard stops runaways, not a one-pass echo.
+- **F7 — Open: the acoustic proof is live-only.** The gates prove routing
+  (headless, muted, no speaker, no room). Off air, on the ASUS speakers at
+  stream volume: This tab with a real guest on headphones, then on laptop
+  speakers, then Through OBS — two minutes each, talking over each other. If
+  This tab still rings while the overlay log says every seat is muted, the
+  ordinary canceller fails on this hardware and Through OBS is the answer for
+  speakers here.

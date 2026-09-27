@@ -8,35 +8,44 @@
  * The first fix (ab8a5f9) had the booth play the guests, which cured the echo,
  * but the streamer heard them "robotic": that overlay also played the FIRST
  * guest from an element no mute could reach, so he heard every first guest
- * twice (_gate-overlay-first-guest.mjs). Three ways to hear guests now:
- *   This tab (default)  the booth plays them, the mic cancels them (Discord's way)
- *   OBS · headphones    the overlay plays them to OBS as before; nothing to cancel
- *   OBS · speakers      the overlay plays them; the mic asks Chrome 154 for
- *                       'all', which cancels everything the PC plays (and, under
- *                       loud playback, gates the streamer's voice for guests —
- *                       _probe-aec-doubletalk.mjs). Falls back to This tab
- *                       whenever Chrome will not grant 'all'.
+ * twice (_gate-overlay-first-guest.mjs). Then, 2026-09-26, live on monitor
+ * speakers: a SIREN in This tab and in "OBS · headphones". OBS monitors the
+ * overlay to the speakers; anything the overlay played went into the booth
+ * mic, which the ordinary canceller cannot remove — in headphones mode always,
+ * in This tab in every gap before the booth's per-seat claim landed. This gate
+ * USED to score "the overlay plays the guest alone" as correct: that is
+ * exactly the echo state, and it only started sampling after "on air". Now:
+ *   This tab (default)  the booth plays them, the mic cancels them (Discord's
+ *                       way); the overlay is SILENT for every guest
+ *                       (mc.seatAudio = 'booth', in the host token at join)
+ *   Through OBS         the overlay plays them; the mic is on Chrome 154's
+ *                       'all', which cancels everything the PC plays; the
+ *                       booth says mc.seatAudio = 'overlay' only while 'all'
+ *                       is confirmed. Falls back to This tab whenever Chrome
+ *                       will not grant 'all'.
+ *   (OBS · headphones is retired: a stored choice reads as This tab.)
  *
- * Getting that wrong has two faces on a live stream: a guest silent (the
- * overlay muted, the booth not playing them) or doubled (both playing). So
- * alongside the scenario checks, this gate samples ONE invariant every 250ms —
- * for each guest, exactly one of {booth, overlay} is playing them — allows a
- * violation to last only as long as a handover, and proves with a negative
- * control that the sampler can see one.
+ * The invariants, sampled every 250ms from BEFORE the first guest goes live:
+ *   ECHO     the overlay is audible for a guest while a booth mic that is not
+ *            on 'all' is open — must be ZERO samples over the whole run
+ *   SILENT   neither plays a live guest — only as long as a join or a handover
+ *   DOUBLED  both play them — only as long as a handover
+ * with negative controls proving the sampler can see an echo and a silence.
  *
  * The host's getUserMedia is a shim that behaves like Chrome would: it records
  * the echoCancellation each request asked for, reports 'all' in getSettings()
  * only when 'all' was asked for and "Chrome" grants it, and can refuse 'all',
  * throw on it, or be slow to open the mic or the camera.
  *
+ *   S0   a stored "OBS · headphones" reads as This tab; two choices only; the
+ *        first guest goes live with the booth cold (sampled from before)
  *   S1   default This tab → the booth plays the guest with the ordinary
- *        canceller (never 'all'), receives their audio only, claims exactly
- *        that seat; the overlay mutes that seat
- *   S2   "OBS · speakers" → 'all'; the booth plays nobody and receives nothing
- *        of the guest's; the overlay plays them
- *   S2b  "OBS · headphones" → the mic restarts WITHOUT 'all'; still the overlay
- *   S3   back to "This tab" → played here again, with no mic restart
- *   S3b  "OBS · headphones" from This tab → handed to the overlay, no restart
+ *        canceller (never 'all'), receives their audio only; the room hears
+ *        mc.seatAudio=booth; the overlay mutes that seat
+ *   S2   "Through OBS" → 'all'; the booth plays nobody and receives nothing
+ *        of the guest's; mc.seatAudio=overlay; the overlay plays them
+ *   S3   back to "This tab" with the mic restart slowed 1.5s → the overlay is
+ *        silenced BEFORE 'all' goes (the ECHO invariant), played here again
  *   S4   Chrome REFUSES 'all' at the start, with a SLOW camera → automatic
  *        This-tab, and the claim goes out with the playback, not after the
  *        camera (the invariant would see the guest doubled otherwise)
@@ -46,16 +55,18 @@
  *   S6   the mic drops out and LiveKit restarts it WITHOUT 'all' → 'all' is put
  *        back; if it cannot be, the guests are handed to this tab
  *   S12  disarmed while the start is still opening the mic → no host left
+ *   S19  a booth whose mic takes 14s to open: the overlay stays silent 8s after
+ *        the booth joined, then plays; it goes silent again once the mic is on
  *   S7   two guests, one whose track reached the overlay before their tile:
  *        exactly ONE audio element per guest, none outside the page; a booth
- *        element that stops hands only THAT guest back to the overlay
+ *        element that pauses resumes by itself and the overlay stays silent
  *   S13  a guest at "Camera ready — hit GO LIVE" is not played by the booth
  *   S8   the booth tab closes → the overlay plays every guest again
  *   S9   a second dashboard tab takes the host seat → the first stands down
- *   S11  the booth tab CRASHES (no goodbye) in This-tab → the overlay stops
- *        trusting its claim once the SFU reports the link lost
- *   S10  the SFU itself restarts mid-call (a full reconnect) → a Whole-PC booth
- *        comes back Whole PC, not wrongly downgraded to This tab
+ *   S11  the booth tab CRASHES (no goodbye) in This-tab → the overlay plays the
+ *        guests again once the SFU drops the booth
+ *   S10  the SFU itself restarts mid-call (a full reconnect) → a Through-OBS
+ *        booth comes back Through OBS (mc.seatAudio=overlay), not downgraded
  *
  * Spends nothing: local SFU (tools/livekit-server.exe --dev), free room.
  */
@@ -179,6 +190,10 @@ const booth = (page) => page.evaluate(() => {
     playing: playing.sort(),
     mode: document.getElementById('boothAecNote')?.dataset.mode || null,
     pref: ['tab', 'phones', 'system'].find((v) => document.getElementById(`booth-aec-${v}`)?.getAttribute('aria-checked') === 'true') || null,
+    choices: document.querySelectorAll('[role="radiogroup"][aria-label="Where you hear guests"] [role="radio"]').length,
+    // A mic open without whole-PC cancellation: anything the overlay plays
+    // through OBS monitoring goes straight back out of it.
+    unsafeMic: mics.some((t) => t.readyState === 'live' && t.getSettings().echoCancellation !== 'all'),
     note: document.getElementById('boothNote')?.textContent || '',
     error: document.getElementById('boothError')?.textContent || '',
     aecNote: document.getElementById('boothAecNote')?.textContent || '',
@@ -243,7 +258,9 @@ const srv = await startGateServer({
   env: { LIVEKIT_URL: 'ws://localhost:7880', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'secret' },
 });
 let browser = null, crashed = null;
-const violations = new Map(); // seat → { run, worst, total, kinds }
+const violations = new Map(); // seat → { run, worst, total, kinds } (silent / doubled)
+const echoes = new Map(); // seat → samples the overlay was audible into an unsafe booth mic
+const echoPaused = { on: false }; // S19 measures its own, bounded tail
 let sampling = true;
 let samplerPaused = false; // for scenarios that break a booth on purpose
 let sampler = null;
@@ -276,13 +293,44 @@ try {
 
   // Every page gets its own window: a background tab stops painting and throttles.
   let host = await newHost();
+  // S0: a streamer who had picked the retired "OBS · headphones".
+  await host.evaluateOnNewDocument(() => { try { if (!sessionStorage.getItem('s0')) { localStorage.setItem('mc-booth-aec', 'phones'); sessionStorage.setItem('s0', '1'); } } catch { /* */ } });
   await unlock(host, room.id);
   await host.click('#cohost-booth');
   await host.waitForFunction(() => /armed|on air/i.test(document.getElementById('boothStatus')?.textContent || ''), { timeout: 20000 });
-  ok('the setting is there, and "This tab" is the default', (await booth(host)).pref === 'tab');
+  {
+    const b0 = await booth(host);
+    ok('S0. a stored "OBS · headphones" reads as This tab, and there are two choices', b0.pref === 'tab' && b0.choices === 2 && !(await host.$('#booth-aec-phones')), JSON.stringify({ pref: b0.pref, choices: b0.choices }));
+  }
 
   const ov = await (await ctx()).newPage();
   await ov.goto(`${APP}/overlay?room=${room.id}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+  // ── the invariants, sampled from BEFORE the first guest goes live ──────────
+  sampler = (async () => {
+    while (sampling) {
+      if (!samplerPaused) {
+        try {
+          const [b, o] = await Promise.all([booth(host), overlay(ov)]);
+          for (const [seat, state] of Object.entries(o)) {
+            const boothPlays = b.playing.includes(seat);
+            const overlayPlays = state === 'playing';
+            if (overlayPlays && b.unsafeMic && !echoPaused.on) echoes.set(seat, (echoes.get(seat) || 0) + 1);
+            const bad = boothPlays === overlayPlays; // both = doubled, neither = silent
+            const v = violations.get(seat) || { run: 0, worst: 0, worstDoubled: 0, total: 0, kinds: new Set() };
+            if (bad) {
+              v.run++; v.total++; v.kinds.add(boothPlays ? 'doubled' : 'silent');
+              if (boothPlays) v.worstDoubled = Math.max(v.worstDoubled, v.run); else v.worst = Math.max(v.worst, v.run);
+            } else v.run = 0;
+            violations.set(seat, v);
+          }
+        } catch { /* a page mid-navigation or closed; next tick */ }
+      } else {
+        for (const v of violations.values()) v.run = 0;
+      }
+      await sleep(250);
+    }
+  })();
 
   const joinGuest = async (name, hz, { goLive = true, pauseBeforeGoLive = 0 } = {}) => {
     const g = await (await ctx()).newPage();
@@ -302,30 +350,8 @@ try {
     return g;
   };
   const g1 = await joinGuest('aec-guest-one', 440);
-  console.log('  [guest one] live');
+  console.log('  [guest one] live (the booth was cold)');
   await onAir(host);
-
-  // ── the invariant, sampled for the rest of the run ─────────────────────────
-  sampler = (async () => {
-    while (sampling) {
-      if (!samplerPaused) {
-        try {
-          const [b, o] = await Promise.all([booth(host), overlay(ov)]);
-          for (const [seat, state] of Object.entries(o)) {
-            const boothPlays = b.playing.includes(seat);
-            const overlayPlays = state === 'playing';
-            const bad = boothPlays === overlayPlays; // both = doubled, neither = silent
-            const v = violations.get(seat) || { run: 0, worst: 0, total: 0, kinds: new Set() };
-            if (bad) { v.run++; v.total++; v.kinds.add(boothPlays ? 'doubled' : 'silent'); v.worst = Math.max(v.worst, v.run); } else v.run = 0;
-            violations.set(seat, v);
-          }
-        } catch { /* a page mid-navigation or closed; next tick */ }
-      } else {
-        for (const v of violations.values()) v.run = 0;
-      }
-      await sleep(250);
-    }
-  })();
 
   // ── S1: This tab by default ────────────────────────────────────────────────
   let b = await until(async () => { const x = await booth(host); return x.mode === 'tab' && x.playing.length === 1 ? x : null; }, 20000);
@@ -337,61 +363,43 @@ try {
   ok('S1. the booth receives the guest\'s AUDIO only — no video decoded', inb.audio >= 1 && inb.video === 0, JSON.stringify(inb));
   let a = await until(async () => { const x = await hostAttrs(room.id); return x && x['mc.guestAudioSeats'] === seat1 ? x : null; }, 8000);
   a = a || await hostAttrs(room.id);
-  ok('S1. the booth claims exactly that seat (mc.aec=tab)', a && a['mc.guestAudioSeats'] === seat1 && a['mc.aec'] === 'tab', JSON.stringify(a));
+  ok('S1. the booth claims exactly that seat (mc.aec=tab) and tells the overlay to stay silent (mc.seatAudio=booth)', a && a['mc.guestAudioSeats'] === seat1 && a['mc.aec'] === 'tab' && a['mc.seatAudio'] === 'booth', JSON.stringify(a));
   let o = await until(async () => { const x = await overlay(ov); return x[seat1] === 'muted' ? x : null; }, 20000);
   o = o || await overlay(ov);
   ok('S1. the overlay mutes that seat (never on stream twice)', Object.keys(o).length === 1 && o[seat1] === 'muted', JSON.stringify(o));
   ok('S1. the card says so', /like Discord/.test(b.aecNote), b.aecNote);
 
-  // ── S2: OBS · speakers (Whole PC) ──────────────────────────────────────────
+  // ── S2: Through OBS (Whole PC) ─────────────────────────────────────────────
   await host.click('#booth-aec-system');
   b = await until(async () => { const x = await booth(host); return x.mode === 'system' && x.elements === 0 ? x : null; }, 15000);
   b = b || await booth(host);
-  ok('S2. "OBS · speakers" → the mic asks for "all" and gets it; the booth plays nobody',
+  ok('S2. "Through OBS" → the mic asks for "all" and gets it; the booth plays nobody',
     b.mode === 'system' && b.elements === 0 && b.asked[b.asked.length - 1] === 'all', JSON.stringify({ mode: b.mode, asked: b.asked }));
   inb = await inbound(host);
   ok('S2. the booth RECEIVES none of the guest\'s media (no video decoded, no audio)', inb.audio === 0 && inb.video === 0, JSON.stringify(inb));
-  a = await until(async () => { const x = await hostAttrs(room.id); return x && x['mc.aec'] === 'system' && x['mc.guestAudioSeats'] === '-' ? x : null; }, 8000);
+  a = await until(async () => { const x = await hostAttrs(room.id); return x && x['mc.aec'] === 'system' && x['mc.guestAudioSeats'] === '-' && x['mc.seatAudio'] === 'overlay' ? x : null; }, 8000);
   a = a || await hostAttrs(room.id);
-  ok('S2. the booth tells the room: mc.aec=system, claims no seat', a && a['mc.aec'] === 'system' && a['mc.guestAudioSeats'] === '-', JSON.stringify(a));
+  ok('S2. the booth tells the room: mc.aec=system, mc.seatAudio=overlay, claims no seat', a && a['mc.aec'] === 'system' && a['mc.guestAudioSeats'] === '-' && a['mc.seatAudio'] === 'overlay', JSON.stringify(a));
   o = await until(async () => { const x = await overlay(ov); return x[seat1] === 'playing' ? x : null; }, 8000);
   o = o || await overlay(ov);
   ok('S2. the overlay plays the guest (the streamer hears them through OBS)', o[seat1] === 'playing', JSON.stringify(o));
   ok('S2. the card is honest about the cost (voice can cut out; OBS 32)', /cut out/.test(b.aecNote) && /OBS 32/.test(b.aecNote), b.aecNote);
 
-  // ── S2b: OBS · headphones, from Whole PC ───────────────────────────────────
-  await host.click('#booth-aec-phones');
-  b = await until(async () => { const x = await booth(host); return x.mode === 'phones' ? x : null; }, 15000);
-  b = b || await booth(host);
-  ok('S2b. "OBS · headphones" → the mic restarts WITHOUT "all" (no gating, no 170ms)', b.mode === 'phones' && b.asked[b.asked.length - 1] === 'true' && b.micLive === true, JSON.stringify({ mode: b.mode, asked: b.asked.slice(-3) }));
-  ok('S2b. ...and the booth still plays nobody and receives nothing', b.elements === 0 && (await inbound(host)).audio === 0, JSON.stringify(b.playing));
-  a = await until(async () => { const x = await hostAttrs(room.id); return x && x['mc.aec'] === 'phones' ? x : null; }, 8000);
-  a = a || await hostAttrs(room.id);
-  ok('S2b. the room hears mc.aec=phones, no seat claimed', a && a['mc.aec'] === 'phones' && a['mc.guestAudioSeats'] === '-', JSON.stringify(a));
-  o = await overlay(ov);
-  ok('S2b. the overlay still plays the guest', o[seat1] === 'playing', JSON.stringify(o));
-  ok('S2b. the card says headphones only', /Headphones only/.test(b.aecNote), b.aecNote);
-
-  // ── S3: back to This tab, from Headphones ──────────────────────────────────
+  // ── S3: back to This tab, from Through OBS, with the mic restart slowed ────
+  // The overlay must be silent BEFORE 'all' goes: the ECHO invariant samples
+  // the whole switch, and a 1.5s restart makes any wrong order visible.
+  await host.evaluate(() => { window.__audioDelay = 1500; });
   let askedN = (await booth(host)).asked.length;
   await host.click('#booth-aec-tab');
-  b = await until(async () => { const x = await booth(host); return x.playing.includes(seat1) ? x : null; }, 15000);
+  b = await until(async () => { const x = await booth(host); return x.playing.includes(seat1) && x.asked.length > askedN && x.micLive ? x : null; }, 15000);
   b = b || await booth(host);
-  ok('S3. "This tab" → the booth plays the guest again', b.mode === 'tab' && b.playing.includes(seat1), JSON.stringify(b.playing));
-  ok('S3. ...without restarting the mic (it already had the ordinary canceller — no blip)', b.asked.length === askedN, JSON.stringify(b.asked.slice(askedN)));
+  await host.evaluate(() => { window.__audioDelay = 0; });
+  ok('S3. "This tab" → the booth plays the guest again, on the ordinary canceller', b.mode === 'tab' && b.playing.includes(seat1) && b.asked[b.asked.length - 1] === 'true', JSON.stringify({ playing: b.playing, asked: b.asked.slice(askedN) }));
   o = await until(async () => { const x = await overlay(ov); return x[seat1] === 'muted' ? x : null; }, 8000);
   o = o || await overlay(ov);
-  ok('S3. ...and the overlay mutes that seat', o[seat1] === 'muted', JSON.stringify(o));
-
-  // ── S3b: Headphones, from This tab ─────────────────────────────────────────
-  askedN = (await booth(host)).asked.length;
-  await host.click('#booth-aec-phones');
-  b = await until(async () => { const x = await booth(host); return x.mode === 'phones' && x.elements === 0 ? x : null; }, 15000);
-  b = b || await booth(host);
-  ok('S3b. "OBS · headphones" from This tab → handed to the overlay, no mic restart', b.mode === 'phones' && b.elements === 0 && b.asked.length === askedN, JSON.stringify({ mode: b.mode, asked: b.asked.slice(askedN) }));
-  o = await until(async () => { const x = await overlay(ov); return x[seat1] === 'playing' ? x : null; }, 8000);
-  o = o || await overlay(ov);
-  ok('S3b. ...and the overlay plays the guest', o[seat1] === 'playing', JSON.stringify(o));
+  a = await hostAttrs(room.id);
+  ok('S3. ...the overlay mutes that seat, and the room hears mc.seatAudio=booth', o[seat1] === 'muted' && a?.['mc.seatAudio'] === 'booth', JSON.stringify({ o, seatAudio: a?.['mc.seatAudio'] }));
+  ok('S3. ...and not one sample of the overlay playing into the plain mic during the switch', (echoes.get(seat1) || 0) === 0, `${echoes.get(seat1) || 0} sample(s)`);
   await host.click('#booth-aec-system'); // S4-S6 start from Whole PC
   await until(async () => (await booth(host)).mode === 'system', 15000);
 
@@ -468,6 +476,33 @@ try {
   await sleep(5000);
   b = await booth(host);
   ok('S12. disarmed during the start → no host left in the room, and not on air', (await hosts(room.id)).length === 0 && !/ON AIR/.test(b.status), `${(await hosts(room.id)).length} host(s); ${b.status}`);
+
+  // ── S19: the booth joins but its mic takes 14s to open ─────────────────────
+  // Silent here while the mic may still come (8s), then play — a booth with no
+  // mic is nothing to loop through — and silent again once it is on.
+  {
+    await host.evaluate(() => { window.__audioDelay = 14000; });
+    await until(async () => (await overlay(ov))[seat1] === 'playing', 15000); // no booth: the overlay plays
+    await host.click('#cohost-booth'); // arm → joins at once, the mic takes 14s
+    const armedAt = Date.now();
+    await until(async () => (await hosts(room.id)).length === 1, 10000, 100);
+    const joinedAt = Date.now();
+    await sleep(3000);
+    const early = (await overlay(ov))[seat1];
+    const playedAt = await until(async () => ((await overlay(ov))[seat1] === 'playing' ? Date.now() : null), 12000, 100);
+    const micAt = await until(async () => ((await booth(host)).micLive ? Date.now() : null), 15000, 100);
+    const silentAgain = await until(async () => ((await overlay(ov))[seat1] === 'muted' ? Date.now() : null), 5000, 50);
+    const since = (t) => (t ? ((t - joinedAt) / 1000).toFixed(1) + 's' : 'never');
+    ok('S19. a booth still opening its mic: the overlay stays silent (3s after the booth joined)', early === 'muted', early);
+    ok('S19. ...plays the guests once the booth has had 8s with no mic', !!playedAt && playedAt - joinedAt >= 7000, `played at ${since(playedAt)}`);
+    ok('S19. ...and goes silent again within 1s of the mic opening', !!micAt && !!silentAgain && silentAgain - micAt <= 1000,
+      `mic at ${since(micAt)}, silent at ${since(silentAgain)}`);
+    void armedAt;
+    await onAir(host);
+    await host.click('#cohost-booth'); // disarm, then the normal arm below
+    await host.waitForFunction(() => document.getElementById('cohost-booth')?.checked === false, { timeout: 10000 });
+    await until(async () => (await hosts(room.id)).length === 0, 10000);
+  }
   await host.evaluate(() => { window.__audioDelay = 0; });
   await host.click('#cohost-booth'); // arm again for the rest of the run
   await onAir(host);
@@ -489,11 +524,14 @@ try {
   ok('S7. exactly ONE overlay audio element per guest, and none outside the page (unreachable by mute)',
     !!att && Object.keys(att).length === 2 && Object.values(att).every((x) => x.attached === 1 && x.outsidePage === 0), JSON.stringify(att));
   await host.evaluate((s) => document.querySelector(`[data-guest-audio] audio[data-seat="${s}"]`)?.pause(), seat2);
-  o = await until(async () => { const x = await overlay(ov); return x[seat2] === 'playing' && x[seat1] === 'muted' ? x : null; }, 10000);
-  o = o || await overlay(ov);
-  ok('S7. one of the booth\'s elements stops → only THAT guest goes back to the overlay; the other stays muted', o[seat2] === 'playing' && o[seat1] === 'muted', JSON.stringify(o));
-  await host.evaluate((s) => document.querySelector(`[data-guest-audio] audio[data-seat="${s}"]`)?.play(), seat2);
-  await until(async () => (await overlay(ov))[seat2] === 'muted', 8000);
+  let overlayPlayedSeat2 = false;
+  const resumed = await until(async () => {
+    const [x, y] = await Promise.all([booth(host), overlay(ov)]);
+    if (y[seat2] === 'playing') overlayPlayedSeat2 = true;
+    return x.playing.includes(seat2) ? x : null;
+  }, 3000, 100);
+  o = await overlay(ov);
+  ok('S7. one of the booth\'s elements pauses → it resumes by itself, and the overlay never plays that guest', !!resumed && !overlayPlayedSeat2 && o[seat2] === 'muted' && o[seat1] === 'muted', JSON.stringify({ resumed: !!resumed, overlayPlayedSeat2, o }));
 
   // ── S13: a guest who has not gone live yet ─────────────────────────────────
   const g3 = await joinGuest('aec-guest-three', 660, { goLive: false });
@@ -536,9 +574,9 @@ try {
   // Fire and forget: a crashed page never answers, and awaiting the call would
   // only time the protocol timeout, not the overlay.
   try { const cdp = await tabB.createCDPSession(); cdp.send('Page.crash').catch(() => {}); } catch { /* already gone */ }
-  o = await until(async () => { const x = await overlay(ov); return Object.keys(x).length === 2 && Object.values(x).every((v) => v === 'playing') ? x : null; }, 40000, 500);
+  o = await until(async () => { const x = await overlay(ov); return Object.keys(x).length === 2 && Object.values(x).every((v) => v === 'playing') ? x : null; }, 60000, 500);
   const took = ((Date.now() - crashAt) / 1000).toFixed(1);
-  ok('S11. the booth tab CRASHES (no goodbye) → the overlay plays both guests again', !!o, `${o ? took + 's' : 'never'} ${JSON.stringify(o || await overlay(ov))}`);
+  ok('S11. the booth tab CRASHES (no goodbye) → the overlay plays both guests again once the SFU drops it', !!o, `${o ? took + 's' : 'never'} ${JSON.stringify(o || await overlay(ov))}`);
 
   // ── S10: the SFU restarts mid-call (a full reconnect) ──────────────────────
   const tabC = await newHost();
@@ -563,15 +601,44 @@ try {
   ok('S10. ...still Whole PC — not downgraded to This tab by the reconnect', !!b && b.x.mode === 'system' && b.x.elements === 0 && !/restarted/.test(b.x.note),
     JSON.stringify(b && { mode: b.x.mode, elements: b.x.elements, note: b.x.note }));
   ok('S10. ...and the room hears it again: mc.aec=system', !!b && b.at['mc.aec'] === 'system', JSON.stringify(b && b.at));
+  {
+    const at = await until(async () => { const x = await hostAttrs(room.id); return x && x['mc.seatAudio'] === 'overlay' ? x : null; }, 15000);
+    ok('S10. ...with mc.seatAudio=overlay again (its mic is back on "all")', !!at, JSON.stringify(at || await hostAttrs(room.id)));
+  }
   samplerPaused = false;
 
   // ── the invariant over the whole run ──────────────────────────────────────
   sampling = false;
   await sampler;
   ok('INV. the invariant sampler actually ran over both guests', violations.size >= 2, `${violations.size} seat(s) sampled`);
+  for (const seat of violations.keys()) {
+    ok(`INV-ECHO. ${seat.slice(0, 18)}…: the overlay NEVER played this guest into a booth mic that could not cancel it`, (echoes.get(seat) || 0) === 0,
+      `${echoes.get(seat) || 0} sample(s)`);
+  }
   for (const [seat, v] of violations) {
-    ok(`INV. ${seat.slice(0, 18)}…: never doubled or silent beyond a handover (≤2s)`, v.worst <= 8,
-      `longest ${v.worst} samples (${(v.worst * 0.25).toFixed(2)}s), ${v.total} total, kinds: ${[...v.kinds].join('/') || 'none'}`);
+    ok(`INV. ${seat.slice(0, 18)}…: never silent beyond a join or handover (≤3s), never doubled beyond one (≤1s)`, v.worst <= 12 && v.worstDoubled <= 4,
+      `longest silent ${(v.worst * 0.25).toFixed(2)}s, doubled ${(v.worstDoubled * 0.25).toFixed(2)}s, ${v.total} total, kinds: ${[...v.kinds].join('/') || 'none'}`);
+  }
+  // NEGATIVE CONTROL (echo): in This tab, hold one overlay seat audible for
+  // 1.5s — the same rule must count it, or the zero above means nothing.
+  {
+    await host.click('#booth-aec-tab');
+    await until(async () => { const x = await booth(host); return x.mode === 'tab' && x.unsafeMic && x.playing.length === 2 ? x : null; }, 20000);
+    const seat = Object.keys(await overlay(ov))[0];
+    let seen = 0;
+    const hold = setInterval(() => { ov.evaluate((s) => { const el = document.querySelector(`audio[data-lk-seat="${s}"]`); if (el) el.muted = false; }, seat).catch(() => {}); }, 50);
+    await sleep(150);
+    const end = Date.now() + 1500;
+    while (Date.now() < end) {
+      const [bb, oo] = await Promise.all([booth(host), overlay(ov)]);
+      if (oo[seat] === 'playing' && bb.unsafeMic) seen++;
+      await sleep(250);
+    }
+    clearInterval(hold);
+    await ov.evaluate((s) => { const el = document.querySelector(`audio[data-lk-seat="${s}"]`); if (el) el.muted = true; }, seat);
+    ok('NEG-ECHO. the same rule DOES catch an overlay seat held audible into the plain mic for 1.5s', seen >= 4, `${seen} sample(s)`);
+    await host.click('#booth-aec-system');
+    await until(async () => (await booth(host)).mode === 'system', 15000);
   }
   // NEGATIVE CONTROL: the sampler must be able to SEE a violation, or its zero
   // means nothing. Force one guest silent (overlay muted while the booth, in

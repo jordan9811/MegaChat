@@ -647,7 +647,15 @@
     let lkCarriedSeats = new Set();
     let lkCarriedAll = false; // a booth from before per-seat claims: every seat
     let lkCarriedSummary = 'none';
-    function seatCarried(identity) { return lkCarriedAll || lkCarriedSeats.has(identity); }
+    // A booth that speaks mc.seatAudio (2026-09-26) silences EVERY seat here
+    // unless it says 'overlay' — see applyGuestAudio.
+    let lkSilenceAll = false;
+    let lkHostJoinedAt = 0;
+    let lkHostMicTimer = null;
+    // A booth with no mic this long after joining never will: play the seats
+    // (with no booth mic there is nothing for them to loop through).
+    const HOST_NO_MIC_MS = 8000;
+    function seatCarried(identity) { return lkSilenceAll || lkCarriedAll || lkCarriedSeats.has(identity); }
     const lkTracks = new Map(); // identity → { video, audio }
     const lkTileEls = new Map(); // identity → video element awaiting a track
 
@@ -855,32 +863,66 @@
     // the streamer hears them through OBS. A booth from before per-seat claims
     // says only mc.guestAudio = 'booth', which meant every seat. Stingers and
     // MegaChat clips are not seat audio and are never touched.
+    //
+    // SILENT UNLESS TOLD (2026-09-26). The per-seat claim above left the overlay
+    // playing a guest in every gap before the claim landed — a guest going live,
+    // a reconnect, a switch of mode — and OBS monitors this page to the
+    // streamer's speakers, where the booth mic's ordinary canceller cannot
+    // hear it: on speakers that is a loop, and a loop fed often enough is the
+    // siren the operator heard. So a booth that speaks mc.seatAudio decides it
+    // outright: 'booth' (the token's own starting value — set before the booth
+    // has said anything) means SILENT HERE for every seat; 'overlay' — which
+    // the booth sends only while its mic is confirmed cancelling everything
+    // the PC plays — means play every seat. With no booth in the room, or a
+    // booth that never got a mic, there is no mic to loop through: play.
+    // A booth from before this (no mc.seatAudio) keeps the old claim rules.
     function applyGuestAudio(leaving) {
       // `leaving`: a participant mid-disconnect may still be listed; never trust it.
       const host = lkOverlayRoom && lkHostIdentity && leaving !== lkHostIdentity
         ? [...lkOverlayRoom.remoteParticipants.values()].find((p) => p.identity === lkHostIdentity)
         : null;
-      // A booth whose link the SFU reports LOST (tab crashed, network gone) is
-      // not playing anybody any more, but its claim would stand until the SFU
-      // times it out — tens of seconds of guests silent on stream. Stop
-      // trusting it the moment the SFU says so.
-      const LK = window.LivekitClient;
-      const hostLost = !!(host && LK && LK.ConnectionQuality && host.connectionQuality === LK.ConnectionQuality.Lost);
-      const attrs = (host && !hostLost && host.attributes) || {};
-      const list = attrs['mc.guestAudioSeats'];
+      if (!host) lkHostJoinedAt = 0;
+      else if (!lkHostJoinedAt) lkHostJoinedAt = Date.now();
+      if (lkHostMicTimer) { clearTimeout(lkHostMicTimer); lkHostMicTimer = null; }
+      const attrs = (host && host.attributes) || {};
       lkCarriedAll = false;
       lkCarriedSeats = new Set();
-      if (host && !hostLost) {
-        if (typeof list === 'string') {
-          if (list && list !== '-') lkCarriedSeats = new Set(list.split(','));
-        } else if (attrs['mc.guestAudio'] === 'booth') {
-          lkCarriedAll = true;
+      lkSilenceAll = false;
+      let summary;
+      if (host && typeof attrs['mc.seatAudio'] === 'string') {
+        const hasMic = host.audioTrackPublications && host.audioTrackPublications.size > 0;
+        const waited = Date.now() - lkHostJoinedAt;
+        if (attrs['mc.seatAudio'] === 'overlay') {
+          summary = 'none — the booth mic cancels everything this PC plays, so every seat plays here';
+        } else if (!hasMic && waited >= HOST_NO_MIC_MS) {
+          summary = 'none — the booth has no mic, so every seat plays here';
+        } else {
+          lkSilenceAll = true;
+          summary = 'every seat — the booth plays the guests; its mic cannot cancel OBS, so none play here';
+          // Not yet published: look again once the booth has had its chance.
+          if (!hasMic) lkHostMicTimer = setTimeout(() => applyGuestAudio(), HOST_NO_MIC_MS - waited + 50);
         }
+      } else {
+        // A booth from before mc.seatAudio. One whose link the SFU reports LOST
+        // (tab crashed, network gone) is not playing anybody any more, but its
+        // claim would stand until the SFU times it out — tens of seconds of
+        // guests silent on stream. Stop trusting it the moment the SFU says so.
+        const LK = window.LivekitClient;
+        const hostLost = !!(host && LK && LK.ConnectionQuality && host.connectionQuality === LK.ConnectionQuality.Lost);
+        const list = !hostLost ? attrs['mc.guestAudioSeats'] : undefined;
+        if (host && !hostLost) {
+          if (typeof list === 'string') {
+            if (list && list !== '-') lkCarriedSeats = new Set(list.split(','));
+          } else if (attrs['mc.guestAudio'] === 'booth') {
+            lkCarriedAll = true;
+          }
+        }
+        summary = (lkCarriedAll ? 'every seat' : ([...lkCarriedSeats].join(', ') || 'none'))
+          + (hostLost ? ' (booth link lost — playing every seat here)' : '');
       }
       document.querySelectorAll('audio[data-lk-seat]').forEach((a) => { a.muted = seatCarried(a.dataset.lkSeat); });
-      const summary = lkCarriedAll ? 'every seat' : ([...lkCarriedSeats].join(', ') || 'none');
       if (summary !== lkCarriedSummary) {
-        console.log(`[overlay] seats the booth plays (muted here): ${summary}; booth echo mode: ${attrs['mc.aec'] || 'unknown'}${hostLost ? ' (booth link lost — playing every seat here)' : ''}`);
+        console.log(`[overlay] seats muted here: ${summary}; booth echo mode: ${attrs['mc.aec'] || 'unknown'}`);
         lkCarriedSummary = summary;
       }
     }
@@ -928,6 +970,9 @@
           lkAttach(id);
         });
         lkOverlayRoom.on(LK.RoomEvent.ParticipantAttributesChanged, () => applyGuestAudio());
+        // The booth's mic arriving (or going) changes what may play here.
+        lkOverlayRoom.on(LK.RoomEvent.TrackPublished, (pub, p) => { if (p && p.identity === lkHostIdentity) applyGuestAudio(); });
+        lkOverlayRoom.on(LK.RoomEvent.TrackUnpublished, (pub, p) => { if (p && p.identity === lkHostIdentity) applyGuestAudio(); });
         lkOverlayRoom.on(LK.RoomEvent.ConnectionQualityChanged, (q, p) => {
           if (p && p.identity === lkHostIdentity) applyGuestAudio();
         });

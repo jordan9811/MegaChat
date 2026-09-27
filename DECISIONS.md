@@ -1044,3 +1044,26 @@ reason than "the API is expensive".
   setQuietEligibility in `server.js`.
 - **A room with no proven channel says "plays once".** It never kept a copy;
   the screen now says what happens. Undo: `replayKeepDays` in `/api/config`.
+
+## Silence over echo; one fewer mode; a howl guard (2026-09-26)
+
+- **The overlay is silent for guests unless the booth's mic cancels
+  everything the PC plays.** This reverses "A guest silent on stream is the one
+  outcome worse than an echo" (Echo: the booth carries the guests,
+  2026-09-24): an echo on speakers became a siren, live. The cost is a guest
+  silent for a moment at each join (inside the entry stinger) and, if the
+  booth cannot play a guest, silent until the streamer clicks the named
+  button. Undo: `applyGuestAudio` in `public/overlay.html` back to the
+  per-seat claim for new booths (drop the mc.seatAudio branch).
+- **"OBS · headphones" retired; the OBS choice is "Through OBS".** It fed the
+  guests into a mic with nothing to cancel them; on headphones This tab gives
+  the same. Undo: re-add 'phones' to AEC_PREFS in `host-cam-card.tsx` — and it
+  would need its own mc.seatAudio rule.
+- **A howl guard on the booth mic, always on.** It can cost guests ~1 s of the
+  streamer when a real steady tone sounds (a whistle), never the stream. It
+  never changes the mode. Undo: remove the armGuard calls in
+  `host-cam-card.tsx`.
+- **No automatic OBS writes (deferred).** The design's fourth item — the booth
+  setting the overlay's monitoring through obs-websocket — is not needed for
+  safety once the overlay is silent in This tab; Through OBS still needs
+  Monitor and Output, which "Add to OBS" sets.

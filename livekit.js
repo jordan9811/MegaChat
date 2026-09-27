@@ -25,8 +25,8 @@ export function createLivekitService({ log = console } = {}) {
 
   const lkRoomName = (roomId) => `mc-${roomId}`;
 
-  async function mint({ identity, name, roomId, canPublish, canSubscribe, canUpdateOwnMetadata = false, ttl = '2h' }) {
-    const at = new AccessToken(apiKey, apiSecret, { identity, name, ttl });
+  async function mint({ identity, name, roomId, canPublish, canSubscribe, canUpdateOwnMetadata = false, ttl = '2h', attributes }) {
+    const at = new AccessToken(apiKey, apiSecret, { identity, name, ttl, ...(attributes ? { attributes } : {}) });
     at.addGrant({
       roomJoin: true,
       room: lkRoomName(roomId),
@@ -58,9 +58,14 @@ export function createLivekitService({ log = console } = {}) {
       return mint({ identity, roomId, canPublish: false, canSubscribe: true });
     },
 
-    /** Streamer's own camera (phase 2) — password-gated at the route. */
-    hostToken(roomId) {
+    /** Streamer's own camera (phase 2) — password-gated at the route.
+     *  `seatAudio`: a booth that speaks mc.seatAudio joins already saying
+     *  'booth' — the overlay is silent for guests from the first instant, not
+     *  from whenever the booth's first attribute write lands (overlay.html,
+     *  applyGuestAudio). */
+    hostToken(roomId, { seatAudio = false } = {}) {
       return mint({
+        ...(seatAudio ? { attributes: { 'mc.seatAudio': 'booth' } } : {}),
         identity: `host:${roomId}`,
         name: 'HOST',
         roomId,

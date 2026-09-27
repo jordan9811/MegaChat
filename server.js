@@ -1907,7 +1907,9 @@ app.post('/api/livekit/token', async (req, res) => {
       // the room password (same rule as every management route).
       const access = await verifyRoomAccess(req, roomId);
       if (!access.ok) return res.status(401).json({ error: 'Sign in as the room owner, or provide the room password.' });
-      const token = await livekit.hostToken(roomId);
+      // proto 2: a booth that speaks mc.seatAudio (host-cam-card.tsx). A
+      // dashboard tab from before it asks without, and keeps the old rules.
+      const token = await livekit.hostToken(roomId, { seatAudio: req.body?.proto === 2 });
       return res.json({ token, url: livekit.url, room: livekit.lkRoomName(roomId), identity: `host:${roomId}` });
     }
     return res.status(400).json({ error: 'Unknown role' });

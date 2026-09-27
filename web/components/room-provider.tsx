@@ -787,6 +787,10 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       ws = new WebSocket(backendWsUrl())
       ws.onopen = () => {
         ws?.send(JSON.stringify({ type: 'subscribe_room', room: room!.id }))
+        // A seat that went live while the socket was down sent its seat_added
+        // to nobody: catch up now, not at the next poll — the booth plays a
+        // guest only once it knows the seat is live.
+        void refresh()
       }
       ws.onmessage = (event) => {
         let msg: any
@@ -830,7 +834,8 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     const res = await fetch('/api/livekit/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Room-Password': passwordRef.current },
-      body: JSON.stringify({ room: roomId, role: 'host' }),
+      // proto 2: this booth speaks mc.seatAudio (host-cam-card.tsx).
+      body: JSON.stringify({ room: roomId, role: 'host', proto: 2 }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok || !data.token) throw new Error(data.error || 'Host token failed')
