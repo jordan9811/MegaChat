@@ -1934,6 +1934,28 @@ app.post('/api/seat/quality', (req, res) => {
   res.json({ ok: true });
 });
 
+// The guest's page reports that its mic is sending the host's own voice back
+// (web/lib/echo-detector.ts: a speaker, or another tab playing the stream).
+// Same authority as the quality report — possession of the seat id. The
+// streamer's booth names the guest; the guest's page has already told them.
+app.post('/api/seat/echo', (req, res) => {
+  const { seatId, echo, lagS } = req.body || {};
+  const seat = activeSeats.get(String(seatId || ''));
+  if (!seat) return res.status(404).json({ error: 'Seat not found' });
+  // Seat ids reach every socket in the room, so this is a claim, not proof —
+  // the worst it can do is a wrong line on the booth. Only a CHANGE is
+  // broadcast, and a seat can change it at most every 2s.
+  const next = echo === true;
+  const now = Date.now();
+  if (next === !!seat.echoBack) return res.json({ ok: true });
+  if (seat.echoChangedAt && now - seat.echoChangedAt < 2000) return res.status(429).json({ error: 'Too many echo reports' });
+  seat.echoChangedAt = now;
+  const lag = Number(lagS);
+  seat.echoBack = next ? { lagS: Number.isFinite(lag) ? Math.max(0, Math.min(60, Math.round(lag * 10) / 10)) : null, at: now } : null;
+  broadcastToRoom(seat.streamRoomId, { type: 'seat_echo', seatId: seat.id, echo: next });
+  res.json({ ok: true });
+});
+
 // ─── OAuth identity (Twitch / X — identity only, env-gated) ─────────────────
 app.set('trust proxy', 1); // Railway terminates TLS; req.protocol must be https
 try {

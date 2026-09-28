@@ -66,7 +66,7 @@ What `/api/seats` and the dashboard's session view carry per seat. `paymentMode`
 
 <!-- source:web/lib/api.ts#Seat -->
 ```typescript
-// web/lib/api.ts — Seat (lines 132–147), embedded by docs:sync
+// web/lib/api.ts — Seat (lines 132–149), embedded by docs:sync
 export type Seat = {
   id: string
   username: string
@@ -80,6 +80,8 @@ export type Seat = {
   liveAt: number | null
   /** Control-WS currently open for this seat. */
   connected?: boolean
+  /** The guest's mic is sending the host's own voice back (their page said so). */
+  echo?: { lagS: number | null; at: number } | null
   /** good | unstable (WS blip) | poor (LiveKit link quality); null while queued. */
   quality?: 'good' | 'unstable' | 'poor' | null
 }
@@ -90,7 +92,7 @@ export type Seat = {
 
 <!-- source:web/lib/api.ts#RoomSession -->
 ```typescript
-// web/lib/api.ts — RoomSession (lines 149–158), embedded by docs:sync
+// web/lib/api.ts — RoomSession (lines 151–160), embedded by docs:sync
 export type RoomSession = {
   room: Room
   seats: Seat[]
@@ -147,7 +149,7 @@ export type RecentAiring = {
 
 <!-- source:web/lib/api.ts#GuestEntry -->
 ```typescript
-// web/lib/api.ts — GuestEntry (lines 495–500), embedded by docs:sync
+// web/lib/api.ts — GuestEntry (lines 497–502), embedded by docs:sync
 export type GuestEntry = {
   handle: string
   addedAt: string
@@ -159,7 +161,7 @@ export type GuestEntry = {
 
 <!-- source:web/lib/api.ts#GuestList -->
 ```typescript
-// web/lib/api.ts — GuestList (lines 503–508), embedded by docs:sync
+// web/lib/api.ts — GuestList (lines 505–510), embedded by docs:sync
 export type GuestList = {
   enabled: boolean
   explicit: boolean | null
@@ -429,6 +431,6 @@ export function attachRecording(airingId, { vodId = null, vodUrl = null, capture
 
 ## HTTP surface
 
-The routes `server.js` registers directly, in source order: `GET /r/:handle`, `GET /r/:handle/overlay`, `GET /api/health/platforms`, `GET /api/health`, `GET /api/config`, `GET /api/balance/:address`, `POST /api/livekit/webhook`, `GET /api/livekit/burn`, `POST /api/livekit/burn/purge-foreign`, `POST /api/livekit/burn/test-alert`, `POST|DELETE /api/livekit/burn/override`, `POST /api/livekit/prewarm[/progress|/cancel]`, `POST /api/livekit/overlay/beat`, `GET /api/livekit/overlay/health`, `GET /api/livekit/sessions`, `POST /api/livekit/token`, `POST /api/seat/quality`, `GET /`, `GET /overlay`, `POST /api/join/passkey`, `POST /api/join/mpp`, `ALL /api/meter/tick`, `POST /api/join` (501, retired), `POST /api/leave/:seatId`, `GET /api/seats`, `GET /api/rooms/:roomId/poster.jpg`, `GET /api/airings/:airingId/poster.jpg`, `GET /api/rooms/:roomId/replay`, `GET /api/aired-clips/:id`, `DELETE /api/dashboard/rooms/:roomId/aired-clips/:id`, `GET|PUT /api/site-settings` (the owner only; anyone else gets the not-found answer), `GET /api/rooms/recent`, `GET /api/rooms/public`, `GET /favicon.ico`, `GET /:handle`, `GET /:handle/overlay`.
+The routes `server.js` registers directly, in source order: `GET /r/:handle`, `GET /r/:handle/overlay`, `GET /api/health/platforms`, `GET /api/health`, `GET /api/config`, `GET /api/balance/:address`, `POST /api/livekit/webhook`, `GET /api/livekit/burn`, `POST /api/livekit/burn/purge-foreign`, `POST /api/livekit/burn/test-alert`, `POST|DELETE /api/livekit/burn/override`, `POST /api/livekit/prewarm[/progress|/cancel]`, `POST /api/livekit/overlay/beat`, `GET /api/livekit/overlay/health`, `GET /api/livekit/sessions`, `POST /api/livekit/token`, `POST /api/seat/quality`, `POST /api/seat/echo`, `GET /`, `GET /overlay`, `POST /api/join/passkey`, `POST /api/join/mpp`, `ALL /api/meter/tick`, `POST /api/join` (501, retired), `POST /api/leave/:seatId`, `GET /api/seats`, `GET /api/rooms/:roomId/poster.jpg`, `GET /api/airings/:airingId/poster.jpg`, `GET /api/rooms/:roomId/replay`, `GET /api/aired-clips/:id`, `DELETE /api/dashboard/rooms/:roomId/aired-clips/:id`, `GET|PUT /api/site-settings` (the owner only; anyone else gets the not-found answer), `GET /api/rooms/recent`, `GET /api/rooms/public`, `GET /favicon.ico`, `GET /:handle`, `GET /:handle/overlay`.
 
 Attached modules add their own: `/auth/*` (`auth.js`), `/api/letter/*` (`letters.js`), `/api/dashboard/*` (`dashboard-routes.js`), `/api/whitelist/*` (`whitelist-routes.js`), and — only with `BOUNTY_CLAIM=1` — the `/api/bounty/*` set listed by path in `bounty-routes.js` (`guarded.get`/`guarded.post`), every one of which is looked up in `bounty-auth.js`'s policy table at registration.

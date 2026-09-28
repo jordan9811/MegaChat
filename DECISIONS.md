@@ -1067,3 +1067,23 @@ reason than "the API is expensive".
   setting the overlay's monitoring through obs-websocket — is not needed for
   safety once the overlay is silent in This tab; Through OBS still needs
   Monitor and Output, which "Add to OBS" sets.
+
+## Echo detection, and Through OBS tucked away (2026-09-28)
+
+- **This tab with no choice shown; Through OBS kept for power users.** It gives
+  guests as their own OBS source and works without Desktop Audio; its cost
+  (whole-PC cancelling gates some speech under loud game audio, ~0.2s) is not
+  for everyone. Undo: remove the `<details>` around the picker in
+  `host-cam-card.tsx`.
+- **An echo is reported only on the same delay twice, on audio that does not
+  overlap — never on one high score.** Slower (20s-2 min) but it does not cry
+  wolf; a warning a guest learns to ignore is worse than a late one. Undo:
+  `judgeFor` in `web/lib/echo-detector.ts`.
+- **The booth never switches modes by itself** on a leak or a howl: it names
+  the problem and offers one click. Through OBS needs the overlay monitored,
+  which the booth can only verify with an OBS password.
+- **The OBS check stays silent unless nothing plausible records the browser,**
+  and a one-click fix is offered only where it cannot double the audio.
+- **Echo reports ride the seat id, like quality reports.** A forged one costs a
+  wrong line on the booth, throttled; a per-seat secret would stop it and is
+  not built.

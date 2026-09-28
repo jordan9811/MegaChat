@@ -1247,3 +1247,15 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
   .join-stinger-grid { grid-template-columns: 1fr; }
   .join-stinger-grid .sp-wrap { grid-column: auto; }
 }
+
+/* The guest's mic is sending the host's voice back (echo-detector.ts). */
+.guest-echo-warn {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 45, 120, 0.55);
+  background: rgba(255, 45, 120, 0.1);
+  color: #f4f6f8;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.guest-echo-warn strong { color: #ff5c96; }

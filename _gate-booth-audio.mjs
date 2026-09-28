@@ -370,7 +370,7 @@ try {
   ok('S1. the card says so', /like Discord/.test(b.aecNote), b.aecNote);
 
   // ── S2: Through OBS (Whole PC) ─────────────────────────────────────────────
-  await host.click('#booth-aec-system');
+  await host.evaluate(() => document.getElementById('booth-aec-system').click()) /* tucked away in #boothAecAdvanced */;
   b = await until(async () => { const x = await booth(host); return x.mode === 'system' && x.elements === 0 ? x : null; }, 15000);
   b = b || await booth(host);
   ok('S2. "Through OBS" → the mic asks for "all" and gets it; the booth plays nobody',
@@ -390,7 +390,7 @@ try {
   // the whole switch, and a 1.5s restart makes any wrong order visible.
   await host.evaluate(() => { window.__audioDelay = 1500; });
   let askedN = (await booth(host)).asked.length;
-  await host.click('#booth-aec-tab');
+  await host.evaluate(() => document.getElementById('booth-aec-tab').click()) /* tucked away in #boothAecAdvanced */;
   b = await until(async () => { const x = await booth(host); return x.playing.includes(seat1) && x.asked.length > askedN && x.micLive ? x : null; }, 15000);
   b = b || await booth(host);
   await host.evaluate(() => { window.__audioDelay = 0; });
@@ -400,7 +400,7 @@ try {
   a = await hostAttrs(room.id);
   ok('S3. ...the overlay mutes that seat, and the room hears mc.seatAudio=booth', o[seat1] === 'muted' && a?.['mc.seatAudio'] === 'booth', JSON.stringify({ o, seatAudio: a?.['mc.seatAudio'] }));
   ok('S3. ...and not one sample of the overlay playing into the plain mic during the switch', (echoes.get(seat1) || 0) === 0, `${echoes.get(seat1) || 0} sample(s)`);
-  await host.click('#booth-aec-system'); // S4-S6 start from Whole PC
+  await host.evaluate(() => document.getElementById('booth-aec-system').click()) /* tucked away in #boothAecAdvanced */; // S4-S6 start from Whole PC
   await until(async () => (await booth(host)).mode === 'system', 15000);
 
   // A fresh start of the booth: disarm, set the shim, arm again (a guest is live).
@@ -433,10 +433,10 @@ try {
   ok('S5. ...exactly ONE host in the room (no stray connection from the failed attempt)', (await hosts(room.id)).length === 1, `${(await hosts(room.id)).length} host(s)`);
 
   // ── S5b: a mic RESTART that throws ─────────────────────────────────────────
-  await host.click('#booth-aec-tab');
+  await host.evaluate(() => document.getElementById('booth-aec-tab').click()) /* tucked away in #boothAecAdvanced */;
   await until(async () => (await booth(host)).pref === 'tab', 5000);
   await sleep(1500);
-  await host.click('#booth-aec-system'); // 'all' still throws in the shim
+  await host.evaluate(() => document.getElementById('booth-aec-system').click()) /* tucked away in #boothAecAdvanced */; // 'all' still throws in the shim
   b = await until(async () => { const x = await booth(host); return x.pref === 'system' && x.asked[x.asked.length - 1] === 'true' ? x : null; }, 15000);
   b = b || await booth(host);
   ok('S5b. the restart asking for "all" throws → a plain mic is brought back, not left dead', b.micLive === true && b.mode === 'tab' && !b.error, JSON.stringify({ micLive: b.micLive, mode: b.mode, asked: b.asked.slice(-3), error: b.error }));
@@ -565,7 +565,7 @@ try {
   await tabA.close();
 
   // ── S11: the booth tab crashes, in This-tab with both guests claimed ───────
-  await tabB.click('#booth-aec-tab');
+  await tabB.evaluate(() => document.getElementById('booth-aec-tab').click()) /* tucked away in #boothAecAdvanced */;
   await until(async () => (await booth(tabB)).playing.length === 2, 15000);
   o = await until(async () => { const x = await overlay(ov); return Object.values(x).every((v) => v === 'muted') ? x : null; }, 10000);
   ok('S11. (setup) This-tab: the booth plays both guests and the overlay has muted both', !!o, JSON.stringify(o || await overlay(ov)));
@@ -581,7 +581,7 @@ try {
   // ── S10: the SFU restarts mid-call (a full reconnect) ──────────────────────
   const tabC = await newHost();
   await unlock(tabC, room.id);
-  await tabC.click('#booth-aec-system');
+  await tabC.evaluate(() => document.getElementById('booth-aec-system').click()) /* tucked away in #boothAecAdvanced */;
   await onAir(tabC);
   host = tabC;
   b = await until(async () => { const x = await booth(tabC); return x.mode === 'system' ? x : null; }, 20000);
@@ -622,7 +622,7 @@ try {
   // NEGATIVE CONTROL (echo): in This tab, hold one overlay seat audible for
   // 1.5s — the same rule must count it, or the zero above means nothing.
   {
-    await host.click('#booth-aec-tab');
+    await host.evaluate(() => document.getElementById('booth-aec-tab').click()) /* tucked away in #boothAecAdvanced */;
     await until(async () => { const x = await booth(host); return x.mode === 'tab' && x.unsafeMic && x.playing.length === 2 ? x : null; }, 20000);
     const seat = Object.keys(await overlay(ov))[0];
     let seen = 0;
@@ -637,7 +637,7 @@ try {
     clearInterval(hold);
     await ov.evaluate((s) => { const el = document.querySelector(`audio[data-lk-seat="${s}"]`); if (el) el.muted = true; }, seat);
     ok('NEG-ECHO. the same rule DOES catch an overlay seat held audible into the plain mic for 1.5s', seen >= 4, `${seen} sample(s)`);
-    await host.click('#booth-aec-system');
+    await host.evaluate(() => document.getElementById('booth-aec-system').click()) /* tucked away in #boothAecAdvanced */;
     await until(async () => (await booth(host)).mode === 'system', 15000);
   }
   // NEGATIVE CONTROL: the sampler must be able to SEE a violation, or its zero

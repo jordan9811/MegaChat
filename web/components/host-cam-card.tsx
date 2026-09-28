@@ -15,6 +15,8 @@ import { Radio, RefreshCw, VideoOff } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import { useRoom } from '@/components/room-provider'
 import { startHowlGuard, type HowlGuard } from '@/lib/howl-guard'
+import { startEchoDetector, type EchoDetector } from '@/lib/echo-detector'
+import { useObsAudioCheck } from '@/components/obs/use-obs-audio-check'
 import type {
   AudioCaptureOptions,
   DisconnectReason,
@@ -209,6 +211,13 @@ export function HostCamCard() {
   const [howlGuard, setHowlGuard] = useState<'none' | 'on' | 'off'>('none')
   const [ducks, setDucks] = useState(0)
   const [howlTimes, setHowlTimes] = useState<number[]>([])
+  // Leak watch (lib/echo-detector.ts): one detector per guest this tab plays —
+  // does the mic pick that guest up from the speakers? The seats it does.
+  const echoWatchRef = useRef(new Map<string, EchoDetector>())
+  const echoGenRef = useRef(new Map<string, number>())
+  const [leaking, setLeaking] = useState<string[]>([])
+  // The delay each standing leak was found at (seat → s), carried to a new detector.
+  const leakLagRef = useRef(new Map<string, number>())
   // The guard's last release — why and after how long — for anyone diagnosing a call.
   const [lastRelease, setLastRelease] = useState('')
 
@@ -298,6 +307,58 @@ export function HostCamCard() {
     return !!t && t.readyState === 'live'
   }
 
+  // Does the mic pick this guest up from the speakers? Watched while this tab
+  // plays them (This tab), on whatever mic track is live now.
+  function watchEcho(key: string, track: RemoteTrack) {
+    const r = sessionRef.current
+    const mic = r ? micTrack(r)?.mediaStreamTrack : undefined
+    if (!r || !mic || mic.readyState !== 'live' || !track.mediaStreamTrack) return
+    const seat = key.split('/')[0]
+    const gen = (echoGenRef.current.get(key) ?? 0) + 1
+    echoGenRef.current.set(key, gen)
+    echoWatchRef.current.get(key)?.stop()
+    echoWatchRef.current.delete(key)
+    void startEchoDetector(track.mediaStreamTrack, mic, {
+      maxLagS: 0.8,
+      reportedLagS: leakLagRef.current.get(seat) ?? null, // a new mic track keeps a standing finding
+      onEcho: (f) => {
+        if (echoGenRef.current.get(key) !== gen) return
+        leakLagRef.current.set(seat, f.lagS)
+        setLeaking((prev) => (prev.includes(seat) ? prev : [...prev, seat].sort()))
+      },
+      onClear: () => {
+        if (echoGenRef.current.get(key) !== gen) return
+        leakLagRef.current.delete(seat)
+        setLeaking((prev) => prev.filter((x) => x !== seat))
+      },
+    }).then((d) => {
+      if (echoGenRef.current.get(key) !== gen || !guestAudioRef.current.has(key) || sessionRef.current !== r) {
+        d.stop()
+        return
+      }
+      echoWatchRef.current.set(key, d)
+    })
+  }
+  // `keep`: the detector is being replaced (a new mic track), not the guest
+  // gone — the standing finding stays shown and is handed to the new one.
+  function unwatchEcho(match?: (key: string) => boolean, keep = false) {
+    for (const key of [...echoGenRef.current.keys()]) {
+      if (match && !match(key)) continue
+      echoGenRef.current.set(key, (echoGenRef.current.get(key) ?? 0) + 1) // a start in flight lets go
+      echoWatchRef.current.get(key)?.stop()
+      echoWatchRef.current.delete(key)
+      if (keep) continue
+      const seat = key.split('/')[0]
+      leakLagRef.current.delete(seat)
+      setLeaking((prev) => prev.filter((x) => x !== seat))
+    }
+  }
+  function rewatchAllEcho() {
+    if (aecModeRef.current !== 'tab') return unwatchEcho()
+    unwatchEcho(undefined, true)
+    for (const [key, g] of guestAudioRef.current) watchEcho(key, g.track)
+  }
+
   // The guard follows the mic: every new mic track (start, restart, LiveKit's
   // own recovery) gets a fresh guard, and the old one lets go of its track.
   function armGuard(r: LiveKitRoom) {
@@ -306,6 +367,7 @@ export function HostCamCard() {
     const gen = ++guardGenRef.current
     const t = micTrack(r)?.mediaStreamTrack
     if (!t || t.readyState !== 'live' || sessionRef.current !== r) return
+    rewatchAllEcho()
     void startHowlGuard(t, {
       onDuck: (e) => {
         setDucks((n) => n + 1)
@@ -431,7 +493,7 @@ export function HostCamCard() {
       return reconcile(r)
     }
     applyMode(target)
-    detachGuestAudio()
+    detachGuestAudio() // and the leak watch with it: this tab plays nobody now
     syncSubscriptions(r)
     // A reconnect while the handover waited (mode still 'tab') said 'booth':
     // say 'overlay' again, or nobody would play the guests.
@@ -507,6 +569,7 @@ export function HostCamCard() {
     })
     guestAudioBoxRef.current?.appendChild(el)
     guestAudioRef.current.set(key, { track, el })
+    watchEcho(key, track)
     recomputePlaying()
   }
 
@@ -526,6 +589,7 @@ export function HostCamCard() {
       g.el.remove()
       guestAudioRef.current.delete(key)
     }
+    unwatchEcho(match)
     recomputePlaying()
   }
 
@@ -543,6 +607,7 @@ export function HostCamCard() {
     guardGenRef.current++
     guardRef.current?.stop()
     guardRef.current = null
+    unwatchEcho()
     setHowlGuard('none')
     setHowlTimes([])
     setSession(null)
@@ -819,6 +884,29 @@ export function HostCamCard() {
     return () => document.removeEventListener('pointerdown', again)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [howlGuard])
+
+  // OBS set up so guests reach the stream (This tab: Desktop Audio or a
+  // per-app capture of Chrome) and so the streamer hears them (Through OBS:
+  // the overlay monitored and unmuted) — checked only with a stored OBS
+  // password, fixed only on a click.
+  const obsAudio = useObsAudioCheck({
+    enabled: onAir,
+    mode: aecMode === 'tab' || aecMode === 'system' ? aecMode : null,
+    roomId: room?.id ?? null,
+    handle: (room as { handle?: string | null } | null)?.handle ?? null,
+  })
+  const [obsFixing, setObsFixing] = useState<string | null>(null)
+  const [obsFixFailed, setObsFixFailed] = useState<string | null>(null)
+  // The tucked-away picker opens by itself when the choice is Through OBS (so
+  // the way back is in view) and is never closed from code — a section the
+  // streamer opened stays open.
+  const aecAdvRef = useRef<HTMLDetailsElement>(null)
+  useEffect(() => {
+    if (aecPref === 'system' && aecAdvRef.current) aecAdvRef.current.open = true
+  }, [aecPref, armed])
+  // Guests whose own page found their mic sending this booth's voice back.
+  const echoingGuests = seats.filter((x) => x.live && x.echo)
+  const leakingNames = leaking.map((id) => seats.find((x) => `seat:${x.id}` === id)?.username || 'a guest')
 
   // Two confirmed howls a minute apart or less: the speakers are feeding back.
   const feedbackAlert = howlTimes.length >= 2 && howlTimes[howlTimes.length - 1] - howlTimes[howlTimes.length - 2] < 60_000
@@ -1176,9 +1264,13 @@ export function HostCamCard() {
         {armed ? (
           <div className="flex flex-col gap-2 rounded-xl border border-border bg-input/20 px-4 py-3">
             <span className="text-sm font-semibold">Where you hear guests</span>
-            {/* Through OBS needs Chrome's whole-PC canceller; where it is not
-                offered there is nothing to choose. */}
+            {/* Nothing to choose for most streamers: This tab just works. Through
+                OBS is for power users who want guests as their own OBS source
+                (own volume, filters, audio track) or who do not record Desktop
+                Audio — and it needs Chrome's whole-PC canceller. */}
             {wholePcSupported() ? (
+            <details id="boothAecAdvanced" ref={aecAdvRef} className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer select-none">For OBS power users: hear guests through OBS</summary>
             <div
               role="radiogroup"
               aria-label="Where you hear guests"
@@ -1203,6 +1295,7 @@ export function HostCamCard() {
                 </button>
               ))}
             </div>
+            </details>
             ) : null}
             <p id="boothAecNote" data-mode={aecMode} className="text-xs leading-relaxed text-muted-foreground">
               {aecPref === 'tab' || !wholePcSupported()
@@ -1305,6 +1398,58 @@ export function HostCamCard() {
                 Dismiss
               </button>
             </div>
+          </div>
+        ) : null}
+        {onAir && aecMode === 'tab' && leaking.length ? (
+          <div role="alert" id="boothLeak" data-seats={leaking.join(',')} className="rounded-xl border border-[var(--neon-magenta)]/60 bg-[var(--neon-magenta)]/10 p-3">
+            <strong className="block text-sm font-bold text-[var(--neon-magenta)]">
+              Your mic is picking up {leakingNames.join(', ')} from your speakers
+            </strong>
+            <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+              So they hear themselves. Headphones fix it{wholePcSupported() && aecPref === 'tab' ? ', or hear guests through OBS, which cancels everything this PC plays' : ''}.
+            </span>
+            {wholePcSupported() && aecPref === 'tab' ? (
+              <button
+                type="button"
+                onClick={() => setAecPref('system')}
+                className="mt-2 h-8 rounded-lg border border-[var(--neon-magenta)]/70 px-3 text-xs font-bold text-[var(--neon-magenta)]"
+              >
+                Hear guests through OBS
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {onAir && echoingGuests.length ? (
+          <p id="boothGuestEcho" data-seats={echoingGuests.map((x) => x.id).join(',')} className="rounded-lg border border-border bg-input/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+            <strong className="text-foreground">{echoingGuests.map((x) => x.username).join(', ')}</strong>{' '}
+            {echoingGuests.length === 1 ? 'is' : 'are'} sending your voice back to you (speakers, or the stream open in another tab).
+            {echoingGuests.length === 1 ? ' They’ve' : ' They’ve'} been asked to put on headphones.
+          </p>
+        ) : null}
+        {onAir && obsAudio.problems.length ? (
+          <div id="boothObsAudio" data-codes={obsAudio.problems.map((x) => x.code).join(',')} className="flex flex-col gap-2 rounded-xl border border-[var(--neon-yellow,#ffd23d)]/60 bg-[#ffd23d]/10 p-3">
+            {obsAudio.problems.map((x) => (
+              <div key={x.id} className="flex flex-wrap items-center gap-2 text-xs leading-relaxed text-foreground">
+                <span className="flex-1">
+                  {x.text}
+                  {obsFixFailed === x.id ? ' OBS didn’t accept the change — try it in OBS.' : ''}
+                </span>
+                {x.fix ? (
+                  <button
+                    type="button"
+                    disabled={obsFixing === x.id}
+                    onClick={() => {
+                      setObsFixing(x.id)
+                      setObsFixFailed(null)
+                      void obsAudio.fix(x).then((ok) => { if (!ok) setObsFixFailed(x.id) }).finally(() => setObsFixing(null))
+                    }}
+                    className="h-8 rounded-lg border border-[#ffd23d]/70 px-3 text-xs font-bold text-[#ffd23d]"
+                  >
+                    {obsFixing === x.id ? 'Fixing…' : x.fix.label}
+                  </button>
+                ) : null}
+              </div>
+            ))}
           </div>
         ) : null}
         {howlGuard === 'off' && onAir ? (

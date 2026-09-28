@@ -799,7 +799,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
         } catch {
           return
         }
-        if (msg.type === 'seat_added' || msg.type === 'seat_removed') {
+        if (msg.type === 'seat_added' || msg.type === 'seat_removed' || msg.type === 'seat_echo') {
           void refresh()
         } else if (msg.type === 'meter_update' && msg.seatId) {
           setSeats((prev) =>

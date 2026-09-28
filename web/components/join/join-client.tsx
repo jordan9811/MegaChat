@@ -68,6 +68,12 @@ export function JoinClient() {
               </span>
               <span className="stream-preview-label">Headphones recommended</span>
             </div>
+            {/* Shown when this page's mic is sending the host's own voice back
+                (web/lib/echo-detector.ts). */}
+            <p id="guestEchoWarn" className="guest-echo-warn" role="alert" hidden>
+              <strong>The host can hear their own voice through your mic.</strong> Put on headphones — or mute any
+              other tab or app playing the stream.
+            </p>
           </div>
 
           <div id="streamPreview" className="stream-preview" style={{ display: 'none' }}>

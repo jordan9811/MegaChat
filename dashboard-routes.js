@@ -258,6 +258,8 @@ export function attachDashboardRoutes(app, deps) {
         liveAt: seat.liveAt,
         connected,
         quality,
+        // The guest's page found its mic sending the host's voice back.
+        echo: seat.live && seat.echoBack ? seat.echoBack : null,
       });
     }
 

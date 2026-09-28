@@ -15,6 +15,7 @@
  */
 
 import { formatDollars, guestName } from '@/lib/display-format';
+import { startEchoDetector } from '@/lib/echo-detector';
 
 let CONFIG = null;
 let account = null;
@@ -1839,7 +1840,67 @@ async function mountLivekitHostFeed(wrap, mount) {
       a.style.display = 'none';
       mount.appendChild(a);
       audioEls.push(a);
+      watchGuestEcho(track);
     }
+  };
+  // ECHO: is this page's mic sending the host's own voice back? A guest on
+  // speakers whose canceller leaks, or with the stream playing in another tab
+  // (seconds behind — hence up to 30s). The guest is told here; the streamer's
+  // booth names them (POST /api/seat/echo). What is shown belongs to the PAGE,
+  // not to one detector: a new mic track (LiveKit restarts it on a device
+  // change or a reconnect) gets a new detector that carries the finding over,
+  // so the warning neither sticks nor flickers.
+  let echoWatch = null;
+  let echoGen = 0;
+  let echoHostTrack = null;
+  let echoMicTrack = null;
+  let echoShown = null; // null, or the delay (s) of the echo being shown
+  let echoSent = undefined; // what the server last accepted
+  let echoRetry = null;
+  const warn = document.getElementById('guestEchoWarn');
+  const sendEcho = () => {
+    if (echoRetry) { clearTimeout(echoRetry); echoRetry = null; }
+    const want = echoShown != null;
+    if (!mySeatId || echoSent === want) return;
+    fetch('/api/seat/echo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seatId: mySeatId, echo: want, lagS: echoShown }),
+    })
+      .then((r) => {
+        if (r.ok || r.status === 404) { echoSent = want; return; } // 404: the seat is gone
+        echoRetry = setTimeout(sendEcho, 5000);
+      })
+      .catch(() => { echoRetry = setTimeout(sendEcho, 5000); });
+  };
+  const showEcho = (lagS) => {
+    echoShown = lagS;
+    if (warn) warn.hidden = lagS == null;
+    sendEcho();
+  };
+  const rearmEcho = () => { if (echoHostTrack) watchGuestEcho(echoHostTrack); };
+  const watchGuestEcho = (hostTrack) => {
+    echoHostTrack = hostTrack;
+    const gen = ++echoGen;
+    if (echoWatch) { echoWatch.stop(); echoWatch = null; }
+    const micPub = [...lkRoom.localParticipant.audioTrackPublications.values()][0];
+    const micTrack = (micPub && micPub.track) || null;
+    if (micTrack !== echoMicTrack) {
+      if (echoMicTrack) echoMicTrack.off(lk.TrackEvent.Restarted, rearmEcho);
+      if (micTrack) micTrack.on(lk.TrackEvent.Restarted, rearmEcho);
+      echoMicTrack = micTrack;
+    }
+    const mic = micTrack && micTrack.mediaStreamTrack;
+    if (!mic || !hostTrack.mediaStreamTrack) return;
+    startEchoDetector(hostTrack.mediaStreamTrack, mic, {
+      maxLagS: 30,
+      reportedLagS: echoShown,
+      onEcho: (f) => { if (gen === echoGen) showEcho(f.lagS); },
+      onClear: () => { if (gen === echoGen) showEcho(null); },
+    }).then((d) => {
+      if (gen !== echoGen) { d.stop(); return; }
+      echoWatch = d;
+    });
   };
   // host may already be on air — attach existing tracks now
   console.log(
@@ -1872,6 +1933,11 @@ async function mountLivekitHostFeed(wrap, mount) {
     if (legacyTimer) clearTimeout(legacyTimer);
     if (held) held.style.display = 'none';
     audioEls.forEach((a) => a.remove());
+    echoGen++;
+    if (echoWatch) { echoWatch.stop(); echoWatch = null; }
+    if (echoMicTrack) { echoMicTrack.off(lk.TrackEvent.Restarted, rearmEcho); echoMicTrack = null; }
+    if (echoShown != null) showEcho(null); // the seat is ending or the feed is gone: nothing to warn about
+    if (echoRetry) { clearTimeout(echoRetry); echoRetry = null; }
   };
   wrap.style.display = '';
   syncPreviewIdle();

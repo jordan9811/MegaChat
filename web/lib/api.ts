@@ -142,6 +142,8 @@ export type Seat = {
   liveAt: number | null
   /** Control-WS currently open for this seat. */
   connected?: boolean
+  /** The guest's mic is sending the host's own voice back (their page said so). */
+  echo?: { lagS: number | null; at: number } | null
   /** good | unstable (WS blip) | poor (LiveKit link quality); null while queued. */
   quality?: 'good' | 'unstable' | 'poor' | null
 }

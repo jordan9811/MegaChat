@@ -3388,3 +3388,63 @@ sections A–H, all green.
   This tab still rings while the overlay log says every seat is muted, the
   ordinary canceller fails on this hardware and Through OBS is the answer for
   speakers here.
+
+## Echo that just works: found and named on both sides, OBS audio checked (2026-09-28)
+
+- **J1 — The ask.** The owner, after the siren fix: "we gonna need this to work
+  for our users … it needs to just work", and on "Through OBS": "will some pro
+  streamers want the OBS thing?" (yes — guests as their own OBS source, and
+  setups that do not record Desktop Audio). Three gaps were left: a guest whose
+  device sends the streamer's own voice back (the "echoing to myself" of
+  2026-09-26), a streamer whose speakers leak guests into the mic without a
+  runaway howl, and an OBS that does not record the booth so guests never
+  reach the stream — none of which anything said.
+- **J2 — No choice to make.** The booth's picker is folded into "For OBS power
+  users: hear guests through OBS" (`host-cam-card.tsx`, `#boothAecAdvanced`);
+  This tab runs by default. It opens by itself when the choice is Through OBS
+  and is never closed from code.
+- **J3 — Echo detection (`web/lib/echo-detector.ts`).** An AudioWorklet takes
+  20ms loudness of what a page plays and of its own mic; once a second the
+  frame-to-frame CHANGES are correlated at every delay up to a limit. An echo
+  is reported only when the same delay wins again on fresh audio (a window
+  sharing none of the first's), and cleared only after ~30s of the other side
+  talking at that delay with the mic not following — `EchoJudge`. Booth: one
+  detector per guest it plays, delays up to 0.8s → "Your mic is picking up X
+  from your speakers" with "Hear guests through OBS". Guest page: the host's
+  audio against the guest's mic, delays up to 30s (a stream tab) → a warning on
+  the guest's page, and `POST /api/seat/echo` → the booth names the guest.
+- **J4 — OBS audio check (`web/lib/obs-audio-check.mjs`, only with a stored OBS
+  password).** This tab: speaks only on positive evidence that nothing records
+  the browser — Desktop Audio or any output capture, a per-app capture of a
+  browser, a window/game capture with audio, a virtual cable or mixer bus all
+  count as a route — and offers a one-click fix only where it cannot put every
+  sound on the PC on stream twice. Through OBS: the room's overlay found by URL
+  must be monitored, on stream, unmuted, and live once.
+- **J5 — Review (29 agents, 24 confirmed) fixed before shipping.** The worst:
+  the first version false-alarmed on ordinary talk every few minutes on the
+  guest page (the best of 751 delays is often ≥0.4 by chance, its "prominence"
+  was the same number, and "three windows running" shared most of their
+  audio); a steady real echo flickered off and on; the guest page never
+  re-bound after LiveKit restarted its mic and could leave a warning stuck;
+  echo reports were broadcast on every POST, unthrottled; the OBS check called
+  per-app, scene-capture, cable and mixer setups broken and offered an unmute
+  that would double every app; `/r/<room id>/overlay` was matched where the
+  server's retired link is `/r/<handle>/overlay`; "turn it up" jumped a
+  deliberately low fader to 0 dB.
+- **J6 — Proof.** `_gate-echo.mjs` 21/0: on the review's phrase-and-pause speech
+  model, 45 min of unrelated talk at 30s of delays → 0 reports, where the logic
+  first shipped reports 8 (U2); a steady echo is reported once within 2.5 min
+  and never flickers (the first logic: 10 reports); the OBS check across every
+  setup the review named (O1-O8); in real browsers, 25s of both sides talking →
+  nothing; a guest's mic replaying the host 3s late → the guest warned (~20s),
+  the server has it at 3.0s, the booth names them, and it clears; the booth's
+  mic picking up a guest → the alert (~16s) with its cure. Planted defects: the
+  server dropping reports → G red; the booth never watching → B red. Also green:
+  `_gate-booth-audio` 52/0, `_gate-howl-guard` 11/0,
+  `_gate-overlay-first-guest` 4/0, `_gate-booth-picture` 20/0, Gate H 38/0.
+- **J7 — Open.** Detection takes 20s-2 min — it waits for the same delay on
+  fresh audio, which is what keeps it from false alarms. Seat ids reach every
+  socket in the room, so an echo report is a claim, not proof: the worst a
+  forger can do is a wrong line on the booth (throttled to one change per 2s a
+  seat). A stream tab more than 30s behind is not found. The acoustic proof on
+  real speakers and devices is still live-only (E80).
