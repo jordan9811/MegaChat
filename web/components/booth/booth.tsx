@@ -88,7 +88,8 @@ function Stage({
   hero?: boolean
   linked?: boolean
 }) {
-  const { state, rate, full } = roomPresentation(room)
+  const { state, rate, full, rates } = roomPresentation(room)
+  const seats = rates.find((r) => r.seats)?.seats
   const Tag = linked ? 'a' : 'span'
   return (
     <Tag
@@ -107,6 +108,19 @@ function Stage({
         size={hero ? 'hero' : 'card'}
       />
       <span className="mcr-scan" aria-hidden="true" />
+      {/* The featured stage shows the room's seats the way they sit on the
+          broadcast — taken ones as guests, open ones as an empty frame — so
+          what a "seat" is reads before any copy does. Decorative: the seat
+          count is stated in text beside the price. */}
+      {hero && seats ? (
+        <span className="mcr-seats" aria-hidden="true">
+          {Array.from({ length: seats.total }, (_, i) => (
+            <span key={i} className={`mcr-seat ${i < seats.taken ? 'is-taken' : ''}`}>
+              {i < seats.taken ? <i /> : '+'}
+            </span>
+          ))}
+        </span>
+      ) : null}
       <span className="mcr-tags">
         <span className={`mcr-tag ${onAir(room) ? 'is-live' : full ? 'is-full' : ''}`}>
           <i aria-hidden="true" />
@@ -125,8 +139,19 @@ function spanStyle(k: number): CSSProperties {
   return { ['--k' as string]: k } as CSSProperties
 }
 
+/** A room's seats as dots: filled = someone on camera, hollow = open. */
+function SeatDots({ taken, total }: { taken: number; total: number }) {
+  return (
+    <span className="mcr-dots" role="img" aria-label={`${taken} of ${total} seats taken`}>
+      {Array.from({ length: total }, (_, i) => (
+        <i key={i} className={i < taken ? 'is-on' : ''} />
+      ))}
+    </span>
+  )
+}
+
 function FeaturedRoom({ room, size = 'normal' }: { room: PublicRoomCard; size?: FeatureSize }) {
-  const { action, capabilities, full } = roomPresentation(room)
+  const { action, capabilities, full, rates } = roomPresentation(room)
   return (
     <div className={`mcr-feat ${onAir(room) ? 'is-live' : ''} ${size === 'normal' ? '' : `is-${size}`}`}>
       <Stage room={room} hero linked />
@@ -140,6 +165,19 @@ function FeaturedRoom({ room, size = 'normal' }: { room: PublicRoomCard; size?: 
           {room.live > 0 ? ` · ${room.live} on camera` : ''}
           {room.waiting > 0 ? ` · ${room.waiting} waiting` : ''}
         </span>
+        {rates.length ? (
+          <dl className="mcr-rates">
+            {rates.map((r) => (
+              <div key={r.label}>
+                <dt>
+                  {r.label}
+                  {r.seats ? <SeatDots {...r.seats} /> : null}
+                </dt>
+                <dd>{r.rate}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
         <span className="mcr-cta">
           <a href={roomHref(room)} className={`mcr-btn ${full ? 'is-queue' : ''}`}>
             {action}
@@ -154,7 +192,8 @@ function FeaturedRoom({ room, size = 'normal' }: { room: PublicRoomCard; size?: 
 }
 
 function RoomCard({ room }: { room: PublicRoomCard }) {
-  const { action, capabilities } = roomPresentation(room)
+  const { action, capabilities, rates } = roomPresentation(room)
+  const seats = rates.find((r) => r.seats)?.seats
   return (
     <a href={roomHref(room)} className={`mcr-card ${onAir(room) ? 'is-live' : ''}`}>
       <Stage room={room} />
@@ -168,6 +207,7 @@ function RoomCard({ room }: { room: PublicRoomCard }) {
             {capabilities}
             {room.live > 0 ? ` · ${room.live} on camera` : ''}
           </span>
+          {seats ? <SeatDots {...seats} /> : null}
         </span>
         <span className="mcr-ghost is-sm">{action}</span>
       </span>
@@ -219,6 +259,11 @@ function BountyBoard({ pools }: { pools: BountyPool[] }) {
         <h2>Bounty board</h2>
         <Link href="/bounty">See the board &#8594;</Link>
       </header>
+      {/* What a bounty is comes first, so the amounts below read as money
+          waiting for someone rather than numbers without a subject. */}
+      {pools.length > 0 ? (
+        <p className="mcr-board-lead">Back a streamer before they have a room. They claim it by going live.</p>
+      ) : null}
       {pools.length === 0 ? (
         <div className="mcr-board-foot">
           No pools open yet. <Link href="/bounty">Start one for any streamer &#8594;</Link>
@@ -240,9 +285,6 @@ function BountyBoard({ pools }: { pools: BountyPool[] }) {
               <span className="mcr-money">{formatDollars(pool.remaining)}</span>
             </Link>
           ))}
-          <div className="mcr-board-foot">
-            Back a streamer before they have a room. They claim it by going live.
-          </div>
         </>
       )}
     </aside>
@@ -253,11 +295,20 @@ export function Booth({
   initialRooms,
   initialPools,
   initialAirings = [],
+  showIntro = false,
 }: {
   initialRooms: PublicRoomCard[]
   initialPools: BountyPool[]
   initialAirings?: RecentAiring[]
+  /** First visit (no mc-intro cookie): one line on what this board is. Read
+   *  on the server so a returning visitor never sees it flash and vanish. */
+  showIntro?: boolean
 }) {
+  const [intro, setIntro] = useState(showIntro)
+  const dismissIntro = () => {
+    document.cookie = 'mc-intro=seen; path=/; max-age=31536000; samesite=lax'
+    setIntro(false)
+  }
   const [rooms, setRooms] = useState<PublicRoomCard[]>(initialRooms)
   const [pools, setPools] = useState<BountyPool[]>(initialPools)
   const [airings, setAirings] = useState<RecentAiring[]>(initialAirings)
@@ -436,6 +487,26 @@ export function Booth({
         <h1 className="sr-only">
           MegaChat rooms — {onAirCount} on air, {rooms.length} on the board
         </h1>
+
+        {/* Someone who arrived without the landing page gets the whole idea in
+            one line, in the board's own words (the empty state's), with the
+            one room they can try right now. Never on an empty board, which
+            already says the same thing. */}
+        {intro && featuredList.length ? (
+          <div className="mcr-intro">
+            <p>
+              The demo room is always open — take a seat, record a MegaChat, and watch it play back
+              on the broadcast for a fraction of a cent.
+            </p>
+            <a href="/demo">Try the demo</a>
+            <button type="button" onClick={dismissIntro} aria-label="Dismiss">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <line x1="6" y1="6" x2="18" y2="18" />
+                <line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
+            </button>
+          </div>
+        ) : null}
 
         {/* Filters moved out of the nav: the nav is where you leave this page,
             the chips are how you read it. */}

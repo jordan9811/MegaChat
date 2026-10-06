@@ -352,9 +352,93 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 .mcl-entry-card[data-tone='lime'] { --mcl-tone: var(--mcl-lime); }
 .mcl-entry-card[data-tone='pink'] { --mcl-tone: var(--mcl-pink); }
 
-.mcl-entry-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 0 44px -18px var(--mcl-tone);
+@media (hover: hover) and (pointer: fine) {
+  .mcl-entry-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 0 44px -18px var(--mcl-tone);
+  }
+}
+
+/* Each way in shows itself before it explains itself: a recording readout,
+   three seats with one open, the biggest pool on the board. Decorative —
+   the card's own words carry the meaning. */
+.mcl-vig {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 10px;
+  min-height: 34px;
+  margin-top: 28px;
+}
+
+.mcl-vig + h3 {
+  margin-top: 22px;
+}
+
+.mcl-vig-rec {
+  padding: 8px 12px;
+  border: 1px solid rgba(58, 232, 255, 0.3);
+  background: rgba(58, 232, 255, 0.06);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--mcl-fg);
+}
+
+.mcl-vig-rec i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mcl-pink);
+  box-shadow: 0 0 8px var(--mcl-pink);
+}
+
+.mcl-vig-seats {
+  gap: 6px;
+}
+
+.mcl-vig-seats span {
+  position: relative;
+  display: grid;
+  width: 46px;
+  height: 30px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(184, 255, 69, 0.45);
+  background: #13200a;
+}
+
+.mcl-vig-seats span i {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translateX(-50%);
+  border-radius: 50% 50% 0 0;
+  background: #3c5a1e;
+}
+
+.mcl-vig-seats span.is-open {
+  border-style: dashed;
+  border-color: rgba(184, 255, 69, 0.7);
+  background: transparent;
+  color: var(--mcl-lime);
+  font-weight: 700;
+}
+
+.mcl-vig-pool b {
+  color: var(--mcl-yellow);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.mcl-vig-pool small {
+  color: var(--mcl-dim);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 11px;
 }
 
 .mcl-card-top {
@@ -743,5 +827,43 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   .mcl-r3,
   .mcl-r4 {
     animation: none;
+  }
+}
+
+/* ── motion: fast out, soft landing ─────────────────────────────────── */
+.mc-landing {
+  --mcl-ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.mcl-btn-primary,
+.mcl-btn-ghost,
+.mcl-nav-cta,
+.mcl-entry-card,
+.mcl-film-ctl button,
+.mcl-bounty-poster > a,
+.mcl-create-strip > a {
+  transition-property: transform, filter, border-color, box-shadow, background-color, color;
+  transition-duration: 180ms;
+  transition-timing-function: var(--mcl-ease);
+}
+
+.mcl-btn-primary:active,
+.mcl-btn-ghost:active,
+.mcl-nav-cta:active,
+.mcl-bounty-poster > a:active,
+.mcl-create-strip > a:active,
+.mcl-film-ctl button:active {
+  transform: scale(0.97);
+}
+
+.mcl-entry-card:active {
+  transform: scale(0.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-landing *,
+  .mc-landing *::before,
+  .mc-landing *::after {
+    transition: none !important;
   }
 }

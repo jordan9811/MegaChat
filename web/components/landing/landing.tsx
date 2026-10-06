@@ -71,6 +71,7 @@ export function Landing({
   contactHref: string
 }) {
   const boardPools = [...pools].sort((a, b) => b.remaining - a.remaining).slice(0, 3)
+  const topPool = boardPools.find((p) => p.remaining > 0)
   return (
     <div className="mc-landing dark min-h-screen">
       <header className="mcl-nav">
@@ -94,6 +95,26 @@ export function Landing({
                   <Icon size={22} strokeWidth={1.8} aria-hidden="true" />
                   <span>{n}</span>
                 </span>
+                {tone === 'cyan' ? (
+                  <span className="mcl-vig mcl-vig-rec" aria-hidden="true">
+                    <i />
+                    REC 0:07 / 0:10
+                  </span>
+                ) : tone === 'lime' ? (
+                  <span className="mcl-vig mcl-vig-seats" aria-hidden="true">
+                    <span><i /></span>
+                    <span><i /></span>
+                    <span className="is-open">+</span>
+                  </span>
+                ) : topPool ? (
+                  <span className="mcl-vig mcl-vig-pool" aria-hidden="true">
+                    <b>{formatDollars(topPool.remaining)}</b>
+                    {topPool.displayOnly ? <small>example</small> : null}
+                  </span>
+                ) : (
+                  // no pool yet: an empty slot keeps the three titles level
+                  <span className="mcl-vig" aria-hidden="true" />
+                )}
                 <h3>{title}</h3>
                 <p>{body}</p>
                 <strong>{cta}<ArrowRight size={14} aria-hidden="true" /></strong>

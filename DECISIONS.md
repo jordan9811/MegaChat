@@ -1087,3 +1087,24 @@ reason than "the API is expensive".
 - **Echo reports ride the seat id, like quality reports.** A forged one costs a
   wrong line on the booth, throttled; a per-seat secret would stop it and is
   not built.
+
+## Landing and board: the round-2 layout, the owner's copy (2026-10-06)
+
+- **Layout from the round-2 mock, words unchanged.** The owner: "dont change the
+  copy, i like text that i already have but your layout changes are good." The
+  board gains the featured room's seats drawn on its stage, one price line per
+  way in (MegaChats, then live seats, with seat dots), seat dots on room cards,
+  the bounty rail's one-line explanation moved above the amounts, and a
+  first-visit line that reuses the empty board's own sentence. The landing's
+  three cards each gain a small picture of themselves (a recording readout,
+  three seats with one open, the biggest pool on the board). Undo: revert the
+  commit; `rates` in `web/lib/room-browse.ts` is the only shared change.
+- **Held back from the mock: the "who you are counts" identity strip and the
+  board's identity card.** Both are new copy, and they advertise perks (front of
+  the line, paid to watch) this tree does not clearly ship. Owner's call.
+- **The first-visit line is read from a cookie on the server** (`mc-intro`), so
+  a returning visitor never sees it flash and vanish. Dismissing sets it for a
+  year.
+- **Motion follows one curve** (`cubic-bezier(0.23, 1, 0.32, 1)`): presses
+  scale to 0.97, hover lifts only on a mouse, the board's tiles enter in a
+  short stagger, all of it off under reduced motion.

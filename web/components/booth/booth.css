@@ -20,6 +20,8 @@
   --mcb-accent: #3ae8ff;
   --mcb-live: #b8ff45;
   --mcb-queue: #ffd23d;
+  /* One curve for everything that moves: starts fast, settles softly. */
+  --mcb-ease: cubic-bezier(0.23, 1, 0.32, 1);
   background-color: var(--mcb-bg);
   background-image:
     radial-gradient(circle at 12% 0%, rgba(255, 45, 120, 0.11), transparent 31rem),
@@ -308,8 +310,10 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   box-shadow: 0 0 26px -8px var(--mcb-queue);
 }
 
-.mcr-btn:hover {
-  transform: translateY(-1px);
+@media (hover: hover) and (pointer: fine) {
+  .mcr-btn:hover {
+    transform: translateY(-1px);
+  }
 }
 
 .mcr-ghost {
@@ -878,3 +882,243 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   font-size: 11px;
 }
 
+
+/* ── first visit: the whole idea in one line ────────────────────────── */
+.mcr-intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin-bottom: 14px;
+  padding: 6px 6px 6px 14px;
+  border: 1px solid rgba(58, 232, 255, 0.22);
+  background: rgba(58, 232, 255, 0.04);
+  animation: mcr-enter 240ms var(--mcb-ease) backwards;
+}
+
+.mcr-intro p {
+  flex: 1 1 420px;
+  margin: 0;
+  padding: 6px 0;
+  color: #c9d1d9;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.mcr-intro a {
+  color: var(--mcb-accent);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.mcr-intro button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--mcb-dim);
+  cursor: pointer;
+}
+
+/* ── the featured room's prices, one line per way in ────────────────── */
+.mcr-rates {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 4px 0 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--mcb-line);
+  border-bottom: 1px solid var(--mcb-line);
+}
+
+.mcr-rates > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.mcr-rates dt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--mcb-muted);
+}
+
+.mcr-rates dd {
+  margin: 0;
+  color: var(--mcb-queue);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Seats as dots: filled = someone on camera, hollow = open. */
+.mcr-dots {
+  display: inline-flex;
+  gap: 4px;
+  vertical-align: middle;
+}
+
+.mcr-dots i {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--mcb-live);
+}
+
+.mcr-dots i.is-on {
+  background: var(--mcb-live);
+}
+
+.mcr-card .mcr-dots {
+  display: flex;
+  margin-top: 6px;
+}
+
+/* The seats as they sit on the broadcast: a column of guest frames on the
+   right of the featured stage. Taken = a guest, open = an empty frame. */
+.mcr-seats {
+  position: absolute;
+  top: 48px;
+  right: 3%;
+  bottom: 12px;
+  display: flex;
+  width: 22%;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.mcr-seat {
+  position: relative;
+  display: grid;
+  flex: 1 1 0;
+  max-height: 34%;
+  place-items: center;
+  overflow: hidden;
+  border: 1px dashed rgba(184, 255, 69, 0.45);
+  background: rgba(5, 6, 9, 0.45);
+  color: rgba(184, 255, 69, 0.85);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.mcr-seat.is-taken {
+  border: 1px solid rgba(255, 45, 120, 0.7);
+  background: #0c111a;
+}
+
+/* a guest, drawn: head and shoulders */
+.mcr-seat i::before,
+.mcr-seat i::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.mcr-seat i::before {
+  top: 22%;
+  width: 24%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #3a4658;
+}
+
+.mcr-seat i::after {
+  bottom: -22%;
+  width: 52%;
+  aspect-ratio: 1;
+  border-radius: 50% 50% 0 0;
+  background: #2a3444;
+}
+
+/* ── the bounty rail says what a bounty is before the amounts ───────── */
+.mcr-board-lead {
+  margin: 0;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--mcb-line);
+  color: var(--mcb-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.mcr-money {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── motion: fast out, soft landing, nothing that waits on you ──────── */
+.mcr-btn,
+.mcr-ghost,
+.mcr-chip,
+.mcr-more,
+.mcr-card,
+.mcr-open,
+.mcr-row,
+.mcr-intro button {
+  transition-property: transform, background-color, border-color, color, box-shadow;
+  transition-duration: 160ms;
+  transition-timing-function: var(--mcb-ease);
+}
+
+.mcr-btn:active,
+.mcr-ghost:active,
+.mcr-chip:active,
+.mcr-more:active,
+.mcr-intro button:active {
+  transform: scale(0.97);
+}
+
+.mcr-card:active,
+.mcr-open:active {
+  transform: scale(0.985);
+}
+
+@keyframes mcr-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.mcr-feat,
+.mcr-feat-pair,
+.mcr-grid > *,
+.mcr-recent-grid > *,
+.mcr-board {
+  animation: mcr-enter 360ms var(--mcb-ease) backwards;
+}
+
+.mcr-board { animation-delay: 80ms; }
+.mcr-grid > :nth-child(1), .mcr-recent-grid > :nth-child(1) { animation-delay: 60ms; }
+.mcr-grid > :nth-child(2), .mcr-recent-grid > :nth-child(2) { animation-delay: 100ms; }
+.mcr-grid > :nth-child(3), .mcr-recent-grid > :nth-child(3) { animation-delay: 140ms; }
+.mcr-grid > :nth-child(4), .mcr-recent-grid > :nth-child(4) { animation-delay: 180ms; }
+.mcr-grid > :nth-child(5), .mcr-recent-grid > :nth-child(5) { animation-delay: 220ms; }
+.mcr-grid > :nth-child(6), .mcr-recent-grid > :nth-child(6) { animation-delay: 260ms; }
+.mcr-grid > :nth-child(n + 7) { animation-delay: 300ms; }
+
+@media (hover: hover) and (pointer: fine) {
+  .mcr-intro button:hover {
+    color: var(--mcb-fg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-booth *,
+  .mc-booth *::before,
+  .mc-booth *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

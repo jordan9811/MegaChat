@@ -13,14 +13,22 @@ export function roomPresentation(room: PublicRoomCard) {
   const recording = room.letters?.enabled === true
   const full = mic && room.live >= room.maxSeats
   const liveRate = Number(room.passkeyTickPrice) / Math.max(1, room.passkeyTickSeconds)
-  const rate = recording
+  const letterRate = recording
     ? room.letters!.price == null ? liveRate : Number(room.letters!.price) / Math.max(1, room.letters!.maxSeconds)
-    : mic ? liveRate : null
+    : null
+  const rate = recording ? letterRate : mic ? liveRate : null
+  const label = (r: number) => (r === 0 ? 'Free' : `${formatDollars(r)} /second`)
+  // One line per way in, in the order the product sells them: MegaChats
+  // first, live seats second. `seats` rides along so the board can draw the
+  // room's seats (taken / total) next to the seat price.
+  const rates: { label: string; rate: string; seats?: { taken: number; total: number } }[] = []
+  if (recording && letterRate != null) rates.push({ label: 'MegaChats', rate: label(letterRate) })
+  if (mic) rates.push({ label: 'Live seats', rate: label(liveRate), seats: { taken: Math.min(room.live, room.maxSeats), total: room.maxSeats } })
   return {
-    onAir, demo, full,
+    onAir, demo, full, mic, rates,
     state: demo ? 'Demo' : onAir ? 'On air' : 'No live signal',
     action: demo ? 'Try demo' : full && onAir ? 'Join queue' : recording ? 'Record a MegaChat' : mic && onAir ? 'Take a seat' : 'Open room',
-    rate: rate == null ? 'View rates' : rate === 0 ? 'Free' : `${formatDollars(rate)} /second`,
+    rate: rate == null ? 'View rates' : label(rate),
     capabilities: [recording && 'MegaChats', mic && 'Live seats', room.rewardsEnabled && 'Drops'].filter(Boolean).join(' · ') || 'View room details',
   }
 }
