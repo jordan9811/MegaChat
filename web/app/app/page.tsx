@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 // Fonts come from the root layout — Jakarta for UI, Archivo for headlines,
 // Space Mono for readouts — so this page loads none of its own.
 export default async function Page() {
-  const [rooms, pools, airings, jar] = await Promise.all([loadInitialRooms(), loadBountyPools(), loadRecentAirings(BOARD_RECENT_CAP), cookies()])
+  const [rooms, pools, airings, jar] = await Promise.all([loadInitialRooms({ withConfig: true }), loadBountyPools(), loadRecentAirings(BOARD_RECENT_CAP), cookies()])
   return (
     <Booth
       initialRooms={rooms}

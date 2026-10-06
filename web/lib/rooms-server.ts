@@ -12,7 +12,7 @@ function backendBase(): string {
   return (process.env.BASE_URL || `http://127.0.0.1:${port}`).replace(/\/+$/, '')
 }
 
-export async function loadInitialRooms(): Promise<PublicRoomCard[]> {
+export async function loadInitialRooms({ withConfig = false } = {}): Promise<PublicRoomCard[]> {
   try {
     const res = await fetch(`${backendBase()}/api/rooms/public`, { cache: 'no-store' })
     if (!res.ok) {
@@ -20,7 +20,28 @@ export async function loadInitialRooms(): Promise<PublicRoomCard[]> {
       return []
     }
     const data = (await res.json()) as { rooms?: PublicRoomCard[] }
-    return data.rooms ?? []
+    const rooms = data.rooms ?? []
+    if (!withConfig) return rooms
+    // What a room sells (MegaChats, live seats) lives in its config, not in
+    // the public list. The board's client poll adds it (listPublicRooms), but
+    // only after its first 5s tick — so without it here the first paint says
+    // "View rates", the chips filter on nothing, and the featured card grows
+    // its price lines a beat later. Same fields the client merges.
+    return await Promise.all(
+      rooms.map(async (room) => {
+        try {
+          const r = await fetch(`${backendBase()}/api/config?room=${encodeURIComponent(room.id)}`, {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(1500),
+          })
+          if (!r.ok) return room
+          const config = (await r.json()) as Partial<PublicRoomCard>
+          return { ...room, letters: config.letters, joinStream: config.joinStream, isDemo: config.isDemo }
+        } catch {
+          return room
+        }
+      }),
+    )
   } catch (err) {
     // An empty board and a broken backend render identically, so leave a
     // breadcrumb — otherwise an outage looks exactly like a quiet night.
