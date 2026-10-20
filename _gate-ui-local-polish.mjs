@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 
@@ -21,13 +22,25 @@ check('Dollar formatting keeps whole dollars, cents, and sub-cent prices', () =>
 check('Guest names are valid, editable room handles too', () => {
   for (let i = 0; i < 100; i++) assert.match(guestName().toLowerCase(), /^[a-z0-9_]{3,20}$/);
 });
+// The display examples mirror the demo seed in bounty-routes.js (DEMO_TARGETS).
+// This gate first asked for five; e92eae7 (Sep 4) added asmongold, pokimane
+// and xqc to the seed and to the examples together ("the display examples
+// match"), and the count here was never moved. The count stays a literal, so
+// growing the list is still a deliberate edit here; the seed is read from its
+// source, so a name added to one list and not the other fails too.
+const REQUESTED_FIVE = ['twitch:threadguy', 'kick:chessbrah', 'x:martinshkreli', 'x:rasmr', 'pumpfun:GnBQjwQibzB9zFPHEGEhoiASon7JfaRADxQe6C64pump'];
+const seedList = fs.readFileSync(new URL('./bounty-routes.js', import.meta.url), 'utf8').match(/const DEMO_TARGETS = \[([\s\S]*?)\];/);
+assert.ok(seedList, 'DEMO_TARGETS not found in bounty-routes.js');
+const SEEDED = [...seedList[1].matchAll(/platform: '([^']+)', handle: '([^']+)'/g)].map(([, platform, handle]) => `${platform}:${platform === 'pumpfun' ? handle : handle.toLowerCase()}`);
 const examples = withBountyExamples([]);
-check('All five requested examples exist without fake ledger contributions', () => {
-  assert.equal(examples.length, 5);
+check('All eight seeded examples exist (the five requested plus the three added with the seed) without fake ledger contributions', () => {
+  assert.equal(examples.length, 8);
+  for (const key of REQUESTED_FIVE) assert.ok(examples.some((p) => p.handleKey === key), `requested example ${key} is missing`);
+  assert.deepEqual(examples.map((p) => p.handleKey).sort(), [...SEEDED].sort(), 'display examples and the demo seed list different names');
   for (const p of examples) { assert.equal(p.remaining, 200); assert.equal(p.guaranteed, 100); assert.equal(p.contestedTotal, 100); assert.equal(p.totalContributed, 0); assert.equal(p.contributionCount, 0); assert.equal(p.displayOnly, true); }
-  assert.deepEqual(exampleTotals(examples), { unique: 600, visible: 1000, count: 5 });
+  assert.deepEqual(exampleTotals(examples), { unique: 900, visible: 1600, count: 8 });
 });
-check('One shared contested pledge, not five separate hundreds', () => {
+check('One shared contested pledge, not eight separate hundreds', () => {
   assert.equal(new Set(examples.flatMap((p) => p.contested.map((c) => c.pledgeId))).size, 1);
 });
 check('Funded and expired real pools replace examples without mutations', () => {
@@ -46,7 +59,7 @@ check('Example merge is idempotent and preserves pump.fun address case', () => {
 const room = { id: 'gate', live: 0, twitchLive: false, maxSeats: 3, passkeyTickPrice: '0.001', passkeyTickSeconds: 1, rewardsEnabled: false, letters: { enabled: true, price: '0.01', maxSeconds: 10 }, joinStream: { enabled: false } };
 check('Offline recording-only rooms never advertise open live seats', () => {
   const view = roomPresentation(room);
-  assert.equal(view.state, 'No live signal'); assert.equal(view.action, 'Record a MegaChat'); assert.equal(view.rate, '$0.001 /second'); assert.equal(view.capabilities, 'MegaChats');
+  assert.equal(view.state, 'No live signal'); assert.equal(view.action, 'Record a Holler'); assert.equal(view.rate, '$0.001 /second'); assert.equal(view.capabilities, 'Hollers');
 });
 check('Live seat, full queue, and demo actions follow capabilities', () => {
   const live = { ...room, live: 1, letters: { enabled: false }, joinStream: { enabled: true } };
