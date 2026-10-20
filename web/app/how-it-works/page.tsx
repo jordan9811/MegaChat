@@ -19,11 +19,13 @@ import { contactUrl } from '@/components/site-footer'
 import { docsUrl } from '@/lib/docs-url.mjs'
 import './how-it-works.css'
 import { BrandText } from '@/components/brand-text'
+import { FeatureTag, type FeatureKind } from '@/components/feature-tag'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 export const metadata: Metadata = {
-  title: 'How it works — MegaChat',
+  title: 'How it works — Holler',
   description:
-    'Record a MegaChat or join a live broadcast on camera. Learn how to join, create a room, and manage your settings.',
+    'Record a Holler or join a live broadcast on camera. Learn how to join, create a room, and manage your settings.',
 }
 
 // One UI face across the app, loaded per route — there is no site-wide
@@ -34,11 +36,12 @@ const ui = Plus_Jakarta_Sans({
   variable: '--font-ui',
 })
 
-const VIEWER_STEPS = [
+const VIEWER_STEPS: Step[] = [
   {
     icon: Compass,
     title: 'Find a room',
     body: 'Browse Rooms or follow a streamer\'s link. Check the price and which features are enabled before you join.',
+    tags: ['holler', 'callin', 'rewards'],
   },
   {
     icon: Fingerprint,
@@ -50,9 +53,10 @@ const VIEWER_STEPS = [
   {
     icon: KeyRound,
     title: 'Record or take a live seat',
-    body: 'MegaChats have a clip total you review before sending. For a live seat, approve a maximum spend first; the meter charges only while you are on camera.',
+    body: 'Hollers have a clip total you review before sending. For a live seat, approve a maximum spend first; the meter charges only while you are on camera.',
     simpleBody:
-      'MegaChats have a clip total you review before sending. For a live seat, approve a maximum spend first; the meter charges only while you are on camera.',
+      'Hollers have a clip total you review before sending. For a live seat, approve a maximum spend first; the meter charges only while you are on camera.',
+    tags: ['holler', 'callin'],
   },
   {
     icon: Camera,
@@ -62,7 +66,7 @@ const VIEWER_STEPS = [
   {
     icon: Radio,
     title: 'You are the stream',
-    body: 'Your MegaChat plays after screening and any streamer approval. A live seat puts you on camera beside the streamer, with the meter running only while you are live.',
+    body: 'Your Holler plays after screening and any streamer approval. A live seat puts you on camera beside the streamer, with the meter running only while you are live.',
   },
   {
     icon: LogOut,
@@ -73,7 +77,7 @@ const VIEWER_STEPS = [
   },
 ]
 
-const STREAMER_STEPS = [
+const STREAMER_STEPS: Step[] = [
   {
     icon: LayoutDashboard,
     title: 'Create your room',
@@ -82,9 +86,10 @@ const STREAMER_STEPS = [
   {
     icon: SlidersHorizontal,
     title: 'Set your rates',
-    body: 'MegaChats start enabled and paid. Set the rate and clip length; the form shows the total. Open mic and drops are optional. Live seats have their own rate and spend cap.',
+    body: 'Hollers start enabled and paid. Set the rate and clip length; the form shows the total. Call in and Rewards are optional. Call in has its own rate and spend cap.',
     simpleBody:
-      'MegaChats start enabled and paid. Set the rate and clip length; the form shows the total. Open mic and drops are optional. Live seats have their own rate and spend cap.',
+      'Hollers start enabled and paid. Set the rate and clip length; the form shows the total. Call in and Rewards are optional. Call in has its own rate and spend cap.',
+    tags: ['holler', 'callin', 'rewards'],
   },
   {
     icon: MonitorPlay,
@@ -103,10 +108,11 @@ const STREAMER_STEPS = [
   },
   {
     icon: Sparkles,
-    title: 'Optional: watch-to-earn drops',
+    title: 'Optional: watch-to-earn rewards',
     body: 'Enable rewards if you want to pay viewers to watch. Choose the reward, earning rate, and cap before turning it on.',
     simpleBody:
       'Flip on rewards and viewers earn credit toward their first seat just by watching. Fund the pool, set the drip rate and cap — it feeds joins, not chat.',
+    tags: ['rewards'],
   },
 ]
 
@@ -117,7 +123,7 @@ const FAQ = [
   },
   {
     q: 'How much does it cost to be on stream?',
-    a: 'The room sets the price. The default live-seat rate is $0.001 per second with a $2 spend limit. MegaChats show a separate clip total before you send. Free rooms are marked as free.',
+    a: 'The room sets the price. The default live-seat rate is $0.001 per second with a $2 spend limit. Hollers show a separate clip total before you send. Free rooms are marked as free.',
   },
   {
     q: 'What happens if I close the tab?',
@@ -155,6 +161,8 @@ type Step = {
   title: string
   body: string
   simpleBody?: string
+  // the features this step is about, shown as FeatureTags over its body
+  tags?: FeatureKind[]
 }
 
 function FlowColumn({
@@ -174,7 +182,12 @@ function FlowColumn({
         <li key={s.title}>
           <span>{String(i + 1).padStart(2, '0')}</span>
           <s.icon className="mch-step-icon" />
-          <div><h3>{s.title}</h3><p>
+          <div><h3>{s.title}</h3>{s.tags ? (
+            // spans, not li: .mch-flow li is the step's own grid row
+            <span className="mch-step-tags">
+              {s.tags.map((k) => <FeatureTag key={k} kind={k} />)}
+            </span>
+          ) : null}<p>
             {s.simpleBody ? (
               <>
                 <span className="adv-only">{s.body}</span>
@@ -194,7 +207,7 @@ function FlowColumn({
 export default function HowItWorksPage() {
   const contactHref = contactUrl()
   return (
-    <div className={`mc-how dark min-h-screen ${ui.variable}`}>
+    <div className={`mc-how min-h-screen ${ui.variable}`}>
       <header className="mch-product-header">
         <div>
           <span className="mch-product-brand">
@@ -210,6 +223,7 @@ export default function HowItWorksPage() {
           </nav>
           <span className="mch-product-actions">
             <a href="/dashboard">Create room</a>
+            <ThemeToggle />
             <AccountChip accent="var(--mcc-accent)" />
           </span>
         </div>
@@ -218,8 +232,13 @@ export default function HowItWorksPage() {
       <main className="mch-main">
         <section className="mch-hero">
           <span className="mch-coordinate">The full signal path</span>
-          <h1>How MegaChat works</h1>
-          <p>Viewers can send a recorded MegaChat or take a live camera seat. Streamers control the room from one dashboard and one OBS source.</p>
+          <h1>How Holler works</h1>
+          <p>Viewers can send a recorded Holler or take a live camera seat. Streamers control the room from one dashboard and one OBS source.</p>
+          <ul className="mch-hero-tags" aria-label="Features">
+            {(['holler', 'callin', 'bounty', 'rewards'] as const).map((k) => (
+              <li key={k}><FeatureTag kind={k} size="md" /></li>
+            ))}
+          </ul>
         </section>
 
         <section className="mch-tree-section">
@@ -237,6 +256,7 @@ export default function HowItWorksPage() {
             <span className="mch-coordinate">Result</span>
             <h2>A camera seat on the broadcast.</h2>
             <p>Real-time between viewer and streamer. Public stream timing remains unchanged.</p>
+            <FeatureTag kind="callin" size="md" />
           </div>
         </section>
 

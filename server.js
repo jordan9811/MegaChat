@@ -2117,7 +2117,7 @@ app.post('/api/join/passkey', async (req, res) => {
       return res.status(403).json({
         error: 'Join Stream is disabled in this room',
         reason: 'feature_disabled',
-        hint: cfg.letters.enabled ? 'This room takes MegaChats only — send one instead.' : undefined,
+        hint: cfg.letters.enabled ? 'This room takes Hollers only — send one instead.' : undefined,
       });
     }
     {
@@ -2502,7 +2502,7 @@ app.post('/api/join/mpp', async (req, res) => {
       return res.status(403).json({
         error: 'Join Stream is disabled in this room',
         reason: 'feature_disabled',
-        hint: cfg.letters.enabled ? 'This room takes MegaChats only — send one instead.' : undefined,
+        hint: cfg.letters.enabled ? 'This room takes Hollers only — send one instead.' : undefined,
       });
     }
     {
@@ -3511,13 +3511,13 @@ try {
   const existing = getRoomByHandle('demo');
   if (existing) {
     // Reset the demo back to its canonical config on every deploy.
-    updateRoom(existing.id, { name: 'MegaChat Demo — try everything for pennies', config: DEMO_CONFIG });
+    updateRoom(existing.id, { name: 'Holler Demo — try everything for pennies', config: DEMO_CONFIG });
     console.log(`[demo] refreshed demo room ${existing.id} at /demo`);
   } else {
     const demoPassword = process.env.DEMO_ROOM_PASSWORD
       || Buffer.from(crypto.getRandomValues(new Uint8Array(12))).toString('base64url');
     const room = await createRoomWithPassword(
-      'MegaChat Demo — try everything for pennies', DEMO_CONFIG, demoPassword,
+      'Holler Demo — try everything for pennies', DEMO_CONFIG, demoPassword,
     );
     setRoomHandle(room.id, 'demo');
     console.log(

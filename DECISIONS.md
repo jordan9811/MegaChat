@@ -1108,3 +1108,33 @@ reason than "the API is expensive".
 - **Motion follows one curve** (`cubic-bezier(0.23, 1, 0.32, 1)`): presses
   scale to 0.97, hover lifts only on a mouse, the board's tiles enter in a
   short stagger, all of it off under reduced motion.
+
+## MegaChat becomes Holler: the mark, feature colours, light mode (2026-10-20)
+
+- **The mark is the owner's pick: HOLLER in a slanted violet strap, the O a red
+  record button** (ring above 24px, solid dot below). Spec in
+  `design-assets/holler-brand/SPEC.md`; the component is
+  `web/components/holler-mark.tsx`. Undo: point `brand-text.tsx` back at the
+  old wordmark.
+- **One colour per feature, from the owner:** red = Holler (a recorded clip),
+  purple = Call in (a camera seat), yellow `#cfe83a` = Bounty, green
+  `#00ffc3` = Rewards. Tags (`feature-tag.tsx`) mark what a room has on the
+  board, the create page and the landing cards; the landing's three cards wear
+  their own feature's colour instead of the generic pink/cyan/lime.
+- **Tokens depart from SPEC.md for contrast, on purpose.** Light-mode text inks
+  are a shade deeper (`--f-holler-ink` `#b5170f`, `--f-rewards-ink` `#007054`)
+  so tag labels clear 4.5:1, and filled buttons that carry text use the new
+  `--f-x-solid` fills, since white on `#ff3b30` is 3.6:1. Do not "restore" the
+  spec values from SPEC.md; `globals.css` is the record.
+- **Light mode follows the system by default** (next-themes, `class`), with a
+  toggle in every header. Stream stages and thumbnails stay dark in light mode.
+- **Only visible words change.** Routes, API paths, storage keys, class
+  prefixes, and the megachat.fun domain stay. The demo room is renamed
+  ("Holler Demo — try everything for pennies") and two server hints now say
+  Hollers; none of the three is matched by a gate.
+- **Left as "MegaChat", deliberately:** the OBS source name "MegaChat Overlay"
+  (an identifier in every existing streamer's OBS and in four gates; renaming
+  it orphans their sources), the roadmap's history entries, and the legacy page.
+- **The mark's O is an empty span, so its text reads "HLLER".** Screen readers
+  get "Holler" from `aria-label`; a gate that scrapes innerText for /Holler/
+  must look past the header mark.

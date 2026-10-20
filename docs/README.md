@@ -9,6 +9,8 @@ There are two ways to be on the stream:
 
 And one way to get a streamer's attention before they have ever heard of you: a **bounty**, money pooled by fans that a streamer can claim by going live with the MegaChat program on. Bounties exist in the tree as a complete state machine over an append-only ledger; **settlement is a stub and no funds move through it.** Source: `bounty-escrow.js`, `bounty-settlement.js` (`StubSettlement`), and Gate H in `_gate-bounty-claim.mjs`.
 
+**On the site the product is called Holler**, since the 2026-10-20 rebrand, and so is a recorded clip; the live seat is *Call in* and watch-to-earn is *Rewards*. Only what users read changed: routes, API paths, data keys and the megachat.fun domain did not, and these pages keep the code's names. The [glossary](glossary.md) maps one to the other (`web/components/feature-tag.tsx`, `FEATURE_LABELS`).
+
 {% hint style="warning" %}
 **Pre-launch.** MegaChat is deployed but in stealth: there are no users, and every session so far has been a rehearsal or a test gate. Money paths have been verified against fixtures, local infrastructure and a small number of real broadcasts by the project's own operator — not production traffic. Nothing in these pages describes production history. Source: `docs/internal/launch-readiness.md`.
 {% endhint %}

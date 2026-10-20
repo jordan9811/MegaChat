@@ -4,7 +4,7 @@ import { PageMockSuite } from '@/components/design-system/page-mock-suite'
 import './page-mocks.css'
 
 export const metadata: Metadata = {
-  title: 'MegaChat page mock suite',
+  title: 'Holler page mock suite',
   robots: { index: false, follow: false },
 }
 

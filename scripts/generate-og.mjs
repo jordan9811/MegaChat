@@ -1,72 +1,84 @@
-// Generate the social-share OG image (1200x630) — mic + wordmark centered,
-// correct landscape aspect — and save it to web/public/og.png.
-// The old og:image was the 697x985 PORTRAIT hero PNG, which every link
-// preview cropped badly. Re-run whenever the brand look changes:
+// Generate the Holler brand rasters and save them to web/public/:
+//   og.png          1200x630 social card — the full mark, large, on the night
+//                   ground with the tagline in Archivo
+//   apple-icon.png  180x180 home-screen icon — the "icon" mark (strap fragment
+//                   "H◉"), full-bleed square (iOS rounds the corners itself)
+// The mark is drawn with the SAME .hm CSS the site uses (read out of
+// web/app/globals.css), so the rasters cannot drift from the component.
+// Re-run whenever the brand look changes:
 //   node scripts/generate-og.mjs
 import puppeteer from 'puppeteer-core';
 import { readFileSync } from 'fs';
 
-const mic = readFileSync('web/public/megachat-hero-mic.png').toString('base64');
+const globals = readFileSync('web/app/globals.css', 'utf8');
+const start = globals.indexOf('/* ── Holler mark');
+const end = globals.indexOf('/* ── Feature tags');
+if (start < 0 || end < start) throw new Error('could not find the Holler mark section in web/app/globals.css');
+const markCss = globals.slice(start, end);
 
-const html = `<!doctype html><html><head>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&family=Pacifico&display=swap" rel="stylesheet">
-<style>
+const FONTS = 'https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=block';
+const base = `
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --font-display: 'Archivo';
+    --font-ui: 'Archivo';
+    --hl-strap: #6d28d9;
+    --hl-record: #ff3b30;
+    --hl-mark-glow: drop-shadow(0 0 18px color-mix(in srgb, #6d28d9 45%, transparent));
+  }
+  ${markCss}
+`;
+const mark = (variant) => `<span class="hm hm--${variant}" role="img" aria-label="Holler"><span class="hm-strap"><span class="hm-l">H</span><span class="hm-o"></span>${variant === 'icon' ? '' : '<span class="hm-l">LLER</span>'}</span></span>`;
+
+const og = `<!doctype html><html><head><meta charset="utf-8">
+<link href="${FONTS}" rel="stylesheet">
+<style>${base}
   body {
     width: 1200px; height: 630px; overflow: hidden;
     background:
-      radial-gradient(560px 560px at 78% 52%, oklch(0.68 0.27 340 / 0.28), transparent 70%),
-      radial-gradient(420px 420px at 12% 8%, oklch(0.8 0.14 200 / 0.14), transparent 70%),
-      #1a1029;
-    display: flex; align-items: center;
-    font-family: 'Space Grotesk', sans-serif;
+      radial-gradient(620px 360px at 50% 44%, rgba(109, 40, 217, 0.30), transparent 70%),
+      radial-gradient(420px 260px at 50% 46%, rgba(255, 59, 48, 0.08), transparent 70%),
+      linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px) 0 0 / 48px 48px,
+      linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px) 0 0 / 48px 48px,
+      #0a0812;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 46px;
+    font-family: 'Archivo', sans-serif;
   }
-  .copy { flex: 1 1 56%; padding-left: 84px; }
-  .mark {
-    font-size: 118px; font-weight: 700; letter-spacing: -0.02em;
-    background: linear-gradient(180deg, oklch(0.82 0.16 350) 0%, oklch(0.6 0.24 320) 55%, oklch(0.52 0.24 295) 100%);
-    -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent;
-    -webkit-text-stroke: 3px #f7f2fc;
-    paint-order: stroke fill;
-    filter: drop-shadow(0 0 26px oklch(0.68 0.27 340 / 0.55));
-  }
+  .hm.hm { font-size: 150px; filter: drop-shadow(0 0 42px rgba(109, 40, 217, 0.55)); }
   .tag {
-    font-family: 'Pacifico', cursive;
-    font-size: 52px; line-height: 1.35; color: #f4f2fa;
-    transform: rotate(-3deg); transform-origin: left center;
-    margin-top: 30px;
-    text-shadow: 0 0 22px oklch(0.8 0.14 200 / 0.5);
+    color: #f5f3fa; font-size: 58px; font-weight: 800; font-stretch: 112%;
+    font-variation-settings: 'wdth' 112; letter-spacing: -0.01em; line-height: 1;
   }
-  .eq {
-    margin-top: 44px; font-size: 25px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.08em; color: rgba(244,242,250,0.72);
-  }
-  .eq .op { color: oklch(0.8 0.14 200); }
-  .eq .mc { color: oklch(0.88 0.22 128); text-shadow: 0 0 14px oklch(0.88 0.22 128 / 0.5); }
-  .art { flex: 1 1 44%; height: 100%; display: flex; align-items: center; justify-content: center; }
-  /* the mic canvas carries transparent right-padding — same +4.5% mass
-     correction the landing hero uses (measured via _diag-mic-bbox.mjs) */
-  .art img { height: 560px; translate: 4.5% 0; filter: drop-shadow(0 0 60px oklch(0.68 0.27 340 / 0.4)); }
 </style></head><body>
-  <div class="copy">
-    <div class="mark">MegaChat</div>
-    <div class="tag">Skip the chat.<br>Be the stream.</div>
-    <div class="eq">Call-in show <span class="op">+</span> FaceTime <span class="op">+</span> Superchat <span class="op">=</span> <span class="mc">MegaChat</span></div>
-  </div>
-  <div class="art"><img src="data:image/png;base64,${mic}"></div>
+  ${mark('full')}
+  <div class="tag">Skip the chat. Be the stream.</div>
 </body></html>`;
+
+const appleIcon = `<!doctype html><html><head><meta charset="utf-8">
+<link href="${FONTS}" rel="stylesheet">
+<style>${base}
+  body { width: 180px; height: 180px; overflow: hidden; background: #0a0812; position: relative; }
+  /* the strap bleeds off the left edge, the same cut as web/public/icon.svg */
+  .hm.hm { position: absolute; left: 0; top: 50%; transform: translateY(-50%); font-size: 66px; }
+  .hm .hm-strap { padding-left: 0.3em; }
+</style></head><body>${mark('icon')}</body></html>`;
 
 const browser = await puppeteer.launch({
   executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
   headless: 'new',
 });
-const page = await browser.newPage();
-await page.setViewport({ width: 1200, height: 630, deviceScaleFactor: 1 });
-await page.setContent(html, { waitUntil: 'networkidle0' });
-await page.evaluate(() => document.fonts.ready);
-await new Promise((r) => setTimeout(r, 400));
-await page.screenshot({ path: 'web/public/og.png', clip: { x: 0, y: 0, width: 1200, height: 630 } });
+async function render(html, width, height, path) {
+  const page = await browser.newPage();
+  await page.setViewport({ width, height, deviceScaleFactor: 1 });
+  await page.setContent(html, { waitUntil: 'networkidle0' });
+  await page.evaluate(() => document.fonts.ready);
+  const ok = await page.evaluate(() => document.fonts.check('900 1em Archivo'));
+  if (!ok) throw new Error('Archivo did not load — check the network, then re-run');
+  await new Promise((r) => setTimeout(r, 300));
+  await page.screenshot({ path, clip: { x: 0, y: 0, width, height } });
+  await page.close();
+  console.log(`wrote ${path} (${width}x${height})`);
+}
+await render(og, 1200, 630, 'web/public/og.png');
+await render(appleIcon, 180, 180, 'web/public/apple-icon.png');
 await browser.close();
-console.log('wrote web/public/og.png (1200x630)');

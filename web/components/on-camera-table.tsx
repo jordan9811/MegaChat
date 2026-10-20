@@ -44,13 +44,13 @@ export function OnCameraTable() {
         icon={<Video className="size-5" />}
         title="On camera"
         description="Viewers currently paying to be on stream."
-        accent="cyan"
+        accent="callin"
         action={
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-input/30 px-3 py-1 text-xs font-medium text-foreground">
             <Circle
               className={
                 liveCount > 0
-                  ? 'size-2 animate-neon-pulse fill-[var(--neon-magenta)] text-[var(--neon-magenta)]'
+                  ? 'size-2 animate-neon-pulse fill-hl-record text-hl-record'
                   : 'size-2 fill-muted-foreground/40 text-muted-foreground/40'
               }
             />
@@ -63,7 +63,9 @@ export function OnCameraTable() {
           No one on camera yet. Share your viewer link to fill the seats.
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        // relative: the sr-only "Actions" header is absolutely positioned; without a
+        // positioned ancestor it escapes this scroller and widens the whole page on a phone.
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[600px] text-sm">
             <thead>
               <tr className="border-b border-border/70 text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -93,7 +95,7 @@ export function OnCameraTable() {
                   <td className="px-3 py-3 font-mono text-foreground/90">
                     {elapsedSince(s.liveAt, now)}
                   </td>
-                  <td className="px-3 py-3 font-mono text-foreground/90">
+                  <td className="px-3 py-3 font-mono text-f-bounty-ink">
                     {s.spent} {tokenSymbol}
                   </td>
                   <td className="px-3 py-3">
@@ -101,7 +103,7 @@ export function OnCameraTable() {
                     {s.quality === 'poor' ? (
                       <span
                         title="Weak connection (LiveKit link quality)"
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[oklch(0.63_0.24_25)]"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-f-holler-ink"
                       >
                         <WifiOff className="size-3.5 animate-neon-pulse" />
                         Poor
@@ -109,7 +111,7 @@ export function OnCameraTable() {
                     ) : s.quality === 'unstable' ? (
                       <span
                         title={s.connected ? 'Reconnected after a recent drop' : 'Connection lost — reconnect grace running'}
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[oklch(0.82_0.16_80)]"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-f-bounty-ink"
                       >
                         {s.connected ? (
                           <Wifi className="size-3.5 animate-neon-pulse" />
@@ -121,7 +123,7 @@ export function OnCameraTable() {
                     ) : s.quality === 'good' ? (
                       <span
                         title="Connection healthy"
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--neon-lime)]"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-f-rewards-ink"
                       >
                         <Wifi className="size-3.5" />
                         Good
@@ -132,13 +134,13 @@ export function OnCameraTable() {
                   </td>
                   <td className="px-3 py-3">
                     {s.pinned ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--neon-lime)]/15 px-2.5 py-1 text-xs font-semibold text-[var(--neon-lime)]">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-f-callin-line bg-f-callin-bg px-2.5 py-1 text-xs font-semibold text-f-callin-ink">
                         <Pin className="size-3" />
                         PINNED / CO-HOST
                       </span>
                     ) : s.live ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--neon-magenta)]/15 px-2.5 py-1 text-xs font-semibold text-[var(--neon-magenta)]">
-                        <span className="size-1.5 rounded-full bg-[var(--neon-magenta)]" />
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-f-holler-solid px-2.5 py-1 text-xs font-semibold text-f-holler-on">
+                        <span className="size-1.5 rounded-full bg-f-holler-on" />
                         Live
                       </span>
                     ) : (
@@ -156,8 +158,8 @@ export function OnCameraTable() {
                         title={s.pinned ? 'Unpin (resume metering)' : 'Pin as free co-host (pause meter)'}
                         className={
                           s.pinned
-                            ? 'inline-flex size-7 items-center justify-center rounded-md border border-[var(--neon-lime)]/60 bg-[var(--neon-lime)]/15 text-[var(--neon-lime)] transition-colors hover:bg-[var(--neon-lime)]/25'
-                            : 'inline-flex size-7 items-center justify-center rounded-md border border-border bg-input/30 text-muted-foreground transition-colors hover:border-[var(--neon-lime)]/60 hover:text-[var(--neon-lime)]'
+                            ? 'inline-flex size-7 items-center justify-center rounded-md border border-f-callin-line bg-f-callin-bg text-f-callin-ink transition-colors hover:bg-f-callin/25'
+                            : 'inline-flex size-7 items-center justify-center rounded-md border border-border bg-input/30 text-muted-foreground transition-colors hover:border-f-callin-line hover:text-f-callin-ink'
                         }
                       >
                         {s.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
@@ -167,7 +169,7 @@ export function OnCameraTable() {
                         onClick={() => void kick(s.id)}
                         aria-label={`Kick ${s.username}`}
                         title="Kick"
-                        className="inline-flex size-7 items-center justify-center rounded-md border border-border bg-input/30 text-muted-foreground transition-colors hover:border-[var(--neon-magenta)]/60 hover:text-[var(--neon-magenta)]"
+                        className="inline-flex size-7 items-center justify-center rounded-md border border-border bg-input/30 text-muted-foreground transition-colors hover:border-f-holler-line hover:text-f-holler-ink"
                       >
                         <X className="size-3.5" />
                       </button>

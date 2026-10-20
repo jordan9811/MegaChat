@@ -27,8 +27,8 @@ export function BountyClient() {
       <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 px-6 py-12 text-center">
         <h1 className="font-heading text-2xl font-bold text-foreground">Creator bounties</h1>
         <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-          Not available yet. Recorded MegaChats will be able to stack up against a
-          streamer who isn&apos;t on MegaChat, and pay out when they claim their handle
+          Not available yet. Recorded Hollers will be able to stack up against a
+          streamer who isn&apos;t on Holler, and pay out when they claim their handle
           and play them on stream.
         </p>
       </div>
@@ -38,19 +38,19 @@ export function BountyClient() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <span className="text-xs font-bold uppercase tracking-widest text-[var(--neon-lime)]">
+        <span className="text-xs font-bold uppercase tracking-widest text-f-bounty-ink">
           Creator bounty
         </span>
         <h1 className="mt-1 font-heading text-3xl font-bold text-foreground">
-          MegaChats waiting for their streamer
+          Hollers waiting for their streamer
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          Fans record MegaChats for streamers who aren&apos;t here yet. Those stack up
+          Fans record Hollers for streamers who aren&apos;t here yet. Those stack up
           against the streamer&apos;s handle. Claim yours, play them on your broadcast,
-          and the pool pays out per verified on-air minute — MegaChat matches part of it.
+          and the pool pays out per verified on-air minute — Holler matches part of it.
         </p>
-        <p className="mt-2 max-w-2xl rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--neon-amber)]/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-          <strong className="text-[var(--neon-amber)]">Preview build.</strong> Escrow is
+        <p className="mt-2 max-w-2xl rounded-lg border border-f-bounty-line bg-f-bounty-bg px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+          <strong className="text-f-bounty-ink">Preview build.</strong> Escrow is
           tracked as a ledger and settlement is not connected — no funds move yet.
         </p>
       </div>

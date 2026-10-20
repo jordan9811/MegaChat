@@ -203,7 +203,7 @@ try {
   ok('R1 ?replay= plays the broadcast\'s recording ON the page, 20s before its MegaChat',
     !!s.iframe && s.iframe.startsWith('https://player.twitch.tv/?') && s.iframe.includes(want1) && s.iframe.includes(`time=${t1}`) && s.iframe.includes('parent=localhost'),
     `${s.iframe} (want ${want1}, time=${t1})`);
-  ok('R1 ...and says what it is', /Replay/.test(s.label) && /20s before MegaChat · viv/.test(s.label), s.label);
+  ok('R1 ...and says what it is', /Replay/.test(s.label) && /20s before Holler · viv/.test(s.label), s.label);
   ok('R2 a button for every moment', s.moments && s.buttons.length === 3, JSON.stringify(s.buttons));
   await page.evaluate(() => [...document.querySelectorAll('#streamReplayMoments button')].find((b) => /amy/.test(b.textContent)).click());
   s = await state(page);

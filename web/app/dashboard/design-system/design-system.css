@@ -3,8 +3,16 @@
   box-sizing: border-box;
 }
 
+/* UI direction lab (internal, /dashboard/design-system). Holler rebrand
+   (design-assets/holler-brand/SPEC.md §3): every colour is a Holler token, so
+   the lab follows the light/dark theme like the real pages, and the three
+   directions now differ in surface depth, rules and radii, not in hue.
+   Colour by meaning: strap violet is action and navigation, the record red
+   is on air, money is bounty yellow, and a module wears its own feature
+   colour (holler / call in / rewards) when it is switched on. */
+
 html:has(.design-lab-page) {
-  scrollbar-color: #347995 #071219;
+  scrollbar-color: var(--hl-dim) var(--hl-bg);
 }
 
 html:has(.design-lab-page)::-webkit-scrollbar,
@@ -15,20 +23,20 @@ html:has(.design-lab-page) *::-webkit-scrollbar {
 
 html:has(.design-lab-page)::-webkit-scrollbar-track,
 html:has(.design-lab-page) *::-webkit-scrollbar-track {
-  background: #071219;
+  background: var(--hl-bg);
 }
 
 html:has(.design-lab-page)::-webkit-scrollbar-thumb,
 html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
-  border: 2px solid #071219;
-  background: #347995;
+  border: 2px solid var(--hl-bg);
+  background: var(--hl-dim);
 }
 
 .design-lab-page {
   min-height: 100vh;
   margin: 0;
-  background: #050a0e;
-  color: #edf7fa;
+  background: var(--hl-bg);
+  color: var(--hl-fg);
   font-family: var(--font-ui), sans-serif;
 }
 
@@ -46,97 +54,85 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   outline-offset: 2px;
 }
 
+/* The lab's scoped names, pointing at the theme tokens. They are redeclared
+   on any .dark wrapper inside (the preview stage) so that surface recomputes
+   them from the dark tokens instead of inheriting the page's light values. */
+.lab,
+.lab .dark {
+  --lab-page: var(--hl-bg);
+  --lab-page-glow: color-mix(in srgb, var(--hl-strap) 16%, transparent);
+  --lab-shell: var(--hl-panel);
+  --lab-panel: var(--hl-panel-2);
+  --lab-panel-2: color-mix(in srgb, var(--hl-fg) 6%, var(--hl-panel-2));
+  --lab-sunk: var(--hl-bg);
+  --lab-line: var(--hl-line);
+  --lab-line-strong: var(--hl-line-2);
+  --lab-text: var(--hl-fg);
+  --lab-muted: var(--hl-muted);
+  --lab-faint: var(--hl-dim);
+  --lab-header: var(--hl-bar);
+  --lab-header-text: var(--hl-fg);
+  --lab-header-muted: var(--hl-muted);
+  /* action: -primary is read (text, icons, rules), -primary-fill carries
+     white text. strap-hi alone is 4.4:1 on panel-2 in dark, hence the lift. */
+  --lab-primary: color-mix(in srgb, var(--hl-strap-hi) 72%, var(--hl-fg));
+  --lab-primary-fill: var(--hl-strap);
+  --lab-primary-hi: var(--hl-strap-hover);
+  --lab-primary-ink: var(--primary-foreground);
+  --lab-focus: var(--hl-strap-hi);
+  /* money: bounty yellow. The yellow hue is near-white on a light ground,
+     so in light every yellow mark also carries a hairline in the bounty ink. */
+  --lab-money: var(--f-bounty-ink);
+  --lab-money-fill: var(--f-bounty);
+  --lab-money-edge: transparent;
+  --lab-money-gap: color-mix(in srgb, var(--f-bounty) 26%, var(--hl-bg));
+  /* on air: the record red is the light itself, its text is the holler ink */
+  --lab-live: var(--hl-record);
+  --lab-live-ink: var(--f-holler-ink);
+  --lab-danger: var(--f-holler-ink);
+  --lab-warn: var(--f-holler-ink);
+  --preview-text: var(--hl-fg);
+  --preview-muted: var(--hl-muted);
+  --preview-line: var(--hl-line);
+}
+
 .lab {
-  --lab-page: #07151c;
-  --lab-page-glow: rgba(105, 202, 234, 0.16);
-  --lab-shell: #0e2832;
-  --lab-panel: #153540;
-  --lab-panel-2: #1b414e;
-  --lab-sunk: #0a1e26;
-  --lab-line: rgba(199, 231, 239, 0.17);
-  --lab-line-strong: rgba(199, 231, 239, 0.3);
-  --lab-text: #eff8fa;
-  --lab-text-soft: #c4d8df;
-  --lab-muted: #91adb7;
-  --lab-faint: #86a4ad;
-  --lab-header: #081219;
-  --lab-header-text: #eff8fa;
-  --lab-primary: #76c8f1;
-  --lab-primary-hi: #a7ddf7;
-  --lab-primary-ink: #07161e;
-  --lab-focus: #a7ddf7;
-  --lab-money: #ffd45a;
-  --lab-money-fill: #ffd45a;
-  --lab-live: #61e5ad;
-  --lab-danger: #ff6b7a;
-  --lab-record: #ff5480;
   --lab-radius-sm: 4px;
   --lab-radius: 8px;
   --lab-radius-lg: 12px;
   min-height: 100vh;
   background:
     radial-gradient(circle at 78% 4%, var(--lab-page-glow), transparent 34%),
-    linear-gradient(180deg, color-mix(in srgb, var(--lab-page) 92%, #122b39), var(--lab-page) 620px);
+    linear-gradient(180deg, color-mix(in srgb, var(--lab-page) 92%, var(--hl-strap)), var(--lab-page) 620px);
   color: var(--lab-text);
   transition: background-color 180ms ease, color 180ms ease;
 }
 
+/* Broadcast OS: one layer deeper, tighter corners. */
 .lab[data-direction='broadcast'] {
-  --lab-page: #060c14;
-  --lab-page-glow: rgba(48, 116, 191, 0.18);
-  --lab-shell: #0a1421;
-  --lab-panel: #101e2e;
-  --lab-panel-2: #16283b;
-  --lab-sunk: #07111c;
-  --lab-line: rgba(148, 194, 234, 0.14);
-  --lab-line-strong: rgba(148, 194, 234, 0.27);
-  --lab-text: #f1f6fb;
-  --lab-text-soft: #c4d3e1;
-  --lab-muted: #8fa7bc;
-  --lab-faint: #7f98ac;
-  --lab-header: #070f19;
-  --lab-header-text: #f1f6fb;
-  --lab-primary: #63baff;
-  --lab-primary-hi: #9bd4ff;
-  --lab-primary-ink: #04121f;
-  --lab-focus: #9bd4ff;
-  --lab-money: #f8d66b;
-  --lab-money-fill: #f8d66b;
-  --lab-live: #57e7b9;
-  --lab-danger: #ff6a82;
-  --lab-record: #ff4f7b;
+  --lab-panel: color-mix(in srgb, var(--hl-panel-2) 55%, var(--hl-panel));
   --lab-radius-sm: 2px;
   --lab-radius: 5px;
   --lab-radius-lg: 8px;
 }
 
+/* Game Tape: a strap-violet chassis around flat equipment panels. */
 .lab[data-direction='tape'] {
-  --lab-page: #090e12;
-  --lab-page-glow: rgba(95, 192, 220, 0.13);
-  --lab-shell: #d8e5e7;
-  --lab-panel: #eef4f2;
-  --lab-panel-2: #dce8e8;
-  --lab-sunk: #cedde0;
-  --lab-line: rgba(12, 28, 35, 0.14);
-  --lab-line-strong: rgba(12, 28, 35, 0.28);
-  --lab-text: #101a1f;
-  --lab-text-soft: #30434b;
-  --lab-muted: #536a73;
-  --lab-faint: #536a73;
-  --lab-header: #0c151b;
-  --lab-header-text: #f4f8f8;
-  --lab-primary: #087f9f;
-  --lab-primary-hi: #0a91b6;
-  --lab-primary-ink: #f6fcfd;
-  --lab-focus: #087f9f;
-  --lab-money: #8a6100;
-  --lab-money-fill: #eebd24;
-  --lab-live: #25bd7c;
-  --lab-danger: #e75062;
-  --lab-record: #ef3f72;
+  --lab-header: var(--hl-strap);
+  --lab-header-text: var(--primary-foreground);
+  --lab-header-muted: color-mix(in srgb, var(--primary-foreground) 86%, var(--hl-strap));
+  --lab-band: color-mix(in srgb, var(--hl-strap) 7%, var(--hl-panel));
   --lab-radius-sm: 2px;
   --lab-radius: 4px;
   --lab-radius-lg: 6px;
+}
+
+/* In light the plain strap-hi already clears 9:1, so no lift is needed. */
+.light .lab {
+  --lab-primary: var(--hl-strap-hi);
+  --lab-page-glow: color-mix(in srgb, var(--hl-strap) 9%, transparent);
+  --lab-money-edge: var(--f-bounty-ink);
+  --lab-money-gap: color-mix(in srgb, var(--f-bounty) 22%, var(--hl-panel));
 }
 
 .lab-toolbar {
@@ -147,10 +143,10 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   grid-template-columns: minmax(210px, 1fr) auto minmax(210px, 1fr);
   align-items: center;
   min-height: 64px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(5, 10, 14, 0.94);
+  border-bottom: 1px solid var(--hl-line);
+  background: var(--hl-bar);
   padding: 0 28px;
-  color: #edf7fa;
+  color: var(--hl-fg);
   backdrop-filter: blur(14px);
 }
 
@@ -168,7 +164,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 
 .lab-toolbar-brand small,
 .lab-local-status {
-  color: #70838c;
+  color: var(--hl-dim);
   font-size: 11px;
   font-weight: 600;
 }
@@ -182,9 +178,9 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   position: relative;
   min-width: 142px;
   border: 0;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 1px solid var(--hl-line);
   background: transparent;
-  color: #8598a1;
+  color: var(--hl-muted);
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
@@ -192,24 +188,24 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 }
 
 .lab-directions button:last-child {
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid var(--hl-line);
 }
 
 .lab-directions button span {
   margin-right: 9px;
-  color: #53646c;
+  color: var(--hl-dim);
   font-family: var(--font-geist-mono), monospace;
   font-size: 10px;
 }
 
 .lab-directions button:hover {
-  background: rgba(255, 255, 255, 0.035);
-  color: #c7d4d9;
+  background: color-mix(in srgb, var(--hl-fg) 4%, transparent);
+  color: var(--hl-fg);
 }
 
 .lab-directions button[aria-current='page'] {
-  background: rgba(118, 200, 241, 0.08);
-  color: #f2f8fa;
+  background: color-mix(in srgb, var(--hl-strap) 12%, transparent);
+  color: var(--hl-fg);
 }
 
 .lab-directions button[aria-current='page']::after {
@@ -218,12 +214,12 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   bottom: 0;
   left: 20px;
   height: 2px;
-  background: #76c8f1;
+  background: var(--hl-strap-hi);
   content: '';
 }
 
 .lab-directions button[aria-current='page'] span {
-  color: #76c8f1;
+  color: var(--lab-primary);
 }
 
 .lab-local-status {
@@ -237,8 +233,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #61e5ad;
-  box-shadow: 0 0 12px rgba(97, 229, 173, 0.55);
+  background: var(--hl-strap-hi);
 }
 
 .lab-frame {
@@ -256,7 +251,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 }
 
 .lab-kicker {
-  color: #76c8f1;
+  color: var(--lab-primary);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -266,7 +261,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 .lab-intro h1,
 .component-sheet h2 {
   margin: 6px 0 0;
-  color: #f2f8fa;
+  color: var(--lab-text);
   font-size: clamp(28px, 3vw, 44px);
   font-weight: 800;
   letter-spacing: -0.035em;
@@ -277,7 +272,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 .component-sheet header p {
   max-width: 52ch;
   margin: 0;
-  color: #93a7b0;
+  color: var(--lab-muted);
   font-size: 13px;
   line-height: 1.55;
 }
@@ -291,10 +286,10 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   display: flex;
   align-items: center;
   min-height: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--lab-line);
+  background: color-mix(in srgb, var(--hl-fg) 3%, transparent);
   padding: 0 9px;
-  color: #7f929b;
+  color: var(--lab-muted);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -320,7 +315,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   border-radius: var(--lab-radius-lg);
   background: var(--lab-shell);
   color: var(--lab-text);
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--hl-shadow);
 }
 
 .room-mock-header {
@@ -345,11 +340,11 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   width: 1px;
   height: 18px;
   margin: 0 14px;
-  background: rgba(255, 255, 255, 0.18);
+  background: color-mix(in srgb, var(--lab-header-text) 22%, transparent);
 }
 
 .room-page-title {
-  color: color-mix(in srgb, var(--lab-header-text) 64%, transparent);
+  color: var(--lab-header-muted);
   font-size: 12px;
   font-weight: 600;
 }
@@ -359,7 +354,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   align-items: center;
   gap: 8px;
   margin: 0 auto;
-  color: color-mix(in srgb, var(--lab-header-text) 46%, transparent);
+  color: var(--lab-header-muted);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -374,7 +369,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 .room-progress i {
   width: 48px;
   height: 1px;
-  background: rgba(255, 255, 255, 0.17);
+  background: color-mix(in srgb, var(--lab-header-text) 22%, transparent);
 }
 
 .room-identity {
@@ -445,7 +440,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   border: 0;
   background: transparent;
   padding: 0 10px 0 0;
-  color: var(--lab-live);
+  color: var(--lab-primary);
   font-weight: 700;
 }
 
@@ -510,8 +505,15 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   gap: 8px;
 }
 
+/* Each module wears its own feature once it is on (SPEC §3-4). The accent
+   names predate the rebrand: 'primary' is the Hollers module, 'live' is
+   Call in, 'money' is Rewards. Hue for rules and fills, ink for anything
+   that is read, solid + on for the filled check box. */
 .lab-module {
-  --module-accent: var(--lab-primary);
+  --module-accent: var(--f-holler);
+  --module-ink: var(--f-holler-ink);
+  --module-solid: var(--f-holler-solid);
+  --module-on: var(--f-holler-on);
   overflow: hidden;
   border: 1px solid var(--lab-line);
   border-radius: var(--lab-radius);
@@ -519,8 +521,19 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   transition: border-color 140ms ease, background 140ms ease;
 }
 
-.lab-module[data-accent='live'] { --module-accent: var(--lab-live); }
-.lab-module[data-accent='money'] { --module-accent: var(--lab-money); }
+.lab-module[data-accent='live'] {
+  --module-accent: var(--f-callin);
+  --module-ink: var(--f-callin-ink);
+  --module-solid: var(--f-callin-solid);
+  --module-on: var(--f-callin-on);
+}
+
+.lab-module[data-accent='money'] {
+  --module-accent: var(--f-rewards);
+  --module-ink: var(--f-rewards-ink);
+  --module-solid: var(--f-rewards-solid);
+  --module-on: var(--f-rewards-on);
+}
 
 .lab-module[data-enabled='true'] {
   border-color: color-mix(in srgb, var(--module-accent) 48%, var(--lab-line));
@@ -558,7 +571,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 .lab-module[data-enabled='true'] .lab-module-icon {
   border-color: color-mix(in srgb, var(--module-accent) 44%, transparent);
   background: color-mix(in srgb, var(--module-accent) 12%, var(--lab-sunk));
-  color: var(--module-accent);
+  color: var(--module-ink);
 }
 
 .lab-module-copy {
@@ -600,13 +613,13 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 }
 
 .lab-module[data-enabled='true'] .lab-switch {
-  color: var(--module-accent);
+  color: var(--module-ink);
 }
 
 .lab-module[data-enabled='true'] .lab-switch > span {
-  border-color: var(--module-accent);
-  background: var(--module-accent);
-  color: var(--lab-primary-ink);
+  border-color: var(--module-ink);
+  background: var(--module-solid);
+  color: var(--module-on);
 }
 
 .lab-module-body {
@@ -667,7 +680,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 }
 
 .lab-segmented button[aria-pressed='true'] {
-  background: var(--lab-primary);
+  background: var(--lab-primary-fill);
   color: var(--lab-primary-ink);
 }
 
@@ -731,7 +744,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 
 .free-readout {
   min-height: 40px;
-  color: var(--lab-live);
+  color: var(--lab-primary);
   font-size: 14px;
   line-height: 40px;
 }
@@ -856,7 +869,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
-  accent-color: var(--lab-primary);
+  accent-color: var(--lab-primary-fill);
 }
 
 .lab-check-row span,
@@ -929,9 +942,9 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 
 .lab-button-primary {
   min-width: 150px;
-  background: var(--lab-primary);
+  background: var(--lab-primary-fill);
   color: var(--lab-primary-ink);
-  box-shadow: 0 8px 26px color-mix(in srgb, var(--lab-primary) 18%, transparent);
+  box-shadow: 0 8px 26px color-mix(in srgb, var(--lab-primary-fill) 18%, transparent);
 }
 
 .lab-button-primary:hover {
@@ -961,17 +974,16 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--lab-danger) 18%, transparent);
 }
 
+/* The preview column follows the theme; only the stage inside it is a
+   broadcast surface, carries .dark in the markup and stays dark in both. */
 .room-preview {
-  --preview-text: #edf8fb;
-  --preview-muted: #91aab4;
-  --preview-line: rgba(181, 218, 231, 0.15);
   position: relative;
   min-width: 0;
   overflow: hidden;
   background:
-    linear-gradient(rgba(115, 191, 221, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(115, 191, 221, 0.025) 1px, transparent 1px),
-    #08141b;
+    linear-gradient(color-mix(in srgb, var(--hl-fg) 3.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--hl-fg) 2.5%, transparent) 1px, transparent 1px),
+    var(--lab-sunk);
   background-size: 20px 20px;
   color: var(--preview-text);
 }
@@ -1018,7 +1030,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 }
 
 .preview-live {
-  color: var(--lab-live);
+  color: var(--lab-live-ink);
 }
 
 .preview-live i,
@@ -1027,7 +1039,17 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   height: 6px;
   border-radius: 50%;
   background: currentColor;
-  box-shadow: 0 0 10px currentColor;
+}
+
+/* The on-air dot is the record light itself; it glows only in dark. */
+.preview-live i,
+.status-live i {
+  background: var(--lab-live);
+}
+
+:root:not(.light) .preview-live i,
+:root:not(.light) .status-live i {
+  box-shadow: 0 0 10px var(--lab-live);
 }
 
 .preview-stage {
@@ -1035,16 +1057,17 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   overflow: hidden;
   border-bottom: 1px solid var(--preview-line);
   background:
-    radial-gradient(circle at 76% 24%, rgba(77, 191, 234, 0.24), transparent 23%),
-    radial-gradient(circle at 25% 75%, rgba(97, 229, 173, 0.09), transparent 28%),
-    linear-gradient(155deg, rgba(15, 44, 57, 0.96), rgba(5, 13, 18, 0.98));
+    radial-gradient(circle at 76% 24%, color-mix(in srgb, var(--hl-strap-hi) 26%, transparent), transparent 23%),
+    radial-gradient(circle at 25% 75%, color-mix(in srgb, var(--hl-record) 9%, transparent), transparent 28%),
+    linear-gradient(155deg, color-mix(in srgb, var(--hl-strap) 16%, var(--hl-panel)), var(--hl-bg));
   padding: 22px 20px;
+  color: var(--hl-fg);
 }
 
 .preview-stage::before {
   position: absolute;
   inset: 0;
-  background: linear-gradient(105deg, transparent 34%, rgba(143, 216, 228, 0.06) 50%, transparent 66%);
+  background: linear-gradient(105deg, transparent 34%, color-mix(in srgb, var(--hl-fg) 6%, transparent) 50%, transparent 66%);
   content: '';
   transform: translateX(-70%);
   animation: lab-scan 7s ease-in-out infinite;
@@ -1055,7 +1078,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   z-index: 2;
   display: inline-flex;
   border-left: 2px solid var(--lab-money);
-  background: rgba(4, 11, 15, 0.72);
+  background: color-mix(in srgb, var(--hl-bg) 72%, transparent);
   padding: 7px 9px;
   color: var(--lab-money);
   font-family: var(--font-geist-mono), monospace;
@@ -1090,11 +1113,11 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   right: 20px;
   bottom: 22px;
   left: 20px;
-  border: 1px solid rgba(171, 220, 236, 0.21);
-  border-left: 3px solid var(--lab-primary);
-  background: rgba(7, 20, 27, 0.86);
+  border: 1px solid color-mix(in srgb, var(--hl-fg) 18%, transparent);
+  border-left: 3px solid var(--f-holler);
+  background: color-mix(in srgb, var(--hl-bg) 86%, transparent);
   padding: 17px;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
+  box-shadow: 0 18px 50px color-mix(in srgb, var(--hl-bg) 60%, transparent);
   backdrop-filter: blur(10px);
 }
 
@@ -1126,11 +1149,11 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   min-height: 37px;
   align-items: center;
   justify-content: space-between;
-  border: 1px solid rgba(118, 200, 241, 0.48);
+  border: 1px solid var(--f-holler-line);
   border-radius: var(--lab-radius-sm);
-  background: rgba(118, 200, 241, 0.08);
+  background: var(--f-holler-bg);
   padding: 0 12px;
-  color: var(--lab-primary-hi);
+  color: var(--f-holler-ink);
   cursor: pointer;
   font-size: 10px;
   font-weight: 800;
@@ -1174,7 +1197,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   align-items: center;
   gap: 10px;
   padding: 16px 18px;
-  color: var(--lab-live);
+  color: var(--lab-primary);
 }
 
 .preview-note span {
@@ -1214,8 +1237,8 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   margin-top: 28px;
   border: 1px solid var(--lab-line-strong);
   border-radius: var(--lab-radius-lg);
-  background: #0b171e;
-  color: #edf7fa;
+  background: var(--lab-shell);
+  color: var(--lab-text);
 }
 
 .results-sheet > header {
@@ -1223,7 +1246,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   grid-template-columns: minmax(230px, 0.7fr) minmax(340px, 1fr) auto;
   align-items: end;
   gap: 28px;
-  border-bottom: 1px solid rgba(181, 218, 231, 0.15);
+  border-bottom: 1px solid var(--lab-line);
   padding: 24px;
 }
 
@@ -1235,16 +1258,16 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 
 .results-sheet header p {
   margin: 0;
-  color: #91aab4;
+  color: var(--lab-muted);
   font-size: 12px;
   line-height: 1.5;
 }
 
 .selected-direction {
-  border-left: 2px solid #63baff;
-  background: rgba(99, 186, 255, 0.08);
+  border-left: 2px solid var(--hl-strap-hi);
+  background: color-mix(in srgb, var(--hl-strap) 12%, transparent);
   padding: 9px 11px;
-  color: #9bd4ff;
+  color: var(--lab-primary);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -1265,8 +1288,8 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 
 .results-sheet th,
 .results-sheet td {
-  border-right: 1px solid rgba(181, 218, 231, 0.11);
-  border-bottom: 1px solid rgba(181, 218, 231, 0.11);
+  border-right: 1px solid var(--lab-line);
+  border-bottom: 1px solid var(--lab-line);
   padding: 13px 16px;
   text-align: right;
 }
@@ -1277,14 +1300,14 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 }
 
 .results-sheet thead th {
-  color: #6f8994;
+  color: var(--lab-faint);
   font-size: 9px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .results-sheet tbody th {
-  color: #dce9ed;
+  color: var(--lab-text);
   font-family: var(--font-ui), sans-serif;
   font-size: 12px;
 }
@@ -1292,22 +1315,22 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 .results-sheet tbody th small {
   display: block;
   margin-top: 2px;
-  color: #63baff;
+  color: var(--lab-primary);
   font-size: 9px;
   font-weight: 700;
 }
 
 .results-sheet tbody td {
-  color: #91aab4;
+  color: var(--lab-muted);
 }
 
 .results-sheet tbody tr[data-selected='true'] {
-  background: rgba(99, 186, 255, 0.07);
+  background: color-mix(in srgb, var(--hl-strap) 8%, transparent);
 }
 
 .results-sheet tbody tr[data-selected='true'] th,
 .results-sheet tbody tr[data-selected='true'] td strong {
-  color: #9bd4ff;
+  color: var(--lab-primary);
 }
 
 .results-fixes {
@@ -1320,7 +1343,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 
 .results-fixes span,
 .results-fixes strong {
-  color: #63baff;
+  color: var(--lab-primary);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -1329,12 +1352,12 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 
 .results-fixes p {
   margin: 0;
-  color: #91aab4;
+  color: var(--lab-muted);
   font-size: 11px;
 }
 
 .results-fixes strong {
-  color: #f8d66b;
+  color: var(--lab-warn);
 }
 
 .component-sheet > header {
@@ -1411,8 +1434,8 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 }
 
 .status-live {
-  border-color: color-mix(in srgb, var(--lab-live) 45%, transparent);
-  color: var(--lab-live);
+  border-color: var(--f-holler-line);
+  color: var(--lab-live-ink);
 }
 
 .status-money {
@@ -1446,15 +1469,19 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   background: var(--lab-sunk);
 }
 
+/* Same split as the real bounty page: solid yellow is money locked to one
+   name, the yellow hatch is money several names are racing for. */
 .bounty-track span {
   width: 50%;
   background: var(--lab-money-fill);
+  box-shadow: inset 0 0 0 1px var(--lab-money-edge);
 }
 
 .bounty-track i {
   width: 50%;
   background:
-    repeating-linear-gradient(135deg, color-mix(in srgb, var(--lab-primary) 76%, transparent) 0 5px, color-mix(in srgb, var(--lab-primary) 24%, transparent) 5px 10px);
+    repeating-linear-gradient(135deg, var(--lab-money-fill) 0 5px, var(--lab-money-gap) 5px 10px);
+  box-shadow: inset 0 0 0 1px var(--lab-money-edge);
 }
 
 .bounty-legend {
@@ -1474,22 +1501,26 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 .bounty-legend i {
   width: 7px;
   height: 7px;
-  background: var(--lab-money);
+  background: var(--lab-money-fill);
+  box-shadow: inset 0 0 0 1px var(--lab-money-edge);
 }
 
 .bounty-legend span:last-child i {
-  background: var(--lab-primary);
+  background: repeating-linear-gradient(135deg, var(--lab-money-fill) 0 2px, var(--lab-money-gap) 2px 4px);
 }
 
 .room-mock-header .lab-button-quiet {
   min-height: 33px;
-  border-color: rgba(255, 255, 255, 0.18);
+  border-color: color-mix(in srgb, var(--lab-header-text) 22%, transparent);
   color: var(--lab-header-text);
 }
 
 .lab[data-direction='broadcast'] .room-mock {
-  border-top: 2px solid var(--lab-primary);
-  box-shadow: 0 36px 100px rgba(0, 0, 0, 0.4), 0 0 70px rgba(45, 140, 214, 0.08);
+  border-top: 2px solid var(--hl-strap);
+}
+
+:root:not(.light) .lab[data-direction='broadcast'] .room-mock {
+  box-shadow: var(--hl-shadow), 0 0 70px color-mix(in srgb, var(--hl-strap) 12%, transparent);
 }
 
 .lab[data-direction='broadcast'] .room-identity {
@@ -1516,32 +1547,31 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 
 .lab[data-direction='broadcast'] .lab-module,
 .lab[data-direction='broadcast'] .advanced-shell {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--hl-fg) 4%, transparent);
 }
 
 .lab[data-direction='broadcast'] .preview-stage {
   min-height: 440px;
   background:
-    linear-gradient(180deg, rgba(40, 120, 185, 0.12), transparent 36%),
-    radial-gradient(circle at 70% 18%, rgba(76, 174, 255, 0.3), transparent 24%),
-    linear-gradient(145deg, #102a40, #050b12 72%);
+    linear-gradient(180deg, color-mix(in srgb, var(--hl-strap) 14%, transparent), transparent 36%),
+    radial-gradient(circle at 70% 18%, color-mix(in srgb, var(--hl-strap-hi) 30%, transparent), transparent 24%),
+    linear-gradient(145deg, color-mix(in srgb, var(--hl-strap) 24%, var(--hl-panel)), var(--hl-bg) 72%);
 }
 
 .lab[data-direction='tape'] .room-mock {
-  border-top: 4px solid var(--lab-primary);
-  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.34);
+  border-top: 4px solid var(--hl-strap);
 }
 
-.lab[data-direction='tape'] .component-sheet > header .lab-kicker {
-  color: #0b7898;
+.lab[data-direction='tape'] .room-progress b {
+  color: var(--lab-header-text);
 }
 
 .lab[data-direction='tape'] .room-identity {
-  background: #c8dadd;
+  background: var(--lab-band);
 }
 
 .lab[data-direction='tape'] .room-section-title > span {
-  background: var(--lab-primary);
+  background: var(--lab-primary-fill);
   color: var(--lab-primary-ink);
 }
 
@@ -1554,31 +1584,26 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 }
 
 .lab[data-direction='tape'] .advanced-nav button[aria-current='page'] {
-  background: var(--lab-primary);
+  background: var(--lab-primary-fill);
   color: var(--lab-primary-ink);
 }
 
 .lab[data-direction='tape'] .room-submit {
   border-top: 2px solid var(--lab-line-strong);
-  background: #c8dadd;
+  background: var(--lab-band);
 }
 
 .lab[data-direction='tape'] .lab-button-primary {
-  box-shadow: 2px 2px 0 rgba(5, 41, 50, 0.42);
+  box-shadow: 2px 2px 0 color-mix(in srgb, var(--hl-fg) 32%, transparent);
 }
 
 .lab[data-direction='tape'] .preview-stage {
   background:
-    linear-gradient(90deg, rgba(34, 173, 214, 0.08) 1px, transparent 1px),
-    linear-gradient(rgba(34, 173, 214, 0.08) 1px, transparent 1px),
-    radial-gradient(circle at 68% 20%, rgba(34, 173, 214, 0.34), transparent 22%),
-    #07141b;
+    linear-gradient(90deg, color-mix(in srgb, var(--hl-strap-hi) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--hl-strap-hi) 10%, transparent) 1px, transparent 1px),
+    radial-gradient(circle at 68% 20%, color-mix(in srgb, var(--hl-strap-hi) 32%, transparent), transparent 22%),
+    var(--hl-bg);
   background-size: 28px 28px, 28px 28px, auto, auto;
-}
-
-.lab[data-direction='tape'] .preview-stage-rate,
-.lab[data-direction='tape'] .preview-ledger strong {
-  color: #ffd45a;
 }
 
 @media (max-width: 1220px) {
@@ -1731,7 +1756,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
 
   .lab-directions button {
     min-height: 38px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid var(--hl-line);
     text-align: left;
   }
 

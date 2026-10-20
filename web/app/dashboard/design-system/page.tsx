@@ -4,7 +4,7 @@ import { RoomDesignLab } from '@/components/design-system/room-design-lab'
 import './design-system.css'
 
 export const metadata: Metadata = {
-  title: 'MegaChat UI direction lab',
+  title: 'Holler UI direction lab',
   robots: { index: false, follow: false },
 }
 

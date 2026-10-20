@@ -1,16 +1,18 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { listPublicRooms, listRecentAirings, type PublicRoomCard, type RecentAiring } from '@/lib/api'
 import { listBountyPools, type BountyPool } from '@/lib/bounty-api'
 import { AccountChip } from '@/components/account-chip'
 import { PlatformPip } from '@/components/platform-pip'
 import { TwitchPreview } from '@/components/twitch-preview'
 import { formatDollars } from '@/lib/display-format'
-import { BOARD_RECENT_CAP, roomPresentation } from '@/lib/room-browse'
+import { BOARD_RECENT_CAP, featureKinds, roomPresentation } from '@/lib/room-browse'
 import './booth.css'
 import { BrandText } from '@/components/brand-text'
+import { FeatureTag } from '@/components/feature-tag'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { RecentRail } from './recent-rail'
 
 const ROOM_POLL_MS = 5000
@@ -25,11 +27,13 @@ const SPARSE_MAX = 4
 // same board twice. These five are the real ways a room differs.
 type ChipKey = 'all' | 'live' | 'seats' | 'letters' | 'free'
 
-const CHIPS: { key: ChipKey; label: string }[] = [
+// `dot`: the light a chip carries — the record red for what is on air, and
+// the feature colour for the two chips that pick a feature (booth.css).
+const CHIPS: { key: ChipKey; label: string; dot?: 'live' | 'callin' | 'holler' }[] = [
   { key: 'all', label: 'All' },
-  { key: 'live', label: 'Live now' },
-  { key: 'seats', label: 'Live seats' },
-  { key: 'letters', label: 'MegaChats' },
+  { key: 'live', label: 'Live now', dot: 'live' },
+  { key: 'seats', label: 'Call in', dot: 'callin' },
+  { key: 'letters', label: 'Hollers', dot: 'holler' },
   { key: 'free', label: 'Free rooms' },
 ]
 
@@ -37,7 +41,7 @@ const EMPTY_COPY: Record<ChipKey, string> = {
   all: 'No rooms on the board yet.',
   live: 'Nothing is on air this minute.',
   seats: 'No room is selling live camera seats right now.',
-  letters: 'No room is taking recorded MegaChats right now.',
+  letters: 'No room is taking recorded Hollers right now.',
   free: 'No room is running free right now.',
 }
 
@@ -91,10 +95,12 @@ function Stage({
   const { state, rate, full, rates } = roomPresentation(room)
   const seats = rates.find((r) => r.seats)?.seats
   const Tag = linked ? 'a' : 'span'
+  // `dark`: the stage is a video frame, so its chrome reads the dark tokens
+  // in either theme (globals.css redeclares them on any .dark scope).
   return (
     <Tag
       {...(linked ? { href: roomHref(room), 'aria-label': room.name } : {})}
-      className="mcr-stage"
+      className="mcr-stage dark"
     >
       {/* Renders nothing at all when the channel is offline or has no usable
           frame, which is what lets the stage's own glow act as the fallback.
@@ -150,8 +156,54 @@ function SeatDots({ taken, total }: { taken: number; total: number }) {
   )
 }
 
+/** What a room offers, as feature tags in the order the product sells them,
+ *  with its seats on the SAME line: the dots sit right after the Call in tag
+ *  they belong to (roomPresentation only gives seats to a Call in room), then
+ *  how many are on camera. A second line for the dots cost every tile 15px,
+ *  and the first room is held to the fold (_gate-board-fold F4). A room with
+ *  none of the three keeps the plain line roomPresentation gives it ("View
+ *  room details"). */
+function RoomFeatures({
+  room,
+  fallback,
+  seats,
+}: {
+  room: PublicRoomCard
+  fallback: string
+  seats?: { taken: number; total: number }
+}) {
+  const kinds = featureKinds(room)
+  if (!kinds.length) {
+    return (
+      <span className="mcr-sub">
+        {fallback}
+        {room.live > 0 ? ` · ${room.live} on camera` : ''}
+      </span>
+    )
+  }
+  return (
+    <span className="mcr-feats">
+      {kinds.map((k) => (
+        <Fragment key={k}>
+          <FeatureTag kind={k} />
+          {k === 'callin' && seats ? <SeatDots {...seats} /> : null}
+        </Fragment>
+      ))}
+      {room.live > 0 ? <span className="mcr-oncam">{room.live} on camera</span> : null}
+    </span>
+  )
+}
+
 function FeaturedRoom({ room, size = 'normal' }: { room: PublicRoomCard; size?: FeatureSize }) {
   const { action, capabilities, full, rates } = roomPresentation(room)
+  const kinds = featureKinds(room)
+  const counts = [
+    room.viewers ? `${room.viewers.toLocaleString('en-US')} watching` : '',
+    room.live > 0 ? `${room.live} on camera` : '',
+    room.waiting > 0 ? `${room.waiting} waiting` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
   return (
     <div className={`mcr-feat ${onAir(room) ? 'is-live' : ''} ${size === 'normal' ? '' : `is-${size}`}`}>
       <Stage room={room} hero linked />
@@ -160,17 +212,20 @@ function FeaturedRoom({ room, size = 'normal' }: { room: PublicRoomCard; size?: 
           <a href={roomHref(room)}>{room.name}</a>
         </h2>
         <span className="mcr-meta">
-          {capabilities}
-          {room.viewers ? ` · ${room.viewers.toLocaleString('en-US')} watching` : ''}
-          {room.live > 0 ? ` · ${room.live} on camera` : ''}
-          {room.waiting > 0 ? ` · ${room.waiting} waiting` : ''}
+          {kinds.length ? kinds.map((k) => <FeatureTag key={k} kind={k} />) : <span>{capabilities}</span>}
+          {counts ? <span className="mcr-counts">{counts}</span> : null}
         </span>
         {rates.length ? (
           <dl className="mcr-rates">
+            {/* roomPresentation gives the Hollers line no seats and the Call
+                in line always its seats, so seats say which feature it is. */}
             {rates.map((r) => (
-              <div key={r.label}>
+              <div key={r.label} data-kind={r.seats ? 'callin' : 'holler'}>
                 <dt>
-                  {r.label}
+                  <span className="mcr-rate-k">
+                    <i aria-hidden="true" />
+                    {r.label}
+                  </span>
                   {r.seats ? <SeatDots {...r.seats} /> : null}
                 </dt>
                 <dd>{r.rate}</dd>
@@ -203,11 +258,7 @@ function RoomCard({ room }: { room: PublicRoomCard }) {
         </span>
         <span className="mcr-t">
           <span className="mcr-name">{room.name}</span>
-          <span className="mcr-sub">
-            {capabilities}
-            {room.live > 0 ? ` · ${room.live} on camera` : ''}
-          </span>
-          {seats ? <SeatDots {...seats} /> : null}
+          <RoomFeatures room={room} fallback={capabilities} seats={seats} />
         </span>
         <span className="mcr-ghost is-sm">{action}</span>
       </span>
@@ -428,7 +479,7 @@ export function Booth({
   }, [visible, featuredList])
   const shown = showAll ? rest : rest.slice(0, GRID_CAP)
   // Recent broadcasts are not rooms, so the chips that pick KINDS of room
-  // (seats, MegaChats, free) do not show them; "All" and "Live now" do —
+  // (Call in, Hollers, free) do not show them; "All" and "Live now" do —
   // "nothing is on air, here is what just was" is the answer to both.
   const recentAirings = chip === 'all' || chip === 'live' ? airings.slice(0, BOARD_RECENT_CAP) : []
   const quiet = onAirCount === 0
@@ -456,36 +507,39 @@ export function Booth({
   const sections = quiet ? [recentSection, roomsSection] : [roomsSection, recentSection]
 
   return (
-    <div className="mc-booth dark flex min-h-dvh flex-col">
+    // No forced theme: the board follows next-themes' class on <html>, and
+    // booth.css maps its colours onto the Holler tokens for both.
+    <div className="mc-booth flex min-h-dvh flex-col">
       {/* chrome: one bar */}
       <header className="flex h-12 shrink-0 items-center justify-between px-4">
         <div className="flex items-center gap-5">
-          <Link href="/?stay=1" className="mc-bc mc-booth-brand text-[19px] font-[700] tracking-[0.1em]">
+          <Link href="/?stay=1" aria-label="Holler home" className="mc-bc mc-booth-brand text-[20px]">
             <BrandText />
           </Link>
-          <span className="flex items-center gap-1.5 text-[13px] font-[600] text-[var(--mcb-live)]">
-            <span className="inline-block size-1.5 rounded-full bg-[var(--mcb-live)]" aria-hidden="true" />
+          <span className={`mcr-onair ${onAirCount ? 'is-live' : ''}`}>
+            <i aria-hidden="true" />
             {onAirCount} room{onAirCount === 1 ? '' : 's'} on air
           </span>
         </div>
-        <nav className="flex items-center gap-5 text-[13px] font-[500] text-[var(--mcb-dim)]">
-          <Link href="/bounty" className="hidden hover:text-white sm:inline">
+        <nav className="flex items-center gap-5 text-[13px] font-[500] text-hl-dim">
+          <Link href="/bounty" className="hidden hover:text-hl-fg sm:inline">
             Bounties
           </Link>
-          <a href="/demo" className="hover:text-white">Try demo</a>
-          <Link href="/how-it-works" className="hidden hover:text-white md:inline">
+          <a href="/demo" className="hover:text-hl-fg">Try demo</a>
+          <Link href="/how-it-works" className="hidden hover:text-hl-fg md:inline">
             How it works
           </Link>
-          <Link href="/dashboard" className="border border-[var(--mcb-accent)] px-3 py-2 font-[700] text-[var(--mcb-accent)] hover:bg-[rgba(58,232,255,0.1)]">
+          <Link href="/dashboard" className="mcr-create">
             Create room
           </Link>
+          <ThemeToggle />
           <AccountChip />
         </nav>
       </header>
 
       <main className="grow px-4 pb-10 pt-3.5">
         <h1 className="sr-only">
-          MegaChat rooms — {onAirCount} on air, {rooms.length} on the board
+          Holler rooms — {onAirCount} on air, {rooms.length} on the board
         </h1>
 
         {/* Someone who arrived without the landing page gets the whole idea in
@@ -495,7 +549,7 @@ export function Booth({
         {intro && featuredList.length ? (
           <div className="mcr-intro">
             <p>
-              The demo room is always open — take a seat, record a MegaChat, and watch it play back
+              The demo room is always open — take a seat, record a Holler, and watch it play back
               on the broadcast for a fraction of a cent.
             </p>
             <a href="/demo">Try the demo</a>
@@ -522,6 +576,7 @@ export function Booth({
                 setShowAll(false)
               }}
             >
+              {c.dot ? <i className={`mcr-chip-dot is-${c.dot}`} aria-hidden="true" /> : null}
               {c.label}
             </button>
           ))}
@@ -553,7 +608,7 @@ export function Booth({
               <div className="mcr-empty">
                 <h2>{EMPTY_COPY[chip]}</h2>
                 <p>
-                  The demo room is always open — take a seat, record a MegaChat, and watch it play
+                  The demo room is always open — take a seat, record a Holler, and watch it play
                   back on the broadcast for a fraction of a cent.
                 </p>
                 <span className="mcr-cta">

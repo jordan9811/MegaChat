@@ -1,52 +1,65 @@
-/* Rooms board — a directory, on the Nerve skin.
+/* Rooms board — a directory, on the Holler skin (design-assets/holler-brand/SPEC.md).
    One featured room, a uniform grid under it, and the bounty board as a calm
-   side rail. Colour carries meaning and nothing else: lime is on air, cyan is
-   the thing to click, yellow is money, pink is the filter you are standing in.
-   Every panel is the same dark surface; a 2px line across the top says what
-   kind of thing the card is. */
+   side rail. Colour carries meaning and nothing else: violet is the brand and
+   the thing to click, red is on air, purple is a camera seat (Call in), the
+   holler red is a recorded Holler, yellow is money. Every panel is the same
+   surface; a 2px line across the top says what kind of thing the card is.
+   Both themes read the --hl-* / --f-* tokens from app/globals.css. The media
+   boxes (.mcr-stage, .mcr-recent-stage) carry `dark` in the markup: they are
+   video frames and stay a dark screen in either theme. */
+
+/* Page-ground aliases onto the Holler tokens. Redeclared on every `.dark`
+   inside the board so a stage scoped dark recomputes them against its own
+   dark tokens instead of inheriting the page's. */
+.mc-booth,
+.mc-booth .dark {
+  --mcb-bg: var(--hl-bg);
+  --mcb-panel: var(--hl-panel);
+  --mcb-panel-up: var(--hl-panel-2);
+  --mcb-fg: var(--hl-fg);
+  --mcb-muted: var(--hl-muted);
+  --mcb-dim: var(--hl-dim);
+  --mcb-line: var(--hl-line);
+  --mcb-line2: var(--hl-line-2);
+}
 
 .mc-booth {
-  --mcb-bg: #050609;
-  --mcb-panel: #0a0c12;
-  --mcb-panel-up: #0f1219;
-  --mcb-fg: #f4f6f8;
-  --mcb-muted: #a9b2bd;
-  --mcb-dim: #7d8794;
-  --mcb-off: #b3bcc6;
-  --mcb-line: rgba(255, 255, 255, 0.09);
-  --mcb-line2: rgba(255, 255, 255, 0.17);
-  --mcb-hairline: rgba(255, 255, 255, 0.16);
-  --mcb-brand: #ff2d78;
-  --mcb-accent: #3ae8ff;
-  --mcb-live: #b8ff45;
-  --mcb-queue: #ffd23d;
+  /* White text on the violet strap — SPEC §3 ("primary buttons, white text");
+     the strap is #6d28d9 in both themes, so this never flips. */
+  --mcb-on-strap: #fff;
+  /* How strongly the violet wash at the top-left tints the ground. */
+  --mcb-wash: 13%;
   /* One curve for everything that moves: starts fast, settles softly. */
   --mcb-ease: cubic-bezier(0.23, 1, 0.32, 1);
   background-color: var(--mcb-bg);
   background-image:
-    radial-gradient(circle at 12% 0%, rgba(255, 45, 120, 0.11), transparent 31rem),
-    linear-gradient(rgba(101, 171, 214, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(101, 171, 214, 0.025) 1px, transparent 1px);
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--hl-strap) var(--mcb-wash), transparent), transparent 31rem),
+    linear-gradient(var(--hl-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hl-grid) 1px, transparent 1px);
   background-size: auto, 48px 48px, 48px 48px;
   color: var(--mcb-fg);
   font-family: var(--font-ui), system-ui, sans-serif;
 }
 
+.light .mc-booth {
+  --mcb-wash: 7%;
+}
+
 html:has(.mc-booth),
 html:has(.mc-booth) * {
-  scrollbar-color: #2a2f3a transparent;
+  scrollbar-color: var(--hl-line-2) transparent;
 }
 
 body:has(.mc-booth) {
-  background: #050609;
+  background: var(--hl-bg);
 }
 
 html:has(.mc-booth) ::-webkit-scrollbar-thumb {
-  background: #2a2f3a;
+  background: var(--hl-line-2);
 }
 
 html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
-  background: #3a4150;
+  background: var(--hl-dim);
 }
 
 /* Was a condensed face. Condensed narrows letterforms to buy space and
@@ -58,10 +71,57 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   letter-spacing: 0.04em;
 }
 
-/* Same reason as the landing: the themed focus ring is invisible here. */
+/* The brand's focus ring: strap-hi clears 3:1 on every ground in both themes. */
 .mc-booth :is(a, button, [tabindex]):focus-visible {
-  outline: 2px solid var(--mcb-fg);
+  outline: 2px solid var(--hl-strap-hi);
   outline-offset: 2px;
+}
+
+/* ── the bar ────────────────────────────────────────────────────────── */
+
+/* The live count: the red light when anything is on air, quiet otherwise. */
+.mcr-onair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mcb-muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mcr-onair i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mcb-dim);
+}
+
+.mcr-onair.is-live {
+  color: var(--f-holler-ink);
+}
+
+.mcr-onair.is-live i {
+  background: var(--hl-record);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--hl-record) calc(70% * var(--hl-glow-k)), transparent);
+  animation: mcr-pulse 1.6s ease-in-out infinite;
+}
+
+.mcr-create {
+  padding: 8px 12px;
+  border: 1px solid var(--hl-strap-hi);
+  color: var(--hl-strap-hi);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mcr-create:hover {
+    background: var(--hl-strap);
+    border-color: var(--hl-strap);
+    color: var(--mcb-on-strap);
+  }
 }
 
 /* ── filter row ─────────────────────────────────────────────────────── */
@@ -75,6 +135,9 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   padding: 8px 14px;
   border: 1px solid var(--mcb-line2);
   background: transparent;
@@ -88,13 +151,47 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 
 .mcr-chip:hover {
   color: var(--mcb-fg);
-  border-color: rgba(255, 255, 255, 0.32);
+  border-color: var(--mcb-muted);
 }
 
 .mcr-chip[aria-pressed='true'] {
-  background: var(--mcb-brand);
-  border-color: var(--mcb-brand);
-  color: #fff;
+  background: var(--hl-strap);
+  border-color: var(--hl-strap);
+  color: var(--mcb-on-strap);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mcr-chip[aria-pressed='true']:hover {
+    background: var(--hl-strap-hover);
+    border-color: var(--hl-strap-hover);
+  }
+}
+
+/* A feature chip carries its feature's light: the record red for Live now,
+   purple for Call in, the holler red for Hollers. */
+.mcr-chip-dot {
+  display: block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.mcr-chip-dot.is-live {
+  background: var(--hl-record);
+}
+
+.mcr-chip-dot.is-callin {
+  background: var(--f-callin);
+}
+
+.mcr-chip-dot.is-holler {
+  background: var(--f-holler);
+}
+
+/* On the violet fill a white ring keeps the purple dot from vanishing. */
+.mcr-chip[aria-pressed='true'] .mcr-chip-dot {
+  box-shadow: 0 0 0 1.5px var(--mcb-on-strap);
 }
 
 .mcr-sort {
@@ -125,16 +222,18 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
    paints itself absolutely over this box and contributes no height of its
    own, so the box has to be positioned and has to size itself. The gradient
    is the fallback art — it is simply what shows through whenever the preview
-   decides it has no real frame to render. */
+   decides it has no real frame to render: the studio's violet from below and
+   the red on-air light from the corner. The box is scoped `dark` in the
+   markup, so these tokens are the dark ones in either theme. */
 .mcr-stage {
   position: relative;
   display: block;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   background:
-    radial-gradient(ellipse 70% 70% at 50% 110%, rgba(58, 232, 255, 0.28), transparent 65%),
-    radial-gradient(ellipse 45% 55% at 12% 0%, rgba(255, 45, 120, 0.26), transparent 60%),
-    #07090f;
+    radial-gradient(ellipse 70% 70% at 50% 110%, color-mix(in srgb, var(--hl-strap) 46%, transparent), transparent 65%),
+    radial-gradient(ellipse 45% 55% at 12% 0%, color-mix(in srgb, var(--hl-record) 22%, transparent), transparent 60%),
+    var(--hl-bg);
 }
 
 /* Scanlines read as a signal rather than a still, and they sit over the
@@ -143,7 +242,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.28) 0 2px, transparent 2px 4px);
+  background: repeating-linear-gradient(0deg, color-mix(in srgb, var(--hl-bg) 30%, transparent) 0 2px, transparent 2px 4px);
 }
 
 .mcr-tags {
@@ -174,15 +273,17 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* Chrome over a picture: the scrim is dense enough that the label clears
+   4.5:1 even over a white frame. */
 .mcr-tag {
   font-family: var(--font-code), ui-monospace, monospace;
   font-size: 10.5px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   padding: 4px 8px;
-  background: rgba(5, 6, 9, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: var(--mcb-muted);
+  background: color-mix(in srgb, var(--hl-bg) 82%, transparent);
+  border: 1px solid var(--hl-line-2);
+  color: var(--hl-muted);
   white-space: nowrap;
 }
 
@@ -196,15 +297,22 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   vertical-align: middle;
 }
 
+/* ON AIR: the red light, as a solid pill so the word reads over any frame. */
 .mcr-tag.is-live {
-  color: var(--mcb-live);
-  border-color: rgba(184, 255, 69, 0.6);
-  box-shadow: 0 0 14px -4px var(--mcb-live);
+  background: var(--f-holler-solid);
+  border-color: var(--f-holler-solid);
+  color: var(--f-holler-on);
+  box-shadow: 0 0 16px -4px var(--hl-record);
 }
 
+.mcr-tag.is-live i {
+  animation: mcr-pulse 1.6s ease-in-out infinite;
+}
+
+/* Every seat taken: a Call in state, so it wears the call-in purple. */
 .mcr-tag.is-full {
-  color: var(--mcb-queue);
-  border-color: rgba(255, 210, 61, 0.55);
+  color: var(--f-callin-ink);
+  border-color: var(--f-callin-line);
 }
 
 /* ── featured room ──────────────────────────────────────────────────── */
@@ -218,11 +326,26 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   margin-bottom: 16px;
   background: var(--mcb-panel);
   border: 1px solid var(--mcb-line);
-  border-top: 2px solid var(--mcb-accent);
+  border-top: 2px solid var(--hl-strap);
+  box-shadow: var(--hl-shadow);
 }
 
 .mcr-feat.is-live {
-  border-top-color: var(--mcb-live);
+  border-top-color: var(--hl-record);
+}
+
+/* The screen fills its cell. When the copy beside it runs taller than the
+   16:9 frame, the frame grows with it (the preview is object-fit: cover)
+   instead of leaving a band of panel under a dark screen. Stacked, the cell
+   is the frame's own 16:9 row, so this changes nothing there.
+   The width is load-bearing: with only the height set, aspect-ratio derives
+   the width FROM that height, so a tall copy column (a two-line room name
+   plus the feature-tag row) widened the frame past its 448px track and it
+   painted over the title, tags and button beside it. Both sides definite =
+   aspect-ratio steps aside and the frame stays in its own column. */
+.mcr-feat > .mcr-stage {
+  width: 100%;
+  height: 100%;
 }
 
 @media (max-width: 900px) {
@@ -275,12 +398,21 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcr-feat-body h2 a:hover {
-  color: var(--mcb-accent);
+  color: var(--hl-strap-hi);
 }
 
+/* What the room offers as feature tags, then the counts in plain text. */
 .mcr-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   color: var(--mcb-muted);
   font-size: 13px;
+}
+
+.mcr-meta .mcr-counts {
+  margin-left: 4px;
 }
 
 .mcr-cta {
@@ -297,22 +429,30 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   align-items: center;
   gap: 8px;
   padding: 11px 16px;
-  background: var(--mcb-accent);
-  color: #050609;
+  background: var(--hl-strap);
+  color: var(--mcb-on-strap);
   font-size: 13px;
   font-weight: 800;
-  box-shadow: 0 0 26px -8px var(--mcb-accent);
+  /* A violet glow in dark, a soft violet shadow in light — same value. */
+  box-shadow: 0 8px 26px -10px color-mix(in srgb, var(--hl-strap) 90%, transparent);
   transition: transform 0.12s ease;
 }
 
+/* The seats are full and this joins the queue for one: Call in purple. */
 .mcr-btn.is-queue {
-  background: var(--mcb-queue);
-  box-shadow: 0 0 26px -8px var(--mcb-queue);
+  background: var(--f-callin-solid);
+  color: var(--f-callin-on);
+  box-shadow: 0 8px 26px -10px color-mix(in srgb, var(--f-callin) 90%, transparent);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .mcr-btn:hover {
     transform: translateY(-1px);
+    background: var(--hl-strap-hover);
+  }
+
+  .mcr-btn.is-queue:hover {
+    background: var(--hl-strap-hover);
   }
 }
 
@@ -329,7 +469,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcr-ghost:hover {
-  border-color: var(--mcb-fg);
+  border-color: var(--hl-strap-hi);
 }
 
 .mcr-ghost.is-sm {
@@ -365,16 +505,17 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   display: block;
   background: var(--mcb-panel);
   border: 1px solid var(--mcb-line);
-  border-top: 2px solid var(--mcb-accent);
+  border-top: 2px solid var(--hl-strap);
+  box-shadow: var(--hl-shadow);
   transition: background-color 0.12s ease;
 }
 
 .mcr-card.is-live {
-  border-top-color: var(--mcb-live);
+  border-top-color: var(--hl-record);
 }
 
 .mcr-card.is-bounty {
-  border-top-color: var(--mcb-queue);
+  border-top-color: var(--f-bounty);
 }
 
 .mcr-card:hover {
@@ -422,6 +563,29 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   white-space: nowrap;
 }
 
+/* The room's features as tags, the seat dots right after the Call in tag and
+   then how many are on camera — one line (booth.tsx RoomFeatures). Three tags
+   wrap onto a second line in a tile. */
+.mcr-feats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+/* The dots read as the Call in tag's own seats: close to it, clear of the next. */
+.mcr-feats .mcr-dots {
+  margin: 0 4px 0 2px;
+}
+
+.mcr-oncam {
+  color: var(--mcb-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* The room's initial on the brand strap — the same violet as the mark. */
 .mcr-mono {
   flex: 0 0 auto;
   display: grid;
@@ -431,15 +595,14 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   font-family: var(--font-display), var(--font-ui), sans-serif;
   font-size: 13px;
   font-weight: 800;
-  color: var(--mcb-accent);
-  background: linear-gradient(145deg, #123245, #0a1622);
-  border: 1px solid rgba(58, 232, 255, 0.25);
+  color: var(--mcb-on-strap);
+  background: var(--hl-strap);
 }
 
 .mcr-mono.is-queue {
-  color: var(--mcb-queue);
-  background: linear-gradient(145deg, #3a3117, #1a160b);
-  border-color: rgba(255, 210, 61, 0.25);
+  color: var(--f-bounty-ink);
+  background: var(--f-bounty-bg);
+  border: 1px solid var(--f-bounty-line);
 }
 
 /* Open-a-room sits in the grid as a card-shaped invitation, not a button
@@ -459,20 +622,20 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcr-open:hover {
-  border-color: var(--mcb-accent);
+  border-color: var(--hl-strap-hi);
 }
 
 .mcr-open strong {
   font-family: var(--font-display), var(--font-ui), sans-serif;
   font-size: 16px;
   font-weight: 800;
-  color: var(--mcb-accent);
+  color: var(--hl-strap-hi);
 }
 
 .mcr-open .mcr-plus {
   font-size: 28px;
   line-height: 1;
-  color: var(--mcb-accent);
+  color: var(--hl-strap-hi);
 }
 
 .mcr-open small {
@@ -485,7 +648,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   min-height: 46px;
   border: 1px solid var(--mcb-line2);
   background: transparent;
-  color: var(--mcb-accent);
+  color: var(--hl-strap-hi);
   font: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -493,7 +656,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcr-more:hover {
-  border-color: var(--mcb-accent);
+  border-color: var(--hl-strap-hi);
 }
 
 /* ── empty board ────────────────────────────────────────────────────── */
@@ -525,10 +688,13 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 
 /* ── bounty board rail ──────────────────────────────────────────────── */
 
+/* The whole rail is the bounty's: its yellow bar, its yellow amounts, its
+   links in bounty ink. */
 .mcr-board {
   background: var(--mcb-panel);
   border: 1px solid var(--mcb-line);
-  border-top: 2px solid var(--mcb-queue);
+  border-top: 2px solid var(--f-bounty);
+  box-shadow: var(--hl-shadow);
 }
 
 .mcr-board-head {
@@ -549,7 +715,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcr-board-head a {
-  color: var(--mcb-accent);
+  color: var(--f-bounty-ink);
   font-size: 12.5px;
   font-weight: 700;
   white-space: nowrap;
@@ -590,7 +756,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcr-money {
-  color: var(--mcb-queue);
+  color: var(--f-bounty-ink);
   font-family: var(--font-code), ui-monospace, monospace;
   font-size: 15px;
   font-weight: 700;
@@ -605,12 +771,14 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcr-board-foot a {
-  color: var(--mcb-accent);
+  color: var(--f-bounty-ink);
   font-weight: 700;
 }
 
 /* Face + platform pip, same anatomy as the landing's bounty rows. */
 .mcr-face {
+  /* PlatformPip cuts pump.fun's notch in this colour: the pip's own plate. */
+  --mc-pip-notch: var(--mcb-panel);
   position: relative;
   flex: 0 0 auto;
   display: block;
@@ -634,9 +802,9 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   font-size: 16px;
   font-style: normal;
   font-weight: 800;
-  color: var(--mcb-accent);
-  background: linear-gradient(145deg, #123245, #0a1622);
-  border: 1px solid rgba(58, 232, 255, 0.25);
+  color: var(--f-bounty-ink);
+  background: var(--f-bounty-bg);
+  border: 1px solid var(--f-bounty-line);
 }
 
 .mcr-face b {
@@ -719,6 +887,14 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   grid-column: 1 / -1;
 }
 
+/* One row, one bottom edge. A recent card carries its tags on the picture,
+   so it is shorter than a room card; each section's tile row takes the rest
+   of the strip's height and its tiles stretch to it, the way Open a room
+   already does. */
+.mcr-strip > section:has(> .mcr-sec-h) {
+  grid-template-rows: auto 1fr;
+}
+
 .mcr-strip .mcr-grid,
 .mcr-strip .mcr-recent-grid {
   display: contents;
@@ -787,18 +963,20 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   background: var(--mcb-panel);
   border: 1px solid var(--mcb-line);
   border-top: 2px solid var(--mcb-dim);
+  box-shadow: var(--hl-shadow);
 }
 
 .mcr-recent:hover {
-  border-top-color: var(--mcb-accent);
+  border-top-color: var(--hl-strap-hi);
 }
 
+/* A screen: scoped `dark` in the markup, so it stays dark in either theme. */
 .mcr-recent-stage {
   position: relative;
   display: block;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  background: #07090f;
+  background: var(--hl-bg);
 }
 
 .mcr-recent-stage img {
@@ -818,22 +996,22 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   gap: 6px;
   text-align: center;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 10px),
-    var(--mcb-panel-up);
+    linear-gradient(135deg, var(--hl-line) 0 1px, transparent 1px 10px),
+    var(--hl-panel-2);
 }
 
 .mcr-recent-card b {
   font-family: var(--font-display), var(--font-ui), sans-serif;
   font-size: 34px;
   font-weight: 800;
-  color: var(--mcb-off);
+  color: var(--hl-muted);
 }
 
 .mcr-recent-card em {
   font-family: var(--font-code), ui-monospace, monospace;
   font-size: 10.5px;
   font-style: normal;
-  color: var(--mcb-dim);
+  color: var(--hl-dim);
 }
 
 .mcr-recent-tag {
@@ -841,13 +1019,13 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   left: 8px;
   top: 8px;
   padding: 3px 7px;
-  background: rgba(5, 6, 9, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: color-mix(in srgb, var(--hl-bg) 82%, transparent);
+  border: 1px solid var(--hl-line-2);
   font-family: var(--font-code), ui-monospace, monospace;
   font-size: 9.5px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--mcb-dim);
+  color: var(--hl-muted);
 }
 
 .mcr-recent-len {
@@ -855,10 +1033,10 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   right: 8px;
   bottom: 8px;
   padding: 2px 6px;
-  background: rgba(5, 6, 9, 0.78);
+  background: color-mix(in srgb, var(--hl-bg) 82%, transparent);
   font-family: var(--font-code), ui-monospace, monospace;
   font-size: 10px;
-  color: #fff;
+  color: var(--hl-fg);
 }
 
 .mcr-recent-meta {
@@ -882,6 +1060,32 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   font-size: 11px;
 }
 
+/* What happened on that broadcast — a recorded Holler, a guest called in — on
+   the picture's lower-left corner, the way a room card carries its state on
+   its stage. Under the title the tags cost the card a whole line, and on a
+   quiet night this row sits above the rooms (_gate-board-fold F4). Kept
+   clear of the length pill on the right; a second tag that does not fit
+   wraps upward, never over the pill. */
+.mcr-recent-feats {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-wrap: wrap-reverse;
+  gap: 4px;
+  max-width: calc(100% - 76px);
+}
+
+/* Chrome over a picture: each tag keeps its own tint and border, laid over
+   the same dark scrim as the other tags on a stage, so its ink clears 4.5:1
+   over a white frame too. The stage is scoped `dark`, so these are the dark
+   tokens in either theme. */
+.mcr-recent-feats .ft.ft {
+  background:
+    linear-gradient(var(--ft-bg), var(--ft-bg)),
+    color-mix(in srgb, var(--hl-bg) 88%, transparent);
+}
+
 
 /* ── first visit: the whole idea in one line ────────────────────────── */
 .mcr-intro {
@@ -891,8 +1095,8 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   gap: 6px 16px;
   margin-bottom: 14px;
   padding: 6px 6px 6px 14px;
-  border: 1px solid rgba(58, 232, 255, 0.22);
-  background: rgba(58, 232, 255, 0.04);
+  border: 1px solid color-mix(in srgb, var(--hl-strap-hi) 32%, transparent);
+  background: color-mix(in srgb, var(--hl-strap) 7%, transparent);
   animation: mcr-enter 240ms var(--mcb-ease) backwards;
 }
 
@@ -900,16 +1104,21 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   flex: 1 1 420px;
   margin: 0;
   padding: 6px 0;
-  color: #c9d1d9;
+  color: var(--mcb-fg);
   font-size: 13.5px;
   line-height: 1.5;
 }
 
 .mcr-intro a {
-  color: var(--mcb-accent);
+  color: var(--hl-strap-hi);
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.mcr-intro a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .mcr-intro button {
@@ -942,6 +1151,17 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   font-size: 13px;
 }
 
+/* Each line is labelled in its feature's colour (booth.tsx data-kind). */
+.mcr-rates > [data-kind='holler'] {
+  --mcr-k: var(--f-holler);
+  --mcr-k-ink: var(--f-holler-ink);
+}
+
+.mcr-rates > [data-kind='callin'] {
+  --mcr-k: var(--f-callin);
+  --mcr-k-ink: var(--f-callin-ink);
+}
+
 .mcr-rates dt {
   display: flex;
   align-items: center;
@@ -949,16 +1169,33 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   color: var(--mcb-muted);
 }
 
+.mcr-rate-k {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--mcr-k-ink, var(--mcb-muted));
+  font-weight: 700;
+}
+
+.mcr-rate-k i {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mcr-k, var(--mcb-dim));
+}
+
+/* Money is the bounty's yellow ink. */
 .mcr-rates dd {
   margin: 0;
-  color: var(--mcb-queue);
+  color: var(--f-bounty-ink);
   font-family: var(--font-code), ui-monospace, monospace;
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-/* Seats as dots: filled = someone on camera, hollow = open. */
+/* Seats as dots: filled = someone on camera, hollow = open. Call in purple. */
 .mcr-dots {
   display: inline-flex;
   gap: 4px;
@@ -968,20 +1205,16 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 .mcr-dots i {
   width: 8px;
   height: 8px;
-  border: 1px solid var(--mcb-live);
+  border: 1px solid var(--f-callin);
 }
 
 .mcr-dots i.is-on {
-  background: var(--mcb-live);
-}
-
-.mcr-card .mcr-dots {
-  display: flex;
-  margin-top: 6px;
+  background: var(--f-callin);
 }
 
 /* The seats as they sit on the broadcast: a column of guest frames on the
-   right of the featured stage. Taken = a guest, open = an empty frame. */
+   right of the featured stage. Taken = a guest, open = an empty frame. Both
+   in the call-in purple; inside the dark-scoped stage. */
 .mcr-seats {
   position: absolute;
   top: 48px;
@@ -1001,17 +1234,18 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   max-height: 34%;
   place-items: center;
   overflow: hidden;
-  border: 1px dashed rgba(184, 255, 69, 0.45);
-  background: rgba(5, 6, 9, 0.45);
-  color: rgba(184, 255, 69, 0.85);
+  border: 1px dashed var(--f-callin-line);
+  background: color-mix(in srgb, var(--hl-bg) 45%, transparent);
+  color: var(--f-callin-ink);
   font-size: 14px;
   font-weight: 700;
   line-height: 1;
 }
 
 .mcr-seat.is-taken {
-  border: 1px solid rgba(255, 45, 120, 0.7);
-  background: #0c111a;
+  border: 1px solid color-mix(in srgb, var(--f-callin) 75%, transparent);
+  background: var(--hl-panel);
+  box-shadow: 0 0 14px -6px var(--f-callin);
 }
 
 /* a guest, drawn: head and shoulders */
@@ -1028,7 +1262,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   width: 24%;
   aspect-ratio: 1;
   border-radius: 50%;
-  background: #3a4658;
+  background: color-mix(in srgb, var(--f-callin) 34%, var(--hl-panel-2));
 }
 
 .mcr-seat i::after {
@@ -1036,7 +1270,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   width: 52%;
   aspect-ratio: 1;
   border-radius: 50% 50% 0 0;
-  background: #2a3444;
+  background: color-mix(in srgb, var(--f-callin) 22%, var(--hl-panel-2));
 }
 
 /* ── the bounty rail says what a bounty is before the amounts ───────── */
@@ -1061,6 +1295,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 .mcr-card,
 .mcr-open,
 .mcr-row,
+.mcr-create,
 .mcr-intro button {
   transition-property: transform, background-color, border-color, color, box-shadow;
   transition-duration: 160ms;
@@ -1071,6 +1306,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 .mcr-ghost:active,
 .mcr-chip:active,
 .mcr-more:active,
+.mcr-create:active,
 .mcr-intro button:active {
   transform: scale(0.97);
 }
@@ -1088,6 +1324,13 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* The on-air light breathes; opacity only. */
+@keyframes mcr-pulse {
+  50% {
+    opacity: 0.35;
   }
 }
 

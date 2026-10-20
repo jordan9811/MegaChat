@@ -778,7 +778,9 @@ try {
   ok('G. flag off: /bounty renders no bounty surface (no board, no claim CTA)',
     // Copy updated with the program-page rebuild: flag-off now reads
     // "Not open yet" and must still show no board, no claim CTA, no recorder.
-    !/This is me|Claim this handle|Record a MegaChat for/i.test(txt) && /Not open yet/i.test(txt));
+    // Holler rebrand: the recorder CTA is now "Record a Holler for"; the old
+    // wording stays in the pattern so neither name can slip through.
+    !/This is me|Claim this handle|Record a (?:MegaChat|Holler) for/i.test(txt) && /Not open yet/i.test(txt));
   await page.close();
 } finally { off.kill(); }
 

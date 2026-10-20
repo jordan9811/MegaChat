@@ -1,47 +1,66 @@
-html:has(.mc-how) {
-  color-scheme: dark;
-}
+/* How it works — scoped under .mc-how. Every colour is a Holler token
+   (app/globals.css), so the page follows the light/dark theme next-themes
+   puts on <html>; nothing here forces dark any more.
+
+   The two roles get the brand's two colours: a chatter is the voice — the
+   record red the product is named for — and a streamer runs the strap
+   violet room. Feature mentions use the feature colours (FeatureTag). */
 
 body:has(.mc-how) {
-  background: #050609;
+  background: var(--hl-bg);
 }
 
 html:has(.mc-how),
 html:has(.mc-how) * {
-  scrollbar-color: #2a2f3a transparent;
+  scrollbar-color: var(--hl-line-2) transparent;
 }
 
 html:has(.mc-how) ::-webkit-scrollbar-thumb {
-  background-color: #2a2f3a;
+  background-color: var(--hl-line-2);
 }
 
 html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
-  background-color: #3a4150;
+  background-color: color-mix(in srgb, var(--hl-fg) 32%, transparent);
 }
 
+/* accent-ink: strap-hi lifted toward the text colour so small accent text
+   clears 4.5:1 on every ground in both themes (strap-hi alone is 4.4:1 on
+   panel-2 in dark). */
 .mc-how {
-  --mcc-bg: #050609;
-  --mcc-panel: #0a0c12;
-  --mcc-panel-up: #0f1219;
-  --mcc-sunk: #07090f;
-  --mcc-fg: #f4f6f8;
-  --mcc-muted: #a9b2bd;
-  --mcc-dim: #7d8794;
-  --mcc-faint: #6b7684;
-  --mcc-rule: rgba(255, 255, 255, 0.17);
-  --mcc-rule-2: rgba(255, 255, 255, 0.28);
-  --mcc-accent: #3ae8ff;
-  --mcc-live: #b8ff45;
-  --mcc-warn: #ffd23d;
+  --mcc-bg: var(--hl-bg);
+  --mcc-panel: var(--hl-panel);
+  --mcc-panel-up: var(--hl-panel-2);
+  --mcc-sunk: var(--hl-bg);
+  --mcc-fg: var(--hl-fg);
+  --mcc-muted: var(--hl-muted);
+  --mcc-dim: var(--hl-dim);
+  --mcc-faint: var(--hl-dim);
+  --mcc-rule: var(--hl-line-2);
+  --mcc-rule-2: color-mix(in srgb, var(--hl-fg) 28%, transparent);
+  --mcc-accent: var(--hl-strap-hi);
+  --mcc-accent-ink: color-mix(in srgb, var(--hl-strap-hi) 72%, var(--hl-fg));
+  --mcc-accent-tint: color-mix(in srgb, var(--hl-strap) 12%, transparent);
+  --mcc-live: var(--mcc-accent-ink);
+  --mcc-warn: var(--f-bounty-ink);
+  --mch-chatter: var(--f-holler);
+  --mch-chatter-ink: var(--f-holler-ink);
+  --mch-streamer: var(--hl-strap-hi);
+  --mch-streamer-ink: var(--mcc-accent-ink);
+  --mch-bloom: color-mix(in srgb, var(--hl-strap) 16%, transparent);
   min-height: 100vh;
   background-color: var(--mcc-bg);
   background-image:
-    radial-gradient(circle at 8% 0%, rgba(255, 45, 120, 0.12), transparent 32rem),
-    linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px);
-  background-size: auto, 42px 42px, 42px 42px;
+    radial-gradient(circle at 8% 0%, var(--mch-bloom), transparent 32rem),
+    linear-gradient(var(--hl-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hl-grid) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px;
   color: var(--mcc-fg);
   font-family: var(--font-ui), system-ui, sans-serif;
+}
+/* In light the plain strap-hi already clears 9:1, so no lift is needed. */
+.light .mc-how {
+  --mcc-accent-ink: var(--hl-strap-hi);
+  --mch-bloom: color-mix(in srgb, var(--hl-strap) 9%, transparent);
 }
 
 .mc-how .bc {
@@ -50,7 +69,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mc-how :is(a, button, summary, [tabindex]):focus-visible {
-  outline: 2px solid var(--mcc-fg);
+  outline: 2px solid var(--hl-strap-hi);
   outline-offset: 2px;
 }
 
@@ -59,8 +78,8 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   z-index: 30;
   top: 0;
   height: 58px;
-  border-bottom: 1px solid var(--mcc-rule);
-  background: rgba(5, 6, 9, 0.9);
+  border-bottom: 1px solid var(--hl-line);
+  background: var(--hl-bar);
   backdrop-filter: blur(18px);
 }
 
@@ -123,24 +142,25 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 .mch-product-actions > a {
   padding: 8px 12px;
   border: 1px solid var(--mcc-accent);
-  color: var(--mcc-accent);
+  color: var(--mcc-accent-ink);
   font-size: 11px;
   font-weight: 750;
 }
 
 .mch-product-actions > a:hover {
-  background: rgba(58, 232, 255, 0.1);
+  background: var(--mcc-accent-tint);
 }
 
 .mch-main {
   width: min(1500px, calc(100% - 40px));
   margin: 20px auto 40px;
   border: 1px solid var(--mcc-rule);
-  background: rgba(5, 6, 9, 0.72);
+  background: color-mix(in srgb, var(--mcc-panel) 82%, transparent);
+  box-shadow: var(--hl-shadow);
 }
 
 .mch-coordinate {
-  color: var(--mcc-accent);
+  color: var(--mcc-accent-ink);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.11em;
@@ -155,9 +175,19 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   padding: 54px 56px;
   border-bottom: 1px solid var(--mcc-rule);
   background:
-    radial-gradient(circle at 78% 22%, rgba(184, 255, 69, 0.11), transparent 25rem),
-    radial-gradient(circle at 18% 0%, rgba(58, 232, 255, 0.23), transparent 32rem),
-    linear-gradient(118deg, #102a3f 0%, #0a1927 54%, #07090f 100%);
+    radial-gradient(circle at 78% 22%, color-mix(in srgb, var(--f-holler) 10%, transparent), transparent 25rem),
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--hl-strap) 30%, transparent), transparent 32rem),
+    linear-gradient(118deg, var(--hl-panel-2) 0%, var(--hl-panel) 54%, var(--hl-bg) 100%);
+}
+
+/* The four features, named once in their own colours under the hero. */
+.mch-hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
 .mch-hero h1 {
@@ -179,10 +209,10 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 
 .mch-tree-section {
   padding: 58px 56px 64px;
-  background: linear-gradient(180deg, rgba(12, 15, 23, 0.82), rgba(7, 9, 15, 0.9));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--hl-panel-2) 60%, transparent), color-mix(in srgb, var(--hl-panel) 90%, transparent));
 }
 
-/* The split, in the landing's language: two neon tags side by side over the
+/* The split, in the landing's language: two tags side by side over the
    two columns. It replaces a centred box and a drawn connector that together
    read like an org chart. */
 .mch-arewe {
@@ -215,16 +245,24 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   text-transform: uppercase;
 }
 
+/* Glow in dark only: the shadow colour fades to nothing as --hl-glow-k → 0,
+   and light gets a plain tint instead. */
 .mch-tag.is-chatter {
-  border-color: color-mix(in srgb, var(--mcc-accent) 65%, transparent);
-  color: var(--mcc-accent);
-  box-shadow: 0 0 20px -6px var(--mcc-accent), inset 0 0 14px -9px var(--mcc-accent);
+  border-color: color-mix(in srgb, var(--mch-chatter) 65%, transparent);
+  background: color-mix(in srgb, var(--mch-chatter) 8%, transparent);
+  color: var(--mch-chatter-ink);
+  box-shadow:
+    0 0 20px -6px color-mix(in srgb, var(--mch-chatter) calc(100% * var(--hl-glow-k)), transparent),
+    inset 0 0 14px -9px color-mix(in srgb, var(--mch-chatter) calc(100% * var(--hl-glow-k)), transparent);
 }
 
 .mch-tag.is-streamer {
-  border-color: color-mix(in srgb, var(--mcc-live) 65%, transparent);
-  color: var(--mcc-live);
-  box-shadow: 0 0 20px -6px var(--mcc-live), inset 0 0 14px -9px var(--mcc-live);
+  border-color: color-mix(in srgb, var(--mch-streamer) 65%, transparent);
+  background: color-mix(in srgb, var(--mch-streamer) 8%, transparent);
+  color: var(--mch-streamer-ink);
+  box-shadow:
+    0 0 20px -6px color-mix(in srgb, var(--mch-streamer) calc(100% * var(--hl-glow-k)), transparent),
+    inset 0 0 14px -9px color-mix(in srgb, var(--mch-streamer) calc(100% * var(--hl-glow-k)), transparent);
 }
 
 .mch-tree-result h2 {
@@ -250,18 +288,24 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 .mch-flow {
   min-width: 0;
   border: 1px solid var(--mcc-rule);
-  background: rgba(5, 6, 9, 0.82);
+  border-top: 2px solid var(--mch-chatter);
+  background: var(--mcc-panel);
+  box-shadow: var(--hl-shadow);
+}
+
+.mch-flow.is-streamer {
+  border-top-color: var(--mch-streamer);
 }
 
 .mch-flow > header {
   display: block;
   padding: 22px 27px;
   border-bottom: 1px solid var(--mcc-rule);
-  background: linear-gradient(135deg, rgba(58, 232, 255, 0.14), rgba(7, 9, 15, 0.42));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--mch-chatter) 11%, transparent), transparent 70%);
 }
 
 .mch-flow.is-streamer > header {
-  background: linear-gradient(135deg, rgba(184, 255, 69, 0.13), rgba(8, 28, 29, 0.36));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--mch-streamer) 13%, transparent), transparent 70%);
 }
 
 .mch-flow > header p {
@@ -303,11 +347,19 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   width: 19px;
   height: 19px;
   margin-top: 1px;
-  color: var(--mcc-accent);
+  color: var(--mch-chatter-ink);
 }
 
 .mch-flow.is-streamer .mch-step-icon {
-  color: var(--mcc-live);
+  color: var(--mch-streamer-ink);
+}
+
+/* Which features a step is about, in their own colours. */
+.mch-step-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 9px;
 }
 
 .mch-flow li h3 {
@@ -325,18 +377,24 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   line-height: 1.55;
 }
 
+/* The result is a camera seat on the broadcast — the Call in feature, so it
+   wears the call-in purple. */
 .mch-tree-result {
   width: min(660px, 100%);
   margin: 46px auto 0;
   padding: 28px 34px;
-  border: 1px solid rgba(184, 255, 69, 0.32);
-  border-left: 3px solid var(--mcc-live);
-  background: linear-gradient(120deg, rgba(184, 255, 69, 0.13), rgba(7, 26, 28, 0.48));
+  border: 1px solid var(--f-callin-line);
+  border-left: 3px solid var(--f-callin);
+  background: linear-gradient(120deg, var(--f-callin-bg), color-mix(in srgb, var(--mcc-panel) 70%, transparent));
   text-align: center;
 }
 
 .mch-tree-result .mch-coordinate {
-  color: var(--mcc-live);
+  color: var(--f-callin-ink);
+}
+
+.mch-tree-result .ft {
+  margin-top: 14px;
 }
 
 /* Label over title, left aligned. The old label-left / title-far-right split
@@ -373,7 +431,9 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mch-faq-section {
-  background: rgba(7, 9, 15, 0.82);
+  padding: 58px 56px 64px;
+  border-top: 1px solid var(--mcc-rule);
+  background: color-mix(in srgb, var(--hl-panel) 90%, transparent);
 }
 
 .mch-faq-list {
@@ -403,7 +463,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mch-faq-list .mark {
-  color: var(--mcc-accent);
+  color: var(--mcc-accent-ink);
   font-size: 21px;
   font-weight: 400;
   transition: transform 140ms ease;
@@ -411,6 +471,12 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 
 .mch-faq-list details[open] .mark {
   transform: rotate(45deg);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mch-faq-list summary:hover {
+    color: var(--mcc-accent-ink);
+  }
 }
 
 .mch-faq-list details p {
@@ -425,7 +491,10 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 .mch-cta {
   padding: 42px 56px;
   border-top: 1px solid var(--mcc-rule);
-  background: linear-gradient(100deg, rgba(58, 232, 255, 0.38), rgba(12, 15, 23, 0.8));
+  background: linear-gradient(100deg, color-mix(in srgb, var(--hl-strap) 36%, transparent), color-mix(in srgb, var(--hl-panel) 80%, transparent));
+}
+.light .mch-cta {
+  background: linear-gradient(100deg, color-mix(in srgb, var(--hl-strap) 16%, transparent), color-mix(in srgb, var(--hl-panel) 80%, transparent));
 }
 
 .mch-cta > div {
@@ -451,21 +520,38 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   min-width: 128px;
   padding: 12px 17px;
   border: 1px solid var(--mcc-rule-2);
+  background: color-mix(in srgb, var(--hl-panel) 60%, transparent);
   color: var(--mcc-fg);
   font-size: 12px;
   font-weight: 750;
   text-align: center;
+  transition: transform 150ms cubic-bezier(.23, 1, .32, 1);
+}
+
+.mch-cta a:active {
+  transform: scale(.97);
 }
 
 .mch-cta a:last-child {
-  border-color: var(--mcc-accent);
-  background: var(--mcc-accent);
-  color: #050609;
+  border-color: var(--hl-strap);
+  background: var(--hl-strap);
+  color: #fff;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mch-cta a:hover {
+    border-color: var(--mcc-accent);
+  }
+
+  .mch-cta a:last-child:hover {
+    border-color: var(--hl-strap-hover);
+    background: var(--hl-strap-hover);
+  }
 }
 
 .mch-footer {
   border-top: 1px solid var(--mcc-rule);
-  background: rgba(5, 6, 9, 0.92);
+  background: var(--hl-bar);
 }
 
 .mch-footer > div {

@@ -5,7 +5,7 @@ import { RoomProvider } from '@/components/room-provider'
 import { DashboardShell } from '@/components/dashboard-shell'
 
 export const metadata = {
-  title: 'MegaChat — Streamer dashboard',
+  title: 'Holler — Streamer dashboard',
   description: 'Tune pricing, share links, watch viewers roll onto camera.',
 }
 

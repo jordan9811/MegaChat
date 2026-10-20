@@ -8,7 +8,7 @@
 // blend: a streamer who claims and watches "their" pool shrink learns about
 // restaking from the worst possible teacher, so the page teaches it first.
 //
-// Primary CTA for fans: record a MegaChat. For the claimed streamer: the
+// Primary CTA for fans: record a Holler. For the claimed streamer: the
 // approval queue (also reachable from the booth).
 
 import { useCallback, useEffect, useState } from 'react'
@@ -17,9 +17,22 @@ import {
   getBountyConfig, getPoolView, getProgram,
   type BountyClientConfig, type PoolView, type ProgramPool,
 } from '@/lib/bounty-api'
+import { FeatureTag } from '@/components/feature-tag'
 import { RecordFlow } from './record-flow'
 import { ApprovalQueue } from './approval-queue'
 import { ClaimFlow } from './claim-flow'
+
+// The locked/contested key, same as the leaderboard's stacked bar: solid is
+// money locked to this name, the hatch is money rivals can also take. The
+// hairline in the bounty ink keeps the swatch visible on a light ground.
+const LOCKED_SWATCH = {
+  background: 'var(--f-bounty)',
+  boxShadow: 'inset 0 0 0 1px var(--f-bounty-ink)',
+}
+const CONTESTED_SWATCH = {
+  backgroundImage: 'repeating-linear-gradient(135deg, var(--f-bounty) 0 3px, transparent 3px 6px)',
+  boxShadow: 'inset 0 0 0 1px var(--f-bounty-ink)',
+}
 
 export function StreamerBountyPage({ platform, handle }: { platform: string; handle: string }) {
   const [config, setConfig] = useState<BountyClientConfig | null | 'loading'>('loading')
@@ -84,16 +97,17 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
             {handle}
             <span className="text-xs font-normal uppercase tracking-wide text-muted-foreground">{platform}</span>
             {claimedBy ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--neon-lime)]/50 px-2 py-0.5 text-[10px] font-bold text-[var(--neon-lime)]">
+              <span className="inline-flex items-center gap-1 rounded-full border border-f-rewards-line bg-f-rewards-bg px-2 py-0.5 text-[10px] font-bold tracking-normal text-f-rewards-ink">
                 <CircleCheck className="size-3" /> claimed
               </span>
             ) : (
-              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                not on MegaChat yet
+              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-bold tracking-normal text-muted-foreground">
+                not on Holler yet
               </span>
             )}
+            {/* On air: the solid record red with white ink (SPEC §3). */}
             {twitchLive === true ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--neon-magenta)]/60 px-2 py-0.5 text-[10px] font-bold text-[var(--neon-magenta)]">
+              <span className="inline-flex items-center gap-1 rounded-full bg-f-holler-solid px-2 py-0.5 text-[10px] font-bold tracking-normal text-f-holler-on">
                 <Radio className="size-3 animate-pulse" /> live now
               </span>
             ) : null}
@@ -108,19 +122,24 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
 
       {view ? (
         <div className="grid gap-3 sm:grid-cols-3">
-          {/* GUARANTEED leads. Always. */}
-          <div className="rounded-2xl border border-[var(--neon-lime)]/40 bg-[var(--neon-lime)]/5 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Guaranteed to {handle}</p>
-            <p className="mt-1 font-heading text-2xl font-bold text-foreground tabular">
+          {/* GUARANTEED leads. Always. Solid bounty swatch = locked to this
+              name; the hatched one beside Contested = may go to a rival. */}
+          <div className="rounded-2xl border border-f-bounty-line bg-f-bounty-bg p-4">
+            <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              <span aria-hidden="true" className="h-2 w-3.5 shrink-0" style={LOCKED_SWATCH} />
+              Guaranteed to {handle}
+            </p>
+            <p className="mt-1 font-heading text-2xl font-bold text-f-bounty-ink tabular">
               {view.guaranteed.toLocaleString()} <span className="text-sm">{currency}</span>
             </p>
             <p className="mt-0.5 text-[11px] text-muted-foreground">theirs alone the moment they claim</p>
           </div>
           <div className="rounded-2xl border border-border/70 bg-card/50 p-4">
             <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              <span aria-hidden="true" className="mr-0.5 h-2 w-3.5 shrink-0" style={CONTESTED_SWATCH} />
               <Swords className="size-3" /> Contested
             </p>
-            <p className="mt-1 font-heading text-2xl font-bold text-foreground tabular">
+            <p className="mt-1 font-heading text-2xl font-bold text-f-bounty-ink tabular">
               {view.contestedTotal.toLocaleString()} <span className="text-sm">{currency}</span>
             </p>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -134,20 +153,22 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
               <Users className="size-3" /> Backers
             </p>
             <p className="mt-1 font-heading text-2xl font-bold text-foreground tabular">{view.contributionCount}</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">{clipCount} clip{clipCount === 1 ? '' : 's'} ready to air</p>
+            {/* A recorded clip is a Holler — labelled in the holler red. */}
+            <FeatureTag kind="holler" className="mt-1.5">{clipCount} clip{clipCount === 1 ? '' : 's'} ready to air</FeatureTag>
           </div>
         </div>
       ) : null}
 
       {!recording ? (
         <div className="flex flex-wrap items-center gap-3">
+          {/* Recording a clip is the holler red; claiming the money is bounty. */}
           <button type="button" onClick={() => setRecording(true)}
-            className="rounded-full bg-[var(--neon-magenta)] px-6 py-3 text-sm font-bold text-white transition-transform hover:scale-[1.02]">
-            🎙 Record a MegaChat for {handle}
+            className="rounded-full bg-f-holler-solid px-6 py-3 text-sm font-bold text-f-holler-on transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.02] active:scale-[.97]">
+            🎙 Record a Holler for {handle}
           </button>
           {!claimedBy ? (
             <button type="button" onClick={() => setClaiming(true)}
-              className="rounded-full border border-[var(--neon-lime)]/60 px-5 py-3 text-sm font-bold text-[var(--neon-lime)] transition-colors hover:bg-[var(--neon-lime)]/10">
+              className="rounded-full border border-f-bounty-line px-5 py-3 text-sm font-bold text-f-bounty-ink transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-f-bounty-bg active:scale-[.97]">
               I am {handle} — claim this
             </button>
           ) : null}

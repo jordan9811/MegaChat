@@ -19,6 +19,13 @@ import { useAccount } from '@/lib/use-account'
 
 type Stage = 'idle' | 'claiming' | 'setup' | 'live' | 'error'
 
+// Colour roles (Holler SPEC §3): money and the claim action are bounty
+// yellow (a caution about getting paid is too); money already released is
+// rewards green; a plain notice is strap violet; red text is an error.
+const CAUTION_BOX = 'rounded-xl border border-f-bounty-line bg-f-bounty-bg p-3'
+const CAUTION_HEAD = 'flex items-center gap-1.5 text-sm font-bold text-f-bounty-ink'
+const NOTICE_BOX = 'rounded-xl border border-hl-strap-hi/45 bg-hl-strap/10 p-3'
+
 export function ClaimFlow({
   pool,
   config,
@@ -101,8 +108,8 @@ export function ClaimFlow({
             Claim the {pool.handle} bounty
           </h3>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {pool.contributionCount} MegaChat{pool.contributionCount === 1 ? '' : 's'} waiting ·{' '}
-            <span className="font-semibold text-foreground">
+            {pool.contributionCount} Holler{pool.contributionCount === 1 ? '' : 's'} waiting ·{' '}
+            <span className="font-semibold text-f-bounty-ink">
               {formatDollars(pool.remaining)}
             </span>{' '}
             in the pool
@@ -127,21 +134,21 @@ export function ClaimFlow({
             id="bounty-claimant"
             value={claimant}
             onChange={(e) => setClaimant(e.target.value)}
-            placeholder="0x… or your MegaChat account"
-            className="mt-1.5 w-full rounded-xl border border-border bg-input/30 px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-[var(--neon-lime)]/70 focus:outline-none"
+            placeholder="0x… or your Holler account"
+            className="mt-1.5 w-full rounded-xl border border-border bg-input/30 px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-hl-strap-hi"
           />
-          <p className="mt-2 rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--neon-amber)]/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-            <strong className="text-[var(--neon-amber)]">Identity check is stubbed in this build.</strong>{' '}
+          <p className="mt-2 rounded-lg border border-f-bounty-line bg-f-bounty-bg px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+            <strong className="text-f-bounty-ink">Identity check is stubbed in this build.</strong>{' '}
             It auto-approves and is recorded as <code>STUBBED_APPROVAL</code>. Connecting a real
             platform account comes next — nothing here moves real funds.
           </p>
           {!canClaim && <p className="mt-3 text-sm text-muted-foreground">This is an unfunded example. Create a real bounty before claiming; the setup preview is available here.</p>}
-          {error || authError ? <p role="alert" className="mt-2 text-sm text-[#ffb39e]">{error || authError}</p> : null}
+          {error || authError ? <p role="alert" className="mt-2 text-sm text-f-holler-ink">{error || authError}</p> : null}
           <button
             type="button"
             disabled={stage === 'claiming' || !canClaim}
             onClick={doClaim}
-            className="mt-3 rounded-full bg-[var(--neon-lime)] px-5 py-2.5 text-sm font-bold text-black transition-transform hover:scale-[1.02] disabled:opacity-60"
+            className="mt-3 rounded-full bg-f-bounty-solid px-5 py-2.5 text-sm font-bold text-f-bounty-on transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.02] active:scale-[.97] disabled:opacity-60"
           >
             {stage === 'claiming' ? 'Checking…' : !canClaim ? 'No funded bounty to claim' : !signedIn ? 'Sign in to claim' : 'Claim this handle'}
           </button>
@@ -150,8 +157,8 @@ export function ClaimFlow({
 
       {stage === 'setup' || stage === 'live' ? (
         <div className="mt-4 space-y-4">
-          <div className="rounded-xl border border-[var(--neon-lime)]/40 bg-[var(--neon-lime)]/5 p-3">
-            <p className="flex items-center gap-1.5 text-sm font-bold text-[var(--neon-lime)]">
+          <div className="rounded-xl border border-f-rewards-line bg-f-rewards-bg p-3">
+            <p className="flex items-center gap-1.5 text-sm font-bold text-f-rewards-ink">
               <CircleCheck className="size-4" /> Handle claimed
             </p>
           </div>
@@ -179,21 +186,21 @@ export function ClaimFlow({
                     if (overlayUrl) void navigator.clipboard.writeText(overlayUrl)
                     setCopied(true); setTimeout(() => setCopied(false), 1500)
                   }}
-                  className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-[var(--neon-cyan)]"
+                  className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-foreground"
                 >
-                  <Copy className="size-3.5" /> {copied ? 'Copied' : 'Copy'}
+                  <Copy className="size-3.5 text-hl-strap-hi" /> {copied ? 'Copied' : 'Copy'}
                 </button>
               </div>
             )}
           </div>
 
           {/* The rule that decides whether they get paid. Stated plainly. */}
-          <div className="rounded-xl border border-[var(--neon-amber)]/50 bg-[var(--neon-amber)]/5 p-3">
-            <p className="flex items-center gap-1.5 text-sm font-bold text-[var(--neon-amber)]">
+          <div className={CAUTION_BOX}>
+            <p className={CAUTION_HEAD}>
               <CircleAlert className="size-4" /> Keep the badge visible and readable
             </p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              While a MegaChat is playing, the overlay shows a short code tied to that
+              While a Holler is playing, the overlay shows a short code tied to that
               specific clip, changing every {Math.round(config.codeRotateMs / 1000)}s. We
               check your public stream for those codes — that is how we confirm the clips
               actually aired. <strong className="text-foreground">If the badge is cropped,
@@ -224,8 +231,8 @@ export function ClaimFlow({
           {/* Kick has no VOD, so it has no retry. A materially different
               bargain, said before they rely on it. */}
           {profile && !profile.vodRetry ? (
-            <div className="rounded-xl border border-[var(--neon-cyan)]/40 bg-[var(--neon-cyan)]/5 p-3">
-              <p className="text-sm font-bold text-[var(--neon-cyan)]">
+            <div className={NOTICE_BOX}>
+              <p className="text-sm font-bold text-foreground">
                 On {profile.platform}, the live check is the only check
               </p>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{profile.notice}</p>
@@ -235,8 +242,8 @@ export function ClaimFlow({
           {/* Measured on THEIR broadcast: named, with the number, so a
               shortfall can never pass for ordinary partial verification. */}
           {quality && quality.belowFloorClips > 0 ? (
-            <div className="rounded-xl border border-[var(--neon-amber)]/50 bg-[var(--neon-amber)]/5 p-3">
-              <p className="flex items-center gap-1.5 text-sm font-bold text-[var(--neon-amber)]">
+            <div className={CAUTION_BOX}>
+              <p className={CAUTION_HEAD}>
                 <CircleAlert className="size-4" /> Your badge is reading small
               </p>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -252,9 +259,9 @@ export function ClaimFlow({
           ) : null}
 
           <div>
-            <p className="text-sm font-semibold text-foreground">2. Go live and play the MegaChats</p>
+            <p className="text-sm font-semibold text-foreground">2. Go live and play the Hollers</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              You earn per <strong className="text-foreground">verified MegaChat played</strong>,
+              You earn per <strong className="text-foreground">verified Holler played</strong>,
               released as the checks come back — not in one lump at the end. Simply having the
               overlay open earns nothing; the clips have to actually air. Each release then has
               a {Math.round(config.disputeWindowMs / 3_600_000)}h dispute window before
@@ -265,8 +272,8 @@ export function ClaimFlow({
           {/* An ambiguous check must never look like silence or a denial —
               the streamer needs to know a person is on it. */}
           {underReview ? (
-            <div className="rounded-xl border border-[var(--neon-violet)]/50 bg-[var(--neon-violet)]/5 p-3">
-              <p className="text-sm font-bold text-[var(--neon-violet)]">Under review</p>
+            <div className={NOTICE_BOX}>
+              <p className="text-sm font-bold text-foreground">Under review</p>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 Our automatic check couldn&apos;t say for sure whether your clips aired, so a
                 person is looking at it. Nothing is denied — payout is paused until they
@@ -289,18 +296,18 @@ export function ClaimFlow({
             </div>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Released</p>
-              <p className="mt-0.5 font-heading text-lg font-bold text-[var(--neon-lime)] tabular">
+              <p className="mt-0.5 font-heading text-lg font-bold text-f-rewards-ink tabular">
                 {formatDollars(released)}
               </p>
               {match > 0 ? (
-                <p className="text-[10px] text-muted-foreground tabular">+{formatDollars(match)} match</p>
+                <p className="text-[10px] text-f-rewards-ink tabular">+{formatDollars(match)} match</p>
               ) : null}
             </div>
             <div>
               <p className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                 <Clock className="size-3" /> Remaining
               </p>
-              <p className="mt-0.5 font-heading text-lg font-bold text-foreground tabular">
+              <p className="mt-0.5 font-heading text-lg font-bold text-f-bounty-ink tabular">
                 {formatDollars(status?.pool.remaining ?? pool.remaining)}
               </p>
             </div>

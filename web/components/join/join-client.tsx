@@ -5,10 +5,12 @@
 // match what that script expects, and the classes it toggles (.show, .success,
 // .error, .live, .addr, .adv-only/.simple-only) are styled in join.css.
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { FeatureTag } from '@/components/feature-tag'
 import { StingerPreview } from '@/components/join/stinger-preview'
 import { initJoinPage } from '@/lib/join-page'
 import { backendWsUrl } from '@/lib/backend'
+import type { RoomFeature } from '@/lib/room-browse'
 
 const primaryBtn =
   'mcj-action mcj-action-record flex w-full items-center justify-center gap-2 px-6 py-3.5 text-[14px] font-bold disabled:opacity-50'
@@ -22,7 +24,111 @@ const ghostBtn =
 const miniBtn =
   'mcj-mini flex w-full items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-semibold disabled:opacity-50'
 
+type RoomFlags = {
+  letters?: { enabled?: boolean }
+  joinStream?: { enabled?: boolean }
+  rewardsEnabled?: boolean
+}
+
+// The same three flags the console below reads, in the order the product
+// sells them. Call in follows join-page.ts joinStreamEnabled(): an absent
+// block means on, so the tag and the seat controls can never disagree.
+function roomFeatures(cfg: RoomFlags): RoomFeature[] {
+  const kinds: RoomFeature[] = []
+  if (cfg.letters?.enabled === true) kinds.push('holler')
+  if (cfg.joinStream?.enabled !== false) kinds.push('callin')
+  if (cfg.rewardsEnabled) kinds.push('rewards')
+  return kinds
+}
+
+// What this room offers, in the room bar. The script owns the room config and
+// announces the resolved room id with `stream:room` (also re-sent when the
+// identity changes); this asks for the same public config once per room id.
+function RoomFeatureTags() {
+  const [kinds, setKinds] = useState<RoomFeature[]>([])
+
+  useEffect(() => {
+    const ctrl = new AbortController()
+    let latest = ''
+    const load = () => {
+      const room = (window as Window & { __streamRoomId?: string }).__streamRoomId
+      if (!room || room === latest) return
+      latest = room
+      fetch('/api/config?room=' + encodeURIComponent(room), { signal: ctrl.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((cfg: RoomFlags | null) => {
+          if (cfg && room === latest) setKinds(roomFeatures(cfg))
+        })
+        .catch(() => { /* the tags are decoration; the console still works */ })
+    }
+    window.addEventListener('stream:room', load)
+    return () => {
+      ctrl.abort()
+      window.removeEventListener('stream:room', load)
+    }
+  }, [])
+
+  if (!kinds.length) return null
+  return (
+    <span className="join-room-features">
+      <span className="sr-only">This room offers: </span>
+      {kinds.map((k) => <FeatureTag key={k} kind={k} />)}
+    </span>
+  )
+}
+
+// Presentation only. The script writes the status message and the replay's
+// moment buttons as plain text, with no hook saying which feature they belong
+// to. This reads what it wrote and sets data-feature, so join.css can draw a
+// Holler's sent / queued / on-air states in holler red and a seat's in call-in
+// purple. It never changes the text, the classes the script owns, or any
+// click behaviour.
+function featureOfMessage(text: string, seated: boolean): RoomFeature | '' {
+  if (/\bHollers?\b/.test(text)) return 'holler'
+  if (seated || /\b(seat|go live|left the stream)\b/i.test(text)) return 'callin'
+  return ''
+}
+
+function featureOfMoment(text: string): RoomFeature | '' {
+  if (/^Holler\b/.test(text)) return 'holler'
+  if (/^On camera\b/.test(text)) return 'callin'
+  return ''
+}
+
+function setFeature(el: HTMLElement, kind: RoomFeature | '') {
+  if (kind) {
+    if (el.dataset.feature !== kind) el.dataset.feature = kind
+  } else if (el.dataset.feature) {
+    delete el.dataset.feature
+  }
+}
+
+function useFeatureTagging() {
+  useEffect(() => {
+    const message = document.getElementById('message')
+    const moments = document.getElementById('streamReplayMoments')
+    const camera = document.getElementById('cameraStage')
+    const observers: MutationObserver[] = []
+
+    if (message) {
+      const tag = () => setFeature(message, featureOfMessage(message.textContent || '', !!camera?.classList.contains('show')))
+      const mo = new MutationObserver(tag)
+      mo.observe(message, { childList: true, subtree: true, characterData: true })
+      observers.push(mo)
+    }
+    if (moments) {
+      const tag = () => moments.querySelectorAll('button').forEach((b) => setFeature(b, featureOfMoment(b.textContent || '')))
+      const mo = new MutationObserver(tag)
+      mo.observe(moments, { childList: true })
+      observers.push(mo)
+    }
+    return () => observers.forEach((mo) => mo.disconnect())
+  }, [])
+}
+
 export function JoinClient() {
+  useFeatureTagging()
+
   useEffect(() => {
     return initJoinPage({ wsUrl: backendWsUrl() })
   }, [])
@@ -32,6 +138,7 @@ export function JoinClient() {
       <div className="join-room-strip">
         <span className="join-live-label" id="joinRoomState">Room entrance</span>
         <strong id="joinRoomName">Loading room...</strong>
+        <RoomFeatureTags />
         <span>Your camera stays private until you confirm.</span>
       </div>
 
@@ -40,65 +147,72 @@ export function JoinClient() {
         className="join-demo-banner"
         style={{ display: 'none' }}
       >
-        This is a live demo room. Farm drops by watching, send a MegaChat, go
+        This is a live demo room. Farm rewards by watching, send a Holler, go
         live for pennies — everything here runs the real machinery at dust
         prices.
       </div>
 
       <div className="join-layout">
-        <section className="join-media-stage" aria-label="Broadcast preview">
-          <div id="hostLiveFeed" className="stream-preview host-live" style={{ display: 'none' }}>
-            <div className="stream-preview-frame host-live-frame">
-              <div id="hostLiveMount" className="stream-preview-mount" />
-              {/* Shown instead of the host's picture until their booth confirms
-                  it is really them — never OBS's placeholder, never a frozen
-                  frame. The host's voice plays either way. */}
-              <div id="hostFeedHeld" className="host-feed-held" style={{ display: 'none' }}>
-                <div>
-                  <span className="join-coordinate">Host camera</span>
-                  <h2 id="hostFeedHeldTitle">Waiting for the host</h2>
-                  <p id="hostFeedHeldText">Their camera and voice come through here when they join you.</p>
+        {/* The broadcast column is a picture, not page chrome: it stays dark in
+            both themes (the .dark scope re-resolves every token inside it). It
+            runs the full height of the row, so a console taller than the stage
+            never leaves a bare strip of page under the picture; the stage
+            inside it stays sticky. */}
+        <div className="join-stage-col dark">
+          <section className="join-media-stage" aria-label="Broadcast preview">
+            <div id="hostLiveFeed" className="stream-preview host-live" style={{ display: 'none' }}>
+              <div className="stream-preview-frame host-live-frame">
+                <div id="hostLiveMount" className="stream-preview-mount" />
+                {/* Shown instead of the host's picture until their booth confirms
+                    it is really them — never OBS's placeholder, never a frozen
+                    frame. The host's voice plays either way. */}
+                <div id="hostFeedHeld" className="host-feed-held" style={{ display: 'none' }}>
+                  <div>
+                    <span className="join-coordinate">Host camera</span>
+                    <h2 id="hostFeedHeldTitle">Waiting for the host</h2>
+                    <p id="hostFeedHeldText">Their camera and voice come through here when they join you.</p>
+                  </div>
                 </div>
               </div>
+              <div className="stream-preview-caption">
+                <span className="host-live-label">
+                  <span className="host-live-dot" aria-hidden="true" />
+                  Real-time with the host — the public stream shows this after a slight delay
+                </span>
+                <span className="stream-preview-label">Headphones recommended</span>
+              </div>
+              {/* Shown when this page's mic is sending the host's own voice back
+                  (web/lib/echo-detector.ts). */}
+              <p id="guestEchoWarn" className="guest-echo-warn" role="alert" hidden>
+                <strong>The host can hear their own voice through your mic.</strong> Put on headphones — or mute any
+                other tab or app playing the stream.
+              </p>
             </div>
-            <div className="stream-preview-caption">
-              <span className="host-live-label">
-                <span className="host-live-dot" aria-hidden="true" />
-                Real-time with the host — the public stream shows this after a slight delay
-              </span>
-              <span className="stream-preview-label">Headphones recommended</span>
-            </div>
-            {/* Shown when this page's mic is sending the host's own voice back
-                (web/lib/echo-detector.ts). */}
-            <p id="guestEchoWarn" className="guest-echo-warn" role="alert" hidden>
-              <strong>The host can hear their own voice through your mic.</strong> Put on headphones — or mute any
-              other tab or app playing the stream.
-            </p>
-          </div>
 
-          <div id="streamPreview" className="stream-preview" style={{ display: 'none' }}>
-            <div className="stream-preview-frame">
-              <div id="streamPreviewMount" className="stream-preview-mount" />
+            <div id="streamPreview" className="stream-preview" style={{ display: 'none' }}>
+              <div className="stream-preview-frame">
+                <div id="streamPreviewMount" className="stream-preview-mount" />
+              </div>
+              <div className="stream-preview-caption">
+                <span id="streamPreviewLabel" className="stream-preview-label">Stream preview · slight delay</span>
+                <span id="streamPreviewDrops" className="stream-preview-drops" style={{ display: 'none' }}>
+                  Watching earns rewards in this room
+                </span>
+              </div>
+              {/* An offline room plays the replay of its last broadcast here, and
+                  these jump to its moments (join-page.ts mountReplay). */}
+              <div id="streamReplayMoments" className="stream-replay-moments" hidden />
             </div>
-            <div className="stream-preview-caption">
-              <span id="streamPreviewLabel" className="stream-preview-label">Stream preview · slight delay</span>
-              <span id="streamPreviewDrops" className="stream-preview-drops" style={{ display: 'none' }}>
-                Watching earns drops in this room
-              </span>
-            </div>
-            {/* An offline room plays the replay of its last broadcast here, and
-                these jump to its moments (join-page.ts mountReplay). */}
-            <div id="streamReplayMoments" className="stream-replay-moments" hidden />
-          </div>
 
-          <div id="previewIdle" className="join-preview-idle">
-            <div>
-              <span className="join-coordinate">Stream preview</span>
-              <h1>Preview unavailable</h1>
-              <p>This room is not publishing a preview here. Recording and live-seat controls still work normally.</p>
+            <div id="previewIdle" className="join-preview-idle">
+              <div>
+                <span className="join-coordinate">Stream preview</span>
+                <h1>Preview unavailable</h1>
+                <p>This room is not publishing a preview here. Recording and call-in controls still work normally.</p>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
 
         <aside className="join-action-console">
           <div className="join-console-body">
@@ -136,12 +250,12 @@ export function JoinClient() {
             </section>
 
             <section id="megachatAction" className="join-mode-zone is-record" style={{ display: 'none' }}>
-              <header><h2>Record a MegaChat</h2><p>Review before sending. Your clip plays once on the broadcast<span id="letterKeepNote" />.</p></header>
+              <header><h2>Record a Holler</h2><p>Review before sending. Your clip plays once on the broadcast<span id="letterKeepNote" />.</p></header>
               <button id="letterBtn" type="button" className={primaryBtn} style={{ display: 'none' }}>
-                Send a MegaChat
+                Send a Holler
               </button>
               <div id="letterStage" className="letter-stage" style={{ display: 'none' }}>
-                <div className="cam-frame letter-frame"><video id="letterVideo" playsInline muted /></div>
+                <div className="cam-frame letter-frame dark"><video id="letterVideo" playsInline muted /></div>
                 <div className="letter-controls">
                   <button id="letterRecordBtn" type="button" className={ghostBtn}>Record</button>
                   <button id="letterRedoBtn" type="button" className={ghostBtn} style={{ display: 'none' }}>Re-record</button>
@@ -153,20 +267,20 @@ export function JoinClient() {
             </section>
 
             <section id="liveSeatAction" className="join-mode-zone is-live-seat" style={{ display: 'none' }}>
-              <header><h2>Live seat</h2><p>Your camera stays private until you press Go Live.</p></header>
+              <header><h2>Call in</h2><p>Your camera stays private until you press Go Live.</p></header>
               <div id="cameraStage">
                 <div id="camStatus" className="cam-status">
                   <span className="dot" /><span id="camStatusText">Requesting camera…</span>
                   <span id="lkQualityDot" className="lk-quality" style={{ display: 'none' }} />
                 </div>
-                <div className="cam-frame">
+                <div className="cam-frame dark">
                   <iframe id="camPublisher" title="Camera publisher" allow="camera; microphone; autoplay; display-capture; fullscreen" />
                 </div>
                 <iframe id="camDetector" title="Publish detector" className="cam-detector" allow="autoplay" />
                 <button id="camRetryBtn" type="button" className={ghostBtn}>Retry camera</button>
                 <div id="camHint" />
               </div>
-              <button id="joinBtn" type="button" className={dopamineBtn}>Join Stream</button>
+              <button id="joinBtn" type="button" className={dopamineBtn}>🎬 Call in</button>
               <p className="join-trust-line">Leave anytime. Every unused cent returns automatically.</p>
             </section>
 

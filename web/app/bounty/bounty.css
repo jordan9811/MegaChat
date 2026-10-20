@@ -1,57 +1,55 @@
 /* Bounty leaderboard (feat/ui-overhaul) — scoped under .mc-bounty.
-   Same skin as the room board, the create page and /account: near-black
-   ground, one warm accent, square corners, hairline rules. Green is money
-   that is locked to one name; yellow is money several names are racing for,
-   and the two are never blended into one number. */
-
-/* The site paints a magenta neon scrollbar on the document itself, so
-   scoping the app skin to .mc-bounty isn't enough — the pink rail survives
-   next to a near-black page. :has lets this page own the document chrome
-   for as long as it is the thing on screen. */
-html:has(.mc-bounty) {
-  color-scheme: dark;
-}
+   Same skin as the room board, the create page and /account: square
+   corners, hairline rules. Holler rebrand (design-assets/holler-brand/
+   SPEC.md): every colour is a Holler token, so the page follows the
+   light/dark theme. Bounty yellow is money and the bounty actions — solid
+   yellow is money locked to one name, the yellow hatch is money several
+   names are racing for, and the two are never blended into one number.
+   Money already paid out is rewards green; strap violet is everything else. */
 
 body:has(.mc-bounty) {
-  background: #050609;
-}
-/* html itself owns the page scrollbar, and the site's rule is `*` — which
-   matches html but not `html *`. Both selectors are needed. */
-html:has(.mc-bounty),
-html:has(.mc-bounty) * {
-  scrollbar-color: #2a2f3a transparent;
-}
-html:has(.mc-bounty) ::-webkit-scrollbar-thumb {
-  background-color: #2a2f3a;
-}
-html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
-  background-color: #3a4150;
+  background: var(--hl-bg);
 }
 
 .mc-bounty {
-  --mcc-bg: #050609;
-  --mcc-panel: #0a0c12;
-  --mcc-sunk: #07090f;
-  --mcc-fg: #f4f6f8;
-  --mcc-muted: #a9b2bd;
-  --mcc-dim: #7d8794;
-  --mcc-faint: #6b7684;
-  --mcc-off: #b3bcc6;
-  --mcc-ghost: #6b7684;
-  --mcc-hairline: rgba(255, 255, 255, 0.1);
-  --mcc-rule: rgba(255, 255, 255, 0.17);
-  --mcc-rule-2: rgba(255, 255, 255, 0.28);
-  --mcc-accent: #3ae8ff;
-  --mcc-live: #b8ff45;
-  --mcc-warn: #ffd23d;
+  /* The page's scoped names, now pointing at the theme tokens. */
+  --mcc-bg: var(--hl-bg);
+  --mcc-panel: var(--hl-panel);
+  --mcc-sunk: var(--hl-panel-2);
+  --mcc-fg: var(--hl-fg);
+  --mcc-muted: var(--hl-muted);
+  --mcc-dim: var(--hl-dim);
+  --mcc-faint: var(--hl-dim);
+  --mcc-off: var(--hl-muted);
+  --mcc-ghost: var(--hl-dim);
+  --mcc-hairline: var(--hl-line);
+  --mcc-rule: var(--hl-line-2);
+  --mcc-rule-2: color-mix(in srgb, var(--hl-fg) 28%, transparent);
+  /* Bounty marks that are not text — bars, swatches, the selected-row edge.
+     The owner's #cfe83a is near-white on a light ground (1.3:1), so in light
+     each yellow fill also carries a hairline in the bounty ink. */
+  --mcb-fill: var(--f-bounty);
+  --mcb-edge: transparent;
+  --mcb-gap: color-mix(in srgb, var(--f-bounty) 26%, var(--hl-bg));
+  --mcb-mark: var(--f-bounty);
+  --mcb-select: color-mix(in srgb, var(--f-bounty) 6%, transparent);
+  --mcb-field: var(--hl-bg);
   background-color: var(--mcc-bg);
   background-image:
-    radial-gradient(circle at 8% 0%, rgba(255, 45, 120, 0.11), transparent 31rem),
-    linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px);
-  background-size: auto, 42px 42px, 42px 42px;
+    radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--hl-strap) 14%, transparent), transparent 31rem),
+    linear-gradient(var(--hl-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hl-grid) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px;
   color: var(--mcc-fg);
   font-family: var(--font-ui), system-ui, sans-serif;
+}
+
+.light .mc-bounty {
+  --mcb-edge: var(--f-bounty-ink);
+  --mcb-gap: color-mix(in srgb, var(--f-bounty) 22%, var(--hl-panel));
+  --mcb-mark: var(--f-bounty-ink);
+  --mcb-select: var(--f-bounty-bg);
+  --mcb-field: var(--hl-panel);
 }
 
 .mc-bounty .bc {
@@ -81,49 +79,62 @@ html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
   text-transform: uppercase;
 }
 
-/* The themed focus ring is invisible on this ground. */
 .mc-bounty :is(a, button, input, select, [tabindex]):focus-visible {
-  outline: 2px solid var(--mcc-fg);
+  outline: 2px solid var(--hl-strap-hi);
   outline-offset: 2px;
 }
 
 /* ── THE STACKED BAR ──────────────────────────────────────────────────────
-   One row of money, split by who can still take it. Solid green is locked
-   to this name alone; the hatch is pledged to rivals as well, so it may
-   never arrive. A blended headline hides exactly that. */
+   One row of money, split by who can still take it. Solid is locked to
+   this name alone; the hatch is pledged to rivals as well, so it may never
+   arrive. A blended headline hides exactly that. */
 .mc-bounty .track {
   display: flex;
   height: 8px;
   background: var(--mcc-rule);
 }
 .mc-bounty .track-locked {
-  background: var(--mcc-live);
+  background: var(--mcb-fill);
+  box-shadow: inset 0 0 0 1px var(--mcb-edge);
 }
 .mc-bounty .hatch {
-  background-image: repeating-linear-gradient(135deg, #ffd23d 0 4px, #6b5a18 4px 8px);
+  background-image: repeating-linear-gradient(135deg, var(--mcb-fill) 0 4px, var(--mcb-gap) 4px 8px);
+  box-shadow: inset 0 0 0 1px var(--mcb-edge);
+}
+/* Locked money is lit; contested money is not. Dark only (SPEC §5). */
+:root:not(.light) .mc-bounty .track .track-locked {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--f-bounty) 38%, transparent);
 }
 
 /* ── AVATAR FALLBACK ──────────────────────────────────────────────────────
-   Same six meshes the room tiles use (booth.css), redeclared here because
-   this route never loads the booth chunk. Keyed off the handle, so a name
-   always gets the same colour. */
+   Six meshes keyed off the handle, so a name always gets the same one.
+   Violet family and neutrals only — a feature hue on an avatar would read
+   as a claim about the streamer. */
+.mc-bounty [class*='mc-mesh-'] {
+  color: color-mix(in srgb, var(--hl-fg) 72%, transparent);
+}
 .mc-bounty .mc-mesh-0 {
-  background: radial-gradient(120% 90% at 22% 18%, #1c2029 0%, #141c22 62%);
+  background: radial-gradient(120% 90% at 22% 18%, color-mix(in srgb, var(--hl-strap) 30%, var(--hl-panel-2)) 0%, var(--hl-panel-2) 62%);
 }
 .mc-bounty .mc-mesh-1 {
-  background: radial-gradient(120% 90% at 76% 20%, #4a2b34 0%, #21181c 64%);
+  background: radial-gradient(120% 90% at 76% 20%, color-mix(in srgb, var(--f-callin) 22%, var(--hl-panel-2)) 0%, var(--hl-panel-2) 64%);
 }
 .mc-bounty .mc-mesh-2 {
-  background: radial-gradient(120% 90% at 34% 74%, #26402f 0%, #161f1a 62%);
+  background: radial-gradient(120% 90% at 34% 74%, color-mix(in srgb, var(--hl-fg) 10%, var(--hl-panel-2)) 0%, var(--hl-panel-2) 62%);
 }
 .mc-bounty .mc-mesh-3 {
-  background: radial-gradient(120% 90% at 62% 26%, #363050 0%, #1c1a24 64%);
+  background: radial-gradient(120% 90% at 62% 26%, color-mix(in srgb, var(--hl-strap-hi) 22%, var(--hl-panel-2)) 0%, var(--hl-panel-2) 64%);
 }
 .mc-bounty .mc-mesh-4 {
-  background: radial-gradient(120% 90% at 26% 30%, #2c2a26 0%, #181818 64%);
+  background: radial-gradient(120% 90% at 26% 30%, color-mix(in srgb, var(--hl-fg) 6%, var(--hl-panel-2)) 0%, var(--hl-panel-2) 64%);
 }
 .mc-bounty .mc-mesh-5 {
-  background: radial-gradient(120% 90% at 70% 68%, #29343a 0%, #171a1c 64%);
+  background: radial-gradient(120% 90% at 70% 68%, color-mix(in srgb, var(--f-callin) 12%, var(--hl-panel-2)) 0%, var(--hl-panel-2) 64%);
+}
+/* Platform glyphs are drawn in the text colour, not their own brand hues. */
+.mc-bounty .mcb-platform {
+  background: var(--mcc-bg);
+  color: var(--mcc-fg);
 }
 
 /* ── THE LEADERBOARD GRID ─────────────────────────────────────────────────
@@ -142,9 +153,13 @@ html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
   align-items: center;
   border-bottom: 1px solid var(--mcc-hairline);
   padding: 15px 12px;
-  transition: background-color .15s;
 }
-.mc-bounty .lb-row.is-selected { background: rgba(58, 232, 255, .07); }
+/* The edge sits just outside the row, in the column gutter, so it never
+   touches the rank digits. */
+.mc-bounty .lb-row.is-selected {
+  background: var(--mcb-select);
+  box-shadow: -3px 0 0 var(--mcb-mark);
+}
 .mc-bounty .lb-who { border: 0; background: transparent; color: inherit; cursor: pointer; }
 .mc-bounty .lb-row > .lb-bar,
 .mc-bounty .lb-row > .lb-status,
@@ -186,18 +201,24 @@ html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
   }
 }
 
-/* ── ACTIONS ──────────────────────────────────────────────────────────────*/
+/* ── ACTIONS ──────────────────────────────────────────────────────────────
+   Bounty actions are the solid bounty yellow with dark ink. Ease-out, a
+   press scale, and a lit edge on a real pointer (SPEC §6). */
 .mc-bounty .rowcta {
   display: block;
-  background: var(--mcc-accent);
-  color: #050609;
+  background: var(--f-bounty-solid);
+  color: var(--f-bounty-on);
   font-size: 11px;
   font-weight: 700;
   padding: 9px 14px;
   text-align: center;
 }
-.mc-bounty .rowcta:hover {
-  background: #7df0ff;
+
+.mc-bounty :is(.rowcta, .rowcta-ghost, .btn, .mcb-detail-action, .mcb-claim-action) {
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.mc-bounty :is(.rowcta, .rowcta-ghost, .btn:not(:disabled), .mcb-detail-action, .mcb-claim-action):active {
+  transform: scale(0.97);
 }
 
 .mc-bounty .rowcta-ghost {
@@ -209,10 +230,6 @@ html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
   padding: 9px 14px;
   text-align: center;
 }
-.mc-bounty .rowcta-ghost:hover {
-  color: var(--mcc-fg);
-  border-color: var(--mcc-fg);
-}
 
 .mc-bounty .btn {
   font-family: inherit;
@@ -221,13 +238,23 @@ html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
   letter-spacing: 0;
   padding: 12px 22px;
   border: 0;
-  background: var(--mcc-accent);
-  color: #050609;
+  background: var(--f-bounty-solid);
+  color: var(--f-bounty-on);
   cursor: pointer;
 }
 .mc-bounty .btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mc-bounty :is(.rowcta, .btn:not(:disabled), .mcb-detail-action):hover {
+    box-shadow: var(--hl-glow-bounty);
+  }
+  .mc-bounty :is(.rowcta-ghost, .mcb-claim-action):hover {
+    color: var(--mcc-fg);
+    border-color: var(--mcc-fg);
+  }
 }
 
 /* Handle entry for a streamer nobody has named yet. */
@@ -236,7 +263,7 @@ html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
   font-size: 13.5px;
   font-weight: 500;
   color: var(--mcc-fg);
-  background: var(--mcc-bg);
+  background: var(--mcb-field);
   border: 1px solid var(--mcc-rule-2);
   padding: 11px 12px;
 }
@@ -253,7 +280,7 @@ html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
   top: 0;
   height: 58px;
   border-bottom: 1px solid var(--mcc-rule);
-  background: rgba(5, 6, 9, .9);
+  background: var(--hl-bar);
   backdrop-filter: blur(18px);
 }
 
@@ -270,30 +297,40 @@ html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcb-product-brand { display: flex; align-items: center; gap: 12px; }
-.mcb-product-brand .bc { color: var(--mcc-fg); font-size: 16px; font-weight: 800; letter-spacing: .09em; }
+.mcb-product-brand .bc { display: inline-flex; align-items: center; color: var(--mcc-fg); font-size: 16px; font-weight: 800; letter-spacing: .09em; }
 .mcb-product-brand i { width: 1px; height: 18px; background: var(--mcc-rule-2); }
 .mcb-product-brand span,
 .mcb-product-header nav a { color: var(--mcc-faint); font-size: 11px; }
 .mcb-product-header nav { display: flex; align-items: center; gap: 26px; }
 .mcb-product-header nav a:hover,
 .mcb-product-header nav a[aria-current='page'] { color: var(--mcc-fg); }
+/* The page you are on is underlined in its own feature colour. */
+.mcb-product-header nav a[aria-current='page'] { box-shadow: inset 0 -2px 0 var(--mcb-mark); }
 .mcb-product-header > div > :last-child { justify-self: end; }
 .mcb-product-actions { display: flex; align-items: center; gap: 10px; }
-.mcb-product-actions > a { padding: 8px 12px; border: 1px solid var(--mcc-accent); color: var(--mcc-accent); font-size: 11px; font-weight: 750; }
-.mcb-product-actions > a:hover { background: rgba(58, 232, 255, .1); }
+.mcb-product-actions > a { padding: 8px 12px; border: 1px solid var(--hl-strap-hi); color: var(--hl-strap-hi); font-size: 11px; font-weight: 750; }
+@media (hover: hover) and (pointer: fine) {
+  .mcb-product-actions > a:hover { background: color-mix(in srgb, var(--hl-strap) 12%, transparent); }
+}
 
 .mcb-shell {
   width: min(1500px, calc(100% - 40px));
   margin: 20px auto 48px;
   border: 1px solid var(--mcc-rule);
-  background: rgba(5, 6, 9, .72);
+  background: color-mix(in srgb, var(--hl-panel) 78%, transparent);
+  box-shadow: var(--hl-shadow);
 }
 
-.mcb-loading { height: 320px; background: linear-gradient(110deg, rgba(58, 232, 255, .05), rgba(58, 232, 255, .12), rgba(58, 232, 255, .05)); background-size: 200% 100%; animation: mcb-load 1.4s linear infinite; }
+.mcb-loading {
+  height: 320px;
+  background: linear-gradient(110deg, color-mix(in srgb, var(--f-bounty) 4%, transparent), color-mix(in srgb, var(--f-bounty) 12%, transparent), color-mix(in srgb, var(--f-bounty) 4%, transparent));
+  background-size: 200% 100%;
+  animation: mcb-load 1.4s linear infinite;
+}
 @keyframes mcb-load { to { background-position: -200% 0; } }
 
 .mcb-coordinate {
-  color: var(--mcc-accent);
+  color: var(--f-bounty-ink);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: .11em;
@@ -304,6 +341,8 @@ html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
 .mcb-disabled h1 { margin: 12px 0 10px; font-size: 40px; line-height: 1.02; letter-spacing: -.045em; }
 .mcb-disabled p { max-width: 600px; margin: 0; color: var(--mcc-muted); font-size: 13px; line-height: 1.6; }
 
+/* The hero is lit from two sides: the money (bounty yellow) and the brand
+   (strap violet) — complementary, so neither muddies the other. */
 .mcb-hero {
   min-height: 245px;
   display: grid;
@@ -313,26 +352,32 @@ html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
   padding: 42px;
   border-bottom: 1px solid var(--mcc-rule);
   background:
-    radial-gradient(circle at 17% 10%, rgba(58, 232, 255, .2), transparent 31rem),
-    linear-gradient(110deg, #0f1219 0%, #07090f 62%, #07090f 100%);
+    radial-gradient(circle at 17% 10%, color-mix(in srgb, var(--f-bounty) 16%, transparent), transparent 31rem),
+    radial-gradient(circle at 96% 100%, color-mix(in srgb, var(--hl-strap) 16%, transparent), transparent 26rem),
+    linear-gradient(110deg, var(--hl-panel-2) 0%, var(--hl-panel) 62%, var(--hl-panel) 100%);
 }
 
 .mcb-hero h1 { margin: 12px 0 9px; font-size: clamp(38px, 4.6vw, 66px); font-weight: 800; line-height: .98; letter-spacing: -.05em; }
-.mcb-hero > div > p { margin: 0; color: #7df0ff; font-size: 17px; font-weight: 650; }
+.mcb-hero > div > p { margin: 0; color: var(--f-bounty-ink); font-size: 17px; font-weight: 650; }
 .mcb-totals { display: grid; grid-template-columns: auto 1px auto; align-items: center; gap: 26px; }
 .mcb-totals > i { width: 1px; height: 74px; background: var(--mcc-rule); }
 .mcb-totals > span { display: flex; flex-direction: column; gap: 4px; }
-.mcb-totals small { color: var(--mcc-faint); font-size: 10px; }
-.mcb-totals strong { color: var(--mcc-warn); font-size: 27px; font-variant-numeric: tabular-nums; }
-.mcb-totals strong b { color: var(--mcc-dim); font-size: 10px; }
-.mcb-totals em { color: var(--mcc-faint); font-size: 9px; font-style: normal; }
+/* Muted, not dim, over the lit hero — dim drops under 4.5:1 there. */
+.mcb-totals small { color: var(--mcc-muted); font-size: 10px; }
+.mcb-totals strong { color: var(--f-bounty-ink); font-size: 27px; font-variant-numeric: tabular-nums; }
+.mcb-totals strong b { color: var(--mcc-muted); font-size: 10px; }
+.mcb-totals em { color: var(--mcc-muted); font-size: 9px; font-style: normal; }
+:root:not(.light) .mc-bounty :is(.mcb-totals strong, .mcb-detail-total strong) {
+  text-shadow: 0 0 28px color-mix(in srgb, var(--f-bounty) 34%, transparent);
+}
 
 .mcb-board-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
 .mcb-leaderboard { min-width: 0; padding: 30px 26px; border-right: 1px solid var(--mcc-rule); }
 .mcb-leaderboard > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
 .mcb-leaderboard h2 { margin: 7px 0 0; font-size: 27px; letter-spacing: -.035em; }
-.mcb-open-count { display: inline-flex; align-items: center; gap: 7px; color: var(--mcc-live); font-size: 9px; font-weight: 750; text-transform: uppercase; letter-spacing: .07em; }
-.mcb-open-count i { width: 6px; height: 6px; border-radius: 50%; background: var(--mcc-live); box-shadow: 0 0 10px rgba(184, 255, 69, .45); }
+.mcb-open-count { display: inline-flex; align-items: center; gap: 7px; color: var(--f-bounty-ink); font-size: 9px; font-weight: 750; text-transform: uppercase; letter-spacing: .07em; }
+.mcb-open-count i { width: 6px; height: 6px; border-radius: 50%; background: var(--mcb-mark); }
+:root:not(.light) .mcb-open-count i { box-shadow: 0 0 10px color-mix(in srgb, var(--f-bounty) 45%, transparent); }
 .mcb-empty { padding: 28px 12px; color: var(--mcc-muted); font-size: 12px; }
 
 .mcb-pool-detail {
@@ -340,28 +385,30 @@ html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
   top: 78px;
   min-height: 520px;
   padding: 30px 26px;
-  background: linear-gradient(180deg, rgba(18, 21, 29, .92), rgba(7, 9, 15, .94));
+  background: linear-gradient(180deg, var(--hl-panel-2), var(--hl-panel));
 }
 .mcb-detail-person { display: flex; align-items: center; gap: 14px; margin-top: 20px; }
 .mcb-detail-person > span { min-width: 0; }
 .mcb-detail-person h2 { overflow: hidden; margin: 0 0 4px; font-size: 22px; letter-spacing: -.03em; text-overflow: ellipsis; white-space: nowrap; }
 .mcb-detail-person p { margin: 0; color: var(--mcc-faint); font-size: 10px; text-transform: capitalize; }
+.mcb-detail-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
 .mcb-detail-total { display: flex; flex-direction: column; gap: 4px; margin: 30px 0 24px; padding: 20px 0; border-block: 1px solid var(--mcc-rule); }
-.mcb-detail-total strong { color: var(--mcc-warn); font-size: 37px; line-height: 1; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+.mcb-detail-tags + .mcb-detail-total { margin-top: 20px; }
+.mcb-detail-total strong { color: var(--f-bounty-ink); font-size: 37px; line-height: 1; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
 .mcb-detail-total strong b { color: var(--mcc-dim); font-size: 10px; letter-spacing: 0; }
 .mcb-detail-total span { color: var(--mcc-faint); font-size: 10px; }
 .mcb-detail-split { display: flex; flex-direction: column; gap: 15px; }
 .mcb-detail-split > span { display: grid; grid-template-columns: 9px 1fr; column-gap: 10px; }
 .mcb-detail-split i { grid-row: 1 / 3; width: 7px; height: 100%; }
-.mcb-detail-split i.is-locked { background: var(--mcc-live); }
-.mcb-detail-split i.is-contested { background: repeating-linear-gradient(135deg,#ffd23d 0 3px,#6b5a18 3px 6px); }
+.mcb-detail-split i.is-locked { background: var(--mcb-fill); box-shadow: inset 0 0 0 1px var(--mcb-edge); }
+.mcb-detail-split i.is-contested { background: repeating-linear-gradient(135deg, var(--mcb-fill) 0 3px, var(--mcb-gap) 3px 6px); box-shadow: inset 0 0 0 1px var(--mcb-edge); }
 .mcb-detail-split b { font-size: 11px; }
 .mcb-detail-split small { margin-top: 3px; color: var(--mcc-faint); font-size: 9px; line-height: 1.45; }
 .mcb-detail-action,
-.mcb-claim-action { display: block; margin-top: 25px; padding: 12px 14px; background: var(--mcc-accent); color: #050609; font-size: 11px; font-weight: 800; text-align: center; }
+.mcb-claim-action { display: block; margin-top: 25px; padding: 12px 14px; background: var(--f-bounty-solid); color: var(--f-bounty-on); font-size: 11px; font-weight: 800; text-align: center; }
 .mcb-claim-action { margin-top: 8px; border: 1px solid var(--mcc-rule-2); background: transparent; color: var(--mcc-muted); font-weight: 650; }
 
-.mcb-anatomy { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--mcc-rule); border-bottom: 1px solid var(--mcc-rule); background: rgba(7, 9, 15, .76); }
+.mcb-anatomy { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--mcc-rule); border-bottom: 1px solid var(--mcc-rule); background: color-mix(in srgb, var(--hl-bg) 76%, transparent); }
 .mcb-anatomy > div { min-height: 112px; display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-right: 1px solid var(--mcc-rule); }
 .mcb-anatomy > div:last-child { border-right: 0; }
 .mcb-anatomy > div > span { width: 28px; height: 8px; flex-shrink: 0; }
@@ -376,7 +423,7 @@ html:has(.mc-bounty) ::-webkit-scrollbar-thumb:hover {
   align-items: center;
   gap: 40px;
   padding: 34px 42px;
-  background: linear-gradient(110deg, rgba(255, 210, 61, .13), rgba(38,33,17,.35) 46%, rgba(7, 9, 15, .9));
+  background: linear-gradient(110deg, color-mix(in srgb, var(--f-bounty) 13%, transparent), color-mix(in srgb, var(--f-bounty) 4%, transparent) 46%, color-mix(in srgb, var(--hl-bg) 90%, transparent));
 }
 .mcb-create-bounty h2 { margin: 8px 0 6px; font-size: 31px; letter-spacing: -.04em; }
 .mcb-create-bounty p { margin: 0; color: var(--mcc-muted); font-size: 11px; }

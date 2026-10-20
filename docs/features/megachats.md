@@ -25,7 +25,7 @@ A viewer records a clip from their camera on the join page, sees the clip total 
 
 ## How to use it
 
-- **Viewer:** on the room page choose *Send a MegaChat*, record, review, pay, send. In a free room there is no payment step (`web/lib/join-page.ts`, `isFreeRoom`).
+- **Viewer:** on the room page choose *Send a Holler*, record, review, pay, send. In a free room there is no payment step (`web/lib/join-page.ts`, `isFreeRoom`).
 - **Streamer:** MegaChats are on by default (`resolveLetters`, `enabled: l.enabled !== false`). Set a flat price or leave it derived; choose `approve` if you want to see clips before they play; set AI strictness. All on the create/manage room page.
 - **Mod, in producer mode:** watch what is in *Waiting for review* and approve or reject it. Approving parks the clip in *Ready to air* — nothing reaches the stream yet. When the show wants one, press **Air it**. Each row shows how long before the payer is refunded automatically.
 

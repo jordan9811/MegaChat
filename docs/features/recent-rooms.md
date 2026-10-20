@@ -15,6 +15,7 @@ The board's job is to look alive with few streamers, and a room that was busy an
 - **After the end**, a sweep attaches the Twitch recording, falls back to its thumbnail when needed, and clears previews an hour after the end, plus anything left by airings the store no longer keeps or whose room is gone (`sweepAiringPosters`). A stream that ended while the server was down is closed at the last moment it was known up (`lastEvidenceAt`).
 - **Opening a card plays that broadcast on the room page** (`?replay=`): its Twitch recording in a player, 20s before the first MegaChat (else the first guest), a button per moment, each opened in the recording that covers it; when the recording is gone, the MegaChat clip, kept for the days its fan was told (30 by default; the owner sets it on `/dev`; `aired-clips.js`); with neither, the picture. A live room keeps its live player (`GET /api/rooms/:roomId/replay`; `web/lib/join-page.ts`, mountReplay; `_gate-replay.mjs`).
 - **A broadcast with no picture gets a card, not a fake frame**: title, guests, duration, drawn flat and typographic (`buildCard`, `room-poster.js`; `web/components/booth/recent-rail.tsx`). `poster.kind` (`frame` | `card`) is the contract; the rail never infers which to draw.
+- **Each card says what happened in it**: one tag per kind of moment the broadcast holds, *Holler* for a recorded clip and then *Call in* for a guest on camera, and a screen reader hears the same words in the card's label (`web/components/booth/recent-rail.tsx`, `momentKinds`; `web/components/feature-tag.tsx`).
 
 ## How to use it
 

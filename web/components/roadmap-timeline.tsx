@@ -3,6 +3,9 @@
 // The roadmap as one vertical timeline, two directions:
 //  - FORWARD (default): what's next, priority-ordered top to bottom,
 //    color-coded by horizon — green near / amber mid / purple ambitious.
+//    The horizon colours borrow the Holler palette's hues (rewards green,
+//    bounty yellow, the strap violet) but never the FeatureTag shape — no
+//    dot — so a horizon chip cannot be read as a feature.
 //  - JOURNEY (back-arrow toggle): how we got here, oldest first, ending at
 //    today. The Feb 2026 prototype links to the original tweet when
 //    JOURNEY_TWEET_URL is set; a quiet placeholder otherwise.
@@ -16,6 +19,7 @@ import {
   Compass,
   CreditCard,
   Gift,
+  Megaphone,
   MonitorPlay,
   Radio,
   Rocket,
@@ -28,14 +32,20 @@ import {
   Wallet,
   Zap,
 } from 'lucide-react'
+import { FeatureTag, type FeatureKind } from '@/components/feature-tag'
 
 type Horizon = 'near' | 'mid' | 'far'
 
-const HORIZONS: Record<Horizon, { color: string; chip: string }> = {
-  near: { color: 'var(--neon-lime)', chip: 'Near term' },
-  mid: { color: 'var(--neon-amber)', chip: 'Mid term' },
-  far: { color: 'var(--neon-violet)', chip: 'Ambitious' },
+// ink: text in that colour (≥4.5:1 in both themes) · hue: the dot itself
+const STRAP_INK = 'color-mix(in srgb, var(--hl-strap-hi) 72%, var(--hl-fg))'
+const HORIZONS: Record<Horizon, { color: string; hue: string; chip: string }> = {
+  near: { color: 'var(--f-rewards-ink)', hue: 'var(--f-rewards)', chip: 'Near term' },
+  mid: { color: 'var(--f-bounty-ink)', hue: 'var(--f-bounty)', chip: 'Mid term' },
+  far: { color: STRAP_INK, hue: 'var(--hl-strap-hi)', chip: 'Ambitious' },
 }
+
+// A dot's glow, dark theme only (--hl-glow-k is 0 in light).
+const glow = (hue: string) => `0 0 10px color-mix(in srgb, ${hue} calc(100% * var(--hl-glow-k)), transparent)`
 
 type ForwardItem = {
   icon: React.ComponentType<{ className?: string }>
@@ -62,7 +72,7 @@ const FORWARD: ForwardItem[] = [
     icon: ShieldCheck,
     horizon: 'near',
     title: 'Live AI moderation (v3)',
-    body: 'MegaChats already get frames-plus-transcript review before they play. v3 points the same pipeline at live seats, sampling in near-real-time so a room can run hands-off.',
+    body: 'Hollers already get frames-plus-transcript review before they play. v3 points the same pipeline at live seats, sampling in near-real-time so a room can run hands-off.',
   },
   {
     icon: Store,
@@ -102,6 +112,7 @@ type JourneyItem = {
   title: string
   body: string
   tweet?: boolean
+  tags?: FeatureKind[]
 }
 
 // Oldest first — read it top to bottom and you arrive at today.
@@ -161,6 +172,13 @@ const JOURNEY: JourneyItem[] = [
     title: 'OAuth identity + handles',
     body: 'Twitch and X sign-in reserves your handle as a display name and a permanent megachat.xyz/yourname room link.',
   },
+  {
+    icon: Megaphone,
+    date: 'Oct 2026',
+    title: 'MegaChat becomes Holler',
+    body: 'A new name and a new mark: HOLLER on a broadcast strap, the O a record button. Recorded clips are Hollers, camera seats are Call in, and each feature wears its own colour.',
+    tags: ['holler', 'callin', 'bounty', 'rewards'],
+  },
 ]
 
 function TimelineCard({
@@ -177,7 +195,7 @@ function TimelineCard({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex gap-4 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5">
+    <div className="flex gap-4 rounded-2xl border border-hl-line-2 bg-hl-panel/70 p-5 shadow-[var(--hl-shadow)] backdrop-blur-sm transition-transform duration-200 ease-[cubic-bezier(.23,1,.32,1)] hover:-translate-y-0.5">
       <span
         className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border"
         style={{
@@ -190,7 +208,7 @@ function TimelineCard({
       </span>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h3 className="font-heading text-base font-bold text-foreground">{title}</h3>
+          <h3 className="font-heading text-base font-bold text-hl-fg">{title}</h3>
           <span
             className="rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest"
             style={{
@@ -202,7 +220,7 @@ function TimelineCard({
             {chip}
           </span>
         </div>
-        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{children}</p>
+        <div className="mt-1 text-sm leading-relaxed text-hl-muted">{children}</div>
       </div>
     </div>
   )
@@ -218,16 +236,16 @@ export function RoadmapTimeline({ journeyTweetUrl }: { journeyTweetUrl: string }
         <button
           type="button"
           onClick={() => setJourney((v) => !v)}
-          className="flex items-center gap-2 rounded-full border border-border bg-input/30 px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-input/50"
+          className="flex items-center gap-2 rounded-full border border-hl-line-2 bg-hl-panel/60 px-4 py-2 text-sm font-semibold text-hl-fg transition-colors hover:bg-hl-panel-2"
         >
           {journey ? (
             <>
               Back to the roadmap
-              <ArrowRight className="size-4 text-[var(--neon-lime)]" />
+              <ArrowRight className="size-4 text-hl-strap-hi" />
             </>
           ) : (
             <>
-              <ArrowLeft className="size-4 text-[var(--neon-cyan)]" />
+              <ArrowLeft className="size-4 text-hl-strap-hi" />
               Our journey — how we got here
             </>
           )}
@@ -254,14 +272,15 @@ export function RoadmapTimeline({ journeyTweetUrl }: { journeyTweetUrl: string }
 
       {journey ? (
         /* ── the journey: oldest first, ends at today ── */
-        <ol className="relative flex flex-col gap-4 border-l border-dashed border-[var(--neon-cyan)]/35 pl-6">
+        <ol className="relative flex flex-col gap-4 border-l border-dashed border-hl-strap-hi/40 pl-6">
           {JOURNEY.map((m) => (
             <li key={m.title} className="relative">
               <span
                 aria-hidden="true"
-                className="absolute -left-[31px] top-6 size-2.5 rounded-full bg-[var(--neon-cyan)] shadow-[0_0_10px_var(--neon-cyan)]"
+                className="absolute -left-[31px] top-6 size-2.5 rounded-full bg-hl-strap-hi"
+                style={{ boxShadow: glow('var(--hl-strap-hi)') }}
               />
-              <TimelineCard icon={m.icon} color="var(--neon-cyan)" chip={m.date} title={m.title}>
+              <TimelineCard icon={m.icon} color={STRAP_INK} chip={m.date} title={m.title}>
                 {m.body}{' '}
                 {m.tweet ? (
                   journeyTweetUrl ? (
@@ -269,40 +288,47 @@ export function RoadmapTimeline({ journeyTweetUrl }: { journeyTweetUrl: string }
                       href={journeyTweetUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-semibold text-[var(--neon-cyan)] underline decoration-dotted underline-offset-2 hover:text-foreground"
+                      className="font-semibold text-[color-mix(in_srgb,var(--hl-strap-hi)_72%,var(--hl-fg))] underline decoration-dotted underline-offset-2 hover:text-hl-fg"
                     >
                       Watch the first demo →
                     </a>
                   ) : (
-                    <span className="italic text-muted-foreground/70">
+                    <span className="italic text-hl-dim">
                       (first-demo tweet link coming soon)
                     </span>
                   )
+                ) : null}
+                {m.tags ? (
+                  <span className="mt-2.5 flex flex-wrap gap-1.5">
+                    {m.tags.map((k) => <FeatureTag key={k} kind={k} />)}
+                  </span>
                 ) : null}
               </TimelineCard>
             </li>
           ))}
           <li className="relative">
+            {/* Today is on air: the record light, not a horizon colour. */}
             <span
               aria-hidden="true"
-              className="absolute -left-[31px] top-2 size-2.5 rounded-full bg-[var(--neon-lime)] shadow-[0_0_10px_var(--neon-lime)]"
+              className="absolute -left-[31px] top-2 size-2.5 rounded-full bg-hl-record"
+              style={{ boxShadow: glow('var(--hl-record)') }}
             />
-            <p className="pt-0.5 text-sm font-semibold text-[var(--neon-lime)]">
+            <p className="pt-0.5 text-sm font-semibold text-f-holler-ink">
               Today — everything above is live. Flip back for what’s next.
             </p>
           </li>
         </ol>
       ) : (
         /* ── forward: priority order, horizon-colored ── */
-        <ol className="relative flex flex-col gap-4 border-l border-border/70 pl-6">
+        <ol className="relative flex flex-col gap-4 border-l border-hl-line-2 pl-6">
           {FORWARD.map((item) => (
             <li key={item.title} className="relative" data-horizon={item.horizon}>
               <span
                 aria-hidden="true"
                 className="absolute -left-[31px] top-6 size-2.5 rounded-full"
                 style={{
-                  background: HORIZONS[item.horizon].color,
-                  boxShadow: `0 0 10px ${HORIZONS[item.horizon].color}`,
+                  background: HORIZONS[item.horizon].hue,
+                  boxShadow: glow(HORIZONS[item.horizon].hue),
                 }}
               />
               <TimelineCard

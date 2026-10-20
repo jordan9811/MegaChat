@@ -3,8 +3,8 @@
 // The account control for the NEW surfaces (room board, create room).
 //
 // Same state as the old header chip — one hook, so the two can never disagree
-// about whether you are signed in — but drawn in the near-black app skin
-// instead of the legacy neon one. Before this existed, the board and the
+// about whether you are signed in — but drawn in the app skin, from the Holler
+// tokens, so it follows the light/dark theme. Before this existed, the board and the
 // create page carried a "Sign in" link that pointed at /dashboard and did no
 // signing in, so once you were signed in there was nowhere to see your
 // handle, your balance, or a way out.
@@ -13,7 +13,10 @@ import { useEffect, useRef, useState } from 'react'
 import { shortAddr, useAccount } from '@/lib/use-account'
 import { formatDollars } from '@/lib/display-format'
 
-export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
+// `accent` colours the signed-in dot only. The Sign in button is always the
+// strap violet with white text, so whatever accent a page passes, its label
+// keeps ≥4.5:1 in both themes.
+export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const {
@@ -47,7 +50,7 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
   }, [open])
 
   // Hold the slot pre-load so the header never visibly reflows.
-  if (!loaded) return <span aria-hidden="true" className="inline-block h-[31px] w-[92px] bg-white/5" />
+  if (!loaded) return <span aria-hidden="true" className="inline-block h-[31px] w-[92px] bg-hl-line" />
 
   if (!signedIn) {
     return (
@@ -57,12 +60,11 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
         onClick={openSignIn}
         disabled={wallet.modalOpen}
         title={wallet.configured ? 'Twitch, X, Google, email or passkey' : 'Sign-in is not configured on this server'}
-        className="px-3.5 py-[7px] text-[13px] font-[700] text-[#08080a] disabled:opacity-70"
-        style={{ background: accent }}
+        className="bg-hl-strap px-3.5 py-[7px] text-[13px] font-[700] text-white transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-hl-strap-hover active:scale-[0.97] disabled:opacity-70"
       >
         {wallet.modalOpen ? 'Opening…' : 'Sign in'}
       </button>
-      {authError && <p role="alert" className="absolute right-0 top-full z-50 mt-2 w-72 border border-[#4f5865] bg-[#0f1219] p-3 text-left text-[13px] leading-normal text-[#f4f6f8]">{authError}</p>}
+      {authError && <p role="alert" className="absolute right-0 top-full z-50 mt-2 w-72 border border-f-holler-line bg-hl-panel p-3 text-left text-[13px] leading-normal text-hl-fg shadow-[var(--hl-shadow)]">{authError}</p>}
       </div>
     )
   }
@@ -74,7 +76,7 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="flex items-center gap-2 border border-white/20 px-3 py-[6px] text-[13px] font-[600] text-white hover:border-white/45"
+        className="flex items-center gap-2 border border-hl-line-2 px-3 py-[6px] text-[13px] font-[600] text-hl-fg hover:border-hl-strap-hi"
       >
         <span className="size-1.5 shrink-0 rounded-full" style={{ background: accent }} />
         <span className="max-w-[10rem] truncate">{chipLabel}</span>
@@ -86,31 +88,31 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+6px)] z-40 w-[248px] border border-white/15 bg-[#101014] p-1.5 shadow-[0_16px_44px_rgba(0,0,0,0.6)]"
+          className="absolute right-0 top-[calc(100%+6px)] z-40 w-[248px] border border-hl-line-2 bg-hl-panel p-1.5 shadow-[var(--hl-shadow)]"
         >
           {identity ? (
             <a
               href={`/${identity.handle}`}
               role="menuitem"
-              className="block px-2.5 pb-1.5 pt-2 text-[11.5px] leading-[1.45] text-[#9aa4ad] hover:text-white"
+              className="block px-2.5 pb-1.5 pt-2 text-[11.5px] leading-[1.45] text-hl-muted hover:text-hl-fg"
             >
               Your room link
-              <span className="mt-0.5 block font-[600] text-[#b8ff45]">
+              <span className="mt-0.5 block font-[600] text-hl-strap-hi dark:text-[color-mix(in_srgb,var(--hl-strap-hi)_72%,var(--hl-fg))]">
                 megachat.fun/{identity.handle}
               </span>
             </a>
           ) : null}
 
           {wallet.address ? (
-            <div className="mb-1 border border-white/10 bg-black/30 px-2.5 py-2">
+            <div className="mb-1 border border-hl-line bg-hl-panel-2 px-2.5 py-2">
               <span className="flex items-baseline justify-between text-[12.5px]">
-                <span className="text-[#9aa4ad]">Balance</span>
-                <span className="font-[700] tabular-nums text-white">
+                <span className="text-hl-muted">Balance</span>
+                <span className="font-[700] tabular-nums text-f-bounty-ink">
                   {balance == null ? '…' : formatDollars(balance)}
                 </span>
               </span>
               <span
-                className="mt-0.5 block text-[10.5px] text-[#6d7780]"
+                className="mt-0.5 block text-[10.5px] text-hl-dim"
                 title={wallet.address}
               >
                 {shortAddr(wallet.address)}
@@ -122,24 +124,24 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
               role="menuitem"
               onClick={() => void connectBalance()}
               disabled={!wallet.configured || connectingBalance}
-              className="block w-full px-2.5 py-2 text-left text-[13px] text-white hover:bg-white/10 disabled:opacity-50"
+              className="block w-full px-2.5 py-2 text-left text-[13px] text-hl-fg hover:bg-hl-panel-2 disabled:opacity-50"
               title={wallet.configured ? 'Connect the wallet that pays for seats' : 'Wallet service not configured on this server'}
             >
               {connectingBalance ? 'Connecting…' : 'Connect balance'}
             </button>
           )}
-          {authError && <p role="alert" className="px-2.5 py-2 text-[13px] text-[#ffb39e]">{authError}</p>}
+          {authError && <p role="alert" className="px-2.5 py-2 text-[13px] text-f-holler-ink">{authError}</p>}
 
-          <a href="/account" role="menuitem" className="block px-2.5 py-2 text-[13px] text-white hover:bg-white/10">
+          <a href="/account" role="menuitem" className="block px-2.5 py-2 text-[13px] text-hl-fg hover:bg-hl-panel-2">
             Account
           </a>
-          <a href="/dashboard" role="menuitem" className="block px-2.5 py-2 text-[13px] text-white hover:bg-white/10">
+          <a href="/dashboard" role="menuitem" className="block px-2.5 py-2 text-[13px] text-hl-fg hover:bg-hl-panel-2">
             Your room
           </a>
           {/* The site owner's own settings page. Nobody else is ever told it
               exists — the server sends siteAdmin only for them. */}
           {identity?.siteAdmin ? (
-            <a href="/dev" role="menuitem" className="block px-2.5 py-2 text-[13px] text-[#ffd23d] hover:bg-white/10">
+            <a href="/dev" role="menuitem" className="block px-2.5 py-2 text-[13px] text-hl-strap-hi dark:text-[color-mix(in_srgb,var(--hl-strap-hi)_72%,var(--hl-fg))] hover:bg-hl-panel-2">
               Site settings
             </a>
           ) : null}
@@ -147,7 +149,7 @@ export function AccountChip({ accent = '#f2f2f4' }: { accent?: string }) {
             type="button"
             role="menuitem"
             onClick={() => void signOut()}
-            className="block w-full px-2.5 py-2 text-left text-[13px] text-[#9aa4ad] hover:bg-white/10 hover:text-white"
+            className="block w-full px-2.5 py-2 text-left text-[13px] text-hl-muted hover:bg-hl-panel-2 hover:text-hl-fg"
           >
             Sign out
           </button>

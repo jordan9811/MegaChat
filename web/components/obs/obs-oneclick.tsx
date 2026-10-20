@@ -207,7 +207,7 @@ export function ObsOneClick({
           </button>
         </div>
         <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-          The password stays in this browser (saved locally, never sent to MegaChat).
+          The password stays in this browser (saved locally, never sent to Holler).
           It unlocks OBS on <em>your</em> machine — we have no business holding it.
         </p>
         {phase === 'connected' && obsVersion ? (
@@ -223,7 +223,7 @@ export function ObsOneClick({
           type="button"
           onClick={() => void addToObs()}
           disabled={phase === 'adding' || phase === 'testing'}
-          className="w-full rounded-full bg-[var(--neon-lime)] px-5 py-2.5 text-sm font-bold text-black transition-transform hover:scale-[1.01] disabled:opacity-60"
+          className="w-full rounded-full bg-hl-strap px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-[1.01] active:scale-[.97] disabled:opacity-60"
         >
           <span className="inline-flex items-center gap-1.5">
             <MonitorUp className="size-4" />
@@ -282,7 +282,7 @@ export function ObsOneClick({
               <CircleAlert className="mt-px size-3 shrink-0" />
               <span>
                 {sceneWatch.detail || 'The overlay is not visible in your live scene.'}
-                {' '}MegaChats playing now will not be verifiable.
+                {' '}Hollers playing now will not be verifiable.
               </span>
             </p>
           ) : null}

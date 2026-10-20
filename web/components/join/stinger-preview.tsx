@@ -105,7 +105,9 @@ export function StingerPreview() {
 
   return (
     <div className="stinger-preview sm:col-span-2">
-      <div className="sp-stage" aria-hidden="true">
+      {/* A preview monitor of the broadcast, so it stays dark in both themes
+          like the stage it stands in for. */}
+      <div className="sp-stage dark" aria-hidden="true">
         <div ref={tileRef} className="sp-tile">
           <div className="sp-cam">
             <span className="sp-avatar" />
@@ -121,7 +123,7 @@ export function StingerPreview() {
         <button
           id="stingerReplayBtn"
           type="button"
-          className="border border-[var(--mcj-rule-2)] px-3 py-1 text-[12px] font-semibold text-[var(--mcj-dim)] transition-colors hover:border-[var(--mcj-fg)] hover:text-[var(--mcj-fg)]"
+          className="sp-replay border border-[var(--mcj-rule-2)] px-3 py-1 text-[12px] font-semibold text-[var(--mcj-dim)] hover:border-[var(--mcj-fg)] hover:text-[var(--mcj-fg)]"
         >
           Replay
         </button>

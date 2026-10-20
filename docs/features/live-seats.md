@@ -27,7 +27,7 @@ A viewer opens a room's link, pays per second, and their camera appears in a til
 
 ## How to use it
 
-- **Viewer:** open `megachat.fun/<handle>` (or `/join?room=<id>`), sign in with Google, email, a passkey or MetaMask, pick a stinger under Advanced if you like, press Join. Your unused cap is never taken (`refundSeat`, `server.js`).
+- **Viewer:** open `megachat.fun/<handle>` (or `/join?room=<id>`), sign in with Google, email, a passkey or MetaMask, pick a stinger under Advanced if you like, press *Call in*. Your unused cap is never taken (`refundSeat`, `server.js`).
 - **Streamer:** create a room, set the per-second price and session cap, add the overlay to OBS ([OBS setup](obs-setup.md)), and keep the dashboard open — that is where you kick, pin, and see the booth.
 
 ## Admission and gates

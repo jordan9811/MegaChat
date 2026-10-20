@@ -46,7 +46,7 @@ export function LettersQueueCard() {
       setOverlayLive(data.overlayLive)
       setError(null)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load MegaChats')
+      setError(e instanceof Error ? e.message : 'Failed to load Hollers')
     }
   }, [active, lettersAdmin])
 
@@ -92,7 +92,7 @@ export function LettersQueueCard() {
             </span>
           </p>
           {l.flaggedReason ? (
-            <p className="mt-1 inline-block rounded-md border border-[var(--neon-magenta)]/40 bg-[var(--neon-magenta)]/10 px-2 py-0.5 text-xs font-semibold text-[var(--neon-magenta)]">
+            <p className="mt-1 inline-block rounded-md border border-f-holler-line bg-f-holler-bg px-2 py-0.5 text-xs font-semibold text-f-holler-ink">
               🕵️ AI flag: {l.flaggedReason}
             </p>
           ) : null}
@@ -118,7 +118,7 @@ export function LettersQueueCard() {
               disabled={busyId === l.id}
               onClick={() => void act(l.id, 'approve')}
               title={producer ? 'Move to Ready to air — it will not play until you air it' : 'Approve; the scheduler plays it when a tile frees'}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--neon-lime)]/50 bg-[var(--neon-lime)]/10 px-3 py-1.5 text-xs font-bold text-[var(--neon-lime)] transition-colors hover:bg-[var(--neon-lime)]/20 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-hl-strap bg-hl-strap px-3 py-1.5 text-xs font-bold text-primary-foreground transition-colors hover:border-hl-strap-hover hover:bg-hl-strap-hover disabled:opacity-50"
             >
               {busyId === l.id ? <RefreshCw className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
               {producer ? 'Approve' : 'Approve'}
@@ -141,7 +141,7 @@ export function LettersQueueCard() {
               disabled={busyId === l.id}
               onClick={() => void act(l.id, 'play')}
               title="Put this on screen right now, even if overlay detection disagrees"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--neon-cyan)]/50 bg-[var(--neon-cyan)]/10 px-3 py-1.5 text-xs font-bold text-[var(--neon-cyan)] transition-colors hover:bg-[var(--neon-cyan)]/20 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-f-holler-solid bg-f-holler-solid px-3 py-1.5 text-xs font-bold text-f-holler-on transition-transform active:scale-[0.97] disabled:opacity-50"
             >
               {busyId === l.id ? <RefreshCw className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
               {l.status === 'ready' ? 'Air it' : 'Play now'}
@@ -177,19 +177,19 @@ export function LettersQueueCard() {
     <GlassCard>
       <CardHeader
         icon={<Mail className="size-5" />}
-        title="MegaChats"
+        title="Hollers"
         description={
           producer
             ? 'You choose what airs and when. Approving holds a clip; nothing reaches the stream until you air it.'
             : 'Queued clips play automatically when a tile frees up.'
         }
-        accent="cyan"
+        accent="holler"
       />
       <div className="flex flex-col gap-4 px-5 py-5 sm:px-6">
         {!overlayLive && (ready.length > 0 || running.length > 0) ? (
           <p
             id="overlay-offline-note"
-            className="flex items-start gap-2 rounded-lg border border-[var(--neon-amber)]/50 bg-[var(--neon-amber)]/10 px-3 py-2 text-xs font-semibold text-[var(--neon-amber)]"
+            className="flex items-start gap-2 rounded-lg border border-f-bounty-line bg-f-bounty-bg px-3 py-2 text-xs font-semibold text-f-bounty-ink"
           >
             <MonitorOff className="mt-0.5 size-3.5 shrink-0" />
             <span>
@@ -200,7 +200,7 @@ export function LettersQueueCard() {
           </p>
         ) : null}
         {letters.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No MegaChats waiting.</p>
+          <p className="text-sm text-muted-foreground">No Hollers waiting.</p>
         ) : (
           <>
             {pile('Waiting for review', 'watch, then approve or reject', waiting)}
@@ -208,7 +208,7 @@ export function LettersQueueCard() {
             {pile(producer ? 'On screen' : 'Queued', producer ? 'airing now' : 'plays automatically when a tile frees', running)}
           </>
         )}
-        {error ? <p className="text-xs text-[var(--neon-magenta)]">{error}</p> : null}
+        {error ? <p className="text-xs text-f-holler-ink">{error}</p> : null}
       </div>
     </GlassCard>
   )

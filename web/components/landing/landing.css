@@ -1,48 +1,70 @@
-/* Landing (feat/ui-overhaul) — scoped under .mc-landing. The Nerve system:
-   near-black ground, hot pink for the brand and the fan's primary action,
-   electric cyan for the watcher side and the streamer's action, lime for
-   live, yellow for money, and a mono face for anything that reads like a
-   readout. Square corners, hairline rules, glow only where a word is neon. */
+/* Landing (feat/ui-overhaul, re-coloured for Holler) — scoped under
+   .mc-landing. Every colour reads the Holler tokens in app/globals.css, so the
+   page follows the theme next-themes puts on <html>:
+     strap violet  the brand and the primary action
+     record red    the light itself: the neon line, the REC dot, the playhead
+     each way in   wears its own feature colour: holler red, call-in purple,
+                   bounty yellow; money is always bounty ink
+   Square corners, hairline rules, a mono face for anything that reads like a
+   readout. Glows exist only in dark; light gets soft shadows instead. The
+   film column is a video, so it stays dark-framed in both themes (it carries
+   its own .dark scope in landing-hero.tsx). */
 
 .mc-landing {
-  --mcl-bg: #050609;
-  --mcl-panel: #0a0c12;
-  --mcl-panel-2: #0c0f17;
-  --mcl-fg: #f4f6f8;
-  --mcl-muted: #a9b2bd;
-  --mcl-dim: #7d8794;
-  --mcl-faint: #6b7684;
-  --mcl-hairline: rgba(255, 255, 255, 0.08);
-  --mcl-hairline-2: rgba(255, 255, 255, 0.16);
-  --mcl-pink: #ff2d78;
-  --mcl-cyan: #3ae8ff;
-  --mcl-lime: #b8ff45;
-  --mcl-yellow: #ffd23d;
-  --mcl-ink: #050609;
+  /* the landing's own names, mapped onto the shared tokens */
+  --mcl-bg: var(--hl-bg);
+  --mcl-panel: var(--hl-panel);
+  --mcl-panel-2: var(--hl-panel-2);
+  --mcl-fg: var(--hl-fg);
+  --mcl-muted: var(--hl-muted);
+  --mcl-dim: var(--hl-dim);
+  --mcl-faint: var(--hl-dim);
+  --mcl-hairline: var(--hl-line);
+  --mcl-hairline-2: var(--hl-line-2);
+  /* the white that sits on a violet fill (≥7:1 on --hl-strap) */
+  --mcl-on-strap: var(--f-callin-on);
+
+  /* dark: neon and glow */
+  --mcl-neon: var(--hl-record);
+  --mcl-neon-shadow:
+    0 0 18px color-mix(in srgb, var(--hl-record) 55%, transparent),
+    0 0 48px color-mix(in srgb, var(--hl-record) 25%, transparent);
+  --mcl-strap-shadow: 0 0 32px -8px var(--hl-strap);
+  --mcl-bounty-shadow: 0 0 30px -10px var(--f-bounty);
+  --mcl-card-shadow: none;
+  --mcl-dot-glow: 0 0 8px var(--hl-record);
+  --mcl-wash: 18%;
+  --mcl-bounty-wash: 14%;
+  --mcl-card-wash: 9%;
+
   background: var(--mcl-bg);
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
+    linear-gradient(var(--hl-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hl-grid) 1px, transparent 1px);
   background-size: 48px 48px;
   color: var(--mcl-fg);
   font-family: var(--font-ui), system-ui, sans-serif;
 }
 
+/* light: the same page on paper — no neon, soft lifted shadows */
+.light .mc-landing {
+  --mcl-neon: var(--f-holler-ink);
+  --mcl-neon-shadow: none;
+  --mcl-strap-shadow:
+    0 1px 2px color-mix(in srgb, var(--hl-strap) 30%, transparent),
+    0 12px 26px -12px color-mix(in srgb, var(--hl-strap) 65%, transparent);
+  --mcl-bounty-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--f-bounty-ink) 30%, transparent),
+    0 12px 26px -14px color-mix(in srgb, var(--f-bounty-ink) 60%, transparent);
+  --mcl-card-shadow: var(--hl-shadow);
+  --mcl-dot-glow: none;
+  --mcl-wash: 12%;
+  --mcl-bounty-wash: 26%;
+  --mcl-card-wash: 11%;
+}
+
 body:has(.mc-landing) {
-  background: #050609;
-}
-
-html:has(.mc-landing),
-html:has(.mc-landing) * {
-  scrollbar-color: #2a2f3a transparent;
-}
-
-html:has(.mc-landing) ::-webkit-scrollbar-thumb {
-  background: #2a2f3a;
-}
-
-html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
-  background: #3a4150;
+  background: var(--hl-bg);
 }
 
 .mc-landing a {
@@ -61,7 +83,7 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcl-coordinate,
-.mcl-card-top > span,
+.mcl-card-n,
 .mcl-entry-card strong,
 .mcl-mini-board > header,
 .mcl-pool-row > span,
@@ -72,19 +94,12 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   font-family: var(--font-code), ui-monospace, monospace;
 }
 
-.mc-brand-mega {
-  color: var(--mcl-pink);
-}
-
 .mcl-coordinate {
   color: var(--mcl-dim);
   font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
-
-.mcl-coordinate-pink { color: var(--mcl-pink); }
-.mcl-coordinate-cyan { color: var(--mcl-cyan); }
 
 /* ── nav ─────────────────────────────────────────────────────────────────── */
 .mcl-nav {
@@ -96,11 +111,14 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   border-bottom: 1px solid var(--mcl-hairline);
 }
 
+/* The Holler mark at nav size: 21px puts the strap at ~24px tall, the
+   same visual weight the old 17px letterspaced wordmark carried. */
 .mcl-brand {
+  display: inline-flex;
+  align-items: center;
   color: var(--mcl-fg);
-  font-size: 17px;
-  font-weight: 900;
-  letter-spacing: 0.22em;
+  font-size: 21px;
+  line-height: 1;
 }
 
 .mcl-nav-links {
@@ -112,21 +130,28 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   font-weight: 600;
 }
 
-.mcl-nav-links a:not(.mcl-nav-cta):hover {
-  color: var(--mcl-fg);
+/* the theme switch sits tighter to the CTA than the text links do */
+.mcl-nav-links > .hl-tt {
+  margin-right: -12px;
 }
 
 .mcl-nav-cta {
-  border: 1px solid rgba(255, 45, 120, 0.55);
+  border: 1px solid color-mix(in srgb, var(--hl-strap-hi) 55%, transparent);
   padding: 9px 18px;
-  color: var(--mcl-pink);
+  color: var(--hl-strap-hi);
   font-size: 13px;
   font-weight: 700;
   transition: border-color 150ms ease;
 }
 
-.mcl-nav-cta:hover {
-  border-color: var(--mcl-pink);
+@media (hover: hover) and (pointer: fine) {
+  .mcl-nav-links a:not(.mcl-nav-cta):hover {
+    color: var(--mcl-fg);
+  }
+
+  .mcl-nav-cta:hover {
+    border-color: var(--hl-strap-hi);
+  }
 }
 
 /* ── hero: film column + panel column ────────────────────────────────────── */
@@ -137,10 +162,13 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   border-bottom: 1px solid var(--mcl-hairline);
 }
 
+/* The film column wears .dark in both themes (landing-hero.tsx), so every
+   --hl-* token in here resolves to its dark value: a video is framed in
+   black whatever the page around it is doing. */
 .mcl-film {
   position: relative;
   overflow: hidden;
-  background: #000;
+  background: var(--hl-bg);
 }
 
 .mcl-film-media {
@@ -155,7 +183,7 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 .mcl-film-hold {
   position: absolute;
   inset: 0;
-  background: var(--mcl-bg);
+  background: var(--hl-bg);
   transition: opacity 1600ms ease-out;
   pointer-events: none;
 }
@@ -163,7 +191,13 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 .mcl-film-shade {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(5, 6, 9, 0.2) 0%, transparent 26%, transparent 60%, rgba(5, 6, 9, 0.64) 100%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--hl-bg) 20%, transparent) 0%,
+    transparent 26%,
+    transparent 60%,
+    color-mix(in srgb, var(--hl-bg) 64%, transparent) 100%
+  );
   pointer-events: none;
 }
 
@@ -181,16 +215,18 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   width: 44px;
   height: 44px;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.26);
+  border: 1px solid color-mix(in srgb, var(--hl-fg) 26%, transparent);
   border-radius: 50%;
-  background: rgba(5, 6, 9, 0.42);
-  color: var(--mcl-fg);
+  background: color-mix(in srgb, var(--hl-bg) 42%, transparent);
+  color: var(--hl-fg);
   cursor: pointer;
   transition: border-color 150ms ease;
 }
 
-.mcl-film-ctl button:hover {
-  border-color: rgba(255, 255, 255, 0.6);
+@media (hover: hover) and (pointer: fine) {
+  .mcl-film-ctl button:hover {
+    border-color: color-mix(in srgb, var(--hl-fg) 60%, transparent);
+  }
 }
 
 .mcl-film-progress {
@@ -200,15 +236,16 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   left: 0;
   z-index: 2;
   height: 2px;
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--hl-fg) 12%, transparent);
 }
 
+/* the playhead is the record light */
 .mcl-film-progress i {
   display: block;
   width: 0;
   height: 100%;
-  background: var(--mcl-pink);
-  box-shadow: 0 0 12px var(--mcl-pink);
+  background: var(--hl-record);
+  box-shadow: 0 0 12px var(--hl-record);
   transition: width 250ms linear;
 }
 
@@ -221,8 +258,8 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   padding: 48px 56px;
   border-left: 1px solid var(--mcl-hairline);
   background:
-    radial-gradient(ellipse 55% 70% at 0% 50%, rgba(255, 45, 120, 0.15), transparent 70%),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.028) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse 55% 70% at 0% 50%, color-mix(in srgb, var(--hl-strap) var(--mcl-wash), transparent), transparent 70%),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--hl-fg) 3%, transparent) 0 1px, transparent 1px 3px),
     var(--mcl-panel);
 }
 
@@ -237,11 +274,13 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   line-height: 0.94;
 }
 
+/* The neon line is the record light. In dark it is --hl-record itself with
+   its glow (≥4.8:1 even where the violet wash is strongest); in light there
+   is no glow and the wash would pull the light red under 4.5:1, so it takes
+   the red text ink (≥5.5:1). */
 .mcl-neon {
-  color: var(--mcl-pink);
-  text-shadow:
-    0 0 18px rgba(255, 45, 120, 0.55),
-    0 0 48px rgba(255, 45, 120, 0.25);
+  color: var(--mcl-neon);
+  text-shadow: var(--mcl-neon-shadow);
 }
 
 .mcl-sub {
@@ -261,16 +300,11 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 
 .mcl-btn-primary {
   padding: 15px 26px;
-  background: var(--mcl-pink);
-  color: #fff;
+  background: var(--hl-strap);
+  color: var(--mcl-on-strap);
   font-size: 15px;
   font-weight: 800;
-  box-shadow: 0 0 32px -8px var(--mcl-pink);
-  transition: filter 150ms ease;
-}
-
-.mcl-btn-primary:hover {
-  filter: brightness(1.08);
+  box-shadow: var(--mcl-strap-shadow);
 }
 
 .mcl-btn-ghost {
@@ -288,8 +322,14 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   transition: border-color 150ms ease;
 }
 
-.mcl-btn-ghost:hover {
-  border-color: rgba(255, 255, 255, 0.4);
+@media (hover: hover) and (pointer: fine) {
+  .mcl-btn-primary:hover {
+    background: var(--hl-strap-hover);
+  }
+
+  .mcl-btn-ghost:hover {
+    border-color: color-mix(in srgb, var(--hl-fg) 40%, transparent);
+  }
 }
 
 .mcl-compat {
@@ -320,8 +360,10 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   transition: opacity 200ms ease;
 }
 
-.mcl-platform-mark:hover {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  .mcl-platform-mark:hover {
+    opacity: 1;
+  }
 }
 
 /* ── three ways in ───────────────────────────────────────────────────────── */
@@ -335,6 +377,33 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   gap: 16px;
 }
 
+/* Each card wears its own feature: the top rule, the icon, the number, the
+   vignette and the CTA all take the one colour. Hue for lines and fills,
+   ink for anything that is read. */
+.mcl-entry-card[data-tone='holler'] {
+  --mcl-tone: var(--f-holler);
+  --mcl-tone-ink: var(--f-holler-ink);
+  --mcl-tone-bg: var(--f-holler-bg);
+  --mcl-tone-line: var(--f-holler-line);
+  --mcl-tone-glow: var(--hl-glow-holler);
+}
+
+.mcl-entry-card[data-tone='callin'] {
+  --mcl-tone: var(--f-callin);
+  --mcl-tone-ink: var(--f-callin-ink);
+  --mcl-tone-bg: var(--f-callin-bg);
+  --mcl-tone-line: var(--f-callin-line);
+  --mcl-tone-glow: var(--hl-glow-callin);
+}
+
+.mcl-entry-card[data-tone='bounty'] {
+  --mcl-tone: var(--f-bounty);
+  --mcl-tone-ink: var(--f-bounty-ink);
+  --mcl-tone-bg: var(--f-bounty-bg);
+  --mcl-tone-line: var(--f-bounty-line);
+  --mcl-tone-glow: var(--hl-glow-bounty);
+}
+
 .mcl-entry-card {
   position: relative;
   display: flex;
@@ -343,19 +412,18 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   padding: 24px 26px 26px;
   border: 1px solid var(--mcl-hairline);
   border-top: 2px solid var(--mcl-tone);
-  background: var(--mcl-panel);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--mcl-tone) var(--mcl-card-wash), transparent), transparent 58%),
+    var(--mcl-panel);
+  box-shadow: var(--mcl-card-shadow);
   color: var(--mcl-fg);
   transition: transform 180ms ease, box-shadow 180ms ease;
 }
 
-.mcl-entry-card[data-tone='cyan'] { --mcl-tone: var(--mcl-cyan); }
-.mcl-entry-card[data-tone='lime'] { --mcl-tone: var(--mcl-lime); }
-.mcl-entry-card[data-tone='pink'] { --mcl-tone: var(--mcl-pink); }
-
 @media (hover: hover) and (pointer: fine) {
   .mcl-entry-card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 0 44px -18px var(--mcl-tone);
+    box-shadow: var(--mcl-tone-glow);
   }
 }
 
@@ -377,20 +445,20 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 
 .mcl-vig-rec {
   padding: 8px 12px;
-  border: 1px solid rgba(58, 232, 255, 0.3);
-  background: rgba(58, 232, 255, 0.06);
+  border: 1px solid var(--mcl-tone-line);
+  background: var(--mcl-tone-bg);
+  color: var(--mcl-tone-ink);
   font-family: var(--font-code), ui-monospace, monospace;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  color: var(--mcl-fg);
 }
 
 .mcl-vig-rec i {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--mcl-pink);
-  box-shadow: 0 0 8px var(--mcl-pink);
+  background: var(--hl-record);
+  box-shadow: var(--mcl-dot-glow);
 }
 
 .mcl-vig-seats {
@@ -404,8 +472,8 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   height: 30px;
   place-items: center;
   overflow: hidden;
-  border: 1px solid rgba(184, 255, 69, 0.45);
-  background: #13200a;
+  border: 1px solid var(--mcl-tone-line);
+  background: color-mix(in srgb, var(--mcl-tone) 14%, var(--mcl-panel));
 }
 
 .mcl-vig-seats span i {
@@ -416,19 +484,19 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   height: 20px;
   transform: translateX(-50%);
   border-radius: 50% 50% 0 0;
-  background: #3c5a1e;
+  background: color-mix(in srgb, var(--mcl-tone) 50%, var(--mcl-panel));
 }
 
 .mcl-vig-seats span.is-open {
   border-style: dashed;
-  border-color: rgba(184, 255, 69, 0.7);
+  border-color: color-mix(in srgb, var(--mcl-tone) 75%, transparent);
   background: transparent;
-  color: var(--mcl-lime);
+  color: var(--mcl-tone-ink);
   font-weight: 700;
 }
 
 .mcl-vig-pool b {
-  color: var(--mcl-yellow);
+  color: var(--f-bounty-ink);
   font-family: var(--font-code), ui-monospace, monospace;
   font-size: 22px;
   font-weight: 700;
@@ -445,11 +513,18 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: var(--mcl-tone);
+  gap: 12px;
+  color: var(--mcl-tone-ink);
 }
 
-.mcl-card-top > span {
-  color: var(--mcl-dim);
+.mcl-card-id {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mcl-card-n {
+  color: var(--mcl-tone-ink);
   font-size: 12px;
   letter-spacing: 0.08em;
 }
@@ -475,7 +550,7 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   gap: 8px;
   margin-top: auto;
   padding-top: 22px;
-  color: var(--mcl-tone);
+  color: var(--mcl-tone-ink);
   font-size: 12px;
   font-weight: 400;
   letter-spacing: 0.04em;
@@ -497,8 +572,8 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   gap: 12px;
   padding: 64px;
   background:
-    radial-gradient(circle at 18% 22%, rgba(255, 45, 120, 0.16), transparent 46%),
-    #0a0a12;
+    radial-gradient(circle at 18% 22%, color-mix(in srgb, var(--f-bounty) var(--mcl-bounty-wash), transparent), transparent 46%),
+    var(--mcl-panel);
 }
 
 .mcl-bounty-poster h2 {
@@ -511,7 +586,7 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 
 .mcl-bounty-poster p {
   margin: 0;
-  color: var(--mcl-pink);
+  color: var(--f-bounty-ink);
   font-size: 17px;
   font-weight: 700;
 }
@@ -522,11 +597,17 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   gap: 14px;
   margin-top: 20px;
   padding: 14px 20px;
-  background: var(--mcl-pink);
-  color: #fff;
+  background: var(--f-bounty-solid);
+  color: var(--f-bounty-on);
   font-size: 13px;
   font-weight: 800;
-  box-shadow: 0 0 30px -10px var(--mcl-pink);
+  box-shadow: var(--mcl-bounty-shadow);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mcl-bounty-poster > a:hover {
+    filter: brightness(1.06);
+  }
 }
 
 .mcl-mini-board {
@@ -549,7 +630,7 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcl-mini-board > header a {
-  color: var(--mcl-cyan);
+  color: var(--f-bounty-ink);
 }
 
 .mcl-pool-row {
@@ -585,14 +666,20 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   object-fit: cover;
 }
 
+/* a person, not a feature: a violet-tinted tile, the letter in plain text
+   colour so it clears 4.5:1 in both themes */
 .mcl-thumb i {
   display: grid;
   width: 40px;
   height: 40px;
   place-items: center;
-  border: 1px solid rgba(58, 232, 255, 0.25);
-  background: linear-gradient(145deg, #123245, #0a1622);
-  color: var(--mcl-cyan);
+  border: 1px solid color-mix(in srgb, var(--hl-strap-hi) 30%, transparent);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--hl-strap) 30%, var(--mcl-panel-2)),
+    color-mix(in srgb, var(--hl-strap) 8%, var(--mcl-panel-2))
+  );
+  color: var(--mcl-fg);
   font-size: 14px;
   font-style: normal;
   font-weight: 800;
@@ -636,7 +723,7 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcl-pool-row > b {
-  color: var(--mcl-yellow);
+  color: var(--f-bounty-ink);
   font-size: 14px;
 }
 
@@ -650,7 +737,7 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 
 .mcl-pool-empty strong { font-size: 18px; }
 .mcl-pool-empty span { color: var(--mcl-muted); font-size: 13px; }
-.mcl-pool-empty a { margin-top: 8px; border: 1px solid var(--mcl-hairline-2); padding: 10px 13px; color: var(--mcl-cyan); font-size: 12px; font-weight: 700; }
+.mcl-pool-empty a { margin-top: 8px; border: 1px solid var(--f-bounty-line); padding: 10px 13px; background: var(--f-bounty-bg); color: var(--f-bounty-ink); font-size: 12px; font-weight: 700; }
 
 /* ── proof ───────────────────────────────────────────────────────────────── */
 .mcl-proof {
@@ -671,7 +758,7 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 
 .mcl-proof > span:first-child { padding-left: 64px; }
 .mcl-proof > span:last-child { border-right: 0; }
-.mcl-proof svg { grid-row: 1 / 3; color: var(--mcl-cyan); }
+.mcl-proof svg { grid-row: 1 / 3; color: var(--hl-strap-hi); }
 .mcl-proof b { font-size: 14px; }
 .mcl-proof small { color: var(--mcl-dim); font-size: 11.5px; }
 
@@ -683,7 +770,7 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   gap: 48px;
   padding: 56px 64px;
   border-top: 1px solid var(--mcl-hairline);
-  background: radial-gradient(circle at 12% 30%, rgba(58, 232, 255, 0.09), transparent 40%);
+  background: radial-gradient(circle at 12% 30%, color-mix(in srgb, var(--hl-strap) var(--mcl-wash), transparent), transparent 40%);
 }
 
 .mcl-create-strip h2 {
@@ -708,11 +795,17 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   align-items: center;
   gap: 16px;
   padding: 16px 24px;
-  background: var(--mcl-cyan);
-  color: var(--mcl-ink);
+  background: var(--hl-strap);
+  color: var(--mcl-on-strap);
   font-size: 14px;
   font-weight: 800;
-  box-shadow: 0 0 34px -10px var(--mcl-cyan);
+  box-shadow: var(--mcl-strap-shadow);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mcl-create-strip > a:hover {
+    background: var(--hl-strap-hover);
+  }
 }
 
 /* ── footer ──────────────────────────────────────────────────────────────── */
@@ -728,15 +821,12 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   font-size: 13px;
 }
 
+/* the mark, a size down from the nav */
 .mcl-footer > span {
-  color: var(--mcl-dim);
-  font-size: 13px;
-  font-weight: 900;
-  letter-spacing: 0.2em;
-}
-
-.mcl-footer > span .mc-brand-mega {
-  color: var(--mcl-pink);
+  display: inline-flex;
+  align-items: center;
+  font-size: 15px;
+  line-height: 1;
 }
 
 .mcl-footer nav {
@@ -746,8 +836,10 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   gap: 12px 26px;
 }
 
-.mcl-footer nav a:hover {
-  color: var(--mcl-fg);
+@media (hover: hover) and (pointer: fine) {
+  .mcl-footer nav a:hover {
+    color: var(--mcl-fg);
+  }
 }
 
 @media (min-width: 768px) {
@@ -766,8 +858,8 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
     border-top: 1px solid var(--mcl-hairline);
     border-left: 0;
     background:
-      radial-gradient(ellipse 80% 50% at 50% 0%, rgba(255, 45, 120, 0.14), transparent 70%),
-      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.028) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse 80% 50% at 50% 0%, color-mix(in srgb, var(--hl-strap) var(--mcl-wash), transparent), transparent 70%),
+      repeating-linear-gradient(0deg, color-mix(in srgb, var(--hl-fg) 3%, transparent) 0 1px, transparent 1px 3px),
       var(--mcl-panel);
   }
   .mcl-entry { padding: 36px 28px 40px; }
@@ -784,8 +876,9 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
 
 @media (max-width: 560px) {
   .mcl-nav { height: 60px; padding: 0 20px; }
-  .mcl-brand { font-size: 14px; }
+  .mcl-brand { font-size: 17px; }
   .mcl-nav-links { gap: 14px; }
+  .mcl-nav-links > .hl-tt { margin-right: 0; }
   .mcl-panel { padding: 28px 22px 30px; }
   .mcl-h1 { font-size: 38px; }
   .mcl-ctas { flex-direction: column; align-items: stretch; }
@@ -797,12 +890,12 @@ html:has(.mc-landing) ::-webkit-scrollbar-thumb:hover {
   .mcl-footer { padding: 28px 20px; }
 }
 
-/* The global focus ring is tuned for the themed pages and washes out on
-   this ground; give the landing its own visible ring. */
-.mc-landing :is(a, button, [tabindex]):focus-visible {
-  outline: 2px solid var(--mcl-cyan);
+/* The landing's own keyboard ring: the brand violet, a step further out so
+   it clears the filled buttons. No radius change — the round film controls
+   keep a round ring — and the theme switch keeps its own. */
+.mc-landing :is(a, button, [tabindex]):not(.hl-tt):focus-visible {
+  outline: 2px solid var(--hl-strap-hi);
   outline-offset: 3px;
-  border-radius: 2px;
 }
 
 @keyframes mcl-rise {

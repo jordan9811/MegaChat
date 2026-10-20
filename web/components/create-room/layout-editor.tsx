@@ -147,7 +147,7 @@ export function LayoutEditor() {
 
       <div className="mcc-layout-controls">
         <label className="mcc-layout-wide">
-          <span>MegaChat clips</span>
+          <span>Holler clips</span>
           <select value={layout.clip.follow ? 'follow' : 'own'}
             onChange={(e) => setClip({ follow: e.target.value === 'follow' })}>
             <option value="follow">In the same stack as the seats</option>

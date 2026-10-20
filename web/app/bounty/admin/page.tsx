@@ -3,7 +3,7 @@ import { SiteFooter, contactUrl } from '@/components/site-footer'
 import { BountyAdmin } from '@/components/bounty/bounty-admin'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Bounty admin — MegaChat' }
+export const metadata = { title: 'Bounty admin — Holler' }
 
 export default function BountyAdminPage() {
   return (

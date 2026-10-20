@@ -1235,7 +1235,7 @@ export function HostCamCard() {
         icon={<Radio className="size-5" />}
         title="Co-host booth"
         description="Arm once. Your camera goes on air to live guests automatically and hangs up when they leave — they see you sub-second (the public broadcast runs on a slight delay)."
-        accent="lime"
+        accent="callin"
       />
       <div className="flex flex-col gap-3 px-5 py-5 sm:px-6">
         <label
@@ -1243,14 +1243,14 @@ export function HostCamCard() {
           className={
             'flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors ' +
             (armed
-              ? 'border-[var(--neon-lime)]/60 bg-[var(--neon-lime)]/10'
+              ? 'border-f-callin-line bg-f-callin-bg'
               : 'border-border bg-input/20')
           }
         >
           <input
             type="checkbox"
             id="cohost-booth"
-            className="size-4 accent-[var(--neon-lime)]"
+            className="size-4 accent-f-callin"
             checked={armed}
             disabled={busy}
             onChange={(e) => void onToggle(e.target.checked)}
@@ -1287,7 +1287,7 @@ export function HostCamCard() {
                   className={
                     'flex-1 rounded-md px-2 py-1 transition-colors ' +
                     (aecPref === v
-                      ? 'bg-[var(--neon-lime)]/15 text-[var(--neon-lime)]'
+                      ? 'bg-f-callin-bg text-f-callin-ink'
                       : 'text-muted-foreground hover:text-foreground')
                   }
                 >
@@ -1299,7 +1299,7 @@ export function HostCamCard() {
             ) : null}
             <p id="boothAecNote" data-mode={aecMode} className="text-xs leading-relaxed text-muted-foreground">
               {aecPref === 'tab' || !wholePcSupported()
-                ? 'Your guests play in this tab and your mic cancels them, like Discord. They reach your stream once, through OBS Desktop Audio, and the MegaChat overlay stays silent for them. Headphones are safest; on speakers, feedback cuts your mic for guests for a moment instead of howling.'
+                ? 'Your guests play in this tab and your mic cancels them, like Discord. They reach your stream once, through OBS Desktop Audio, and the Holler overlay stays silent for them. Headphones are safest; on speakers, feedback cuts your mic for guests for a moment instead of howling.'
                 : aecMode === 'tab'
                   ? 'Chrome didn’t allow cancelling everything this PC plays, so your guests play in this tab and your mic cancels them.'
                   : 'You hear guests through OBS: set the MegaChat Overlay’s Audio Monitoring to Monitor and Output. Your mic cancels everything this PC plays, so speakers are fine. While your game is loud your voice can cut out for guests, and it reaches them about 0.2s later. Needs OBS 32 or newer.'}
@@ -1346,9 +1346,9 @@ export function HostCamCard() {
         {onAir && micOnly ? (
           <div
             role="alert"
-            className="rounded-xl border border-[var(--neon-magenta)]/60 bg-[var(--neon-magenta)]/10 p-3"
+            className="rounded-xl border border-f-holler-line bg-f-holler-bg p-3"
           >
-            <strong className="block text-sm font-bold text-[var(--neon-magenta)]">
+            <strong className="block text-sm font-bold text-f-holler-ink">
               Your camera isn&#39;t working — {guestNoun} can hear you but cannot see you
             </strong>
             <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
@@ -1360,7 +1360,7 @@ export function HostCamCard() {
             <button
               type="button"
               onClick={() => void tryEnableCamera(camIdRef.current)}
-              className="mt-2 h-8 rounded-lg border border-[var(--neon-magenta)]/70 px-3 text-xs font-bold text-[var(--neon-magenta)]"
+              className="mt-2 h-8 rounded-lg border border-f-holler-line px-3 text-xs font-bold text-f-holler-ink"
             >
               Try the camera now
             </button>
@@ -1371,9 +1371,9 @@ export function HostCamCard() {
           <div
             role="alert"
             id="boothFeedback"
-            className="rounded-xl border border-[var(--neon-magenta)]/60 bg-[var(--neon-magenta)]/10 p-3"
+            className="rounded-xl border border-f-holler-line bg-f-holler-bg p-3"
           >
-            <strong className="block text-sm font-bold text-[var(--neon-magenta)]">
+            <strong className="block text-sm font-bold text-f-holler-ink">
               Feedback on your speakers
             </strong>
             <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
@@ -1385,7 +1385,7 @@ export function HostCamCard() {
                 <button
                   type="button"
                   onClick={() => setAecPref('system')}
-                  className="h-8 rounded-lg border border-[var(--neon-magenta)]/70 px-3 text-xs font-bold text-[var(--neon-magenta)]"
+                  className="h-8 rounded-lg border border-f-holler-line px-3 text-xs font-bold text-f-holler-ink"
                 >
                   Hear guests through OBS
                 </button>
@@ -1401,8 +1401,8 @@ export function HostCamCard() {
           </div>
         ) : null}
         {onAir && aecMode === 'tab' && leaking.length ? (
-          <div role="alert" id="boothLeak" data-seats={leaking.join(',')} className="rounded-xl border border-[var(--neon-magenta)]/60 bg-[var(--neon-magenta)]/10 p-3">
-            <strong className="block text-sm font-bold text-[var(--neon-magenta)]">
+          <div role="alert" id="boothLeak" data-seats={leaking.join(',')} className="rounded-xl border border-f-holler-line bg-f-holler-bg p-3">
+            <strong className="block text-sm font-bold text-f-holler-ink">
               Your mic is picking up {leakingNames.join(', ')} from your speakers
             </strong>
             <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
@@ -1412,7 +1412,7 @@ export function HostCamCard() {
               <button
                 type="button"
                 onClick={() => setAecPref('system')}
-                className="mt-2 h-8 rounded-lg border border-[var(--neon-magenta)]/70 px-3 text-xs font-bold text-[var(--neon-magenta)]"
+                className="mt-2 h-8 rounded-lg border border-f-holler-line px-3 text-xs font-bold text-f-holler-ink"
               >
                 Hear guests through OBS
               </button>
@@ -1427,7 +1427,7 @@ export function HostCamCard() {
           </p>
         ) : null}
         {onAir && obsAudio.problems.length ? (
-          <div id="boothObsAudio" data-codes={obsAudio.problems.map((x) => x.code).join(',')} className="flex flex-col gap-2 rounded-xl border border-[var(--neon-yellow,#ffd23d)]/60 bg-[#ffd23d]/10 p-3">
+          <div id="boothObsAudio" data-codes={obsAudio.problems.map((x) => x.code).join(',')} className="flex flex-col gap-2 rounded-xl border border-f-bounty-line bg-f-bounty-bg p-3">
             {obsAudio.problems.map((x) => (
               <div key={x.id} className="flex flex-wrap items-center gap-2 text-xs leading-relaxed text-foreground">
                 <span className="flex-1">
@@ -1443,7 +1443,7 @@ export function HostCamCard() {
                       setObsFixFailed(null)
                       void obsAudio.fix(x).then((ok) => { if (!ok) setObsFixFailed(x.id) }).finally(() => setObsFixing(null))
                     }}
-                    className="h-8 rounded-lg border border-[#ffd23d]/70 px-3 text-xs font-bold text-[#ffd23d]"
+                    className="h-8 rounded-lg border border-f-bounty-line px-3 text-xs font-bold text-f-bounty-ink"
                   >
                     {obsFixing === x.id ? 'Fixing…' : x.fix.label}
                   </button>
@@ -1465,7 +1465,7 @@ export function HostCamCard() {
             id="boothHearGuests"
             data-unheard={unheard.join(',')}
             onClick={hearGuests}
-            className="h-9 rounded-lg border border-[var(--neon-lime)]/60 bg-[var(--neon-lime)]/10 px-3 text-sm font-bold text-[var(--neon-lime)] transition-colors hover:bg-[var(--neon-lime)]/20"
+            className="h-9 rounded-lg border border-f-callin-line bg-f-callin-bg px-3 text-sm font-bold text-f-callin-ink transition-colors hover:bg-f-callin/20"
           >
             {unheard.length
               ? `You can’t hear ${unheard.map((id) => seats.find((x) => `seat:${x.id}` === id)?.username || 'a guest').join(', ')} — click to fix`
@@ -1501,12 +1501,12 @@ export function HostCamCard() {
             <div
               id="boothPictureHeld"
               data-state={picture}
-              className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-[#07090d] px-6 text-center"
+              className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-hl-panel-2 px-6 text-center"
             >
               {picture === 'checking' ? (
                 <RefreshCw className="size-4 animate-spin text-muted-foreground" />
               ) : (
-                <VideoOff className="size-5 text-[var(--neon-magenta)]" />
+                <VideoOff className="size-5 text-f-holler-ink" />
               )}
               <p className="text-sm font-semibold text-foreground">
                 {picture === 'checking' ? 'Checking your camera' : 'Guests can’t see you'}
@@ -1523,7 +1523,7 @@ export function HostCamCard() {
         </div>
 
         {error ? (
-          <p id="boothError" className="text-xs text-[var(--neon-magenta)]">
+          <p id="boothError" className="text-xs text-f-holler-ink">
             {error}
           </p>
         ) : null}

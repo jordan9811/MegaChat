@@ -81,9 +81,9 @@ ok('unlock with password', goodAuth.status === 200 && goodAuth.data?.room?.id ==
 console.log('\n— 2. pages serve (join / dashboard / overlay / browse) —');
 for (const [name, path, marker] of [
   ['join page', `/join?room=${roomId}`, 'Sign up'],
-  ['dashboard page', '/dashboard', 'MegaChat'],
+  ['dashboard page', '/dashboard', 'Holler'],
   ['overlay page', `/overlay?room=${roomId}`, ''],
-  ['landing/browse', '/', 'MegaChat'],
+  ['landing/browse', '/', 'Holler'],
 ]) {
   const r = await fetch(`${BASE}${path}`);
   const text = await r.text();

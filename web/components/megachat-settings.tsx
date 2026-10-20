@@ -136,7 +136,7 @@ export function MegaChatSettings() {
     <GlassCard>
       <CardHeader
         icon={<Radio className="size-5" />}
-        title={managing ? 'MegaChat Settings' : picking ? 'Your rooms' : 'New room'}
+        title={managing ? 'Holler Settings' : picking ? 'Your rooms' : 'New room'}
         description={
           managing
             ? 'Changes save automatically while you stream.'
@@ -367,20 +367,20 @@ export function MegaChatSettings() {
                 className={cn(
                   'flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors',
                   draft.lettersEnabled
-                    ? 'border-[var(--neon-magenta)]/60 bg-[var(--neon-magenta)]/10'
+                    ? 'border-[color:var(--f-holler-line)] bg-[color:var(--f-holler-bg)]'
                     : 'border-border bg-input/20 opacity-75',
                 )}
               >
                 <input
                   type="checkbox"
                   id="letters-enabled"
-                  className="mt-0.5 size-4 accent-[var(--neon-magenta)]"
+                  className="mt-0.5 size-4 accent-[var(--f-holler)]"
                   checked={draft.lettersEnabled}
                   onChange={(e) => updateDraft({ lettersEnabled: e.target.checked })}
                 />
                 <span className="flex flex-col gap-0.5">
                   <span className="font-heading text-sm font-bold text-foreground">
-                    📼 MegaChats
+                    📼 Hollers
                   </span>
                   <span className="text-xs leading-relaxed text-muted-foreground">
                     Viewers record a clip, pay flat, it plays once on stream.
@@ -391,20 +391,20 @@ export function MegaChatSettings() {
                 className={cn(
                   'flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors',
                   draft.joinStreamEnabled
-                    ? 'border-[var(--neon-lime)]/60 bg-[var(--neon-lime)]/10'
+                    ? 'border-[color:var(--f-callin-line)] bg-[color:var(--f-callin-bg)]'
                     : 'border-border bg-input/20 opacity-75',
                 )}
               >
                 <input
                   type="checkbox"
                   id="joinstream-enabled"
-                  className="mt-0.5 size-4 accent-[var(--neon-lime)]"
+                  className="mt-0.5 size-4 accent-[var(--f-callin)]"
                   checked={draft.joinStreamEnabled}
                   onChange={(e) => updateDraft({ joinStreamEnabled: e.target.checked })}
                 />
                 <span className="flex flex-col gap-0.5">
                   <span className="font-heading text-sm font-bold text-foreground">
-                    ⚡ Join Stream
+                    ⚡ Call in
                   </span>
                   <span className="text-xs leading-relaxed text-muted-foreground">
                     Live camera seats on your broadcast, billed per second.
@@ -439,7 +439,7 @@ export function MegaChatSettings() {
                   💸 Free room
                 </span>
                 <span className="text-xs leading-relaxed text-muted-foreground">
-                  No charges — viewers hop on camera (and send MegaChats) without
+                  No charges — viewers hop on camera (and send Hollers) without
                   a wallet. Flip off to set a price.
                 </span>
               </span>
@@ -458,7 +458,7 @@ export function MegaChatSettings() {
               hint={
                 simple
                   ? 'What one credit (one second on camera) costs viewers.'
-                  : 'Drives Join Stream metering AND the auto MegaChat price.'
+                  : 'Drives Call in metering AND the auto Holler price.'
               }
             >
               <InputAffix
@@ -564,7 +564,7 @@ export function MegaChatSettings() {
             {/* 1 · MegaChat details — the hero feature, most-touched knobs */}
             <div className="pt-5">
               <p className="mb-4 text-sm font-semibold text-foreground/90">
-                📼 MegaChat details
+                📼 Holler details
               </p>
               {draft.lettersEnabled ? (
                 <>
@@ -685,7 +685,7 @@ export function MegaChatSettings() {
                 </>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  MegaChats are off — flip the tile up top to configure them.
+                  Hollers are off — flip the tile up top to configure them.
                 </p>
               )}
             </div>
@@ -694,7 +694,7 @@ export function MegaChatSettings() {
                 (billing/shipping-address pattern) unless overridden */}
             <div className="mt-6 border-t border-border/50 pt-5">
               <p className="mb-4 text-sm font-semibold text-foreground/90">
-                ⚡ Join Stream details
+                ⚡ Call in details
               </p>
               {draft.joinStreamEnabled ? (
                 <>
@@ -706,7 +706,7 @@ export function MegaChatSettings() {
                       checked={draft.jsGatesSame}
                       onChange={(e) => updateDraft({ jsGatesSame: e.target.checked })}
                     />
-                    Same gates as MegaChats
+                    Same gates as Hollers
                   </label>
                   {!draft.jsGatesSame ? (
                     <div className="flex flex-col gap-5">
@@ -757,7 +757,7 @@ export function MegaChatSettings() {
                 </>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  Join Stream is off — this is a MegaChats-only room.
+                  Call in is off — this is a Hollers-only room.
                 </p>
               )}
             </div>

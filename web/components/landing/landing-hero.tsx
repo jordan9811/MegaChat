@@ -57,7 +57,8 @@ export function LandingHero() {
 
   return (
     <section className="mcl-hero">
-      <div className="mcl-film">
+      {/* .dark keeps the film framed in black in both themes: it is a video */}
+      <div className="mcl-film dark">
         <img src="/launch-film-poster.jpg" alt="" className="mcl-film-media" />
         <video
           ref={videoRef}
@@ -67,7 +68,7 @@ export function LandingHero() {
           muted
           playsInline
           preload="auto"
-          aria-label="The MegaChat launch film: a viewer is pulled off his couch and into the stream"
+          aria-label="The Holler launch film: a viewer is pulled off his couch and into the stream"
           onEnded={() => {
             setEnded(true)
             setPlaying(false)
@@ -123,7 +124,7 @@ export function LandingHero() {
         </h1>
         <p className="mcl-sub mcl-r3">Camera seats on live broadcasts, billed by the second.</p>
         <div className="mcl-ctas mcl-r3">
-          <Link href="/app" className="mcl-btn-primary">Enter MegaChat</Link>
+          <Link href="/app" className="mcl-btn-primary">Enter Holler</Link>
           <button type="button" onClick={replay} className="mcl-btn-ghost">
             Watch the film
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

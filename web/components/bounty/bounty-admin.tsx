@@ -17,11 +17,14 @@ type Row = AirSession & {
   claim: BountyClaim | null
 }
 
+// Holler colour roles: pass / approve is the positive green, partial and
+// ambiguous are the caution yellow, a failure or a breach is red text
+// (--f-holler-ink), a review in progress is strap violet.
 const RESULT_TONE: Record<string, string> = {
-  PASS: 'text-[var(--neon-lime)]',
-  PARTIAL: 'text-[var(--neon-amber)]',
-  AMBIGUOUS: 'text-[var(--neon-amber)]',
-  FAIL: 'text-[var(--neon-magenta)]',
+  PASS: 'text-f-rewards-ink',
+  PARTIAL: 'text-f-bounty-ink',
+  AMBIGUOUS: 'text-f-bounty-ink',
+  FAIL: 'text-f-holler-ink',
   NO_FRAMES: 'text-muted-foreground',
   NO_CODES: 'text-muted-foreground',
 }
@@ -98,8 +101,8 @@ export function BountyAdmin() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-[var(--neon-amber)]/50 bg-[var(--neon-amber)]/5 px-4 py-3">
-        <p className="flex items-center gap-2 text-sm font-bold text-[var(--neon-amber)]">
+      <div className="rounded-xl border border-f-bounty-line bg-f-bounty-bg px-4 py-3">
+        <p className="flex items-center gap-2 text-sm font-bold text-f-bounty-ink">
           <ShieldAlert className="size-4" /> Settlement is stubbed
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -108,17 +111,17 @@ export function BountyAdmin() {
         </p>
       </div>
 
-      {err ? <p className="text-sm text-[var(--neon-magenta)]">{err}</p> : null}
+      {err ? <p className="text-sm text-f-holler-ink">{err}</p> : null}
 
       {/* Review queue — an ambiguous verification that reaches nobody is a
           streamer who did the work, wasn't paid, and never saw a human. */}
       {reviews.length > 0 ? (
-        <div className="rounded-2xl border border-[var(--neon-violet)]/50 bg-[var(--neon-violet)]/5 p-4">
-          <p className="flex items-center gap-2 text-sm font-bold text-[var(--neon-violet)]">
-            <ShieldAlert className="size-4" />
+        <div className="rounded-2xl border border-hl-strap-hi/45 bg-hl-strap/10 p-4">
+          <p className="flex items-center gap-2 text-sm font-bold text-foreground">
+            <ShieldAlert className="size-4 text-hl-strap-hi" />
             Review queue — {openReviews.length} open
             {breachedCount > 0 ? (
-              <span className="ml-1 rounded-full bg-[var(--neon-magenta)] px-2 py-0.5 text-[10px] font-bold text-black">
+              <span className="ml-1 rounded-full bg-f-holler-solid px-2 py-0.5 text-[10px] font-bold text-f-holler-on">
                 {breachedCount} past SLA
               </span>
             ) : null}
@@ -128,7 +131,7 @@ export function BountyAdmin() {
               <li
                 key={r.id}
                 className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 ${
-                  r.breachedSla ? 'border-[var(--neon-magenta)]/60' : 'border-border/70'
+                  r.breachedSla ? 'border-f-holler-line' : 'border-border/70'
                 }`}
               >
                 <span className="min-w-0 flex-1">
@@ -137,14 +140,14 @@ export function BountyAdmin() {
                     confidence {r.confidence.toFixed(2)} · open{' '}
                     {Math.round(r.ageMs / 3_600_000)}h
                     {r.breachedSla ? (
-                      <strong className="ml-1 text-[var(--neon-magenta)]">PAST SLA</strong>
+                      <strong className="ml-1 text-f-holler-ink">PAST SLA</strong>
                     ) : null}
                   </span>
                 </span>
                 <button
                   type="button"
                   onClick={() => void resolve(r.id, true)}
-                  className="rounded-full bg-[var(--neon-lime)] px-3 py-1 text-xs font-bold text-black"
+                  className="rounded-full bg-f-rewards-solid px-3 py-1 text-xs font-bold text-f-rewards-on active:scale-[.97]"
                 >
                   Approve
                 </button>
@@ -195,13 +198,13 @@ export function BountyAdmin() {
                     <td className="px-4 py-3 tabular text-xs">
                       {last?.confidence != null ? last.confidence.toFixed(2) : '—'}
                       {last?.result === 'AMBIGUOUS' ? (
-                        <span className="ml-1 text-[10px] text-[var(--neon-amber)]">review</span>
+                        <span className="ml-1 text-[10px] text-f-bounty-ink">review</span>
                       ) : null}
                     </td>
                     <td className="px-4 py-3 tabular text-xs">{(r.verifiedMinutes || 0).toFixed(2)}m</td>
                     <td className="px-4 py-3 text-xs">
                       {violations > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-[var(--neon-magenta)]">
+                        <span className="inline-flex items-center gap-1 text-f-holler-ink">
                           <CircleAlert className="size-3.5" /> badge ×{violations}
                         </span>
                       ) : (
@@ -213,7 +216,7 @@ export function BountyAdmin() {
                         type="button"
                         disabled={busy === r.id}
                         onClick={() => void override(r)}
-                        className="rounded-full border border-border px-3 py-1 text-xs font-bold text-foreground transition-colors hover:border-[var(--neon-magenta)]/60 disabled:opacity-50"
+                        className="rounded-full border border-border px-3 py-1 text-xs font-bold text-foreground hover:border-f-holler-line disabled:opacity-50"
                       >
                         {busy === r.id ? '…' : 'Override'}
                       </button>

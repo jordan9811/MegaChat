@@ -29,6 +29,8 @@ import {
 import { shortAddr, useAccount } from '@/lib/use-account'
 import { formatDollars } from '@/lib/display-format'
 import { BrandText } from '@/components/brand-text'
+import { FeatureTag, type FeatureKind } from '@/components/feature-tag'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { docsUrl } from '@/lib/docs-url.mjs'
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -64,8 +66,11 @@ function whenLinked(iso: string) {
 }
 
 // Human summary of a saved defaults blob — only fields worth glancing at.
-function defaultsSummary(d: Record<string, unknown>): [string, string][] {
-  const rows: [string, string][] = []
+// A feature row carries its kind, so an On value shows as that feature's tag.
+type SummaryRow = [string, string, FeatureKind?]
+
+function defaultsSummary(d: Record<string, unknown>): SummaryRow[] {
+  const rows: SummaryRow[] = []
   const s = (k: string) => (typeof d[k] === 'string' ? (d[k] as string) : null)
   const b = (k: string) => (typeof d[k] === 'boolean' ? (d[k] as boolean) : null)
   const price = s('passkeyTickPrice')
@@ -77,9 +82,9 @@ function defaultsSummary(d: Record<string, unknown>): [string, string][] {
   const t = s('transport')
   if (t != null) rows.push(['Transport', t === 'livekit' ? 'LiveKit (default)' : 'vdo.ninja'])
   const mc = b('lettersEnabled')
-  if (mc != null) rows.push(['MegaChats', mc ? 'On' : 'Off'])
+  if (mc != null) rows.push(['Hollers', mc ? 'On' : 'Off', 'holler'])
   const js = b('joinStreamEnabled')
-  if (js != null) rows.push(['Join Stream', js ? 'On' : 'Off'])
+  if (js != null) rows.push(['Call in', js ? 'On' : 'Off', 'callin'])
   const sfx = b('stingerSounds')
   if (sfx != null) rows.push(['Stinger sounds', sfx ? 'On' : 'Off'])
   const tw = s('twitchChannel')
@@ -192,7 +197,7 @@ export function AccountPage() {
   const rows = defaults ? defaultsSummary(defaults) : []
 
   return (
-    <div className="mc-account dark min-h-screen">
+    <div className="mc-account min-h-screen">
       <header className="mcc-product-header">
         <div>
           <span className="mcc-product-brand">
@@ -208,6 +213,7 @@ export function AccountPage() {
           </nav>
           <span className="mcc-product-actions">
             <a href="/dashboard">Create room</a>
+            <ThemeToggle />
             <AccountChip accent="var(--mcc-accent)" />
           </span>
         </div>
@@ -249,7 +255,7 @@ export function AccountPage() {
               <span className="mcc-coordinate">Identity / permanent</span>
               <h1>{identity ? `@${identity.handle}` : 'Wallet only'}</h1>
               <p>{identity
-                ? 'Your handle is your room link everywhere MegaChat appears.'
+                ? 'Your handle is your room link everywhere Holler appears.'
                 : 'Add a sign-in to claim a permanent handle and room link.'}</p>
             </div>
             {identity ? (
@@ -337,7 +343,12 @@ export function AccountPage() {
                     <p className="hint">Loading…</p>
                   ) : rows.length > 0 ? (
                     <ul id="defaults-summary" className="mcc-setting-rows">
-                      {rows.map(([k, v]) => <li key={k}><span>{k}</span><strong>{v}</strong></li>)}
+                      {rows.map(([k, v, kind]) => (
+                        <li key={k}>
+                          <span>{k}</span>
+                          {kind && v === 'On' ? <FeatureTag kind={kind}>On</FeatureTag> : <strong>{v}</strong>}
+                        </li>
+                      ))}
                     </ul>
                   ) : defaults ? (
                     <p id="defaults-summary" className="hint">Defaults are saved, but none differ from stock.</p>
@@ -364,7 +375,7 @@ export function AccountPage() {
 
               {section === 'connections' ? (
                 <section className="mcc-connections-zone" id="connections">
-                  <header><span className="mcc-coordinate">Linked sign-ins</span><h2>One identity, multiple ways back in.</h2><p>Every provider below resolves to this same MegaChat account.</p></header>
+                  <header><span className="mcc-coordinate">Linked sign-ins</span><h2>One identity, multiple ways back in.</h2><p>Every provider below resolves to this same Holler account.</p></header>
                   {!identity ? (
                     <div className="mcc-empty-connection"><p>Wallet-only session. Add Google, email, passkey, Twitch, X, or another supported sign-in.</p><button type="button" className="btn" onClick={openSignIn}>Add a sign-in</button></div>
                   ) : accounts == null ? (
@@ -434,7 +445,7 @@ export function AccountPage() {
                       <ul className="mcc-standing-reasons">
                         {overview.classification.reasons.map((r, i) => <li key={i}>{r}</li>)}
                       </ul>
-                      <p className="hint">Only you can see this. Nothing on MegaChat uses it yet.</p>
+                      <p className="hint">Only you can see this. Nothing on Holler uses it yet.</p>
                     </div>
                   ) : null}
                   <div className="mcc-wallet-line">

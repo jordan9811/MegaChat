@@ -2,53 +2,59 @@
    (lib/join-page.ts) toggles the same classes the legacy page used (.show,
    .success, .error, .live, .addr); these rules give them the app skin.
    Elements whose className the script overwrites entirely (#message,
-   #camStatus) are styled here rather than with Tailwind utilities. */
+   #camStatus) are styled here rather than with Tailwind utilities.
 
-/* The site paints a magenta neon scrollbar on the document itself, so
-   scoping the app skin to .mc-join isn't enough — the pink rail survives
-   next to a near-black page. :has lets this page own the document chrome
-   for as long as it is the thing on screen. */
-html:has(.mc-join) {
-  color-scheme: dark;
-}
+   Colour is the Holler system (design-assets/holler-brand/SPEC.md §3) and
+   follows the theme: --mcj-* below are aliases onto --hl-*, and every feature
+   colour is read by meaning — the Holler path (record a clip) is holler red,
+   the live camera seat is call-in purple, money is bounty yellow, a LIVE
+   light is the record red. The broadcast column (the stage and the ground
+   around it), the camera frames and the stinger monitor carry a .dark scope
+   (join-client.tsx), so they stay a picture in both themes. */
 
+/* The page owns the document chrome while it is on screen — a quiet rail, not
+   the site's tinted one, next to the stage. html itself owns the page
+   scrollbar, and the site's rule is `*` — which matches html but not
+   `html *`. Both selectors are needed. */
 body:has(.mc-join) {
-  background: #050609;
+  background: var(--hl-bg);
 }
-/* html itself owns the page scrollbar, and the site's rule is `*` — which
-   matches html but not `html *`. Both selectors are needed. */
 html:has(.mc-join),
 html:has(.mc-join) * {
-  scrollbar-color: #2a2f3a transparent;
+  scrollbar-color: var(--hl-line-2) transparent;
 }
 html:has(.mc-join) ::-webkit-scrollbar-thumb {
-  background-color: #2a2f3a;
+  background-color: var(--hl-line-2);
 }
 html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
-  background-color: #3a4150;
+  background-color: color-mix(in srgb, var(--hl-fg) 30%, transparent);
+}
+
+/* Redeclared on any nested .dark/.light scope so the aliases re-resolve there
+   instead of inheriting the page theme's values. */
+.mc-join,
+.mc-join :is(.dark, .light) {
+  --mcj-bg: var(--hl-bg);
+  --mcj-panel: var(--hl-panel);
+  --mcj-panel-up: var(--hl-panel-2);
+  --mcj-sunk: var(--hl-bg);
+  --mcj-fg: var(--hl-fg);
+  --mcj-muted: var(--hl-muted);
+  --mcj-dim: var(--hl-dim);
+  /* Was a step below dim and under 4.5:1; the floor is now dim. */
+  --mcj-faint: var(--hl-dim);
+  --mcj-hairline: var(--hl-line);
+  --mcj-rule: var(--hl-line-2);
+  --mcj-rule-2: color-mix(in srgb, var(--hl-fg) 28%, transparent);
+  --mcj-accent: var(--hl-strap-hi);
 }
 
 .mc-join {
-  --mcj-bg: #050609;
-  --mcj-panel: #0a0c12;
-  --mcj-panel-up: #0f1219;
-  --mcj-sunk: #07090f;
-  --mcj-fg: #f4f6f8;
-  --mcj-muted: #a9b2bd;
-  --mcj-dim: #7d8794;
-  --mcj-faint: #6b7684;
-  --mcj-hairline: rgba(255, 255, 255, 0.1);
-  --mcj-rule: rgba(255, 255, 255, 0.17);
-  --mcj-rule-2: rgba(255, 255, 255, 0.28);
-  --mcj-accent: #3ae8ff;
-  --mcj-live: #b8ff45;
-  --mcj-warn: #ffd23d;
-  --mcj-danger: #ff6b3d;
   background-color: var(--mcj-bg);
   background-image:
-    radial-gradient(circle at 8% 0%, rgba(255, 45, 120, 0.12), transparent 32rem),
-    linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px);
+    radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--hl-strap) 14%, transparent), transparent 32rem),
+    linear-gradient(var(--hl-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hl-grid) 1px, transparent 1px);
   background-size: auto, 42px 42px, 42px 42px;
   color: var(--mcj-fg);
   font-family: var(--font-ui), system-ui, sans-serif;
@@ -66,45 +72,48 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   padding: 0 16px;
   border: 1px solid var(--mcj-rule);
   border-bottom: 0;
-  background: rgba(12, 15, 23, 0.88);
+  background: var(--hl-panel);
   color: var(--mcj-faint);
   font-size: 11px;
 }
 
 .join-room-strip strong {
   color: var(--mcj-fg);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .join-room-strip > span:last-child {
   margin-left: auto;
 }
 
+/* What the room offers — FeatureTags (components/feature-tag.tsx). */
+.join-room-features {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The room's state ("Room entrance", "Demo room", "Room closed") reads like a
+   HUD coordinate in the brand violet — it is not a LIVE light. */
 .join-live-label {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: var(--mcj-live);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.09em;
+  color: var(--hl-strap-hi);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
-.join-live-label i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--mcj-live);
-  box-shadow: 0 0 10px rgba(184, 255, 69, 0.45);
-}
-
 .join-demo-banner {
-  border: 1px solid rgba(184, 255, 69, 0.3);
+  border: 1px solid color-mix(in srgb, var(--hl-strap-hi) 40%, transparent);
   border-bottom: 0;
-  background: rgba(25, 79, 65, 0.35);
+  background: color-mix(in srgb, var(--hl-strap) 12%, var(--hl-panel));
   padding: 10px 16px;
-  color: #d4ff8a;
+  color: var(--mcj-fg);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -116,34 +125,47 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   border: 1px solid var(--mcj-rule);
 }
 
+/* The broadcast column. Always dark (.dark scope): text colour is set here so
+   it re-resolves inside the scope instead of inheriting the page theme's ink.
+   It fills the whole row, because the console beside it often runs taller
+   than the stage (a seat's camera, the advanced drawer, a status line) and
+   the cell under a fixed-height stage used to show bare page — a light strip
+   under a black picture in light mode. The ground, the diagonal band, the
+   floor shade and the grid all live here, on the column, so they run on
+   unbroken above and below the sticky stage as it slides. */
+.join-stage-col {
+  position: relative;
+  min-width: 0;
+  align-self: stretch;
+  color: var(--hl-fg);
+  background:
+    linear-gradient(to top, color-mix(in srgb, var(--hl-bg) 38%, transparent), transparent 46%),
+    linear-gradient(145deg, var(--hl-bg) 0%, var(--hl-panel-2) 58%, var(--hl-bg) 100%);
+}
+
+.join-stage-col::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(color-mix(in srgb, var(--hl-strap-hi) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--hl-strap-hi) 7%, transparent) 1px, transparent 1px);
+  background-size: 42px 42px;
+  /* A mask reads only alpha; any opaque token will do. */
+  mask-image: linear-gradient(to right, transparent, var(--hl-bg));
+  pointer-events: none;
+}
+
+/* The stage carries only its own glow, which fades out well inside its edges,
+   so it has no edge of its own against the column. Sticky inside the column:
+   the column is the row's height, so the stage follows a long console down. */
 .join-media-stage {
   position: sticky;
   top: 68px;
   min-height: 500px;
   height: min(620px, calc(100vh - 92px));
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 42%, rgba(255, 45, 120, 0.13), transparent 34%),
-    linear-gradient(145deg, #07090f 0%, #0a1a28 58%, #07090f 100%);
-}
-
-.join-media-stage::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(rgba(58, 232, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(58, 232, 255, 0.05) 1px, transparent 1px);
-  background-size: 42px 42px;
-  mask-image: linear-gradient(to right, transparent, #000);
-}
-
-.join-media-stage::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, rgba(5, 6, 9, 0.38), transparent 46%);
-  pointer-events: none;
+  background: radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--hl-strap) 18%, transparent), transparent 34%);
 }
 
 .join-preview-idle {
@@ -170,7 +192,7 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   max-width: 410px;
   padding: 28px 32px;
   border: 1px solid var(--mcj-rule);
-  background: rgba(5, 6, 9, 0.34);
+  background: color-mix(in srgb, var(--hl-bg) 40%, transparent);
 }
 
 .join-preview-idle h1 {
@@ -193,7 +215,7 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   z-index: 8;
   inset: 0;
   padding: 22px;
-  background: #050b12;
+  background: var(--hl-bg);
 }
 
 .join-media-stage > .stream-preview .stream-preview-frame {
@@ -205,9 +227,11 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
 .join-action-console {
   min-width: 0;
   border-left: 1px solid var(--mcj-rule);
-  background: linear-gradient(180deg, #0f1219 0%, #07090f 62%, #07090f 100%);
+  background: linear-gradient(180deg, var(--hl-panel-2) 0%, var(--hl-panel) 240px);
 }
 
+/* Two-way path switch (record a Holler / call in), each tab in its own
+   feature colour. */
 .join-path-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -222,23 +246,27 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   gap: 10px;
   padding: 10px 16px;
   border-bottom: 3px solid transparent;
-  background: rgba(5, 6, 9, 0.55);
+  background: var(--mcj-sunk);
   color: var(--mcj-faint);
   text-decoration: none;
 }
 
 .join-path-switch a:first-child {
   border-right: 1px solid var(--mcj-rule);
-  border-bottom-color: var(--mcj-accent);
-  background: rgba(58, 232, 255, 0.09);
+  border-bottom-color: var(--f-holler);
+  background: var(--f-holler-bg);
 }
 
-.join-path-switch a:hover {
-  color: var(--mcj-fg);
-  background: rgba(58, 232, 255, 0.13);
+@media (hover: hover) and (pointer: fine) {
+  .join-path-switch a:hover {
+    color: var(--mcj-fg);
+    background: color-mix(in srgb, var(--hl-fg) 6%, var(--mcj-sunk));
+  }
+  .join-path-switch a:first-child:hover { background: var(--f-holler-bg); }
 }
 
-.join-path-switch b { color: var(--mcj-accent); font-size: 12px; }
+.join-path-switch b { color: var(--f-callin-ink); font-size: 12px; }
+.join-path-switch a:first-child b { color: var(--f-holler-ink); }
 .join-path-switch span { display: flex; flex-direction: column; gap: 2px; font-size: 12px; font-weight: 750; }
 .join-path-switch small { color: var(--mcj-faint); font-size: 9px; font-weight: 500; }
 
@@ -249,20 +277,24 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   padding: 24px;
 }
 
+/* The room's price is money: bounty yellow. */
 .join-price-zone {
   padding: 14px 16px;
-  border-left: 3px solid var(--mcj-warn);
-  background: rgba(255, 210, 61, 0.08);
+  border-left: 3px solid var(--f-bounty);
+  background: var(--f-bounty-bg);
 }
 
-.join-price-zone .join-coordinate { color: #d4ae30; }
+.join-price-zone .join-coordinate { color: var(--f-bounty-ink); }
 .join-price-zone > div { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; margin-top: 8px; }
-#priceAmount { color: var(--mcj-warn); font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
-#priceLabel { max-width: 58%; color: #cdb36a; font-size: 11px; line-height: 1.45; text-align: right; }
+#priceAmount { color: var(--f-bounty-ink); font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+#priceLabel { max-width: 58%; color: var(--mcj-muted); font-size: 11px; line-height: 1.45; text-align: right; }
 
+/* The per-second meter belongs to the seat (call-in purple); the amounts in
+   it are money (bounty yellow) and what watching earned is rewards green. */
 .join-meter {
-  border: 1px solid rgba(255, 210, 61, 0.2);
-  background: rgba(17, 21, 19, 0.7);
+  border: 1px solid var(--f-callin-line);
+  border-left: 3px solid var(--f-callin);
+  background: var(--mcj-sunk);
   padding: 3px 14px;
 }
 
@@ -271,14 +303,15 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   justify-content: space-between;
   gap: 18px;
   padding: 9px 0;
-  border-top: 1px solid rgba(255, 210, 61, 0.1);
-  color: var(--mcj-dim);
+  border-top: 1px solid var(--hl-line);
+  color: var(--f-callin-ink);
   font-size: 12px;
 }
 
 .join-meter > div:first-child { border-top: 0; }
 .join-meter strong { color: var(--mcj-fg); font-variant-numeric: tabular-nums; }
-#meterTime, #rewardsEarned { color: var(--mcj-live); }
+#meterRemaining, #meterSpent { color: var(--f-bounty-ink); }
+#rewardsEarned { color: var(--f-rewards-ink); }
 
 .join-identity-zone {
   display: grid;
@@ -295,9 +328,15 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   line-height: 1.5;
 }
 
+/* The script marks a refusal with this class (setLetterStatus). The id rule
+   above used to outrank it, so a refusal read like progress copy. */
+.mc-join #letterStatus[class*='neon-magenta'] {
+  color: var(--f-holler-ink);
+}
+
 .join-identity-zone #passkeyFundNote {
   border: 1px solid var(--mcj-rule);
-  background: rgba(5, 6, 9, 0.45);
+  background: var(--mcj-sunk);
   padding: 9px 11px;
 }
 
@@ -307,7 +346,11 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   gap: 8px;
 }
 
+/* Each path is marked by a short bar in its feature colour on the rule. */
 .join-mode-zone {
+  --zone-hue: var(--hl-strap);
+  --zone-ink: var(--hl-strap-hi);
+  position: relative;
   scroll-margin-top: 80px;
   display: flex;
   flex-direction: column;
@@ -316,33 +359,67 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   border-top: 1px solid var(--mcj-rule);
 }
 
+.join-mode-zone::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 0;
+  width: 44px;
+  height: 3px;
+  background: var(--zone-hue);
+}
+
+.join-mode-zone.is-record { --zone-hue: var(--f-holler); --zone-ink: var(--f-holler-ink); }
+.join-mode-zone.is-live-seat { --zone-hue: var(--f-callin); --zone-ink: var(--f-callin-ink); }
+
 .join-mode-zone header > span {
-  color: var(--mcj-danger);
+  color: var(--zone-ink);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.join-mode-zone.is-live-seat header > span { color: var(--mcj-live); }
 .join-mode-zone h2 { margin: 7px 0 6px; font-size: 25px; line-height: 1.03; letter-spacing: -0.035em; }
 .join-mode-zone header p { margin: 0; color: var(--mcj-muted); font-size: 11.5px; line-height: 1.55; }
 
+/* House motion: transform only, ease-out, hover lift on a real pointer,
+   press at .97. Colour changes are instant. */
 .mcj-action,
 .mcj-secondary,
 .mcj-mini {
   border: 1px solid var(--mcj-rule-2);
   border-radius: 0;
-  transition: background-color .15s, border-color .15s, color .15s, transform .15s;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.mcj-action:hover:not(:disabled) { transform: translateY(-1px); }
-.mcj-action-record { border-color: var(--mcj-accent); background: var(--mcj-accent); color: #050609; }
-.mcj-action-live { border-color: var(--mcj-live); background: var(--mcj-live); color: #06130f; }
-.mcj-secondary { background: rgba(5, 6, 9, 0.72); color: var(--mcj-fg); }
-.mcj-secondary:hover:not(:disabled) { border-color: var(--mcj-accent); background: rgba(58, 232, 255, 0.09); }
+/* Record a Holler: the send buttons are the holler fill. */
+.mcj-action-record { border-color: var(--f-holler-solid); background: var(--f-holler-solid); color: var(--f-holler-on); }
+/* Call in: the seat button is the call-in fill. */
+.mcj-action-live { border-color: var(--f-callin-solid); background: var(--f-callin-solid); color: var(--f-callin-on); }
+.mcj-secondary { background: var(--hl-panel); color: var(--mcj-fg); }
 .mcj-mini { background: transparent; color: var(--mcj-dim); }
-.mcj-mini:hover:not(:disabled) { border-color: var(--mcj-rule-2); color: var(--mcj-fg); }
+
+/* The recorder's Record / Stop (countdown) button wears the holler tint. */
+.mc-join #letterRecordBtn {
+  border-color: var(--f-holler-line);
+  background: var(--f-holler-bg);
+  color: var(--f-holler-ink);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mcj-action:hover:not(:disabled) { transform: translateY(-1px); }
+  .mcj-action-record:hover:not(:disabled) { box-shadow: var(--hl-glow-holler); }
+  .mcj-action-live:hover:not(:disabled) { box-shadow: var(--hl-glow-callin); }
+  .mcj-secondary:hover:not(:disabled) { border-color: var(--mcj-accent); background: color-mix(in srgb, var(--hl-strap) 10%, var(--hl-panel)); }
+  .mc-join #letterRecordBtn:hover:not(:disabled) { border-color: var(--f-holler); background: color-mix(in srgb, var(--f-holler) 18%, var(--hl-panel)); }
+  .mcj-mini:hover:not(:disabled) { border-color: var(--mcj-rule-2); color: var(--mcj-fg); }
+}
+
+/* After the hover lift, so a press reads as a press. */
+.mcj-action:active:not(:disabled),
+.mcj-secondary:active:not(:disabled),
+.mcj-mini:active:not(:disabled) { transform: scale(0.97); }
 
 .join-trust-line {
   margin: -5px 0 0;
@@ -353,7 +430,7 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
 
 .join-advanced {
   border: 1px solid var(--mcj-rule);
-  background: rgba(5, 6, 9, 0.48);
+  background: var(--mcj-sunk);
 }
 
 .join-advanced summary {
@@ -374,18 +451,13 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
 .join-stinger-grid label { display: flex; flex-direction: column; gap: 6px; }
 .join-stinger-grid .sp-wrap { grid-column: 1 / -1; }
 
-.mc-join .bc {
-  font-family: var(--font-ui), system-ui, sans-serif;
-  letter-spacing: 0.04em;
-}
-
 .mcj-product-header {
   position: sticky;
   z-index: 30;
   top: 0;
   height: 58px;
-  border-bottom: 1px solid var(--mcj-rule);
-  background: rgba(5, 6, 9, 0.9);
+  border-bottom: 1px solid var(--hl-line);
+  background: var(--hl-bar);
   backdrop-filter: blur(18px);
 }
 
@@ -407,11 +479,14 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   gap: 12px;
 }
 
+/* The Holler mark sizes to 1em of this link (components/holler-mark.tsx). */
 .mcj-product-brand .bc {
+  display: inline-flex;
+  align-items: center;
   color: var(--mcj-fg);
   font-size: 16px;
-  font-weight: 800;
-  letter-spacing: 0.09em;
+  line-height: 1;
+  text-decoration: none;
 }
 
 .mcj-product-brand i {
@@ -422,7 +497,7 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
 
 .mcj-product-brand span,
 .mcj-product-header nav a {
-  color: var(--mcj-faint);
+  color: var(--mcj-muted);
   font-size: 11px;
 }
 
@@ -432,11 +507,24 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   gap: 26px;
 }
 
-.mcj-product-header nav a:hover { color: var(--mcj-fg); }
 .mcj-product-header > div > :last-child { justify-self: end; }
 .mcj-product-actions { display: flex; align-items: center; gap: 10px; }
-.mcj-product-actions > a { padding: 8px 12px; border: 1px solid var(--mcj-accent); color: var(--mcj-accent); font-size: 11px; font-weight: 750; }
-.mcj-product-actions > a:hover { background: rgba(58, 232, 255, .1); }
+.mcj-product-actions > a { display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px; border: 1px solid var(--hl-strap-hi); color: var(--hl-strap-hi); font-size: 11px; font-weight: 750; }
+
+@media (hover: hover) and (pointer: fine) {
+  .mcj-product-header nav a:hover { color: var(--mcj-fg); }
+  .mcj-product-actions > a:hover { background: color-mix(in srgb, var(--hl-strap) 12%, transparent); }
+}
+
+/* AccountChip (components/account-chip.tsx) is drawn for a dark header —
+   white chip text, near-black text on its accent. Until it follows the theme
+   itself, this header points its two visible states at the tokens (unlayered,
+   so they outrank its Tailwind colour utilities). */
+.mcj-product-actions button[style] { color: var(--primary-foreground); }
+.mcj-product-actions button[aria-haspopup='menu'] { border-color: var(--hl-line-2); color: var(--hl-fg); }
+@media (hover: hover) and (pointer: fine) {
+  .mcj-product-actions button[aria-haspopup='menu']:hover { border-color: color-mix(in srgb, var(--hl-fg) 45%, transparent); }
+}
 
 /* Sentence case, normal tracking — same labels as the create page. */
 .mc-join .lbl {
@@ -452,9 +540,10 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   line-height: 1.5;
 }
 
-/* The themed focus ring is invisible against near-black. */
+/* One ring for every control, the brand violet that clears 3:1 on both
+   grounds. The text input used to cancel it with outline: none. */
 .mc-join :is(a, button, input, select, summary, [tabindex]):focus-visible {
-  outline: 2px solid var(--mcj-fg);
+  outline: 2px solid var(--hl-strap-hi);
   outline-offset: 2px;
 }
 
@@ -465,17 +554,17 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   font-family: inherit;
   font-size: 14px;
   padding: 8px 10px;
-  outline: none;
 }
+.mc-join input[type='text']:focus { border-color: var(--hl-strap-hi); }
 .mc-join input::placeholder {
-  color: #6d7780;
+  color: var(--hl-dim);
 }
 
 /* Wallet address / inline link chips injected via innerHTML */
 .join-shell .addr {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: var(--mcj-live);
+  color: var(--hl-strap-hi);
   word-break: break-all;
 }
 a.addr {
@@ -494,7 +583,7 @@ a.addr {
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border: 1px solid var(--mcj-rule);
-  background: #000;
+  background: var(--hl-bg);
 }
 .stream-preview-mount,
 .stream-preview-mount iframe {
@@ -504,7 +593,7 @@ a.addr {
   height: 100%;
   border: 0;
 }
-/* The replay of an offline room's last broadcast: a kept MegaChat clip plays
+/* The replay of an offline room's last broadcast: a kept Holler clip plays
    in the frame like the recording would, and the moments sit under it. */
 .stream-preview-mount video.stream-replay-clip,
 .stream-preview-mount img.stream-replay-poster {
@@ -513,7 +602,7 @@ a.addr {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #000;
+  background: var(--hl-bg);
 }
 /* One row that scrolls sideways: the media stage has a fixed height, and a
    wrapping list would squeeze the player to nothing on a phone. */
@@ -538,13 +627,36 @@ a.addr {
   font-weight: 600;
   color: var(--mcj-faint);
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--hl-line-2);
   cursor: pointer;
 }
-.stream-replay-moments button:hover,
 .stream-replay-moments button[aria-pressed='true'] {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.5);
+  color: var(--hl-fg);
+  border-color: color-mix(in srgb, var(--hl-fg) 50%, transparent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .stream-replay-moments button:hover {
+    color: var(--hl-fg);
+    border-color: color-mix(in srgb, var(--hl-fg) 50%, transparent);
+  }
+}
+/* A moment names what aired (join-client.tsx tags it): a recorded clip is a
+   Holler (red dot), a guest on camera is Call in (purple dot). */
+.stream-replay-moments button[data-feature='holler'] { --moment-hue: var(--f-holler); --moment-line: var(--f-holler-line); --moment-bg: var(--f-holler-bg); }
+.stream-replay-moments button[data-feature='callin'] { --moment-hue: var(--f-callin); --moment-line: var(--f-callin-line); --moment-bg: var(--f-callin-bg); }
+.stream-replay-moments button[data-feature]::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--moment-hue);
+  vertical-align: 1px;
+}
+.stream-replay-moments button[data-feature][aria-pressed='true'] {
+  border-color: var(--moment-line);
+  background: var(--moment-bg);
 }
 .stream-preview-caption {
   display: flex;
@@ -558,13 +670,25 @@ a.addr {
   font-weight: 600;
   color: var(--mcj-faint);
 }
+/* Watch-to-earn: rewards green. */
 .stream-preview-drops {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--mcj-live);
+  color: var(--f-rewards-ink);
+}
+.stream-preview-drops::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--f-rewards);
 }
 
-/* ── Letter mode ─────────────────────────────────────────────────────────── */
+/* ── Letter mode (record a Holler) ───────────────────────────────────────── */
 .letter-stage {
   display: flex;
   flex-direction: column;
@@ -574,8 +698,8 @@ a.addr {
   position: relative;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border: 1px solid var(--mcj-rule-2);
-  background: #000;
+  border: 1px solid var(--f-holler-line);
+  background: var(--hl-bg);
 }
 .letter-frame video {
   position: absolute;
@@ -590,19 +714,20 @@ a.addr {
   gap: 0.5rem;
 }
 
-/* LiveKit connection-quality dot (joiner's own link health, subtle). */
+/* LiveKit connection-quality dot (joiner's own link health, subtle): the
+   seat's purple while healthy, caution yellow when poor, red when lost. */
 .lk-quality {
   width: 6px;
   height: 6px;
   margin-left: auto;
   border-radius: 9999px;
-  background: var(--mcj-live);
+  background: var(--f-callin);
 }
 .lk-quality[data-q='poor'] {
-  background: var(--mcj-warn);
+  background: var(--f-bounty);
 }
 .lk-quality[data-q='lost'] {
-  background: var(--mcj-danger);
+  background: var(--f-holler);
   animation: hostLivePulse 1.2s ease-in-out infinite;
 }
 
@@ -617,13 +742,13 @@ a.addr {
   justify-content: center;
   padding: 24px;
   text-align: center;
-  background: #050b12;
+  background: var(--hl-bg);
 }
 .host-feed-held > div {
   max-width: 360px;
   padding: 22px 26px;
   border: 1px solid var(--mcj-rule);
-  background: rgba(5, 6, 9, 0.34);
+  background: color-mix(in srgb, var(--hl-panel) 60%, transparent);
 }
 .host-feed-held h2 {
   margin: 10px 0 7px;
@@ -639,9 +764,9 @@ a.addr {
   line-height: 1.6;
 }
 
-/* True-live host feed — same frame, unmistakably LIVE. */
+/* True-live host feed — same frame, unmistakably LIVE: the record red. */
 .host-live-frame {
-  border-color: rgba(184, 255, 69, 0.55);
+  border-color: color-mix(in srgb, var(--hl-record) 55%, transparent);
 }
 .host-live-label {
   display: inline-flex;
@@ -649,13 +774,13 @@ a.addr {
   gap: 0.45rem;
   font-size: 12px;
   font-weight: 600;
-  color: var(--mcj-live);
+  color: var(--f-holler-ink);
 }
 .host-live-dot {
   width: 6px;
   height: 6px;
   border-radius: 9999px;
-  background: var(--mcj-live);
+  background: var(--hl-record);
   animation: hostLivePulse 1.6s ease-in-out infinite;
 }
 @keyframes hostLivePulse {
@@ -678,12 +803,11 @@ a.addr {
   font: inherit;
   line-height: 1.2;
   cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background-color 0.15s;
 }
-.addr-copy:hover {
-  border-color: var(--mcj-fg);
+@media (hover: hover) and (pointer: fine) {
+  .addr-copy:hover {
+    border-color: var(--mcj-fg);
+  }
 }
 .addr-copy .addr {
   word-break: normal;
@@ -694,11 +818,11 @@ a.addr {
   color: var(--mcj-dim);
 }
 .addr-copy.copied {
-  border-color: rgba(184, 255, 69, 0.6);
+  border-color: var(--hl-strap-hi);
 }
 .addr-copy.copied .addr,
 .addr-copy.copied .addr-copy-icon {
-  color: var(--mcj-live);
+  color: var(--hl-strap-hi);
 }
 
 /* Status / result message under the join button */
@@ -716,18 +840,45 @@ a.addr {
   display: block;
 }
 .join-message.success {
-  border-left-color: var(--mcj-live);
+  border-left-color: var(--hl-strap-hi);
 }
 .join-message.error {
-  border-left-color: var(--mcj-accent);
-  color: var(--mcj-accent);
+  border-left-color: var(--f-holler);
+  color: var(--f-holler-ink);
 }
 /* Advisory, not a failure — e.g. the streamer's overlay isn't open, so a paid
-   camera might not land on their broadcast. Amber so it reads as "check this"
-   rather than "something broke". */
+   camera might not land on their broadcast. Caution yellow so it reads as
+   "check this" rather than "something broke"; it is only the bar. */
 .join-message.warning {
-  border-left-color: var(--mcj-warn);
+  border-left-color: var(--f-bounty);
 }
+/* A Holler's sent / queued / on-air states and a seat's progress, tagged by
+   join-client.tsx from the text the script wrote: the bar, a fading tint and
+   a feature pill in that path's colour (holler red / call-in purple). */
+.join-message[data-feature='holler'] { --msg-hue: var(--f-holler); --msg-ink: var(--f-holler-ink); --msg-bg: var(--f-holler-bg); --msg-line: var(--f-holler-line); }
+.join-message[data-feature='callin'] { --msg-hue: var(--f-callin); --msg-ink: var(--f-callin-ink); --msg-bg: var(--f-callin-bg); --msg-line: var(--f-callin-line); }
+.join-message.success[data-feature] {
+  border-left-color: var(--msg-hue);
+  background: linear-gradient(90deg, var(--msg-bg) 0, transparent 75%), var(--mcj-sunk);
+  color: var(--mcj-fg);
+}
+.join-message.success[data-feature]::before {
+  display: block;
+  width: fit-content;
+  margin: 0 0 8px;
+  padding: 3px 8px 3px 20px;
+  border: 1px solid var(--msg-line);
+  border-radius: 999px;
+  background: radial-gradient(circle at 11px 50%, var(--msg-hue) 0 3px, transparent 3.5px), var(--msg-bg);
+  color: var(--msg-ink);
+  font: 700 10.5px/1.25 var(--font-code), ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+/* The pill repeats what the message says, so it is silent to screen readers
+   where the alt-text form is supported (the plain form is the fallback). */
+.join-message.success[data-feature='holler']::before { content: 'Holler'; content: 'Holler' / ''; }
+.join-message.success[data-feature='callin']::before { content: 'Call in'; content: 'Call in' / ''; }
 
 /* Balance / live meter — hidden until the script reveals it */
 #meter {
@@ -754,7 +905,8 @@ a.addr {
   display: inline-flex;
 }
 
-/* Camera status pill — script overwrites className with cam-status [live|error] */
+/* Camera status pill — script overwrites className with cam-status [live|error].
+   Live is the seat's purple with the red on-air light. */
 .cam-status {
   display: flex;
   align-items: center;
@@ -773,27 +925,29 @@ a.addr {
   background: var(--mcj-dim);
 }
 .cam-status.live {
-  color: var(--mcj-live);
-  border-color: rgba(184, 255, 69, 0.45);
+  color: var(--f-callin-ink);
+  border-color: var(--f-callin-line);
+  background: var(--f-callin-bg);
 }
 .cam-status.live .dot {
-  background: var(--mcj-live);
+  background: var(--hl-record);
   animation: hostLivePulse 1.6s ease-in-out infinite;
 }
 .cam-status.error {
-  color: var(--mcj-danger);
-  border-color: rgba(255, 107, 61, 0.5);
+  color: var(--f-holler-ink);
+  border-color: var(--f-holler-line);
 }
 .cam-status.error .dot {
-  background: var(--mcj-danger);
+  background: var(--f-holler);
 }
 
-/* vdo.ninja publisher frame + hidden self-view detector */
+/* vdo.ninja publisher frame + hidden self-view detector. A .dark scope: a
+   camera frame is a picture in both themes. */
 .cam-frame {
   position: relative; /* children must never escape the frame */
   overflow: hidden;
   border: 1px solid var(--mcj-rule);
-  background: black;
+  background: var(--hl-bg);
 }
 /* LiveKit self-view — same footprint as the vdo iframe it replaces. */
 .cam-frame video.lk-self {
@@ -823,15 +977,13 @@ a.addr {
 }
 
 /* ═══ Stinger picker + mock preview ══════════════════════════════════════
-   The join card sits on the dark-locked page, but the toggle can put the
-   ROOT html in light mode — native <select> popups follow color-scheme, which
-   made the option list white-on-near-white. Solid popover colors + an
-   explicit dark color-scheme fix readability everywhere. */
+   The selects follow the theme (color-scheme comes from the html class), and
+   the option list takes solid token colours so a native popup is never
+   white-on-near-white. The chevron is drawn from tokens, not a data URI. */
 .stinger-select {
   height: 36px;
   width: 100%;
   appearance: none;
-  color-scheme: dark;
   border: 1px solid var(--mcj-rule-2);
   background-color: var(--mcj-sunk);
   color: var(--mcj-fg);
@@ -841,30 +993,40 @@ a.addr {
   font-weight: 500;
   letter-spacing: 0;
   cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%239aa4ad' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--hl-dim) 50%),
+    linear-gradient(135deg, var(--hl-dim) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+  background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
-  background-position: right 0.7rem center;
-  transition: border-color 0.15s;
 }
-.stinger-select:hover {
-  border-color: var(--mcj-fg);
+@media (hover: hover) and (pointer: fine) {
+  .stinger-select:hover {
+    border-color: var(--mcj-fg);
+  }
 }
 .stinger-select option {
-  background-color: #101014;
-  color: #f2f2f4;
+  background-color: var(--hl-panel);
+  color: var(--hl-fg);
 }
 
+.sp-replay {
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.sp-replay:active { transform: scale(0.97); }
+
 /* Mock camera square — 16:9 stage the stinger animations play on. This is a
-   FAKE tile (gradient + avatar silhouette), never the real camera. */
+   FAKE tile (gradient + avatar silhouette), never the real camera. The stage
+   is a .dark scope: a preview monitor of the broadcast. */
 .sp-stage {
   display: flex;
   justify-content: center;
   padding: 0.9rem;
   border: 1px dashed var(--mcj-rule-2);
   background:
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    #0b0b0e;
+    linear-gradient(color-mix(in srgb, var(--hl-fg) 3.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--hl-fg) 3.5%, transparent) 1px, transparent 1px),
+    var(--hl-bg);
   background-size: 21px 21px, 21px 21px, auto;
 }
 .sp-tile {
@@ -883,7 +1045,7 @@ a.addr {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: radial-gradient(120% 90% at 22% 18%, #1c2029 0%, #141c22 62%);
+  background: radial-gradient(120% 90% at 22% 18%, var(--hl-panel-2) 0%, var(--hl-panel) 62%);
 }
 /* head + shoulders silhouette — universal "camera feed" shorthand */
 .sp-avatar {
@@ -891,7 +1053,7 @@ a.addr {
   width: 46%;
   height: 34%;
   border-radius: 50% 50% 0 0;
-  background: rgba(8, 8, 10, 0.7);
+  background: color-mix(in srgb, var(--hl-bg) 80%, transparent);
 }
 .sp-avatar::before {
   content: '';
@@ -902,16 +1064,17 @@ a.addr {
   width: 52%;
   height: 130%;
   border-radius: 50%;
-  background: rgba(8, 8, 10, 0.7);
+  background: color-mix(in srgb, var(--hl-bg) 80%, transparent);
 }
+/* A guest on camera is Call in: the name plate carries the call-in bar. */
 .sp-label {
   position: absolute;
   bottom: 6px;
   left: 6px;
-  background: rgba(8, 8, 10, 0.72);
+  background: color-mix(in srgb, var(--hl-bg) 72%, transparent);
   color: var(--mcj-fg);
   padding: 3px 8px 3px 9px;
-  border-left: 3px solid var(--mcj-accent);
+  border-left: 3px solid var(--f-callin);
   font-family: var(--font-ui), system-ui, sans-serif;
   font-weight: 700;
   font-size: 10px;
@@ -921,7 +1084,7 @@ a.addr {
 .sp-tile .crt-flash {
   position: absolute;
   inset: 0;
-  background: #fff;
+  background: var(--hl-fg);
   opacity: 0;
   pointer-events: none;
   z-index: 5;
@@ -933,19 +1096,22 @@ a.addr {
   z-index: 20;
 }
 
-/* ═══ Stinger animations — ported VERBATIM from public/overlay.html so the
-   preview is exactly what the OBS overlay will play. ═════════════════════ */
+/* ═══ Stinger animations — the motion is ported VERBATIM from
+   public/overlay.html so the preview moves exactly as the OBS overlay will.
+   The colours are the Holler system by meaning (a guest's camera is Call in
+   purple; the LIVE banner is the record red); overlay.html keeps its own
+   palette until it is rebranded. ═════════════════════════════════════════ */
 .sp-tile.joining { animation: tileJoin 650ms cubic-bezier(.2, .8, .2, 1) both; }
 @keyframes tileJoin {
   0%   { clip-path: inset(50% 0% 50% 0%); opacity: .35;
-         box-shadow: 0 0 16px 3px rgba(58, 232, 255, .9); filter: brightness(1.7); }
+         box-shadow: 0 0 16px 3px color-mix(in srgb, var(--f-callin) 90%, transparent); filter: brightness(1.7); }
   14%  { clip-path: inset(49% 0% 49% 0%); opacity: 1;
-         box-shadow: 0 0 28px 8px rgba(58, 232, 255, 1); }
+         box-shadow: 0 0 28px 8px var(--f-callin); }
   26%  { clip-path: inset(44.5% 0% 44.5% 0%); }
   36%  { clip-path: inset(48.5% 0% 48.5% 0%); }
   46%  { clip-path: inset(43% 0% 43% 0%); }
   100% { clip-path: inset(0% 0% 0% 0%); opacity: 1;
-         box-shadow: 0 0 0 0 rgba(58, 232, 255, 0); filter: brightness(1); }
+         box-shadow: 0 0 0 0 transparent; filter: brightness(1); }
 }
 
 .sp-tile.out-default { animation: crtOff 460ms ease-in forwards; }
@@ -977,10 +1143,10 @@ a.addr {
 .fx-storm::before {
   content: ''; position: absolute; inset: -40% -20%;
   background:
-    radial-gradient(38% 55% at 22% 28%, rgba(8, 9, 14, .95), transparent 70%),
-    radial-gradient(45% 60% at 55% 18%, rgba(8, 9, 14, .92), transparent 70%),
-    radial-gradient(40% 50% at 82% 30%, rgba(8, 9, 14, .95), transparent 70%),
-    radial-gradient(60% 70% at 50% 55%, rgba(8, 9, 14, .85), transparent 75%);
+    radial-gradient(38% 55% at 22% 28%, color-mix(in srgb, var(--hl-bg) 95%, transparent), transparent 70%),
+    radial-gradient(45% 60% at 55% 18%, color-mix(in srgb, var(--hl-bg) 92%, transparent), transparent 70%),
+    radial-gradient(40% 50% at 82% 30%, color-mix(in srgb, var(--hl-bg) 95%, transparent), transparent 70%),
+    radial-gradient(60% 70% at 50% 55%, color-mix(in srgb, var(--hl-bg) 85%, transparent), transparent 75%);
   animation: stormClouds 1400ms ease-in-out both;
 }
 @keyframes stormClouds {
@@ -991,9 +1157,9 @@ a.addr {
 }
 .fx-storm::after {
   content: ''; position: absolute; top: 0; bottom: 0; left: 44%; width: 14%;
-  background: linear-gradient(178deg, #fff, var(--neon-cyan) 60%, transparent);
+  background: linear-gradient(178deg, var(--hl-fg), var(--f-callin) 60%, transparent);
   clip-path: polygon(48% 0, 62% 0, 40% 42%, 58% 42%, 22% 100%, 38% 55%, 20% 55%);
-  opacity: 0; filter: drop-shadow(0 0 8px var(--neon-cyan));
+  opacity: 0; filter: drop-shadow(0 0 8px var(--f-callin));
   animation: stormBolt 1400ms linear both;
 }
 @keyframes stormBolt {
@@ -1011,8 +1177,8 @@ a.addr {
 }
 .fx-proroll::before {
   content: ''; position: absolute; top: -4%; bottom: -4%; width: 4px; left: 0;
-  background: linear-gradient(var(--neon-cyan), #fff, var(--neon-magenta));
-  box-shadow: 0 0 14px 2px color-mix(in oklab, var(--neon-cyan) 70%, transparent);
+  background: linear-gradient(var(--f-callin), var(--hl-fg), var(--hl-strap-hi));
+  box-shadow: 0 0 14px 2px color-mix(in oklab, var(--f-callin) 70%, transparent);
   animation: prorollBar 900ms cubic-bezier(.25,.9,.3,1) both;
 }
 @keyframes prorollBar {
@@ -1033,7 +1199,7 @@ a.addr {
 .fx-callme::before, .fx-callme::after {
   content: ''; position: absolute; top: 50%; left: 50%; width: 40px; height: 40px;
   margin: -20px 0 0 -20px; border-radius: 50%;
-  border: 2px solid var(--neon-lime); opacity: 0;
+  border: 2px solid var(--f-callin); opacity: 0;
 }
 .fx-callme::before { animation: callmeRing 600ms ease-out 80ms 2; }
 .fx-callme::after  { animation: callmeRing 600ms ease-out 280ms 2; }
@@ -1054,11 +1220,11 @@ a.addr {
   content: '● LIVE — BREAKING'; position: absolute; left: -6%; right: -6%;
   top: 38%; height: 24%;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(90deg, var(--neon-magenta), oklch(0.55 0.24 25));
-  color: #fff; font: 700 11px/1 var(--font-heading), sans-serif;
+  background: linear-gradient(90deg, var(--f-holler-solid), color-mix(in srgb, var(--f-holler-solid) 82%, var(--hl-bg)));
+  color: var(--f-holler-on); font: 700 11px/1 var(--font-heading), sans-serif;
   letter-spacing: .18em; text-transform: uppercase;
   transform: translateX(-120%) skewX(-12deg);
-  box-shadow: 0 0 18px rgba(0,0,0,.5);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--hl-bg) 50%, transparent);
   animation: breakingBanner 1300ms cubic-bezier(.6,0,.2,1) both;
 }
 @keyframes breakingBanner {
@@ -1081,8 +1247,8 @@ a.addr {
 }
 .fx-scanline::before {
   content: ''; position: absolute; left: 0; right: 0; height: 3px; top: 0;
-  background: linear-gradient(90deg, transparent, var(--neon-lime), transparent);
-  box-shadow: 0 0 12px 1px color-mix(in oklab, var(--neon-lime) 60%, transparent);
+  background: linear-gradient(90deg, transparent, var(--f-callin), transparent);
+  box-shadow: 0 0 12px 1px color-mix(in oklab, var(--f-callin) 60%, transparent);
   animation: scanSweep 1400ms linear both;
 }
 @keyframes scanSweep {
@@ -1135,8 +1301,8 @@ a.addr {
 .sp-tile.out-wildout { animation: signalLost 1000ms steps(1, end) forwards; }
 @keyframes signalLost {
   0%   { filter: none; }
-  14%  { filter: drop-shadow(3px 0 0 color-mix(in oklab, var(--neon-cyan) 80%, transparent))
-               drop-shadow(-3px 0 0 color-mix(in oklab, var(--neon-magenta) 80%, transparent)); }
+  14%  { filter: drop-shadow(3px 0 0 color-mix(in oklab, var(--f-callin) 80%, transparent))
+               drop-shadow(-3px 0 0 color-mix(in oklab, var(--hl-record) 80%, transparent)); }
   28%  { clip-path: inset(0 0 0 0); transform: translateY(-8%); filter: contrast(1.6) saturate(.4); }
   42%  { transform: translateY(7%); filter: contrast(2) saturate(.2) brightness(1.3); }
   56%  { transform: translateY(-4%); clip-path: inset(12% 0 12% 0); filter: saturate(0) contrast(2.2); }
@@ -1158,14 +1324,14 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
 .addr-details { margin-top: 0.25rem; }
 
 
-/* ── Join Stream ──
-   The seat is the purchase this page exists for, so it takes the one warm
-   accent — flat, square, no halo. The label morphs through the whole
+/* ── Call in ──
+   The seat is the purchase this page exists for, so it takes the call-in
+   fill — flat, square, no halo at rest. The label morphs through the whole
    session (join → cancel → go live → leave), so the type must stay legible
    in the disabled states too. */
 .dopamine-btn {
-  background: var(--mcj-live);
-  color: #06130f;
+  background: var(--f-callin-solid);
+  color: var(--f-callin-on);
   letter-spacing: 0;
 }
 .dopamine-btn:disabled {
@@ -1207,12 +1373,15 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
   margin-left: 6px;
   padding: 5px 12px;
   border: 0;
-  background: var(--mcj-fg);
-  color: #08080a;
+  background: var(--hl-strap);
+  color: var(--primary-foreground);
   font-family: inherit;
   font-weight: 700;
   font-size: 12.5px;
   cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .tx-addfunds:hover { background: var(--hl-strap-hover); }
 }
 
 @media (max-width: 1023px) {
@@ -1231,11 +1400,13 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
 @media (max-width: 720px) {
   .mcj-product-header > div { grid-template-columns: 1fr auto; }
   .mcj-product-header nav { display: none; }
-  .mcj-product-brand > span { display: none; }
+  .mcj-product-brand > span,
+  .mcj-product-brand > i { display: none; }
   .mcj-product-actions > a { display: none; }
   .join-shell { padding: 12px 12px 28px; }
   .join-room-strip { align-items: flex-start; flex-direction: column; gap: 4px; padding: 10px 12px; }
   .join-room-strip > span:last-child { margin-left: 0; }
+  .join-room-features { margin: 4px 0 2px; }
   .join-media-stage { height: 350px; min-height: 350px; }
   .join-preview-idle { padding: 24px; }
   .join-preview-idle > div { padding: 24px 20px; }
@@ -1248,14 +1419,32 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
   .join-stinger-grid .sp-wrap { grid-column: auto; }
 }
 
-/* The guest's mic is sending the host's voice back (echo-detector.ts). */
+/* Reduced motion: the pulsing lights hold still and buttons do not move. The
+   stinger preview still plays — it is the thing the viewer asked to see. */
+@media (prefers-reduced-motion: reduce) {
+  .host-live-dot,
+  .cam-status.live .dot,
+  .lk-quality[data-q='lost'] { animation: none; }
+  .mcj-action,
+  .mcj-secondary,
+  .mcj-mini,
+  .sp-replay { transition: none; }
+  .mcj-action:hover:not(:disabled),
+  .mcj-action:active:not(:disabled),
+  .mcj-secondary:active:not(:disabled),
+  .mcj-mini:active:not(:disabled),
+  .sp-replay:active { transform: none; }
+}
+
+/* The guest's mic is sending the host's voice back (echo-detector.ts). An
+   alert on the stage: holler red, the strong line in red ink. */
 .guest-echo-warn {
   margin: 10px 0 0;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 45, 120, 0.55);
-  background: rgba(255, 45, 120, 0.1);
-  color: #f4f6f8;
+  border: 1px solid var(--f-holler-line);
+  background: var(--f-holler-bg);
+  color: var(--hl-fg);
   font-size: 13px;
   line-height: 1.45;
 }
-.guest-echo-warn strong { color: #ff5c96; }
+.guest-echo-warn strong { color: var(--f-holler-ink); }

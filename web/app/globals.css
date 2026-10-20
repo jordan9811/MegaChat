@@ -9,6 +9,45 @@
   --font-sans: var(--font-ui), sans-serif;
   --font-mono: var(--font-ui), sans-serif;
 
+  /* Holler tokens as Tailwind colours: bg-hl-panel, text-f-bounty-ink,
+     border-f-callin-line, bg-f-holler-solid text-f-holler-on … */
+  --color-hl-bg: var(--hl-bg);
+  --color-hl-panel: var(--hl-panel);
+  --color-hl-panel-2: var(--hl-panel-2);
+  --color-hl-line: var(--hl-line);
+  --color-hl-line-2: var(--hl-line-2);
+  --color-hl-fg: var(--hl-fg);
+  --color-hl-muted: var(--hl-muted);
+  --color-hl-dim: var(--hl-dim);
+  --color-hl-strap: var(--hl-strap);
+  --color-hl-strap-hi: var(--hl-strap-hi);
+  --color-hl-strap-hover: var(--hl-strap-hover);
+  --color-hl-record: var(--hl-record);
+  --color-f-holler: var(--f-holler);
+  --color-f-holler-ink: var(--f-holler-ink);
+  --color-f-holler-bg: var(--f-holler-bg);
+  --color-f-holler-line: var(--f-holler-line);
+  --color-f-holler-on: var(--f-holler-on);
+  --color-f-holler-solid: var(--f-holler-solid);
+  --color-f-callin: var(--f-callin);
+  --color-f-callin-ink: var(--f-callin-ink);
+  --color-f-callin-bg: var(--f-callin-bg);
+  --color-f-callin-line: var(--f-callin-line);
+  --color-f-callin-on: var(--f-callin-on);
+  --color-f-callin-solid: var(--f-callin-solid);
+  --color-f-bounty: var(--f-bounty);
+  --color-f-bounty-ink: var(--f-bounty-ink);
+  --color-f-bounty-bg: var(--f-bounty-bg);
+  --color-f-bounty-line: var(--f-bounty-line);
+  --color-f-bounty-on: var(--f-bounty-on);
+  --color-f-bounty-solid: var(--f-bounty-solid);
+  --color-f-rewards: var(--f-rewards);
+  --color-f-rewards-ink: var(--f-rewards-ink);
+  --color-f-rewards-bg: var(--f-rewards-bg);
+  --color-f-rewards-line: var(--f-rewards-line);
+  --color-f-rewards-on: var(--f-rewards-on);
+  --color-f-rewards-solid: var(--f-rewards-solid);
+
   --color-neon-magenta: var(--neon-magenta);
   --color-neon-violet: var(--neon-violet);
   --color-neon-lime: var(--neon-lime);
@@ -54,107 +93,200 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ===== DARK (primary) ===== */
-/* Nerve system: near-black ground, hot pink primary, electric cyan, acid
-   lime, and a yellow that money reads in. Chart colors are untouched. */
+/* ===== HOLLER TOKENS (design-assets/holler-brand/SPEC.md §3) =====
+   Every page reads these; nobody keeps their own brand or feature hexes.
+   :root is dark; next-themes puts .light or .dark on <html>, and a page may
+   scope either class on a wrapper — every derived variable is redeclared on
+   all three selectors below so a nested wrapper recomputes, not inherits.
+
+   Feature tokens, per feature x in holler | callin | bounty | rewards:
+     --f-x        the hue — dots, bars, rings, glows (non-text)
+     --f-x-ink    text in that colour on the page (≥4.5:1 on bg, panel, panel-2)
+     --f-x-bg     tag tint            --f-x-line   tag border
+     --f-x-solid  a fill that carries text   --f-x-on   the text on that fill
+   Two deliberate, measured deviations from the spec table, both for
+   contrast: in dark, white on the red/purple hues is 3.6/4.0:1, so the
+   text-carrying fill (-solid) is the deeper hue (4.7/5.7:1). In light, the
+   holler and rewards inks are a shade deeper (#b5170f, #007054) so a tag's
+   label clears 4.5:1 on its own tint over every ground.
+   Red TEXT is always --f-holler-ink; --hl-record is the light itself (a dot). */
+
+/* ----- dark (default) ----- */
 :root,
 .dark {
   color-scheme: dark;
-  --background: #050609;
-  --foreground: #f4f6f8;
-  --card: #0a0c12;
-  --card-foreground: #f4f6f8;
-  --popover: #0c0f17;
-  --popover-foreground: #f4f6f8;
-  --primary: #ff2d78;
-  --primary-foreground: #ffffff;
-  --secondary: #12151d;
-  --secondary-foreground: #f4f6f8;
-  --muted: #0f1219;
-  --muted-foreground: #a9b2bd;
-  --accent: #151a24;
-  --accent-foreground: #f4f6f8;
-  --destructive: #ff6b3d;
-  --border: rgba(255, 255, 255, 0.1);
-  --input: rgba(255, 255, 255, 0.12);
-  --ring: #ff2d78;
+  --hl-bg: #0a0812;
+  --hl-panel: #110e1b;
+  --hl-panel-2: #181424;
+  --hl-line: rgba(255, 255, 255, 0.09);
+  --hl-line-2: rgba(255, 255, 255, 0.17);
+  --hl-fg: #f5f3fa;
+  --hl-muted: #b3adc2;
+  --hl-dim: #8d86a0;
+  --hl-strap: #6d28d9;
+  --hl-strap-hi: #8b5cff;
+  /* hover fill for a strap button — keeps white text ≥4.5:1 (strap-hi is 4.1) */
+  --hl-strap-hover: #7c3aed;
+  --hl-record: #ff3b30;
+  /* sticky header bars and the page grid */
+  --hl-bar: rgba(10, 8, 18, 0.92);
+  --hl-grid: rgba(255, 255, 255, 0.014);
 
-  --neon-magenta: #ff2d78;
-  --neon-violet: #a855ff;
-  --neon-lime: #b8ff45;
-  --neon-cyan: #3ae8ff;
-  --neon-amber: #ffd23d;
-  /* Wordmark outline — near-white pop on dark, dark plum on light. */
-  --wordmark-stroke: oklch(0.98 0.02 320 / 0.85);
-  /* Backdrop blooms + grid — variable-driven so .bg-noir follows the
-     theme (the join page re-locks these by carrying .dark on its wrapper). */
-  --noir-bloom-1: rgba(255, 45, 120, 0.14);
-  --noir-bloom-2: rgba(58, 232, 255, 0.1);
-  --noir-bloom-3: rgba(255, 45, 120, 0.1);
+  --f-holler: #ff3b30;
+  --f-holler-ink: #ff6b62;
+  --f-holler-bg: rgba(255, 59, 48, 0.12);
+  --f-holler-line: rgba(255, 59, 48, 0.45);
+  --f-holler-solid: #e0261c;
+  --f-holler-on: #ffffff;
+
+  --f-callin: #a855f7;
+  --f-callin-ink: #c08bff;
+  --f-callin-bg: rgba(168, 85, 247, 0.12);
+  --f-callin-line: rgba(168, 85, 247, 0.45);
+  --f-callin-solid: #7c3aed;
+  --f-callin-on: #ffffff;
+
+  --f-bounty: #cfe83a;
+  --f-bounty-ink: #cfe83a;
+  --f-bounty-bg: rgba(207, 232, 58, 0.12);
+  --f-bounty-line: rgba(207, 232, 58, 0.45);
+  --f-bounty-solid: #cfe83a;
+  --f-bounty-on: #16141c;
+
+  --f-rewards: #00ffc3;
+  --f-rewards-ink: #00ffc3;
+  --f-rewards-bg: rgba(0, 255, 195, 0.12);
+  --f-rewards-line: rgba(0, 255, 195, 0.45);
+  --f-rewards-solid: #00ffc3;
+  --f-rewards-on: #16141c;
+
+  /* Glows exist only in dark; light swaps them for soft shadows (SPEC §5). */
+  --hl-glow-k: 1;
+  --hl-mark-glow: drop-shadow(0 0 18px color-mix(in srgb, #6d28d9 45%, transparent));
+  --hl-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
+  --hl-glow-strap: 0 0 0 1px rgba(139, 92, 255, 0.5), 0 0 24px rgba(109, 40, 217, 0.38), 0 0 60px rgba(109, 40, 217, 0.22);
+  --hl-glow-holler: 0 0 0 1px rgba(255, 59, 48, 0.5), 0 0 24px rgba(255, 59, 48, 0.3), 0 0 56px rgba(255, 59, 48, 0.16);
+  --hl-glow-callin: 0 0 0 1px rgba(168, 85, 247, 0.5), 0 0 24px rgba(168, 85, 247, 0.3), 0 0 56px rgba(168, 85, 247, 0.16);
+  --hl-glow-bounty: 0 0 0 1px rgba(207, 232, 58, 0.5), 0 0 24px rgba(207, 232, 58, 0.26), 0 0 56px rgba(207, 232, 58, 0.14);
+  --hl-glow-rewards: 0 0 0 1px rgba(0, 255, 195, 0.5), 0 0 24px rgba(0, 255, 195, 0.26), 0 0 56px rgba(0, 255, 195, 0.14);
+
+  /* Legacy Wordmark outline + .bg-noir blooms + grid. */
+  --wordmark-stroke: rgba(245, 243, 250, 0.85);
+  --noir-bloom-1: rgba(109, 40, 217, 0.16);
+  --noir-bloom-2: rgba(255, 59, 48, 0.07);
+  --noir-bloom-3: rgba(109, 40, 217, 0.1);
   --grid-line: rgba(255, 255, 255, 0.05);
-
-  --chart-1: oklch(0.68 0.26 336);
-  --chart-2: oklch(0.6 0.24 295);
-  --chart-3: oklch(0.8 0.14 200);
-  --chart-4: oklch(0.88 0.22 128);
-  --chart-5: oklch(0.75 0.18 20);
-  --radius: 0.75rem;
-  --sidebar: #0a0c12;
-  --sidebar-foreground: #f4f6f8;
-  --sidebar-primary: #ff2d78;
-  --sidebar-primary-foreground: #050609;
-  --sidebar-accent: #12151d;
-  --sidebar-accent-foreground: #f4f6f8;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: #ff2d78;
 }
 
-/* ===== LIGHT ===== */
+/* ----- light ----- */
 .light {
   color-scheme: light;
-  --background: oklch(0.97 0.015 320);
-  --foreground: oklch(0.22 0.06 305);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.06 305);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.06 305);
-  --primary: oklch(0.58 0.26 336);
-  --primary-foreground: oklch(0.99 0.005 320);
-  --secondary: oklch(0.94 0.03 320);
-  --secondary-foreground: oklch(0.3 0.08 305);
-  --muted: oklch(0.95 0.02 320);
-  --muted-foreground: oklch(0.5 0.06 310);
-  --accent: oklch(0.93 0.05 330);
-  --accent-foreground: oklch(0.3 0.08 305);
-  --destructive: oklch(0.58 0.24 18);
-  --border: oklch(0.55 0.12 320 / 20%);
-  --input: oklch(0.55 0.1 320 / 16%);
-  --ring: oklch(0.58 0.26 336);
+  --hl-bg: #f6f4fa;
+  --hl-panel: #ffffff;
+  --hl-panel-2: #efebf6;
+  --hl-line: rgba(22, 20, 28, 0.1);
+  --hl-line-2: rgba(22, 20, 28, 0.18);
+  --hl-fg: #16141c;
+  --hl-muted: #4f4960;
+  --hl-dim: #6b6580;
+  --hl-strap: #6d28d9;
+  --hl-strap-hi: #5b21b6;
+  --hl-strap-hover: #5b21b6;
+  --hl-record: #e0261c;
+  --hl-bar: rgba(246, 244, 250, 0.9);
+  --hl-grid: rgba(22, 20, 28, 0.035);
 
-  --neon-magenta: oklch(0.58 0.27 340);
-  --neon-violet: oklch(0.52 0.24 295);
-  --neon-lime: oklch(0.72 0.2 128);
-  --neon-cyan: oklch(0.66 0.14 200);
-  --neon-amber: oklch(0.68 0.15 70);
-  --wordmark-stroke: oklch(0.32 0.1 320 / 0.9);
-  --noir-bloom-1: oklch(0.85 0.09 330 / 0.55);
-  --noir-bloom-2: oklch(0.86 0.08 285 / 0.45);
-  --noir-bloom-3: oklch(0.84 0.08 300 / 0.55);
-  --grid-line: oklch(0.45 0.1 320 / 0.09);
+  --f-holler: #e0261c;
+  --f-holler-ink: #b5170f;
+  --f-holler-bg: rgba(224, 38, 28, 0.14);
+  --f-holler-line: rgba(224, 38, 28, 0.55);
+  --f-holler-solid: #e0261c;
+  --f-holler-on: #ffffff;
 
-  --chart-1: oklch(0.58 0.26 336);
-  --chart-2: oklch(0.52 0.24 295);
-  --chart-3: oklch(0.66 0.14 200);
-  --chart-4: oklch(0.72 0.2 128);
-  --chart-5: oklch(0.6 0.2 20);
-  --sidebar: oklch(0.99 0.01 320);
-  --sidebar-foreground: oklch(0.22 0.06 305);
-  --sidebar-primary: oklch(0.58 0.26 336);
-  --sidebar-primary-foreground: oklch(0.99 0.005 320);
-  --sidebar-accent: oklch(0.94 0.03 320);
-  --sidebar-accent-foreground: oklch(0.3 0.08 305);
-  --sidebar-border: oklch(0.55 0.12 320 / 20%);
-  --sidebar-ring: oklch(0.58 0.26 336);
+  --f-callin: #7c3aed;
+  --f-callin-ink: #6d28d9;
+  --f-callin-bg: rgba(124, 58, 237, 0.14);
+  --f-callin-line: rgba(124, 58, 237, 0.55);
+  --f-callin-solid: #7c3aed;
+  --f-callin-on: #ffffff;
+
+  --f-bounty: #cfe83a;
+  --f-bounty-ink: #556400;
+  --f-bounty-bg: rgba(207, 232, 58, 0.14);
+  --f-bounty-line: rgba(207, 232, 58, 0.55);
+  --f-bounty-solid: #cfe83a;
+  --f-bounty-on: #16141c;
+
+  --f-rewards: #00ffc3;
+  --f-rewards-ink: #007054;
+  --f-rewards-bg: rgba(0, 255, 195, 0.14);
+  --f-rewards-line: rgba(0, 255, 195, 0.55);
+  --f-rewards-solid: #00ffc3;
+  --f-rewards-on: #16141c;
+
+  --hl-glow-k: 0;
+  --hl-mark-glow: drop-shadow(0 6px 14px rgba(76, 29, 149, 0.2));
+  --hl-shadow: 0 1px 2px rgba(22, 20, 28, 0.06), 0 14px 32px -14px rgba(22, 20, 28, 0.18);
+  --hl-glow-strap: 0 0 0 1px rgba(109, 40, 217, 0.35), 0 8px 22px -6px rgba(109, 40, 217, 0.28);
+  --hl-glow-holler: 0 0 0 1px rgba(224, 38, 28, 0.35), 0 8px 22px -6px rgba(224, 38, 28, 0.24);
+  --hl-glow-callin: 0 0 0 1px rgba(124, 58, 237, 0.35), 0 8px 22px -6px rgba(124, 58, 237, 0.24);
+  --hl-glow-bounty: 0 0 0 1px rgba(85, 100, 0, 0.35), 0 8px 22px -6px rgba(85, 100, 0, 0.2);
+  --hl-glow-rewards: 0 0 0 1px rgba(0, 112, 84, 0.35), 0 8px 22px -6px rgba(0, 112, 84, 0.2);
+
+  --wordmark-stroke: rgba(22, 20, 28, 0.85);
+  --noir-bloom-1: rgba(109, 40, 217, 0.1);
+  --noir-bloom-2: rgba(224, 38, 28, 0.05);
+  --noir-bloom-3: rgba(109, 40, 217, 0.07);
+  --grid-line: rgba(22, 20, 28, 0.05);
+}
+
+/* ----- shadcn / Tailwind theme variables, derived from the tokens ----- */
+:root,
+.dark,
+.light {
+  --background: var(--hl-bg);
+  --foreground: var(--hl-fg);
+  --card: var(--hl-panel);
+  --card-foreground: var(--hl-fg);
+  --popover: var(--hl-panel-2);
+  --popover-foreground: var(--hl-fg);
+  --primary: var(--hl-strap);
+  --primary-foreground: #ffffff;
+  --secondary: var(--hl-panel-2);
+  --secondary-foreground: var(--hl-fg);
+  --muted: var(--hl-panel-2);
+  --muted-foreground: var(--hl-muted);
+  --accent: var(--hl-panel-2);
+  --accent-foreground: var(--hl-fg);
+  --destructive: var(--f-holler-ink);
+  --border: var(--hl-line);
+  --input: var(--hl-line-2);
+  --ring: var(--hl-strap-hi);
+
+  /* The retired Nerve neons (pink, cyan, lime, gold) now resolve by meaning,
+     so any component not yet re-pointed still lands on a Holler colour:
+     brand/action → strap violet, camera side → call-in purple, positive →
+     rewards green, money → bounty yellow. All are text-safe inks. */
+  --neon-magenta: var(--hl-strap-hi);
+  --neon-violet: var(--f-callin-ink);
+  --neon-cyan: var(--f-callin-ink);
+  --neon-lime: var(--f-rewards-ink);
+  --neon-amber: var(--f-bounty-ink);
+
+  --chart-1: var(--hl-strap-hi);
+  --chart-2: var(--f-holler);
+  --chart-3: var(--f-callin);
+  --chart-4: var(--f-bounty-ink);
+  --chart-5: var(--f-rewards-ink);
+  --radius: 0.75rem;
+  --sidebar: var(--hl-panel);
+  --sidebar-foreground: var(--hl-fg);
+  --sidebar-primary: var(--hl-strap);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--hl-panel-2);
+  --sidebar-accent-foreground: var(--hl-fg);
+  --sidebar-border: var(--hl-line);
+  --sidebar-ring: var(--hl-strap-hi);
 }
 
 @layer base {
@@ -172,16 +304,23 @@
     scroll-behavior: smooth;
   }
 
-  /* Neon text selection — brand color, not the OS default blue. */
-  ::selection {
-    background: oklch(0.68 0.27 340 / 0.32);
-    color: oklch(0.99 0.01 320);
+  /* A visible keyboard ring on every real control. Zero specificity, so any
+     component that draws its own focus style still wins. */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--hl-strap-hi);
+    outline-offset: 2px;
   }
 
-  /* Slim neon scrollbar (WebKit + Firefox). */
+  /* Text selection in the brand violet, not the OS default blue. */
+  ::selection {
+    background: color-mix(in srgb, var(--hl-strap) 38%, transparent);
+    color: var(--hl-fg);
+  }
+
+  /* Slim scrollbar (WebKit + Firefox). */
   * {
     scrollbar-width: thin;
-    scrollbar-color: oklch(0.68 0.27 340 / 0.4) transparent;
+    scrollbar-color: color-mix(in srgb, var(--hl-strap-hi) 40%, transparent) transparent;
   }
   ::-webkit-scrollbar {
     width: 10px;
@@ -194,10 +333,10 @@
     border-radius: 9999px;
     border: 2px solid transparent;
     background-clip: padding-box;
-    background-color: oklch(0.68 0.27 340 / 0.35);
+    background-color: color-mix(in srgb, var(--hl-strap-hi) 35%, transparent);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background-color: oklch(0.68 0.27 340 / 0.6);
+    background-color: color-mix(in srgb, var(--hl-strap-hi) 60%, transparent);
   }
 }
 
@@ -206,20 +345,20 @@
     font-family: var(--font-heading);
   }
 
-  /* ── Graffiti tagline — thick smooth brush script, hot-pink fill with a
-     solid violet 3D extrude down-right, like the brand reference art. ─────── */
+  /* ── Graffiti tagline — thick smooth brush script, record-red fill with a
+     solid strap-violet 3D extrude down-right. ─────────────────────────────── */
   .font-graffiti {
     font-family: var(--font-graffiti), 'Brush Script MT', cursive;
   }
   .graffiti-tag {
-    color: oklch(0.72 0.25 348);
-    -webkit-text-stroke: 0.012em oklch(0.78 0.22 350);
+    color: var(--hl-record);
+    -webkit-text-stroke: 0.012em var(--hl-record);
     text-shadow:
-      0.022em 0.022em 0 oklch(0.52 0.24 305),
-      0.045em 0.045em 0 oklch(0.45 0.22 302),
-      0.068em 0.068em 0 oklch(0.36 0.18 300),
-      0.09em 0.09em 0 oklch(0.28 0.13 298 / 0.9),
-      0 0 32px oklch(0.68 0.27 340 / 0.3);
+      0.022em 0.022em 0 #7c3aed,
+      0.045em 0.045em 0 #6d28d9,
+      0.068em 0.068em 0 #5b21b6,
+      0.09em 0.09em 0 rgba(46, 16, 101, 0.9),
+      0 0 32px rgba(255, 59, 48, calc(0.3 * var(--hl-glow-k)));
   }
 
   /* ── GRAB 10 SEC physics — the banner is its own image slice, so the tilt
@@ -254,17 +393,16 @@
     }
   }
 
-  /* ── Admission ticket chip (hero badge) — lime slab with punched side
-     notches, perforated stub divider, inner dashed outline like the GRAB
-     button art. ───────────────────────────────────────────────────────────── */
+  /* ── Admission ticket chip (hero badge) — rewards-green slab with punched
+     side notches, perforated stub divider. ─────────────────────────────────── */
   .ticket {
     position: relative;
     display: inline-flex;
     align-items: stretch;
     border-radius: 10px;
-    background: var(--neon-lime);
-    color: oklch(0.2 0.06 140);
-    filter: drop-shadow(0 4px 10px oklch(0.88 0.22 128 / 0.25));
+    background: var(--f-rewards-solid);
+    color: var(--f-rewards-on);
+    filter: drop-shadow(0 4px 10px rgba(0, 255, 195, calc(0.25 * var(--hl-glow-k))));
     -webkit-mask-image:
       radial-gradient(circle 7px at 0 50%, transparent 6.5px, #000 7px),
       radial-gradient(circle 7px at 100% 50%, transparent 6.5px, #000 7px);
@@ -278,7 +416,7 @@
     display: inline-flex;
     align-items: center;
     padding: 0.45rem 0.7rem 0.45rem 0.95rem;
-    border-right: 2px dashed oklch(0.2 0.06 140 / 0.55);
+    border-right: 2px dashed color-mix(in srgb, var(--f-rewards-on) 55%, transparent);
     font-size: 9px;
     font-weight: 800;
     letter-spacing: 0.14em;
@@ -289,48 +427,39 @@
     padding: 0.45rem 0.95rem 0.45rem 0.7rem;
   }
 
-  /* Neon glow text used for the wordmark */
+  /* Glow text (legacy wordmark) — dark only; light gets none. */
   .text-glow-magenta {
     text-shadow:
-      0 0 8px oklch(0.68 0.27 340 / 0.6),
-      0 0 24px oklch(0.68 0.27 340 / 0.45),
-      0 0 48px oklch(0.6 0.24 295 / 0.35);
+      0 0 8px rgba(139, 92, 255, calc(0.55 * var(--hl-glow-k))),
+      0 0 24px rgba(109, 40, 217, calc(0.45 * var(--hl-glow-k))),
+      0 0 48px rgba(109, 40, 217, calc(0.3 * var(--hl-glow-k)));
   }
   .text-glow-lime {
     text-shadow:
-      0 0 6px oklch(0.88 0.22 128 / 0.5),
-      0 0 20px oklch(0.88 0.22 128 / 0.35);
+      0 0 6px rgba(0, 255, 195, calc(0.5 * var(--hl-glow-k))),
+      0 0 20px rgba(0, 255, 195, calc(0.35 * var(--hl-glow-k)));
   }
 
-  /* Chromatic aberration effect for hero headings */
+  /* Chromatic aberration effect for hero headings (dark only). */
   .chromatic {
     text-shadow:
-      -2px 0 oklch(0.8 0.14 200 / 0.7),
-      2px 0 oklch(0.68 0.27 340 / 0.7);
+      -2px 0 rgba(168, 85, 247, calc(0.7 * var(--hl-glow-k))),
+      2px 0 rgba(255, 59, 48, calc(0.7 * var(--hl-glow-k)));
   }
 
-  /* Neon box glow for CTAs / cards */
+  /* Box glow for CTAs / cards — a neon glow in dark, a soft shadow in light. */
   .glow-magenta {
-    box-shadow:
-      0 0 0 1px oklch(0.68 0.27 340 / 0.5),
-      0 0 24px oklch(0.68 0.27 340 / 0.35),
-      0 0 60px oklch(0.6 0.24 295 / 0.25);
+    box-shadow: var(--hl-glow-strap);
   }
   .glow-lime {
-    box-shadow:
-      0 0 0 1px oklch(0.88 0.22 128 / 0.6),
-      0 0 24px oklch(0.88 0.22 128 / 0.4),
-      0 0 60px oklch(0.88 0.22 128 / 0.2);
+    box-shadow: var(--hl-glow-rewards);
   }
   .glow-cyan {
-    box-shadow:
-      0 0 0 1px oklch(0.8 0.14 200 / 0.6),
-      0 0 24px oklch(0.8 0.14 200 / 0.4),
-      0 0 60px oklch(0.8 0.14 200 / 0.2);
+    box-shadow: var(--hl-glow-callin);
   }
 
-  /* Glitch backdrop — deep purple in dark, soft lavender wash in light.
-     Colors come from theme variables so scoped .dark wrappers stay noir. */
+  /* Glitch backdrop — colours come from theme variables so scoped .dark
+     wrappers stay noir. */
   .bg-noir {
     background-color: var(--background);
     background-image:
@@ -346,7 +475,7 @@
   }
 
   .dashed-neon {
-    border: 2px dashed oklch(0.88 0.22 128 / 0.9);
+    border: 2px dashed var(--f-rewards-line);
   }
 
   @keyframes neon-pulse {
@@ -503,3 +632,196 @@
    server components can ship both variants. */
 html[data-ui='simple'] .adv-only { display: none !important; }
 html[data-ui='advanced'] .simple-only { display: none !important; }
+
+/* ── Holler mark (components/holler-mark.tsx · SPEC §2) ──────────────────────
+   HOLLER in a slanted deep-violet broadcast strap; the O is a record button.
+   Selectors are doubled on purpose: page headers style every span inside the
+   lockup at (0,1,1) — e.g. `.mcb-product-brand span { font-size: 11px }` — and
+   the mark must neither shrink nor recolour with them. With no px it is 1em of
+   its parent; below 24px the O is a solid dot (.hm--solid). */
+.hm.hm {
+  display: inline-block;
+  vertical-align: middle;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-decoration: none;
+  text-transform: none;
+  white-space: nowrap;
+}
+.hm.hm--glow {
+  filter: var(--hl-mark-glow);
+}
+.hm .hm-strap {
+  display: block;
+  margin: 0;
+  padding: 0.1em 0.6em 0.06em 0.3em;
+  border: 0;
+  background: var(--hl-strap);
+  color: #ffffff;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 0.4em) 100%, 0 100%);
+  font-family: var(--font-display), 'Archivo', var(--font-ui), sans-serif;
+  font-size: 1em;
+  font-style: normal;
+  font-weight: 900;
+  font-stretch: 112%;
+  font-variation-settings: 'wdth' 112;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+.hm .hm-l {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+.hm .hm-o {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  margin: 0 0.035em 0 0.045em;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  font-size: inherit;
+  vertical-align: baseline;
+  background: radial-gradient(circle closest-side, var(--hl-record) 0 62%, transparent 63%);
+  box-shadow: inset 0 0 0 0.06em var(--hl-record);
+}
+.hm.hm--solid .hm-o {
+  background: var(--hl-record);
+  box-shadow: none;
+}
+.hm.hm--bare .hm-strap {
+  padding: 0;
+  background: none;
+  clip-path: none;
+  color: inherit;
+}
+
+/* ── Feature tags (components/feature-tag.tsx · SPEC §4) ─────────────────────
+   A subtle pill: tinted fill, hairline border, a dot in the hue, the label in
+   the feature's ink. Doubled root selector for the same reason as the mark. */
+.ft {
+  --ft-hue: var(--f-holler);
+  --ft-ink: var(--f-holler-ink);
+  --ft-bg: var(--f-holler-bg);
+  --ft-line: var(--f-holler-line);
+}
+.ft--callin {
+  --ft-hue: var(--f-callin);
+  --ft-ink: var(--f-callin-ink);
+  --ft-bg: var(--f-callin-bg);
+  --ft-line: var(--f-callin-line);
+}
+.ft--bounty {
+  --ft-hue: var(--f-bounty);
+  --ft-ink: var(--f-bounty-ink);
+  --ft-bg: var(--f-bounty-bg);
+  --ft-line: var(--f-bounty-line);
+}
+.ft--rewards {
+  --ft-hue: var(--f-rewards);
+  --ft-ink: var(--f-rewards-ink);
+  --ft-bg: var(--f-rewards-bg);
+  --ft-line: var(--f-rewards-line);
+}
+.ft.ft {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--ft-line);
+  border-radius: 999px;
+  background: var(--ft-bg);
+  color: var(--ft-ink);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.ft .ft-dot {
+  display: block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--ft-hue);
+}
+.ft.ft--md {
+  gap: 7px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.ft.ft--md .ft-dot {
+  width: 7px;
+  height: 7px;
+}
+
+/* ── Theme toggle (components/theme-toggle.tsx · SPEC §5) ────────────────────
+   40px round icon button. Only transform animates (house motion rules); the
+   hover tint is instant and only on a real pointer. */
+.hl-tt.hl-tt {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--hl-line-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--hl-muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.hl-tt.hl-tt:active {
+  transform: scale(0.97);
+}
+.hl-tt.hl-tt:focus-visible {
+  outline: 2px solid var(--hl-strap-hi);
+  outline-offset: 2px;
+}
+.hl-tt.hl-tt--placeholder {
+  cursor: default;
+  pointer-events: none;
+}
+.hl-tt svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  animation: hl-tt-in 240ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@keyframes hl-tt-in {
+  from {
+    opacity: 0;
+    transform: rotate(-40deg) scale(0.7);
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .hl-tt.hl-tt:hover {
+    background: var(--hl-panel-2);
+    color: var(--hl-fg);
+  }
+}

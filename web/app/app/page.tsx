@@ -7,7 +7,7 @@ import { BOARD_RECENT_CAP } from '@/lib/room-browse'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: 'Rooms — MegaChat',
+  title: 'Rooms — Holler',
   description: 'Every room on the board. Take a camera seat, billed by the second.',
 }
 

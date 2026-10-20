@@ -23,9 +23,9 @@ import { useUiMode } from '@/lib/ui-mode'
 import { shortAddr, useAccount } from '@/lib/use-account'
 
 const itemCls =
-  'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-input/50'
+  'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-hl-fg transition-colors hover:bg-hl-panel-2'
 const itemDisabledCls =
-  'flex w-full cursor-not-allowed items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground opacity-60'
+  'flex w-full cursor-not-allowed items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-hl-muted opacity-60'
 
 export function HeaderAuth() {
   const [open, setOpen] = useState(false)
@@ -86,7 +86,7 @@ export function HeaderAuth() {
 
   // Reserve the slot pre-load so the header never visibly reflows.
   if (!loaded) {
-    return <span aria-hidden="true" className="inline-block h-9 w-24 rounded-full bg-input/20" />
+    return <span aria-hidden="true" className="inline-block h-9 w-24 rounded-full bg-hl-line" />
   }
 
   return (
@@ -97,9 +97,9 @@ export function HeaderAuth() {
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-haspopup="menu"
-          className="flex items-center gap-2 rounded-full border border-border bg-input/30 px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-input/50 sm:px-4"
+          className="flex items-center gap-2 rounded-full border border-hl-line-2 bg-hl-panel/60 px-3 py-2 text-sm font-semibold text-hl-fg transition-colors hover:bg-hl-panel-2 sm:px-4"
         >
-          <span className="size-1.5 shrink-0 rounded-full bg-[var(--neon-lime)] shadow-[0_0_8px_var(--neon-lime)]" />
+          <span className="size-1.5 shrink-0 rounded-full bg-hl-strap-hi dark:shadow-[0_0_8px_var(--hl-strap-hi)]" />
           {/* handles run up to 20 chars — truncate or the chip blows up a
               375px header */}
           <span
@@ -115,7 +115,7 @@ export function HeaderAuth() {
           onClick={openSignIn}
           disabled={wallet.modalOpen}
           title={wallet.configured ? 'Twitch, X, Google, email or passkey' : 'Sign-in is not configured on this server'}
-          className="glow-magenta flex items-center gap-2 rounded-full bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.03] disabled:opacity-70 sm:px-4"
+          className="glow-magenta flex items-center gap-2 rounded-full bg-hl-strap px-3 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.03] hover:bg-hl-strap-hover active:scale-[0.97] disabled:opacity-70 sm:px-4"
         >
           <UserRound className="size-4" />
           {/* Straight to Privy's modal — no in-house chooser in between.
@@ -131,29 +131,29 @@ export function HeaderAuth() {
       {open && signedIn ? (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-border bg-card/95 p-1.5 shadow-[0_12px_40px_oklch(0.1_0.03_300/0.5)] backdrop-blur-md"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-xl border border-hl-line-2 bg-hl-panel/95 p-1.5 shadow-[var(--hl-shadow)] backdrop-blur-md"
         >
           {identity ? (
             <a
               href="/dashboard?section=account"
               role="menuitem"
-              className="block rounded-lg px-3 pb-1.5 pt-2 text-xs text-muted-foreground transition-colors hover:bg-input/50"
+              className="block rounded-lg px-3 pb-1.5 pt-2 text-xs text-hl-muted transition-colors hover:bg-hl-panel-2"
             >
               @{identity.handle} is yours forever, and it&apos;s your room link:{' '}
-              <span className="font-mono text-foreground">/{identity.handle}</span>
+              <span className="font-mono text-hl-strap-hi dark:text-[color-mix(in_srgb,var(--hl-strap-hi)_72%,var(--hl-fg))]">/{identity.handle}</span>
             </a>
           ) : null}
 
           {wallet.address ? (
-            <div className="mx-1.5 mb-1 rounded-lg border border-border/70 bg-input/20 px-3 py-2">
+            <div className="mx-1.5 mb-1 rounded-lg border border-hl-line bg-hl-panel-2 px-3 py-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Balance</span>
-                <span className="font-mono font-semibold text-foreground">
+                <span className="text-hl-muted">Balance</span>
+                <span className="font-mono font-semibold text-f-bounty-ink">
                   {balance == null ? '…' : simple ? `$${balance}` : `${balance} USDC`}
                 </span>
               </div>
               {/* the address lives HERE — opt-in, never on the button */}
-              <p className="mt-0.5 font-mono text-[10px] text-muted-foreground" title={wallet.address}>
+              <p className="mt-0.5 font-mono text-[10px] text-hl-muted" title={wallet.address}>
                 {shortAddr(wallet.address)}
               </p>
             </div>
@@ -166,21 +166,21 @@ export function HeaderAuth() {
               className={wallet.configured ? itemCls : itemDisabledCls}
               title={wallet.configured ? 'Connect the wallet that pays for seats' : 'Wallet service not configured on this server'}
             >
-              <Wallet className="size-4 text-[var(--neon-cyan)]" />
+              <Wallet className="size-4 text-hl-strap-hi" />
               {connectingBalance ? 'Connecting…' : 'Connect balance'}
             </button>
           )}
 
           <a href="/dashboard?section=account" role="menuitem" className={itemCls}>
-            <UserRound className="size-4 text-[var(--neon-cyan)]" />
+            <UserRound className="size-4 text-hl-strap-hi" />
             Account
           </a>
           <a href="/dashboard" role="menuitem" className={itemCls}>
-            <LayoutDashboard className="size-4 text-[var(--neon-lime)]" />
+            <LayoutDashboard className="size-4 text-hl-strap-hi" />
             Dashboard
           </a>
           <button type="button" role="menuitem" onClick={() => void signOut()} className={itemCls}>
-            <LogOut className="size-4 text-muted-foreground" />
+            <LogOut className="size-4 text-hl-muted" />
             Sign out
           </button>
         </div>

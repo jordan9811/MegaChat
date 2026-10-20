@@ -17,15 +17,15 @@ export function ModeToggle() {
           : 'Advanced mode: the full crypto-native view. Click for Simple.'
       }
       aria-label="Toggle simple / advanced mode"
-      className="inline-flex items-center gap-1 rounded-full border border-border bg-input/30 p-1 text-[11px] font-bold uppercase tracking-wide"
+      className="inline-flex items-center gap-1 rounded-full border border-hl-line-2 bg-hl-panel/60 p-1 text-[11px] font-bold uppercase tracking-wide"
     >
       {/* On phones only the ACTIVE segment shows (the header shares 375px
           with the wordmark and the login chip); sm+ shows both segments. */}
       <span
         className={
           mode === 'simple'
-            ? 'rounded-full bg-[var(--neon-lime)]/20 px-2 py-0.5 text-[var(--neon-lime)]'
-            : 'hidden px-2 py-0.5 text-muted-foreground sm:inline-block'
+            ? 'rounded-full bg-hl-strap px-2 py-0.5 text-white'
+            : 'hidden px-2 py-0.5 text-hl-muted sm:inline-block'
         }
       >
         Simple
@@ -33,8 +33,8 @@ export function ModeToggle() {
       <span
         className={
           mode === 'advanced'
-            ? 'rounded-full bg-primary/20 px-2 py-0.5 text-[var(--neon-magenta)]'
-            : 'hidden px-2 py-0.5 text-muted-foreground sm:inline-block'
+            ? 'rounded-full bg-hl-strap px-2 py-0.5 text-white'
+            : 'hidden px-2 py-0.5 text-hl-muted sm:inline-block'
         }
       >
         Adv

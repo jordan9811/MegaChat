@@ -14,7 +14,7 @@ const ui = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'Bounties — MegaChat',
+  title: 'Bounties — Holler',
   description:
     'Your favorite streamer doesn’t even know you. Create a bounty they can claim by going live.',
 }

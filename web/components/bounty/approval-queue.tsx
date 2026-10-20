@@ -10,11 +10,15 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, X, SkipForward, ShieldAlert } from 'lucide-react'
 import { getQueue, approveClip, rejectClip, type QueueClip } from '@/lib/bounty-api'
 import { backendHttpUrl } from '@/lib/backend'
+import { FeatureTag } from '@/components/feature-tag'
 
+// Holler colour roles: clean / approve is the positive green, borderline is
+// the caution yellow, a violation / reject is the red. Each queued clip is a
+// recorded Holler, tagged as one.
 const GRADE_CHIP: Record<string, string> = {
-  clean: 'border-[var(--neon-lime)]/60 text-[var(--neon-lime)]',
-  borderline: 'border-[var(--neon-amber)]/60 text-[var(--neon-amber)]',
-  violation: 'border-[var(--neon-magenta)]/60 text-[var(--neon-magenta)]',
+  clean: 'border-f-rewards-line text-f-rewards-ink',
+  borderline: 'border-f-bounty-line text-f-bounty-ink',
+  violation: 'border-f-holler-line text-f-holler-ink',
 }
 
 export function ApprovalQueue({ platform, handle, by }: { platform: string; handle: string; by: string }) {
@@ -56,6 +60,7 @@ export function ApprovalQueue({ platform, handle, by }: { platform: string; hand
           {visible.map((c) => (
             <li key={c.clipId} className="rounded-xl border border-border/70 bg-background/40 p-3">
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <FeatureTag kind="holler" />
                 <span className="font-mono">{c.durationS}s</span>
                 {c.moderation ? (
                   <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${GRADE_CHIP[c.moderation.grade] || 'border-border'}`}>
@@ -68,17 +73,19 @@ export function ApprovalQueue({ platform, handle, by }: { platform: string; hand
                 {c.contributor ? <span className="truncate">from {c.contributor}</span> : null}
               </div>
               {/* eslint-disable-next-line jsx-a11y/media-has-caption -- fan-recorded clip */}
+              {/* A video frame stays dark in both themes: `dark` re-scopes the
+                  tokens on the element itself, so bg-hl-bg is the dark ground. */}
               <video src={`${backendHttpUrl()}${c.mediaUrl}`} controls preload="metadata"
-                className="mt-2 aspect-video w-full max-w-md rounded-lg border border-border bg-black" />
+                className="dark mt-2 aspect-video w-full max-w-md rounded-lg border border-border bg-hl-bg" />
               <div className="mt-2 flex flex-wrap gap-2">
                 <button type="button" disabled={busy}
                   onClick={() => act(() => approveClip(c.clipId, by))}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[var(--neon-lime)] px-4 py-2 text-xs font-bold text-black disabled:opacity-60">
+                  className="inline-flex items-center gap-1.5 rounded-full bg-f-rewards-solid px-4 py-2 text-xs font-bold text-f-rewards-on active:scale-[.97] disabled:opacity-60">
                   <Check className="size-3.5" /> Approve
                 </button>
                 <button type="button" disabled={busy}
                   onClick={() => setRejecting(c)}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--neon-magenta)]/60 px-4 py-2 text-xs font-bold text-[var(--neon-magenta)] disabled:opacity-60">
+                  className="inline-flex items-center gap-1.5 rounded-full border border-f-holler-line px-4 py-2 text-xs font-bold text-f-holler-ink active:scale-[.97] disabled:opacity-60">
                   <X className="size-3.5" /> Reject
                 </button>
                 <button type="button" disabled={busy}
@@ -100,7 +107,7 @@ export function ApprovalQueue({ platform, handle, by }: { platform: string; hand
                     </button>
                     <button type="button" disabled={busy}
                       onClick={() => act(() => rejectClip(c.clipId, { by, reasonCode: 'POLICY_VIOLATION', reason: 'rule-breaking content' }))}
-                      className="rounded-lg border border-[var(--neon-magenta)]/50 px-3 py-2 text-left text-xs text-foreground hover:bg-card">
+                      className="rounded-lg border border-f-holler-line px-3 py-2 text-left text-xs text-foreground hover:bg-card">
                       <span className="flex items-center gap-1 font-bold"><ShieldAlert className="size-3" /> Breaks the rules</span>
                       <span className="block text-muted-foreground">counts against repeat offenders</span>
                     </button>

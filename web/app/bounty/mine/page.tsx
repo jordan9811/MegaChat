@@ -1,9 +1,9 @@
-import { ProductShell } from '@/components/product-shell'
+import { BountyShell } from '@/components/bounty/bounty-shell'
 import { MyPledges } from '@/components/bounty/my-pledges'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = { title: 'My bounties — MegaChat' }
+export const metadata = { title: 'My bounties — Holler' }
 
 export default async function MinePage({
   searchParams,
@@ -12,8 +12,8 @@ export default async function MinePage({
 }) {
   const { me } = await searchParams
   return (
-    <ProductShell title="My bounties">
+    <BountyShell title="My bounties">
         <MyPledges initialMe={me} />
-    </ProductShell>
+    </BountyShell>
   )
 }

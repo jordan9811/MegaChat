@@ -13,6 +13,8 @@ import type { PublicRoomCard } from '@/lib/api'
 import type { BountyPool } from '@/lib/bounty-api'
 import { formatDollars } from '@/lib/display-format'
 import { BrandText } from '@/components/brand-text'
+import { FeatureTag } from '@/components/feature-tag'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { docsUrl } from '@/lib/docs-url.mjs'
 import { PoolThumb } from './pool-thumb'
 import { LandingHero } from './landing-hero'
@@ -24,19 +26,21 @@ function poolHref(pool: BountyPool): string {
     : '/bounty'
 }
 
+// Each way in wears its own feature colour and tag: a recorded clip is a
+// holler, a camera seat is a call-in, a pool is a bounty.
 const ENTRY_PATHS = [
   {
     n: '01',
-    tone: 'cyan',
+    kind: 'holler',
     icon: MessageSquareText,
-    title: 'Record a MegaChat',
+    title: 'Record a Holler',
     body: 'Say it on camera. Set the clip loose on their broadcast.',
     cta: 'Find a streamer',
     href: '/app',
   },
   {
     n: '02',
-    tone: 'lime',
+    kind: 'callin',
     icon: Video,
     title: 'Take a live seat',
     body: 'Join face-to-face and pay only for the seconds you use.',
@@ -45,7 +49,7 @@ const ENTRY_PATHS = [
   },
   {
     n: '03',
-    tone: 'pink',
+    kind: 'bounty',
     icon: Trophy,
     title: 'Start a bounty',
     body: 'Back a streamer before they have a room. They claim it by going live.',
@@ -73,13 +77,14 @@ export function Landing({
   const boardPools = [...pools].sort((a, b) => b.remaining - a.remaining).slice(0, 3)
   const topPool = boardPools.find((p) => p.remaining > 0)
   return (
-    <div className="mc-landing dark min-h-screen">
+    <div className="mc-landing min-h-screen">
       <header className="mcl-nav">
         <Link href="/?stay=1" className="mcl-brand"><BrandText /></Link>
         <nav aria-label="Primary" className="mcl-nav-links">
           <Link href="/app" className="hidden sm:inline">Rooms</Link>
           <Link href="/bounty" className="hidden sm:inline">Bounties</Link>
           <Link href="/how-it-works" className="hidden md:inline">How it works</Link>
+          <ThemeToggle />
           <Link href="/app" className="mcl-nav-cta">Enter app</Link>
         </nav>
       </header>
@@ -89,18 +94,21 @@ export function Landing({
       <main>
         <section className="mcl-entry">
           <div className="mcl-entry-grid">
-            {ENTRY_PATHS.map(({ n, tone, icon: Icon, title, body, cta, href }) => (
-              <Link key={n} href={href} className="mcl-entry-card" data-tone={tone}>
+            {ENTRY_PATHS.map(({ n, kind, icon: Icon, title, body, cta, href }) => (
+              <Link key={n} href={href} className="mcl-entry-card" data-tone={kind}>
                 <span className="mcl-card-top">
-                  <Icon size={22} strokeWidth={1.8} aria-hidden="true" />
-                  <span>{n}</span>
+                  <span className="mcl-card-id">
+                    <Icon size={22} strokeWidth={1.8} aria-hidden="true" />
+                    <FeatureTag kind={kind} />
+                  </span>
+                  <span className="mcl-card-n">{n}</span>
                 </span>
-                {tone === 'cyan' ? (
+                {kind === 'holler' ? (
                   <span className="mcl-vig mcl-vig-rec" aria-hidden="true">
                     <i />
                     REC 0:07 / 0:10
                   </span>
-                ) : tone === 'lime' ? (
+                ) : kind === 'callin' ? (
                   <span className="mcl-vig mcl-vig-seats" aria-hidden="true">
                     <span><i /></span>
                     <span><i /></span>

@@ -7,6 +7,8 @@
 import { useEffect, useState } from 'react'
 import { AccountChip } from '@/components/account-chip'
 import { BrandText } from '@/components/brand-text'
+import { FeatureTag } from '@/components/feature-tag'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 type Source = 'saved' | 'env' | 'default'
 type Setting<T> = { value: T; source: Source; fallback: T; fallbackSource: 'env' | 'default'; rule: string }
@@ -29,7 +31,7 @@ type Name = keyof SiteSettingsData['settings']
 
 const LABELS: Record<Name, string> = {
   bigStreamViewers: 'Big streamer',
-  replayKeepDays: 'MegaChat replays',
+  replayKeepDays: 'Holler replays',
   recentShowsQuiet: 'Quiet broadcasts',
 }
 
@@ -74,7 +76,7 @@ export function SiteSettingsPanel({ initial }: { initial: SiteSettingsData }) {
   const [local, setLocal] = useState(false)
 
   useEffect(() => {
-    document.title = 'Site settings — MegaChat'
+    document.title = 'Site settings — Holler'
     setLocal(true)
   }, [])
   const at = (ms: number) => (local ? when(ms) : '')
@@ -168,7 +170,7 @@ export function SiteSettingsPanel({ initial }: { initial: SiteSettingsData }) {
     ) : null
 
   return (
-    <div className="mc-account mc-dev dark min-h-screen">
+    <div className="mc-account mc-dev min-h-screen">
       <header className="mcc-product-header">
         <div>
           <span className="mcc-product-brand">
@@ -181,6 +183,7 @@ export function SiteSettingsPanel({ initial }: { initial: SiteSettingsData }) {
             <a href="/account">Account</a>
           </nav>
           <span className="mcc-product-actions">
+            <ThemeToggle />
             <AccountChip accent="var(--mcc-accent)" />
           </span>
         </div>
@@ -263,10 +266,13 @@ export function SiteSettingsPanel({ initial }: { initial: SiteSettingsData }) {
 
         <section className="mcd-card" aria-labelledby="keep-h" data-setting="replayKeepDays">
           <header>
-            <span className="mcc-coordinate">Replays · MegaChat clips</span>
+            <span className="mcd-kicker">
+              <span className="mcc-coordinate">Replays · Holler clips</span>
+              <FeatureTag kind="holler" />
+            </span>
             <small>{sourceText('replayKeepDays', s.replayKeepDays)}</small>
           </header>
-          <h2 id="keep-h">Keep each aired MegaChat for</h2>
+          <h2 id="keep-h">Keep each aired Holler for</h2>
           <div className="mcd-row">
             <div className="mcd-chips" role="group" aria-label="Quick choices">
               {[0, 7, 14, 30].map((d) => (
@@ -295,7 +301,7 @@ export function SiteSettingsPanel({ initial }: { initial: SiteSettingsData }) {
             <span>days</span>
           </div>
           <p id="keep-d" className="mcd-desc">
-            A copy of each MegaChat, so a broadcast&apos;s replay can still show it after Twitch&apos;s recording is gone.
+            A copy of each Holler, so a broadcast&apos;s replay can still show it after Twitch&apos;s recording is gone.
             Fans see this number before they send, and no clip is ever kept longer than its fan was told. A shorter
             time, or off, applies to every clip already kept.
           </p>
@@ -344,8 +350,8 @@ export function SiteSettingsPanel({ initial }: { initial: SiteSettingsData }) {
           </div>
           <p className="mcd-desc">
             {quietOn
-              ? 'On: a broadcast of five minutes or more where nobody took a seat and no MegaChat played also gets a Recently aired card, opening at the start of its recording. Only on a channel its room’s owner has proved, and only once the recording is found.'
-              : 'Off: a broadcast gets a Recently aired card only when someone took a seat or a MegaChat played.'}
+              ? 'On: a broadcast of five minutes or more where nobody took a seat and no Holler played also gets a Recently aired card, opening at the start of its recording. Only on a channel its room’s owner has proved, and only once the recording is found.'
+              : 'Off: a broadcast gets a Recently aired card only when someone took a seat or a Holler played.'}
           </p>
           <div className="mcd-stats">
             <span>

@@ -26,6 +26,7 @@ import {
   getAccessToken,
   type ConnectedWallet,
 } from '@privy-io/react-auth'
+import { useTheme } from 'next-themes'
 import { tempo } from 'viem/chains'
 
 type MegaWalletBridge = {
@@ -329,7 +330,16 @@ export function TempoWalletProvider({ children }: { children: React.ReactNode })
     }
   }, [])
 
-  const providerConfig = useMemo(
+  // The sign-in modal wears Holler: strap violet accent (--hl-strap, the same
+  // in both themes) on Privy's own light or dark ground, following the theme
+  // the page is in (next-themes resolves 'system' to one of the two). Until
+  // the theme is known it reads as dark, the old fixed value.
+  const { resolvedTheme } = useTheme()
+  const privyTheme: 'light' | 'dark' = resolvedTheme === 'light' ? 'light' : 'dark'
+
+  // Everything but appearance is built once, so a theme switch hands Privy
+  // the same loginMethods / embeddedWallets / chain objects it already has.
+  const baseConfig = useMemo(
     () => ({
       // THE front door — every provider lives in this one modal. Privy speaks
       // Twitch natively, which is what killed the old double sign-in (our own
@@ -342,11 +352,6 @@ export function TempoWalletProvider({ children }: { children: React.ReactNode })
         | 'email'
         | 'passkey'
       )[],
-      appearance: {
-        theme: 'dark' as const,
-        accentColor: '#e91e8c' as `#${string}`,
-        walletChainType: 'ethereum-only' as const,
-      },
       // DO NOT set externalWallets.disableAllExternalWallets here. It looks
       // like the fix for Phantom's "Which extension?" popup and is not: Privy
       // then never initializes its connectors, useWallets().ready stays false
@@ -364,6 +369,18 @@ export function TempoWalletProvider({ children }: { children: React.ReactNode })
       supportedChains: [tempo],
     }),
     [],
+  )
+
+  const providerConfig = useMemo(
+    () => ({
+      ...baseConfig,
+      appearance: {
+        theme: privyTheme,
+        accentColor: '#6d28d9' as `#${string}`,
+        walletChainType: 'ethereum-only' as const,
+      },
+    }),
+    [baseConfig, privyTheme],
   )
 
   return (

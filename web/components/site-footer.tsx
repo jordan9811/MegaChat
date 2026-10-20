@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { BrandText } from '@/components/brand-text'
 import { docsUrl } from '@/lib/docs-url.mjs'
 
 // One nav, everywhere: hero strip, page footer, and the standalone pages.
@@ -27,14 +28,14 @@ export function FooterNav({
   return (
     <nav className={cn('flex flex-wrap items-center gap-x-6 gap-y-2', className)}>
       {NAV_LINKS.map((l) => (
-        <a key={l.href} href={l.href} className="transition-colors hover:text-foreground">
+        <a key={l.href} href={l.href} className="transition-colors hover:text-hl-fg">
           {l.label}
         </a>
       ))}
       {/* The handbook, only when a docs URL was set at build time — no
           placeholder and no dead link when it was not (docs-url.mjs). */}
       {docsUrl() ? (
-        <a href={docsUrl() as string} className="transition-colors hover:text-foreground">
+        <a href={docsUrl() as string} className="transition-colors hover:text-hl-fg">
           Docs
         </a>
       ) : null}
@@ -42,7 +43,7 @@ export function FooterNav({
         href={contactHref}
         target="_blank"
         rel="noopener noreferrer"
-        className="transition-colors hover:text-foreground"
+        className="transition-colors hover:text-hl-fg"
       >
         Contact
       </a>
@@ -50,13 +51,15 @@ export function FooterNav({
   )
 }
 
-// Brand name left, nav right. The tagline appears exactly once in the app —
+// The Holler mark left, nav right. The tagline appears exactly once in the app —
 // under the hero wordmark — so it deliberately does NOT repeat here.
 export function SiteFooter({ contactHref }: { contactHref: string }) {
   return (
-    <footer className="border-t border-border/60">
-      <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-3 px-6 py-6 text-sm font-semibold text-muted-foreground sm:flex-row sm:items-center">
-        <span className="font-heading font-bold tracking-wide text-foreground">MegaChat</span>
+    <footer className="border-t border-hl-line">
+      <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-3 px-6 py-6 text-sm font-semibold text-hl-muted sm:flex-row sm:items-center">
+        <a href="/" aria-label="Holler home" className="text-[17px] transition-opacity hover:opacity-90">
+          <BrandText />
+        </a>
         <FooterNav contactHref={contactHref} />
       </div>
     </footer>

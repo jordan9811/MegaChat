@@ -125,9 +125,9 @@ try {
 
   await page.goto(`${APP}/bounty/s/twitch/${STAR}`, { waitUntil: 'networkidle2', timeout: 60000 });
   ok('the streamer page renders the record entry point',
-    await waitText(`Record a MegaChat for ${STAR}`), 'entry button present');
+    await waitText(`Record a Holler for ${STAR}`), 'entry button present');
 
-  await clickText(`Record a MegaChat for ${STAR}`);
+  await clickText(`Record a Holler for ${STAR}`);
   // The minimum duration must be DISCLOSED before recording starts.
   ok('the minimum duration is stated BEFORE recording starts',
     await waitText('3s minimum'), 'not discovered after a failed take');

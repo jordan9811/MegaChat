@@ -8,17 +8,24 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getMyContributions, type MyContribution } from '@/lib/bounty-api'
 
+// Holler colour roles: money waiting on someone is bounty yellow, a review in
+// progress is strap violet, approved / played / paid is the positive green, a
+// policy rejection is red text, and a refund is neutral.
+const WAITING = 'border-f-bounty-line bg-f-bounty-bg text-f-bounty-ink'
+const REVIEWING = 'border-hl-strap-hi/50 bg-hl-strap/10 text-foreground'
+const GOOD = 'border-f-rewards-line bg-f-rewards-bg text-f-rewards-ink'
+
 const STATE_LABEL: Record<string, { label: string; cls: string }> = {
-  pending_upload: { label: 'Waiting for upload', cls: 'border-[var(--neon-amber)]/60 text-[var(--neon-amber)]' },
-  pending_moderation: { label: 'In review', cls: 'border-[var(--neon-cyan)]/60 text-[var(--neon-cyan)]' },
-  awaiting_claim: { label: 'Awaiting claim', cls: 'border-[var(--neon-violet)]/60 text-[var(--neon-violet)]' },
-  claimed_pending_review: { label: 'Streamer reviewing', cls: 'border-[var(--neon-cyan)]/60 text-[var(--neon-cyan)]' },
-  approved: { label: 'Approved', cls: 'border-[var(--neon-lime)]/60 text-[var(--neon-lime)]' },
-  played: { label: 'Played on stream 🎉', cls: 'border-[var(--neon-lime)]/60 text-[var(--neon-lime)]' },
-  paid: { label: 'Paid', cls: 'border-[var(--neon-lime)]/60 text-[var(--neon-lime)]' },
+  pending_upload: { label: 'Waiting for upload', cls: WAITING },
+  pending_moderation: { label: 'In review', cls: REVIEWING },
+  awaiting_claim: { label: 'Awaiting claim', cls: WAITING },
+  claimed_pending_review: { label: 'Streamer reviewing', cls: REVIEWING },
+  approved: { label: 'Approved', cls: GOOD },
+  played: { label: 'Played on stream 🎉', cls: GOOD },
+  paid: { label: 'Paid', cls: GOOD },
   expired_refunded: { label: 'Expired — refunded', cls: 'border-border text-muted-foreground' },
   declined_refunded: { label: 'Declined — refunded in full', cls: 'border-border text-muted-foreground' },
-  rejected_policy: { label: 'Rejected (policy)', cls: 'border-[var(--neon-magenta)]/60 text-[var(--neon-magenta)]' },
+  rejected_policy: { label: 'Rejected (policy)', cls: 'border-f-holler-line bg-f-holler-bg text-f-holler-ink' },
   refunded: { label: 'Refunded', cls: 'border-border text-muted-foreground' },
 }
 
@@ -52,20 +59,20 @@ export function MyPledges({ initialMe: _ignored }: { initialMe?: string }) {
       <div>
         <h1 className="font-heading text-2xl font-bold text-foreground">My bounties</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Every MegaChat you&apos;ve pledged, where it is, and what happens next.
+          Every Holler you&apos;ve pledged, where it is, and what happens next.
         </p>
       </div>
 
       {needsAuth ? (
         <p className="text-sm text-muted-foreground">
-          Sign in (top right) to see your MegaChats — they&apos;re attached to your account, not to a name you type.
+          Sign in (top right) to see your Hollers — they&apos;re attached to your account, not to a name you type.
         </p>
       ) : null}
-      {error ? <p className="text-sm text-[var(--neon-magenta)]">{error}</p> : null}
+      {error ? <p className="text-sm text-f-holler-ink">{error}</p> : null}
 
       {rows && rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nothing yet. <a href="/bounty" className="text-[var(--neon-cyan)] underline-offset-2 hover:underline">Find a streamer to back →</a>
+          Nothing yet. <a href="/bounty" className="font-semibold text-foreground underline decoration-hl-strap-hi decoration-2 underline-offset-4">Find a streamer to back →</a>
         </p>
       ) : null}
 
@@ -78,7 +85,7 @@ export function MyPledges({ initialMe: _ignored }: { initialMe?: string }) {
                 <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold ${s.cls}`}>{s.label}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-bold text-foreground">
-                    {r.amount} → {r.targets.map((t) => t.split(':')[1]).join(' / ')}
+                    <span className="text-f-bounty-ink">{r.amount}</span> → {r.targets.map((t) => t.split(':')[1]).join(' / ')}
                     {r.targets.length > 1 && r.winner ? ` (won by ${r.winner.split(':')[1]})` : ''}
                   </span>
                   <span className="block text-xs text-muted-foreground">{r.next}</span>

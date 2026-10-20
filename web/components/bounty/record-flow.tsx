@@ -27,8 +27,17 @@ import {
   createPledge, postFrames, uploadClip,
   type BountyClientConfig, type ProgramPool, type RejectionPolicy,
 } from '@/lib/bounty-api'
+import { FeatureTag } from '@/components/feature-tag'
 
 type Stage = 'idle' | 'recording' | 'preview' | 'terms' | 'sending' | 'done' | 'error'
+
+// Colour roles (Holler SPEC §3): the recording itself is the holler red —
+// the Record button, the REC light, the finished take. Money and the bounty
+// steps are bounty yellow; a choice you have made is strap violet; the done
+// state is rewards green. The camera frame stays dark in both themes.
+const CHOICE_ON = 'border-hl-strap-hi bg-hl-strap/15 text-foreground'
+const CHOICE_OFF = 'border-border text-muted-foreground'
+const BOUNTY_SOLID = 'bg-f-bounty-solid text-f-bounty-on'
 
 const EXPIRY_CHOICES = [
   { label: '3 days', ms: 3 * 86_400_000 },
@@ -207,7 +216,7 @@ export function RecordFlow({
   return (
     <div className="rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm">
       <h3 className="font-heading text-lg font-bold text-foreground">
-        Record a MegaChat for {target.handle}
+        Record a Holler for {target.handle}
       </h3>
       {/* The requirement, BEFORE recording starts — not after a failed take. */}
       <p className="mt-0.5 text-xs text-muted-foreground">
@@ -215,22 +224,22 @@ export function RecordFlow({
         plays on their broadcast if they claim · refunds automatically if nobody claims before your expiry.
       </p>
 
-      <div className="relative mt-3 overflow-hidden rounded-xl border border-border bg-black">
+      <div className="dark relative mt-3 overflow-hidden rounded-xl border border-border bg-hl-bg">
         {/* eslint-disable-next-line jsx-a11y/media-has-caption -- live cam preview */}
         <video ref={videoRef} playsInline className="aspect-video w-full" />
         {stage === 'recording' ? (
-          <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-xs font-bold text-[var(--neon-magenta)]">
-            <span className="size-2 animate-pulse rounded-full bg-[var(--neon-magenta)]" /> REC {elapsed}s
+          <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-hl-bg/75 px-2.5 py-1 text-xs font-bold text-f-holler-ink">
+            <span className="size-2 animate-pulse rounded-full bg-hl-record" /> REC {elapsed}s
           </span>
         ) : null}
       </div>
 
-      {error ? <p className="mt-2 text-sm text-[var(--neon-magenta)]">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-f-holler-ink">{error}</p> : null}
 
       {stage === 'idle' ? (
         <button type="button" onClick={startRecording}
-          className="mt-3 inline-flex items-center gap-2 rounded-full bg-[var(--neon-magenta)] px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-[1.02]">
-          <Circle className="size-4" /> Record
+          className="mt-3 inline-flex items-center gap-2 rounded-full bg-f-holler-solid px-5 py-2.5 text-sm font-bold text-f-holler-on transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.02] active:scale-[.97]">
+          <Circle className="size-4 fill-current" /> Record
         </button>
       ) : null}
       {stage === 'recording' ? (
@@ -247,10 +256,10 @@ export function RecordFlow({
             <RotateCcw className="size-4" /> Re-record
           </button>
           <button type="button" onClick={() => setStage('terms')}
-            className="inline-flex items-center gap-2 rounded-full bg-[var(--neon-lime)] px-5 py-2.5 text-sm font-bold text-black">
+            className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] active:scale-[.97] ${BOUNTY_SOLID}`}>
             Looks good — set the bounty
           </button>
-          <span className="text-xs text-muted-foreground">{durationS}s take</span>
+          <FeatureTag kind="holler">{durationS}s take</FeatureTag>
         </div>
       ) : null}
 
@@ -281,9 +290,8 @@ export function RecordFlow({
             <div className="mt-1.5 flex flex-wrap gap-2">
               {EXPIRY_CHOICES.map((c) => (
                 <button key={c.ms} type="button" onClick={() => setExpiryMs(c.ms)}
-                  className={`rounded-full border px-3.5 py-1.5 text-xs font-bold ${expiryMs === c.ms
-                    ? 'border-[var(--neon-cyan)] text-[var(--neon-cyan)]'
-                    : 'border-border text-muted-foreground'}`}>
+                  aria-pressed={expiryMs === c.ms}
+                  className={`rounded-full border px-3.5 py-1.5 text-xs font-bold ${expiryMs === c.ms ? CHOICE_ON : CHOICE_OFF}`}>
                   {c.label}
                 </button>
               ))}
@@ -307,16 +315,15 @@ export function RecordFlow({
                       onClick={() => setExtraTargets((cur) => on
                         ? cur.filter((x) => x !== k)
                         : cur.length >= 2 ? cur : [...cur, k])}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-bold ${on
-                        ? 'border-[var(--neon-violet)] text-[var(--neon-violet)]'
-                        : 'border-border text-muted-foreground'}`}>
+                      aria-pressed={on}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-bold ${on ? CHOICE_ON : CHOICE_OFF}`}>
                       {p.handle}
                     </button>
                   )
                 })}
               </div>
               {extraTargets.length ? (
-                <p className="mt-1 text-xs text-[var(--neon-amber)]">
+                <p className="mt-1 text-xs text-f-bounty-ink">
                   Heads up: one bounty, {extraTargets.length + 1} doors. Whoever claims first gets it — the others will see it leave their pool.
                 </p>
               ) : null}
@@ -324,8 +331,8 @@ export function RecordFlow({
           ) : null}
 
           {/* The rejection policy, BEFORE the pay button. */}
-          <div className="rounded-xl border border-[var(--neon-amber)]/50 bg-[var(--neon-amber)]/5 p-3">
-            <p className="flex items-center gap-1.5 text-sm font-bold text-[var(--neon-amber)]">
+          <div className="rounded-xl border border-f-bounty-line bg-f-bounty-bg p-3">
+            <p className="flex items-center gap-1.5 text-sm font-bold text-f-bounty-ink">
               <ShieldAlert className="size-4" /> Before you pay
             </p>
             <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs leading-relaxed text-muted-foreground">
@@ -336,12 +343,12 @@ export function RecordFlow({
           </div>
 
           <button type="button" disabled={stage === 'sending' || signedIn === false} onClick={paySubmit}
-            className="inline-flex items-center gap-2 rounded-full bg-[var(--neon-lime)] px-5 py-2.5 text-sm font-bold text-black transition-transform hover:scale-[1.02] disabled:opacity-60">
+            className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.02] active:scale-[.97] disabled:opacity-60 ${BOUNTY_SOLID}`}>
             <Send className="size-4" />
             {stage === 'sending' ? 'Sending…' : `Pay ${amount} ${config.currency} & send`}
           </button>
           {signedIn === false ? (
-            <p className="text-xs text-[var(--neon-amber)]">
+            <p className="text-xs text-f-bounty-ink">
               Sign in first (top right) — the bounty and any refund attach to your account.
               Your recording stays right here while you do.
             </p>
@@ -350,14 +357,14 @@ export function RecordFlow({
       ) : null}
 
       {stage === 'done' ? (
-        <div className="mt-4 rounded-xl border border-[var(--neon-lime)]/50 bg-[var(--neon-lime)]/5 p-4">
-          <p className="font-heading text-sm font-bold text-[var(--neon-lime)]">Sent 🎉</p>
+        <div className="mt-4 rounded-xl border border-f-rewards-line bg-f-rewards-bg p-4">
+          <p className="font-heading text-sm font-bold text-f-rewards-ink">Sent 🎉</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Your MegaChat is in {target.handle}&apos;s bounty{extraTargets.length ? ` (and ${extraTargets.length} more)` : ''}.
+            Your Holler is in {target.handle}&apos;s bounty{extraTargets.length ? ` (and ${extraTargets.length} more)` : ''}.
             {policy ? ' The review policy you saw applies from here.' : ''} Track every step on your status page.
           </p>
           <button type="button" onClick={() => onDone(contributor.trim())}
-            className="mt-2 text-sm font-bold text-[var(--neon-cyan)] underline-offset-2 hover:underline">
+            className="mt-2 text-sm font-bold text-foreground underline decoration-hl-strap-hi decoration-2 underline-offset-4">
             View my contributions →
           </button>
         </div>

@@ -53,9 +53,9 @@ const DIRECTIONS: Array<{
 ]
 
 const ADVANCED_TABS: Array<{ id: AdvancedTab; label: string; icon: LucideIcon }> = [
-  { id: 'megachats', label: 'MegaChats', icon: MessageSquareText },
-  { id: 'open-mic', label: 'Open mic', icon: Video },
-  { id: 'drops', label: 'Drops', icon: Gift },
+  { id: 'megachats', label: 'Hollers', icon: MessageSquareText },
+  { id: 'open-mic', label: 'Call in', icon: Video },
+  { id: 'drops', label: 'Rewards', icon: Gift },
   { id: 'access', label: 'Who gets in', icon: Users },
   { id: 'money', label: 'Money', icon: CircleDollarSign },
   { id: 'stream', label: 'Stream', icon: Radio },
@@ -108,20 +108,20 @@ function RateStepper({ rate, setRate }: { rate: string; setRate: (value: string)
 
   return (
     <div className="lab-rate-control">
-      <button type="button" aria-label="Lower MegaChat rate" onClick={() => adjust(-0.0005)}>
+      <button type="button" aria-label="Lower Holler rate" onClick={() => adjust(-0.0005)}>
         <Minus size={15} strokeWidth={2.5} />
       </button>
       <label className="lab-rate-input">
         <span>$</span>
         <input
-          aria-label="MegaChat rate"
+          aria-label="Holler rate"
           inputMode="decimal"
           value={rate}
           onChange={(event) => setRate(event.target.value.replace(/[^0-9.]/g, ''))}
         />
         <small>/s</small>
       </label>
-      <button type="button" aria-label="Raise MegaChat rate" onClick={() => adjust(0.0005)}>
+      <button type="button" aria-label="Raise Holler rate" onClick={() => adjust(0.0005)}>
         <Plus size={15} strokeWidth={2.5} />
       </button>
     </div>
@@ -182,7 +182,7 @@ export function RoomDesignLab() {
     <div className="lab" data-direction={direction}>
       <header className="lab-toolbar">
         <div className="lab-toolbar-brand">
-          <span>MEGACHAT</span>
+          <span>HOLLER</span>
           <small>UI direction lab</small>
         </div>
         <nav className="lab-directions" aria-label="Design directions">
@@ -218,7 +218,7 @@ export function RoomDesignLab() {
 
         <section className="room-mock" aria-label={`${active.name} Create Room mockup`}>
           <header className="room-mock-header">
-            <a href="/app" className="room-brand">MEGACHAT</a>
+            <a href="/app" className="room-brand">HOLLER</a>
             <span className="room-divider" />
             <span className="room-page-title">New room</span>
             <span className="room-progress"><b>01</b> Set the room <i /> <b>02</b> Go live</span>
@@ -250,13 +250,13 @@ export function RoomDesignLab() {
               <section className="room-section">
                 <div className="room-section-title">
                   <span>01</span>
-                  <div><h2>What runs in your room</h2><p>Start with MegaChats. Add live seats or rewards only when you need them.</p></div>
+                  <div><h2>What runs in your room</h2><p>Start with Hollers. Add Call in or Rewards only when you need them.</p></div>
                 </div>
 
                 <div className="lab-modules">
                   <Module
                     icon={MessageSquareText}
-                    title="MegaChats"
+                    title="Hollers"
                     description="Recorded clips that play on the broadcast"
                     enabled={megachats}
                     onToggle={() => setMegachats((value) => !value)}
@@ -292,7 +292,7 @@ export function RoomDesignLab() {
 
                   <Module
                     icon={Video}
-                    title="Open mic"
+                    title="Call in"
                     description="Viewers take live camera seats beside you"
                     enabled={openMic}
                     onToggle={() => setOpenMic((value) => !value)}
@@ -303,8 +303,8 @@ export function RoomDesignLab() {
 
                   <Module
                     icon={Gift}
-                    title="Drops & rewards"
-                    description="Pay viewers to watch or give MegaChat credit"
+                    title="Rewards"
+                    description="Pay viewers to watch or give Holler credit"
                     enabled={drops}
                     onToggle={() => setDrops((value) => !value)}
                     accent="money"
@@ -377,20 +377,20 @@ export function RoomDesignLab() {
 
             <aside className="room-preview">
               <div className="preview-head"><div><span>Live preview</span><h2>What viewers see</h2></div><span className="preview-live"><i /> On air</span></div>
-              <div className="preview-stage">
+              <div className="preview-stage dark">
                 <span className="preview-stage-rate">${paid ? rate || '0' : '0'}/s</span>
                 <div className="preview-signal"><i /><i /><i /><i /></div>
                 <div className="preview-card">
                   <small>Your room</small>
                   <h3>Jordan's room</h3>
-                  <p>{megachats ? 'MegaChats open' : 'MegaChats closed'}{openMic ? ' / 3 camera seats' : ''}</p>
-                  <button type="button">Send a MegaChat <ChevronRight size={15} /></button>
+                  <p>{megachats ? 'Hollers open' : 'Hollers closed'}{openMic ? ' / 3 camera seats' : ''}</p>
+                  <button type="button">Send a Holler <ChevronRight size={15} /></button>
                 </div>
               </div>
               <div className="preview-ledger">
-                <div><span>A MegaChat</span><strong>${paid ? rate || '0' : '0'}/s</strong></div>
+                <div><span>A Holler</span><strong>${paid ? rate || '0' : '0'}/s</strong></div>
                 <div><span>10 second clip</span><strong>${paid ? ((Number.parseFloat(rate || '0') || 0) * 10).toFixed(2) : '0'}</strong></div>
-                <div><span>Open mic</span><strong data-off={!openMic}>{openMic ? '3 seats' : 'Off'}</strong></div>
+                <div><span>Call in</span><strong data-off={!openMic}>{openMic ? '3 seats' : 'Off'}</strong></div>
                 <div><span>Spend limit</span><strong>$2 max</strong></div>
               </div>
               <div className="preview-note"><ShieldCheck size={18} /><span><strong>Real configuration</strong>Only the stage art is illustrative.</span></div>

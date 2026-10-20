@@ -19,18 +19,21 @@ function PlatformIcon({ platform }: { platform: string | null }) {
   return <AtSign className={cls} />
 }
 
+// Holler colour roles: money on offer is bounty yellow, a step in progress is
+// strap violet, a verified or paying pool is the positive green, a dispute is
+// red text, and anything finished is neutral.
 const STATUS_TONE: Record<string, string> = {
-  ACCUMULATING: 'border-[var(--neon-cyan)]/50 text-[var(--neon-cyan)]',
-  RESERVED: 'border-[var(--neon-cyan)]/50 text-[var(--neon-cyan)]',
-  CLAIM_PENDING: 'border-[var(--neon-amber)]/50 text-[var(--neon-amber)]',
-  CLAIM_VERIFIED: 'border-[var(--neon-lime)]/50 text-[var(--neon-lime)]',
-  AWAITING_AIRTIME: 'border-[var(--neon-lime)]/60 text-[var(--neon-lime)]',
-  VERIFYING: 'border-[var(--neon-violet)]/50 text-[var(--neon-violet)]',
-  PARTIALLY_RELEASED: 'border-[var(--neon-lime)]/60 text-[var(--neon-lime)]',
+  ACCUMULATING: 'border-f-bounty-line text-f-bounty-ink',
+  RESERVED: 'border-f-bounty-line text-f-bounty-ink',
+  CLAIM_PENDING: 'border-hl-strap-hi/50 text-foreground',
+  CLAIM_VERIFIED: 'border-f-rewards-line text-f-rewards-ink',
+  AWAITING_AIRTIME: 'border-f-rewards-line text-f-rewards-ink',
+  VERIFYING: 'border-hl-strap-hi/50 text-foreground',
+  PARTIALLY_RELEASED: 'border-f-rewards-line text-f-rewards-ink',
   RELEASED: 'border-border text-muted-foreground',
   EXPIRED: 'border-border text-muted-foreground',
   REFUNDED: 'border-border text-muted-foreground',
-  DISPUTED: 'border-[var(--neon-magenta)]/60 text-[var(--neon-magenta)]',
+  DISPUTED: 'border-f-holler-line text-f-holler-ink',
   VOID: 'border-border text-muted-foreground',
 }
 
@@ -56,7 +59,7 @@ export function BountyBoard({
   }, [])
 
   if (error) {
-    return <p className="text-sm text-[var(--neon-magenta)]">{error}</p>
+    return <p className="text-sm text-f-holler-ink">{error}</p>
   }
 
   if (pools && pools.length === 0) {
@@ -64,7 +67,7 @@ export function BountyBoard({
       <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 px-6 py-10 text-center">
         <p className="font-heading text-lg font-bold text-foreground">No bounties yet.</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Record a MegaChat addressed to a streamer who isn&apos;t here yet — it starts
+          Record a Holler addressed to a streamer who isn&apos;t here yet — it starts
           their bounty pool.
         </p>
       </div>
@@ -72,7 +75,7 @@ export function BountyBoard({
   }
 
   return (
-    <DeckPanel title="Creator bounties" icon={<Trophy className="size-4 text-[var(--neon-lime)]" />}>
+    <DeckPanel title="Creator bounties" icon={<Trophy className="size-4 text-f-bounty-ink" />}>
       {pools === null ? (
         <div className="space-y-2 p-4" aria-hidden="true">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -105,15 +108,15 @@ export function BountyBoard({
                       {(p.status || 'UNKNOWN').replace(/_/g, ' ').toLowerCase()}
                     </span>
                     <span className="ml-2 text-[11px] text-muted-foreground">
-                      {p.contributionCount} MegaChat{p.contributionCount === 1 ? '' : 's'} waiting
+                      {p.contributionCount} Holler{p.contributionCount === 1 ? '' : 's'} waiting
                     </span>
                   </span>
                   <span className="shrink-0 text-right">
-                    <span className="block text-sm font-bold text-foreground tabular">
+                    <span className="block text-sm font-bold text-f-bounty-ink tabular">
                       {p.remaining.toLocaleString()} {config.currency}
                     </span>
                     {p.releasedContributor > 0 ? (
-                      <span className="block text-[10px] text-[var(--neon-lime)] tabular">
+                      <span className="block text-[10px] text-f-rewards-ink tabular">
                         {p.releasedContributor.toLocaleString()} released
                       </span>
                     ) : null}
@@ -122,7 +125,7 @@ export function BountyBoard({
                     <button
                       type="button"
                       onClick={() => onClaim(p)}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--neon-lime)] px-3 py-1.5 text-xs font-bold text-black transition-transform hover:scale-[1.04]"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-f-bounty-solid px-3 py-1.5 text-xs font-bold text-f-bounty-on transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.04] active:scale-[.97]"
                     >
                       This is me <ArrowRight className="size-3" />
                     </button>

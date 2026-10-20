@@ -4,7 +4,7 @@ import { AccountPage } from '@/components/account/account-page'
 import './account.css'
 
 export const metadata: Metadata = {
-  title: 'Account — MegaChat',
+  title: 'Account — Holler',
   description: 'Your handle, linked sign-ins, balance and saved room defaults.',
 }
 

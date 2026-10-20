@@ -28,14 +28,17 @@
 $schema: https://api.gitbook.com/gitbook-docs.yaml
 
 site:
-  title: MegaChat Docs
+  # The titles are what readers see, so they carry the product's name: Holler
+  # since the 2026-10-20 rebrand. The pages keep the code's names, and
+  # docs/README.md says so. The key and the path stay as they were.
+  title: Holler Docs
   structure:
     # One space. A site with no sections must mark exactly one of its
     # top-level spaces `default: true` — that is the space that opens when the
     # site is visited without a space path.
     - type: space
       key: docs
-      title: MegaChat Docs
+      title: Holler Docs
       path: docs
       default: true
       content:

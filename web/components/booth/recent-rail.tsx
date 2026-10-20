@@ -18,6 +18,7 @@
 
 import type { CSSProperties } from 'react'
 import type { RecentAiring } from '@/lib/api'
+import { FEATURE_LABELS, FeatureTag } from '@/components/feature-tag'
 
 function ago(ms: number): string {
   const mins = Math.max(1, Math.round((Date.now() - ms) / 60000))
@@ -41,6 +42,16 @@ function guestCount(a: RecentAiring): number {
   return new Set(a.moments.filter((m) => m.kind === 'seat').map((m) => m.label || '')).size
 }
 
+/** The kinds of moment the broadcast holds, as feature tags: a recorded clip
+ *  (server kind 'megachat') is a Holler, a guest on camera ('seat') is a Call
+ *  in. One tag per kind, Holler first — the order the product sells them. */
+function momentKinds(a: RecentAiring): ('holler' | 'callin')[] {
+  const kinds: ('holler' | 'callin')[] = []
+  if (a.moments.some((m) => m.kind === 'megachat')) kinds.push('holler')
+  if (a.moments.some((m) => m.kind === 'seat')) kinds.push('callin')
+  return kinds
+}
+
 function RecentCard({ a }: { a: RecentAiring }) {
   // A plain anchor, never next/link: /<handle> is served by Express, and a
   // client-side route to it is the 404 5993024 fixed on the room cards.
@@ -50,9 +61,14 @@ function RecentCard({ a }: { a: RecentAiring }) {
   const href = a.handle ? `/${a.handle}?${replay}` : `/join?room=${encodeURIComponent(a.roomId)}&${replay}`
   const p = a.poster
   const guests = guestCount(a)
+  const kinds = momentKinds(a)
+  // The aria-label replaces the card's text for a screen reader, so the tags'
+  // words ride along in it.
+  const label = [`${a.name}, aired ${ago(a.endedAt)}`, ...kinds.map((k) => FEATURE_LABELS[k])].join(', ')
   return (
-    <a href={href} className="mcr-recent" aria-label={`${a.name}, aired ${ago(a.endedAt)}`}>
-      <span className="mcr-recent-stage">
+    <a href={href} className="mcr-recent" aria-label={label}>
+      {/* `dark`: a picture of a broadcast is a dark screen in either theme. */}
+      <span className="mcr-recent-stage dark">
         {p?.kind === 'frame' ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={p.url} alt="" loading="lazy" decoding="async" />
@@ -66,6 +82,16 @@ function RecentCard({ a }: { a: RecentAiring }) {
         <span className="mcr-recent-tag">
           {p?.kind === 'frame' ? 'Aired' : a.vodUrl ? 'Recorded' : 'No recording'}
         </span>
+        {/* On the picture, not under the title: a line of tags under it made
+            every card 28px taller, and on a quiet night this row sits above
+            the rooms, which are held to the fold (_gate-board-fold F4). */}
+        {kinds.length ? (
+          <span className="mcr-recent-feats">
+            {kinds.map((k) => (
+              <FeatureTag key={k} kind={k} />
+            ))}
+          </span>
+        ) : null}
         {a.durationMs ? <span className="mcr-recent-len">{length(a.durationMs)}</span> : null}
       </span>
       <span className="mcr-recent-meta">

@@ -853,7 +853,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     // broken AND an enumeration hole: anyone could read anyone's
     // contributions by guessing the string. The session decides now.
     const contributor = accountKey(req);
-    if (!contributor) return res.status(401).json({ error: 'Sign in to see your MegaChats', reason: 'auth_required' });
+    if (!contributor) return res.status(401).json({ error: 'Sign in to see your Hollers', reason: 'auth_required' });
     const moderationOn = !!process.env.MODERATION_API_KEY;
     const mine = (store.listPledges({ contributor }) || []).map((p) => {
       const c = store.getContribution(p.contributionId);

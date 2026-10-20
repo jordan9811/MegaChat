@@ -35,7 +35,7 @@ export function ObsSetup() {
   const obsLink = origin ? (room.handle ? `${origin}/${room.handle}/overlay` : `${origin}/overlay?room=${room.id}`) : overlayUrl
 
   return (
-    <section className="mcc-obs" aria-label="Get MegaChat on your stream">
+    <section className="mcc-obs" aria-label="Get Holler on your stream">
       <header>
         <strong>Add it to your stream</strong>
         <small>Your viewers use the link. Your broadcast needs the overlay in OBS.</small>
@@ -55,7 +55,7 @@ export function ObsSetup() {
               <ChevronDown size={15} aria-hidden="true" />
             </summary>
             <div className="mcc-obs-panel">
-              <p>MegaChat talks to OBS and adds the overlay itself, sized correctly. Nothing to type.</p>
+              <p>Holler talks to OBS and adds the overlay itself, sized correctly. Nothing to type.</p>
               {/* showManual off: choice 2 below IS the manual road, and this
                   component renders its own copy of it by default. */}
               <ObsOneClick overlayUrl={obsLink} mode="room" showManual={false} />

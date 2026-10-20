@@ -111,7 +111,7 @@ export function OverlayHealthCard() {
       role="alert"
       className="flex items-start gap-3 rounded-2xl border border-border/70 bg-card/60 p-4 backdrop-blur-sm"
     >
-      <EyeOff className="mt-0.5 size-4 shrink-0" style={{ color: 'var(--neon-magenta)' }} />
+      <EyeOff className="mt-0.5 size-4 shrink-0 text-f-holler-ink" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-foreground">
           {hidden ? 'Your overlay is not on screen' : 'Your overlay is too small to be read'}
@@ -120,18 +120,18 @@ export function OverlayHealthCard() {
           {hidden ? (
             <>
               OBS says {HIDDEN_COPY[visibility?.reason ?? ''] ?? 'the overlay is not visible'}.
-              Guests and MegaChats are not reaching your broadcast.
+              Guests and Hollers are not reaching your broadcast.
             </>
           ) : (
             <>
               The overlay source is scaled down, which shrinks the verification
-              badge with it. A MegaChat that plays now may not be provable.
+              badge with it. A Holler that plays now may not be provable.
               Set the source back to 100%.
             </>
           )}
         </p>
       </div>
-      <span className="mt-1 size-2 shrink-0 rounded-full" style={{ backgroundColor: 'var(--neon-magenta)', animation: 'pulse 2s ease-in-out infinite' }} />
+      <span className="mt-1 size-2 shrink-0 rounded-full bg-f-holler" style={{ animation: 'pulse 2s ease-in-out infinite' }} />
     </div>
   ) : null
 
@@ -153,7 +153,7 @@ export function OverlayHealthCard() {
           overlay. Connect OBS under <em>OBS setup</em> and they release within a check of each chunk.
         </>
       )}
-      {parseFloat(seatMoney.pending) > 0 ? <> Pending now: ${seatMoney.pending}.</> : null}
+      {parseFloat(seatMoney.pending) > 0 ? <> Pending now: <span className="font-semibold text-f-bounty-ink">${seatMoney.pending}</span>.</> : null}
     </p>
   ) : null
 
@@ -163,13 +163,16 @@ export function OverlayHealthCard() {
   const connected = health.lkState === 'live'
   const bad = health.present && !health.healthy
 
+  // ink = the icon, dot = the light. Not open is a warning (bounty yellow),
+  // not responding is a fault (holler red), on air is the record light with
+  // the call-in guest's colour on the icon, and idle-ready is call-in waiting.
   const tone = !health.present
-    ? { icon: CircleAlert, color: 'var(--neon-amber)', label: 'Overlay not open' }
+    ? { icon: CircleAlert, ink: 'var(--f-bounty-ink)', dot: 'var(--f-bounty)', label: 'Overlay not open' }
     : bad
-      ? { icon: CircleAlert, color: 'var(--neon-magenta)', label: 'Overlay not responding' }
+      ? { icon: CircleAlert, ink: 'var(--f-holler-ink)', dot: 'var(--f-holler)', label: 'Overlay not responding' }
       : connected
-        ? { icon: Radio, color: 'var(--neon-lime)', label: 'On air — guest connected' }
-        : { icon: Moon, color: 'var(--neon-cyan)', label: 'Ready — sleeping until a guest joins' }
+        ? { icon: Radio, ink: 'var(--f-callin-ink)', dot: 'var(--hl-record)', label: 'On air — guest connected' }
+        : { icon: Moon, ink: 'var(--f-callin-ink)', dot: 'var(--f-callin)', label: 'Ready — sleeping until a guest joins' }
 
   const Icon = tone.icon
 
@@ -177,7 +180,7 @@ export function OverlayHealthCard() {
     <>
     {banner}
     <div className="flex items-start gap-3 rounded-2xl border border-border/70 bg-card/60 p-4 backdrop-blur-sm">
-      <Icon className="mt-0.5 size-4 shrink-0" style={{ color: tone.color }} />
+      <Icon className="mt-0.5 size-4 shrink-0" style={{ color: tone.ink }} />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-foreground">{tone.label}</p>
         <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
@@ -211,7 +214,7 @@ export function OverlayHealthCard() {
       <span
         className="mt-1 size-2 shrink-0 rounded-full"
         style={{
-          backgroundColor: tone.color,
+          backgroundColor: tone.dot,
           animation: connected || bad ? 'pulse 2s ease-in-out infinite' : undefined,
         }}
       />

@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { docsUrl } from '@/lib/docs-url.mjs'
+import { FeatureTag } from '@/components/feature-tag'
 import {
   addGuest,
   getGuestWhitelist,
@@ -86,7 +87,11 @@ export function GuestWhitelist({ myHandle }: { myHandle: string | null }) {
     <section className="mcc-settings-zone mcc-guests">
       <header>
         <div>
-          <span className="mcc-coordinate">Guest list</span>
+          {/* A guest takes a camera seat free: this is a Call in setting. */}
+          <span className="mcc-guests-kicker">
+            <span className="mcc-coordinate">Guest list</span>
+            <FeatureTag kind="callin" />
+          </span>
           <h2>Let your regulars walk in.</h2>
           {/* Deep link to the handbook page for this feature; renders nothing
               when NEXT_PUBLIC_DOCS_URL was not set at build time. */}
@@ -96,7 +101,7 @@ export function GuestWhitelist({ myHandle }: { myHandle: string | null }) {
           <p>
             Anyone here takes a camera seat in any of your rooms free — no
             per-second charge, no waiting for a seat. It applies to every room
-            you open, not just one. Recorded MegaChats are still charged at
+            you open, not just one. Recorded Hollers are still charged at
             your normal price.
           </p>
         </div>
@@ -126,7 +131,7 @@ export function GuestWhitelist({ myHandle }: { myHandle: string | null }) {
       ) : null}
 
       <form className="mcc-guests-add" onSubmit={(e) => void submit(e)}>
-        <label htmlFor="guest-handle">Add by MegaChat handle</label>
+        <label htmlFor="guest-handle">Add by Holler handle</label>
         <div>
           <span className="mcc-guests-at">@</span>
           <input

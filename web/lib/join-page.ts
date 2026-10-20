@@ -317,7 +317,7 @@ function updatePriceDisplay() {
     if (lbl) lbl.textContent = `Clip total: ${fmtAmount(total)} · Max: ${mc.maxSeconds} seconds`;
   } else if (joinStreamEnabled()) {
     if (amt) amt.textContent = `${fmtAmount(Number(tickPrice) / tickSec)} /second`;
-    if (lbl) lbl.textContent = roomIsFree() ? 'Free live seat' : `Live seat · Spend limit: ${fmtAmount(CONFIG.maxSession)}`;
+    if (lbl) lbl.textContent = roomIsFree() ? 'Call in · Free' : `Call in · Spend limit: ${fmtAmount(CONFIG.maxSession)}`;
   } else {
     if (amt) amt.textContent = '—';
     if (lbl) lbl.textContent = 'Nothing is enabled in this room right now.';
@@ -411,7 +411,7 @@ let joinBtnState = 'idle';
 // camera wait can be cancelled, and while live the same button IS the
 // leave action — there is no sibling Leave button anymore.
 const JOIN_BTN_STATES = {
-  idle: { label: '🎬 Join Stream', disabled: false },
+  idle: { label: '🎬 Call in', disabled: false },
   busy: { label: '⏳ Processing…', disabled: true },
   'awaiting-camera': { label: '⏳ Waiting for camera — tap to cancel', disabled: false },
   'go-live': { label: '🎥 Go Live', disabled: false },
@@ -1592,7 +1592,7 @@ function mountReplay(wrap, mount, replay) {
   const list = document.getElementById('streamReplayMoments');
   const moments = replay.moments || [];
   const describe = (m) => (m.kind === 'start' ? 'the start'
-    : `${m.kind === 'megachat' ? 'MegaChat' : 'On camera'} · ${m.label || 'guest'}`);
+    : `${m.kind === 'megachat' ? 'Holler' : 'On camera'} · ${m.label || 'guest'}`);
   const play = (i) => {
     const m = moments[i];
     mount.innerHTML = '';
@@ -1628,7 +1628,7 @@ function mountReplay(wrap, mount, replay) {
         ? (m.kind === 'start'
           ? `Replay · aired ${agoText(replay.airing.endedAt)} · from the start`
           : `Replay · aired ${agoText(replay.airing.endedAt)} · from ${replay.leadS}s before ${describe(m)}`)
-        : `The MegaChat · ${m.label || 'guest'} · aired ${agoText(replay.airing.endedAt)} (the recording is gone)`;
+        : `The Holler · ${m.label || 'guest'} · aired ${agoText(replay.airing.endedAt)} (the recording is gone)`;
     }
     if (list) list.querySelectorAll('button').forEach((b, j) => b.setAttribute('aria-pressed', String(j === i)));
   };
@@ -2112,8 +2112,8 @@ function initLetterUi() {
   // Short label — "· up to 10s" pushed the button onto two wrapped lines on
   // mobile, and the recorder stage states the cap the moment it opens.
   btn.textContent = parseFloat(cfg.price) > 0
-      ? `📼 Send a MegaChat — ${fmtAmount(cfg.price)}`
-      : '📼 Send a MegaChat — FREE';
+      ? `📼 Send a Holler — ${fmtAmount(cfg.price)}`
+      : '📼 Send a Holler — FREE';
 }
 
 function setLetterStatus(text, tone) {
@@ -2143,7 +2143,7 @@ async function openLetterStage() {
   try {
     letterStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
   } catch (err) {
-    showMessage('❌ Camera/mic access is needed to record a letter.', 'error');
+    showMessage('❌ Camera/mic access is needed to record a Holler.', 'error');
     return;
   }
   stage.style.display = '';
@@ -2240,7 +2240,7 @@ function toggleLetterRecording() {
     if (letterDurationS < minS) {
       letterButtons({ record: false, redo: true, send: false });
       setLetterStatus(
-        `That take was ${letterDurationS}s — MegaChats need at least ${minS}s. ` +
+        `That take was ${letterDurationS}s — Hollers need at least ${minS}s. ` +
         'Shorter clips can\'t be reliably shown on stream, so we won\'t charge for one. Give it another go.',
         'error',
       );
@@ -2281,7 +2281,7 @@ async function sendLetter() {
   if (!cfg || !letterBlob || letterState === 'sending') return;
   const username = (document.getElementById('username').value || '').trim();
   if (!username) {
-    showMessage('Pick a username first — it labels your MegaChat on stream.', 'error');
+    showMessage('Pick a username first — it labels your Holler on stream.', 'error');
     return;
   }
   const letterIsFree = !(parseFloat(cfg.price) > 0);
@@ -2320,7 +2320,7 @@ async function sendLetter() {
     );
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || !data.letterId) {
-      throw new Error(data.error || `MegaChat submit failed (${resp.status})`);
+      throw new Error(data.error || `Holler submit failed (${resp.status})`);
     }
     session.close().catch(() => { /* nothing unspent; channel just closes */ });
     myLetterId = data.letterId;
@@ -2345,14 +2345,14 @@ async function sendLetter() {
     // clip HOLDS in the queue — saying "on stream shortly" there was a lie
     // that cost a solo tester their clip.
     const held = upData.overlayLive === false
-      ? '<br><span style="font-size:0.85em;opacity:0.85">Heads up: the stream overlay isn\'t online yet — your MegaChat is safely queued and plays the moment it connects.</span>'
+      ? '<br><span style="font-size:0.85em;opacity:0.85">Heads up: the stream overlay isn\'t online yet — your Holler is safely queued and plays the moment it connects.</span>'
       : '';
     showMessage(
       (upData.status === 'reviewing'
-        ? '🔎 MegaChat sent — quick automated review (a few seconds), then it queues.'
+        ? '🔎 Holler sent — quick automated review (a few seconds), then it queues.'
         : upData.status === 'pending_approval'
-          ? '📮 MegaChat sent — the streamer approves MegaChats before they play. You were charged; rejects auto-refund.'
-          : '📮 MegaChat sent! It will pop up on stream shortly — watch the preview above (it runs on a slight delay).') + held,
+          ? '📮 Holler sent — the streamer approves Hollers before they play. You were charged; rejects auto-refund.'
+          : '📮 Holler sent! It will pop up on stream shortly — watch the preview above (it runs on a slight delay).') + held,
       'success',
     );
   } catch (err) {
@@ -2361,7 +2361,7 @@ async function sendLetter() {
     // a blank status line here read as "nothing happened". Show the reason
     // right where their eyes are; the banner still carries the full story.
     setLetterStatus('❌ ' + shortTxReason(err?.message) + ' — your take is still here, try Send again.');
-    await showTxError('MegaChat failed', err, { need: cfg && cfg.price });
+    await showTxError('Holler failed', err, { need: cfg && cfg.price });
   }
 }
 
@@ -2626,22 +2626,22 @@ export function initJoinPage({ wsUrl }) {
       // Letter lifecycle toasts are seat-independent (senders usually have
       // no seat) — handle them before the seat guard.
       if (msg.type === 'letter_play' && msg.letter && msg.letter.id === myLetterId) {
-        showMessage('▶ Your MegaChat is on stream RIGHT NOW — the preview above shows it after a slight delay.', 'success');
+        showMessage('▶ Your Holler is on stream RIGHT NOW — the preview above shows it after a slight delay.', 'success');
         return;
       }
       if (msg.type === 'letter_queued' && msg.letterId === myLetterId) {
         if (msg.status === 'queued') {
           showMessage(
             msg.overlayLive === false
-              ? "✅ Review passed — your MegaChat is queued. The stream overlay isn't online yet; it plays the moment it connects."
-              : '✅ Review passed — your MegaChat is queued and will pop up on stream shortly.',
+              ? "✅ Review passed — your Holler is queued. The stream overlay isn't online yet; it plays the moment it connects."
+              : '✅ Review passed — your Holler is queued and will pop up on stream shortly.',
             'success',
           );
         } else if (msg.status === 'pending_approval') {
           showMessage(
             msg.flagged
-              ? '🕵️ The automated review flagged your MegaChat — the streamer will approve or reject it (rejects refund).'
-              : '📮 Your MegaChat awaits the streamer\'s approval.',
+              ? '🕵️ The automated review flagged your Holler — the streamer will approve or reject it (rejects refund).'
+              : '📮 Your Holler awaits the streamer\'s approval.',
             'success',
           );
         }

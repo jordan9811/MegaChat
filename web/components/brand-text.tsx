@@ -1,9 +1,8 @@
-// The wordmark set in type. MEGA carries the brand pink and CHAT takes the
-// surrounding color, so every header agrees on which half is the emphasis.
+import { HollerMark } from '@/components/holler-mark'
+
+// The brand as it sits in a header or footer line: the Holler mark sized to
+// the surrounding text (1em, solid record dot). The export keeps its old name
+// so every existing <BrandText /> picks up the new mark.
 export function BrandText() {
-  return (
-    <>
-      <span className="mc-brand-mega">MEGA</span>CHAT
-    </>
-  )
+  return <HollerMark />
 }

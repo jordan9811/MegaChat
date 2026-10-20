@@ -1,8 +1,8 @@
-import { ProductShell } from '@/components/product-shell'
+import { BountyShell } from '@/components/bounty/bounty-shell'
 import { StreamerBountyPage } from '@/components/bounty/streamer-page'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Streamer bounty - MegaChat' }
+export const metadata = { title: 'Streamer bounty - Holler' }
 
 export default async function StreamerBounty({
   params,
@@ -11,8 +11,8 @@ export default async function StreamerBounty({
 }) {
   const { platform, handle } = await params
   return (
-    <ProductShell title="Bounty">
+    <BountyShell title="Bounty">
         <StreamerBountyPage platform={decodeURIComponent(platform)} handle={decodeURIComponent(handle)} />
-    </ProductShell>
+    </BountyShell>
   )
 }

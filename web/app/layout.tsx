@@ -13,7 +13,9 @@ const ui = Plus_Jakarta_Sans({ variable: '--font-ui', subsets: ['latin'], weight
 // Display face for headlines and the wordmark, and a mono for anything that
 // reads like a readout (coordinates, meters, meta). Site-wide so every page
 // can reach them; the UI face stays Jakarta.
-const display = Archivo({ variable: '--font-display', subsets: ['latin'], weight: ['700', '800', '900'] })
+// Variable Archivo with the width axis, so the Holler mark's font-stretch: 112%
+// is a real wider cut, not a synthesized one.
+const display = Archivo({ variable: '--font-display', subsets: ['latin'], axes: ['wdth'] })
 const code = Space_Mono({ variable: '--font-code', subsets: ['latin'], weight: ['400', '700'] })
 const graffiti = Pacifico({
   variable: '--font-graffiti',
@@ -24,7 +26,7 @@ const graffiti = Pacifico({
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ||
   'https://megachat.fun'
-const SITE_TITLE = 'MegaChat — Skip the chat. Be the stream.'
+const SITE_TITLE = 'Holler — Skip the chat. Be the stream.'
 const SITE_DESC =
   'Viewers pay per-second in USDC to put their camera on your live broadcast. One-tap passkey to go live, unused balance refunds automatically. Turn chat into content.'
 
@@ -32,7 +34,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: SITE_TITLE,
   description: SITE_DESC,
-  applicationName: 'MegaChat',
+  applicationName: 'Holler',
   keywords: [
     'live streaming',
     'creator monetization',
@@ -45,7 +47,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     url: SITE_URL,
-    siteName: 'MegaChat',
+    siteName: 'Holler',
     title: SITE_TITLE,
     description: SITE_DESC,
     images: [
@@ -55,7 +57,7 @@ export const metadata: Metadata = {
         url: '/og.png',
         width: 1200,
         height: 630,
-        alt: 'MegaChat — crowned glitch microphone and wordmark',
+        alt: 'Holler — the word HOLLER on a deep-violet broadcast strap, the O a red record button',
       },
     ],
   },
@@ -74,8 +76,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: 'dark light',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f4ecfa' },
-    { media: '(prefers-color-scheme: dark)', color: '#050609' },
+    { media: '(prefers-color-scheme: light)', color: '#f6f4fa' },
+    { media: '(prefers-color-scheme: dark)', color: '#0a0812' },
   ],
 }
 
@@ -101,8 +103,8 @@ export default function RootLayout({
         />
         <ThemeProvider
           attribute="class"
-          defaultTheme="dark"
-          enableSystem={false}
+          defaultTheme="system"
+          enableSystem
           disableTransitionOnChange
         >
           {/* App-wide so every header can offer login + balance, and a
