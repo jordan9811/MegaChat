@@ -2,9 +2,10 @@
 
 // The roadmap as one vertical timeline, two directions:
 //  - FORWARD (default): what's next, priority-ordered top to bottom,
-//    color-coded by horizon — green near / amber mid / purple ambitious.
+//    color-coded by horizon — green near / amber mid / ultramarine ambitious
+//    (the page copy still says purple: the owner's wording to change).
 //    The horizon colours borrow the Holler palette's hues (rewards green,
-//    bounty yellow, the strap violet) but never the FeatureTag shape — no
+//    bounty yellow, the strap ultramarine) but never the FeatureTag shape — no
 //    dot — so a horizon chip cannot be read as a feature.
 //  - JOURNEY (back-arrow toggle): how we got here, oldest first, ending at
 //    today. The Feb 2026 prototype links to the original tweet when
@@ -36,11 +37,12 @@ import { FeatureTag, type FeatureKind } from '@/components/feature-tag'
 
 type Horizon = 'near' | 'mid' | 'far'
 
-// ink: text in that colour (≥4.5:1 in both themes) · hue: the dot itself
+// ink: text in that colour (≥4.5:1 in both themes) · hue: the dot itself, the
+// -ui token so the pale green and yellow take their ink on a light page
 const STRAP_INK = 'color-mix(in srgb, var(--hl-strap-hi) 72%, var(--hl-fg))'
 const HORIZONS: Record<Horizon, { color: string; hue: string; chip: string }> = {
-  near: { color: 'var(--f-rewards-ink)', hue: 'var(--f-rewards)', chip: 'Near term' },
-  mid: { color: 'var(--f-bounty-ink)', hue: 'var(--f-bounty)', chip: 'Mid term' },
+  near: { color: 'var(--f-rewards-ink)', hue: 'var(--f-rewards-ui)', chip: 'Near term' },
+  mid: { color: 'var(--f-bounty-ink)', hue: 'var(--f-bounty-ui)', chip: 'Mid term' },
   far: { color: STRAP_INK, hue: 'var(--hl-strap-hi)', chip: 'Ambitious' },
 }
 
@@ -254,15 +256,18 @@ export function RoadmapTimeline({ journeyTweetUrl }: { journeyTweetUrl: string }
         </button>
 
         {journey ? null : (
+          /* The tint rides on an opaque panel: the legend sits on the page
+             over the GlitchBackground, which otherwise shows through and takes
+             the light "Near term" under 4.5:1. The card chips have the card. */
           <div className="flex flex-wrap items-center gap-2" aria-hidden="true">
             {(Object.keys(HORIZONS) as Horizon[]).map((h) => (
               <span
                 key={h}
-                className="rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest"
+                className="rounded-full border bg-hl-panel px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest"
                 style={{
                   color: HORIZONS[h].color,
                   borderColor: `color-mix(in oklab, ${HORIZONS[h].color} 50%, transparent)`,
-                  background: `color-mix(in oklab, ${HORIZONS[h].color} 10%, transparent)`,
+                  backgroundImage: `linear-gradient(color-mix(in oklab, ${HORIZONS[h].color} 10%, transparent) 0 0)`,
                 }}
               >
                 {HORIZONS[h].chip}

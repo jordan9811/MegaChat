@@ -9,8 +9,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { getMyContributions, type MyContribution } from '@/lib/bounty-api'
 
 // Holler colour roles: money waiting on someone is bounty yellow, a review in
-// progress is strap violet, approved / played / paid is the positive green, a
-// policy rejection is red text, and a refund is neutral.
+// progress is strap ultramarine, approved / played / paid is the positive
+// green, a policy rejection (and a failed load) is the danger orange, and a
+// refund is neutral.
 const WAITING = 'border-f-bounty-line bg-f-bounty-bg text-f-bounty-ink'
 const REVIEWING = 'border-hl-strap-hi/50 bg-hl-strap/10 text-foreground'
 const GOOD = 'border-f-rewards-line bg-f-rewards-bg text-f-rewards-ink'
@@ -25,7 +26,7 @@ const STATE_LABEL: Record<string, { label: string; cls: string }> = {
   paid: { label: 'Paid', cls: GOOD },
   expired_refunded: { label: 'Expired — refunded', cls: 'border-border text-muted-foreground' },
   declined_refunded: { label: 'Declined — refunded in full', cls: 'border-border text-muted-foreground' },
-  rejected_policy: { label: 'Rejected (policy)', cls: 'border-f-holler-line bg-f-holler-bg text-f-holler-ink' },
+  rejected_policy: { label: 'Rejected (policy)', cls: 'border-hl-danger/50 bg-hl-danger/10 text-hl-danger' },
   refunded: { label: 'Refunded', cls: 'border-border text-muted-foreground' },
 }
 
@@ -68,7 +69,7 @@ export function MyPledges({ initialMe: _ignored }: { initialMe?: string }) {
           Sign in (top right) to see your Hollers — they&apos;re attached to your account, not to a name you type.
         </p>
       ) : null}
-      {error ? <p className="text-sm text-f-holler-ink">{error}</p> : null}
+      {error ? <p className="text-sm text-hl-danger">{error}</p> : null}
 
       {rows && rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">

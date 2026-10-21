@@ -3,6 +3,8 @@
 //                   ground with the tagline in Archivo
 //   apple-icon.png  180x180 home-screen icon — the "icon" mark (strap fragment
 //                   "H◉"), full-bleed square (iOS rounds the corners itself)
+//   holler-logo.png the full mark on transparent, ~460x92 — the Privy sign-in
+//                   modal's logo (appearance.logo in tempo-wallet.tsx)
 // The mark is drawn with the SAME .hm CSS the site uses (read out of
 // web/app/globals.css), so the rasters cannot drift from the component.
 // Re-run whenever the brand look changes:
@@ -22,9 +24,9 @@ const base = `
   :root {
     --font-display: 'Archivo';
     --font-ui: 'Archivo';
-    --hl-strap: #6d28d9;
-    --hl-record: #ff3b30;
-    --hl-mark-glow: drop-shadow(0 0 18px color-mix(in srgb, #6d28d9 45%, transparent));
+    --hl-strap: #2f2ad8;
+    --hl-record: #ff2d78;
+    --hl-mark-glow: drop-shadow(0 0 18px color-mix(in srgb, #2f2ad8 60%, transparent));
   }
   ${markCss}
 `;
@@ -36,17 +38,17 @@ const og = `<!doctype html><html><head><meta charset="utf-8">
   body {
     width: 1200px; height: 630px; overflow: hidden;
     background:
-      radial-gradient(620px 360px at 50% 44%, rgba(109, 40, 217, 0.30), transparent 70%),
-      radial-gradient(420px 260px at 50% 46%, rgba(255, 59, 48, 0.08), transparent 70%),
+      radial-gradient(620px 360px at 50% 44%, rgba(47, 42, 216, 0.34), transparent 70%),
+      radial-gradient(420px 260px at 50% 46%, rgba(255, 45, 120, 0.08), transparent 70%),
       linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px) 0 0 / 48px 48px,
       linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px) 0 0 / 48px 48px,
-      #0a0812;
+      #060a17;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 46px;
     font-family: 'Archivo', sans-serif;
   }
-  .hm.hm { font-size: 150px; filter: drop-shadow(0 0 42px rgba(109, 40, 217, 0.55)); }
+  .hm.hm { font-size: 150px; filter: drop-shadow(0 0 42px rgba(47, 42, 216, 0.6)); }
   .tag {
-    color: #f5f3fa; font-size: 58px; font-weight: 800; font-stretch: 112%;
+    color: #f3f5fb; font-size: 58px; font-weight: 800; font-stretch: 112%;
     font-variation-settings: 'wdth' 112; letter-spacing: -0.01em; line-height: 1;
   }
 </style></head><body>
@@ -57,17 +59,25 @@ const og = `<!doctype html><html><head><meta charset="utf-8">
 const appleIcon = `<!doctype html><html><head><meta charset="utf-8">
 <link href="${FONTS}" rel="stylesheet">
 <style>${base}
-  body { width: 180px; height: 180px; overflow: hidden; background: #0a0812; position: relative; }
+  body { width: 180px; height: 180px; overflow: hidden; background: #060a17; position: relative; }
   /* the strap bleeds off the left edge, the same cut as web/public/icon.svg */
   .hm.hm { position: absolute; left: 0; top: 50%; transform: translateY(-50%); font-size: 66px; }
   .hm .hm-strap { padding-left: 0.3em; }
 </style></head><body>${mark('icon')}</body></html>`;
 
+const logo = `<!doctype html><html><head><meta charset="utf-8">
+<link href="${FONTS}" rel="stylesheet">
+<style>${base}
+  html, body { background: transparent; }
+  body { display: inline-block; }
+  .hm.hm { font-size: 80px; }
+</style></head><body>${mark('full')}</body></html>`;
+
 const browser = await puppeteer.launch({
   executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
   headless: 'new',
 });
-async function render(html, width, height, path) {
+async function render(html, width, height, path, { transparent = false } = {}) {
   const page = await browser.newPage();
   await page.setViewport({ width, height, deviceScaleFactor: 1 });
   await page.setContent(html, { waitUntil: 'networkidle0' });
@@ -75,10 +85,15 @@ async function render(html, width, height, path) {
   const ok = await page.evaluate(() => document.fonts.check('900 1em Archivo'));
   if (!ok) throw new Error('Archivo did not load — check the network, then re-run');
   await new Promise((r) => setTimeout(r, 300));
-  await page.screenshot({ path, clip: { x: 0, y: 0, width, height } });
+  // a transparent raster is cropped to the mark itself
+  const clip = transparent
+    ? await page.evaluate(() => { const r = document.querySelector('.hm').getBoundingClientRect(); return { x: Math.floor(r.x), y: Math.floor(r.y), width: Math.ceil(r.width), height: Math.ceil(r.height) } })
+    : { x: 0, y: 0, width, height };
+  await page.screenshot({ path, clip, omitBackground: transparent });
   await page.close();
-  console.log(`wrote ${path} (${width}x${height})`);
+  console.log(`wrote ${path} (${clip.width}x${clip.height})`);
 }
 await render(og, 1200, 630, 'web/public/og.png');
 await render(appleIcon, 180, 180, 'web/public/apple-icon.png');
+await render(logo, 600, 200, 'web/public/holler-logo.png', { transparent: true });
 await browser.close();

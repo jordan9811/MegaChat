@@ -28,7 +28,7 @@ const SPARSE_MAX = 4
 // same board twice. These five are the real ways a room differs.
 type ChipKey = 'all' | 'live' | 'seats' | 'letters' | 'free'
 
-// `dot`: the light a chip carries — the record red for what is on air, and
+// `dot`: the light a chip carries — the record pink for what is on air, and
 // the feature colour for the two chips that pick a feature (booth.css).
 const CHIPS: { key: ChipKey; label: string; dot?: 'live' | 'callin' | 'holler' }[] = [
   { key: 'all', label: 'All' },

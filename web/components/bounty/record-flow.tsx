@@ -31,10 +31,10 @@ import { FeatureTag } from '@/components/feature-tag'
 
 type Stage = 'idle' | 'recording' | 'preview' | 'terms' | 'sending' | 'done' | 'error'
 
-// Colour roles (Holler SPEC §3): the recording itself is the holler red —
+// Colour roles (Holler SPEC §3): the recording itself is the holler pink —
 // the Record button, the REC light, the finished take. Money and the bounty
-// steps are bounty yellow; a choice you have made is strap violet; the done
-// state is rewards green. The camera frame stays dark in both themes.
+// steps are bounty yellow; a choice you have made is strap ultramarine; the
+// done state is rewards green; an error is the danger orange. The camera frame stays dark in both themes.
 const CHOICE_ON = 'border-hl-strap-hi bg-hl-strap/15 text-foreground'
 const CHOICE_OFF = 'border-border text-muted-foreground'
 const BOUNTY_SOLID = 'bg-f-bounty-solid text-f-bounty-on'
@@ -234,7 +234,7 @@ export function RecordFlow({
         ) : null}
       </div>
 
-      {error ? <p className="mt-2 text-sm text-f-holler-ink">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-hl-danger">{error}</p> : null}
 
       {stage === 'idle' ? (
         <button type="button" onClick={startRecording}

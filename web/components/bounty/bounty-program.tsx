@@ -359,7 +359,7 @@ export function BountyProgram() {
           <span className="mcb-product-actions">
             <a href="/dashboard">Create room</a>
             <ThemeToggle />
-            <AccountChip accent="var(--f-bounty-solid)" />
+            <AccountChip accent="var(--f-bounty-ui)" />
           </span>
         </div>
       </header>

@@ -1138,3 +1138,35 @@ reason than "the API is expensive".
 - **The mark's O is an empty span, so its text reads "HLLER".** Screen readers
   get "Holler" from `aria-label`; a gate that scrapes innerText for /Holler/
   must look past the header mark.
+- **Second colourway, same day: MegaChat pink on ultramarine.** The owner
+  liked the old pinker red but not against violet ("lame and feminine"), and
+  picked pink `#ff2d78` on ultramarine `#2f2ad8` on blue ink `#060a17` from
+  the lab (`design-assets/holler-lab`, Record O colourways). He then made the
+  brand pair two of the features: "call in should be brand color bc our colors
+  are nodding at our core features" — pink is Holler, ultramarine is Call in.
+  That retires the call-in purple and turns the critique's complaint ("every
+  primary button reads as Call in") into the intent. In dark the call-in hue is
+  lifted to `#6662ff` and its ink (and `--hl-strap-hi`) to `#928fff`, because
+  ultramarine on the ground is 2.3:1. Undo: the token blocks in
+  `web/app/globals.css`, then `node scripts/generate-og.mjs` for the rasters.
+- **The colourway's first fix round keeps pink to Holler and lifts weak marks.**
+  Errors and destructive steps get their own orange, `--hl-danger` (`#ff8a4c`
+  dark, `#b3400b` light), because a failed send and a sent Holler wore the same
+  pink bar. Pink washes and blooms are gone from dark grounds (the landing's
+  Holler card, the dashboard's Hollers tile, the how-it-works hero and chatter
+  header, the room stage, the roadmap/404 blooms): a thin pink over blue ink
+  composites to the retired violet. The dark lime tint is thinner for the same
+  reason (olive). Text fields get a 3:1 edge (`--hl-field`), pale-hue marks a
+  `--f-x-ui` token (hue in dark, ink in light). The tag hairlines for Holler and
+  Call in stay decorative (under 3:1); the label and dot carry the feature.
+  Undo: the same token blocks, plus the page rules that read the new tokens.
+- **The board's featured stage rings 4px out, not inset.** Its card stripe
+  became the call-in hue, and the 2px-offset ring lay on it as one thick band
+  (1.6:1 dark, 1.2:1 light). An inset ring was suggested, but the preview
+  `<img>` and scanlines are positioned and paint over an inner outline: with a
+  frame up it vanished in every case measured. At 4px the ring sits on page
+  with 2px clear of the stripe (6.9:1 dark, 8.6:1+ light). The roadmap's
+  horizon legend chips now lay their tint on an opaque panel, so the light
+  "Near term" no longer drops under 4.5:1 over the GlitchBackground. Undo:
+  `.mcr-feat > .mcr-stage:focus-visible` in `booth.css`; the legend's
+  `bg-hl-panel` and `backgroundImage` in `roadmap-timeline.tsx`.

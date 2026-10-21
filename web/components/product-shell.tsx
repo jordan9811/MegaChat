@@ -8,7 +8,7 @@ import { docsUrl } from '@/lib/docs-url.mjs'
 // the bounty tag as its title. Kept on the Holler tokens so it is on brand if
 // anything picks it up again: no forced `dark` (every .mc-product value is a
 // token, so it follows the theme), the theme toggle in the header, and the
-// account chip on its default strap-violet accent.
+// account chip on its default strap-ultramarine accent.
 export function ProductShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mc-product min-h-screen">

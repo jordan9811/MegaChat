@@ -7,7 +7,7 @@ body :is(.mc-product-brand, .mcc-brand, .mcb-product-brand .bc, .mcc-product-bra
 body :is(.mc-product-brand, .mcc-brand, .mcb-product-brand .bc, .mcc-product-brand .bc, .mch-product-brand .bc, .mcj-product-brand .bc, .mc-booth-brand) { font-size: var(--hl-hdr-mark); line-height: 1; display: inline-flex; align-items: center; }
 body :is(.mcb-product-header, .mcj-product-header, .mcc-product-header, .mch-product-header) { height: var(--hl-hdr-h); box-sizing: border-box; }
 .mc-product {
-  /* One accent (the strap violet) across the product screens; every value is
+  /* One accent (the strap ultramarine) across the product screens; every value is
      a Holler token, so the scope follows the light/dark theme. */
   --background: var(--hl-bg);
   --foreground: var(--hl-fg);

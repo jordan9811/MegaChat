@@ -20,8 +20,9 @@ function PlatformIcon({ platform }: { platform: string | null }) {
 }
 
 // Holler colour roles: money on offer is bounty yellow, a step in progress is
-// strap violet, a verified or paying pool is the positive green, a dispute is
-// red text, and anything finished is neutral.
+// strap ultramarine, a verified or paying pool is the positive green, a dispute
+// is pink text, anything finished is neutral, and a failed load is the danger
+// orange (--hl-danger).
 const STATUS_TONE: Record<string, string> = {
   ACCUMULATING: 'border-f-bounty-line text-f-bounty-ink',
   RESERVED: 'border-f-bounty-line text-f-bounty-ink',
@@ -59,7 +60,7 @@ export function BountyBoard({
   }, [])
 
   if (error) {
-    return <p className="text-sm text-f-holler-ink">{error}</p>
+    return <p className="text-sm text-hl-danger">{error}</p>
   }
 
   if (pools && pools.length === 0) {

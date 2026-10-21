@@ -23,12 +23,12 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 }
 
 /* The page's own names, each resolved onto a token by meaning:
-     accent      the strap violet — actions, links, the active section
+     accent      the strap ultramarine — actions, links, the active section
      accent-ink  accent as small text: strap-hi lifted toward the text colour,
                  ≥4.5:1 on every ground in both themes (strap-hi alone is
                  4.4:1 on panel-2 in dark)
      money       bounty yellow — balances and amounts (SPEC §3)
-     alert       holler red ink — errors, destructive, "you are being charged" */
+     alert       holler pink ink — errors, destructive, "you are being charged" */
 .mc-account {
   --mcc-bg: var(--hl-bg);
   --mcc-panel: var(--hl-panel);
@@ -233,7 +233,9 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 /* Money reads in bounty yellow (SPEC §3): the balance is an amount. */
 .mcc-balance-zone {
   border: 1px solid var(--f-bounty-line);
-  border-left: 3px solid var(--f-bounty);
+  /* -ui: the lime in dark, the bounty ink in light, where the raw lime
+     stripe is 1.3:1 on the page */
+  border-left: 3px solid var(--f-bounty-ui);
   background: linear-gradient(145deg, var(--f-bounty-bg), color-mix(in srgb, var(--mcc-panel) 70%, transparent));
 }
 
@@ -245,10 +247,11 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 .mcc-balance-zone :is(button, a),
 .mcc-room-zone a { padding: 10px 14px; border: 1px solid currentColor; background: transparent; color: inherit; font-size: 11px; font-weight: 750; cursor: pointer; }
 
-/* The room address is the brand's own: the strap violet. */
+/* The room address is the brand's own: the strap ultramarine. The stripe is
+   the call-in hue, the strap lifted to 3.5:1+ on the dark ground. */
 .mcc-room-zone {
   border: 1px solid color-mix(in srgb, var(--hl-strap-hi) 40%, transparent);
-  border-left: 3px solid var(--hl-strap);
+  border-left: 3px solid var(--f-callin);
   background: linear-gradient(145deg, var(--mcc-accent-tint-2), color-mix(in srgb, var(--mcc-panel) 70%, transparent));
   color: var(--mcc-accent-ink);
 }
@@ -341,7 +344,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   color: var(--mcc-faint);
 }
 
-/* The site's focus ring, in the strap violet (≥3:1 on every ground). */
+/* The site's focus ring, in the strap ultramarine (≥3:1 on every ground). */
 .mc-account :is(a, button, input, [tabindex]):focus-visible {
   outline: 2px solid var(--hl-strap-hi);
   outline-offset: 2px;
@@ -415,7 +418,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   cursor: default;
 }
 
-/* The handle is the room's address, so it wears the brand's violet. */
+/* The handle is the room's address, so it wears the brand's ultramarine. */
 .mc-account .handle {
   color: var(--mcc-accent-ink);
 }
@@ -477,7 +480,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   background: var(--mcc-faint);
 }
 /* A guest takes a camera seat free, so the list is a Call in setting and
-   its On state wears the call-in purple. The dot glows in dark only. */
+   its On state wears the call-in ultramarine. The dot glows in dark only. */
 .mcc-guests-switch.is-on {
   border-color: var(--f-callin-line);
   background: var(--f-callin-bg);

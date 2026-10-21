@@ -1,8 +1,8 @@
 /* Page mock suite (internal, /dashboard/design-system/pages). Holler rebrand
    (design-assets/holler-brand/SPEC.md §3): every colour is a Holler token, so the
    mocks follow the light/dark theme like the real pages. Colour by meaning: strap
-   violet is action and navigation, the record red is on air, a recorded clip is
-   holler red, a camera seat is call-in purple, money is bounty yellow. Media
+   ultramarine is action and navigation, the record pink is on air, a recorded clip
+   is holler pink, a camera seat is call-in ultramarine, money is bounty yellow. Media
    surfaces (the broadcast stage, the camera frames, the film) carry .dark in the
    markup and stay dark in both themes, the way the real join page does. */
 html:has(.page-mocks-root),html:has(.page-mocks-root) * { scrollbar-color:var(--hl-line-2) transparent; }
@@ -131,7 +131,7 @@ body:has(.page-mocks-root) { margin:0;background:var(--hl-bg); }
 /* Sign-in providers match the real account page: strap tint, no third-party brand fills. */
 .pm-connections>header{margin-bottom:18px}.pm-connection{height:70px;display:grid;grid-template-columns:38px 1fr auto;align-items:center;gap:12px;padding:0 15px;background:var(--panel);border-bottom:1px solid var(--line)}.pm-provider{width:34px;height:34px;display:grid;place-items:center;background:color-mix(in srgb,var(--hl-strap) 20%,transparent);color:var(--action-ink);font-size:11px;font-weight:800}.pm-provider.x{border:1px solid var(--line2)}.pm-connection>div{display:flex;flex-direction:column;gap:3px}.pm-connection strong{font-size:11px}.pm-connection small{color:var(--faint);font-size:9px}.pm-connection>b{display:flex;align-items:center;gap:5px;color:var(--action-ink);font-size:9px}.pm-connection>button{border:1px solid var(--line2);background:transparent;color:var(--text);padding:8px 11px;font-size:9px}
 
-/* Bounty: yellow owns money, violet owns navigation. Solid yellow is money locked to one
+/* Bounty: yellow owns money, ultramarine owns navigation. Solid yellow is money locked to one
    name, the yellow hatch is money several names are racing for (as on the real page). */
 .pm-bounty-hero { min-height:255px;display:flex;align-items:center;justify-content:space-between;gap:40px;padding:30px 38px;background:radial-gradient(circle at 10% 22%,color-mix(in srgb,var(--f-bounty) 20%,transparent),transparent 35%),linear-gradient(110deg,color-mix(in srgb,var(--f-bounty) 9%,var(--hl-panel)) 0%,var(--hl-panel) 58%); }
 .pm-bounty-hero h1 { margin:10px 0 7px;font-size:46px;line-height:.98;letter-spacing:-.055em; }.pm-bounty-hero p{margin:0;color:var(--money-ink);font-size:17px;font-weight:650}

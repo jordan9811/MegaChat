@@ -1,10 +1,10 @@
 /* Landing (feat/ui-overhaul, re-coloured for Holler) — scoped under
    .mc-landing. Every colour reads the Holler tokens in app/globals.css, so the
    page follows the theme next-themes puts on <html>:
-     strap violet  the brand and the primary action
-     record red    the light itself: the neon line, the REC dot, the playhead
-     each way in   wears its own feature colour: holler red, call-in purple,
-                   bounty yellow; money is always bounty ink
+     strap ultramarine  the brand and the primary action
+     record pink   the light itself: the neon line, the REC dot, the playhead
+     each way in   wears its own feature colour: holler pink, call-in
+                   ultramarine, bounty yellow; money is always bounty ink
    Square corners, hairline rules, a mono face for anything that reads like a
    readout. Glows exist only in dark; light gets soft shadows instead. The
    film column is a video, so it stays dark-framed in both themes (it carries
@@ -21,7 +21,7 @@
   --mcl-faint: var(--hl-dim);
   --mcl-hairline: var(--hl-line);
   --mcl-hairline-2: var(--hl-line-2);
-  /* the white that sits on a violet fill (≥7:1 on --hl-strap) */
+  /* the white that sits on an ultramarine fill (≥7:1 on --hl-strap) */
   --mcl-on-strap: var(--f-callin-on);
 
   /* dark: neon and glow */
@@ -34,7 +34,8 @@
   --mcl-card-shadow: none;
   --mcl-dot-glow: 0 0 8px var(--hl-record);
   --mcl-wash: 18%;
-  --mcl-bounty-wash: 14%;
+  /* no lime wash in dark: lime over the blue ink goes olive-drab */
+  --mcl-bounty-wash: 0%;
   --mcl-card-wash: 9%;
 
   background: var(--mcl-bg);
@@ -48,7 +49,7 @@
 
 /* light: the same page on paper — no neon, soft lifted shadows */
 .light .mc-landing {
-  --mcl-neon: var(--f-holler-ink);
+  --mcl-neon: var(--f-holler-solid);
   --mcl-neon-shadow: none;
   --mcl-strap-shadow:
     0 1px 2px color-mix(in srgb, var(--hl-strap) 30%, transparent),
@@ -57,7 +58,8 @@
     inset 0 0 0 1px color-mix(in srgb, var(--f-bounty-ink) 30%, transparent),
     0 12px 26px -14px color-mix(in srgb, var(--f-bounty-ink) 60%, transparent);
   --mcl-card-shadow: var(--hl-shadow);
-  --mcl-dot-glow: none;
+  /* the pink dot on its own pale tint is 2.9:1, so it takes an ink edge */
+  --mcl-dot-glow: inset 0 0 0 1px var(--f-holler-ink);
   --mcl-wash: 12%;
   --mcl-bounty-wash: 26%;
   --mcl-card-wash: 11%;
@@ -283,9 +285,10 @@ body:has(.mc-landing) {
 }
 
 /* The neon line is the record light. In dark it is --hl-record itself with
-   its glow (≥4.8:1 even where the violet wash is strongest); in light there
-   is no glow and the wash would pull the light red under 4.5:1, so it takes
-   the red text ink (≥5.5:1). */
+   its glow (≥4.8:1 even where the ultramarine wash is strongest); in light
+   there is no glow, so it takes the deeper fill pink (-solid #e0115f, 3.5:1
+   or more where the wash is strongest; display text needs 3:1), which stays
+   the mark's pink where the text ink would go raspberry. */
 .mcl-neon {
   color: var(--mcl-neon);
   text-shadow: var(--mcl-neon-shadow);
@@ -426,6 +429,17 @@ body:has(.mc-landing) {
   box-shadow: var(--mcl-card-shadow);
   color: var(--mcl-fg);
   transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+/* In dark a pink or lime wash over the blue ink goes violet or olive, so
+   those two cards keep the plain panel and let the top rule, tag, readout
+   and CTA carry the feature. On paper the wash reads as the hue. */
+.mcl-entry-card:is([data-tone='holler'], [data-tone='bounty']) {
+  --mcl-card-wash: 0%;
+}
+
+.light .mcl-entry-card:is([data-tone='holler'], [data-tone='bounty']) {
+  --mcl-card-wash: 11%;
 }
 
 /* Lime on paper all but vanishes as a 2px line, so in light the bounty
@@ -681,7 +695,7 @@ body:has(.mc-landing) {
   object-fit: cover;
 }
 
-/* a person, not a feature: a violet-tinted tile, the letter in plain text
+/* a person, not a feature: an ultramarine-tinted tile, the letter in plain text
    colour so it clears 4.5:1 in both themes */
 .mcl-thumb i {
   display: grid;
@@ -924,7 +938,7 @@ body:has(.mc-landing) {
   .mcl-proof svg { grid-row: auto; justify-self: start; margin-bottom: 8px; }
 }
 
-/* The landing's own keyboard ring: the brand violet, a step further out so
+/* The landing's own keyboard ring: the brand ultramarine, a step further out so
    it clears the filled buttons. No radius change — the round film controls
    keep a round ring — and the theme switch keeps its own. */
 .mc-landing :is(a, button, [tabindex]):not(.hl-tt):focus-visible {

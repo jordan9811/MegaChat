@@ -18,8 +18,9 @@ type Row = AirSession & {
 }
 
 // Holler colour roles: pass / approve is the positive green, partial and
-// ambiguous are the caution yellow, a failure or a breach is red text
-// (--f-holler-ink), a review in progress is strap violet.
+// ambiguous are the caution yellow, a failure or a breach is pink text
+// (--f-holler-ink), a review in progress is strap ultramarine, and a request
+// that failed is the danger orange (--hl-danger).
 const RESULT_TONE: Record<string, string> = {
   PASS: 'text-f-rewards-ink',
   PARTIAL: 'text-f-bounty-ink',
@@ -111,7 +112,7 @@ export function BountyAdmin() {
         </p>
       </div>
 
-      {err ? <p className="text-sm text-f-holler-ink">{err}</p> : null}
+      {err ? <p className="text-sm text-hl-danger">{err}</p> : null}
 
       {/* Review queue — an ambiguous verification that reaches nobody is a
           streamer who did the work, wasn't paid, and never saw a human. */}

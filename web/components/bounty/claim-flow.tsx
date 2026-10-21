@@ -21,7 +21,8 @@ type Stage = 'idle' | 'claiming' | 'setup' | 'live' | 'error'
 
 // Colour roles (Holler SPEC §3): money and the claim action are bounty
 // yellow (a caution about getting paid is too); money already released is
-// rewards green; a plain notice is strap violet; red text is an error.
+// rewards green; a plain notice is strap ultramarine; an error is the danger
+// orange (--hl-danger), never the Holler pink.
 const CAUTION_BOX = 'rounded-xl border border-f-bounty-line bg-f-bounty-bg p-3'
 const CAUTION_HEAD = 'flex items-center gap-1.5 text-sm font-bold text-f-bounty-ink'
 const NOTICE_BOX = 'rounded-xl border border-hl-strap-hi/45 bg-hl-strap/10 p-3'
@@ -143,7 +144,7 @@ export function ClaimFlow({
             platform account comes next — nothing here moves real funds.
           </p>
           {!canClaim && <p className="mt-3 text-sm text-muted-foreground">This is an unfunded example. Create a real bounty before claiming; the setup preview is available here.</p>}
-          {error || authError ? <p role="alert" className="mt-2 text-sm text-f-holler-ink">{error || authError}</p> : null}
+          {error || authError ? <p role="alert" className="mt-2 text-sm text-hl-danger">{error || authError}</p> : null}
           <button
             type="button"
             disabled={stage === 'claiming' || !canClaim}

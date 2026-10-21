@@ -164,7 +164,7 @@ export function OverlayHealthCard() {
   const bad = health.present && !health.healthy
 
   // ink = the icon, dot = the light. Not open is a warning (bounty yellow),
-  // not responding is a fault (holler red), on air is the record light with
+  // not responding is a fault (holler pink), on air is the record light with
   // the call-in guest's colour on the icon, and idle-ready is call-in waiting.
   const tone = !health.present
     ? { icon: CircleAlert, ink: 'var(--f-bounty-ink)', dot: 'var(--f-bounty)', label: 'Overlay not open' }

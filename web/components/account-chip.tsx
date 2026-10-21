@@ -14,7 +14,7 @@ import { shortAddr, useAccount } from '@/lib/use-account'
 import { formatDollars } from '@/lib/display-format'
 
 // `accent` colours the signed-in dot only. The Sign in button is always the
-// strap violet with white text, so whatever accent a page passes, its label
+// strap ultramarine with white text, so whatever accent a page passes, its label
 // keeps ≥4.5:1 in both themes.
 export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string }) {
   const [open, setOpen] = useState(false)

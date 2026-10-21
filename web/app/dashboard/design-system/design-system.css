@@ -7,8 +7,8 @@
    (design-assets/holler-brand/SPEC.md §3): every colour is a Holler token, so
    the lab follows the light/dark theme like the real pages, and the three
    directions now differ in surface depth, rules and radii, not in hue.
-   Colour by meaning: strap violet is action and navigation, the record red
-   is on air, money is bounty yellow, and a module wears its own feature
+   Colour by meaning: strap ultramarine is action, navigation and Call in, the
+   record pink is on air, money is bounty yellow, and a module wears its own feature
    colour (holler / call in / rewards) when it is switched on. */
 
 html:has(.design-lab-page) {
@@ -86,7 +86,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   --lab-money-fill: var(--f-bounty);
   --lab-money-edge: transparent;
   --lab-money-gap: color-mix(in srgb, var(--f-bounty) 26%, var(--hl-bg));
-  /* on air: the record red is the light itself, its text is the holler ink */
+  /* on air: the record pink is the light itself, its text is the holler ink */
   --lab-live: var(--hl-record);
   --lab-live-ink: var(--f-holler-ink);
   --lab-danger: var(--f-holler-ink);
@@ -116,7 +116,7 @@ html:has(.design-lab-page) *::-webkit-scrollbar-thumb {
   --lab-radius-lg: 8px;
 }
 
-/* Game Tape: a strap-violet chassis around flat equipment panels. */
+/* Game Tape: a strap-ultramarine chassis around flat equipment panels. */
 .lab[data-direction='tape'] {
   --lab-header: var(--hl-strap);
   --lab-header-text: var(--primary-foreground);

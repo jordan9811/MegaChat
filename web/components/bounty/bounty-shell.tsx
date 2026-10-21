@@ -22,7 +22,7 @@ export function BountyShell({ title, children }: { title: string; children: Reac
           </span>
           <a href="/dashboard" className="mc-product-create">Create room</a>
           <ThemeToggle />
-          <AccountChip accent="var(--f-bounty-solid)" />
+          <AccountChip accent="var(--f-bounty-ui)" />
         </nav>
       </header>
       <main className="mc-product-main">{children}</main>

@@ -1,4 +1,4 @@
-// Confetti in the four feature colours plus the strap violet. The hues are
+// Confetti in the four feature colours plus the strap ultramarine. The hues are
 // the non-text --f-* tokens; the glow is dark-only (--hl-glow-k is 0 in light).
 const CONFETTI = [
   { top: '8%', left: '6%', color: 'var(--hl-strap-hi)', size: 10, rot: 24 },
@@ -28,9 +28,10 @@ export function GlitchBackground() {
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
       <div className="absolute inset-0 bg-noir" />
       <div className="absolute inset-0 bg-grid opacity-60" />
-      {/* soft glow blooms: the strap violet and the record red */}
+      {/* soft glow blooms, both the strap ultramarine: a faint pink bloom over
+          the blue ink reads as a violet smudge, and pink means Holler */}
       <div className="absolute -left-24 top-1/4 size-72 rounded-full bg-hl-strap opacity-20 blur-[100px]" />
-      <div className="absolute right-0 top-0 size-80 rounded-full bg-hl-record opacity-[0.12] blur-[120px]" />
+      <div className="absolute right-0 top-0 size-80 rounded-full bg-hl-strap opacity-[0.12] blur-[120px]" />
       {/* confetti, masked out of the content column */}
       <div className="absolute inset-0" style={{ maskImage: GUTTERS_ONLY, WebkitMaskImage: GUTTERS_ONLY }}>
         {CONFETTI.map((c, i) => (

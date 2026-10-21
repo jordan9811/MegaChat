@@ -3,8 +3,8 @@
    puts on <html>; nothing here forces dark any more.
 
    The two roles get the brand's two colours: a chatter is the voice — the
-   record red the product is named for — and a streamer runs the strap
-   violet room. Feature mentions use the feature colours (FeatureTag). */
+   record pink the product is named for — and a streamer runs the strap
+   ultramarine room. Feature mentions use the feature colours (FeatureTag). */
 
 body:has(.mc-how) {
   background: var(--hl-bg);
@@ -193,8 +193,15 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   padding: 54px 56px;
   border-bottom: 1px solid var(--mcc-rule);
   background:
-    radial-gradient(circle at 78% 22%, color-mix(in srgb, var(--f-holler) 10%, transparent), transparent 25rem),
     radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--hl-strap) 30%, transparent), transparent 32rem),
+    linear-gradient(118deg, var(--hl-panel-2) 0%, var(--hl-panel) 54%, var(--hl-bg) 100%);
+}
+/* Lit by the strap only: a thin pink bloom over the blue ink reads as a
+   violet smudge. On paper the strap at 30% is a heavy lilac band, so light
+   keeps it to 12% — crisp paper with an ultramarine corner. */
+.light .mch-hero {
+  background:
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--hl-strap) 12%, transparent), transparent 32rem),
     linear-gradient(118deg, var(--hl-panel-2) 0%, var(--hl-panel) 54%, var(--hl-bg) 100%);
 }
 
@@ -315,10 +322,16 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   border-top-color: var(--mch-streamer);
 }
 
+/* The chatter's header gets the pink wash on paper only: over the blue ink
+   it reads as violet, so in dark the header is plain. */
 .mch-flow > header {
   display: block;
   padding: 22px 27px;
   border-bottom: 1px solid var(--mcc-rule);
+  background: none;
+}
+
+.light .mch-flow:not(.is-streamer) > header {
   background: linear-gradient(135deg, color-mix(in srgb, var(--mch-chatter) 11%, transparent), transparent 70%);
 }
 
@@ -396,7 +409,7 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 }
 
 /* The result is a camera seat on the broadcast — the Call in feature, so it
-   wears the call-in purple. */
+   wears the call-in ultramarine. */
 .mch-tree-result {
   width: min(660px, 100%);
   margin: 46px auto 0;

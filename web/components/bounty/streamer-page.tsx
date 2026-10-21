@@ -121,7 +121,7 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
                 not on Holler yet
               </span>
             )}
-            {/* On air: the solid record red with white ink (SPEC §3). */}
+            {/* On air: the solid record pink with white ink (SPEC §3). */}
             {twitchLive === true ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-f-holler-solid px-2 py-0.5 text-[10px] font-bold tracking-normal text-f-holler-on">
                 <Radio className="size-3 animate-pulse" /> live now
@@ -169,7 +169,7 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
               <Users className="size-3" /> Backers
             </p>
             <p className="mt-1 font-heading text-2xl font-bold text-foreground tabular">{view.contributionCount}</p>
-            {/* A recorded clip is a Holler — labelled in the holler red. */}
+            {/* A recorded clip is a Holler — labelled in the holler pink. */}
             <FeatureTag kind="holler" className="mt-1.5">{clipCount} clip{clipCount === 1 ? '' : 's'} ready to air</FeatureTag>
           </div>
         </div>
@@ -177,7 +177,7 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
 
       {!recording ? (
         <div className="flex flex-wrap items-center gap-3">
-          {/* Recording a clip is the holler red; claiming the money is bounty. */}
+          {/* Recording a clip is the holler pink; claiming the money is bounty. */}
           <button type="button" onClick={() => setRecording(true)}
             className="inline-flex items-center gap-2 rounded-full bg-f-holler-solid px-6 py-3 text-sm font-bold text-f-holler-on transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.02] active:scale-[.97]">
             <Mic className="size-4" aria-hidden="true" />

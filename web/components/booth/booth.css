@@ -1,9 +1,9 @@
 /* Rooms board — a directory, on the Holler skin (design-assets/holler-brand/SPEC.md).
    One featured room, a uniform grid under it, and the bounty board as a calm
-   side rail. Colour carries meaning and nothing else: violet is the brand and
-   the thing to click, red is on air, purple is a camera seat (Call in), the
-   holler red is a recorded Holler, yellow is money. Every panel is the same
-   surface; a 2px line across the top says what kind of thing the card is.
+   side rail. Colour carries meaning and nothing else: ultramarine is the brand,
+   the thing to click and a camera seat (Call in), pink is on air and a
+   recorded Holler, yellow is money. Every panel is the same surface; a 2px
+   line across the top says what kind of thing the card is.
    Both themes read the --hl-* / --f-* tokens from app/globals.css. The media
    boxes (.mcr-stage, .mcr-recent-stage) carry `dark` in the markup: they are
    video frames and stay a dark screen in either theme. */
@@ -24,10 +24,10 @@
 }
 
 .mc-booth {
-  /* White text on the violet strap — SPEC §3 ("primary buttons, white text");
-     the strap is #6d28d9 in both themes, so this never flips. */
+  /* White text on the ultramarine strap — SPEC §3 ("primary buttons, white
+     text"); the strap is #2f2ad8 in both themes, so this never flips. */
   --mcb-on-strap: #fff;
-  /* How strongly the violet wash at the top-left tints the ground. */
+  /* How strongly the ultramarine wash at the top-left tints the ground. */
   --mcb-wash: 13%;
   /* One curve for everything that moves: starts fast, settles softly. */
   --mcb-ease: cubic-bezier(0.23, 1, 0.32, 1);
@@ -107,7 +107,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   }
 }
 
-/* The live count: the red light when anything is on air, quiet otherwise. */
+/* The live count: the pink light when anything is on air, quiet otherwise. */
 .mcr-onair {
   display: flex;
   align-items: center;
@@ -187,22 +187,23 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   border-color: var(--mcb-muted);
 }
 
+/* The strap fill is 2.3:1 on the dark ground, so the selected state's edge
+   is strap-hi (7:1 dark, 9.8:1 light) and stays put on hover. */
 .mcr-chip[aria-pressed='true'] {
   background: var(--hl-strap);
-  border-color: var(--hl-strap);
+  border-color: var(--hl-strap-hi);
   color: var(--mcb-on-strap);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .mcr-chip[aria-pressed='true']:hover {
     background: var(--hl-strap-hover);
-    border-color: var(--hl-strap-hover);
   }
 }
 
-/* A feature chip carries its feature's light: the record red for Live now,
-   purple for Call in, the holler red for Hollers. Live now and Hollers share
-   a red, so they differ by shape: Live now is the mark's record button (a
+/* A feature chip carries its feature's light: the record pink for Live now,
+   ultramarine for Call in, the holler pink for Hollers. Live now and Hollers
+   share a pink, so they differ by shape: Live now is the mark's record button (a
    dot in a ring), Hollers a plain dot. No pulse — the shape is enough. */
 .mcr-chip-dot {
   display: block;
@@ -227,7 +228,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   background: var(--f-holler);
 }
 
-/* On the violet fill a white ring keeps the purple dot from vanishing. */
+/* On the strap fill a white ring keeps the call-in dot from vanishing. */
 .mcr-chip[aria-pressed='true'] .mcr-chip-dot {
   box-shadow: 0 0 0 1.5px var(--mcb-on-strap);
 }
@@ -265,9 +266,10 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
    paints itself absolutely over this box and contributes no height of its
    own, so the box has to be positioned and has to size itself. The gradient
    is the fallback art — it is simply what shows through whenever the preview
-   decides it has no real frame to render: the studio's violet from below and
-   the red on-air light from the corner. The box is scoped `dark` in the
-   markup, so these tokens are the dark ones in either theme. */
+   decides it has no real frame to render: the studio's ultramarine from
+   below, and nothing pink — a faint pink over the blue ink reads as a violet
+   smudge beside the H◉ mark. The box is scoped `dark` in the markup, so
+   these tokens are the dark ones in either theme. */
 .mcr-stage {
   position: relative;
   display: block;
@@ -275,7 +277,6 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   overflow: hidden;
   background:
     radial-gradient(ellipse 70% 70% at 50% 110%, color-mix(in srgb, var(--hl-strap) 46%, transparent), transparent 65%),
-    radial-gradient(ellipse 45% 55% at 12% 0%, color-mix(in srgb, var(--hl-record) 22%, transparent), transparent 60%),
     var(--hl-bg);
 }
 
@@ -351,7 +352,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   vertical-align: middle;
 }
 
-/* ON AIR: the red light, as a solid pill so the word reads over any frame. */
+/* ON AIR: the pink light, as a solid pill so the word reads over any frame. */
 .mcr-tag.is-live {
   background: var(--f-holler-solid);
   border-color: var(--f-holler-solid);
@@ -363,7 +364,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   animation: mcr-pulse 1.6s ease-in-out infinite;
 }
 
-/* Every seat taken: a Call in state, so it wears the call-in purple. */
+/* Every seat taken: a Call in state, so it wears the call-in ultramarine. */
 .mcr-tag.is-full {
   color: var(--f-callin-ink);
   border-color: var(--f-callin-line);
@@ -380,7 +381,9 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   margin-bottom: 16px;
   background: var(--mcb-panel);
   border: 1px solid var(--mcb-line);
-  border-top: 2px solid var(--hl-strap);
+  /* the strap's hue as Call in: the raw strap is 2.3:1 on the dark ground,
+     the lifted call-in hue 4.2:1 or more; in light both are #2f2ad8 */
+  border-top: 2px solid var(--f-callin);
   box-shadow: var(--hl-shadow);
 }
 
@@ -400,6 +403,15 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 .mcr-feat > .mcr-stage {
   width: 100%;
   height: 100%;
+}
+
+/* The featured stage is a link, and its top edge is the card's 2px stripe:
+   at the house 2px offset the ring lay on that stripe and the two read as one
+   thick band (#928fff on #6662ff is 1.6:1). 4px sits the ring the house 2px
+   off the card's own edge, with page between them. Not inset: the preview
+   <img> and the scanlines are positioned and paint over an inner outline. */
+.mcr-feat > .mcr-stage:focus-visible {
+  outline-offset: 4px;
 }
 
 @media (max-width: 900px) {
@@ -487,12 +499,12 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   color: var(--mcb-on-strap);
   font-size: 13px;
   font-weight: 800;
-  /* A violet glow in dark, a soft violet shadow in light — same value. */
+  /* An ultramarine glow in dark, a soft shadow in light — same value. */
   box-shadow: 0 8px 26px -10px color-mix(in srgb, var(--hl-strap) 90%, transparent);
   transition: transform 0.12s ease;
 }
 
-/* The seats are full and this joins the queue for one: Call in purple. */
+/* The seats are full and this joins the queue for one: Call in ultramarine. */
 .mcr-btn.is-queue {
   background: var(--f-callin-solid);
   color: var(--f-callin-on);
@@ -559,7 +571,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   display: block;
   background: var(--mcb-panel);
   border: 1px solid var(--mcb-line);
-  border-top: 2px solid var(--hl-strap);
+  border-top: 2px solid var(--f-callin);
   box-shadow: var(--hl-shadow);
   transition: background-color 0.12s ease;
 }
@@ -639,7 +651,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   white-space: nowrap;
 }
 
-/* The room's initial on the brand strap — the same violet as the mark. */
+/* The room's initial on the brand strap — the same ultramarine as the mark. */
 .mcr-mono {
   flex: 0 0 auto;
   display: grid;
@@ -1259,7 +1271,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   white-space: nowrap;
 }
 
-/* Seats as pips: solid = someone on camera, tinted = open. Call in purple.
+/* Seats as pips: solid = someone on camera, tinted = open. Call in ultramarine.
    Filled and rounded on purpose — hollow squares after a word read as a
    font failing to draw a glyph (□□□). */
 .mcr-dots {
@@ -1282,7 +1294,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 /* The seats as they sit on the broadcast: a column of guest frames on the
-   right of the featured stage. Taken = a guest in the call-in purple, open =
+   right of the featured stage. Taken = a guest in the call-in ultramarine, open =
    an empty frame on a quiet hairline, so the H◉ fallback leads an empty
    stage; inside the dark-scoped stage. */
 .mcr-seats {
