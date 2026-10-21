@@ -50,7 +50,8 @@ export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string
   }, [open])
 
   // Hold the slot pre-load so the header never visibly reflows.
-  if (!loaded) return <span aria-hidden="true" className="inline-block h-[31px] w-[92px] bg-hl-line" />
+  // 36px, the same height as the theme toggle and Create room beside it.
+  if (!loaded) return <span aria-hidden="true" className="inline-block h-9 w-[92px] bg-hl-line" />
 
   if (!signedIn) {
     return (
@@ -60,7 +61,7 @@ export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string
         onClick={openSignIn}
         disabled={wallet.modalOpen}
         title={wallet.configured ? 'Twitch, X, Google, email or passkey' : 'Sign-in is not configured on this server'}
-        className="bg-hl-strap px-3.5 py-[7px] text-[13px] font-[700] text-white transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-hl-strap-hover active:scale-[0.97] disabled:opacity-70"
+        className="inline-flex h-9 items-center bg-hl-strap px-3.5 text-[13px] font-[700] text-white transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-hl-strap-hover active:scale-[0.97] disabled:opacity-70"
       >
         {wallet.modalOpen ? 'Opening…' : 'Sign in'}
       </button>
@@ -76,7 +77,7 @@ export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="flex items-center gap-2 border border-hl-line-2 px-3 py-[6px] text-[13px] font-[600] text-hl-fg hover:border-hl-strap-hi"
+        className="flex h-9 items-center gap-2 border border-hl-line-2 px-3 text-[13px] font-[600] text-hl-fg hover:border-hl-strap-hi"
       >
         <span className="size-1.5 shrink-0 rounded-full" style={{ background: accent }} />
         <span className="max-w-[10rem] truncate">{chipLabel}</span>

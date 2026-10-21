@@ -194,10 +194,12 @@ function TimelineCard({
   title: string
   children: React.ReactNode
 }) {
+  // Square card on the panel fill with a hairline, like every other card in
+  // the Holler skin.
   return (
-    <div className="flex gap-4 rounded-2xl border border-hl-line-2 bg-hl-panel/70 p-5 shadow-[var(--hl-shadow)] backdrop-blur-sm transition-transform duration-200 ease-[cubic-bezier(.23,1,.32,1)] hover:-translate-y-0.5">
+    <div className="flex gap-4 rounded-[3px] border border-hl-line bg-hl-panel p-5 shadow-[var(--hl-shadow)] transition-transform duration-200 ease-[cubic-bezier(.23,1,.32,1)] hover:-translate-y-0.5">
       <span
-        className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border"
+        className="inline-flex size-9 shrink-0 items-center justify-center rounded-[2px] border"
         style={{
           color,
           borderColor: `color-mix(in oklab, ${color} 40%, transparent)`,
@@ -236,7 +238,7 @@ export function RoadmapTimeline({ journeyTweetUrl }: { journeyTweetUrl: string }
         <button
           type="button"
           onClick={() => setJourney((v) => !v)}
-          className="flex items-center gap-2 rounded-full border border-hl-line-2 bg-hl-panel/60 px-4 py-2 text-sm font-semibold text-hl-fg transition-colors hover:bg-hl-panel-2"
+          className="flex items-center gap-2 rounded-[2px] border border-hl-line-2 bg-hl-panel/60 px-4 py-2 text-sm font-semibold text-hl-fg transition-colors hover:bg-hl-panel-2"
         >
           {journey ? (
             <>

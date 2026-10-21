@@ -12,6 +12,7 @@ import { BOARD_RECENT_CAP, featureKinds, roomPresentation } from '@/lib/room-bro
 import './booth.css'
 import { BrandText } from '@/components/brand-text'
 import { FeatureTag } from '@/components/feature-tag'
+import { HollerMark } from '@/components/holler-mark'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { RecentRail } from './recent-rail'
 
@@ -102,9 +103,15 @@ function Stage({
       {...(linked ? { href: roomHref(room), 'aria-label': room.name } : {})}
       className="mcr-stage dark"
     >
+      {/* The designed fallback, the same H◉ the create page shows in its
+          stream preview: under everything, so a real frame covers it and the
+          stage's glow plus this mark is what an empty stage shows. */}
+      <span className="mcr-stage-fallback" aria-hidden="true">
+        <HollerMark variant="icon" px={52} glow />
+      </span>
       {/* Renders nothing at all when the channel is offline or has no usable
-          frame, which is what lets the stage's own glow act as the fallback.
-          It has to stay FIRST here: neither the picture nor the scanlines nor
+          frame, which is what lets the fallback above show through. It has to
+          stay ahead of the chrome: neither the picture nor the scanlines nor
           the tags carry a z-index, so DOM order alone decides that the chrome
           paints over the picture rather than under it. Liveness and channel
           normalization both live inside the component — do not re-gate here. */}
@@ -145,7 +152,7 @@ function spanStyle(k: number): CSSProperties {
   return { ['--k' as string]: k } as CSSProperties
 }
 
-/** A room's seats as dots: filled = someone on camera, hollow = open. */
+/** A room's seats as pips: solid = someone on camera, tinted = open. */
 function SeatDots({ taken, total }: { taken: number; total: number }) {
   return (
     <span className="mcr-dots" role="img" aria-label={`${taken} of ${total} seats taken`}>
@@ -510,10 +517,11 @@ export function Booth({
     // No forced theme: the board follows next-themes' class on <html>, and
     // booth.css maps its colours onto the Holler tokens for both.
     <div className="mc-booth flex min-h-dvh flex-col">
-      {/* chrome: one bar */}
-      <header className="flex h-12 shrink-0 items-center justify-between px-4">
+      {/* chrome: one bar, on the shared header sizes (bar height, mark,
+          nav type) so it does not change between the board and the rest */}
+      <header className="relative flex h-[60px] shrink-0 items-center justify-between px-4">
         <div className="flex items-center gap-5">
-          <Link href="/?stay=1" aria-label="Holler home" className="mc-bc mc-booth-brand text-[20px]">
+          <Link href="/?stay=1" aria-label="Holler home" className="mc-bc mc-booth-brand">
             <BrandText />
           </Link>
           <span className={`mcr-onair ${onAirCount ? 'is-live' : ''}`}>
@@ -521,14 +529,18 @@ export function Booth({
             {onAirCount} room{onAirCount === 1 ? '' : 's'} on air
           </span>
         </div>
-        <nav className="flex items-center gap-5 text-[13px] font-[500] text-hl-dim">
-          <Link href="/bounty" className="hidden hover:text-hl-fg sm:inline">
-            Bounties
-          </Link>
-          <a href="/demo" className="hover:text-hl-fg">Try demo</a>
-          <Link href="/how-it-works" className="hidden hover:text-hl-fg md:inline">
-            How it works
-          </Link>
+        <nav className="flex items-center gap-5 text-[13.5px] font-[600] text-hl-muted">
+          {/* The page links as one group, so a wide screen can centre them the
+              way the other product headers do (booth.css .mcr-nav-links). */}
+          <span className="mcr-nav-links">
+            <Link href="/bounty" className="hidden hover:text-hl-fg sm:inline">
+              Bounties
+            </Link>
+            <a href="/demo" className="hover:text-hl-fg">Try demo</a>
+            <Link href="/how-it-works" className="hidden hover:text-hl-fg md:inline">
+              How it works
+            </Link>
+          </span>
           <Link href="/dashboard" className="mcr-create">
             Create room
           </Link>

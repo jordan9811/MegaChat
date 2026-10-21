@@ -12,11 +12,12 @@
 // approval queue (also reachable from the booth).
 
 import { useCallback, useEffect, useState } from 'react'
-import { Radio, Users, CircleCheck, Swords } from 'lucide-react'
+import { Radio, Users, CircleCheck, Swords, Mic } from 'lucide-react'
 import {
   getBountyConfig, getPoolView, getProgram,
   type BountyClientConfig, type PoolView, type ProgramPool,
 } from '@/lib/bounty-api'
+import { bountyKey } from '@/lib/bounty-examples'
 import { FeatureTag } from '@/components/feature-tag'
 import { RecordFlow } from './record-flow'
 import { ApprovalQueue } from './approval-queue'
@@ -43,6 +44,7 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
   const [twitchLive, setTwitchLive] = useState<boolean | null>(null)
   const [recording, setRecording] = useState(false)
   const [claiming, setClaiming] = useState(false)
+  const [avatarBroken, setAvatarBroken] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -85,15 +87,29 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
   }
 
   const currency = config.currency
+  // The photo the board already shows for this name, from the same
+  // getProgram() call. Initials only when there is none or it fails to load.
+  const poolKey = bountyKey(platform, handle)
+  const avatarUrl = others.find((p) => p.platform && p.handle && bountyKey(p.platform, p.handle) === poolKey)?.avatarUrl || null
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-4">
-        <span className="grid size-14 shrink-0 place-items-center rounded-full border border-border bg-card/60 font-heading text-lg font-bold text-foreground">
-          {handle.slice(0, 2).toUpperCase()}
+        <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-card/60 font-heading text-lg font-bold text-foreground">
+          {avatarUrl && !avatarBroken ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl}
+              alt=""
+              width={56}
+              height={56}
+              onError={() => setAvatarBroken(true)}
+              className="size-full object-cover"
+            />
+          ) : handle.slice(0, 2).toUpperCase()}
         </span>
         <div className="min-w-0">
-          <h1 className="flex flex-wrap items-center gap-2 font-heading text-2xl font-bold text-foreground">
+          <h1 className="flex flex-wrap items-baseline gap-2 font-heading text-2xl font-bold text-foreground">
             {handle}
             <span className="text-xs font-normal uppercase tracking-wide text-muted-foreground">{platform}</span>
             {claimedBy ? (
@@ -112,7 +128,7 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
               </span>
             ) : null}
           </h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-0.5 text-[15px] text-hl-muted">
             {claimedBy
               ? twitchLive === false ? 'Claimed, currently offline.' : 'Claimed — clips can air on their next broadcast.'
               : 'Everything on this page is waiting for them the day they claim this handle.'}
@@ -163,8 +179,9 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
         <div className="flex flex-wrap items-center gap-3">
           {/* Recording a clip is the holler red; claiming the money is bounty. */}
           <button type="button" onClick={() => setRecording(true)}
-            className="rounded-full bg-f-holler-solid px-6 py-3 text-sm font-bold text-f-holler-on transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.02] active:scale-[.97]">
-            🎙 Record a Holler for {handle}
+            className="inline-flex items-center gap-2 rounded-full bg-f-holler-solid px-6 py-3 text-sm font-bold text-f-holler-on transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.02] active:scale-[.97]">
+            <Mic className="size-4" aria-hidden="true" />
+            Record a Holler for {handle}
           </button>
           {!claimedBy ? (
             <button type="button" onClick={() => setClaiming(true)}

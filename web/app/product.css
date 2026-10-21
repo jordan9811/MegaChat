@@ -2,6 +2,10 @@
 body { font-family: var(--font-ui), sans-serif; }
 /* The brand in a header is the Holler mark (components/holler-mark.tsx, styled in globals.css). */
 body :is(.mc-product-brand, .mcc-brand, .mcb-product-brand .bc, .mcc-product-brand .bc, .mch-product-brand .bc, .mcj-product-brand .bc, .mc-booth-brand, .mch-footer .bc) { font-family: var(--font-display), var(--font-ui), sans-serif; font-weight: 900; letter-spacing: .2em; }
+/* One header on every product page (the --hl-hdr-* tokens in globals.css): the same bar height, mark size, nav type
+   and control height, the mark centred on its box so it sits level with the nav. Footers size their own mark. */
+body :is(.mc-product-brand, .mcc-brand, .mcb-product-brand .bc, .mcc-product-brand .bc, .mch-product-brand .bc, .mcj-product-brand .bc, .mc-booth-brand) { font-size: var(--hl-hdr-mark); line-height: 1; display: inline-flex; align-items: center; }
+body :is(.mcb-product-header, .mcj-product-header, .mcc-product-header, .mch-product-header) { height: var(--hl-hdr-h); box-sizing: border-box; }
 .mc-product {
   /* One accent (the strap violet) across the product screens; every value is
      a Holler token, so the scope follows the light/dark theme. */
@@ -36,16 +40,17 @@ body :is(.mc-product-brand, .mcc-brand, .mcb-product-brand .bc, .mcc-product-bra
 }
 body:has(.mc-product) { background: var(--hl-bg); }
 .mc-product [class*='rounded-']:not([role='switch']) { border-radius: 2px; }
-.mc-product [class*='font-'] { font-family: var(--font-ui), sans-serif; }
+.mc-product [class*='font-']:not(h1) { font-family: var(--font-ui), sans-serif; }
 .mc-product .reveal { opacity: 1; animation: none; transform: none; }
 .mc-product :is(button, input, select) { font-family: inherit; }
 .mc-product :is(button, a):focus-visible { outline: 2px solid var(--hl-strap-hi); outline-offset: 3px; }
 .mc-product-main { max-width: 1440px; margin: 0 auto; padding: 32px; }
-.mc-product-header { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 20px; min-height: 64px; padding: 12px 32px; border-bottom: 1px solid var(--hl-line); background: var(--hl-bar); }
-.mc-product-brand { font-size: 16px; font-weight: 800; letter-spacing: .07em; }
+.mc-product-header { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 20px; min-height: var(--hl-hdr-h); padding: 0 32px; border-bottom: 1px solid var(--hl-line); background: var(--hl-bar); }
 .mc-product-header > span { color: var(--hl-muted); }
 .mc-product-header nav { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin-left: auto; }
-.mc-product-header nav > a { display: inline-flex; align-items: center; min-height: 40px; font-size: 13px; }
+.mc-product-links { display: inline-flex; align-items: center; gap: 18px; }
+/* From 1180px the page links sit centred on the bar, like /bounty's; the sticky header is their containing block. */
+@media (min-width: 1180px) { .mc-product-links { position: absolute; left: 50%; transform: translateX(-50%); } }
 .mc-product-create { border: 1px solid var(--hl-strap-hi); color: var(--hl-strap-hi); padding: 0 12px; }
 .mc-product h1 { font-family: var(--font-display), var(--font-ui), sans-serif; font-size: clamp(30px, 3vw, 44px); font-weight: 800; letter-spacing: -.02em; line-height: 1.08; }
 .mc-product h2 { letter-spacing: -.02em; }
@@ -70,7 +75,22 @@ body .mcc-progress { text-transform: none; }
 body :is(.mc-product, .mc-create, .mc-join, .mc-bounty, .mc-account, .mc-how, .mc-landing) :is([class*='text-[9'], [class*='text-[10'], [class*='text-[11']) { font-size: 12px; }
 body :is(.mc-product, .mc-create, .mc-join, .mc-bounty, .mc-account, .mc-how) :is(p, label, small) { line-height: 1.55; }
 body :is(.mc-product, .mc-create, .mc-join, .mc-bounty, .mc-account, .mc-how) :is(p, label, small):is(.text-xs, [class*='text-[12']) { font-size: 13px; }
-body :is(.mcb-product-header, .mcj-product-header, .mcc-product-header, .mch-product-header) nav a { font-size: 13px; min-height: 40px; display: inline-flex; align-items: center; }
+/* Header page links. In .mc-product-header the nav also holds Create room and the account menu (whose links are
+   menu items), so only the page links themselves are matched there. One active style: an underline in strap-hi. */
+body :is(.mcb-product-header, .mcj-product-header, .mcc-product-header, .mch-product-header) nav a,
+body .mc-product-header :is(nav, .mc-product-links) > a:not(.mc-product-create) { font-size: var(--hl-hdr-nav); font-weight: var(--hl-hdr-nav-w); color: var(--hl-muted); min-height: 40px; display: inline-flex; align-items: center; }
+@media (hover: hover) and (pointer: fine) {
+  body :is(.mcb-product-header, .mcj-product-header, .mcc-product-header, .mch-product-header) nav a:hover,
+  body .mc-product-header :is(nav, .mc-product-links) > a:not(.mc-product-create):hover { color: var(--hl-fg); }
+}
+body :is(.mcb-product-header, .mcj-product-header, .mcc-product-header, .mch-product-header) nav a[aria-current='page'],
+body .mc-product-header :is(nav, .mc-product-links) > a[aria-current='page'] { color: var(--hl-fg); box-shadow: inset 0 -2px 0 var(--hl-strap-hi); }
+/* Create room at the shared control height. Display sits in a zero-specificity rule so each page's
+   phone-width `display: none` on it still wins. */
+:where(.mcb-product-actions, .mcj-product-actions, .mch-product-actions, .mcc-product-actions) > a { display: inline-flex; }
+body :is(.mcb-product-actions, .mcj-product-actions, .mch-product-actions, .mcc-product-actions) > a,
+body .mc-product-create { align-items: center; height: var(--hl-hdr-ctl); min-height: 0; padding: 0 14px; font-size: 13px; font-weight: 700; }
+body .mc-product-create { display: inline-flex; }
 body :is(.mcc-progress, .mcc-preview-note, .mcc-module-copy > span) { font-size: 12px; letter-spacing: .025em; font-weight: 600; }
 /* Readouts and section coordinates read like a HUD: mono, small caps, wide tracking. */
 body :is(.mcb-coordinate, .join-coordinate, .mcc-coordinate, .mch-coordinate, .mcc-advanced-head span, .mcc-preview-head > div > span) { font-family: var(--font-code), ui-monospace, monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; font-weight: 400; }
@@ -86,13 +106,42 @@ body .mc-bounty .mcb-totals { min-width: 285px; }
 .mcb-example-notice { padding: 12px 26px; border-bottom: 1px solid var(--hl-line); background: var(--hl-panel-2); color: var(--hl-muted); font-size: 13px; line-height: 1.5; }
 body .mc-bounty :is(.colhead, .pip, .rowcta, .rowcta-ghost, .mcb-open-count) { font-size: 12px; letter-spacing: .025em; }
 body .mc-bounty .lb-row.is-claimed { opacity: 1; }
-body .mc-bounty :is(.mcb-leaderboard h2, .mcb-create-bounty h2, .mcb-detail-person h2) { font-weight: 600; letter-spacing: -.02em; }
+body .mc-bounty :is(.mcb-leaderboard h2, .mcb-create-bounty h2, .mcb-detail-person h2) { font-family: var(--font-display), var(--font-ui), sans-serif; font-weight: 700; letter-spacing: -.02em; }
 body .mc-how .mch-flow p { font-size: 14px; line-height: 1.6; }
 body .mc-how .mch-flow h3 { font-size: 16px; }
 body .mc-how :is(.mch-flow li > span, .mch-section-heading > span, .mch-stats dd, .mch-stats dd span, .mch-footer a) { font-size: 12px; letter-spacing: .025em; }
 body .mc-how :is(.mch-tree-root h2, .mch-tree-result h2, .mch-section-heading h2) { letter-spacing: -.025em; }
+/* Below 1024px the one-row header no longer fits (it wrapped Sign in under the nav at 820px), so it becomes two rows:
+   the mark, tag, theme toggle and account on top; the page links (one strip that scrolls sideways, scrollbar hidden)
+   and Create room below. Same elements, same DOM order; CSS order only. About 100px tall on a phone, down from 153. */
+@media (max-width: 1023px) {
+  .mc-product-header { flex-wrap: wrap; row-gap: 0; column-gap: 12px; padding: 10px 32px 8px; }
+  .mc-product-header nav { display: contents; }
+  .mc-product-brand { order: 0; }
+  .mc-product-header > span { order: 1; }
+  .mc-product-header nav > .hl-tt { order: 2; margin-left: auto; }
+  .mc-product-header nav > :last-child { order: 3; }
+  /* a full-width item that forces the line break after row one and spaces the two rows */
+  .mc-product-header::after { content: ''; order: 3; flex-basis: 100%; height: 6px; }
+  .mc-product-links { order: 4; flex: 1 1 0; min-width: 0; height: 40px; flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+  .mc-product-links::-webkit-scrollbar { display: none; }
+  .mc-product-create { order: 5; flex: none; }
+}
+/* A strip of links that overflows (a 360px phone cut 'How it works' against Create room) fades at its right edge, so
+   it reads as something that scrolls; the fade lifts as it reaches the end. Scroll-driven: a strip that fits, or a
+   browser without scroll timelines, gets no fade at all. */
+@supports (animation-timeline: scroll()) {
+  @media (max-width: 1023px) {
+    .mc-product-links { mask: linear-gradient(to right, #000 calc(100% - 24px), transparent) 0 0 / calc(100% + 24px) 100% no-repeat; animation: mc-links-fade linear both; animation-timeline: scroll(self inline); }
+  }
+}
+@keyframes mc-links-fade { from { mask-size: 100% 100%; } }
 @media (max-width: 760px) {
-  .mc-product-header { flex-wrap: wrap; padding: 12px 16px; gap: 12px; }
-  .mc-product-header nav { margin-left: 0; gap: 12px; }
+  .mc-product-header { padding: 10px 16px 8px; }
   .mc-product-main { padding: 24px 16px; }
+}
+/* On a narrow phone the title tag ('My bounties') pushed Sign in onto a row of its own, so it goes, as the other
+   product headers' tags already do at 720px. */
+@media (max-width: 400px) {
+  .mc-product-header > span { display: none; }
 }

@@ -58,7 +58,7 @@ export function MyPledges({ initialMe: _ignored }: { initialMe?: string }) {
     <div className="flex flex-col gap-5">
       <div>
         <h1 className="font-heading text-2xl font-bold text-foreground">My bounties</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-[15px] text-hl-muted">
           Every Holler you&apos;ve pledged, where it is, and what happens next.
         </p>
       </div>

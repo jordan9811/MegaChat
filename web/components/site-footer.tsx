@@ -57,7 +57,7 @@ export function SiteFooter({ contactHref }: { contactHref: string }) {
   return (
     <footer className="border-t border-hl-line">
       <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-3 px-6 py-6 text-sm font-semibold text-hl-muted sm:flex-row sm:items-center">
-        <a href="/" aria-label="Holler home" className="text-[17px] transition-opacity hover:opacity-90">
+        <a href="/" aria-label="Holler home" className="text-[15px] transition-opacity hover:opacity-90">
           <BrandText />
         </a>
         <FooterNav contactHref={contactHref} />

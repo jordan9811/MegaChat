@@ -161,9 +161,9 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
    the column is the row's height, so the stage follows a long console down. */
 .join-media-stage {
   position: sticky;
-  top: 68px;
+  top: calc(var(--hl-hdr-h, 60px) + 10px);
   min-height: 500px;
-  height: min(620px, calc(100vh - 92px));
+  height: min(620px, calc(100vh - var(--hl-hdr-h, 60px) - 34px));
   overflow: hidden;
   background: radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--hl-strap) 18%, transparent), transparent 34%);
 }
@@ -176,8 +176,15 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 14px;
   padding: 40px;
   text-align: center;
+}
+
+/* The H◉ mark leads; the stage is a .dark scope, so its glow is the dark one. */
+.join-preview-mark {
+  display: block;
+  line-height: 0;
 }
 
 .join-coordinate {
@@ -188,15 +195,15 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   text-transform: uppercase;
 }
 
+/* A caption under the mark, not a panel: a bordered box here read like an
+   error. The heading stays in the UI face so it stays quiet. */
 .join-preview-idle > div {
   max-width: 410px;
-  padding: 28px 32px;
-  border: 1px solid var(--mcj-rule);
-  background: color-mix(in srgb, var(--hl-bg) 40%, transparent);
 }
 
 .join-preview-idle h1 {
   margin: 11px 0 9px;
+  font-family: var(--font-ui), system-ui, sans-serif;
   font-size: 24px;
   font-weight: 750;
   line-height: 1.08;
@@ -205,8 +212,8 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
 
 .join-preview-idle p {
   margin: 0;
-  color: var(--mcj-faint);
-  font-size: 11.5px;
+  color: var(--mcj-muted);
+  font-size: 13px;
   line-height: 1.6;
 }
 
@@ -287,7 +294,7 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
 .join-price-zone .join-coordinate { color: var(--f-bounty-ink); }
 .join-price-zone > div { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; margin-top: 8px; }
 #priceAmount { color: var(--f-bounty-ink); font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
-#priceLabel { max-width: 58%; color: var(--mcj-muted); font-size: 11px; line-height: 1.45; text-align: right; }
+#priceLabel { max-width: 58%; color: var(--mcj-muted); font-size: 13px; line-height: 1.45; text-align: right; }
 
 /* The per-second meter belongs to the seat (call-in purple); the amounts in
    it are money (bounty yellow) and what watching earned is rewards green. */
@@ -323,8 +330,8 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
 .join-identity-zone #passkeyFundNote,
 #camHint,
 #letterStatus {
-  color: var(--mcj-faint);
-  font-size: 11px;
+  color: var(--mcj-muted);
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -380,8 +387,10 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   text-transform: uppercase;
 }
 
-.join-mode-zone h2 { margin: 7px 0 6px; font-size: 25px; line-height: 1.03; letter-spacing: -0.035em; }
-.join-mode-zone header p { margin: 0; color: var(--mcj-muted); font-size: 11.5px; line-height: 1.55; }
+/* Section headings in the display face, at product.css's size and tracking
+   (same selector, so the two agree whichever loads last). */
+body .mc-join .join-mode-zone h2 { margin: 7px 0 6px; font-family: var(--font-display), var(--font-ui), sans-serif; font-size: 22px; font-weight: 700; line-height: 1.03; letter-spacing: -0.02em; }
+.join-mode-zone header p { margin: 0; color: var(--mcj-muted); font-size: 13px; line-height: 1.55; }
 
 /* House motion: transform only, ease-out, hover lift on a real pointer,
    press at .97. Colour changes are instant. */
@@ -423,8 +432,8 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
 
 .join-trust-line {
   margin: -5px 0 0;
-  color: var(--mcj-faint);
-  font-size: 10px;
+  color: var(--mcj-muted);
+  font-size: 13px;
   line-height: 1.45;
 }
 
@@ -451,11 +460,14 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
 .join-stinger-grid label { display: flex; flex-direction: column; gap: 6px; }
 .join-stinger-grid .sp-wrap { grid-column: 1 / -1; }
 
+/* The header reads the shared header tokens (bar height, mark size, nav type,
+   control height), so it matches every other product page. The fallbacks are
+   the same values, for a build where the tokens are not defined yet. */
 .mcj-product-header {
   position: sticky;
   z-index: 30;
   top: 0;
-  height: 58px;
+  height: var(--hl-hdr-h, 60px);
   border-bottom: 1px solid var(--hl-line);
   background: var(--hl-bar);
   backdrop-filter: blur(18px);
@@ -484,7 +496,7 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   display: inline-flex;
   align-items: center;
   color: var(--mcj-fg);
-  font-size: 16px;
+  font-size: var(--hl-hdr-mark, 18px);
   line-height: 1;
   text-decoration: none;
 }
@@ -495,10 +507,16 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   background: var(--mcj-rule-2);
 }
 
-.mcj-product-brand span,
-.mcj-product-header nav a {
+.mcj-product-brand span {
   color: var(--mcj-muted);
   font-size: 11px;
+}
+
+/* .mc-join outranks product.css's shared 13px nav rule (0,1,3). */
+.mc-join .mcj-product-header nav a {
+  color: var(--hl-muted);
+  font-size: var(--hl-hdr-nav, 13.5px);
+  font-weight: var(--hl-hdr-nav-w, 600);
 }
 
 .mcj-product-header nav {
@@ -509,10 +527,10 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
 
 .mcj-product-header > div > :last-child { justify-self: end; }
 .mcj-product-actions { display: flex; align-items: center; gap: 10px; }
-.mcj-product-actions > a { display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px; border: 1px solid var(--hl-strap-hi); color: var(--hl-strap-hi); font-size: 11px; font-weight: 750; }
+.mcj-product-actions > a { display: inline-flex; align-items: center; height: var(--hl-hdr-ctl, 36px); padding: 0 14px; border: 1px solid var(--hl-strap-hi); color: var(--hl-strap-hi); font-size: 13px; font-weight: 700; }
 
 @media (hover: hover) and (pointer: fine) {
-  .mcj-product-header nav a:hover { color: var(--mcj-fg); }
+  .mc-join .mcj-product-header nav a:hover { color: var(--mcj-fg); }
   .mcj-product-actions > a:hover { background: color-mix(in srgb, var(--hl-strap) 12%, transparent); }
 }
 
@@ -759,8 +777,8 @@ a.addr {
 }
 .host-feed-held p {
   margin: 0;
-  color: var(--mcj-faint);
-  font-size: 11.5px;
+  color: var(--mcj-muted);
+  font-size: 13px;
   line-height: 1.6;
 }
 
@@ -1409,7 +1427,6 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
   .join-room-features { margin: 4px 0 2px; }
   .join-media-stage { height: 350px; min-height: 350px; }
   .join-preview-idle { padding: 24px; }
-  .join-preview-idle > div { padding: 24px 20px; }
   .join-console-body { padding: 20px 16px; }
   .join-path-switch a { padding: 10px 12px; }
   .join-price-zone > div { align-items: flex-start; flex-direction: column; gap: 5px; }

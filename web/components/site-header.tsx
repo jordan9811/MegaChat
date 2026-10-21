@@ -11,13 +11,14 @@ export function SiteHeader() {
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-hl-strap-hi/60 to-transparent"
       />
-      {/* px-3 below sm: mark + mode pill + theme + login chip all share
-          a 375px row once someone is signed in */}
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-3 sm:px-6">
+      {/* px-3 below sm: mark + mode switch + theme + login chip all share
+          a 375px row once someone is signed in. 60px bar and an 18px mark,
+          the same as every other page header. */}
+      <div className="mx-auto flex h-[59px] max-w-6xl items-center justify-between gap-2 px-3 sm:px-6">
         <a
           href="/"
           aria-label="Holler home"
-          className="shrink-0 text-[19px] transition-opacity hover:opacity-90 sm:text-[22px]"
+          className="flex shrink-0 items-center text-[18px] transition-opacity hover:opacity-90"
         >
           <BrandText />
         </a>

@@ -16,8 +16,10 @@ export function BountyShell({ title, children }: { title: string; children: Reac
         <a href="/?stay=1" className="mc-product-brand" aria-label="Holler home"><BrandText /></a>
         <span><FeatureTag kind="bounty">{title}</FeatureTag></span>
         <nav aria-label="Product navigation">
-          <a href="/app">Rooms</a><a href="/bounty">Bounties</a><a href="/how-it-works">How it works</a>
-          {docsUrl() ? <a href={docsUrl() as string}>Docs</a> : null}
+          <span className="mc-product-links">
+            <a href="/app">Rooms</a><a href="/bounty">Bounties</a><a href="/how-it-works">How it works</a>
+            {docsUrl() ? <a href={docsUrl() as string}>Docs</a> : null}
+          </span>
           <a href="/dashboard" className="mc-product-create">Create room</a>
           <ThemeToggle />
           <AccountChip accent="var(--f-bounty-solid)" />

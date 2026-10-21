@@ -64,11 +64,13 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   --mcc-bloom: color-mix(in srgb, var(--hl-strap) 9%, transparent);
 }
 
+/* Bar height, mark size, nav type and control height are the shared header
+   tokens, so the bar does not change between this page and the rest. */
 .mcc-product-header {
   position: sticky;
   z-index: 30;
   top: 0;
-  height: 58px;
+  height: var(--hl-hdr-h);
   border-bottom: 1px solid var(--hl-line);
   background: var(--hl-bar);
   backdrop-filter: blur(18px);
@@ -87,15 +89,16 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcc-product-brand { display: flex; align-items: center; gap: 12px; }
-.mcc-product-brand .bc { color: var(--mcc-fg); font-size: 16px; font-weight: 800; letter-spacing: .09em; }
+.mcc-product-brand .bc { display: inline-flex; align-items: center; color: var(--mcc-fg); font-size: var(--hl-hdr-mark); font-weight: 800; letter-spacing: .09em; }
 .mcc-product-brand i { width: 1px; height: 18px; background: var(--mcc-rule-2); }
-.mcc-product-brand span,
-.mcc-product-header nav a { color: var(--mcc-faint); font-size: 11px; }
+.mcc-product-brand span { color: var(--mcc-faint); font-size: 11px; }
+/* Scoped under .mc-account so it outranks product.css's 13px header-link floor. */
+.mc-account .mcc-product-header nav a { color: var(--hl-muted); font-size: var(--hl-hdr-nav); font-weight: var(--hl-hdr-nav-w); }
 .mcc-product-header nav { display: flex; align-items: center; gap: 26px; }
-.mcc-product-header nav a:hover { color: var(--mcc-fg); }
+.mc-account .mcc-product-header nav a:hover { color: var(--mcc-fg); }
 .mcc-product-header > div > :last-child { justify-self: end; }
 .mcc-product-actions { display: flex; align-items: center; gap: 10px; }
-.mcc-product-actions > a { padding: 8px 12px; border: 1px solid var(--mcc-accent); color: var(--mcc-accent-ink); font-size: 11px; font-weight: 750; }
+.mcc-product-actions > a { display: inline-flex; align-items: center; height: var(--hl-hdr-ctl); padding: 0 14px; border: 1px solid var(--mcc-accent); color: var(--mcc-accent-ink); font-size: 13px; font-weight: 700; }
 .mcc-product-actions > a:hover { background: var(--mcc-accent-tint); }
 
 .mcc-coordinate {
@@ -106,6 +109,10 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   text-transform: uppercase;
 }
 
+/* Same 1500px frame and 20px gutter as the header, so the card's left edge
+   sits under the mark at every width (a 1400px frame put it 20px in at 1440). */
+.mcc-signed-out { max-width: 1500px; }
+
 .mcc-signed-out > div {
   max-width: 650px;
   padding: 46px;
@@ -114,7 +121,9 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   box-shadow: var(--hl-shadow);
 }
 
-.mcc-signed-out h1 { margin: 12px 0 10px; font-size: 34px; letter-spacing: -.035em; }
+.mcc-signed-out h1 { margin: 12px 0 10px; font-family: var(--font-display), var(--font-ui), sans-serif; font-size: 34px; font-weight: 800; letter-spacing: -.02em; }
+/* The lead under the H1 is a sentence: 14px in muted, not 12px metadata dim. */
+.mcc-signed-out h1 + .hint { color: var(--mcc-muted); font-size: 14px; }
 .mcc-signed-out .btn { margin-top: 10px; }
 
 .mcc-account-shell {
@@ -146,7 +155,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   letter-spacing: -.055em;
 }
 
-.mcc-identity-hero p { max-width: 560px; margin: 0; color: var(--mcc-muted); font-size: 13px; }
+.mcc-identity-hero p { max-width: 560px; margin: 0; color: var(--mcc-muted); font-size: 14px; }
 
 .mcc-room-link {
   min-width: 0;
@@ -270,7 +279,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 .mcc-settings-zone h2,
 .mcc-connections-zone h2 { margin: 9px 0 7px; font-size: 34px; line-height: 1; letter-spacing: -.04em; }
 .mcc-settings-zone header p,
-.mcc-connections-zone header p { max-width: 590px; margin: 0; color: var(--mcc-muted); font-size: 12px; line-height: 1.55; }
+.mcc-connections-zone header p { max-width: 590px; margin: 0; color: var(--mcc-muted); font-size: 13px; line-height: 1.55; }
 
 .mcc-setting-rows { margin: 20px 0; padding: 0; list-style: none; border: 1px solid var(--mcc-rule); background: var(--mcc-panel); }
 .mcc-setting-rows li { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 13px 16px; border-top: 1px solid var(--mcc-rule); }

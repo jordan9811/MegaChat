@@ -79,6 +79,34 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 
 /* ── the bar ────────────────────────────────────────────────────────── */
 
+/* The mark at the shared header size (product.css owns --hl-hdr-mark; 18px
+   until it lands), centred on its box rather than sat on a text baseline —
+   a line box under the inline mark used to drop it 1.6px below the nav. */
+.mc-booth-brand {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--hl-hdr-mark, 18px);
+}
+
+/* The page links. In the bar's flow on a narrow screen; centred on the bar
+   from 1180px, like the nav on /bounty, /demo and /how-it-works — same
+   links, same order, Create room and the account stay on the right. */
+.mcr-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+@media (min-width: 1180px) {
+  .mcr-nav-links {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}
+
 /* The live count: the red light when anything is on air, quiet otherwise. */
 .mcr-onair {
   display: flex;
@@ -108,10 +136,15 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   animation: mcr-pulse 1.6s ease-in-out infinite;
 }
 
+/* The shared control height, 36px, and the same 13/700 as every header. */
 .mcr-create {
-  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 14px;
   border: 1px solid var(--hl-strap-hi);
   color: var(--hl-strap-hi);
+  font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -168,7 +201,9 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 /* A feature chip carries its feature's light: the record red for Live now,
-   purple for Call in, the holler red for Hollers. */
+   purple for Call in, the holler red for Hollers. Live now and Hollers share
+   a red, so they differ by shape: Live now is the mark's record button (a
+   dot in a ring), Hollers a plain dot. No pulse — the shape is enough. */
 .mcr-chip-dot {
   display: block;
   flex: none;
@@ -178,7 +213,10 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcr-chip-dot.is-live {
-  background: var(--hl-record);
+  width: 8px;
+  height: 8px;
+  background: radial-gradient(circle closest-side, var(--hl-record) 0 45%, transparent 50%);
+  box-shadow: inset 0 0 0 1.5px var(--hl-record);
 }
 
 .mcr-chip-dot.is-callin {
@@ -192,6 +230,11 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 /* On the violet fill a white ring keeps the purple dot from vanishing. */
 .mcr-chip[aria-pressed='true'] .mcr-chip-dot {
   box-shadow: 0 0 0 1.5px var(--mcb-on-strap);
+}
+
+/* …and the record button keeps its own ring inside the white one. */
+.mcr-chip[aria-pressed='true'] .mcr-chip-dot.is-live {
+  box-shadow: inset 0 0 0 1.5px var(--hl-record), 0 0 0 1.5px var(--mcb-on-strap);
 }
 
 .mcr-sort {
@@ -234,6 +277,17 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
     radial-gradient(ellipse 70% 70% at 50% 110%, color-mix(in srgb, var(--hl-strap) 46%, transparent), transparent 65%),
     radial-gradient(ellipse 45% 55% at 12% 0%, color-mix(in srgb, var(--hl-record) 22%, transparent), transparent 60%),
     var(--hl-bg);
+}
+
+/* No picture: the H◉ mark centred on the glow (booth.tsx Stage, the same
+   fallback as the create page's .mcc-stream-fallback). First in the stage,
+   so a real frame, the seats and the tags all paint over it. */
+.mcr-stage-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
 }
 
 /* Scanlines read as a signal rather than a still, and they sit over the
@@ -697,6 +751,12 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   box-shadow: var(--hl-shadow);
 }
 
+/* On white the bounty yellow is barely a line (~1.25:1), so in light the
+   bounty bars take the olive-lime edge instead. Dark keeps the yellow. */
+.light :is(.mcr-board, .mcr-card.is-bounty) {
+  border-top-color: var(--f-bounty-line);
+}
+
 .mcr-board-head {
   display: flex;
   align-items: baseline;
@@ -824,18 +884,22 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   fill: var(--mcb-muted);
 }
 
-/* The one bar carries a wordmark, a live count and the whole site nav; below
-   the sm breakpoint that is wider than a phone. Let it wrap onto a second
-   row rather than pushing the page sideways — same items, same order. */
-@media (max-width: 640px) {
+/* The one bar carries a wordmark, a live count and the whole site nav, which
+   needs ~795px on one row once How it works shows at md. Below that it
+   wraps onto a second row rather than squeezing — at 641-790 the squeeze
+   broke "Try demo" and "Sign in" onto two lines and butted the nav against
+   the live count — or pushing the page sideways. Same items, same order. */
+@media (max-width: 800px) {
   .mc-booth > header {
     height: auto;
+    min-height: 60px;
     flex-wrap: wrap;
     gap: 8px;
     padding: 8px 16px;
   }
 
-  .mc-booth > header nav {
+  .mc-booth > header nav,
+  .mcr-nav-links {
     flex-wrap: wrap;
     gap: 14px;
   }
@@ -1195,26 +1259,32 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   white-space: nowrap;
 }
 
-/* Seats as dots: filled = someone on camera, hollow = open. Call in purple. */
+/* Seats as pips: solid = someone on camera, tinted = open. Call in purple.
+   Filled and rounded on purpose — hollow squares after a word read as a
+   font failing to draw a glyph (□□□). */
 .mcr-dots {
   display: inline-flex;
-  gap: 4px;
+  gap: 3px;
   vertical-align: middle;
 }
 
 .mcr-dots i {
-  width: 8px;
-  height: 8px;
-  border: 1px solid var(--f-callin);
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--f-callin-bg);
+  border: 1px solid var(--f-callin-line);
 }
 
 .mcr-dots i.is-on {
   background: var(--f-callin);
+  border-color: var(--f-callin);
 }
 
 /* The seats as they sit on the broadcast: a column of guest frames on the
-   right of the featured stage. Taken = a guest, open = an empty frame. Both
-   in the call-in purple; inside the dark-scoped stage. */
+   right of the featured stage. Taken = a guest in the call-in purple, open =
+   an empty frame on a quiet hairline, so the H◉ fallback leads an empty
+   stage; inside the dark-scoped stage. */
 .mcr-seats {
   position: absolute;
   top: 48px;
@@ -1234,7 +1304,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   max-height: 34%;
   place-items: center;
   overflow: hidden;
-  border: 1px dashed var(--f-callin-line);
+  border: 1px dashed var(--mcb-line2);
   background: color-mix(in srgb, var(--hl-bg) 45%, transparent);
   color: var(--f-callin-ink);
   font-size: 14px;

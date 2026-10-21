@@ -104,11 +104,16 @@
      --f-x-ink    text in that colour on the page (≥4.5:1 on bg, panel, panel-2)
      --f-x-bg     tag tint            --f-x-line   tag border
      --f-x-solid  a fill that carries text   --f-x-on   the text on that fill
-   Two deliberate, measured deviations from the spec table, both for
+   Deliberate, measured deviations from the spec table, all for
    contrast: in dark, white on the red/purple hues is 3.6/4.0:1, so the
    text-carrying fill (-solid) is the deeper hue (4.7/5.7:1). In light, the
    holler and rewards inks are a shade deeper (#b5170f, #007054) so a tag's
-   label clears 4.5:1 on its own tint over every ground.
+   label clears 4.5:1 on its own tint over every ground, and the call-in ink
+   is its own hue #7c3aed (5.7:1), not #6d28d9, which is the strap.
+   Light tints are opaque (the hue mixed into white), so a tag or card reads
+   the same pale hue over lavender, a gradient or the page grid; dark tints
+   stay translucent. The light bounty line mixes in the ink (≈2.7:1 on white)
+   because the pale lime alone all but vanishes on white.
    Red TEXT is always --f-holler-ink; --hl-record is the light itself (a dot). */
 
 /* ----- dark (default) ----- */
@@ -125,8 +130,9 @@
   --hl-dim: #8d86a0;
   --hl-strap: #6d28d9;
   --hl-strap-hi: #8b5cff;
-  /* hover fill for a strap button — keeps white text ≥4.5:1 (strap-hi is 4.1) */
-  --hl-strap-hover: #7c3aed;
+  /* hover fill for a strap button — a shade deeper, white text 9:1. Not
+     #7c3aed: that is the call-in fill, and a hover must not look like it. */
+  --hl-strap-hover: #5b21b6;
   --hl-record: #ff3b30;
   /* sticky header bars and the page grid */
   --hl-bar: rgba(10, 8, 18, 0.92);
@@ -198,28 +204,28 @@
 
   --f-holler: #e0261c;
   --f-holler-ink: #b5170f;
-  --f-holler-bg: rgba(224, 38, 28, 0.14);
+  --f-holler-bg: color-mix(in srgb, var(--f-holler) 14%, var(--hl-panel));
   --f-holler-line: rgba(224, 38, 28, 0.55);
   --f-holler-solid: #e0261c;
   --f-holler-on: #ffffff;
 
   --f-callin: #7c3aed;
-  --f-callin-ink: #6d28d9;
-  --f-callin-bg: rgba(124, 58, 237, 0.14);
+  --f-callin-ink: #7c3aed;
+  --f-callin-bg: color-mix(in srgb, var(--f-callin) 14%, var(--hl-panel));
   --f-callin-line: rgba(124, 58, 237, 0.55);
   --f-callin-solid: #7c3aed;
   --f-callin-on: #ffffff;
 
   --f-bounty: #cfe83a;
   --f-bounty-ink: #556400;
-  --f-bounty-bg: rgba(207, 232, 58, 0.14);
-  --f-bounty-line: rgba(207, 232, 58, 0.55);
+  --f-bounty-bg: color-mix(in srgb, var(--f-bounty) 14%, var(--hl-panel));
+  --f-bounty-line: color-mix(in srgb, var(--f-bounty-ink) 50%, var(--f-bounty));
   --f-bounty-solid: #cfe83a;
   --f-bounty-on: #16141c;
 
   --f-rewards: #00ffc3;
   --f-rewards-ink: #007054;
-  --f-rewards-bg: rgba(0, 255, 195, 0.14);
+  --f-rewards-bg: color-mix(in srgb, var(--f-rewards) 14%, var(--hl-panel));
   --f-rewards-line: rgba(0, 255, 195, 0.55);
   --f-rewards-solid: #00ffc3;
   --f-rewards-on: #16141c;
@@ -287,6 +293,30 @@
   --sidebar-accent-foreground: var(--hl-fg);
   --sidebar-border: var(--hl-line);
   --sidebar-ring: var(--hl-strap-hi);
+}
+
+/* ----- page header metrics, the same in both themes -----
+   Every product header reads these (app/product.css), so the bar, the mark
+   and the nav stay put going Rooms → Bounties → How it works. An 18px mark
+   renders about 103px wide. */
+:root {
+  --hl-hdr-h: 60px;
+  --hl-hdr-mark: 18px;
+  --hl-hdr-nav: 13.5px;
+  --hl-hdr-nav-w: 600;
+  --hl-hdr-ctl: 36px;
+}
+
+/* ----- the Privy sign-in modal, squared to the site's corners -----
+   Privy writes these on :root at runtime, after this sheet, so the override
+   needs html:root plus !important. --privy-border-radius-full is left alone
+   so spinners and avatars stay round. */
+html:root {
+  --privy-border-radius-xs: 2px !important;
+  --privy-border-radius-sm: 2px !important;
+  --privy-border-radius-md: 2px !important;
+  --privy-border-radius-mdlg: 4px !important;
+  --privy-border-radius-lg: 4px !important;
 }
 
 @layer base {
@@ -768,6 +798,11 @@ html[data-ui='advanced'] .simple-only { display: none !important; }
   border-radius: 50%;
   background: var(--ft-hue);
 }
+/* The lime dot alone is 1.4:1 on white, so in light it takes an ink edge.
+   Inside a dark island the ink is the hue itself and the edge disappears. */
+.light .ft--bounty .ft-dot {
+  box-shadow: inset 0 0 0 1px var(--f-bounty-ink);
+}
 .ft.ft--md {
   gap: 7px;
   padding: 4px 10px;
@@ -779,14 +814,15 @@ html[data-ui='advanced'] .simple-only { display: none !important; }
 }
 
 /* ── Theme toggle (components/theme-toggle.tsx · SPEC §5) ────────────────────
-   40px round icon button. Only transform animates (house motion rules); the
-   hover tint is instant and only on a real pointer. */
+   Round icon button at the shared header control height (--hl-hdr-ctl).
+   Only transform animates (house motion rules); the hover tint is instant
+   and only on a real pointer. */
 .hl-tt.hl-tt {
   display: inline-grid;
   flex: none;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: var(--hl-hdr-ctl);
+  height: var(--hl-hdr-ctl);
   padding: 0;
   border: 1px solid var(--hl-line-2);
   border-radius: 999px;

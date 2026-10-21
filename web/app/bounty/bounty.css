@@ -101,9 +101,10 @@ body:has(.mc-bounty) {
   background-image: repeating-linear-gradient(135deg, var(--mcb-fill) 0 4px, var(--mcb-gap) 4px 8px);
   box-shadow: inset 0 0 0 1px var(--mcb-edge);
 }
-/* Locked money is lit; contested money is not. Dark only (SPEC §5). */
+/* Locked money is lit; contested money is not. Dark only (SPEC §5). Half
+   strength: eight lit bars in a column glow as one block, not as a cue. */
 :root:not(.light) .mc-bounty .track .track-locked {
-  box-shadow: 0 0 12px color-mix(in srgb, var(--f-bounty) 38%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--f-bounty) 19%, transparent);
 }
 
 /* ── AVATAR FALLBACK ──────────────────────────────────────────────────────
@@ -188,8 +189,10 @@ body:has(.mc-bounty) {
     border-bottom: 1px solid var(--mcc-hairline);
     padding: 0 12px 10px;
   }
+  /* Same side padding as the head, so '#' sits over the rank and 'Status'
+     over its column, and the rank clears the selected row's -3px edge. */
   .mc-bounty .lb-row {
-    padding: 18px 0;
+    padding: 18px 12px;
   }
   .mc-bounty .lb-row > .lb-bar,
   .mc-bounty .lb-row > .lb-status,
@@ -219,6 +222,24 @@ body:has(.mc-bounty) {
 }
 .mc-bounty :is(.rowcta, .rowcta-ghost, .btn:not(:disabled), .mcb-detail-action, .mcb-claim-action):active {
   transform: scale(0.97);
+}
+
+/* One filled yellow per view. The row's 'View bounty' stays quiet — bounty
+   ink on a hairline — until the row is selected or under the pointer;
+   'Open bounty' in the detail panel is the solid one. */
+.mc-bounty .lb-row .rowcta {
+  background: transparent;
+  border: 1px solid var(--f-bounty-line);
+  color: var(--f-bounty-ink);
+  transition:
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 160ms ease-out,
+    color 160ms ease-out;
+}
+.mc-bounty .lb-row.is-selected .rowcta {
+  border-color: var(--f-bounty-solid);
+  background: var(--f-bounty-solid);
+  color: var(--f-bounty-on);
 }
 
 .mc-bounty .rowcta-ghost {
@@ -255,6 +276,11 @@ body:has(.mc-bounty) {
     color: var(--mcc-fg);
     border-color: var(--mcc-fg);
   }
+  .mc-bounty .lb-row:hover .rowcta {
+    border-color: var(--f-bounty-solid);
+    background: var(--f-bounty-solid);
+    color: var(--f-bounty-on);
+  }
 }
 
 /* Handle entry for a streamer nobody has named yet. */
@@ -278,7 +304,7 @@ body:has(.mc-bounty) {
   position: sticky;
   z-index: 30;
   top: 0;
-  height: 58px;
+  height: var(--hl-hdr-h);
   border-bottom: 1px solid var(--mcc-rule);
   background: var(--hl-bar);
   backdrop-filter: blur(18px);
@@ -296,11 +322,14 @@ body:has(.mc-bounty) {
   padding: 0 20px;
 }
 
+/* Mark size, bar height, nav type and control height are the shared header
+   tokens, so the bar does not change between /bounty and the rest. */
 .mcb-product-brand { display: flex; align-items: center; gap: 12px; }
-.mcb-product-brand .bc { display: inline-flex; align-items: center; color: var(--mcc-fg); font-size: 16px; font-weight: 800; letter-spacing: .09em; }
+.mcb-product-brand .bc { display: inline-flex; align-items: center; color: var(--mcc-fg); font-size: var(--hl-hdr-mark); font-weight: 800; letter-spacing: .09em; }
 .mcb-product-brand i { width: 1px; height: 18px; background: var(--mcc-rule-2); }
-.mcb-product-brand span,
-.mcb-product-header nav a { color: var(--mcc-faint); font-size: 11px; }
+.mcb-product-brand span { color: var(--mcc-faint); font-size: 11px; }
+/* Scoped under .mc-bounty so it outranks product.css's 13px header-link floor. */
+.mc-bounty .mcb-product-header nav a { color: var(--hl-muted); font-size: var(--hl-hdr-nav); font-weight: var(--hl-hdr-nav-w); }
 .mcb-product-header nav { display: flex; align-items: center; gap: 26px; }
 .mcb-product-header nav a:hover,
 .mcb-product-header nav a[aria-current='page'] { color: var(--mcc-fg); }
@@ -308,7 +337,7 @@ body:has(.mc-bounty) {
 .mcb-product-header nav a[aria-current='page'] { box-shadow: inset 0 -2px 0 var(--mcb-mark); }
 .mcb-product-header > div > :last-child { justify-self: end; }
 .mcb-product-actions { display: flex; align-items: center; gap: 10px; }
-.mcb-product-actions > a { padding: 8px 12px; border: 1px solid var(--hl-strap-hi); color: var(--hl-strap-hi); font-size: 11px; font-weight: 750; }
+.mcb-product-actions > a { display: inline-flex; align-items: center; height: var(--hl-hdr-ctl); padding: 0 14px; border: 1px solid var(--hl-strap-hi); color: var(--hl-strap-hi); font-size: 13px; font-weight: 700; }
 @media (hover: hover) and (pointer: fine) {
   .mcb-product-actions > a:hover { background: color-mix(in srgb, var(--hl-strap) 12%, transparent); }
 }
@@ -355,6 +384,15 @@ body:has(.mc-bounty) {
     radial-gradient(circle at 17% 10%, color-mix(in srgb, var(--f-bounty) 16%, transparent), transparent 31rem),
     radial-gradient(circle at 96% 100%, color-mix(in srgb, var(--hl-strap) 16%, transparent), transparent 26rem),
     linear-gradient(110deg, var(--hl-panel-2) 0%, var(--hl-panel) 62%, var(--hl-panel) 100%);
+}
+/* In light the base runs the other way: lime over lavender mixes to khaki
+   (near complements), so the lime corner sits on white and the lavender is
+   kept to the violet corner. */
+.light .mcb-hero {
+  background:
+    radial-gradient(circle at 17% 10%, color-mix(in srgb, var(--f-bounty) 16%, transparent), transparent 31rem),
+    radial-gradient(circle at 96% 100%, color-mix(in srgb, var(--hl-strap) 16%, transparent), transparent 26rem),
+    linear-gradient(110deg, var(--hl-panel) 0%, var(--hl-panel) 55%, var(--hl-panel-2) 100%);
 }
 
 .mcb-hero h1 { margin: 12px 0 9px; font-size: clamp(38px, 4.6vw, 66px); font-weight: 800; line-height: .98; letter-spacing: -.05em; }
@@ -426,7 +464,7 @@ body:has(.mc-bounty) {
   background: linear-gradient(110deg, color-mix(in srgb, var(--f-bounty) 13%, transparent), color-mix(in srgb, var(--f-bounty) 4%, transparent) 46%, color-mix(in srgb, var(--hl-bg) 90%, transparent));
 }
 .mcb-create-bounty h2 { margin: 8px 0 6px; font-size: 31px; letter-spacing: -.04em; }
-.mcb-create-bounty p { margin: 0; color: var(--mcc-muted); font-size: 11px; }
+.mcb-create-bounty p { margin: 0; color: var(--hl-muted); font-size: 13px; }
 .mcb-create-bounty form { display: grid; grid-template-columns: 120px 190px auto; gap: 8px; }
 
 @media (max-width: 1120px) {

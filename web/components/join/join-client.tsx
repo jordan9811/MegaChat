@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { FeatureTag } from '@/components/feature-tag'
+import { HollerMark } from '@/components/holler-mark'
 import { StingerPreview } from '@/components/join/stinger-preview'
 import { initJoinPage } from '@/lib/join-page'
 import { backendWsUrl } from '@/lib/backend'
@@ -204,7 +205,10 @@ export function JoinClient() {
               <div id="streamReplayMoments" className="stream-replay-moments" hidden />
             </div>
 
+            {/* Nothing to show yet: the same H◉ fallback the create page's
+                preview uses, with the note as a quiet caption under it. */}
             <div id="previewIdle" className="join-preview-idle">
+              <span className="join-preview-mark" aria-hidden="true"><HollerMark variant="icon" px={52} glow /></span>
               <div>
                 <span className="join-coordinate">Stream preview</span>
                 <h1>Preview unavailable</h1>

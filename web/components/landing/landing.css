@@ -102,22 +102,24 @@ body:has(.mc-landing) {
 }
 
 /* ── nav ─────────────────────────────────────────────────────────────────── */
+/* Bar height, mark size, nav type and control height all read the shared
+   --hl-hdr-* tokens (app/globals.css), so the logo sits the same on every
+   page. Only the side padding is the landing's own: it lines up with the
+   content edge below. */
 .mcl-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 74px;
+  height: var(--hl-hdr-h);
   padding: 0 64px;
   border-bottom: 1px solid var(--mcl-hairline);
 }
 
-/* The Holler mark at nav size: 21px puts the strap at ~24px tall, the
-   same visual weight the old 17px letterspaced wordmark carried. */
 .mcl-brand {
   display: inline-flex;
   align-items: center;
   color: var(--mcl-fg);
-  font-size: 21px;
+  font-size: var(--hl-hdr-mark);
   line-height: 1;
 }
 
@@ -125,19 +127,25 @@ body:has(.mc-landing) {
   display: flex;
   align-items: center;
   gap: 32px;
-  color: var(--mcl-muted);
-  font-size: 13.5px;
-  font-weight: 600;
+  color: var(--hl-muted);
+  font-size: var(--hl-hdr-nav);
+  font-weight: var(--hl-hdr-nav-w);
 }
 
-/* the theme switch sits tighter to the CTA than the text links do */
-.mcl-nav-links > .hl-tt {
+/* the theme switch sits tighter to the CTA than the text links do, and
+   stands as tall as it */
+.mcl-nav-links > .hl-tt.hl-tt {
+  width: var(--hl-hdr-ctl);
+  height: var(--hl-hdr-ctl);
   margin-right: -12px;
 }
 
 .mcl-nav-cta {
+  display: inline-flex;
+  height: var(--hl-hdr-ctl);
+  align-items: center;
   border: 1px solid color-mix(in srgb, var(--hl-strap-hi) 55%, transparent);
-  padding: 9px 18px;
+  padding: 0 18px;
   color: var(--hl-strap-hi);
   font-size: 13px;
   font-weight: 700;
@@ -146,7 +154,7 @@ body:has(.mc-landing) {
 
 @media (hover: hover) and (pointer: fine) {
   .mcl-nav-links a:not(.mcl-nav-cta):hover {
-    color: var(--mcl-fg);
+    color: var(--hl-fg);
   }
 
   .mcl-nav-cta:hover {
@@ -418,6 +426,13 @@ body:has(.mc-landing) {
   box-shadow: var(--mcl-card-shadow);
   color: var(--mcl-fg);
   transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+/* Lime on paper all but vanishes as a 2px line, so in light the bounty
+   stripe takes the olive-lime edge. Only the stripe: --mcl-tone still
+   drives the card's wash and vignette. */
+.light .mcl-entry-card[data-tone='bounty'] {
+  border-top-color: var(--f-bounty-line);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -725,6 +740,17 @@ body:has(.mc-landing) {
 .mcl-pool-row > b {
   color: var(--f-bounty-ink);
   font-size: 14px;
+  white-space: nowrap;
+}
+
+/* An example pool says so the way card 03 does: a dim, regular-weight tag
+   beside the amount, not part of it. It stays inside the <b> because a
+   fifth child would wrap onto a second grid row; the space inside it is
+   the gap (~6px), so the row still reads "$200 example" aloud. */
+.mcl-pool-row > b small {
+  color: var(--mcl-dim);
+  font-size: 11px;
+  font-weight: 400;
 }
 
 .mcl-pool-empty {
@@ -759,8 +785,8 @@ body:has(.mc-landing) {
 .mcl-proof > span:first-child { padding-left: 64px; }
 .mcl-proof > span:last-child { border-right: 0; }
 .mcl-proof svg { grid-row: 1 / 3; color: var(--hl-strap-hi); }
-.mcl-proof b { font-size: 14px; }
-.mcl-proof small { color: var(--mcl-dim); font-size: 11.5px; }
+.mcl-proof b { font-size: 14px; text-wrap: balance; }
+.mcl-proof small { color: var(--mcl-dim); font-size: 11.5px; text-wrap: balance; }
 
 /* ── for streamers ───────────────────────────────────────────────────────── */
 .mcl-create-strip {
@@ -875,10 +901,10 @@ body:has(.mc-landing) {
 }
 
 @media (max-width: 560px) {
-  .mcl-nav { height: 60px; padding: 0 20px; }
-  .mcl-brand { font-size: 17px; }
+  .mcl-nav { padding: 0 20px; }
+  .mcl-brand { font-size: var(--hl-hdr-mark); }
   .mcl-nav-links { gap: 14px; }
-  .mcl-nav-links > .hl-tt { margin-right: 0; }
+  .mcl-nav-links > .hl-tt.hl-tt { margin-right: 0; }
   .mcl-panel { padding: 28px 22px 30px; }
   .mcl-h1 { font-size: 38px; }
   .mcl-ctas { flex-direction: column; align-items: stretch; }
@@ -888,6 +914,14 @@ body:has(.mc-landing) {
   .mcl-create-strip { flex-direction: column; align-items: stretch; gap: 20px; padding: 40px 20px 44px; }
   .mcl-create-strip > a { justify-content: center; }
   .mcl-footer { padding: 28px 20px; }
+}
+
+/* On a phone a proof cell is ~195px: beside the icon the text gets ~104px
+   and strands a word, so the icon stacks on top and the text takes the
+   cell's full width (~150px). Still 2×2. */
+@media (max-width: 440px) {
+  .mcl-proof > span { grid-template-columns: minmax(0, 1fr); }
+  .mcl-proof svg { grid-row: auto; justify-self: start; margin-bottom: 8px; }
 }
 
 /* The landing's own keyboard ring: the brand violet, a step further out so

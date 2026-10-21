@@ -24,14 +24,16 @@ export default function RoadmapPage() {
         <GlitchBackground />
 
         <main className="relative z-10 mx-auto max-w-4xl px-6 pb-16 pt-16 md:pt-20">
+          {/* Eyebrow in Space Mono, headline in Archivo: the site's readout
+              and display faces. */}
           <p
-            className="reveal text-xs font-bold uppercase tracking-widest text-[color-mix(in_srgb,var(--hl-strap-hi)_72%,var(--hl-fg))]"
+            className="reveal font-[family-name:var(--font-code)] text-[11px] font-normal uppercase tracking-[.14em] text-[color-mix(in_srgb,var(--hl-strap-hi)_72%,var(--hl-fg))]"
             style={{ ['--reveal-delay' as string]: '0.05s' }}
           >
             Where this is going
           </p>
           <h1
-            className="reveal chromatic mt-2 font-heading text-4xl font-bold leading-tight text-hl-fg md:text-6xl"
+            className="reveal mt-2 font-[family-name:var(--font-display)] text-4xl font-[800] leading-tight tracking-[-0.02em] text-hl-fg md:text-6xl"
             style={{ ['--reveal-delay' as string]: '0.12s' }}
           >
             Roadmap
@@ -56,7 +58,7 @@ export default function RoadmapPage() {
               href={contactHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="glow-magenta rounded-full bg-hl-strap px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-white transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.03] hover:bg-hl-strap-hover active:scale-[0.97]"
+              className="rounded-[2px] bg-hl-strap px-5 py-2.5 text-sm font-bold text-white transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-hl-strap-hover active:scale-[0.97]"
             >
               Tell us on X
             </a>

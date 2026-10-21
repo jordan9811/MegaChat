@@ -86,7 +86,7 @@ export function HeaderAuth() {
 
   // Reserve the slot pre-load so the header never visibly reflows.
   if (!loaded) {
-    return <span aria-hidden="true" className="inline-block h-9 w-24 rounded-full bg-hl-line" />
+    return <span aria-hidden="true" className="inline-block h-9 w-24 rounded-[2px] bg-hl-line" />
   }
 
   return (
@@ -97,7 +97,7 @@ export function HeaderAuth() {
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-haspopup="menu"
-          className="flex items-center gap-2 rounded-full border border-hl-line-2 bg-hl-panel/60 px-3 py-2 text-sm font-semibold text-hl-fg transition-colors hover:bg-hl-panel-2 sm:px-4"
+          className="flex h-9 items-center gap-2 rounded-[2px] border border-hl-line-2 bg-hl-panel/60 px-3 text-sm font-semibold text-hl-fg transition-colors hover:bg-hl-panel-2 sm:px-4"
         >
           <span className="size-1.5 shrink-0 rounded-full bg-hl-strap-hi dark:shadow-[0_0_8px_var(--hl-strap-hi)]" />
           {/* handles run up to 20 chars — truncate or the chip blows up a
@@ -115,7 +115,7 @@ export function HeaderAuth() {
           onClick={openSignIn}
           disabled={wallet.modalOpen}
           title={wallet.configured ? 'Twitch, X, Google, email or passkey' : 'Sign-in is not configured on this server'}
-          className="glow-magenta flex items-center gap-2 rounded-full bg-hl-strap px-3 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.03] hover:bg-hl-strap-hover active:scale-[0.97] disabled:opacity-70 sm:px-4"
+          className="flex h-9 items-center gap-2 rounded-[2px] bg-hl-strap px-3 text-sm font-semibold text-white transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-hl-strap-hover active:scale-[0.97] disabled:opacity-70 sm:px-4"
         >
           <UserRound className="size-4" />
           {/* Straight to Privy's modal — no in-house chooser in between.

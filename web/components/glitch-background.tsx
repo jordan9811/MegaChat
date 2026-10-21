@@ -17,6 +17,12 @@ const CONFETTI = [
   { top: '24%', left: '36%', color: 'var(--f-rewards)', size: 7, rot: 30 },
 ]
 
+// The confetti stays in the gutters: this mask hides it over the centre 940px
+// on desktop, and below about 1000px everywhere inside the 24px page padding
+// (px-6), which is the only gutter a phone has. So no speck lands on copy.
+const GUTTERS_ONLY =
+  'linear-gradient(90deg, #000 0, #000 max(16px, calc(50% - 520px)), transparent max(24px, calc(50% - 470px)), transparent min(calc(100% - 24px), calc(50% + 470px)), #000 min(calc(100% - 16px), calc(50% + 520px)))'
+
 export function GlitchBackground() {
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -25,24 +31,26 @@ export function GlitchBackground() {
       {/* soft glow blooms: the strap violet and the record red */}
       <div className="absolute -left-24 top-1/4 size-72 rounded-full bg-hl-strap opacity-20 blur-[100px]" />
       <div className="absolute right-0 top-0 size-80 rounded-full bg-hl-record opacity-[0.12] blur-[120px]" />
-      {/* confetti */}
-      {CONFETTI.map((c, i) => (
-        <span
-          key={i}
-          className="absolute block rounded-[2px] animate-float-slow"
-          style={{
-            top: c.top,
-            left: c.left,
-            width: c.size,
-            height: c.size * 0.7,
-            backgroundColor: c.color,
-            transform: `rotate(${c.rot}deg)`,
-            boxShadow: `0 0 10px color-mix(in srgb, ${c.color} calc(100% * var(--hl-glow-k)), transparent)`,
-            animationDelay: `${(i % 5) * 0.6}s`,
-            opacity: 0.85,
-          }}
-        />
-      ))}
+      {/* confetti, masked out of the content column */}
+      <div className="absolute inset-0" style={{ maskImage: GUTTERS_ONLY, WebkitMaskImage: GUTTERS_ONLY }}>
+        {CONFETTI.map((c, i) => (
+          <span
+            key={i}
+            className="absolute block rounded-[2px] animate-float-slow"
+            style={{
+              top: c.top,
+              left: c.left,
+              width: c.size,
+              height: c.size * 0.7,
+              backgroundColor: c.color,
+              transform: `rotate(${c.rot}deg)`,
+              boxShadow: `0 0 10px color-mix(in srgb, ${c.color} calc(100% * var(--hl-glow-k)), transparent)`,
+              animationDelay: `${(i % 5) * 0.6}s`,
+              opacity: 0.85,
+            }}
+          />
+        ))}
+      </div>
     </div>
   )
 }

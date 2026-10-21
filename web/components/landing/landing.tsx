@@ -144,7 +144,7 @@ export function Landing({
                 <span>{String(index + 1).padStart(2, '0')}</span>
                 <PoolThumb handle={pool.handle || pool.handleKey} platform={pool.platform} avatarUrl={pool.avatarUrl} />
                 <p><strong>{pool.handle || pool.handleKey}</strong><small>{pool.platform || 'unlisted'} / {pool.contributionCount} backer{pool.contributionCount === 1 ? '' : 's'}</small></p>
-                <b>{formatDollars(pool.remaining)}{pool.displayOnly ? ' example' : ''}</b>
+                <b>{formatDollars(pool.remaining)}{pool.displayOnly ? <small> example</small> : null}</b>
               </Link>
             )) : (
               <div className="mcl-pool-empty">

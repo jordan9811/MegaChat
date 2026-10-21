@@ -377,6 +377,7 @@ export function TempoWalletProvider({ children }: { children: React.ReactNode })
       appearance: {
         theme: privyTheme,
         accentColor: '#6d28d9' as `#${string}`,
+        logo: '/holler-logo.png',
         walletChainType: 'ethereum-only' as const,
       },
     }),
