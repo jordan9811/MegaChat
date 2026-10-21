@@ -21,8 +21,8 @@ type Stage = 'idle' | 'claiming' | 'setup' | 'live' | 'error'
 
 // Colour roles (Holler SPEC §3): money and the claim action are bounty
 // yellow (a caution about getting paid is too); money already released is
-// rewards green; a plain notice is strap ultramarine; an error is the danger
-// orange (--hl-danger), never the Holler pink.
+// rewards green; a plain notice is strap azure; an error is the danger
+// orange (--hl-danger), never the Holler magenta.
 const CAUTION_BOX = 'rounded-xl border border-f-bounty-line bg-f-bounty-bg p-3'
 const CAUTION_HEAD = 'flex items-center gap-1.5 text-sm font-bold text-f-bounty-ink'
 const NOTICE_BOX = 'rounded-xl border border-hl-strap-hi/45 bg-hl-strap/10 p-3'

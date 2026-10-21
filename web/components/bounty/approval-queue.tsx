@@ -13,7 +13,7 @@ import { backendHttpUrl } from '@/lib/backend'
 import { FeatureTag } from '@/components/feature-tag'
 
 // Holler colour roles: clean / approve is the positive green, borderline is
-// the caution yellow, a violation / reject is the holler pink. Each queued clip is a
+// the caution yellow, a violation / reject is the holler magenta. Each queued clip is a
 // recorded Holler, tagged as one.
 const GRADE_CHIP: Record<string, string> = {
   clean: 'border-f-rewards-line text-f-rewards-ink',

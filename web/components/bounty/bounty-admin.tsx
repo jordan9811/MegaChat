@@ -18,14 +18,14 @@ type Row = AirSession & {
 }
 
 // Holler colour roles: pass / approve is the positive green, partial and
-// ambiguous are the caution yellow, a failure or a breach is pink text
-// (--f-holler-ink), a review in progress is strap ultramarine, and a request
-// that failed is the danger orange (--hl-danger).
+// ambiguous are the caution yellow, a failure, a breach and a request that
+// failed are the danger orange (--hl-danger, never Holler pink), and a
+// review in progress is strap azure.
 const RESULT_TONE: Record<string, string> = {
   PASS: 'text-f-rewards-ink',
   PARTIAL: 'text-f-bounty-ink',
   AMBIGUOUS: 'text-f-bounty-ink',
-  FAIL: 'text-f-holler-ink',
+  FAIL: 'text-hl-danger',
   NO_FRAMES: 'text-muted-foreground',
   NO_CODES: 'text-muted-foreground',
 }
@@ -122,7 +122,7 @@ export function BountyAdmin() {
             <ShieldAlert className="size-4 text-hl-strap-hi" />
             Review queue — {openReviews.length} open
             {breachedCount > 0 ? (
-              <span className="ml-1 rounded-full bg-f-holler-solid px-2 py-0.5 text-[10px] font-bold text-f-holler-on">
+              <span className="ml-1 rounded-full bg-hl-danger px-2 py-0.5 text-[10px] font-bold text-hl-panel">
                 {breachedCount} past SLA
               </span>
             ) : null}
@@ -132,7 +132,7 @@ export function BountyAdmin() {
               <li
                 key={r.id}
                 className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 ${
-                  r.breachedSla ? 'border-f-holler-line' : 'border-border/70'
+                  r.breachedSla ? 'border-hl-danger/50' : 'border-border/70'
                 }`}
               >
                 <span className="min-w-0 flex-1">
@@ -141,7 +141,7 @@ export function BountyAdmin() {
                     confidence {r.confidence.toFixed(2)} · open{' '}
                     {Math.round(r.ageMs / 3_600_000)}h
                     {r.breachedSla ? (
-                      <strong className="ml-1 text-f-holler-ink">PAST SLA</strong>
+                      <strong className="ml-1 text-hl-danger">PAST SLA</strong>
                     ) : null}
                   </span>
                 </span>
@@ -205,7 +205,7 @@ export function BountyAdmin() {
                     <td className="px-4 py-3 tabular text-xs">{(r.verifiedMinutes || 0).toFixed(2)}m</td>
                     <td className="px-4 py-3 text-xs">
                       {violations > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-f-holler-ink">
+                        <span className="inline-flex items-center gap-1 text-hl-danger">
                           <CircleAlert className="size-3.5" /> badge ×{violations}
                         </span>
                       ) : (
@@ -217,7 +217,7 @@ export function BountyAdmin() {
                         type="button"
                         disabled={busy === r.id}
                         onClick={() => void override(r)}
-                        className="rounded-full border border-border px-3 py-1 text-xs font-bold text-foreground hover:border-f-holler-line disabled:opacity-50"
+                        className="rounded-full border border-border px-3 py-1 text-xs font-bold text-foreground hover:border-hl-danger/50 disabled:opacity-50"
                       >
                         {busy === r.id ? '…' : 'Override'}
                       </button>

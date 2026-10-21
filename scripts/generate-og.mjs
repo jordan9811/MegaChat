@@ -24,9 +24,10 @@ const base = `
   :root {
     --font-display: 'Archivo';
     --font-ui: 'Archivo';
-    --hl-strap: #2f2ad8;
-    --hl-record: #ff2d78;
-    --hl-mark-glow: drop-shadow(0 0 18px color-mix(in srgb, #2f2ad8 60%, transparent));
+    --hl-strap: #0a9bff;
+    --hl-on-strap: #060a17;
+    --hl-record: #ff2bd6;
+    --hl-mark-glow: drop-shadow(0 0 18px color-mix(in srgb, #0a9bff 55%, transparent));
   }
   ${markCss}
 `;
@@ -38,15 +39,15 @@ const og = `<!doctype html><html><head><meta charset="utf-8">
   body {
     width: 1200px; height: 630px; overflow: hidden;
     background:
-      radial-gradient(620px 360px at 50% 44%, rgba(47, 42, 216, 0.34), transparent 70%),
-      radial-gradient(420px 260px at 50% 46%, rgba(255, 45, 120, 0.08), transparent 70%),
+      radial-gradient(620px 360px at 50% 44%, rgba(10, 155, 255, 0.3), transparent 70%),
+      radial-gradient(420px 260px at 50% 46%, rgba(255, 43, 214, 0.08), transparent 70%),
       linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px) 0 0 / 48px 48px,
       linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px) 0 0 / 48px 48px,
-      #060a17;
+      #070b14;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 46px;
     font-family: 'Archivo', sans-serif;
   }
-  .hm.hm { font-size: 150px; filter: drop-shadow(0 0 42px rgba(47, 42, 216, 0.6)); }
+  .hm.hm { font-size: 150px; filter: drop-shadow(0 0 42px rgba(10, 155, 255, 0.55)); }
   .tag {
     color: #f3f5fb; font-size: 58px; font-weight: 800; font-stretch: 112%;
     font-variation-settings: 'wdth' 112; letter-spacing: -0.01em; line-height: 1;
@@ -59,7 +60,7 @@ const og = `<!doctype html><html><head><meta charset="utf-8">
 const appleIcon = `<!doctype html><html><head><meta charset="utf-8">
 <link href="${FONTS}" rel="stylesheet">
 <style>${base}
-  body { width: 180px; height: 180px; overflow: hidden; background: #060a17; position: relative; }
+  body { width: 180px; height: 180px; overflow: hidden; background: #070b14; position: relative; }
   /* the strap bleeds off the left edge, the same cut as web/public/icon.svg */
   .hm.hm { position: absolute; left: 0; top: 50%; transform: translateY(-50%); font-size: 66px; }
   .hm .hm-strap { padding-left: 0.3em; }

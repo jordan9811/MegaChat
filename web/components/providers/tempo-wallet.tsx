@@ -330,7 +330,7 @@ export function TempoWalletProvider({ children }: { children: React.ReactNode })
     }
   }, [])
 
-  // The sign-in modal wears Holler: ultramarine strap accent (--hl-strap, the same
+  // The sign-in modal wears Holler: azure strap accent (--hl-strap, the same
   // in both themes) on Privy's own light or dark ground, following the theme
   // the page is in (next-themes resolves 'system' to one of the two). Until
   // the theme is known it reads as dark, the old fixed value.
@@ -376,7 +376,7 @@ export function TempoWalletProvider({ children }: { children: React.ReactNode })
       ...baseConfig,
       appearance: {
         theme: privyTheme,
-        accentColor: '#2f2ad8' as `#${string}`,
+        accentColor: '#0a9bff' as `#${string}`,
         logo: '/holler-logo.png',
         walletChainType: 'ethereum-only' as const,
       },

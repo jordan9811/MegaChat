@@ -1,10 +1,10 @@
 /* Landing (feat/ui-overhaul, re-coloured for Holler) — scoped under
    .mc-landing. Every colour reads the Holler tokens in app/globals.css, so the
    page follows the theme next-themes puts on <html>:
-     strap ultramarine  the brand and the primary action
-     record pink   the light itself: the neon line, the REC dot, the playhead
-     each way in   wears its own feature colour: holler pink, call-in
-                   ultramarine, bounty yellow; money is always bounty ink
+     strap azure  the brand and the primary action
+     record magenta   the light itself: the neon line, the REC dot, the playhead
+     each way in   wears its own feature colour: holler magenta, call-in
+                   azure, bounty yellow; money is always bounty ink
    Square corners, hairline rules, a mono face for anything that reads like a
    readout. Glows exist only in dark; light gets soft shadows instead. The
    film column is a video, so it stays dark-framed in both themes (it carries
@@ -24,7 +24,7 @@
   --mcl-faint: var(--hl-dim);
   --mcl-hairline: var(--hl-line);
   --mcl-hairline-2: var(--hl-line-2);
-  /* the white that sits on an ultramarine fill (≥7:1 on --hl-strap) */
+  /* the white that sits on an azure fill (≥7:1 on --hl-strap) */
   --mcl-on-strap: var(--f-callin-on);
 
   /* dark: neon and glow */
@@ -52,7 +52,7 @@
 
 /* light: the same page on paper — no neon, soft lifted shadows */
 .light .mc-landing {
-  --mcl-neon: var(--f-holler-solid);
+  --mcl-neon: var(--f-holler);
   --mcl-neon-shadow: none;
   --mcl-strap-shadow:
     0 1px 2px color-mix(in srgb, var(--hl-strap) 30%, transparent),
@@ -287,10 +287,10 @@ body:has(.mc-landing) {
 }
 
 /* The neon line is the record light. In dark it is --hl-record itself with
-   its glow (≥4.8:1 even where the ultramarine wash is strongest); in light
-   there is no glow, so it takes the deeper fill pink (-solid #e0115f, 3.5:1
-   or more where the wash is strongest; display text needs 3:1), which stays
-   the mark's pink where the text ink would go raspberry. */
+   its glow (≥5.4:1 even where the azure wash is strongest); in light there is
+   no glow, so it takes the light holler hue (#e01fbd, 3.2:1 or more; display
+   text needs 3:1), which stays the mark's magenta where the text ink would go
+   plum. */
 .mcl-neon {
   color: var(--mcl-neon);
   text-shadow: var(--mcl-neon-shadow);
@@ -697,7 +697,7 @@ body:has(.mc-landing) {
   object-fit: cover;
 }
 
-/* a person, not a feature: an ultramarine-tinted tile, the letter in plain text
+/* a person, not a feature: an azure-tinted tile, the letter in plain text
    colour so it clears 4.5:1 in both themes */
 .mcl-thumb i {
   display: grid;
@@ -907,7 +907,7 @@ body:has(.mc-landing) {
 }
 
 
-/* The landing's own keyboard ring: the brand ultramarine, a step further out so
+/* The landing's own keyboard ring: the brand azure, a step further out so
    it clears the filled buttons. No radius change — the round film controls
    keep a round ring — and the theme switch keeps its own. */
 .mc-landing :is(a, button, [tabindex]):not(.hl-tt):focus-visible {

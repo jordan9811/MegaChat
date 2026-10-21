@@ -1,12 +1,21 @@
 # Holler — front-end brand spec (2026-10-20)
 
 The owner chose the rebrand: **MegaChat → Holler**. Logo = **Record O**: the word HOLLER in a slanted
-ultramarine broadcast strap, the O drawn as a pink record button. Every agent implements against this file.
+azure broadcast strap, the O drawn as a magenta record button. Every agent implements against this file.
 
-**Colourway, 2026-10-20 (second pick):** the owner moved from violet + record red to **MegaChat pink #ff2d78 on
-Ultramarine #2f2ad8, on Blue ink #060a17**, and made the brand pair two of the features: pink = Holler, ultramarine
-= Call in ("our colors are nodding at our core features"). `web/app/globals.css` holds the measured values; the
-tables below are kept in step with it.
+**Colourway, 2026-10-21 (third pick, current): the "Azure" neon set** — from the owner's neon HUD reference:
+azure **#0a9bff** strap and Call in, magenta **#ff2bd6** record and Holler, readout yellow **#ffd60a** Bounty,
+neon green **#39ff6a** Rewards, on **#070b14**. The brand pair stays two of the features ("our colors are nodding
+at our core features"). Every fill carries **dark** text (#060a17): white is 2.9:1 on azure. Light mode is the
+"Stone" treatment. `web/app/globals.css` holds the measured values; the tables below are kept in step with it.
+(Earlier picks, both retired: violet #6d28d9 + record red #ff3b30; then pink #ff2d78 on ultramarine #2f2ad8.)
+
+**Standing alternate — "Late-night TV with pink" (owner's #2, 2026-10-21).** He may switch to it once the launch
+film (shot in that look) is done. Same token structure; swap the values:
+- dark ground warm black #0d0a08 (panels a shade warmer), a tungsten-lamp bloom #ff9a3c in one corner
+- strap + Call in: CRT teal #19c6c0, letters and text on it dark #061214
+- Holler + record: MegaChat pink #ff2d78 · Bounty: lamp amber #ffb238 · Rewards: fluoro green #8be36a
+- glow on, text on every fill dark (white on teal is ~2:1). Lab card: `design-assets/holler-lab` → Late-night TV, tv-1.
 
 ## 1. Names (user-facing copy only)
 | Old | New | Notes |
@@ -40,36 +49,42 @@ Everything reads these. No page keeps its own hard-coded brand/feature hexes.
 
 | Token | Dark | Light | Use |
 |---|---|---|---|
-| `--hl-bg` | #060a17 | #f4f5fa | page ground |
-| `--hl-panel` | #0c1122 | #ffffff | cards, panels |
-| `--hl-panel-2` | #131a2e | #eceef6 | raised / nested |
-| `--hl-line` | rgba(255,255,255,.09) | rgba(14,18,36,.10) | hairlines |
-| `--hl-line-2` | rgba(255,255,255,.17) | rgba(14,18,36,.18) | stronger borders |
-| `--hl-fg` | #f3f5fb | #11131c | text |
-| `--hl-muted` | #a9b1c7 | #4a4f63 | secondary text (≥4.5:1) |
-| `--hl-dim` | #8a92aa | #5f657a | tertiary (≥4.5:1 on panel) |
-| `--hl-strap` | #2f2ad8 | #2f2ad8 | brand strap, primary buttons (white text) |
-| `--hl-strap-hi` | #928fff | #2520b8 | links, focus, brand hover |
-| `--hl-record` | #ff2d78 | #ff2d78 | the record, LIVE / on-air dot |
+| `--hl-bg` | #070b14 | #e6e3ee (Stone) | page ground |
+| `--hl-panel` | #0d1220 | #fbfaff | cards, panels |
+| `--hl-panel-2` | #141a2b | #f1eff6 | raised / nested |
+| `--hl-line` | rgba(255,255,255,.09) | #cdc7db | hairlines |
+| `--hl-line-2` | rgba(255,255,255,.17) | #b6afc6 | stronger borders |
+| `--hl-fg` | #f3f5fb | #0b0a12 | text |
+| `--hl-muted` | #a9b1c7 | #3f3a4f | secondary text (≥4.5:1) |
+| `--hl-dim` | #8a92aa | #57526a | tertiary (≥4.5:1 on panel) |
+| `--hl-strap` | #0a9bff | #0a9bff | brand strap, primary buttons (dark text, `--hl-on-strap` #060a17) |
+| `--hl-strap-hi` | #38b0ff | #005fb3 | links, focus, brand hover |
+| `--hl-record` | #ff2bd6 | #ff2bd6 | the record, LIVE / on-air dot |
 | `--hl-field` | fg at 40% | fg at 48% | a text field's or select's edge (≥3:1) |
-| `--hl-danger` | #ff8a4c | #b3400b | errors and destructive steps — never pink, pink is Holler |
+| `--hl-danger` | #ff8a4c | #9c3a10 | errors and destructive steps — never magenta, magenta is Holler (light: 5.5:1 on the ground, ≥4.5:1 on its own 10–18% tint) |
 
 **Feature colours** — each feature has five tokens: `--f-<x>` (the hue), `--f-<x>-ink` (text in that colour on
 the page), `--f-<x>-bg` (tag tint), `--f-<x>-line` (tag border), `--f-<x>-on` (text on a solid fill).
 
 | Feature | `--f-x` dark / light | `-ink` dark / light | `-on` |
 |---|---|---|---|
-| holler (pink, the record) | #ff2d78 / #ff2d78 | #ff5a93 / #b80f4a | #ffffff on -solid #e0115f |
-| callin (ultramarine, the strap) | #6662ff / #2f2ad8 | #928fff / #2f2ad8 | #ffffff on -solid #2f2ad8 |
-| bounty (yellow, the owner's "#cfe83a") | #cfe83a / #cfe83a | #cfe83a / #556400 | #11131c |
-| rewards (green/cyan) | #00ffc3 / #00ffc3 | #00ffc3 / #007054 | #11131c |
+| holler (magenta, the record) | #ff2bd6 / #e01fbd | #ff5fe0 / #a8128a | #060a17 on -solid #ff2bd6 |
+| callin (azure, the strap) | #0a9bff / #0a84e6 | #38b0ff / #005fb3 | #060a17 on -solid #0a9bff |
+| bounty (readout yellow) | #ffd60a / #ffd60a | #ffd60a / #6b5a00 | #060a17 on #ffd60a |
+| rewards (neon green) | #39ff6a / #39ff6a | #39ff6a / #0a6e2a | #060a17 on #39ff6a |
 
-`-bg` = the hue at 12% alpha (dark; bounty .07, since lime over the blue ink goes olive) / 14% (light); `-line` =
-45% / 55%, except the light bounty and rewards lines, which are 70% ink mixed into the hue (the pale hue alone
+`-bg` = the hue at 12% alpha (dark; bounty .045, since yellow over the navy goes grey and olive) / 14% (light);
+`-line` = 45% / 55%, except the dark bounty line, 70% (~#b69b11 gold: in dark the yellow lives in the line, not the
+tint), and the light bounty and rewards lines, which are 70% ink mixed into the hue (the pale hue alone
 vanishes on white). `--f-<x>-ui` is a mark that must hold 3:1 on its own (a stripe, an on-dot, a tag dot's edge):
-the hue in dark, the ink in light. Money amounts use bounty yellow-ink.
-LIVE / on air uses `--hl-record` (the pink light). Cyan #3ae8ff, lime #b8ff45, gold #ffd23d, and the first
-colourway's violet #6d28d9 / record red #ff3b30 / call-in purple #a855f7, are **retired** as UI colours — replace
+the hue in dark, the ink in light, except bounty in light, which takes its line #977f03 (3.1:1 on the ground,
+3.8:1 on a card; the ink #6b5a00 reads olive beside the neons). Money amounts use bounty yellow-ink. Errors,
+faults and alarms use `--hl-danger` (border at 50%, tint at 10%), never a holler token.
+LIVE / on air uses `--hl-record` (the magenta light). In light, a lone LIVE dot on the stone ground or a tint
+takes `--f-holler` (#e01fbd, 3.25:1; #ff2bd6 is 2.5:1 there), scoped to the dot so the mark's O keeps
+#ff2bd6. Cyan #3ae8ff, lime #b8ff45 and #cfe83a, gold #ffd23d,
+cyan-green #00ffc3, and the earlier colourways' violet #6d28d9 / record red #ff3b30 / call-in purple #a855f7 /
+pink #ff2d78 / ultramarine #2f2ad8 are **retired** as UI colours — replace
 them by meaning (action → strap; live → record; money/bounty →
 bounty; rewards → rewards; recorded clip → holler; camera seat → callin).
 

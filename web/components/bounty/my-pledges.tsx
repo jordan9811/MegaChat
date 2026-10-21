@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { getMyContributions, type MyContribution } from '@/lib/bounty-api'
 
 // Holler colour roles: money waiting on someone is bounty yellow, a review in
-// progress is strap ultramarine, approved / played / paid is the positive
+// progress is strap azure, approved / played / paid is the positive
 // green, a policy rejection (and a failed load) is the danger orange, and a
 // refund is neutral.
 const WAITING = 'border-f-bounty-line bg-f-bounty-bg text-f-bounty-ink'

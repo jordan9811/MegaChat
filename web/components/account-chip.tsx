@@ -14,7 +14,7 @@ import { shortAddr, useAccount } from '@/lib/use-account'
 import { formatDollars } from '@/lib/display-format'
 
 // `accent` colours the signed-in dot only. The Sign in button is always the
-// strap ultramarine with white text, so whatever accent a page passes, its label
+// strap azure with white text, so whatever accent a page passes, its label
 // keeps ≥4.5:1 in both themes.
 export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string }) {
   const [open, setOpen] = useState(false)
@@ -61,11 +61,11 @@ export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string
         onClick={openSignIn}
         disabled={wallet.modalOpen}
         title={wallet.configured ? 'Twitch, X, Google, email or passkey' : 'Sign-in is not configured on this server'}
-        className="inline-flex h-9 items-center bg-hl-strap px-3.5 text-[13px] font-[700] text-white transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-hl-strap-hover active:scale-[0.97] disabled:opacity-70"
+        className="inline-flex h-9 items-center bg-hl-strap px-3.5 text-[13px] font-[700] text-hl-on-strap transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-hl-strap-hover active:scale-[0.97] disabled:opacity-70"
       >
         {wallet.modalOpen ? 'Opening…' : 'Sign in'}
       </button>
-      {authError && <p role="alert" className="absolute right-0 top-full z-50 mt-2 w-72 border border-f-holler-line bg-hl-panel p-3 text-left text-[13px] leading-normal text-hl-fg shadow-[var(--hl-shadow)]">{authError}</p>}
+      {authError && <p role="alert" className="absolute right-0 top-full z-50 mt-2 w-72 border border-hl-danger bg-hl-panel p-3 text-left text-[13px] leading-normal text-hl-fg shadow-[var(--hl-shadow)]">{authError}</p>}
       </div>
     )
   }
@@ -131,7 +131,7 @@ export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string
               {connectingBalance ? 'Connecting…' : 'Connect balance'}
             </button>
           )}
-          {authError && <p role="alert" className="px-2.5 py-2 text-[13px] text-f-holler-ink">{authError}</p>}
+          {authError && <p role="alert" className="px-2.5 py-2 text-[13px] text-hl-danger">{authError}</p>}
 
           <a href="/account" role="menuitem" className="block px-2.5 py-2 text-[13px] text-hl-fg hover:bg-hl-panel-2">
             Account

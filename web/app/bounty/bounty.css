@@ -5,7 +5,7 @@
    light/dark theme. Bounty yellow is money and the bounty actions — solid
    yellow is money locked to one name, the yellow hatch is money several
    names are racing for, and the two are never blended into one number.
-   Money already paid out is rewards green; strap ultramarine is everything
+   Money already paid out is rewards green; strap azure is everything
    else. */
 
 body:has(.mc-bounty) {
@@ -27,7 +27,7 @@ body:has(.mc-bounty) {
   --mcc-rule: var(--hl-line-2);
   --mcc-rule-2: color-mix(in srgb, var(--hl-fg) 28%, transparent);
   /* Bounty marks that are not text — bars, swatches, the selected-row edge.
-     The owner's #cfe83a is near-white on a light ground (1.3:1), so in light
+     The owner's #ffd60a is near-white on a light ground (1.1:1), so in light
      each yellow fill also carries a hairline in the bounty ink. */
   --mcb-fill: var(--f-bounty);
   --mcb-edge: transparent;
@@ -110,7 +110,7 @@ body:has(.mc-bounty) {
 
 /* ── AVATAR FALLBACK ──────────────────────────────────────────────────────
    Six meshes keyed off the handle, so a name always gets the same one.
-   Ultramarine family and neutrals only — a feature hue on an avatar would read
+   Azure family and neutrals only — a feature hue on an avatar would read
    as a claim about the streamer. */
 .mc-bounty [class*='mc-mesh-'] {
   color: color-mix(in srgb, var(--hl-fg) 72%, transparent);
@@ -372,7 +372,7 @@ body:has(.mc-bounty) {
 .mcb-disabled p { max-width: 600px; margin: 0; color: var(--mcc-muted); font-size: 13px; line-height: 1.6; }
 
 /* The hero is lit from two sides: the money (bounty yellow) and the brand
-   (strap ultramarine) — complementary, so neither muddies the other. */
+   (strap azure) — complementary, so neither muddies the other. */
 .mcb-hero {
   min-height: 245px;
   display: grid;
@@ -388,7 +388,7 @@ body:has(.mc-bounty) {
 }
 /* In light the base runs the other way: lime over the blue-grey panel mixes
    to khaki (near complements), so the lime corner sits on white and the blue
-   is kept to the ultramarine corner. */
+   is kept to the azure corner. */
 .light .mcb-hero {
   background:
     radial-gradient(circle at 17% 10%, color-mix(in srgb, var(--f-bounty) 16%, transparent), transparent 31rem),

@@ -1,6 +1,6 @@
 /* Rooms board — a directory, on the Holler skin (design-assets/holler-brand/SPEC.md).
    One featured room, a uniform grid under it, and the bounty board as a calm
-   side rail. Colour carries meaning and nothing else: ultramarine is the brand,
+   side rail. Colour carries meaning and nothing else: azure is the brand,
    the thing to click and a camera seat (Call in), pink is on air and a
    recorded Holler, yellow is money. Every panel is the same surface; a 2px
    line across the top says what kind of thing the card is.
@@ -24,10 +24,10 @@
 }
 
 .mc-booth {
-  /* White text on the ultramarine strap — SPEC §3 ("primary buttons, white
-     text"); the strap is #2f2ad8 in both themes, so this never flips. */
-  --mcb-on-strap: #fff;
-  /* How strongly the ultramarine wash at the top-left tints the ground. */
+  /* Text on the azure strap — dark in both themes (SPEC §3: white on
+     #0a9bff is 2.9:1), the same as the mark's letters. */
+  --mcb-on-strap: var(--hl-on-strap);
+  /* How strongly the azure wash at the top-left tints the ground. */
   --mcb-wash: 13%;
   /* One curve for everything that moves: starts fast, settles softly. */
   --mcb-ease: cubic-bezier(0.23, 1, 0.32, 1);
@@ -201,8 +201,8 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   }
 }
 
-/* A feature chip carries its feature's light: the record pink for Live now,
-   ultramarine for Call in, the holler pink for Hollers. Live now and Hollers
+/* A feature chip carries its feature's light: the record magenta for Live now,
+   azure for Call in, the holler magenta for Hollers. Live now and Hollers
    share a pink, so they differ by shape: Live now is the mark's record button (a
    dot in a ring), Hollers a plain dot. No pulse — the shape is enough. */
 .mcr-chip-dot {
@@ -220,6 +220,13 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   box-shadow: inset 0 0 0 1.5px var(--hl-record);
 }
 
+/* The record pink is 2.5:1 on the stone ground; the dot takes the holler
+   hue (#e01fbd, 3.25:1) like its Hollers sibling. Scoped to the dot, so the
+   mark's record O keeps the brand pink. */
+.light .mcr-chip-dot.is-live {
+  --hl-record: var(--f-holler);
+}
+
 .mcr-chip-dot.is-callin {
   background: var(--f-callin);
 }
@@ -228,12 +235,13 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   background: var(--f-holler);
 }
 
-/* On the strap fill a white ring keeps the call-in dot from vanishing. */
+/* On the strap fill a ring in the strap's text colour keeps the call-in dot
+   from vanishing (it is the strap's own azure). */
 .mcr-chip[aria-pressed='true'] .mcr-chip-dot {
   box-shadow: 0 0 0 1.5px var(--mcb-on-strap);
 }
 
-/* …and the record button keeps its own ring inside the white one. */
+/* …and the record button keeps its own ring inside that one. */
 .mcr-chip[aria-pressed='true'] .mcr-chip-dot.is-live {
   box-shadow: inset 0 0 0 1.5px var(--hl-record), 0 0 0 1.5px var(--mcb-on-strap);
 }
@@ -266,7 +274,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
    paints itself absolutely over this box and contributes no height of its
    own, so the box has to be positioned and has to size itself. The gradient
    is the fallback art — it is simply what shows through whenever the preview
-   decides it has no real frame to render: the studio's ultramarine from
+   decides it has no real frame to render: the studio's azure from
    below, and nothing pink — a faint pink over the blue ink reads as a violet
    smudge beside the H◉ mark. The box is scoped `dark` in the markup, so
    these tokens are the dark ones in either theme. */
@@ -364,7 +372,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   animation: mcr-pulse 1.6s ease-in-out infinite;
 }
 
-/* Every seat taken: a Call in state, so it wears the call-in ultramarine. */
+/* Every seat taken: a Call in state, so it wears the call-in azure. */
 .mcr-tag.is-full {
   color: var(--f-callin-ink);
   border-color: var(--f-callin-line);
@@ -381,8 +389,8 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   margin-bottom: 16px;
   background: var(--mcb-panel);
   border: 1px solid var(--mcb-line);
-  /* the strap's hue as Call in: the raw strap is 2.3:1 on the dark ground,
-     the lifted call-in hue 4.2:1 or more; in light both are #2f2ad8 */
+  /* the strap's hue as Call in: azure #0a9bff is 6.7:1 on the dark ground;
+     in light the call-in hue steps down to #0a84e6 to hold 3:1 */
   border-top: 2px solid var(--f-callin);
   box-shadow: var(--hl-shadow);
 }
@@ -407,7 +415,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 
 /* The featured stage is a link, and its top edge is the card's 2px stripe:
    at the house 2px offset the ring lay on that stripe and the two read as one
-   thick band (#928fff on #6662ff is 1.6:1). 4px sits the ring the house 2px
+   thick band (ring and stripe are both azure). 4px sits the ring the house 2px
    off the card's own edge, with page between them. Not inset: the preview
    <img> and the scanlines are positioned and paint over an inner outline. */
 .mcr-feat > .mcr-stage:focus-visible {
@@ -499,12 +507,12 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   color: var(--mcb-on-strap);
   font-size: 13px;
   font-weight: 800;
-  /* An ultramarine glow in dark, a soft shadow in light — same value. */
+  /* An azure glow in dark, a soft shadow in light — same value. */
   box-shadow: 0 8px 26px -10px color-mix(in srgb, var(--hl-strap) 90%, transparent);
   transition: transform 0.12s ease;
 }
 
-/* The seats are full and this joins the queue for one: Call in ultramarine. */
+/* The seats are full and this joins the queue for one: Call in azure. */
 .mcr-btn.is-queue {
   background: var(--f-callin-solid);
   color: var(--f-callin-on);
@@ -651,7 +659,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   white-space: nowrap;
 }
 
-/* The room's initial on the brand strap — the same ultramarine as the mark. */
+/* The room's initial on the brand strap — the same azure as the mark. */
 .mcr-mono {
   flex: 0 0 auto;
   display: grid;
@@ -1271,9 +1279,11 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   white-space: nowrap;
 }
 
-/* Seats as pips: solid = someone on camera, tinted = open. Call in ultramarine.
+/* Seats as pips: solid = someone on camera, tinted = open. Call in azure.
    Filled and rounded on purpose — hollow squares after a word read as a
-   font failing to draw a glyph (□□□). */
+   font failing to draw a glyph (□□□). The open pip's edge is -ui (6.2:1
+   light, 6.4:1 dark): the pips are the only count of open seats, and the
+   -line edge left them under 3:1 in both themes. */
 .mcr-dots {
   display: inline-flex;
   gap: 3px;
@@ -1285,7 +1295,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   height: 7px;
   border-radius: 2px;
   background: var(--f-callin-bg);
-  border: 1px solid var(--f-callin-line);
+  border: 1px solid var(--f-callin-ui);
 }
 
 .mcr-dots i.is-on {
@@ -1294,7 +1304,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 /* The seats as they sit on the broadcast: a column of guest frames on the
-   right of the featured stage. Taken = a guest in the call-in ultramarine, open =
+   right of the featured stage. Taken = a guest in the call-in azure, open =
    an empty frame on a quiet hairline, so the H◉ fallback leads an empty
    stage; inside the dark-scoped stage. */
 .mcr-seats {

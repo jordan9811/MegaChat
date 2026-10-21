@@ -42,7 +42,7 @@ export default function NotFound() {
           >
             <Link
               href="/"
-              className="rounded-[2px] bg-hl-strap px-5 py-2.5 text-sm font-bold text-white transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-hl-strap-hover active:scale-[0.97]"
+              className="rounded-[2px] bg-hl-strap px-5 py-2.5 text-sm font-bold text-hl-on-strap transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-hl-strap-hover active:scale-[0.97]"
             >
               Browse live rooms
             </Link>

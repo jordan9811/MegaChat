@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
   <!-- Holler favicon (design-assets/holler-brand/SPEC.md §2, "icon" variant):
-       the ultramarine strap itself as the silhouette, full height with its
-       slanted right edge, carrying a white H and the pink record O. No ground
+       the azure strap itself as the silhouette, full height with its
+       slanted right edge, carrying a dark H and the magenta record O. No ground
        around it, so at 16px the strap fills the tab icon instead of sitting
        as a thin band inside a dark square. At this size the O is a solid dot. -->
-  <path d="M1.5 3H31L25 29H1.5Q0 29 0 27.5V4.5Q0 3 1.5 3Z" fill="#2f2ad8"/>
-  <path d="M3.5 9H7.5V14.6H11V9H15V23H11V17.4H7.5V23H3.5Z" fill="#fff"/>
-  <circle cx="21" cy="16" r="5.2" fill="#ff2d78"/>
+  <path d="M1.5 3H31L25 29H1.5Q0 29 0 27.5V4.5Q0 3 1.5 3Z" fill="#0a9bff"/>
+  <path d="M3.5 9H7.5V14.6H11V9H15V23H11V17.4H7.5V23H3.5Z" fill="#060a17"/>
+  <circle cx="21" cy="16" r="5.2" fill="#ff2bd6"/>
 </svg>

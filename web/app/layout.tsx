@@ -70,16 +70,16 @@ export const metadata: Metadata = {
   // Versioned: browsers cache a tab icon by its URL and ignore no-cache, so a
   // new icon needs a new URL. Bump ?v= whenever icon.svg or apple-icon.png change.
   icons: {
-    icon: '/icon.svg?v=2',
-    apple: '/apple-icon.png?v=2',
+    icon: '/icon.svg?v=3',
+    apple: '/apple-icon.png?v=3',
   },
 }
 
 export const viewport: Viewport = {
   colorScheme: 'dark light',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f4f5fa' },
-    { media: '(prefers-color-scheme: dark)', color: '#060a17' },
+    { media: '(prefers-color-scheme: light)', color: '#e6e3ee' },
+    { media: '(prefers-color-scheme: dark)', color: '#070b14' },
   ],
 }
 

@@ -1346,9 +1346,9 @@ export function HostCamCard() {
         {onAir && micOnly ? (
           <div
             role="alert"
-            className="rounded-xl border border-f-holler-line bg-f-holler-bg p-3"
+            className="rounded-xl border border-hl-danger/50 bg-hl-danger/10 p-3"
           >
-            <strong className="block text-sm font-bold text-f-holler-ink">
+            <strong className="block text-sm font-bold text-hl-danger">
               Your camera isn&#39;t working — {guestNoun} can hear you but cannot see you
             </strong>
             <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
@@ -1360,7 +1360,7 @@ export function HostCamCard() {
             <button
               type="button"
               onClick={() => void tryEnableCamera(camIdRef.current)}
-              className="mt-2 h-8 rounded-lg border border-f-holler-line px-3 text-xs font-bold text-f-holler-ink"
+              className="mt-2 h-8 rounded-lg border border-hl-danger/50 px-3 text-xs font-bold text-hl-danger"
             >
               Try the camera now
             </button>
@@ -1371,9 +1371,9 @@ export function HostCamCard() {
           <div
             role="alert"
             id="boothFeedback"
-            className="rounded-xl border border-f-holler-line bg-f-holler-bg p-3"
+            className="rounded-xl border border-hl-danger/50 bg-hl-danger/10 p-3"
           >
-            <strong className="block text-sm font-bold text-f-holler-ink">
+            <strong className="block text-sm font-bold text-hl-danger">
               Feedback on your speakers
             </strong>
             <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
@@ -1385,7 +1385,7 @@ export function HostCamCard() {
                 <button
                   type="button"
                   onClick={() => setAecPref('system')}
-                  className="h-8 rounded-lg border border-f-holler-line px-3 text-xs font-bold text-f-holler-ink"
+                  className="h-8 rounded-lg border border-hl-danger/50 px-3 text-xs font-bold text-hl-danger"
                 >
                   Hear guests through OBS
                 </button>
@@ -1401,8 +1401,8 @@ export function HostCamCard() {
           </div>
         ) : null}
         {onAir && aecMode === 'tab' && leaking.length ? (
-          <div role="alert" id="boothLeak" data-seats={leaking.join(',')} className="rounded-xl border border-f-holler-line bg-f-holler-bg p-3">
-            <strong className="block text-sm font-bold text-f-holler-ink">
+          <div role="alert" id="boothLeak" data-seats={leaking.join(',')} className="rounded-xl border border-hl-danger/50 bg-hl-danger/10 p-3">
+            <strong className="block text-sm font-bold text-hl-danger">
               Your mic is picking up {leakingNames.join(', ')} from your speakers
             </strong>
             <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
@@ -1412,7 +1412,7 @@ export function HostCamCard() {
               <button
                 type="button"
                 onClick={() => setAecPref('system')}
-                className="mt-2 h-8 rounded-lg border border-f-holler-line px-3 text-xs font-bold text-f-holler-ink"
+                className="mt-2 h-8 rounded-lg border border-hl-danger/50 px-3 text-xs font-bold text-hl-danger"
               >
                 Hear guests through OBS
               </button>
@@ -1506,7 +1506,7 @@ export function HostCamCard() {
               {picture === 'checking' ? (
                 <RefreshCw className="size-4 animate-spin text-muted-foreground" />
               ) : (
-                <VideoOff className="size-5 text-f-holler-ink" />
+                <VideoOff className="size-5 text-hl-danger" />
               )}
               <p className="text-sm font-semibold text-foreground">
                 {picture === 'checking' ? 'Checking your camera' : 'Guests can’t see you'}
@@ -1523,7 +1523,7 @@ export function HostCamCard() {
         </div>
 
         {error ? (
-          <p id="boothError" className="text-xs text-f-holler-ink">
+          <p id="boothError" className="text-xs text-hl-danger">
             {error}
           </p>
         ) : null}

@@ -208,7 +208,7 @@ export function LettersQueueCard() {
             {pile(producer ? 'On screen' : 'Queued', producer ? 'airing now' : 'plays automatically when a tile frees', running)}
           </>
         )}
-        {error ? <p className="text-xs text-f-holler-ink">{error}</p> : null}
+        {error ? <p className="text-xs text-hl-danger">{error}</p> : null}
       </div>
     </GlassCard>
   )

@@ -31,9 +31,9 @@ import { FeatureTag } from '@/components/feature-tag'
 
 type Stage = 'idle' | 'recording' | 'preview' | 'terms' | 'sending' | 'done' | 'error'
 
-// Colour roles (Holler SPEC §3): the recording itself is the holler pink —
+// Colour roles (Holler SPEC §3): the recording itself is the holler magenta —
 // the Record button, the REC light, the finished take. Money and the bounty
-// steps are bounty yellow; a choice you have made is strap ultramarine; the
+// steps are bounty yellow; a choice you have made is strap azure; the
 // done state is rewards green; an error is the danger orange. The camera frame stays dark in both themes.
 const CHOICE_ON = 'border-hl-strap-hi bg-hl-strap/15 text-foreground'
 const CHOICE_OFF = 'border-border text-muted-foreground'

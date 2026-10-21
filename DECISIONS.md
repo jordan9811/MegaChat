@@ -1170,3 +1170,22 @@ reason than "the API is expensive".
   "Near term" no longer drops under 4.5:1 over the GlitchBackground. Undo:
   `.mcr-feat > .mcr-stage:focus-visible` in `booth.css`; the legend's
   `bg-hl-panel` and `backgroundImage` in `roadmap-timeline.tsx`.
+
+## Holler: "Stone" light mode and the "Azure" neon set (2026-10-21)
+
+- **Light mode is "Stone".** The owner called the first light mode "super
+  whitewashed" and picked Stone from the lab: a mid-tone ground #e6e3ee,
+  near-white cards that lift, solid feature tags, the landing's bounty band at
+  night (`.dark` on the section). Undo: the `.light` block in globals.css.
+- **The colourway is the "Azure" neon set**, from his neon-HUD reference:
+  azure #0a9bff strap and Call in, magenta #ff2bd6 record and Holler, readout
+  yellow #ffd60a Bounty, neon green #39ff6a Rewards, on #070b14. It replaces
+  pink on ultramarine the day after that shipped. Rewards left cyan-green
+  because #00ffc3 next to an azure Call in reads as the same feature.
+- **Every fill carries dark text** (`--hl-on-strap`, `--f-x-on` #060a17), the
+  mark's letters included: white is 2.9:1 on azure and 3.2:1 on magenta. In
+  light the neons are fills and edges; text uses deep inks.
+- **His #2 is on file, not shipped**: "Late-night TV with pink" (CRT teal
+  strap, pink Holler, lamp amber Bounty, warm black ground with a tungsten
+  bloom), the look the launch film is likely to be shot in. He may switch once
+  the film is done; the values are in SPEC.md under "Standing alternate".

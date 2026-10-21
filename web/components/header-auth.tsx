@@ -115,7 +115,7 @@ export function HeaderAuth() {
           onClick={openSignIn}
           disabled={wallet.modalOpen}
           title={wallet.configured ? 'Twitch, X, Google, email or passkey' : 'Sign-in is not configured on this server'}
-          className="flex h-9 items-center gap-2 rounded-[2px] bg-hl-strap px-3 text-sm font-semibold text-white transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-hl-strap-hover active:scale-[0.97] disabled:opacity-70 sm:px-4"
+          className="flex h-9 items-center gap-2 rounded-[2px] bg-hl-strap px-3 text-sm font-semibold text-hl-on-strap transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-hl-strap-hover active:scale-[0.97] disabled:opacity-70 sm:px-4"
         >
           <UserRound className="size-4" />
           {/* Straight to Privy's modal — no in-house chooser in between.

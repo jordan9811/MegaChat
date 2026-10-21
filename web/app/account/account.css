@@ -23,12 +23,12 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 }
 
 /* The page's own names, each resolved onto a token by meaning:
-     accent      the strap ultramarine — actions, links, the active section
+     accent      the strap azure — actions, links, the active section
      accent-ink  accent as small text: strap-hi lifted toward the text colour,
                  ≥4.5:1 on every ground in both themes (strap-hi alone is
                  4.4:1 on panel-2 in dark)
      money       bounty yellow — balances and amounts (SPEC §3)
-     alert       holler pink ink — errors, destructive, "you are being charged" */
+     alert       holler magenta ink — errors, destructive, "you are being charged" */
 .mc-account {
   --mcc-bg: var(--hl-bg);
   --mcc-panel: var(--hl-panel);
@@ -46,8 +46,9 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   --mcc-accent-tint-2: color-mix(in srgb, var(--hl-strap) 20%, transparent);
   --mcc-live: var(--mcc-accent-ink);
   --mcc-money: var(--f-bounty-ink);
-  --mcc-alert: var(--f-holler-ink);
-  --mcc-warn: var(--f-holler-ink);
+  /* errors and alarms: the danger orange, never pink (pink is a Holler) */
+  --mcc-alert: var(--hl-danger);
+  --mcc-warn: var(--hl-danger);
   --mcc-bloom: color-mix(in srgb, var(--hl-strap) 16%, transparent);
   background-color: var(--mcc-bg);
   background-image:
@@ -216,7 +217,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 .mcc-section-nav :is(button, a):hover { color: var(--mcc-fg); }
 .mcc-nav-links { border-top: 1px solid var(--mcc-rule); }
 .mcc-signout { margin: auto 16px 16px; padding: 11px; border: 1px solid var(--mcc-rule); background: transparent; color: var(--mcc-faint); font-size: 11px; font-weight: 650; text-align: left; cursor: pointer; }
-.mcc-signout:hover { border-color: var(--f-holler-line); color: var(--mcc-alert); }
+.mcc-signout:hover { border-color: color-mix(in srgb, var(--hl-danger) 50%, transparent); color: var(--mcc-alert); }
 
 .mcc-account-work { min-width: 0; padding: 34px; }
 .mcc-overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -233,8 +234,8 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 /* Money reads in bounty yellow (SPEC §3): the balance is an amount. */
 .mcc-balance-zone {
   border: 1px solid var(--f-bounty-line);
-  /* -ui: the lime in dark, the bounty ink in light, where the raw lime
-     stripe is 1.3:1 on the page */
+  /* -ui: the yellow in dark, the bounty line in light, where the raw
+     yellow stripe is 1.1:1 on the page */
   border-left: 3px solid var(--f-bounty-ui);
   background: linear-gradient(145deg, var(--f-bounty-bg), color-mix(in srgb, var(--mcc-panel) 70%, transparent));
 }
@@ -247,7 +248,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 .mcc-balance-zone :is(button, a),
 .mcc-room-zone a { padding: 10px 14px; border: 1px solid currentColor; background: transparent; color: inherit; font-size: 11px; font-weight: 750; cursor: pointer; }
 
-/* The room address is the brand's own: the strap ultramarine. The stripe is
+/* The room address is the brand's own: the strap azure. The stripe is
    the call-in hue, the strap lifted to 3.5:1+ on the dark ground. */
 .mcc-room-zone {
   border: 1px solid color-mix(in srgb, var(--hl-strap-hi) 40%, transparent);
@@ -344,7 +345,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   color: var(--mcc-faint);
 }
 
-/* The site's focus ring, in the strap ultramarine (≥3:1 on every ground). */
+/* The site's focus ring, in the strap azure (≥3:1 on every ground). */
 .mc-account :is(a, button, input, [tabindex]):focus-visible {
   outline: 2px solid var(--hl-strap-hi);
   outline-offset: 2px;
@@ -385,7 +386,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   padding: 9px 18px;
   border: 0;
   background: var(--hl-strap);
-  color: #fff;
+  color: var(--hl-on-strap);
   cursor: pointer;
   transition: transform 150ms cubic-bezier(.23, 1, .32, 1);
 }
@@ -418,7 +419,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   cursor: default;
 }
 
-/* The handle is the room's address, so it wears the brand's ultramarine. */
+/* The handle is the room's address, so it wears the brand's azure. */
 .mc-account .handle {
   color: var(--mcc-accent-ink);
 }
@@ -480,7 +481,7 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   background: var(--mcc-faint);
 }
 /* A guest takes a camera seat free, so the list is a Call in setting and
-   its On state wears the call-in ultramarine. The dot glows in dark only. */
+   its On state wears the call-in azure. The dot glows in dark only. */
 .mcc-guests-switch.is-on {
   border-color: var(--f-callin-line);
   background: var(--f-callin-bg);
@@ -495,8 +496,8 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 .mcc-guests-alarm {
   margin: 16px 0 0;
   padding: 13px 15px;
-  border-left: 2px solid var(--f-holler);
-  background: var(--f-holler-bg);
+  border-left: 2px solid var(--hl-danger);
+  background: color-mix(in srgb, var(--hl-danger) 10%, transparent);
   color: var(--mcc-fg);
   font-size: 13.5px;
   line-height: 1.55;
@@ -538,8 +539,8 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
 .mcc-guests-error {
   margin: 14px 0 0;
   padding: 11px 14px;
-  border-left: 2px solid var(--f-holler);
-  background: var(--f-holler-bg);
+  border-left: 2px solid var(--hl-danger);
+  background: color-mix(in srgb, var(--hl-danger) 10%, transparent);
   color: var(--mcc-alert);
   font-size: 13.5px;
   line-height: 1.5;

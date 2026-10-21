@@ -22,6 +22,7 @@
   --color-hl-strap: var(--hl-strap);
   --color-hl-strap-hi: var(--hl-strap-hi);
   --color-hl-strap-hover: var(--hl-strap-hover);
+  --color-hl-on-strap: var(--hl-on-strap);
   --color-hl-record: var(--hl-record);
   --color-hl-field: var(--hl-field);
   --color-hl-danger: var(--hl-danger);
@@ -112,98 +113,105 @@
      --f-x-solid  a fill that carries text   --f-x-on   the text on that fill
      --f-x-ui     a mark that alone must hold 3:1 (a stripe, an on-dot): the
                   hue in dark, the ink in light, where pale hues vanish
-   The brand pair IS two of the features (owner, 2026-10-20): the record pink
-   is Holler and the ultramarine strap is Call in, so a brand button saying
-   "call in" is the point, not a clash. Bounty lime and Rewards cyan stay.
+                  (bounty's light one is its line, #977f03, gold not olive)
+   The "Azure" neon set (owner, 2026-10-21): azure #0a9bff is the strap and
+   Call in, magenta #ff2bd6 is the record and Holler, readout yellow #ffd60a
+   is Bounty, neon green #39ff6a is Rewards — the brand pair IS two of the
+   features, so a brand button saying "call in" is the point, not a clash.
    Deliberate, measured choices, all for contrast:
-   - white on the pink hue is 3.5:1, so the text-carrying fill (-solid) is the
-     deeper #e0115f (4.8:1); white on the strap is 8.6:1.
-   - in dark, ultramarine on the ground is 2.3:1, so the call-in hue is a
-     lifted #6662ff (4.5:1 on the ground, 3.2:1+ as a dot on its own tag
-     tint) and its text ink is #928fff, the same as --hl-strap-hi, which also
-     clears 3:1 against the strap itself where a focus ring touches it.
-   - in light, the holler ink is #b80f4a so a tag's label clears 4.5:1 on its
-     own tint; the rewards ink is #007054 for the same reason.
+   - every fill carries DARK text (--hl-on-strap, --f-x-on #060a17): white is
+     2.9:1 on azure and 3.2:1 on magenta, dark is 6.2–14.8:1 on all four.
+   - in dark every hue clears 4.5:1 as text on the grounds; the inks are a
+     shade lighter (#38b0ff, #ff5fe0) for small type.
+   - in light (Stone) the neons are fills and edges only; text uses deep inks
+     (#005fb3, #a8128a, #6b5a00, #0a6e2a, ≥4.5:1 on ground, card and tint), and
+     the non-text hues of the two deep features step down (#0a84e6, #e01fbd)
+     to hold 3:1 as a dot or stripe.
    Light tints are opaque (the hue mixed into white), so a tag or card reads
    the same pale hue over any ground; dark tints stay translucent, and the
-   bounty one is thinner (.07) because lime over the blue ink goes olive. The
+   bounty one is thinner (.045, its line a stronger .7) because yellow over
+   the navy goes grey and olive. The
    light bounty and rewards lines are 70% ink (3.8 / 3.5:1 on white) because
    the pale lime and cyan alone all but vanish on white.
    --hl-field is a text field's edge (3:1+ on every ground). --hl-danger is an
-   error or a destructive step, orange so it never reads as Holler pink.
+   error or a destructive step, orange so it never reads as Holler magenta.
    Pink TEXT is always --f-holler-ink; --hl-record is the light itself (a dot). */
 
 /* ----- dark (default) ----- */
 :root,
 .dark {
   color-scheme: dark;
-  --hl-bg: #060a17;
-  --hl-panel: #0c1122;
-  --hl-panel-2: #131a2e;
+  --hl-bg: #070b14;
+  --hl-panel: #0d1220;
+  --hl-panel-2: #141a2b;
   --hl-line: rgba(255, 255, 255, 0.09);
   --hl-line-2: rgba(255, 255, 255, 0.17);
   --hl-fg: #f3f5fb;
   --hl-muted: #a9b1c7;
   --hl-dim: #8a92aa;
-  --hl-strap: #2f2ad8;
-  --hl-strap-hi: #928fff;
-  /* hover fill for a strap button — a shade brighter, white text 7:1 */
-  --hl-strap-hover: #3d38ee;
-  --hl-record: #ff2d78;
+  --hl-strap: #0a9bff;
+  --hl-strap-hi: #38b0ff;
+  /* hover fill for a strap button — a shade brighter; its text stays dark */
+  --hl-strap-hover: #38b0ff;
+  /* text on a strap fill: dark, 6.7:1 on azure (white is 2.9:1) */
+  --hl-on-strap: #060a17;
+  --hl-record: #ff2bd6;
   /* sticky header bars and the page grid */
-  --hl-bar: rgba(6, 10, 23, 0.92);
+  --hl-bar: rgba(7, 11, 20, 0.92);
   --hl-grid: rgba(255, 255, 255, 0.014);
   --hl-field: color-mix(in srgb, var(--hl-fg) 40%, transparent);
   --hl-danger: #ff8a4c;
 
-  --f-holler: #ff2d78;
-  --f-holler-ink: #ff5a93;
-  --f-holler-bg: rgba(255, 45, 120, 0.12);
-  --f-holler-line: rgba(255, 45, 120, 0.45);
-  --f-holler-solid: #e0115f;
-  --f-holler-on: #ffffff;
+  --f-holler: #ff2bd6;
+  --f-holler-ink: #ff5fe0;
+  --f-holler-bg: rgba(255, 43, 214, 0.12);
+  --f-holler-line: rgba(255, 43, 214, 0.45);
+  --f-holler-solid: #ff2bd6;
+  --f-holler-on: #060a17;
   --f-holler-ui: var(--f-holler);
 
-  --f-callin: #6662ff;
-  --f-callin-ink: #928fff;
-  --f-callin-bg: rgba(102, 98, 255, 0.14);
-  --f-callin-line: rgba(102, 98, 255, 0.5);
-  --f-callin-solid: #2f2ad8;
-  --f-callin-on: #ffffff;
+  --f-callin: #0a9bff;
+  --f-callin-ink: #38b0ff;
+  --f-callin-bg: rgba(10, 155, 255, 0.14);
+  --f-callin-line: rgba(10, 155, 255, 0.5);
+  --f-callin-solid: #0a9bff;
+  --f-callin-on: #060a17;
   --f-callin-ui: var(--f-callin);
 
-  --f-bounty: #cfe83a;
-  --f-bounty-ink: #cfe83a;
-  --f-bounty-bg: rgba(207, 232, 58, 0.07);
-  --f-bounty-line: rgba(207, 232, 58, 0.45);
-  --f-bounty-solid: #cfe83a;
-  --f-bounty-on: #11131c;
+  --f-bounty: #ffd60a;
+  --f-bounty-ink: #ffd60a;
+  /* yellow over the navy cancels to grey and olive, so the tint stays thin
+     (the panel reads navy) and the yellow lives in the line, ~#b69b11 gold */
+  --f-bounty-bg: rgba(255, 214, 10, 0.045);
+  --f-bounty-line: rgba(255, 214, 10, 0.7);
+  --f-bounty-solid: #ffd60a;
+  --f-bounty-on: #060a17;
   --f-bounty-ui: var(--f-bounty);
 
-  --f-rewards: #00ffc3;
-  --f-rewards-ink: #00ffc3;
-  --f-rewards-bg: rgba(0, 255, 195, 0.12);
-  --f-rewards-line: rgba(0, 255, 195, 0.45);
-  --f-rewards-solid: #00ffc3;
-  --f-rewards-on: #11131c;
+  --f-rewards: #39ff6a;
+  --f-rewards-ink: #39ff6a;
+  --f-rewards-bg: rgba(57, 255, 106, 0.1);
+  --f-rewards-line: rgba(57, 255, 106, 0.45);
+  --f-rewards-solid: #39ff6a;
+  --f-rewards-on: #060a17;
   --f-rewards-ui: var(--f-rewards);
 
   /* Glows exist only in dark; light swaps them for soft shadows (SPEC §5). */
   --hl-glow-k: 1;
-  --hl-mark-glow: drop-shadow(0 0 18px color-mix(in srgb, #2f2ad8 60%, transparent));
+  --hl-mark-glow: drop-shadow(0 0 18px color-mix(in srgb, #0a9bff 55%, transparent));
   --hl-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
-  --hl-glow-strap: 0 0 0 1px rgba(110, 106, 255, 0.5), 0 0 24px rgba(47, 42, 216, 0.45), 0 0 60px rgba(47, 42, 216, 0.25);
-  --hl-glow-holler: 0 0 0 1px rgba(255, 45, 120, 0.5), 0 0 24px rgba(255, 45, 120, 0.3), 0 0 56px rgba(255, 45, 120, 0.16);
-  --hl-glow-callin: 0 0 0 1px rgba(102, 98, 255, 0.5), 0 0 24px rgba(102, 98, 255, 0.32), 0 0 56px rgba(102, 98, 255, 0.18);
-  --hl-glow-bounty: 0 0 0 1px rgba(207, 232, 58, 0.5), 0 0 24px rgba(207, 232, 58, 0.26), 0 0 56px rgba(207, 232, 58, 0.14);
-  --hl-glow-rewards: 0 0 0 1px rgba(0, 255, 195, 0.5), 0 0 24px rgba(0, 255, 195, 0.26), 0 0 56px rgba(0, 255, 195, 0.14);
+  --hl-glow-strap: 0 0 0 1px rgba(56, 176, 255, 0.5), 0 0 24px rgba(10, 155, 255, 0.4), 0 0 60px rgba(10, 155, 255, 0.22);
+  --hl-glow-holler: 0 0 0 1px rgba(255, 43, 214, 0.5), 0 0 24px rgba(255, 43, 214, 0.3), 0 0 56px rgba(255, 43, 214, 0.16);
+  --hl-glow-callin: 0 0 0 1px rgba(10, 155, 255, 0.5), 0 0 24px rgba(10, 155, 255, 0.32), 0 0 56px rgba(10, 155, 255, 0.18);
+  --hl-glow-bounty: 0 0 0 1px rgba(255, 214, 10, 0.5), 0 0 24px rgba(255, 214, 10, 0.26), 0 0 56px rgba(255, 214, 10, 0.14);
+  --hl-glow-rewards: 0 0 0 1px rgba(57, 255, 106, 0.5), 0 0 24px rgba(57, 255, 106, 0.26), 0 0 56px rgba(57, 255, 106, 0.14);
 
   /* Legacy Wordmark outline + .bg-noir blooms + grid. No pink bloom in
      dark: a faint pink over the blue ink reads as a violet smudge. */
   --wordmark-stroke: rgba(243, 245, 251, 0.85);
-  --noir-bloom-1: rgba(47, 42, 216, 0.2);
+  --noir-bloom-1: rgba(10, 155, 255, 0.16);
   --noir-bloom-2: transparent;
-  --noir-bloom-3: rgba(47, 42, 216, 0.12);
+  --noir-bloom-3: rgba(10, 155, 255, 0.1);
   --grid-line: rgba(255, 255, 255, 0.05);
 }
 
@@ -221,61 +229,66 @@
   --hl-fg: #0b0a12;
   --hl-muted: #3f3a4f;
   --hl-dim: #57526a;
-  --hl-strap: #2f2ad8;
-  --hl-strap-hi: #2520b8;
-  --hl-strap-hover: #2520b8;
-  --hl-record: #ff2d78;
+  --hl-strap: #0a9bff;
+  --hl-strap-hi: #005fb3;
+  --hl-strap-hover: #0a8ae6;
+  --hl-on-strap: #060a17;
+  --hl-record: #ff2bd6;
   --hl-bar: rgba(251, 250, 255, 0.92);
   /* no page grid on stone: the cards' lift does the structuring */
   --hl-grid: transparent;
   --hl-field: color-mix(in srgb, var(--hl-fg) 48%, transparent);
-  --hl-danger: #b3400b;
+  /* a shade under #b3400b so error text holds 4.5:1 on its own 10–18% tint
+     over the stone ground and panel-2, not only on a card */
+  --hl-danger: #9c3a10;
 
-  --f-holler: #ff2d78;
-  --f-holler-ink: #b80f4a;
+  --f-holler: #e01fbd;
+  --f-holler-ink: #a8128a;
   --f-holler-bg: color-mix(in srgb, var(--f-holler) 14%, var(--hl-panel));
-  --f-holler-line: rgba(255, 45, 120, 0.55);
-  --f-holler-solid: #e0115f;
-  --f-holler-on: #ffffff;
+  --f-holler-line: rgba(224, 31, 189, 0.55);
+  --f-holler-solid: #ff2bd6;
+  --f-holler-on: #060a17;
   --f-holler-ui: var(--f-holler-ink);
 
-  --f-callin: #2f2ad8;
-  --f-callin-ink: #2f2ad8;
+  --f-callin: #0a84e6;
+  --f-callin-ink: #005fb3;
   --f-callin-bg: color-mix(in srgb, var(--f-callin) 12%, var(--hl-panel));
-  --f-callin-line: rgba(47, 42, 216, 0.5);
-  --f-callin-solid: #2f2ad8;
-  --f-callin-on: #ffffff;
+  --f-callin-line: rgba(10, 132, 230, 0.55);
+  --f-callin-solid: #0a9bff;
+  --f-callin-on: #060a17;
   --f-callin-ui: var(--f-callin-ink);
 
-  --f-bounty: #cfe83a;
-  --f-bounty-ink: #556400;
+  --f-bounty: #ffd60a;
+  --f-bounty-ink: #6b5a00;
   --f-bounty-bg: color-mix(in srgb, var(--f-bounty) 14%, var(--hl-panel));
   --f-bounty-line: color-mix(in srgb, var(--f-bounty-ink) 70%, var(--f-bounty));
-  --f-bounty-solid: #cfe83a;
-  --f-bounty-on: #11131c;
-  --f-bounty-ui: var(--f-bounty-ink);
+  --f-bounty-solid: #ffd60a;
+  --f-bounty-on: #060a17;
+  /* the line (#977f03, 3.1:1 on ground, 3.8:1 on panel), not the ink: a
+     dot or stripe needs only 3:1, and the ink reads olive beside the neons */
+  --f-bounty-ui: var(--f-bounty-line);
 
-  --f-rewards: #00ffc3;
-  --f-rewards-ink: #007054;
+  --f-rewards: #39ff6a;
+  --f-rewards-ink: #0a6e2a;
   --f-rewards-bg: color-mix(in srgb, var(--f-rewards) 14%, var(--hl-panel));
   --f-rewards-line: color-mix(in srgb, var(--f-rewards-ink) 70%, var(--f-rewards));
-  --f-rewards-solid: #00ffc3;
-  --f-rewards-on: #11131c;
+  --f-rewards-solid: #39ff6a;
+  --f-rewards-on: #060a17;
   --f-rewards-ui: var(--f-rewards-ink);
 
   --hl-glow-k: 0;
-  --hl-mark-glow: drop-shadow(0 6px 14px rgba(47, 42, 216, 0.22));
+  --hl-mark-glow: drop-shadow(0 6px 14px rgba(10, 132, 230, 0.24));
   --hl-shadow: 0 1px 2px rgba(20, 16, 40, 0.07), 0 10px 22px -14px rgba(20, 16, 40, 0.35);
-  --hl-glow-strap: 0 0 0 1px rgba(47, 42, 216, 0.35), 0 8px 22px -6px rgba(47, 42, 216, 0.28);
-  --hl-glow-holler: 0 0 0 1px rgba(224, 17, 95, 0.35), 0 8px 22px -6px rgba(224, 17, 95, 0.24);
-  --hl-glow-callin: 0 0 0 1px rgba(47, 42, 216, 0.35), 0 8px 22px -6px rgba(47, 42, 216, 0.24);
-  --hl-glow-bounty: 0 0 0 1px rgba(85, 100, 0, 0.35), 0 8px 22px -6px rgba(85, 100, 0, 0.2);
-  --hl-glow-rewards: 0 0 0 1px rgba(0, 112, 84, 0.35), 0 8px 22px -6px rgba(0, 112, 84, 0.2);
+  --hl-glow-strap: 0 0 0 1px rgba(10, 132, 230, 0.35), 0 8px 22px -6px rgba(10, 132, 230, 0.3);
+  --hl-glow-holler: 0 0 0 1px rgba(224, 31, 189, 0.35), 0 8px 22px -6px rgba(224, 31, 189, 0.24);
+  --hl-glow-callin: 0 0 0 1px rgba(10, 132, 230, 0.35), 0 8px 22px -6px rgba(10, 132, 230, 0.24);
+  --hl-glow-bounty: 0 0 0 1px rgba(107, 90, 0, 0.35), 0 8px 22px -6px rgba(107, 90, 0, 0.2);
+  --hl-glow-rewards: 0 0 0 1px rgba(10, 110, 42, 0.35), 0 8px 22px -6px rgba(10, 110, 42, 0.2);
 
   --wordmark-stroke: rgba(17, 19, 28, 0.85);
-  --noir-bloom-1: rgba(47, 42, 216, 0.1);
-  --noir-bloom-2: rgba(255, 45, 120, 0.05);
-  --noir-bloom-3: rgba(47, 42, 216, 0.07);
+  --noir-bloom-1: rgba(10, 155, 255, 0.1);
+  --noir-bloom-2: rgba(255, 43, 214, 0.05);
+  --noir-bloom-3: rgba(10, 155, 255, 0.07);
   --grid-line: rgba(14, 18, 36, 0.05);
 }
 
@@ -284,7 +297,7 @@
    sits 2px outside it on the light page, where the island's own (dark)
    --hl-strap-hi is under 3:1. Not redeclared, so it cannot flip inside. */
 :root {
-  --hl-ring-light: #2520b8;
+  --hl-ring-light: #005fb3;
 }
 
 /* ----- shadcn / Tailwind theme variables, derived from the tokens ----- */
@@ -298,7 +311,7 @@
   --popover: var(--hl-panel-2);
   --popover-foreground: var(--hl-fg);
   --primary: var(--hl-strap);
-  --primary-foreground: #ffffff;
+  --primary-foreground: var(--hl-on-strap);
   --secondary: var(--hl-panel-2);
   --secondary-foreground: var(--hl-fg);
   --muted: var(--hl-panel-2);
@@ -312,7 +325,7 @@
 
   /* The retired Nerve neons (pink, cyan, lime, gold) now resolve by meaning,
      so any component not yet re-pointed still lands on a Holler colour:
-     brand/action → strap ultramarine, camera side → call-in ultramarine,
+     brand/action → strap azure, camera side → call-in azure,
      positive → rewards green, money → bounty yellow. All are text-safe inks. */
   --neon-magenta: var(--hl-strap-hi);
   --neon-violet: var(--f-callin-ink);
@@ -329,7 +342,7 @@
   --sidebar: var(--hl-panel);
   --sidebar-foreground: var(--hl-fg);
   --sidebar-primary: var(--hl-strap);
-  --sidebar-primary-foreground: #ffffff;
+  --sidebar-primary-foreground: var(--hl-on-strap);
   --sidebar-accent: var(--hl-panel-2);
   --sidebar-accent-foreground: var(--hl-fg);
   --sidebar-border: var(--hl-line);
@@ -382,7 +395,7 @@ html:root {
     outline-offset: 2px;
   }
 
-  /* Text selection in the brand ultramarine, not the OS default blue. */
+  /* Text selection in the brand azure, not the OS default blue. */
   ::selection {
     background: color-mix(in srgb, var(--hl-strap) 38%, transparent);
     color: var(--hl-fg);
@@ -424,8 +437,8 @@ html:root {
     font-family: var(--font-heading);
   }
 
-  /* ── Graffiti tagline — thick smooth brush script, record-pink fill with a
-     solid ultramarine 3D extrude down-right. ─────────────────────────────── */
+  /* ── Graffiti tagline — thick smooth brush script, record-magenta fill with a
+     solid azure 3D extrude down-right. ─────────────────────────────── */
   .font-graffiti {
     font-family: var(--font-graffiti), 'Brush Script MT', cursive;
   }
@@ -433,11 +446,11 @@ html:root {
     color: var(--hl-record);
     -webkit-text-stroke: 0.012em var(--hl-record);
     text-shadow:
-      0.022em 0.022em 0 #3d38ee,
-      0.045em 0.045em 0 #2f2ad8,
-      0.068em 0.068em 0 #2520b8,
-      0.09em 0.09em 0 rgba(20, 17, 92, 0.9),
-      0 0 32px rgba(255, 45, 120, calc(0.3 * var(--hl-glow-k)));
+      0.022em 0.022em 0 #38b0ff,
+      0.045em 0.045em 0 #0a9bff,
+      0.068em 0.068em 0 #0a84e6,
+      0.09em 0.09em 0 rgba(0, 45, 92, 0.9),
+      0 0 32px rgba(255, 43, 214, calc(0.3 * var(--hl-glow-k)));
   }
 
   /* ── GRAB 10 SEC physics — the banner is its own image slice, so the tilt
@@ -713,7 +726,7 @@ html[data-ui='simple'] .adv-only { display: none !important; }
 html[data-ui='advanced'] .simple-only { display: none !important; }
 
 /* ── Holler mark (components/holler-mark.tsx · SPEC §2) ──────────────────────
-   HOLLER in a slanted ultramarine broadcast strap; the O is a record button.
+   HOLLER in a slanted azure broadcast strap; the O is a record button.
    Selectors are doubled on purpose: page headers style every span inside the
    lockup at (0,1,1) — e.g. `.mcb-product-brand span { font-size: 11px }` — and
    the mark must neither shrink nor recolour with them. With no px it is 1em of
@@ -742,7 +755,7 @@ html[data-ui='advanced'] .simple-only { display: none !important; }
   padding: 0.1em 0.6em 0.06em 0.3em;
   border: 0;
   background: var(--hl-strap);
-  color: #ffffff;
+  color: var(--hl-on-strap);
   clip-path: polygon(0 0, 100% 0, calc(100% - 0.4em) 100%, 0 100%);
   font-family: var(--font-display), 'Archivo', var(--font-ui), sans-serif;
   font-size: 1em;
@@ -869,7 +882,7 @@ html[data-ui='advanced'] .simple-only { display: none !important; }
 }
 /* Stone: in light a tag is solid — the feature's fill with its own text, the
    dot in the text colour. Lime and cyan fills are ~1.3:1 on a white card, so
-   those two keep their ink edge (--ft-line); pink and ultramarine edge in
+   those two keep their ink edge (--ft-line); pink and azure edge in
    their own fill. Inside a dark island (.dark) tags stay tinted. */
 .light .ft.ft {
   border-color: var(--ft-solid-edge, var(--ft-solid));

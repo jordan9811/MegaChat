@@ -81,8 +81,8 @@ function RoomFeatureTags() {
 // Presentation only. The script writes the status message and the replay's
 // moment buttons as plain text, with no hook saying which feature they belong
 // to. This reads what it wrote and sets data-feature, so join.css can draw a
-// Holler's sent / queued / on-air states in holler pink and a seat's in call-in
-// ultramarine. It never changes the text, the classes the script owns, or any
+// Holler's sent / queued / on-air states in holler magenta and a seat's in call-in
+// azure. It never changes the text, the classes the script owns, or any
 // click behaviour.
 function featureOfMessage(text: string, seated: boolean): RoomFeature | '' {
   if (/\bHollers?\b/.test(text)) return 'holler'

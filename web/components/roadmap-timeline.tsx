@@ -2,10 +2,10 @@
 
 // The roadmap as one vertical timeline, two directions:
 //  - FORWARD (default): what's next, priority-ordered top to bottom,
-//    color-coded by horizon — green near / amber mid / ultramarine ambitious
+//    color-coded by horizon — green near / amber mid / azure ambitious
 //    (the page copy still says purple: the owner's wording to change).
 //    The horizon colours borrow the Holler palette's hues (rewards green,
-//    bounty yellow, the strap ultramarine) but never the FeatureTag shape — no
+//    bounty yellow, the strap azure) but never the FeatureTag shape — no
 //    dot — so a horizon chip cannot be read as a feature.
 //  - JOURNEY (back-arrow toggle): how we got here, oldest first, ending at
 //    today. The Feb 2026 prototype links to the original tweet when

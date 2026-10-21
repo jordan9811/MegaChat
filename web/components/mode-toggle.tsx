@@ -25,7 +25,7 @@ export function ModeToggle() {
       <span
         className={
           mode === 'simple'
-            ? 'rounded-[2px] bg-hl-strap px-2 py-0.5 text-white'
+            ? 'rounded-[2px] bg-hl-strap px-2 py-0.5 text-hl-on-strap'
             : 'hidden px-2 py-0.5 text-hl-muted sm:inline-block'
         }
       >
@@ -34,7 +34,7 @@ export function ModeToggle() {
       <span
         className={
           mode === 'advanced'
-            ? 'rounded-[2px] bg-hl-strap px-2 py-0.5 text-white'
+            ? 'rounded-[2px] bg-hl-strap px-2 py-0.5 text-hl-on-strap'
             : 'hidden px-2 py-0.5 text-hl-muted sm:inline-block'
         }
       >

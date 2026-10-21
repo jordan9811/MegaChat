@@ -223,7 +223,7 @@ export function ObsOneClick({
           type="button"
           onClick={() => void addToObs()}
           disabled={phase === 'adding' || phase === 'testing'}
-          className="w-full rounded-full bg-hl-strap px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-[1.01] active:scale-[.97] disabled:opacity-60"
+          className="w-full rounded-full bg-hl-strap px-5 py-2.5 text-sm font-bold text-hl-on-strap transition-transform hover:scale-[1.01] active:scale-[.97] disabled:opacity-60"
         >
           <span className="inline-flex items-center gap-1.5">
             <MonitorUp className="size-4" />

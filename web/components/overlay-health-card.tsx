@@ -111,7 +111,7 @@ export function OverlayHealthCard() {
       role="alert"
       className="flex items-start gap-3 rounded-2xl border border-border/70 bg-card/60 p-4 backdrop-blur-sm"
     >
-      <EyeOff className="mt-0.5 size-4 shrink-0 text-f-holler-ink" />
+      <EyeOff className="mt-0.5 size-4 shrink-0 text-hl-danger" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-foreground">
           {hidden ? 'Your overlay is not on screen' : 'Your overlay is too small to be read'}
@@ -131,7 +131,7 @@ export function OverlayHealthCard() {
           )}
         </p>
       </div>
-      <span className="mt-1 size-2 shrink-0 rounded-full bg-f-holler" style={{ animation: 'pulse 2s ease-in-out infinite' }} />
+      <span className="mt-1 size-2 shrink-0 rounded-full bg-hl-danger" style={{ animation: 'pulse 2s ease-in-out infinite' }} />
     </div>
   ) : null
 
@@ -163,13 +163,14 @@ export function OverlayHealthCard() {
   const connected = health.lkState === 'live'
   const bad = health.present && !health.healthy
 
-  // ink = the icon, dot = the light. Not open is a warning (bounty yellow),
-  // not responding is a fault (holler pink), on air is the record light with
+  // ink = the icon, dot = the light. Not open is a warning (bounty yellow; the
+  // dot is -ui, since raw yellow vanishes on a light card), not responding is
+  // a fault (danger orange, never Holler pink), on air is the record light with
   // the call-in guest's colour on the icon, and idle-ready is call-in waiting.
   const tone = !health.present
-    ? { icon: CircleAlert, ink: 'var(--f-bounty-ink)', dot: 'var(--f-bounty)', label: 'Overlay not open' }
+    ? { icon: CircleAlert, ink: 'var(--f-bounty-ink)', dot: 'var(--f-bounty-ui)', label: 'Overlay not open' }
     : bad
-      ? { icon: CircleAlert, ink: 'var(--f-holler-ink)', dot: 'var(--f-holler)', label: 'Overlay not responding' }
+      ? { icon: CircleAlert, ink: 'var(--hl-danger)', dot: 'var(--hl-danger)', label: 'Overlay not responding' }
       : connected
         ? { icon: Radio, ink: 'var(--f-callin-ink)', dot: 'var(--hl-record)', label: 'On air — guest connected' }
         : { icon: Moon, ink: 'var(--f-callin-ink)', dot: 'var(--f-callin)', label: 'Ready — sleeping until a guest joins' }

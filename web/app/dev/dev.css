@@ -44,7 +44,7 @@
   font-weight: 700;
 }
 .mc-dev .mcd-row input:focus-visible { outline: 2px solid var(--hl-strap-hi); outline-offset: 1px; }
-.mc-dev .mcd-row input[aria-invalid='true'] { border-color: var(--f-holler); }
+.mc-dev .mcd-row input[aria-invalid='true'] { border-color: var(--hl-danger); }
 
 .mc-dev .mcd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .mc-dev .mcd-chips button {
@@ -81,7 +81,7 @@
   padding: 10px 18px;
   border: 1px solid var(--hl-strap);
   background: var(--hl-strap);
-  color: #fff;
+  color: var(--hl-on-strap);
   font-size: 12px;
   font-weight: 750;
   cursor: pointer;

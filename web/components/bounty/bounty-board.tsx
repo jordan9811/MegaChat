@@ -20,7 +20,7 @@ function PlatformIcon({ platform }: { platform: string | null }) {
 }
 
 // Holler colour roles: money on offer is bounty yellow, a step in progress is
-// strap ultramarine, a verified or paying pool is the positive green, a dispute
+// strap azure, a verified or paying pool is the positive green, a dispute
 // is pink text, anything finished is neutral, and a failed load is the danger
 // orange (--hl-danger).
 const STATUS_TONE: Record<string, string> = {

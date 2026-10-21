@@ -6,7 +6,7 @@ import { ModeToggle } from '@/components/mode-toggle'
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-hl-line bg-[var(--hl-bar)] backdrop-blur-md">
-      {/* strap-ultramarine hairline under the bar */}
+      {/* strap-azure hairline under the bar */}
       <span
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-hl-strap-hi/60 to-transparent"
