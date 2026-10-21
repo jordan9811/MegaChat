@@ -67,9 +67,11 @@ export const metadata: Metadata = {
     description: SITE_DESC,
     images: ['/og.png'],
   },
+  // Versioned: browsers cache a tab icon by its URL and ignore no-cache, so a
+  // new icon needs a new URL. Bump ?v= whenever icon.svg or apple-icon.png change.
   icons: {
-    icon: '/icon.svg',
-    apple: '/apple-icon.png',
+    icon: '/icon.svg?v=2',
+    apple: '/apple-icon.png?v=2',
   },
 }
 
