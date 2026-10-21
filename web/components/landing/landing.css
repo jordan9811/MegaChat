@@ -10,7 +10,10 @@
    film column is a video, so it stays dark-framed in both themes (it carries
    its own .dark scope in landing-hero.tsx). */
 
-.mc-landing {
+/* The bounty band carries .dark, so in light it stays at night (the owner's
+   "Stone" pick): the mapping below runs again on it with the dark tokens. */
+.mc-landing,
+.mc-landing .mcl-bounty.dark {
   /* the landing's own names, mapped onto the shared tokens */
   --mcl-bg: var(--hl-bg);
   --mcl-panel: var(--hl-panel);
@@ -91,7 +94,6 @@ body:has(.mc-landing) {
 .mcl-pool-row > span,
 .mcl-pool-row > p small,
 .mcl-pool-row > b,
-.mcl-proof small,
 .mcl-compat > span {
   font-family: var(--font-code), ui-monospace, monospace;
 }
@@ -780,28 +782,6 @@ body:has(.mc-landing) {
 .mcl-pool-empty a { margin-top: 8px; border: 1px solid var(--f-bounty-line); padding: 10px 13px; background: var(--f-bounty-bg); color: var(--f-bounty-ink); font-size: 12px; font-weight: 700; }
 
 /* ── proof ───────────────────────────────────────────────────────────────── */
-.mcl-proof {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.mcl-proof > span {
-  display: grid;
-  min-height: 118px;
-  grid-template-columns: 30px 1fr;
-  grid-template-rows: auto auto;
-  align-content: center;
-  column-gap: 12px;
-  padding: 0 34px;
-  border-right: 1px solid var(--mcl-hairline);
-}
-
-.mcl-proof > span:first-child { padding-left: 64px; }
-.mcl-proof > span:last-child { border-right: 0; }
-.mcl-proof svg { grid-row: 1 / 3; color: var(--hl-strap-hi); }
-.mcl-proof b { font-size: 14px; text-wrap: balance; }
-.mcl-proof small { color: var(--mcl-dim); font-size: 11.5px; text-wrap: balance; }
-
 /* ── for streamers ───────────────────────────────────────────────────────── */
 .mcl-create-strip {
   display: flex;
@@ -907,10 +887,6 @@ body:has(.mc-landing) {
   .mcl-entry-card { min-height: 196px; }
   .mcl-bounty { grid-template-columns: 1fr; }
   .mcl-bounty-poster, .mcl-mini-board { padding: 40px 28px; }
-  .mcl-proof { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .mcl-proof > span { min-height: 96px; padding: 0 24px; border-bottom: 1px solid var(--mcl-hairline); }
-  .mcl-proof > span:first-child { padding-left: 24px; }
-  .mcl-proof > span:nth-child(even) { border-right: 0; }
   .mcl-create-strip { padding: 40px 28px 44px; }
 }
 
@@ -930,13 +906,6 @@ body:has(.mc-landing) {
   .mcl-footer { padding: 28px 20px; }
 }
 
-/* On a phone a proof cell is ~195px: beside the icon the text gets ~104px
-   and strands a word, so the icon stacks on top and the text takes the
-   cell's full width (~150px). Still 2×2. */
-@media (max-width: 440px) {
-  .mcl-proof > span { grid-template-columns: minmax(0, 1fr); }
-  .mcl-proof svg { grid-row: auto; justify-self: start; margin-bottom: 8px; }
-}
 
 /* The landing's own keyboard ring: the brand ultramarine, a step further out so
    it clears the filled buttons. No radius change — the round film controls

@@ -1,14 +1,5 @@
 import Link from 'next/link'
-import {
-  ArrowRight,
-  Clock3,
-  Fingerprint,
-  MessageSquareText,
-  MonitorPlay,
-  RefreshCcw,
-  Trophy,
-  Video,
-} from 'lucide-react'
+import { ArrowRight, MessageSquareText, Trophy, Video } from 'lucide-react'
 import type { PublicRoomCard } from '@/lib/api'
 import type { BountyPool } from '@/lib/bounty-api'
 import { formatDollars } from '@/lib/display-format'
@@ -57,13 +48,6 @@ const ENTRY_PATHS = [
     href: '/bounty',
   },
 ] as const
-
-const PROOFS = [
-  { icon: Clock3, title: 'Per-second', body: 'not per session' },
-  { icon: Fingerprint, title: 'One-tap sign in', body: 'no seed phrase' },
-  { icon: RefreshCcw, title: 'Automatic refunds', body: 'unused stays yours' },
-  { icon: MonitorPlay, title: 'Built for OBS', body: 'one browser source' },
-]
 
 export function Landing({
   rooms: _rooms,
@@ -131,7 +115,8 @@ export function Landing({
           </div>
         </section>
 
-        <section className="mcl-bounty">
+        {/* .dark: the bounty band stays at night in light mode too (Stone) */}
+        <section className="mcl-bounty dark">
           <div className="mcl-bounty-poster">
             <h2>Your favorite streamer<br />doesn&apos;t even know you.</h2>
             <p>Be more than a username.</p>
@@ -154,12 +139,6 @@ export function Landing({
               </div>
             )}
           </div>
-        </section>
-
-        <section className="mcl-proof">
-          {PROOFS.map(({ icon: Icon, title, body }) => (
-            <span key={title}><Icon size={22} strokeWidth={1.8} aria-hidden="true" /><b>{title}</b><small>{body}</small></span>
-          ))}
         </section>
 
         <section className="mcl-create-strip">
