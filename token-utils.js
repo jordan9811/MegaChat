@@ -89,3 +89,24 @@ export async function validatePaymentToken(tokenAddress, rpcUrl, chainId = 4217)
   }
   return readTokenMetadata(tokenAddress, rpcUrl, chainId);
 }
+
+/**
+ * A paid seat's CITED approve transaction (OPEN-ISSUES N16): when the client
+ * names one, it must be readable, mined, successful and sent BY the payer.
+ * Returns null when it is, or a refusal reason. `readReceipt(hash)` resolves
+ * to the receipt or throws (not found, not mined, RPC error) — every throw is
+ * a refusal: a junk or unmined hash used to fall through to "the allowance is
+ * authoritative", which made citing one the same as citing none. No hash at
+ * all (`cited: false`) is not judged here: the caller keeps the allowance-only
+ * behaviour for that case and logs it.
+ */
+export async function citedApproveProblem({ txHash, payer, readReceipt }) {
+  if (txHash == null || txHash === '') return null;
+  if (!/^0x[0-9a-fA-F]{64}$/.test(String(txHash))) return 'approve_tx_invalid';
+  let receipt;
+  try { receipt = await readReceipt(txHash); } catch { return 'approve_tx_unreadable'; }
+  if (!receipt) return 'approve_tx_unreadable';
+  if (receipt.status !== 'success') return 'tx_not_success';
+  if (!receipt.from || String(receipt.from).toLowerCase() !== String(payer).toLowerCase()) return 'approve_not_from_payer';
+  return null;
+}

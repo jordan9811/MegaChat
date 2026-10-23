@@ -12,6 +12,7 @@ import { ChevronDown } from 'lucide-react'
 import { CopyRow } from '@/components/copy-row'
 import { ObsOneClick } from '@/components/obs/obs-oneclick'
 import { useRoom } from '@/components/room-provider'
+import { withOverlayKey } from '@/lib/overlay-key'
 
 export function ObsSetup() {
   const { room, joinUrl, overlayUrl, identityHandle, updateDraft } = useRoom()
@@ -32,7 +33,7 @@ export function ObsSetup() {
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const viewerLink = origin ? (room.handle ? `${origin}/${room.handle}` : `${origin}/join?room=${room.id}`) : joinUrl
-  const obsLink = origin ? (room.handle ? `${origin}/${room.handle}/overlay` : `${origin}/overlay?room=${room.id}`) : overlayUrl
+  const obsLink = origin ? withOverlayKey(room.handle ? `${origin}/${room.handle}/overlay` : `${origin}/overlay?room=${room.id}`, overlayUrl) : overlayUrl
 
   return (
     <section className="mcc-obs" aria-label="Get Holler on your stream">
@@ -73,6 +74,7 @@ export function ObsSetup() {
           </summary>
           <div className="mcc-obs-panel">
             <CopyRow label="OBS" value={obsLink} />
+            <p className="mcc-obs-note">Set up OBS before 23 Oct 2026? Paste this link into your MegaChat Overlay source again: campaign Hollers only count through it.</p>
             {room.transport !== 'livekit' ? (
               <CopyRow label="Host cam" value={`https://vdo.ninja/?push=mc-host-${room.id}&webcam&quality=1080&stereo&autostart`} />
             ) : null}

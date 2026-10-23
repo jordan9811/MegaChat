@@ -535,6 +535,14 @@
       const q = new URLSearchParams(location.search).get('room');
       if (q && /^[a-z0-9-]{1,32}$/i.test(q)) streamRoomId = q.toLowerCase();
     } catch { /* default */ }
+    // The room's overlay key (`&k=`, OPEN-ISSUES N14), from the URL the
+    // dashboard hands out. Sent back in subscribe_room; without it the overlay
+    // renders exactly as before, it just cannot make a campaign Holler count.
+    let overlayKey = '';
+    try {
+      const k = new URLSearchParams(location.search).get('k');
+      if (k && /^[A-Za-z0-9_-]{1,64}$/.test(k)) overlayKey = k;
+    } catch { /* unkeyed */ }
 
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${wsProto}//${location.host}`);
@@ -1350,7 +1358,7 @@
       if (ws.readyState === 1) {
         // role:'overlay' — MegaChats only play while an overlay is rendering
         // the room (otherwise clips would burn into the void).
-        ws.send(JSON.stringify({ type: 'subscribe_room', room: streamRoomId, role: 'overlay' }));
+        ws.send(JSON.stringify({ type: 'subscribe_room', room: streamRoomId, role: 'overlay', ...(overlayKey ? { k: overlayKey } : {}) }));
       }
     };
 

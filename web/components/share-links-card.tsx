@@ -12,6 +12,7 @@ import { GlassCard, CardHeader } from '@/components/glass-card'
 import { CopyRow } from '@/components/copy-row'
 import { useRoom } from '@/components/room-provider'
 import { ObsOneClick } from '@/components/obs/obs-oneclick'
+import { withOverlayKey } from '@/lib/overlay-key'
 
 export function ShareLinksCard() {
   const { mode, room, joinUrl, overlayUrl, identityHandle, updateDraft } = useRoom()
@@ -38,9 +39,12 @@ export function ShareLinksCard() {
       : `${origin}/join?room=${room.id}`
     : joinUrl
   const obsLink = origin
-    ? room.handle
-      ? `${origin}/${room.handle}/overlay`
-      : `${origin}/overlay?room=${room.id}`
+    ? withOverlayKey(
+        room.handle
+          ? `${origin}/${room.handle}/overlay`
+          : `${origin}/overlay?room=${room.id}`,
+        overlayUrl,
+      )
     : overlayUrl
 
   return (
@@ -58,6 +62,9 @@ export function ShareLinksCard() {
       <div className="flex flex-col gap-2 px-5 py-5 sm:px-6">
         <CopyRow label="Viewer" value={viewerLink} />
         <CopyRow label="OBS" value={obsLink} />
+        <p className="text-pretty text-xs text-muted-foreground">
+          Set up OBS before 23 Oct 2026? Paste this link into your MegaChat Overlay source again: campaign Hollers only count through it.
+        </p>
 
         {/* One-click OBS setup, flag-gated. For an ORDINARY room this is a
             convenience sitting next to the copyable link above — not a

@@ -37,6 +37,7 @@ import { snapshotLivePreview, finalizeAiringPoster, readAiringPoster, posterFile
 import { readAiredClip, airedClipFile, sweepAiredClips, removeAiredClip, airedClipStats } from './aired-clips.js';
 import { getSetting, siteSettingsView, updateSiteSettings, isSiteAdmin } from './site-settings.js';
 import { hiddenWindows } from './overlay-visibility.js';
+import { overlayKeyMatches } from './overlay-key.js';
 import { buildCard } from './room-poster.js';
 import { createActivityManager } from './livekit-activity.js';
 import { createWebhookTracker, verifyWebhookJwt, reconcile } from './livekit-webhooks.js';
@@ -56,10 +57,14 @@ import {
   fromAtomic,
   readTokenBalance,
   readTokenAllowance,
+  readTokenMetadata,
   validatePaymentToken,
+  citedApproveProblem,
 } from './token-utils.js';
+import { createCampaignEngine, spenderCollisions, receiptConfirmer } from './campaign-engine.js';
+import { attachCampaignRoutes, campaignJoinMiddleware } from './campaign-routes.js';
 import { createMppMeter, toWebRequest } from './meter-mpp.js';
-import { createWalletClient, createPublicClient, http } from 'viem';
+import { createWalletClient, createPublicClient, http, parseEventLogs, erc20Abi } from 'viem';
 import { createSettlement, viemChainAdapter } from './settlement.js';
 import { createEscrowChain, defaultContractAddress } from './escrow-chain.js';
 import { tempo as tempoChainDef, tempoModerato as tempoModeratoChainDef } from 'viem/chains';
@@ -247,16 +252,152 @@ if (/^0x[0-9a-fA-F]{64}$/.test(process.env.REWARD_POOL_PRIVATE_KEY || '')) {
     console.warn('[settlement] REWARD_POOL_PRIVATE_KEY unusable — reward payouts stay PENDING:', err.message);
   }
 }
+// The campaign spender: a DEDICATED key that only pulls campaign budgets
+// (campaign-engine.js pullSigner 'campaignPull'). Creators approve THIS
+// address, never the seat spender, so a seat can never spend a creator's
+// un-pulled budget allowance and a campaign can never pull a viewer's seat
+// allowance. It pulls into SELLER_WALLET_ADDRESS (the platform wallet), which
+// holds the budget and pays rewards and refunds with PLATFORM_SETTLEMENT_KEY.
+// It must hold a little USDC for its own fees (Tempo charges fees in the
+// token moved). Unset, or the same address as a seat spender: campaigns
+// refuse to fund, in plain words. Built on viem's Tempo chain (E49).
+let campaignSpenderClient = null;
+let CAMPAIGN_SPENDER_ADDRESS = null;
+if (/^0x[0-9a-fA-F]{64}$/.test(process.env.CAMPAIGN_SPENDER_KEY || '')) {
+  try {
+    const acct = privateKeyToAccount(process.env.CAMPAIGN_SPENDER_KEY);
+    // The spender must be no OTHER signer this server holds — not the seat
+    // seller, not the payout wallet, not the reward pool, not the escrow
+    // operator or attester. Compared by the address each configured key
+    // resolves to; logged by env var NAME only.
+    const keyAddress = (name) => {
+      const k = process.env[name] || '';
+      if (!/^0x[0-9a-fA-F]{64}$/.test(k)) return null;
+      try { return privateKeyToAccount(k).address; } catch { return null; }
+    };
+    const clash = spenderCollisions(acct.address, {
+      SELLER_WALLET_ADDRESS, SELLER_PRIVATE_KEY: keyAddress('SELLER_PRIVATE_KEY'),
+      PLATFORM_SETTLEMENT_KEY: keyAddress('PLATFORM_SETTLEMENT_KEY'), REWARD_POOL_PRIVATE_KEY: keyAddress('REWARD_POOL_PRIVATE_KEY'),
+      ESCROW_OPERATOR_KEY: keyAddress('ESCROW_OPERATOR_KEY'), ESCROW_ATTEST_KEY: keyAddress('ESCROW_ATTEST_KEY'),
+    });
+    if (clash.length) {
+      console.error(`[campaigns] CAMPAIGN_SPENDER_KEY resolves to the same address as ${clash.join(', ')} — campaign funding DISABLED: campaigns need their own spender`);
+    } else {
+      campaignSpenderClient = createWalletClient({ account: acct, chain: tempoViemChain, transport: http(RPC_URL) });
+      CAMPAIGN_SPENDER_ADDRESS = acct.address;
+    }
+  } catch (err) {
+    console.warn('[campaigns] CAMPAIGN_SPENDER_KEY unusable — campaign funding disabled:', err.message);
+  }
+}
 const settlement = createSettlement({
   chain: viemChainAdapter({
     pull: sellerWalletClient,
     platform: platformWalletClient,
     rewardPool: rewardPoolWalletClient,
+    campaignPull: campaignSpenderClient,
     publicClient: createPublicClient({ chain: tempoViemChain, transport: http(RPC_URL) }),
   }),
   platformAddress: SELLER_WALLET_ADDRESS,
 });
 seatEscrow.setSettlement(settlement);
+
+// ─── Targeted reward campaigns (campaign-engine.js) ──────────────────────────
+// Holds no key and signs nothing: the creator's budget comes in by
+// settlement.pull against an allowance to SELLER_WALLET_ADDRESS (the pull
+// signer), rewards and the unspent refund go out as settlement intents that
+// the flush below executes with PLATFORM_SETTLEMENT_KEY. Taking a budget at
+// all also needs CAMPAIGN_FUNDING=1. Reads go through the same Tempo chain
+// object every signer here uses.
+const campaignPublicClient = createPublicClient({ chain: tempoViemChain, transport: http(RPC_URL) });
+const campaignEngine = createCampaignEngine({
+  settlement,
+  // Budgets are pulled BY the campaign spender INTO the platform wallet, which
+  // holds them and pays every reward and refund (PLATFORM_SETTLEMENT_KEY must
+  // resolve to this same address, see the door above).
+  platformAddress: SELLER_WALLET_ADDRESS,
+  spender: CAMPAIGN_SPENDER_ADDRESS,
+  pullSigner: 'campaignPull',
+  chainId: CHAIN_ID,
+  usdc: { address: USDC_ADDRESS, decimals: 6, symbol: 'USDC' },
+  readAllowance: (token, owner) => (CAMPAIGN_SPENDER_ADDRESS ? readTokenAllowance(token, owner, CAMPAIGN_SPENDER_ADDRESS, RPC_URL, CHAIN_ID) : 0n),
+  // The funding wallet's EIP-712 consent (N10). The Tempo public client
+  // answers for an EOA locally (mode 'eoa' tries ECDSA first) and for a
+  // contract wallet through ERC-1271 / ERC-6492, and for Tempo's P256 /
+  // WebAuthn signature envelopes.
+  verifyFundSignature: (args) => campaignPublicClient.verifyTypedData({ ...args, mode: 'eoa' }),
+  readTokenMeta: (address) => readTokenMetadata(address, RPC_URL, CHAIN_ID),
+  // Cold review B1: viem's replacement check OFF (a receipt for another hash
+  // that took this one's nonce is no answer), the receipt's hash must be the
+  // one asked about, and its logs go to the engine, which credits only the
+  // Transfer they show (campaign-engine.js receiptConfirmer / settleFunding).
+  confirmTx: receiptConfirmer(campaignPublicClient),
+  // B1b: what decides that a signed pull can no longer land — the spender's
+  // MINED nonce passed the one it was signed with, and no node knows the hash
+  // (droppedPullVerdict, with findFundingTransfer below).
+  readSpenderNonce: async (address) => Number(await campaignPublicClient.getTransactionCount({ address, blockTag: 'latest' })),
+  txKnown: async (hash) => {
+    try { return !!(await campaignPublicClient.getTransaction({ hash })); }
+    catch (e) { if (e?.name === 'TransactionNotFoundError') return false; throw e; }
+  },
+  // The creator's approve transaction, as the chain recorded it: who sent it,
+  // to which contract, whether it succeeded, when, and every Approval log in
+  // it. campaign-engine.js decides whether it proves the funding wallet.
+  readApproval: async (hash) => {
+    // Not mined (or never sent) → null → refused as "not found"; the client
+    // waits for the approve to confirm before it calls fund.
+    let rcpt;
+    try { rcpt = await campaignPublicClient.getTransactionReceipt({ hash }); } catch { return null; }
+    const tx = await campaignPublicClient.getTransaction({ hash });
+    const block = await campaignPublicClient.getBlock({ blockNumber: rcpt.blockNumber });
+    const approvals = parseEventLogs({ abi: erc20Abi, logs: rcpt.logs, eventName: 'Approval', strict: false })
+      .map((l) => ({ token: l.address, owner: l.args?.owner, spender: l.args?.spender, value: l.args?.value != null ? l.args.value.toString() : null }));
+    return {
+      from: tx.from, to: tx.to || null, calls: Array.isArray(tx.calls) ? tx.calls.map((c) => ({ to: c.to })) : null,
+      status: rcpt.status === 'success' ? 'success' : 'reverted', timestampMs: Number(block.timestamp) * 1000, approvals,
+    };
+  },
+  // Stuck funding (no tx hash on record): did a Transfer of exactly the budget
+  // from the funding wallet to the platform wallet land since the attempt?
+  // Chain facts only — the allowance is the creator's to change. The start
+  // block is found by timestamp (doubling back until it predates the attempt
+  // by a minute), then the token's Transfer logs are read in windows. Any RPC
+  // failure throws, and the engine leaves the campaign to a person.
+  findFundingTransfer: async ({ token, from, to, atomic, sinceMs }) => {
+    const TRANSFER = erc20Abi.find((x) => x.type === 'event' && x.name === 'Transfer');
+    const latest = await campaignPublicClient.getBlockNumber();
+    let span = BigInt(Math.max(600, Math.ceil((Date.now() - sinceMs) / 1000) + 300));
+    let start = 0n;
+    for (let i = 0; i < 8; i++) {
+      start = latest > span ? latest - span : 0n;
+      if (start === 0n) break;
+      const b = await campaignPublicClient.getBlock({ blockNumber: start });
+      if (Number(b.timestamp) * 1000 <= sinceMs - 60_000) break;
+      span *= 2n;
+    }
+    const want = BigInt(atomic);
+    for (let lo = start; lo <= latest; lo += 20_000n) {
+      const hi = lo + 19_999n < latest ? lo + 19_999n : latest;
+      const logs = await campaignPublicClient.getLogs({ address: token, event: TRANSFER, args: { from, to }, fromBlock: lo, toBlock: hi });
+      const hit = logs.find((l) => l.args?.value === want);
+      if (hit) return { found: true, txHash: hit.transactionHash };
+    }
+    return { found: false };
+  },
+  resolveRoom: (handle) => { const cfg = getRoomByHandle(handle); return cfg ? { id: cfg.id, ownerKey: roomOwnerOf(cfg.id), transport: cfg.transport || null } : null; },
+  // A Call in counts only from a SIGNED LiveKit webhook (track_published for
+  // the seat's identity, see /api/livekit/webhook). No LiveKit, no webhooks:
+  // Call in campaigns refuse to reserve. Read lazily — `livekit` is built
+  // further down this file, and this only runs at request time.
+  seatSignalAvailable: () => !!livekit,
+  // Cold review B2: a Call in counts only while the room is ON AIR — the same
+  // open-airing record the Holler `aired` hook reads (letters.js addMoment →
+  // airings-store.js, opened when Twitch says the room's channel is live).
+  roomOnAir: (roomId) => !!openAiringFor(roomId),
+  // N14: the creator's view says whether the Holler room's overlay is the
+  // KEYED one. Read lazily (wss is built further down; this runs per request).
+  overlayKeyState: (roomId) => overlayKeyState(roomId),
+}).start();
 
 // ─── The seat escrow contract (Session 2) ───────────────────────────────────
 // A paid seat's cap is deposited into contracts/MegaChatEscrow.sol at join and
@@ -470,17 +611,23 @@ async function verifyPasskeyStreamAllowance(payer, sessionAtomic, txHash, tokenA
     return { ok: false, reason: 'insufficient_allowance', allowance };
   }
 
-  if (txHash && /^0x[0-9a-fA-F]{64}$/.test(txHash)) {
-    try {
-      const client = createPublicClient({
-        chain: tempoViemChain,
-        transport: http(RPC_URL)
-      });
-      const receipt = await client.getTransactionReceipt({ hash: txHash });
-      if (!receipt || receipt.status !== 'success') {
-        return { ok: false, reason: 'tx_not_success' };
-      }
-    } catch { /* allowance is authoritative */ }
+  // A CITED approve must be readable, mined, successful and the PAYER's
+  // (N16): a junk or unmined hash is refused, not waved through on the
+  // allowance. The client waits for its approve to mine before joining; the
+  // receipt wait below only absorbs RPC lag. No hash cited: the allowance
+  // alone decides, as before, and that is logged.
+  if (txHash != null && txHash !== '') {
+    const client = createPublicClient({ chain: tempoViemChain, transport: http(RPC_URL) });
+    const problem = await citedApproveProblem({
+      txHash, payer,
+      readReceipt: (hash) => client.waitForTransactionReceipt({ hash, timeout: 15_000 }),
+    });
+    if (problem) {
+      console.warn(`[join:passkey] cited approve ${String(txHash).slice(0, 80)} for payer ${payer} refused — ${problem}`);
+      return { ok: false, reason: problem };
+    }
+  } else {
+    console.log(`[join:passkey] no approve tx cited for ${payer}: the allowance alone decides (N16)`);
   }
 
   console.log(
@@ -775,6 +922,57 @@ function hasOverlay(streamRoomId) {
     if ((client.__streamRoomId || DEFAULT_ROOM_ID) === target) return true;
   }
   return false;
+}
+
+/**
+ * Is the room's REAL overlay connected right now: a socket that presented the
+ * room's overlay key (overlay-key.js) when it subscribed? Only a campaign
+ * `aired` asks this (letters.js); hasOverlay above still gates the display
+ * path for every overlay, keyed or not (OPEN-ISSUES N14).
+ */
+function hasAuthedOverlay(streamRoomId) {
+  const target = streamRoomId || DEFAULT_ROOM_ID;
+  for (const client of wss.clients) {
+    if (client.readyState !== 1) continue;
+    if (client.__role !== 'overlay' || client.__overlayAuthed !== true) continue;
+    if ((client.__streamRoomId || DEFAULT_ROOM_ID) === target) return true;
+  }
+  return false;
+}
+
+/** roomId → ms a KEYED / an UNKEYED overlay was last connected (in memory; a restart forgets). */
+const keyedOverlaySeenAt = new Map();
+const unkeyedOverlaySeenAt = new Map();
+const OVERLAY_RECENT_MS = 10 * 60_000;
+/**
+ * The room's overlay link, for a campaign creator (N14).
+ *   state 'keyed'    a keyed overlay is connected, or was in the last 10 min
+ *   state 'unkeyed'  otherwise an overlay without the key is connected or was
+ *                    in the last 10 min: OBS still holds the old link
+ *   state 'none'     no overlay seen in the last 10 min: OBS is not open
+ * `keyed` is the boolean form of state === 'keyed'.
+ */
+function overlayKeyState(streamRoomId) {
+  const target = streamRoomId || DEFAULT_ROOM_ID;
+  const keyedConnected = hasAuthedOverlay(target);
+  let unkeyedConnected = false;
+  for (const client of wss.clients) {
+    if (client.readyState === 1 && client.__role === 'overlay' && client.__overlayAuthed !== true
+      && (client.__streamRoomId || DEFAULT_ROOM_ID) === target) { unkeyedConnected = true; break; }
+  }
+  const t = Date.now();
+  if (keyedConnected) keyedOverlaySeenAt.set(target, t);
+  if (unkeyedConnected) unkeyedOverlaySeenAt.set(target, t);
+  const kSeen = keyedOverlaySeenAt.get(target) || null;
+  const uSeen = unkeyedOverlaySeenAt.get(target) || null;
+  const keyed = kSeen != null && t - kSeen < OVERLAY_RECENT_MS;
+  const unkeyed = uSeen != null && t - uSeen < OVERLAY_RECENT_MS;
+  return {
+    state: keyed ? 'keyed' : unkeyed ? 'unkeyed' : 'none',
+    keyed, keyedConnected, unkeyedConnected,
+    keyedSeenAt: kSeen ? new Date(kSeen).toISOString() : null,
+    unkeyedSeenAt: uSeen ? new Date(uSeen).toISOString() : null,
+  };
 }
 
 function broadcastToRoom(streamRoomId, message) {
@@ -1118,6 +1316,9 @@ function activateSeatLive(seatId, ws) {
       pinned: !!seat.pinned
     }
   });
+  // NOT a campaign signal. camera_ready is sent by whoever holds the seat id,
+  // so a campaign Call in counts only from the signed LiveKit webhook
+  // (campaignSeatSignal, at /api/livekit/webhook), never from here.
   const modeLabel = seat.paymentMode === 'passkey_stream' ? 'stream meter' : 'prepaid meter';
   console.log(
     `[seat] ${seat.id} (room ${seat.streamRoomId}): camera live — ${modeLabel} `
@@ -1152,6 +1353,11 @@ function removeParticipant(seatId, reason = 'left') {
   if (!seat) return { success: false };
 
   activeSeats.delete(seatId);
+  // Campaign Call in: long enough on camera (timed from the LiveKit
+  // webhook, by the engine) counts as aired; shorter gives the slot back. A
+  // seat with no claim is ignored.
+  try { campaignEngine.onSeatEvent(seatId, 'ended'); }
+  catch (e) { console.warn(`[campaigns] seat ended hook failed: ${e.message}`); }
   // The matching leave for the 'seat' moment activateSeatLive recorded, so the
   // running seat count on an airing is no longer monotonic and "peak" means
   // something. Only for seats that went live: a seat that never did left no
@@ -1436,6 +1642,11 @@ wss.on('connection', (ws, req) => {
         // PLAY while one is connected, so paid clips can't burn into a room
         // where nothing renders them.
         if (msg.role === 'overlay') ws.__role = 'overlay';
+        // N14: role:'overlay' is self-declared. Only a socket that presents
+        // THIS room's key (the `k` the dashboard's overlay URL carries) is the
+        // room's real overlay for a campaign `aired`. Re-evaluated on every
+        // subscribe, so a key never carries over to another room.
+        ws.__overlayAuthed = msg.role === 'overlay' && overlayKeyMatches(roomId, msg.k);
         sendInitialState(ws);
       }
       return;
@@ -1469,6 +1680,7 @@ wss.on('connection', (ws, req) => {
     // only when no OTHER overlay is still rendering this room.
     if (ws.__role === 'overlay') {
       const rid = ws.__streamRoomId || DEFAULT_ROOM_ID;
+      (ws.__overlayAuthed === true ? keyedOverlaySeenAt : unkeyedOverlaySeenAt).set(rid, Date.now());
       setImmediate(() => { if (!hasOverlay(rid)) lkActivity.overlayGone(rid); });
     }
     const seatId = ws.__seatId;
@@ -1685,12 +1897,40 @@ app.post('/api/livekit/webhook', express.raw({ type: '*/*', limit: '256kb' }), (
     try {
       const out = lkWebhooks.handle(event);
       lkBreaker.evaluate();
+      campaignSeatSignal(event);
       if (out.deduped) console.log(`[lk-webhook] duplicate ${event.event} ignored (idempotent)`);
     } catch (e) {
       console.error(`[lk-webhook] post-ack processing failed for ${event?.event}: ${e.message}`);
     }
   });
 });
+
+/**
+ * The ONLY signal a campaign Call in counts from: a signed LiveKit webhook
+ * saying the seat's own identity (`seat:<id>`, minted only for the seat the
+ * join route granted) published a camera track in that seat's room.
+ * track_published (video, not a screen share) → camera_on; the track going
+ * away or the participant leaving → camera_off. Audio and screen shares do
+ * not count. The engine times `aired` from these, not from the client.
+ */
+function campaignSeatSignal(event) {
+  const identity = String(event?.participant?.identity || '');
+  if (!identity.startsWith('seat:')) return;
+  const seatId = identity.slice(5);
+  const seat = activeSeats.get(seatId);
+  const roomName = event?.room?.name || null;
+  if (seat && livekit && roomName !== livekit.lkRoomName(seat.streamRoomId)) return; // another room's track
+  const track = event.track || {};
+  const isVideo = track.type === 'VIDEO' || track.type === 1;
+  const isScreen = ['SCREEN_SHARE', 'SCREEN_SHARE_AUDIO', 3, 4].includes(track.source);
+  try {
+    if (event.event === 'track_published' && isVideo && !isScreen) {
+      if (seat) campaignEngine.onSeatEvent(seatId, 'camera_on');
+    } else if ((event.event === 'track_unpublished' && isVideo && !isScreen) || event.event === 'participant_left') {
+      campaignEngine.onSeatEvent(seatId, 'camera_off');
+    }
+  } catch (e) { console.warn(`[campaigns] seat signal failed for ${seatId}: ${e.message}`); }
+}
 
 /** Webhook-derived usage + breaker state (operator surface). */
 app.get('/api/livekit/burn', (_req, res) => {
@@ -1972,6 +2212,9 @@ try {
     mppMeter,
     broadcastToRoom,
     hasOverlay,
+    // N14: a campaign Holler counts as aired only with the room's KEYED
+    // overlay connected, at the start of the play and at its end.
+    hasAuthedOverlay,
     activeSeats,
     sellerAddress: SELLER_WALLET_ADDRESS,
     settlement,
@@ -1982,6 +2225,14 @@ try {
     // are one artifact instead of two that can disagree. No-ops when the
     // BOUNTY_CLAIM flag is off.
     ...makeClipHooks(),
+    // Targeted reward campaigns: a Holler sent with ?campaign= reserves the
+    // signed-in account's slot; approval / airing / loss move the claim.
+    campaigns: {
+      reserve: (req, slug, roomId) => campaignEngine.reserve({ slug, accountId: readIdentityFromRequest(req)?.accountId || null, kind: 'holler', roomId }),
+      releaseSlot: (claimId, why) => campaignEngine.releaseSlot(claimId, why),
+      bind: (claimId, ids) => campaignEngine.bind(claimId, ids),
+      onLetterEvent: (letterId, event, why) => campaignEngine.onLetterEvent(letterId, event, why),
+    },
     // A copy of an aired MegaChat is kept for the broadcast's replay only for
     // a room whose owner proved the channel, and only when the overlay did not
     // report itself hidden or too small during the play (aired-clips.js).
@@ -2093,6 +2344,14 @@ function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
 }
 
 // Passkey/modular smart account join — NO Gateway x402 middleware or transfer lookup.
+// Targeted reward campaigns: a Call in sent with `campaign` in the body
+// reserves the signed-in account's slot, binds it to the seat the join route
+// answers with, and gives it back when the route answers anything else.
+// Registered ahead of every join route so none of them changes.
+app.post(['/api/join/passkey', '/api/join/mpp', '/api/join'], campaignJoinMiddleware(campaignEngine, {
+  resolveRoomId: (req) => resolveRoomFromRequest(req.body, req.query).roomId || null,
+}));
+
 app.post('/api/join/passkey', async (req, res) => {
   try {
     // Guest whitelist first: free, and before any payment logic runs.
@@ -3415,6 +3674,11 @@ attachWhitelistRoutes(app);
 // signals only; nothing here touches settlement.
 attachVisibilityRoutes(app);
 
+// Targeted reward campaigns — the offer page, the check, a creator's own
+// campaigns and reference sets, and the admin moderation controls
+// (campaign-routes.js; every route listed with its tier).
+attachCampaignRoutes(app, campaignEngine);
+
 await migrateLegacyRoomPasswords();
 
 // "Follow my stream status" is only real if something asks. FOLLOW_STREAM=0
@@ -3584,7 +3848,9 @@ app.get('/:handle', (req, res, next) => {
 app.get('/:handle/overlay', (req, res, next) => {
   const room = handleRoom(req);
   if (!room) return next();
-  res.redirect(302, `/overlay?room=${room.id}`);
+  // The overlay key (N14) rides through the pretty link: /<handle>/overlay?k=…
+  const k = typeof req.query.k === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(req.query.k) ? req.query.k : '';
+  res.redirect(302, `/overlay?room=${room.id}${k ? `&k=${k}` : ''}`);
 });
 
 // Everything not matched above (Next pages + /_next assets) goes to Next.

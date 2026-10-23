@@ -15,10 +15,49 @@ import {
   setRoomHandle,
   setRoomOwner,
   roomsOwnedBy,
+  isRoomOwnedBy,
 } from './rooms-store.js';
 import { validatePaymentToken } from './token-utils.js';
 import { isHandleTakenByIdentity } from './identity-store.js';
 import { readIdentityFromRequest, roomOwnerKey, verifyRoomAccess } from './auth.js';
+import { overlayKeyFor } from './overlay-key.js';
+
+// The overlay URL handed to the room's manager (create, unlock, the owner's
+// room read) carries the room's overlay key (overlay-key.js, OPEN-ISSUES N14).
+// Never on a public route: the key is what makes a socket the room's real
+// overlay for a campaign `aired`. Cold review (2026-10-23): ONLY the signed-in
+// owner gets the keyed URL. A room password is shared with mods and can be
+// guessed, so a password-only caller gets the plain URL (the overlay renders
+// the same; it just does not count a campaign Holler as aired). No key can be
+// derived (production with no secret configured) → the plain URL too.
+const managerOverlayUrl = (baseUrl, roomId, { keyed = false } = {}) => {
+  const k = keyed ? overlayKeyFor(roomId) : null;
+  return `${baseUrl}/overlay?room=${roomId}${k ? `&k=${k}` : ''}`;
+};
+const callerOwnsRoom = (req, roomId) => {
+  const key = roomOwnerKey(readIdentityFromRequest(req));
+  return !!key && isRoomOwnedBy(roomId, key);
+};
+
+/**
+ * /api/dashboard/unlock attempts: UNLOCK_PER_MIN per client IP and per room in
+ * any minute (sliding window, in memory), counted before the password is
+ * checked, so a guessing loop is slowed whichever it rotates.
+ */
+export const UNLOCK_PER_MIN = 10;
+const unlockHits = new Map();
+export function unlockAllowed(ip, roomId, at = Date.now()) {
+  const hit = (key) => {
+    const recent = (unlockHits.get(key) || []).filter((t) => at - t < 60_000);
+    if (recent.length >= UNLOCK_PER_MIN) { unlockHits.set(key, recent); return false; }
+    recent.push(at); unlockHits.set(key, recent);
+    return true;
+  };
+  const okIp = hit(`ip\u0000${ip || 'unknown'}`);
+  const okRoom = hit(`room\u0000${roomId}`);
+  if (unlockHits.size > 5000) for (const [k, v] of unlockHits) if (!v.some((t) => at - t < 60_000)) unlockHits.delete(k);
+  return okIp && okRoom;
+}
 
 /**
  * Can this request use `handle` as a room link?
@@ -166,7 +205,7 @@ export function attachDashboardRoutes(app, deps) {
       owned: !!identity,
       hasPassword,
       joinUrl: `${deps.baseUrl}/?room=${room.id}`,
-      overlayUrl: `${deps.baseUrl}/overlay?room=${room.id}`,
+      overlayUrl: managerOverlayUrl(deps.baseUrl, room.id, { keyed: !!identity }),
     });
   }
 
@@ -177,6 +216,10 @@ export function attachDashboardRoutes(app, deps) {
     const { roomId: rawId, password } = req.body || {};
     const roomId = normalizeRoomId(rawId);
     if (!roomId) return res.status(400).json({ error: 'Invalid room id' });
+    if (!unlockAllowed(req.ip, roomId)) {
+      res.set('Retry-After', '60');
+      return res.status(429).json({ error: 'Too many unlock attempts. Wait a minute and try again.', reason: 'rate_limited' });
+    }
     if (!password || typeof password !== 'string') {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -188,7 +231,8 @@ export function attachDashboardRoutes(app, deps) {
       ok: true,
       room,
       joinUrl: `${deps.baseUrl}/?room=${room.id}`,
-      overlayUrl: `${deps.baseUrl}/overlay?room=${room.id}`,
+      // Keyed only for the signed-in owner; a password alone gets the plain URL.
+      overlayUrl: managerOverlayUrl(deps.baseUrl, room.id, { keyed: callerOwnsRoom(req, room.id) }),
     });
   });
 
@@ -273,7 +317,7 @@ export function attachDashboardRoutes(app, deps) {
       // false on a cold cache, true on the next poll.
       twitchLive: room.twitchChannel ? twitchLiveCached(room.twitchChannel) : false,
       joinUrl: `${deps.baseUrl}/?room=${room.id}`,
-      overlayUrl: `${deps.baseUrl}/overlay?room=${room.id}`,
+      overlayUrl: managerOverlayUrl(deps.baseUrl, room.id, { keyed: callerOwnsRoom(req, room.id) }),
     });
   });
 

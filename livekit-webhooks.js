@@ -58,16 +58,27 @@ export function verifyWebhookJwt(authHeader, rawBody, { apiKey, apiSecret, maxAg
 
   if (apiKey && payload.iss && payload.iss !== apiKey) throw new Error('webhook issuer mismatch');
 
-  // Body integrity: the token commits to a digest of the exact bytes we got.
+  // Body integrity: the token MUST commit to a digest of the exact bytes we
+  // got. Every token this server mints (seat, subscriber, host — livekit.js)
+  // is signed with the same API secret and carries no sha256 claim; any
+  // visitor can get a subscriber token, so a token without sha256 is a
+  // ROOM token, never a webhook, and is refused outright. That also keeps
+  // forged deliveries out of the session ledger and the burn breaker.
   const digest = createHash('sha256').update(rawBody).digest('base64');
-  if (payload.sha256 && !safeEqual(payload.sha256, digest)) {
+  if (typeof payload.sha256 !== 'string' || !payload.sha256) throw new Error('webhook token carries no body digest (not a webhook token)');
+  if (!safeEqual(payload.sha256, digest)) {
     throw new Error('webhook body digest mismatch (tampered or truncated)');
   }
 
-  // Freshness — bounds replay even before the id cache.
+  // Freshness — bounds replay even before the id cache. A webhook token must
+  // say when it was made: `iat`, or `nbf` (LiveKit's own token builders set
+  // nbf = now and exp; some deliveries carry iat too), and it must expire.
   const nowS = Math.floor(Date.now() / 1000);
-  if (payload.exp && nowS > payload.exp + 60) throw new Error('webhook token expired');
-  if (payload.iat && Math.abs(nowS - payload.iat) * 1000 > maxAgeMs) {
+  const madeAt = Number.isFinite(payload.iat) ? payload.iat : Number.isFinite(payload.nbf) ? payload.nbf : null;
+  if (madeAt == null) throw new Error('webhook token carries no issue time (iat/nbf)');
+  if (!Number.isFinite(payload.exp)) throw new Error('webhook token carries no expiry');
+  if (nowS > payload.exp + 60) throw new Error('webhook token expired');
+  if (Math.abs(nowS - madeAt) * 1000 > maxAgeMs) {
     throw new Error('webhook token outside the freshness window (replay?)');
   }
   return payload;

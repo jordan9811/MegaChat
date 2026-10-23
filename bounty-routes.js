@@ -27,6 +27,7 @@ import { resolveAvatars, avatarKey } from './platform-avatars.js';
 import { readIdentityFromRequest, roomOwnerKey } from './auth.js';
 import settlement from './bounty-settlement.js';
 import { policyFor, authorize, TIER, platformLoginFor } from './bounty-auth.js';
+import { overlayKeyFor } from './overlay-key.js';
 import * as capture from './bounty-capture.js';
 import * as bank from './bounty-bank.js';
 import * as seatEscrow from './seat-escrow.js';
@@ -1448,7 +1449,12 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         // keeps working next stream. The by-id form rots — public/overlay.html
         // records that costing three debugging sessions.
         roomId: boundRoomId,
-        overlayPath: `/overlay?room=${encodeURIComponent(boundRoomId)}&bountyRoom=${encodeURIComponent(boundRoomId)}`,
+        // `&k=` is the room's overlay key (overlay-key.js, OPEN-ISSUES N14):
+        // only a keyed overlay can make a campaign Holler count as aired.
+        // This route already refuses a room that is not the caller's, so the
+        // key reaches only the room's own streamer — never a public page.
+        // No key derivable (production with no secret, overlay-key.js) → no `&k=`.
+        overlayPath: `/overlay?room=${encodeURIComponent(boundRoomId)}&bountyRoom=${encodeURIComponent(boundRoomId)}${overlayKeyFor(boundRoomId) ? `&k=${overlayKeyFor(boundRoomId)}` : ''}`,
       });
     } catch (e) { fail(res, e); }
   });

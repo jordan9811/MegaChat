@@ -69,6 +69,12 @@ Every attribute has one shape, whatever produced it:
 
 **Cost.** The X API is pay-per-use against prepaid credits — no subscription tier and no free tier (docs.x.com). One profile lookup per link is the entire spend; follower and following **lists** are never read, at any price, because this layer stores no graph.
 
+**Changed 2026-10-23 for targeted reward campaigns ([campaigns.md](campaigns.md)).** Three things above stopped being true:
+
+- The X profile read now asks for more fields in the same single call: verified type, verified-follower count, ID verification, parody, protected, profile image and bio. The new attributes are additive, so older rows keep working.
+- X OAuth now asks for `offline.access`, and the user token is **stored, encrypted** (`x-token-store.js`). It is used only to read `connection_status` for campaign checks.
+- Following and follower **lists** are now read: as frozen reference sets (ids and handles only), and as the capped fallback of `followedByFromSet`. A claimant's followers are counted and never stored.
+
 **Freshness.** `attributesFetchedAt` is stored per link. Refresh is a re-authorisation: the account page's Refresh button sends the person through that platform's sign-in once more, which an app they have already authorised does not question. No access token is stored, so there is nothing to refresh with in the background — and no background polling exists.
 
 ### The two zkTLS adapters

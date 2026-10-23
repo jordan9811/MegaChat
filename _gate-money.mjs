@@ -248,6 +248,7 @@ function tier2Offenders(texts) {
 const PINNED = {
   '_gate-escrow-contract.mjs': 3,   // writeContract ×2 (approve, send), deployContract ×1 (the reentrancy sink) — Moderato only
   '_gate-escrow-seat.mjs': 1,       // the viewer's approve — MAINNET dust, the Session 2 proof
+  '_gate-campaigns.mjs': 1,         // a node STAND-IN answering the raw send (custom transport, no network, no funds): proves settlement.js records PULL_SENT before the send, 2026-10-23 round 3
   '_gate-gas-floor.mjs': 2,
   '_gate-guest-whitelist.mjs': 4,
   '_gate-mpp-clientpath.mjs': 9,
@@ -259,6 +260,7 @@ const PINNED = {
   'scripts/fund-escrow-roles.mjs': 1, // a capped USDC.e transfer to a role wallet for gas, mainnet, flag-guarded
   'scripts/probe-tempo-write.mjs': 1,
   'src/passkey-wallet.mjs': 1,
+  'web/components/campaigns/approve-step.tsx': 1, // a campaign creator's ONE approve of the budget to the pull spender (campaign-engine.js funding), 2026-10-23
   'web/lib/join-page.ts': 5,
 };
 {

@@ -34,6 +34,17 @@ export const ATTRIBUTES = {
   postCount: 'number',
   listedCount: 'number',
   viewCount: 'number',
+  // X profile fields added for targeted campaigns (2026-10-23). All come from
+  // the SAME single profile lookup; rows written before they existed simply
+  // lack them, and a campaign check that needs one refreshes the link first
+  // (campaign-engine.js) rather than guessing.
+  verifiedType: 'string',            // x: 'blue' | 'business' | 'government' | 'none'
+  verifiedFollowersCount: 'number',  // x: verified accounts among the followers
+  identityVerified: 'boolean',       // x: is_identity_verified
+  parody: 'boolean',                 // x: parody/commentary/fan label
+  protected: 'boolean',              // x: protected (private) posts
+  hasProfileImage: 'boolean',        // x: a non-default avatar
+  hasDescription: 'boolean',         // x: a non-empty bio
 };
 
 export const SOURCES = ['x-api', 'twitch-helix', 'opacity', 'reclaim', 'manual'];

@@ -139,6 +139,16 @@ function secretEquals(a, b) {
   return d === 0;
 }
 
+/**
+ * Does this request carry the admin key? The same credential and the same
+ * constant-time compare the ADMIN tier uses, for other route families that
+ * reuse it (campaign-routes.js). An unset key never matches.
+ */
+export function adminKeyMatches(req) {
+  if (!adminKeyConfigured()) return false;
+  return secretEquals(req.get('x-bounty-admin-key') || req.body?.adminKey, process.env.BOUNTY_ADMIN_KEY);
+}
+
 /** Which platform:handle is this STREAMER route acting on? */
 function resolveSubjectKey(req, subject) {
   switch (subject) {

@@ -3478,3 +3478,295 @@ only in Railway and were not checkable while its API was failing. Names only:
   (Oct 21 security release); production picks up 22.23.4 on rebuild
   (engines 22.x). Upgrade web/ next 16.2.6 -> 16.4.2; until then do not expose
   the local server through cloudflared (GHSA-p293-qw3h-jr36, Windows-only RCE).
+
+## L — Backer's bounty page: revisit, re-up, top up (owner, open 2026-10-23)
+
+The owner, as a backer: "if I record bounties I should be able to revisit them,
+see status… maybe one gets claimed so my recorded ones are gonna be lost — I can
+click there and be like ok re-up this, I still wanna see them do this, I'll top
+up the bounty." What exists today: `/bounty/mine` (`my-pledges.tsx`) lists every
+Holler a signed-in backer pledged with its status (in review, ready, aired,
+expired/declined → refunded). What it is missing:
+- **L1 — Per-bounty view for a backer:** each bounty they backed, its pool,
+  status (open / claimed by whom / aired / expired), and their recorded clips on
+  it, playable, not just a status chip.
+- **L2 — Re-up after a claim:** when a bounty is claimed and a backer's clip did
+  not air (or they want it again), one click re-pledges the same clip to a new
+  bounty on the same streamer instead of losing it.
+- **L3 — Top up:** add money to a bounty they already back, from the same page.
+- **L4 — Clip retention:** recorded clips survive a claim or refund for as long
+  as the backer was told (aired-clips.js keeps aired ones 30 days by default;
+  check unaired/refunded ones are not deleted out from under L2).
+Settlement is still a stub — L2/L3 move ledger entries only until the owner
+lifts that (see K1 first).
+
+## M — Reserved names for launch (owner, open 2026-10-23)
+
+Compile the list of handles to reserve before going public: the streamers on
+the bounty board and in the 2026-10-23 target research (top 20 + reach names),
+the owner's own handles, brand words (holler, megachat, official, admin,
+support…). Reservation exists today only through a bounty pool
+(`store.getReservedHandleByKey`, `handle_bounty_reserved` in bounty-routes.js);
+decide whether launch reservations are bounty-backed or a plain reserved list
+in accounts.js.
+
+## N — Targeted reward campaigns: what is left (open 2026-10-23)
+
+v1 is in the working tree, uncommitted: `campaign-*.js`, `x-token-store.js`,
+`/c/[slug]`, `_gate-campaigns.mjs` (130/0), page `docs/internal/campaigns.md`.
+Payouts are real intents at the settlement door; taking a budget needs
+`CAMPAIGN_FUNDING=1`.
+- **N1 — Real payouts need K1 first, and the owner's word.** The door pays
+  with PLATFORM_SETTLEMENT_KEY and pulls with SELLER_PRIVATE_KEY, both on the
+  K1 rotation list after the Railway breach. Do not set `CAMPAIGN_FUNDING=1` in
+  production until K1 is done and the owner has said so in person.
+- **N2 — Publish the reference-set root on chain.** Not done. The root is shown
+  on the campaign page; `TODO(campaign-root-onchain)` in `campaign-merkle.js`.
+  Any write must go through settlement.js or escrow-chain.js and Gate H.
+- **N3 — Reclaim / Opacity for inbound follows.** Both stay stubs: Reclaim has
+  no provider that proves "who follows me". Revisit when one exists; until
+  then `followedByFromSet` uses stored X tokens (`connection_status`) with a
+  capped followers-list fallback.
+- **N4 — A FAILED campaign payout has no in-app resolution.** It stays counted
+  against the budget, so the refund cannot hand it back; a person has to
+  retry or settle it. There is no "mark paid" on purpose (DECISIONS.md).
+- **N5 — Existing X links lack the new fields** (verified type, verified
+  followers, ID verification, parody, protected, image, bio). A campaign check
+  refreshes them with `X_BEARER_TOKEN`; without it the person is asked to
+  reconnect X once. Existing links also hold no stored token until their
+  owners sign in with X again (`offline.access` is new).
+- **N6 — A campaign Holler in a paid room still charges the room's price.**
+  Decide whether a funded campaign should waive it.
+- **N7 — The HTTP Call in path is gated with a fresh, empty pull key.**
+  `/api/join/mpp` refuses with 503 when no MPP meter exists, even for a free
+  room, so `_gate-campaigns.mjs` D5 runs the server with a generated key that
+  holds nothing. Worth making free joins not depend on the meter.
+- **N8 — Creator dashboard.** `/dashboard/campaigns` (web/components/campaigns/)
+  was built in parallel against the routes in `campaign-routes.js`; its type
+  errors were mid-adaptation when the backend was finished. Check
+  `tsc --noEmit -p web` is clean before merging.
+- **N9 — A custom-token campaign has never run on chain. Test one before
+  advertising custom tokens.** The door pays every transfer's network fee in
+  the token it moves (`settlement.js` `feeToken: token.address`), for the pull
+  (paid by the seller wallet) and for every payout and the refund (paid by the
+  platform wallet). A token that is not an accepted Tempo fee token, or that
+  those wallets do not hold, can be pulled and then never paid out. Campaigns
+  now refuse any custom token not listed in `CAMPAIGN_FEE_TOKENS` (empty by
+  default: USDC only). Before listing one: fund, pay and refund a small
+  campaign in it on chain.
+- **N10 — The funding wallet is proven by its approve transaction, not by a
+  signature naming the campaign.** `fund` accepts a wallet only with an
+  approve tx it sent, to the token, mined after the campaign was created,
+  approving exactly the budget to the platform spender, used once. There is no
+  authenticated wallet-to-account binding in the app to check instead (a
+  payout wallet is set without a signature; rewards' `state.wallet` is
+  client-sent). Residual: someone who creates a campaign whose budget equals a
+  stranger's NEXT approve amount to the seller key, and cites that approve tx
+  before the stranger's seat uses it, could pull it. Closing it needs the
+  creator's wallet to sign a message naming the campaign id (a UI step in
+  `web/components/campaigns/approve-step.tsx`, verified server-side with
+  viem `verifyMessage`, ERC-1271-aware). A wallet that approves through a
+  bundler (the tx is not FROM the wallet) cannot fund yet; it is refused,
+  not mis-credited.
+- **N11 — Call in campaigns depend on LiveKit webhooks reaching the server.**
+  A Call in counts only from a signed `track_published` webhook
+  (`campaignSeatSignal`, `server.js`). If LiveKit is configured but its webhook
+  URL is not set to `/api/livekit/webhook`, no Call in ever counts; claims
+  fail closed and the budget comes back after close. Confirm the webhook is
+  configured in the LiveKit project before opening a Call in campaign. A guest
+  can still satisfy "camera published" with a black frame; nothing checks the
+  picture.
+- **N12 — A campaign stuck in `funding_pending` with `needsPerson` set.** It
+  means a process stopped between marking the pull and the door recording
+  it, so whether the transfer went out is unknown. Check the wallet's
+  transfers on chain, then either record the pull at the door or move the
+  campaign back to draft by hand. No automation guesses either way.
+- **N13 — The public page's copy for an honoured claim is the UI's.** A claim
+  submitted before a close (or the deadline) still counts for 48 hours
+  (`CAMPAIGN_CLOSE_GRACE_HOURS`); the engine records `honourUntil` on the
+  claim. `/c/[slug]` should say "still counts if it airs before …" rather than
+  "campaign closed".
+- **N10 — CLOSED 2026-10-23.** `fund` now also requires the funding
+  wallet's EIP-712 signature over `{campaignId, wallet, token, amountAtomic,
+  deadline ≤ 10 min}` (`campaign-engine.js` `fundSignatureProblem`), verified
+  against the message the server rebuilds, through the Tempo public client
+  (ERC-1271 / ERC-6492 aware); one signed message per attempt. The approve
+  checks stay, and an approve must now be mined after the campaign's money
+  terms were last set (`termsAt`). Campaign budgets are approved to a
+  dedicated spender (`CAMPAIGN_SPENDER_KEY`), never the seat spender. Gate:
+  `_gate-campaigns.mjs` C10.F–H. The bundler note above still holds: a wallet
+  whose approve is not FROM it cannot fund.
+- **N14 — The overlay is not authenticated.** Any WebSocket client can send
+  `subscribe_room` with `role: 'overlay'` (`server.js`); `hasOverlay` believes
+  it and letters play to it. A campaign `aired` now counts only while the room
+  is on air (Twitch says its channel is live), so a fake overlay cannot make
+  an off-air play count (D4b). Residual: during a real broadcast with the real
+  overlay NOT in the scene, a fake socket can still make a clip "play" and
+  count. Closing it needs an owner-issued overlay key in the OBS source URL
+  (`/overlay?room=…&k=…`, HMAC of the room id), sent in `subscribe_room` and
+  required before a socket counts as the overlay; that changes every
+  streamer's OBS URL, so it is the owner's call.
+- **N15 — LiveKit webhook freshness now requires an issue time.** A webhook
+  token must carry `sha256` (matching the body) and `iat` or `nbf` within five
+  minutes (`livekit-webhooks.js`). LiveKit's own token builders set `nbf` and
+  `exp`; whether every real delivery carries `iat` was not confirmed, so `nbf`
+  is accepted. After the next deploy, check the server log for
+  "webhook token carries no issue time": if it appears for real deliveries,
+  Call in campaigns, the session ledger and the burn breaker stop receiving
+  webhooks.
+- **N16 — A seat still trusts the client-named payer's allowance when no
+  approve tx is cited.** `verifyPasskeyStreamAllowance` (`server.js`) now
+  refuses a cited approve sent by another wallet, but the approve tx stays
+  optional, so a seat opened naming someone else's wallet that has leftover
+  allowance to the seller key is still accepted. Campaign budgets are out of
+  reach (dedicated spender); viewers' leftover seat allowances are not.
+- **N17 — The new campaign spender needs fee money.** `CAMPAIGN_SPENDER_KEY`
+  pays its pull's network fee in the token it moves (Tempo), so its address
+  must hold a little USDC before the first real campaign is funded. No pull
+  has run on chain with it yet.
+
+- **K6 — Two keys the campaign work added (2026-10-23), both to be minted
+  fresh, never reused from another signer:** `CAMPAIGN_SPENDER_KEY` (the
+  only wallet that pulls a campaign budget; its address needs a little USDC
+  for its own fees, and server.js refuses it at boot if it matches any other
+  signer) and `X_TOKEN_KEY` (encrypts stored X user tokens; falls back to
+  `AUTH_SECRET`, which K2 rotates). Also `AUTH_SECRET` and
+  `LIVEKIT_API_SECRET` belong on the K2 list — both sat in the breached store.
+
+- **Round 3 money findings (2026-10-23), fixed uncommitted.** Reproduced by
+  scratchpad/judge-money-3/break-3.mjs (A1, A2, A3b, A6, A8 succeeded
+  before; 0 of 9 after). Gate: _gate-campaigns.mjs C10.N-T, D2b, D8; each
+  case fails with its fix reverted on a copy of the tree
+  (scratchpad/fix-money-3/mutate.mjs). DECISIONS.md has the calls.
+- **N12 — CORRECTION (round 3).** The wording above ("no automation guesses
+  either way") went stale in round 2, when the sweep began reverting a
+  stuck funding to draft from the wallet's ALLOWANCE, and that rule was
+  itself wrong: the creator controls the allowance. Now: after 30 minutes
+  with no tx hash on record, the sweep reads the token's Transfer logs since
+  the attempt (server.js findFundingTransfer). No Transfer of exactly the
+  budget from the funding wallet to the platform wallet → back to draft. A
+  matching Transfer, unreadable logs, or a tx hash with no receipt → it
+  stays funding_pending with needsPerson. A pull that threw after it may
+  have been sent also lands here (needsPerson), never in draft. For a
+  person: look the hash or the Transfer up on chain; if it landed, record
+  it at the door (a PULL row for the ref) and let the sweep confirm it; if
+  not, move the campaign back to draft by hand.
+- **N16 — NOTE (round 3).** A CITED approve is now enforced: a malformed,
+  unmined or unreadable hash is refused (token-utils.js
+  citedApproveProblem), where the receipt error used to be swallowed and
+  the allowance trusted. The residual is unchanged and is the owner's call:
+  a join that cites NO approve is still accepted on the allowance alone
+  (now logged "no approve tx cited ... (N16)"), so a seat naming someone
+  else's wallet with leftover seller allowance still opens. The server-side
+  wiring (verifyPasskeyStreamAllowance) is not driven over HTTP by a gate;
+  C10.T covers the decision function.
+- **N18 — The sign-ahead pull and the Transfer-log search have not run on
+  chain.** settlement.js signs the campaign spender's transferFrom locally
+  and records PULL_SENT before sending; gate C10.N shows, offline against a
+  node stand-in on viem's Tempo chain, that the recorded hash equals
+  keccak256 of the raw transaction the node receives (a Tempo 0x76
+  envelope, the same one writeContract sends). The stuck-funding search
+  (getLogs on the token's Transfer event, start block found by timestamp,
+  20,000-block windows) has not been run against Tempo RPC either. Before
+  the first real campaign: fund a small one and check the PULL_SENT hash
+  matches the explorer's, and run findFundingTransfer once by hand for a
+  known transfer. The seat-tick pull still uses writeContract
+  (SIGN_AHEAD_SLOTS).
+- **N14 — CLOSED 2026-10-23.** The overlay URL the room's manager is handed
+  (create, unlock, the owner's room read in `dashboard-routes.js`; the
+  dashboard's OBS link in `share-links-card.tsx` / `obs-setup.tsx`) carries
+  `&k=<key>`, HMAC-SHA256 of the room id under the sign-in secret
+  (`overlay-key.js`; `/<handle>/overlay?k=` forwards it). `public/overlay.html`
+  sends it in `subscribe_room`; the server sets `ws.__overlayAuthed` only on a
+  constant-time match. A campaign `aired` now needs that keyed overlay
+  connected at the play's start and its end, as well as the room on air
+  (`letters.js` `hasAuthedOverlay`). An unkeyed overlay still renders tiles
+  and MegaChats and still satisfies `hasOverlay`; non-campaign airing, replay
+  and bounty playback do not look at the key. An unkeyed on-air play is
+  recorded on the claim (`playedUnauthed`, `playedUnauthedAt`) and the
+  creator's campaign view carries `overlay: 'keyed' | 'unkeyed' | 'none'`
+  (last 10 minutes), `overlayKeyed` and `overlayLink`. Gate:
+  `_gate-campaigns.mjs` D4c (none / no key / wrong key / keyed too late /
+  not silent) and D4 (keyed → owed). Residuals: (1) the bounty claim flow's
+  overlay path (`bounty-routes.js` `overlayPath`,
+  `/overlay?room=…&bountyRoom=…`) carries no key, so a streamer whose only
+  overlay came from that flow gets no campaign airs until they paste the
+  dashboard link; `_gate-obs-ui.mjs` pins that URL shape. (2) The key cannot
+  be rotated per room; rotating the sign-in secret rotates every overlay key
+  and signs everyone out. (3) The legacy `/r/<handle>/overlay` redirect drops
+  the query, so `k` must use the current link forms.
+- **N14 residual (1) — CLOSED 2026-10-23.** The bounty claim flow's overlay path
+  (`bounty-routes.js` `overlayPath`) now carries `&k=` too; that route already
+  refuses a room that is not the caller's, so the key reaches only the room's
+  own streamer. `_gate-obs-ui.mjs` pins the keyed URL shape (16/0) and the old
+  unkeyed shape fails it. Residuals (2) and (3) stand.
+- **N19 — Round 4, the cold review: CLOSED 2026-10-23 (uncommitted).** Five
+  money defects reproduced by `scratchpad/judge-cold/break-4.mjs` against a mock
+  chain with nonces, a mempool, blocks and viem 2.54's replacement semantics,
+  and an unlock / overlay-key hole. B1: two concurrent campaign funds signed the
+  same spender nonce, and viem's `waitForTransactionReceipt` (replacement check
+  on by default) answered the dropped one with the other's success receipt, so
+  a campaign was marked funded with nothing pulled and refunded from the pooled
+  platform wallet. Fixed by one `campaignPull` pull at a time with a nonce
+  floor (`settlement.js` `SERIAL_PULL_SLOTS`, `NONCE_FLOOR_TTL_MS`),
+  `receiptConfirmer` (`checkReplacement: false`, hash must match) and
+  `settleFunding` requiring the hash and a Transfer(wallet → platform) of the
+  pulled token in the receipt's own logs. B1b: the race's loser stuck in
+  `funding_pending` forever; `PULL_SENT` now records the signing nonce and
+  `droppedPullVerdict` returns it to draft when the nonce was used elsewhere, no
+  node knows the hash and no Transfer arrived. B2: a Call in counted off air;
+  now `joined` / `aired` only on air (`roomOnAir` = the Holler's open-airing
+  source). B3: `tryPay`'s ceiling now reads the door's x-cost. B4: a short
+  Transfer is not funded (a person, shortfall on record). B5: the door records
+  the signed hash, never the node's. Unlock is rate-limited (10/min per IP and
+  per room) and only the signed-in owner gets `&k=`; `overlay-key.js` derives
+  no key from the dev fallback in production. Gate: `_gate-campaigns.mjs`
+  C10.U (17 cases, `nonceChain` ported from break-4), D5b, D9 (×3); 257/0.
+  Mutation proof: 24/24 case verdicts across 18 reverted fixes
+  (`scratchpad/fix-cold-4/mutate.mjs`). break-4: 0 of 9 succeed; break,
+  break-2, break-3 still 0 succeed (all four harnesses adapted to the new
+  receipt contract, originals kept). DECISIONS has the judgment calls.
+- **N20 — The door's payout `receipt()` still uses viem's default replacement
+  check.** `settlement.js` `viemChainAdapter.receipt` (the flush that marks a
+  payout or refund DONE) calls `waitForTransactionReceipt` without
+  `checkReplacement: false` and does not compare `transactionHash`. Payouts are
+  one at a time per flush, so the same-nonce race B1 found does not arise
+  there today, but a replaced payout would be marked DONE from another
+  transaction's receipt. Left as it was on purpose: the prompt scoped round 4
+  to the campaign pull, and this path also settles seat and MegaChat refunds.
+  One-line fix when the owner wants it (same as `receiptConfirmer`).
+- **N21 — The campaign pull lock is in-process: one replica only.** Two server
+  instances holding `CAMPAIGN_SPENDER_KEY` each have their own lock, so the
+  same-nonce race returns; the receipt checks still refuse to fund the loser,
+  and the drop rule (N19) returns it to draft after 30 minutes. Railway must
+  run one replica while `CAMPAIGN_FUNDING=1` (launch-readiness correction 1).
+- **N22 — A short or unproven funding has no in-app resolution.** A campaign
+  whose Transfer arrived short (`funding.state: 'short'`, `receivedAtomic`,
+  `shortfallAtomic`) or whose success receipt shows no Transfer (`'unproven'`)
+  stays `funding_pending`; close and update are refused and the admin resolve
+  re-asks the chain. Money did move (all or part of it), so nothing reverts it
+  to draft. A person refunds what arrived by hand today; an admin "close and
+  refund what was received" route is the obvious next step (owner's call).
+- **N23 — The drop rule cannot decide a Tempo nonce-key transaction.** viem's
+  Tempo chain switches to an expiring nonce (nonce key = max uint256) when it
+  sees concurrent sends from one address in one tick. The door's lock makes
+  that unlikely for the campaign spender, but if `PULL_SENT` records a
+  `nonceKey`, `droppedPullVerdict` leaves the campaign to a person rather than
+  reason from the protocol nonce.
+- **N24 — The reviewer's six checklist corrections were not in the evidence
+  handed over.** The round-4 prompt asked for "the reviewer's six checklist
+  corrections" in launch-readiness "Switching on real-money campaigns"; neither
+  `break-4.mjs` nor `break-4.out` (nor anything else in
+  `scratchpad/judge-cold/`) holds them. Six corrections derived from the
+  findings are there, labelled as derived. Reconcile against the reviewer's own
+  list when it is to hand.
+- **N25 — Two dashboard/OBS gates are not green for reasons outside this
+  change.** `_gate-dashboard-phase1.mjs` spawns `server.js` bare with a 2.5 s
+  sleep (fails "fetch failed" before the server mounts Next), boots against
+  the real `data/` directory, and asserts `/passkey-wallet.bundle.js` is served
+  while Gate H asserts it is 404; its run on 2026-10-23 left an orphan server
+  on :3002 (stopped), and its boot wrote to the local, gitignored
+  `data/rooms.json` and `data/boot-marker.json` (modified times changed). `_gate-obs-protocol.mjs` passes 25/0 and
+  then exits 127 on a libuv assertion at teardown (Windows, Node 24.12),
+  twice in a row. Neither touches the round-4 files; port the first to
+  `startGateServer` and a temp data dir.

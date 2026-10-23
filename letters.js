@@ -83,6 +83,14 @@ export function attachLetters(app, deps) {
     // test wiring (and any host without the hook) on the old behavior.
     hasOverlay = () => true,
     /**
+     * Is the room's KEYED overlay connected right now (OPEN-ISSUES N14)? A
+     * socket that only said role:'overlay' satisfies hasOverlay above, which
+     * is all the display path needs; a campaign `aired` (the event that
+     * moves a claim to owed) also needs this, at the start of the play and
+     * at its end. Default false: wiring without the hook never counts one.
+     */
+    hasAuthedOverlay = () => false,
+    /**
      * May this room keep a copy of a MegaChat that just aired, for the
      * broadcast's replay (aired-clips.js)? The server answers: only a room
      * whose owner proved the channel, and not while its overlay reported
@@ -109,8 +117,24 @@ export function attachLetters(app, deps) {
      */
     onClipPlay = () => {},
     onClipEnd = () => {},
+    /**
+     * TARGETED REWARD CAMPAIGNS (campaign-engine.js). A Holler sent with
+     * ?campaign=<slug> reserves the signed-in account's slot before any
+     * payment step, and its approval, airing, rejection or loss is reported
+     * here so the claim can move. null = campaigns off; a campaign Holler is
+     * then refused rather than sent uncounted. Money never moves from here.
+     */
+    campaigns = null,
     log = console,
   } = deps;
+
+  const campaignEvent = (letter, event, why) => {
+    // Keyed by letter id in the campaign store, so it survives a restart that
+    // dropped this letter's runtime fields; a letter with no claim is ignored.
+    if (!campaigns || !letter?.id || letter.bounty) return;
+    try { campaigns.onLetterEvent(letter.id, event, why); }
+    catch (e) { log.warn?.(`[letters] campaign ${event} hook failed for ${letter.id}: ${e.message}`); }
+  };
 
   /** roomId → { queue: Letter[], playing: Letter|null } */
   const rooms = new Map();
@@ -205,6 +229,9 @@ export function attachLetters(app, deps) {
     if (HELD.has(letter.status)) letter.heldSince = Date.now();
     if (letter.status === 'queued') roomState(letter.roomId).queue.push(letter);
     persist();
+    // Queued = it cleared the room's moderation (auto mode): that is
+    // "approved" for a campaign. In approve mode it waits for the approve route.
+    if (letter.status === 'queued') campaignEvent(letter, 'approved', 'cleared the room moderation');
     broadcastToRoom(letter.roomId, {
       type: 'letter_queued',
       letterId: letter.id,
@@ -220,6 +247,9 @@ export function attachLetters(app, deps) {
   async function refundLetter(letter, reason) {
     // A refunded MegaChat is not kept for any replay (aired-clips.js).
     removeAiredClip(letter.id);
+    // A campaign Holler that will never air gives its slot back (a rejection
+    // is reported by the reject route itself).
+    if (reason !== 'rejected') campaignEvent(letter, 'dropped', reason);
     // Free letters: nothing was paid, nothing to send (payer may even be null).
     if (!(parseFloat(letter.price) > 0) || !letter.payer) {
       removeLetter(letter);
@@ -306,6 +336,23 @@ export function attachLetters(app, deps) {
         return res.status(429).json({ error: 'MegaChat queue is full — try again in a minute' });
       }
 
+      // Campaign Holler: reserve the slot BEFORE any payment, synchronously,
+      // so two sends cannot both take the last place. Given back if the
+      // payment step answers 402 or anything below throws.
+      let campaignClaimId = null;
+      const campaignSlug = req.body && req.body.campaign ? String(req.body.campaign).slice(0, 40) : null;
+      if (campaignSlug) {
+        if (!campaigns) return res.status(503).json({ error: 'Campaigns are not available on this server', reason: 'campaigns_off' });
+        try { campaignClaimId = campaigns.reserve(req, campaignSlug, cfg.id).claimId; }
+        catch (e) { return res.status(e.status || 400).json({ error: e.message, reason: e.code || 'campaign_refused' }); }
+      }
+      const giveBack = (why) => {
+        if (!campaignClaimId) return;
+        try { campaigns.releaseSlot(campaignClaimId, why); } catch { /* the engine logs */ }
+        campaignClaimId = null;
+      };
+      try {
+
       const price = letterPriceFor(cfg);
       // Free rooms: price 0 → skip the payment handshake entirely. There is
       // nothing to charge and nothing to refund on reject/expiry.
@@ -319,7 +366,7 @@ export function attachLetters(app, deps) {
           recipient: cfg.payoutAddress || sellerAddress,
           suggestedDeposit: price,
         });
-        if (result.status === 402) return result.respond(res);
+        if (result.status === 402) { giveBack('payment step not completed'); return result.respond(res); }
       }
 
       const letter = {
@@ -340,6 +387,10 @@ export function attachLetters(app, deps) {
         media: null,
         paidAt: Date.now(),
       };
+      if (campaignClaimId) {
+        letter.campaignClaimId = campaignClaimId;
+        campaigns.bind(campaignClaimId, { letterId: letter.id });
+      }
       byId.set(letter.id, letter);
       log.log(`[letters] ${letter.id} ${parseFloat(price) > 0 ? `paid ${price} by ${address}` : 'free'} in room ${cfg.id}`);
       const body = {
@@ -350,6 +401,10 @@ export function attachLetters(app, deps) {
         moderation: cfg.letters.moderation,
       };
       return result ? result.respond(res, body) : res.json(body);
+      } catch (err) {
+        giveBack('send failed');
+        throw err;
+      }
     } catch (err) {
       log.warn('[letters] submit error:', err.message);
       return res.status(500).json({ error: 'MegaChat submit failed', message: err.message });
@@ -508,6 +563,7 @@ export function attachLetters(app, deps) {
     const cfg = resolveRoomConfig(roomId);
     const producer = cfg?.letters?.moderation === 'approve';
     letter.approvedAt = Date.now();
+    campaignEvent(letter, 'approved', 'approved by the room');
     if (producer) {
       letter.status = 'ready';
       letter.heldSince = Date.now();
@@ -531,6 +587,7 @@ export function attachLetters(app, deps) {
       return res.status(404).json({ error: 'MegaChat not found or not rejectable' });
     }
     const cfg = resolveRoomConfig(roomId);
+    campaignEvent(letter, 'rejected', 'rejected by the room');
     if (cfg.letters.autoRefundOnReject) {
       log.log(`[letters] ${letter.id} rejected — refunding`);
       void refundLetter(letter, 'rejected');
@@ -578,6 +635,9 @@ export function attachLetters(app, deps) {
     letter.airedAt = Date.now();
     letter.heldSince = null;
     persist();
+    // N14: was the room's KEYED overlay there when the clip went out? The
+    // overlay renders letter_play only if it was connected to receive it.
+    const keyedAtStart = hasAuthedOverlay(roomId);
     // The most interesting second in a broadcast: somebody paid to be on the
     // stream and here they are. A "recently aired" card opens its replay
     // here rather than at zero. No-op when the room is not on air.
@@ -624,6 +684,23 @@ export function attachLetters(app, deps) {
         log.warn?.(`[aired-clips] could not keep ${letter.id}: ${e.message}`);
       }
       broadcastToRoom(roomId, { type: 'letter_end', letterId: letter.id });
+      // The play COMPLETED: that is "aired" for a campaign — here, not at the
+      // start, so a play a restart cut off never counts — and ONLY when the
+      // room was on air (`moment` is null unless Twitch says the room's
+      // channel is live, airings-store.js) AND the room's keyed overlay was
+      // connected at the start and is still connected at the end
+      // (OPEN-ISSUES N14: role:'overlay' alone is self-declared, so a play to
+      // an unkeyed socket proves nothing rendered on stream). Display,
+      // replay and non-campaign airing do not look at the key.
+      const keyedOverlay = keyedAtStart && hasAuthedOverlay(roomId);
+      if (moment && keyedOverlay) campaignEvent(letter, 'aired', 'played to the end on stream');
+      else if (!moment) log.log(`[letters] ${letter.id} played while ${roomId} was off air — not counted as aired for a campaign`);
+      else {
+        log.log(`[letters] ${letter.id} played without ${roomId}'s keyed overlay connected at its start and end — not counted as aired for a campaign`);
+        // Recorded on the claim (playedUnauthed) so neither side is left
+        // reading "counts once it airs" after it played. Moves nothing.
+        campaignEvent(letter, 'played_unauthed', 'played on air through an overlay link without the room key');
+      }
       try { onClipEnd(roomId, { clipId: letter.id }); }
       catch (e) { log.warn(`[letters] bounty onClipEnd failed: ${e.message}`); }
       setTimeout(() => removeLetter(letter), MEDIA_TTL_MS);

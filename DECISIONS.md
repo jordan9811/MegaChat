@@ -1189,3 +1189,302 @@ reason than "the API is expensive".
   strap, pink Holler, lamp amber Bounty, warm black ground with a tungsten
   bloom), the look the launch film is likely to be shot in. He may switch once
   the film is done; the values are in SPEC.md under "Standing alternate".
+
+## Targeted reward campaigns, v1 (2026-10-23)
+
+- **Real payouts through the settlement door, behind `CAMPAIGN_FUNDING=1`.**
+  The first brief said settlement stays a stub. The coordinator's scope change,
+  relayed as the owner's, made it real: funding is `settlement.pull` against
+  the creator's allowance, payouts are `release` intents, and the unspent budget
+  is one `refund` intent. No new signer and no new transfer path; Gate H 38/0.
+  Taking a budget additionally needs `CAMPAIGN_FUNDING=1`, which defaults to
+  off. K1 (rotate the wallet keys after the Railway breach) is still open, and
+  CLAUDE.md's stub-only rule names bounties. A deploy should not start pulling
+  creators' money before the owner says so in person. Undo: delete the
+  `fundingEnabled()` check in `campaign-engine.js` `fund`.
+- **No manual "mark paid".** The first brief had one. With real intents, a
+  payment made off the door would leave the ledger saying the money is still
+  in the platform wallet, and the refund would hand it back to the creator. A
+  `FAILED` payout stays counted against the budget and needs a person. Undo:
+  add a door intent kind for "paid elsewhere", not a claim flag.
+- **"approved" for a Holler means it cleared the room's moderation.** In an
+  auto room that is the moment it queues, which can be with no human looking;
+  in an approve room it is the approve click. A creator who wants a person to
+  approve every paid clip runs the room in approve mode or requires `aired`.
+  Undo: count only the approve route (`letters.js`, the `settleIntoQueue` hook).
+- **"aired" means played to the end**, at `letter_end`, not at `letter_play`.
+  A restart mid-play does not count. Same rule as the replay archive.
+- **The room's own Holler price still applies to a campaign Holler.**
+  Waiving it would add a free-send path to `letters.js`. A pure reward campaign
+  should use a free room. Undo: skip `handleTick` when a reservation succeeded.
+- **followedByFromSet counts `following`, not `followed_by`.** The coordinator
+  wrote "count followed_by", but `followed_by` means the applicant follows the
+  token holder. Counting it would let anyone qualify by following list
+  members, which is paying for a follow (X Developer Policy). `following`
+  means the list member already follows the applicant, which the applicant
+  cannot manufacture. Undo: one property in `campaign-engine.js`
+  `countFollowedBy`. Do not.
+- **X user tokens are now stored, encrypted, with `offline.access`.** This
+  reverses the account model's "no token is stored". The key is
+  `X_TOKEN_KEY`, falling back to `AUTH_SECRET`; rotating it makes the tokens
+  unreadable, which costs a re-link and never leaks a token. The scope change
+  shows one more line on X's consent screen. Undo: drop the scope and
+  `keepXToken` in `auth.js`; the holder path then finds nobody and the capped
+  followers fallback takes over.
+- **X costs come out of the campaign budget, recorded at the door as
+  RETAINED** (a release to the platform's own address), so refund = funded −
+  Σ releases stays one equation. Because X bills dollars, followedByFromSet
+  and creator-built X lists are USDC campaigns only. A creator's X build needs
+  a FUNDED campaign, so drafts cannot spend platform credits.
+- **Anyone signed in can create a campaign, but only for a room they own.**
+  Admin powers are moderation only: hide, force-close, see all. The admin
+  credential is the existing pair: the site owner's account or
+  `BOUNTY_ADMIN_KEY`.
+- **A payout wallet is set by the account holder without a signature.**
+  Receiving needs no proof, and a hijacked session already controls the
+  account. A recorded intent keeps the address it was recorded with.
+- **An owed claim with no wallet waits 14 days after close, then is
+  forfeited**, so one unclaimed reward cannot hold a creator's refund forever.
+  `CAMPAIGN_WALLET_GRACE_DAYS` changes it.
+- **Funding refs carry an attempt number** (`campaign:fund:<id>:<n>`): the
+  door dedupes a pull by ref forever, so a reverted funding transfer needs a
+  fresh ref to retry. Only one successful funding per campaign, enforced by
+  the status guard and an in-process lock.
+
+## Targeted reward campaigns, hardening after the adversarial review (2026-10-23)
+
+An adversarial review reproduced real-money defects against the engine and
+the real `settlement.js` with a mock chain. Each fix below has a case in
+`_gate-campaigns.mjs` (C10, C4, C5, D5, D6), and each case was shown to FAIL
+with its fix reverted. `settlement.js` (the door) is unchanged.
+
+- **Funded means a pull whose receipt succeeded, in the token that was
+  pulled.** `fund` snapshots `{token, atomic}` before its first await, marks
+  the campaign `funding_pending` before the pull, and payouts and the refund
+  read only `funding.token`. `updateCampaign` and `close` are refused while a
+  pull is in flight or pending. No receipt stays pending and the sweep asks
+  again; a reverted receipt goes back to draft with the failure recorded. If
+  the terms no longer match the pull when the receipt lands, the campaign
+  closes and refunds what was pulled. Why: 10,000 JUNK was pulled and 10,000
+  USDC refunded. Undo: none advisable; the old path is the defect.
+- **A funding wallet must be proven by its approve transaction.** Sent from
+  the wallet, to the token, succeeded, mined after the campaign was created,
+  an `Approval` for exactly the budget to the platform spender, used by one
+  campaign only. The coordinator asked to "accept only the account's bound
+  wallet"; there is no authenticated wallet binding in the app (a payout
+  wallet is set without a signature, and rewards' `state.wallet` is
+  client-sent), so the approve transaction, which the wallet itself signed,
+  is the proof used. Residual in OPEN-ISSUES N10. Undo: delete the
+  `approve_required` / `approvalProblem` checks in `fund`. Do not.
+- **X spend is held before it is spent.** The cap is held against the budget
+  synchronously before the first X call, settled to the actual cost after,
+  released on failure; spends on a campaign queue; refs carry a random UUID;
+  the refund waits for holds; no X spend on a closed or refunded campaign.
+  Estimates are rate-limited (10 a minute per account) and charged after the
+  first 3 per campaign. Undo: `FREE_ESTIMATES`, `ESTIMATE_PER_MIN`.
+- **A Call in counts only from a signed LiveKit webhook.** `camera_ready` is
+  sent by whoever holds the seat id, so it no longer reaches the engine.
+  `track_published` (video, not screen share) for the seat's own identity in
+  its room → joined; `aired` is timed from it and restarts when the camera
+  goes off. Call in campaigns need a LiveKit room and a LiveKit-configured
+  server. If webhooks are not delivered, Call ins fail closed. Undo: call
+  `onSeatEvent(seatId, 'camera_on')` from `activateSeatLive`. Do not.
+- **`aired` is the default `require` for both actions.** In an auto-moderated
+  room `approved` fires when the upload passes the automatic check, with no
+  person looking. `approved` and `joined` stay selectable, labelled. Undo:
+  reorder `REQUIRE_OPTIONS` (server and `web/lib/campaigns-api.ts`).
+- **Closing honours what was already submitted.** A claim bound to a Holler
+  or seat when the campaign closes (creator, admin or deadline) still counts
+  if it reaches `require` within 48 hours (`CAMPAIGN_CLOSE_GRACE_HOURS`); the
+  refund waits for it. This replaces the v1 rule "closing expires every
+  in-flight claim" (claimants saw "campaign closed before this counted" for a
+  Holler already in the queue). It also overrides the review's finding 8 for
+  deadlines (that past-deadline claims must not advance): the coordinator's
+  later instruction says a submitted claim is honoured, so the deadline is
+  treated like a close. A hidden campaign still advances nothing. Undo: set
+  the grace to 1 hour (the minimum) or expire bound claims in `close`.
+- **A followedByFromSet rule that is present is enforced.** The form sent it
+  without `enabled`, the server defaulted to off, and every display said on.
+  Only an explicit `enabled: false` turns it off, and then the rule is
+  dropped. Undo: none; the flag was the defect.
+- **Custom reward tokens need the operator's allowlist
+  (`CAMPAIGN_FEE_TOKENS`).** The door pays every transfer's fee in the token
+  moved (`settlement.js` `feeToken: token.address`), so a token that is not an
+  accepted Tempo fee token could be pulled but never paid out. The door's
+  USDC behaviour is unchanged; campaigns refuse an unlisted token at create
+  and edit. Undo: list the token, after an on-chain test (OPEN-ISSUES N9).
+- **Every campaign has a deadline, at most 90 days out, not in the past.** A
+  budget above reward × maxClaims is a warning on the creator view, not a
+  refusal. Undo: `MAX_DEADLINE_DAYS` and the checks in `validateDraft`.
+- **The funding-off answer comes before the approve, in plain words.** The
+  fund route checks `CAMPAIGN_FUNDING` and the pull signer before it asks for
+  an approve, and says "Paid campaigns aren't open on this server yet"
+  without naming any env var.
+- **N10 closed: the funding wallet signs the campaign (2026-10-23, round 2).**
+  `fund` requires an EIP-712 `Fund` signature by the funding wallet (domain
+  `Holler Campaigns` v1 on the Tempo chain id, no `verifyingContract` because
+  the spender is a plain wallet), deadline at most 10 minutes, verified against
+  the server-rebuilt message with the Tempo public client in `mode: 'eoa'`
+  (ECDSA first, then ERC-1271 / ERC-6492). "nonce = campaignId" is read as one
+  signed message per funding ATTEMPT (keyed by the message hash), not one per
+  campaign forever: a campaign whose pull reverted must be fundable again.
+  The approve checks stay as defence in depth. Undo: drop the
+  `fundSignatureProblem` call in `fund`. Do not.
+- **Campaigns get their own spender (2026-10-23).** `CAMPAIGN_SPENDER_KEY`,
+  door slot `campaignPull` (`settlement.js` `PULL_SIGNERS`), pulls budgets
+  into the platform wallet; `SIGNERS` for outbound intents is unchanged and
+  Gate H stays 38/0. A seat can no longer spend a creator's un-pulled budget
+  allowance, nor a campaign a viewer's seat allowance. The platform wallet
+  still holds budgets and pays rewards (PLATFORM_SETTLEMENT_KEY). Unset: no
+  campaign can be funded. Undo: pass `pullSigner: 'pull'` and the seller
+  address as `spender` in `server.js`.
+- **A LiveKit webhook must carry a body digest and an issue time
+  (2026-10-23).** Every token this server mints is signed with the same
+  secret, and any visitor can get a subscriber token; without `sha256` such a
+  token passed as a webhook with any body. Requiring `sha256` (and `iat` or
+  `nbf`) also protects the LiveKit session ledger and the burn breaker, which
+  the same webhooks feed. `nbf` is accepted because LiveKit's builders set it
+  and may not set `iat` (OPEN-ISSUES N15). Undo: none.
+- **A Holler is `aired` for a campaign only while the room is on air
+  (2026-10-23).** The overlay is self-declared, so the play timer alone proves
+  nothing; the airing (Twitch says the channel is live) is the server-side
+  signal. Overlay authentication is N14, the owner's call. Undo: drop the
+  `moment` condition in `letters.js` `playLetter`.
+- **Stuck funding resolves itself only on chain evidence (2026-10-23).** After
+  30 minutes with no tx hash and the whole budget still allowed to the
+  campaign spender, back to draft; anything else waits for a person. Admin
+  route `resolve-funding` runs the same rule. Undo: `STUCK_FUNDING_MS`.
+- **Hidden stops payouts; X checks have a total ceiling; nothing binds after
+  the end (2026-10-23).** `tryPay` returns while hidden; followedBy checks stop
+  at `maxTotalUsd` (default 20% of the budget); `bind` refuses once the
+  campaign ended. Undo: each is one condition in `campaign-engine.js`.
+- **`describeRules` reads like a person wrote it (2026-10-23).** Human dates
+  ("Oct 23, 2026"), ages in the largest whole unit ("1+ year", "6+ months"),
+  singular/plural throughout. Undo: `dateOf`, `ageOf`, `count` in
+  `campaign-eligibility.js`.
+- **A pull that throws is sent until proven otherwise (2026-10-23, round 3).**
+  Only a provably pre-send error (the door signed nothing; viem's chain holds
+  EstimateGasExecutionError, or ContractFunctionRevertedError with a reason)
+  puts a funding back to draft. Any other throw leaves it funding_pending
+  for a person and refuses a retry, so a creator is never pulled twice for
+  one budget; the cost is that a genuinely unsent pull waits up to 30 min
+  (then the Transfer-log rule below) instead of failing at once. Undo:
+  the provablyPreSend branch in campaign-engine.js fund.
+- **The campaign spender signs ahead; the seat tick does not (2026-10-23,
+  round 3).** settlement.js SIGN_AHEAD_SLOTS = ['campaignPull']: the
+  transferFrom is signed locally, its hash recorded (PULL_SENT) before the
+  raw send, so a send lost after reaching the node is reconciled by receipt.
+  The live seat-tick pull keeps writeContract: one ref per tick, never
+  retried, and the sign-ahead path has not been seen on chain (OPEN-ISSUES
+  N18). Same viem steps as writeContract (prepare, sign, sendRawTransaction);
+  the hash equals the node's (gate C10.N, offline). Undo: SIGN_AHEAD_SLOTS = [].
+- **Stuck funding is decided from Transfer logs, never the allowance
+  (2026-10-23, round 3).** Supersedes the earlier allowance rule: the
+  creator controls the allowance, so re-approving after a landed pull read
+  as "never landed". Draft only when the token's Transfer logs since the
+  attempt hold no transfer of exactly the budget from the funding wallet to
+  the platform wallet AND no tx hash is on record; otherwise a person.
+  Unreadable logs or a server without the reader: a person. Undo: none
+  safe; findFundingTransfer: null keeps every stuck funding for a person.
+- **A field X leaves out is known-missing, refreshed at most daily
+  (2026-10-23, round 3).** The engine stores null for every campaign
+  attribute a profile read did not return; it fails closed (evaluate treats
+  null as missing) and triggers no further paid read until the read is a
+  day old. A link with no x-api record at all is read once. /check is
+  limited to 6 a minute per campaign and 30 a minute per account (per
+  campaign, so someone checking several offers is not refused). Undo:
+  withKnownMissing, neverRead and checkAllowed.
+- **Signature and approve reuse are checked against the ledger
+  (2026-10-23, round 3).** Every funding-started row (now carrying
+  approveTx), not the display list fundingFailures (last 10). The same
+  approve may still fund a RETRY of the same campaign: the signature is the
+  one-time consent, and approve sets the allowance anyway. Undo: the two
+  store.ledger() lines in campaign-engine.js.
+- **A live deadline is bounded twice (2026-10-23, round 3).** At most
+  MAX_DEADLINE_DAYS (90) from now and MAX_EXTENSION_DAYS (90) past the
+  deadline it opened with (originalDeadline, stamped by open; older
+  campaigns fall back to their current deadline). Undo: the two throws in
+  updateCampaign's live branch.
+- **The campaign spender must be no other signer (2026-10-23, round 3).**
+  Boot compares its address with SELLER_WALLET_ADDRESS and the addresses of
+  SELLER_PRIVATE_KEY, PLATFORM_SETTLEMENT_KEY, REWARD_POOL_PRIVATE_KEY,
+  ESCROW_OPERATOR_KEY and ESCROW_ATTEST_KEY, and logs the clashing NAMES.
+  Undo: spenderCollisions in server.js.
+- **A seat's cited approve must be readable (2026-10-23, round 3, N16).** A
+  cited hash that is malformed, unmined or unreadable is refused, no longer
+  waved through on the allowance; the receipt is awaited up to 15 s to
+  absorb RPC lag (the client already waits for its approve to mine). No hash
+  cited keeps the allowance-only behaviour and is logged. Undo:
+  citedApproveProblem in verifyPasskeyStreamAllowance.
+- **The overlay key is derived, not stored, and gates only a campaign `aired`
+  (2026-10-23, N14).** Closing N14 was the owner's call (the OBS URL
+  changes); this run's prompt made it, with zero users. HMAC-SHA256 of the
+  room id under the sign-in secret (`overlay-key.js`, labelled so it never
+  equals a cookie signature): no store, survives restarts and redeploys, and a
+  room's URL never changes on its own. Rejected: a random key on the room
+  record, which would allow per-room rotation but needs a migration and a
+  rotate route nobody has asked for. The display path keeps accepting
+  unkeyed overlays so no existing scene goes dark; only the event that moves
+  a claim to owed needs the key, at the play's start and end. An unkeyed
+  play is recorded (`playedUnauthed`) rather than silently ignored. Undo:
+  drop `&& keyedOverlay` in `letters.js` `playLetter` (the URL can keep its
+  `k`; only the creator view's `overlay` state also reads it).
+- **Round 4, the cold review: the campaign pull is serialized, and only its
+  own receipt's Transfer funds a campaign (2026-10-23).** What: one
+  `campaignPull` pull at a time in `settlement.js` (`SERIAL_PULL_SLOTS`, a
+  per-slot promise chain around prepare, `PULL_SENT` and the send) plus a
+  two-minute nonce floor (`NONCE_FLOOR_TTL_MS`: the next pull signs with at
+  least the last accepted nonce + 1); `receiptConfirmer` asks viem with
+  `checkReplacement: false` and drops a receipt for another hash; `settleFunding`
+  checks the hash again and credits exactly the Transfer(wallet → platform, pulled
+  token) in the receipt's logs. Why: viem's replacement answer handed one
+  campaign another's success receipt (B1); a success receipt says nothing about
+  what a token moved (B4) or whose transaction it was (B5). The mutex is scoped
+  to `campaignPull` because the `pull` slot is the live seat meter's: its
+  per-tick pulls are untouched. The floor exists because a load-balanced RPC
+  can answer the pending count from a node that has not seen our last send; its
+  TTL is there so a dropped transaction cannot leave a nonce gap for long. A
+  send that throws does not move the floor (it may never have reached a node).
+  Undo: drop the `withSlotLock` line in `pull`, the `minNonce` argument, and
+  `settleFunding`'s hash and Transfer checks (each is one block).
+- **A short or log-less funding goes to a person, not to the mismatch refund
+  (2026-10-23, round 4).** The prompt asked for needsPerson with the shortfall
+  recorded. The mismatch path (close and refund exactly what moved) was the
+  other option and would be automatic; it was not taken because a short
+  Transfer means the token is not what the allowlist assumed, which a person
+  should look at before money moves again. More than the budget does take the
+  mismatch path (closed, everything that moved refunded). Undo: in
+  `settleFunding`, route `outcome === 'short'` to the mismatch branch.
+- **A dropped pull returns to draft only on three chain facts (2026-10-23,
+  round 4).** The spender's mined nonce is past the signed nonce, no node
+  knows the hash, and no Transfer of the budget arrived. Any unknown leaves it
+  to a person, as every earlier stuck-funding rule does. A Tempo nonce key on
+  the row is treated as unknown (an expiring nonce does not order by the
+  protocol nonce). Undo: the `droppedPullVerdict` call in `reconcileFunding`.
+- **A Call in counts only on air, timed only on air (2026-10-23, round 4).**
+  Source of truth: the room's open airing, the same one a Holler's `aired`
+  reads through `addMoment`. The clock stops when the room goes off air and
+  restarts from zero, rather than pausing and resuming, so "60 s on air" means
+  60 continuous seconds on air. The sweep starts the clock when a room comes on
+  air with a camera already up, so a claimant who joined a minute early is not
+  told to republish. An unwired engine treats every room as off air (fail
+  closed, like `seatSignalAvailable`). Undo: `callinOnAir` returning true.
+- **Only the signed-in owner gets the keyed overlay URL (2026-10-23, round 4).**
+  The prompt asked for it on unlock; it is applied to create and the room read
+  too, because a password-only caller of the room read would otherwise still
+  get the key, which defeats the change. A password-managed room's mods get the
+  plain URL (renders the same; a campaign Holler does not count through it).
+  Campaigns already require a room the creator owns, so no campaign is left
+  without a way to get the key. Undo: `keyed: true` in the three
+  `managerOverlayUrl` calls in `dashboard-routes.js`.
+- **The round-4 break harnesses were adapted, not rewritten (2026-10-23).**
+  After round 4 a receipt must carry its own hash and Transfer log, so every
+  mock `confirmTx` returning `{status}` alone was refused by design and the four
+  break scripts stopped at their first `open`. Each was adapted to build the
+  receipt from the PULL the door recorded under that hash (break-4 also: the
+  barrier times out, since the door now serializes the prepares; prepare honours
+  the door's floor; B4's close is wrapped). break-4's `confirmTx` keeps viem's
+  replacement semantics ON so the engine's own checks are what B1 and B5 meet.
+  Originals: `break-4.orig.mjs`, `*.pre-cold4.mjs`; patches in
+  `scratchpad/fix-cold-4/`. break.mjs's output is identical to the reviewer's
+  last run.

@@ -139,6 +139,9 @@ export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string
           <a href="/dashboard" role="menuitem" className="block px-2.5 py-2 text-[13px] text-hl-fg hover:bg-hl-panel-2">
             Your room
           </a>
+          <a href="/dashboard/campaigns" role="menuitem" className="block px-2.5 py-2 text-[13px] text-hl-fg hover:bg-hl-panel-2">
+            Campaigns
+          </a>
           {/* The site owner's own settings page. Nobody else is ever told it
               exists — the server sends siteAdmin only for them. */}
           {identity?.siteAdmin ? (

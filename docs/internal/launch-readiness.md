@@ -94,3 +94,87 @@ Every path that touches escrow, settlement, payout, verification, the whitelist,
 ## What leaving stealth changes in these docs
 
 When the app launches: remove the text of `docs/_snippets/pre-launch.md`, run `npm run docs:sync --write` (every page's snippet region empties), record the retest results in the table above, and change this page's first paragraph. The rule is written in `CONTRIBUTING-DOCS.md`.
+
+## Switching on real-money campaigns
+
+The order matters; each step is a gate for the next. Env var names only.
+
+1. The four fix rounds are green: `_gate-campaigns.mjs` 0 fail, `_gate-money.mjs`
+   38/0, and the four attack scripts (`break.mjs`, `break-2.mjs`, `break-3.mjs`,
+   `break-4.mjs`) refuse every attack (`OPEN-ISSUES.md` N, N19–N25).
+2. Rotate K1 and K2 (`OPEN-ISSUES.md` K), including `AUTH_SECRET`,
+   `X_TOKEN_KEY`, `LIVEKIT_API_SECRET`, `BOUNTY_ADMIN_KEY`.
+3. Set `CAMPAIGN_SPENDER_KEY` to a fresh key used nowhere else; fund its address
+   with a little USDC for fees; confirm on chain nothing has approved it yet.
+4. Confirm: `PLATFORM_SETTLEMENT_KEY` resolves to `SELLER_WALLET_ADDRESS`;
+   `TEMPO_CHAIN_ID`, `TEMPO_RPC_URL`, `TEMPO_USDC_ADDRESS` correct;
+   `CAMPAIGN_FEE_TOKENS` empty (USDC only); `X_BEARER_TOKEN`, `LIVEKIT_URL`,
+   `LIVEKIT_API_KEY`, `DATA_DIR` set; `CAMPAIGN_FUNDING` still unset.
+5. Deploy and read the boot log: `[settlement] payout signer ready: <addr>`
+   equals `SELLER_WALLET_ADDRESS`; no `CAMPAIGN_SPENDER_KEY … seller key`,
+   `unusable` or `PLATFORM_SETTLEMENT_KEY … DISABLED` lines;
+   `[campaigns] … funding off`; `/api/health` shows the `/data` volume
+   (a lost campaign store strands budgets); after one real LiveKit delivery, no
+   `webhook token carries no issue time`.
+6. Set `CAMPAIGN_FUNDING=1`, push, poll the live URL until the log says
+   `funding ON`. Commit is not ship.
+7. One dust campaign end to end, owner-approved ($1): approve, sign, fund, open,
+   one Holler, pay, close, refund. Reconcile on chain: Transfer logs creator →
+   platform equal `funding.atomic`; payouts + refund + retained x-cost equal
+   funded; the spender's allowance from the creator is 0; the door has no
+   FAILED rows.
+8. On that first dust campaign, also check N18: the `PULL_SENT` row's hash is
+   the transaction on the explorer, and the stuck-funding sweep finds its
+   Transfer log (neither path has run against the real chain yet).
+9. Watch the ledger for `funding-unknown` and `needsPerson` for the first week.
+
+**Corrections from the cold review (round 4, 2026-10-23).** Derived from that
+review's findings B1–B5 and its unlock / overlay-key finding; they amend the
+steps above.
+
+1. (step 4) Railway runs exactly **one** replica of the service. The lock that
+   keeps two campaign pulls from signing one nonce is in-process
+   (`settlement.js` `SERIAL_PULL_SLOTS`); a second replica would bring the race
+   back, and only the drop rule would clean up after it.
+2. (step 4) `AUTH_SECRET` is set. In production without it (or
+   `MPP_SECRET_KEY`) there is no overlay key and no campaign Holler can count as
+   aired (`overlay-key.js`); step 5's boot log must carry no
+   `[overlay-key] … DISABLED` line.
+3. (step 4) `CAMPAIGN_FEE_TOKENS` stays empty. A token that delivers less than
+   it was asked to move now leaves the campaign `funding_pending` with a
+   shortfall for a person; that path has only run against a mock.
+4. (step 7) Reconcile the funding from the receipt's **own** logs: one Transfer
+   creator → platform equal to `funding.atomic` (= `funding.receivedAtomic`),
+   in that transaction, and the receipt's hash equal to the `PULL` row's
+   `txHash`. The ledger has no `funding-receipt-foreign`, `funding-short` or
+   `funding-unproven` row.
+5. (step 8) The `PULL_SENT` row carries the signing `nonce`, equal to the
+   explorer's nonce for that transaction, and the `PULL` row has no `nodeHash`.
+   Also exercise one Call in: it counts while the room is on air (an open
+   airing) and a camera published off air does not (`offAir` on the claim).
+6. (step 9) Also watch for `funding-receipt-foreign`, `funding-short`,
+   `funding-unproven`, and a `fundingFailures` entry saying a pull "can no longer
+   land" (the drop rule ran): each means the chain disagreed with what the
+   server expected, and a person should read it.
+
+**The cold review's own list, checked against the derived corrections above
+(2026-10-23).** Items 1, 3, 4, 5 and 6 above cover its B1–B5 points. Three it
+raised are not above and matter in practice:
+
+7. (step 2) Rotating `AUTH_SECRET` re-derives every room's overlay key
+   (`overlay-key.js`): every streamer's OBS link becomes the unkeyed one and
+   campaign Hollers silently stop counting until they re-copy the link from
+   the dashboard. Rotate it BEFORE the first campaign, and tell every
+   streamer with a room to re-copy; the creator view must say the overlay is
+   `keyed` before a campaign opens. Rotating `X_TOKEN_KEY` makes stored X
+   tokens unreadable, so list members must re-link X or `followedByFromSet`
+   falls back to the paid path.
+8. (step 4) Confirm the Tempo RPC answers `eth_getLogs` over a 20,000-block
+   window; if it refuses, the stuck-funding sweep (`campaign-engine.js`,
+   `droppedPullVerdict` and the Transfer-log search it relies on) cannot
+   resolve a funding on its own — safe, but every stuck one needs a person.
+9. (new, before step 6) Write the "needs a person" runbook: today a
+   `funding_pending` campaign flagged for a person (`funding-short`,
+   `funding-unproven`, a hash no node knows) is resolved only by the admin
+   resolve route or by hand on the production `/data` volume. The runbook
+   names who reads it, what to check on the explorer, and which route to call.

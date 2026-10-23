@@ -20,6 +20,7 @@ import { classify, loadAllowlist } from './classifier.js';
 import { createPrivyIdentity } from './privy-identity.js';
 import { verifyRoomPassword, isRoomOwnedBy } from './rooms-store.js';
 import { isSiteAdmin } from './site-settings.js';
+import { saveXToken, dropXToken } from './x-token-store.js';
 
 const PROVIDERS = {
   twitch: {
@@ -36,7 +37,10 @@ const PROVIDERS = {
     authBase: () => process.env.X_AUTH_BASE || 'https://twitter.com/i/oauth2',
     tokenBase: () => process.env.X_TOKEN_BASE || 'https://api.twitter.com/2/oauth2',
     apiBase: () => process.env.X_API_BASE || 'https://api.twitter.com/2',
-    scope: 'users.read tweet.read',
+    // offline.access: a refresh token, so a stored token (x-token-store.js,
+    // encrypted) outlives its 2-hour access window. Targeted campaigns use it
+    // to read connection_status as this person — never to act on X.
+    scope: 'users.read tweet.read offline.access',
     pkce: true, // X mandates PKCE
   },
   kick: {
@@ -336,6 +340,8 @@ export function attachAuth(app, { log = console } = {}) {
     if (!identity) return res.status(401).json({ error: 'Sign in first' });
     try {
       const account = detachLink(identity.accountId, String(req.params.provider));
+      // A disconnected X link takes its stored token with it.
+      if (req.params.provider === 'x') dropXToken(identity.accountId);
       res.json({ ok: true, links: account.links.map((l) => l.provider), primary: account.primary });
     } catch (err) {
       res.status(err.code === 'last_link' ? 409 : 400).json({ error: err.message, reason: err.code });
@@ -397,6 +403,9 @@ export function attachAuth(app, { log = console } = {}) {
       // what lets the attribute fetch below happen inside the round trip the
       // person is already in, and it is never stored.
       let username, platformId, accessToken = null;
+      // X only: the token response, kept ENCRYPTED for campaign checks
+      // (x-token-store.js). Never logged.
+      let xTokenResponse = null;
       if (p === 'twitch') {
         const tokenRes = await fetch(`${cfg.authBase()}/token`, {
           method: 'POST',
@@ -488,6 +497,7 @@ export function attachAuth(app, { log = console } = {}) {
         username = me.data.username;
         platformId = me.data.id;
         accessToken = token.access_token;
+        xTokenResponse = token;
       }
 
       /**
@@ -505,6 +515,10 @@ export function attachAuth(app, { log = console } = {}) {
       // Land back where the login button was clicked, not on a random room's
       // checkout page. The header chip flipping to @handle is the receipt.
       const back = safeReturnTo(st.back) || '/';
+      const keepXToken = (accountId) => {
+        if (p !== 'x' || !xTokenResponse) return;
+        try { saveXToken(accountId, platformId, xTokenResponse); } catch (e) { log.warn(`[auth] x token not stored: ${e.message}`); }
+      };
 
       // LINKING. Signed in already? This platform attaches to THAT account —
       // it never mints a second person. A login already linked to a different
@@ -525,6 +539,7 @@ export function attachAuth(app, { log = console } = {}) {
             throw err;
           }
         }
+        keepXToken(current.accountId);
         log.log(`[auth] linked ${p} (@${username}) to account ${current.accountId}`);
         return res.redirect(302, `${back}${back.includes('?') ? '&' : '?'}linked=${encodeURIComponent(p)}`);
       }
@@ -538,6 +553,7 @@ export function attachAuth(app, { log = console } = {}) {
       if (existing) {
         const attributes = await grabAttributes();
         if (attributes) { try { setLinkAttributes(existing.accountId, p, attributes); } catch { /* link vanished */ } }
+        keepXToken(existing.accountId);
         setCookie(res, 'mc_identity', seal({ accountId: existing.accountId }), { maxAge: 30 * 86400 });
         return res.redirect(302, withWelcome(back, existing.handle));
       }
@@ -550,6 +566,7 @@ export function attachAuth(app, { log = console } = {}) {
         });
         const attributes = await grabAttributes();
         if (attributes) { try { setLinkAttributes(identity.accountId, p, attributes); } catch { /* link vanished */ } }
+        keepXToken(identity.accountId);
         setCookie(res, 'mc_identity', seal({ accountId: identity.accountId }), { maxAge: 30 * 86400 });
         return res.redirect(302, withWelcome(back, identity.handle));
       } catch {

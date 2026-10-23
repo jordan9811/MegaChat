@@ -302,6 +302,15 @@ function updateReplayKeepNote() {
   if (note) note.textContent = days > 0 ? `, and stays in that stream’s replay for up to ${days} day${days === 1 ? '' : 's'}` : '';
 }
 
+// Simple mode counts in "credits": one credit is one tick of the meter, so its
+// dollar price is the room's tick price (the same figure the ticks-left maths
+// divides by). Referenced by the fund notes; it was never defined, so the
+// join page threw a ReferenceError in simple mode with the wallet configured.
+function perCreditUsd() {
+  const tickPrice = parseFloat((CONFIG && (CONFIG.passkeyTickPrice || CONFIG.tickPrice)) || '0.001') || 0.001;
+  return fmtAmount(tickPrice).replace(/^\$/, '');
+}
+
 function updatePriceDisplay() {
   if (!CONFIG) return;
   updateReplayKeepNote();
@@ -398,6 +407,90 @@ function ensureEthereum() {
 function stingerSelections() {
   const val = (id) => document.getElementById(id)?.value || undefined;
   return { flyIn: val('flyInSelect'), flyOut: val('flyOutSelect') };
+}
+
+// Targeted reward campaign (/c/<slug> → Record your Holler / Call in): the
+// slug rides every Holler send and seat join from this page, and the server
+// counts it toward the signed-in account's claim (campaign-engine.js). It is
+// only ever an id; the server decides whether it counts.
+function campaignField() {
+  try {
+    const c = new URLSearchParams(location.search).get('campaign');
+    return c && /^[a-z0-9][a-z0-9-]{2,39}$/.test(c) ? { campaign: c } : {};
+  } catch { return {}; }
+}
+
+// The campaign banner: the first thing in the sidebar when the page was
+// reached from /c/<slug>. It names the offer (title, reward, which action),
+// hides the action the campaign does NOT pay for — a Holler campaign's
+// visitor is here to record, not to call in, and the other way round — and
+// states the room's own price when the room is paid, so the fan knows what
+// they pay the room and what the campaign pays them. Read from the public
+// campaign view; the server still decides whether the send counts.
+async function mountCampaignBanner(slug) {
+  const body = document.querySelector('.join-console-body');
+  if (!body) return;
+  const el = document.createElement('section');
+  el.className = 'join-campaign-banner';
+  el.setAttribute('aria-label', 'Campaign');
+  Object.assign(el.style, { padding: '14px 16px', borderLeft: '3px solid var(--hl-strap-hi)', background: 'var(--mcj-sunk, var(--hl-panel-2))' });
+  const offerLink = `<a href="/c/${encodeURIComponent(slug)}" style="color:var(--hl-strap-hi);font-weight:700;text-decoration:underline;text-underline-offset:3px">Back to the offer</a>`;
+  let c = null;
+  try {
+    const r = await fetch(`/api/campaigns/${encodeURIComponent(slug)}`, { credentials: 'same-origin' });
+    if (r.ok) c = (await r.json()).campaign || null;
+  } catch { /* the page still works without it; the banner says so */ }
+  if (!c || c.status !== 'live') {
+    el.innerHTML =
+      `<span class="join-coordinate">Campaign</span>` +
+      `<p style="margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--mcj-muted)">The campaign <strong>${escapeHtml(slug)}</strong> is not open right now, so nothing you send here counts toward it. ${offerLink}</p>`;
+    body.prepend(el);
+    return;
+  }
+  const kind = c.action && c.action.kind === 'callin' ? 'callin' : 'holler';
+  const actionName = kind === 'callin' ? 'Call in' : 'Holler';
+  // Money reads as "$5" for USDC (the symbol is implied); a custom token
+  // keeps its symbol, the same rule as the campaign pages.
+  const rewardAmount = String((c.reward && c.reward.amount) || '0');
+  const rewardSymbol = String((c.reward && c.reward.symbol) || '');
+  const reward = rewardSymbol === 'USDC' && Number.isFinite(Number(rewardAmount))
+    ? `$${escapeHtml(Number(rewardAmount).toLocaleString('en-US', { minimumFractionDigits: Number(rewardAmount) % 1 === 0 ? 0 : 2, maximumFractionDigits: 6 }))}`
+    : `${escapeHtml(rewardAmount)} ${escapeHtml(rewardSymbol)}`;
+  // The action the campaign does not pay for leaves the sidebar.
+  const other = document.getElementById(kind === 'holler' ? 'liveSeatAction' : 'megachatAction');
+  if (other) other.style.display = 'none';
+  // The room's own price, if there is one: what the fan pays the room.
+  let priceLine = '';
+  if (kind === 'holler') {
+    const cfg = lettersCfg();
+    if (cfg && parseFloat(cfg.price) > 0) priceLine = `This room charges <strong>${fmtAmount(cfg.price)}</strong> per Holler; the campaign pays you <strong>${reward}</strong> once it counts.`;
+    else priceLine = `Sending a Holler here is free; the campaign pays you <strong>${reward}</strong> once it counts.`;
+  } else if (!roomIsFree()) {
+    const tickPrice = (CONFIG && (CONFIG.passkeyTickPrice || CONFIG.tickPrice)) || '0';
+    const tickSec = (CONFIG && CONFIG.passkeyTickSeconds) || 1;
+    priceLine = `This room charges <strong>${fmtAmount(Number(tickPrice) / tickSec)}</strong> per second on camera; the campaign pays you <strong>${reward}</strong> once it counts.`;
+  } else {
+    priceLine = `Calling in here is free; the campaign pays you <strong>${reward}</strong> once it counts.`;
+  }
+  const hue = kind === 'holler' ? 'var(--f-holler-ui)' : 'var(--f-callin-ui)';
+  const ink = kind === 'holler' ? 'var(--f-holler-ink)' : 'var(--f-callin-ink)';
+  const bg = kind === 'holler' ? 'var(--f-holler-bg)' : 'var(--f-callin-bg)';
+  el.style.borderLeftColor = hue;
+  el.style.background = `linear-gradient(90deg, ${bg} 0, transparent 75%), var(--mcj-sunk, var(--hl-panel-2))`;
+  // When it counts, in the campaign's own terms (action.require, and the
+  // minimum seconds for a Call in), read from the public view. Signing in
+  // is not what makes it count; the stream is.
+  const require = String((c.action && c.action.require) || 'aired');
+  const minSeconds = Math.max(1, Math.floor(Number(c.action && c.action.minSeconds) || 60));
+  const countsLine = kind === 'callin'
+    ? (require === 'joined' ? 'It counts once your camera is live on the stream.' : `It counts after ${minSeconds} seconds on camera.`)
+    : (require === 'approved' ? 'It counts once the streamer clears it.' : 'It counts when it plays on the stream.');
+  el.innerHTML =
+    `<span class="join-coordinate" style="color:${ink}">${actionName} campaign</span>` +
+    `<strong style="display:block;margin-top:6px;font-size:15px;line-height:1.3;color:var(--mcj-fg)">${escapeHtml(String(c.title || slug))}</strong>` +
+    `<p style="margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--mcj-muted)"><strong style="color:var(--f-bounty-ink);font-size:16px">${reward}</strong> for a ${actionName} on this stream. ${priceLine}</p>` +
+    `<p style="margin:8px 0 0;font-size:12.5px;line-height:1.5;color:var(--mcj-faint, var(--hl-dim))">${countsLine} ${offerLink}</p>`;
+  body.prepend(el);
 }
 
 // ─── Join button state machine ────────────────────────────────────────────
@@ -1052,7 +1145,7 @@ async function joinSeatMpp(username) {
   const r = await fetch('/api/join/mpp', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections() })
+    body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections(), ...campaignField() })
   });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
@@ -1074,7 +1167,7 @@ async function joinSeatMetered(username, { retry = false } = {}) {
   const first = await fetch('/api/join/passkey', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections() })
+    body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections(), ...campaignField() })
   });
 
   const terms = await first.json().catch(() => ({}));
@@ -1094,6 +1187,7 @@ async function joinSeatMetered(username, { retry = false } = {}) {
         address: account,
         room: streamRoomId,
         useRewardCredit: true,
+        ...campaignField(),
       }),
     });
     const data = await paid.json();
@@ -1137,7 +1231,7 @@ async function joinSeatMetered(username, { retry = false } = {}) {
       'Content-Type': 'application/json',
       'X-Modular-Payment': b64encode(payment)
     },
-    body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections() })
+    body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections(), ...campaignField() })
   });
   const data = await paid.json();
   if (paid.ok && data.success) {
@@ -2314,7 +2408,7 @@ async function sendLetter() {
           durationS: letterDurationS,
           mime: letterBlob.type || 'video/webm',
           replayKeepDays: shownKeepDays,
-          ...stingerSelections(),
+          ...stingerSelections(), ...campaignField(),
         }),
       },
     );
@@ -2411,6 +2505,8 @@ async function init() {
     applyModeText();
     applyFreeRoomUi();
     void initAuthUi();
+    const camp = campaignField().campaign;
+    if (camp) void mountCampaignBanner(camp);
     const demo = document.getElementById('demoBanner');
     if (demo && CONFIG && CONFIG.isDemo) demo.style.display = '';
   } catch (err) {

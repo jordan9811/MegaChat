@@ -310,6 +310,24 @@ export function setAccountPlatformLogins(accountId, logins) {
   return clone(acct);
 }
 
+/**
+ * Where this account is PAID: a campaign reward (campaign-engine.js) is
+ * released to this address through the settlement door. Chosen by the
+ * signed-in account holder, like a room's payout address is chosen by its
+ * owner; receiving needs no signature, so none is asked for. null clears it.
+ * An intent already recorded keeps the address it was recorded with.
+ */
+export function setAccountPayoutWallet(accountId, address) {
+  const store = load();
+  const acct = store.accounts[accountId];
+  if (!acct) fail('no_account', 'No such account');
+  if (address === null) delete acct.payoutWallet;
+  else if (/^0x[0-9a-fA-F]{40}$/.test(String(address || ''))) acct.payoutWallet = String(address);
+  else fail('invalid_wallet', 'That is not a wallet address (0x followed by 40 hex characters).');
+  save();
+  return clone(acct);
+}
+
 /** Room-create prefill. Display data only; every room revalidates its config. */
 export function setAccountDefaults(accountId, defaults) {
   const store = load();

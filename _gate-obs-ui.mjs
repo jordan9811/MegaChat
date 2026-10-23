@@ -240,8 +240,10 @@ try {
   // E37 (2026-09-17): the by-id form (`/overlay?bounty=<session>`) rots on the
   // next stream, so the page hands OBS the room-keyed address with the bounty
   // room pinned to the same room.
-  ok('the overlay URL handed to OBS is the stable ROOM-keyed overlay, bounty room pinned to the same room',
-    /\/overlay\?room=([0-9a-f]+)&bountyRoom=\1$/.test(input?.settings?.url || ''), input?.settings?.url);
+  // N14 (2026-10-23): the URL also carries the room's overlay key, `&k=`,
+  // so a campaign Holler played through this source counts as aired.
+  ok('the overlay URL handed to OBS is the stable ROOM-keyed overlay, bounty room pinned to the same room, with the overlay key',
+    /\/overlay\?room=([0-9a-f]+)&bountyRoom=\1&k=[A-Za-z0-9_-]{32}$/.test(input?.settings?.url || ''), input?.settings?.url);
 
   // ── the password stayed home ─────────────────────────────────────────────
   ok('the password never appears in ANY request to our server', leaks.length === 0,
