@@ -552,6 +552,8 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     { platform: 'twitch', handle: 'asmongold' },
     { platform: 'twitch', handle: 'pokimane' },
     { platform: 'kick', handle: 'xqc' },
+    { platform: 'youtube', handle: 'FlockFantasy' },
+    { platform: 'twitch', handle: 'fchwpo' },
   ];
   try {
     // Per name, not once per store: a name added to this list later still

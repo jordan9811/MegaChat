@@ -3448,3 +3448,33 @@ sections A–H, all green.
   forger can do is a wrong line on the booth (throttled to one change per 2s a
   seat). A stream tab more than 30s behind is not found. The acoustic proof on
   real speakers and devices is still live-only (E80).
+
+## K — Railway breach follow-up: rotate secrets (owner, open since 2026-10-22)
+
+Railway disclosed on 2026-10-21 that an unauthorized party may have read, and
+for some customers decrypted, environment variables
+(blog.railway.com/p/security-disclosure-wednesday-october-21st; status incident
+QH8L8B3E). Railway tells every customer to rotate all of them. Checked
+2026-10-22: the two wallets readable from the local .env were not swept
+(seller ~2.81 USDC, reward pool ~0.07 USDC); the other three signer keys live
+only in Railway and were not checkable while its API was failing. Names only:
+
+- **K1 — Wallet keys (new key off Railway, move funds, then update the
+  variable):** SELLER_PRIVATE_KEY, PLATFORM_SETTLEMENT_KEY,
+  REWARD_POOL_PRIVATE_KEY, ESCROW_OPERATOR_KEY, ESCROW_ATTEST_KEY. If the escrow
+  contract binds the operator/attester addresses, rotate those roles on-chain.
+  Hard gate before real bounty settlement.
+- **K2 — Provider secrets (rotate at the provider, update Railway and .env):**
+  PRIVY_APP_SECRET, LIVEKIT_API_KEY/LIVEKIT_API_SECRET, TWITCH_CLIENT_SECRET,
+  KICK_CLIENT_SECRET, X_CLIENT_SECRET, CIRCLE_CLIENT_KEY, MODERATION_API_KEY,
+  BOUNTY_ADMIN_KEY, ROOM_DEFAULT_PASSWORD.
+- **K3 — Stream keys (anyone holding one can broadcast on the channel):**
+  TWITCH_STREAM_KEY in Railway; KICK_STREAM_KEY, RUMBLE_STREAM_KEY,
+  PUMPFUN_STREAM_KEY in the local .env.
+- **K4 — Railway account:** reconnect GitHub in Account Settings and re-enable
+  autodeploy (Railway invalidated its GitHub tokens; pushes do not deploy until
+  then); recreate any API tokens; review the audit log for Oct 20-22.
+- **K5 — Node and Next:** update this machine's Node from 24.12.0 to 24.22.1
+  (Oct 21 security release); production picks up 22.23.4 on rebuild
+  (engines 22.x). Upgrade web/ next 16.2.6 -> 16.4.2; until then do not expose
+  the local server through cloudflared (GHSA-p293-qw3h-jr36, Windows-only RCE).

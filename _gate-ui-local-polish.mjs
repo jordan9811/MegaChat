@@ -33,14 +33,14 @@ const seedList = fs.readFileSync(new URL('./bounty-routes.js', import.meta.url),
 assert.ok(seedList, 'DEMO_TARGETS not found in bounty-routes.js');
 const SEEDED = [...seedList[1].matchAll(/platform: '([^']+)', handle: '([^']+)'/g)].map(([, platform, handle]) => `${platform}:${platform === 'pumpfun' ? handle : handle.toLowerCase()}`);
 const examples = withBountyExamples([]);
-check('All eight seeded examples exist (the five requested plus the three added with the seed) without fake ledger contributions', () => {
-  assert.equal(examples.length, 8);
+check('All ten seeded examples exist (the five requested, three added with the seed, then FlockFantasy and fchwpo) without fake ledger contributions', () => {
+  assert.equal(examples.length, 10);
   for (const key of REQUESTED_FIVE) assert.ok(examples.some((p) => p.handleKey === key), `requested example ${key} is missing`);
   assert.deepEqual(examples.map((p) => p.handleKey).sort(), [...SEEDED].sort(), 'display examples and the demo seed list different names');
   for (const p of examples) { assert.equal(p.remaining, 200); assert.equal(p.guaranteed, 100); assert.equal(p.contestedTotal, 100); assert.equal(p.totalContributed, 0); assert.equal(p.contributionCount, 0); assert.equal(p.displayOnly, true); }
-  assert.deepEqual(exampleTotals(examples), { unique: 900, visible: 1600, count: 8 });
+  assert.deepEqual(exampleTotals(examples), { unique: 1100, visible: 2000, count: 10 });
 });
-check('One shared contested pledge, not eight separate hundreds', () => {
+check('One shared contested pledge, not ten separate hundreds', () => {
   assert.equal(new Set(examples.flatMap((p) => p.contested.map((c) => c.pledgeId))).size, 1);
 });
 check('Funded and expired real pools replace examples without mutations', () => {

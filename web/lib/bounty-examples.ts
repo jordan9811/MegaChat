@@ -10,6 +10,8 @@ const TARGETS = [
   ['twitch', 'asmongold'],
   ['twitch', 'pokimane'],
   ['kick', 'xqc'],
+  ['youtube', 'FlockFantasy'],
+  ['twitch', 'fchwpo'],
 ] as const
 
 const AVATARS: Record<string, string> = {
