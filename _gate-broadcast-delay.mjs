@@ -89,7 +89,7 @@ try {
     port: APP_PORT, label: 'broadcast-delay',
     bountyAuth: { handles: ['delaystreamer'] },
     env: {
-      BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
+      BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
       TWITCH_CLIENT_ID: '', TWITCH_CLIENT_SECRET: '', KICK_CLIENT_ID: '', KICK_CLIENT_SECRET: '',
       BOUNTY_CODE_ROTATE_MS: '600000', BOUNTY_CODE_VALIDITY_MS: '600000',
       BOUNTY_CAPTURE_HLS_URL: `http://localhost:${HLS}/live.m3u8`,

@@ -20,8 +20,8 @@ Every item the repo names as future work, with exactly one status tag and its de
 |---|---|---|---|
 | Kick VOD retry from a streamer-supplied URL (`KickFrameSource` already accepts `vodUrl` + `vodStartMs`) | `SPECCED` | UI to collect the URL | `OPEN-ISSUES.md`, "Kick DOES have VODs" |
 | Rumble verification — a readable playback URL | `SPECCED` (blocked on discovery) | a Rumble API that returns a watch URL, or an operator-supplied one | `OPEN-ISSUES.md`, "Rumble: ingest PROVEN, playback URL is the blocker" |
-| pump.fun claims — wallet-signature ownership over the coin mint's creator address | `SPECCED` (engineering is one of three parts; the other two are a sanctioned discovery API and a product decision on coin-keyed payouts) | product decision | `OPEN-ISSUES.md`, "pump.fun ownership is unsolved" |
-| YouTube / Rumble claim paths (capture is wired; ownership is not) | `SPECCED` | binding the watch URL to the verified identity — required before those claims ship | `OPEN-ISSUES.md`, "The residual, for whoever builds YouTube/Rumble/pump.fun claims" |
+| pump.fun claims — wallet-signature ownership over the coin mint's creator address | `SPECCED` (engineering is one of three parts; the other two are a sanctioned discovery API and a product decision on coin-keyed payouts). Until then a pump.fun claim is refused (`REAL_UNSUPPORTED_PLATFORM`, `bounty-routes.js`) | product decision | `OPEN-ISSUES.md`, "pump.fun ownership is unsolved" |
+| YouTube / Rumble claim paths (capture is wired; ownership is not) | `SPECCED`. Until then a claim is refused (`REAL_UNSUPPORTED_PLATFORM`, `bounty-routes.js`), the demo board's pools included | binding the watch URL to the verified identity — required before those claims ship | `OPEN-ISSUES.md`, "The residual, for whoever builds YouTube/Rumble/pump.fun claims" |
 | Bind X's self-capture address to the X identity (A1) | `SPECCED` | — | `OPEN-ISSUES.md`, adversarial review A1 |
 | Calibration residual vs code validity (R1); `minDetectionRate` from a measured distribution (R2) | `SPECCED` (measure first) | `timelineSpreadMs` across several real broadcasts | `OPEN-ISSUES.md` R1–R3 |
 | Placeholder-stream detection on pump.fun (say "your stream appears to be showing a placeholder" rather than "verification failed") | `SPECCED` (option chosen, not built) | — | `OPEN-ISSUES.md` T6 |
@@ -34,14 +34,14 @@ Every item the repo names as future work, with exactly one status tag and its de
 | Item | Status | Depends on | Source |
 |---|---|---|---|
 | Overlay placement: corner, direction, tile size, gap, editable with a live preview | `SHIPPED` (`94b0a23`) | — | `rooms-store.js` `resolveLayout`; `ROADMAP.md`, "Overlay placement" |
-| The bounty badge takes the corner diagonally opposite the tiles, automatically | `KNOWN-BROKEN` — the badge is fixed at bottom-left (`public/overlay.html`, `#bounty-badge`) whatever the layout origin; a bottom-left origin stacks tiles over it | — | [limitations register](limitations-register.md) L13; `ROADMAP.md`, "The barcode takes the diagonally opposite corner" |
+| The bounty badge takes the corner diagonally opposite the tiles, automatically | `SHIPPED` (Pass C, 2026-09-16) — the badge takes the corner opposite where the stack actually lands (`public/overlay.html`, `applyBadgeAnchor`), and a layout that would still reach it at the ten-tile ceiling is refused at save (`rooms-store.js`, `layoutCollision`; `_gate-overlay-layout.mjs`) | — | [limitations register](limitations-register.md) L13 (CLOSED); `ROADMAP.md`, "The barcode takes the diagonally opposite corner" |
 | Clamp or warn when `maxSeats × (tile + gap)` exceeds the source height | `SPECCED` | — | `ROADMAP.md`, "Guardrails" |
 | Join gating: minimum watch time | `SHIPPED` | — | `checkFeatureGates`, `server.js` |
 | Join gating: followers-only, subscribers-only | `SPECCED` — stored, shown as unenforced | platform verification | `ROADMAP.md`; `checkFeatureGates` |
 | Reputation-score gate | `IDEA` | — | `ROADMAP.md` |
 | Persistent room names | `SHIPPED` (handles, `/<handle>`) | — | `rooms-store.js`, `setRoomHandle` |
 | Sybil-resistant bans keyed on wallet + platform identity | `IDEA` | platform identity on seats | `ROADMAP.md` |
-| Delete a room from the UI | `SPECCED` (`deleteRoom` exists, no caller) | — | `docs/ui-overhaul/baseline/ideal-paths-local.md` T8 |
+| Delete a room from the UI | `SHIPPED` (`2a0cd60`) — *End room*, armed then confirmed, removes every seat and deletes the room (`DELETE /api/dashboard/rooms/:roomId`, `dashboard-routes.js`; `deleteRoom`, `rooms-store.js`) | — | `docs/ui-overhaul/baseline/ideal-paths-local.md` T8 |
 | A smaller cap on *simultaneously live* whitelist guests | `IDEA` (the ten-tile ceiling now bounds it) | — | `OPEN-ISSUES.md` W2 |
 | Invite-by-link for guests without a claimed handle | `IDEA` | — | `OPEN-ISSUES.md` W3 |
 | Follow room state on Kick / YouTube / pump.fun / X | `IDEA` | per-platform liveness APIs | `followTick`, `server.js` (Twitch only) |
@@ -60,7 +60,7 @@ Every item the repo names as future work, with exactly one status tag and its de
 |---|---|---|---|
 | Stinger catalogue with a default | `SHIPPED` | — | `public/overlay.html`; `letters.js` `FLY_IN_OK` |
 | Stinger marketplace | `IDEA` | — | `ROADMAP.md` |
-| Watch-to-earn drops (per room) | `SHIPPED-PARTIAL` — earn/credit exists; credits are in memory and lost on restart | persistence | `rewards.js`, `reward-credits.js` |
+| Watch-to-earn drops (per room) | `SHIPPED-PARTIAL` — earn/credit exists; cash and credit need a sign-in, and cash pays only in an owned room whose creator is on `REWARDS_CASH_ALLOWLIST` (unset = cash off); credits are in memory and lost on restart, though the cash and credit lifetime cap per room is persisted (`data/rewards-ledger.jsonl`) | persistence; the owner naming cash creators | `rewards.js`, `reward-credits.js` |
 | Real Twitch Drops OAuth (credit external watch time) | `IDEA` | — | `ROADMAP.md` |
 | Twitch / Kick OAuth for gates and discovery | `SHIPPED` for identity only | — | `auth.js`, "IDENTITY ONLY" |
 
@@ -70,7 +70,7 @@ Every item the repo names as future work, with exactly one status tag and its de
 |---|---|---|---|
 | One runnable entry point for the whole gate suite, with isolation or retry | `SPECCED` — "until both are fixed, 'the suite is green' is a claim nobody can actually check in one command" | — | `OPEN-ISSUES.md` T2 |
 | Port the fixed-sleep gates to `startGateServer` | `SPECCED` — the list is recorded | — | `OPEN-ISSUES.md` W5 |
-| Lift G0 (build freshness) into `_gate-helpers.mjs`; adopt in eleven browser gates | `SPECCED` | — | `OPEN-ISSUES.md`, 2026-09-16 |
+| Lift G0 (build freshness) into `_gate-helpers.mjs`; adopt in eleven browser gates | `SHIPPED-PARTIAL` — lifted as `assertFreshBuild()` (`_gate-helpers.mjs`); not every browser gate calls it yet | — | `OPEN-ISSUES.md`, 2026-09-16 |
 | `_gate-mpp-clientpath.mjs` converted from a mirror | `SPECCED` | a funded test wallet | `OPEN-ISSUES.md`, "Still open after this run" (07-27) |
 | LiveKit webhooks configured in the Cloud dashboard (breaker inert until then) | owner action — see [Outstanding](outstanding.md) | — | `OPEN-ISSUES.md` L3 |
 | Publish the public half to a second GitBook space (`docs-public`) | `IDEA` (call option C of this pass) | the owner's GitBook space | `megachat-pass-b-and-docs.md` |

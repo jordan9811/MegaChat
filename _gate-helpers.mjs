@@ -12,7 +12,8 @@
  * order they catch things:
  *
  *  1. PORT PRECHECK — refuse to start if something already listens there,
- *     naming the port. No more silent inheritance.
+ *     on any address `localhost` can reach, naming the port. No more silent
+ *     inheritance.
  *  2. SPAWN + EARLY-EXIT WATCH — child 'error' and any exit during startup
  *     are captured with the tail of stderr, instead of vanishing.
  *  3. READINESS POLL, not a blind sleep — wait until /api/health answers,
@@ -22,40 +23,127 @@
  *     zombie even if it had somehow passed 1-3: a stale server cannot know a
  *     nonce minted seconds ago.
  *
+ * And one rule about what the child is GIVEN: it never inherits a live key.
+ * See SENSITIVE_ENV below.
+ *
  * Usage:
  *   const srv = await startGateServer({ port: 3301, env: { BOUNTY_CLAIM: '1' } });
  *   ...
  *   srv.kill();          // and srv.stderr() for diagnostics on failure
  */
 import { spawn } from 'child_process';
-import { createServer } from 'net';
-import { randomUUID, createHmac } from 'crypto';
-import { mkdtempSync, writeFileSync, existsSync, statSync, readdirSync } from 'fs';
+import { createServer, connect } from 'net';
+import { randomUUID } from 'crypto';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import { sessionCookieFor } from './_gate-identity-helper.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Is anything already listening on this port? */
-export function portInUse(port, host = '127.0.0.1') {
-  return new Promise((resolve) => {
+/**
+ * Is anything already answering on this port, on any address a gate reaches?
+ *
+ * It used to BIND 127.0.0.1 and call the port free when that worked. server.js
+ * listens with listen(PORT), which is '::' dual-stack, and Windows lets a
+ * second socket bind 127.0.0.1:PORT beside it, so the probe called a running
+ * server.js free, and anything on 0.0.0.0 too: the defence written for the
+ * zombie never fired for a zombie. Now it CONNECTS on 127.0.0.1 and ::1 (the
+ * readiness poll fetches `localhost`, which is one of the two), and still tries
+ * the bind server.js itself makes ('::'), so a port the child could not take
+ * is refused here, by name, instead of as an early exit.
+ */
+export async function portInUse(port) {
+  const answers = (host) => new Promise((resolve) => {
+    const sock = connect({ port, host });
+    sock.setTimeout(1500, () => { sock.destroy(); resolve(false); });
+    sock.once('connect', () => { sock.destroy(); resolve(true); });
+    sock.once('error', () => resolve(false));
+  });
+  const bindRefused = (host) => new Promise((resolve) => {
     const probe = createServer();
     probe.once('error', (e) => resolve(e.code === 'EADDRINUSE'));
     probe.once('listening', () => probe.close(() => resolve(false)));
     probe.listen(port, host);
   });
+  const [v4, v6] = await Promise.all([answers('127.0.0.1'), answers('::1')]);
+  return v4 || v6 || bindRefused('::');
 }
 
 /** The repo root, resolved from THIS module — never from cwd, because a gate
  *  run from anywhere else would silently compare the wrong trees. */
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 
-const DEFAULT_WATCH = ['web/app', 'web/components', 'web/lib'];
+/**
+ * WHAT A GATE SERVER NEVER INHERITS (harness-9).
+ *
+ * The child used to start from the gate's whole environment, and server.js
+ * then loadEnvFile()s .env, which fills every name still unset: every live key
+ * in .env reached every gate. Seller and reward-pool signers, the OpenAI key
+ * that moderation sends clips to, LiveKit Cloud, the platform client secrets.
+ * Five gates each kept their own blanking list, and the lists had already
+ * drifted apart.
+ *
+ * Now every name below, and every name in the gate's environment or in .env
+ * that ends in _KEY, _SECRET, PRIVATE_KEY or TOKEN, starts BLANK in the child.
+ * '' is a set value, so loadEnvFile leaves it alone. A gate that sets a name in
+ * `env` still gets exactly that value: a generated key, a stand-in URL, a
+ * local SFU. A gate that genuinely needs the real key from .env names it in
+ * `keepEnv: ['NAME']`, and in doing so it SPENDS and belongs on the owner-run
+ * list in docs/technical/testing-methodology.md.
+ *
+ * Not on the list, on purpose: the platform client IDs (public; nothing calls
+ * a platform without the secret beside them) and TEMPO_RPC_URL (a public
+ * endpoint; with every signer blank nothing can be sent through it).
+ */
+export const SENSITIVE_ENV = Object.freeze([
+  // Signers. Anything that can move money.
+  'SELLER_PRIVATE_KEY', 'PLATFORM_SETTLEMENT_KEY', 'REWARD_POOL_PRIVATE_KEY', 'CAMPAIGN_SPENDER_KEY',
+  'ESCROW_OPERATOR_KEY', 'ESCROW_ATTEST_KEY', 'ESCROW_FUNDER_KEY', 'ESCROW_DEPLOYER_KEY', 'TEST_VIEWER_KEY',
+  // Paid or third-party APIs.
+  'MODERATION_API_KEY', 'OPENAI_API_KEY', 'YOUTUBE_API_KEY', 'RUMBLE_LIVESTREAM_API_URL', 'CIRCLE_CLIENT_KEY',
+  'X_BEARER_TOKEN', 'X_TOKEN_KEY', 'X_CLIENT_SECRET', 'TWITCH_CLIENT_SECRET', 'KICK_CLIENT_SECRET',
+  'PRIVY_APP_SECRET', 'OPS_ALERT_WEBHOOK',
+  // LiveKit Cloud, all three, so no gate room lands on the cloud SFU (harness-10).
+  'LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET',
+  // Session and admin secrets. A gate mints its own (mintBountyAuth).
+  'AUTH_SECRET', 'MPP_SECRET_KEY', 'BOUNTY_ADMIN_KEY',
+  // Stream keys. A rehearsal pushes with them from its own process, never the server.
+  'TWITCH_STREAM_KEY', 'KICK_STREAM_KEY', 'RUMBLE_STREAM_KEY', 'PUMPFUN_STREAM_KEY', 'YOUTUBE_STREAM_KEY', 'X_STREAM_KEY',
+]);
+const SENSITIVE_SUFFIX = /(_KEY|_SECRET|PRIVATE_KEY|TOKEN)$/;
 
-/** Newest mtime under a directory, ignoring build output and dependencies. */
+/** Names (never values) assigned in `dir`/.env. */
+function envFileNames(dir) {
+  let text;
+  try { text = readFileSync(path.join(dir, '.env'), 'utf8'); } catch { return []; }
+  return text.split(/\r?\n/).map((l) => /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(l)?.[1]).filter(Boolean);
+}
+
+/** Every name a child booted from `cwd` starts with blank: the list above plus
+ *  every suffix match in this process's environment and in `cwd`/.env. */
+export function sensitiveEnvNames(cwd = REPO_ROOT) {
+  const names = new Set(SENSITIVE_ENV);
+  for (const n of [...Object.keys(process.env), ...envFileNames(cwd)]) if (SENSITIVE_SUFFIX.test(n)) names.add(n);
+  return [...names].sort();
+}
+
+/** What assertFreshBuild compares against the build by default: the source
+ *  directories, and the config files that change a build without touching
+ *  them (a dependency bump in package.json, a Next or PostCSS setting). */
+export const DEFAULT_WATCH = Object.freeze([
+  'web/app', 'web/components', 'web/lib',
+  'web/next.config.mjs', 'web/postcss.config.mjs', 'web/tsconfig.json', 'web/package.json',
+]);
+
+/** Newest mtime of a file, or under a directory, ignoring build output and dependencies. */
 function newestUnder(dir) {
   let newest = { at: 0, file: null };
+  try {
+    const st = statSync(dir);
+    if (!st.isDirectory()) return { at: st.mtimeMs, file: path.relative(REPO_ROOT, dir) };
+  } catch { return newest; }
   const walk = (d) => {
     let entries;
     try { entries = readdirSync(d, { withFileTypes: true }); } catch { return; }
@@ -86,7 +174,9 @@ function newestUnder(dir) {
  * counters and RESULT line, and a helper that called process.exit would print
  * someone else's totals.
  *
- *   watch            dirs whose mtimes must predate the build (repo-relative)
+ *   watch            dirs and files whose mtimes must predate the build
+ *                    (repo-relative). A gate that adds one spreads
+ *                    DEFAULT_WATCH rather than replacing it.
  *   requireNextBuild false for gates that render something Express serves
  *                    directly (public/overlay.html), where there is no build
  *                    step to be stale — the file on disk IS what is served.
@@ -123,30 +213,27 @@ export function assertFreshBuild({ watch = DEFAULT_WATCH, requireNextBuild = tru
 }
 
 /**
- * Spawn server.js and return only once it is verifiably OURS and answering.
- * @throws with a diagnostic message (never a silent stale-server pass).
- */
-/**
- * Bounty routes authorize server-side now (see bounty-auth.js), so a suite
- * that drives them needs credentials. This mints them: a sealed mc_identity
- * cookie per handle plus an admin key, with the identity records seeded into
- * the server's own data dir so `readIdentityFromRequest` resolves a username.
+ * Mint gate credentials: one ACCOUNT per handle, written to accounts.json in
+ * the store's own shape, plus a sealed cookie for each, plus an admin key.
+ * Bounty routes authorize server-side (bounty-auth.js), so a suite that drives
+ * them needs these.
  *
  * Deliberately NOT a bypass. Gates authenticate exactly the way a streamer
  * does; a test-only escape hatch in the auth path is the thing that later
  * turns out to be reachable in production.
- */
-/**
- * Mint gate credentials: one ACCOUNT per handle, written to accounts.json in
- * the store's own shape, plus a sealed cookie for each.
+ *
+ * The accounts are MERGED into an accounts.json already in `dataDir`, so a
+ * gate that seeds its own accounts (seedAccountForLink) and also asks for
+ * bountyAuth keeps both. It used to overwrite the file and drop the seeds.
  *
  * It used to write `identities.json` with one `provider:platformId` row per
  * handle, because that was the identity. Since the account layer, a person is
  * an account with links and everything owner-keyed carries the ACCOUNT ID —
  * so a gate that needs an owner key asks `accountIdFor(handle)` instead of
- * building `provider:platformId` itself. The cookie still seals
- * `{provider, platformId}`, which `readIdentityFromRequest` resolves through
- * the link table exactly as it resolves a real one.
+ * building `provider:platformId` itself. The cookie seals `{accountId, iat}`,
+ * the one session shape auth.js accepts (the `{provider, platformId}` shape it
+ * used to seal is refused now), for the account the link table names, which
+ * is the account the old cookie resolved to. Valid for 30 days from the mint.
  */
 export function mintBountyAuth({ handles = [], dataDir }) {
   const authSecret = `gate-auth-${randomUUID()}`;
@@ -173,12 +260,17 @@ export function mintBountyAuth({ handles = [], dataDir }) {
     handleMap[handle] = accountId;
     links[`${platform}:${platformId}`] = accountId;
     accountIds[raw] = accountId;
-    const payload = Buffer.from(JSON.stringify({ provider: platform, platformId })).toString('base64url');
-    const sig = createHmac('sha256', authSecret).update(payload).digest('base64url');
-    cookies[raw] = `mc_identity=${encodeURIComponent(`${payload}.${sig}`)}`;
+    cookies[raw] = sessionCookieFor(accountId, { secret: authSecret });
   });
-  writeFileSync(path.join(dataDir, 'accounts.json'),
-    JSON.stringify({ accounts, handles: handleMap, links }, null, 2));
+  const file = path.join(dataDir, 'accounts.json');
+  let prior = {};
+  try { prior = JSON.parse(readFileSync(file, 'utf8')); } catch { /* none yet */ }
+  writeFileSync(file, JSON.stringify({
+    ...prior,
+    accounts: { ...prior.accounts, ...accounts },
+    handles: { ...prior.handles, ...handleMap },
+    links: { ...prior.links, ...links },
+  }, null, 2));
   const first = handles[0];
   const cookieFor = (h) => cookies[h] ?? cookies[first] ?? '';
   return {
@@ -191,16 +283,32 @@ export function mintBountyAuth({ handles = [], dataDir }) {
   };
 }
 
+/**
+ * Spawn server.js and return only once it is verifiably OURS and answering.
+ * @throws with a diagnostic message (never a silent stale-server pass).
+ *
+ *   env      set in the child exactly as given, over the blanking and over
+ *            bountyAuth's names (an `undefined` value counts as not given)
+ *   keepEnv  names from SENSITIVE_ENV the child may inherit, from this
+ *            process or .env. Naming one means the gate uses a real key.
+ *   cwd      the child's working directory, and so the .env it loads.
+ *            Defaults to this module's repo, the tree assertFreshBuild checks.
+ */
 export async function startGateServer({
   port,
   env = {},
+  keepEnv = [],
   args = ['server.js', '--prod'],
+  cwd = REPO_ROOT,
   readyTimeoutMs = 45_000,
   dataDir = null,
   label = `:${port}`,
   /** e.g. { handles: ['pipestreamer', 'kick:someslug'] } */
   bountyAuth = null,
 } = {}) {
+  if (!Array.isArray(keepEnv) || keepEnv.some((n) => typeof n !== 'string' || !n)) {
+    throw new Error(`[gate-harness] ${label}: keepEnv must be an array of variable names`);
+  }
   if (await portInUse(port)) {
     throw new Error(
       `[gate-harness] port ${port} is ALREADY IN USE before ${label} started. `
@@ -218,15 +326,18 @@ export async function startGateServer({
     ? mintBountyAuth({ ...bountyAuth, dataDir: resolvedDataDir })
     : null;
 
+  const blankedEnv = sensitiveEnvNames(cwd).filter((n) => !keepEnv.includes(n));
+  const given = Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined));
   const child = spawn(process.execPath, args, {
-    cwd: process.cwd(),
+    cwd,
     env: {
       ...process.env,
+      ...Object.fromEntries(blankedEnv.map((n) => [n, ''])),
       PORT: String(port),
       DATA_DIR: resolvedDataDir,
       GATE_NONCE: nonce,
       ...(auth ? auth.env : {}),
-      ...env,
+      ...given,
     },
     // stdio 'ignore' is what hid the original failure. Pipe and KEEP it.
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -252,6 +363,8 @@ export async function startGateServer({
           return {
             child, port, nonce,
             dataDir: resolvedDataDir,
+            /** The names (never values) this child started with blank. */
+            blankedEnv,
             // Present only when bountyAuth was requested. `headers(handle)`
             // spreads into a fetch to act as that streamer plus admin.
             adminKey: auth?.adminKey ?? null,

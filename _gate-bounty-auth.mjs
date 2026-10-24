@@ -15,13 +15,16 @@
  *      the same table, so a new entry is automatically exercised.
  *   3. THE POSITIVE — the right streamer gets through, or we have merely built
  *      a wall with no door.
+ *   4. WHAT THE HANDLER TRUSTS — the claim verifier's default, the body vs
+ *      the session, private clips, the overlay key, the frames hold. The
+ *      first three layers stayed green while all of these reproduced.
  *
  * Identity is the sealed mc_identity cookie. This gate mints real ones through
  * the same seal the server uses, because a hand-written cookie proves nothing
  * about the real path.
  */
 import path from 'node:path';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 let pass = 0, fail = 0;
@@ -41,6 +44,13 @@ const AUTH_SECRET = 'gate-auth-secret-for-sealing-cookies';
 // route list at all.
 process.env.AUTH_SECRET = AUTH_SECRET;
 process.env.BOUNTY_CLAIM = '1';
+// ...and a scratch DATA_DIR, for the same reason: bounty-store and
+// bounty-clips fix their data dir when they load, and section 1's
+// attachBountyRoutes validates the ledgers, sweeps unindexed clip media (it
+// DELETES files) and seeds the demo pools in it. Without this, all of that ran
+// on the repo's own data/ (audit harness-6). The HTTP server below gets its
+// own dir from startGateServer.
+process.env.DATA_DIR = mkdtempSync(path.join(tmpdir(), 'mc-bauth-routes-'));
 const { ROUTE_POLICY, TIER, SUBJECT, assertPolicyCoversRoutes } = await import('./bounty-auth.js');
 
 // ── 1. COVERAGE: the table vs what actually registers ─────────────────────
@@ -84,6 +94,8 @@ const seeded = [
   ['twitch', '1', 'gatestreamer'],
   ['twitch', '2', 'someoneelse'],
   ['kick', '3', 'gatestreamer'],
+  // The site owner (SITE_ADMIN_TWITCH below): an account, not a key.
+  ['twitch', '4', 'gatesiteowner'],
 ];
 const accounts = {}, links = {};
 for (const [provider, platformId, username] of seeded) {
@@ -103,7 +115,7 @@ const srv = await startGateServer({
   port: PORT, dataDir, label: 'bounty-auth',
   env: {
     BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
-    BOUNTY_ADMIN_KEY: ADMIN_KEY, AUTH_SECRET,
+    BOUNTY_ADMIN_KEY: ADMIN_KEY, AUTH_SECRET, SITE_ADMIN_TWITCH: 'gatesiteowner',
     TWITCH_CLIENT_ID: '', TWITCH_CLIENT_SECRET: '', KICK_CLIENT_ID: '', KICK_CLIENT_SECRET: '',
   },
 });
@@ -155,9 +167,11 @@ function sampleFor(key, ids) {
 
 try {
   // ── fixtures: a real claim owned by 'gatestreamer' ───────────────────────
-  const owner = sealIdentityForTests({ provider: 'twitch', platformId: '1', username: 'gatestreamer' });
-  const other = sealIdentityForTests({ provider: 'twitch', platformId: '2', username: 'someoneelse' });
-  const kickSameName = sealIdentityForTests({ provider: 'kick', platformId: '3', username: 'gatestreamer' });
+  // The cookie names an ACCOUNT, so the helper reads it from this server's
+  // accounts.json — dataDir says which one.
+  const owner = sealIdentityForTests({ provider: 'twitch', platformId: '1', username: 'gatestreamer', dataDir });
+  const other = sealIdentityForTests({ provider: 'twitch', platformId: '2', username: 'someoneelse', dataDir });
+  const kickSameName = sealIdentityForTests({ provider: 'kick', platformId: '3', username: 'gatestreamer', dataDir });
 
   const pledge = await call('POST', '/api/bounty/pledge', {
     cookie: owner,
@@ -249,6 +263,12 @@ try {
   ok('a wrong admin key is rejected', badKey.status === 401, `${badKey.status}`);
   const rightKey = await call('GET', '/api/bounty/admin/ledger', { adminKey: ADMIN_KEY });
   ok('the right admin key gets through (ADMIN positive)', rightKey.status === 200, `${rightKey.status}`);
+  // bounty-N2: the /bounty/admin page sends the site owner's cookie, no key.
+  const siteOwner = sealIdentityForTests({ provider: 'twitch', platformId: '4', username: 'gatesiteowner', dataDir });
+  const ownerAdmin = await Promise.all(['/api/bounty/admin/sessions', '/api/bounty/admin/reviews']
+    .map((p) => call('GET', p, { cookie: siteOwner }).then((r) => r.status)));
+  ok('bounty-N2: the SITE OWNER\'s sign-in reaches the admin routes the admin page calls (it 401\'d)',
+    ownerAdmin.every((s) => s === 200), ownerAdmin.join(','));
 
   // ── T5: strikes follow the ACCOUNT, not a string ─────────────────────────
   // The old hole: `contributor` was whatever the client sent, so a struck fan
@@ -281,6 +301,192 @@ try {
   const overlayPoll = await call('GET', `/api/bounty/air-session/${airSessionId}/code`);
   ok('the OBS overlay can still poll its code with NO session (capability tier)',
     overlayPoll.status === 200, `${overlayPoll.status}`);
+
+  // ── 4. WHAT EACH HANDLER TRUSTS (audit 2026-10-24) ────────────────────────
+  // Everything above was green while six bounty findings reproduced: it
+  // proves who REACHES a handler, not what the handler then believes. Each
+  // case below failed on the pre-fix tree (the mutation run in the audit's
+  // fix-bounty NOTES.md) and passes on this one. No identity flag is set on
+  // this server, so the claim cases run against the DEFAULT verifier.
+  const ledgerLen = async () => (await call('GET', '/api/bounty/admin/ledger', { adminKey: ADMIN_KEY })).body.ledger?.length ?? -1;
+  const reservedOf = async (handle) => (await call('GET', `/api/bounty/pool?platform=twitch&handle=${handle}`)).body.reserved;
+
+  // bounty-9: the default is the REAL verifier. An anonymous claim used to be
+  // approved by the stub and bind the payee; now it is refused, unwritten.
+  await call('POST', '/api/bounty/pledge', {
+    cookie: other, body: { targets: [{ platform: 'twitch', handle: 'freshhandle' }], amount: '4', expiresInMs: 86400000 },
+  });
+  const rowsBefore = await ledgerLen();
+  const anonClaim = await call('POST', '/api/bounty/claim', {
+    body: { platform: 'twitch', handle: 'freshhandle', claimant: '0xIMPOSTOR' },
+  });
+  ok('bounty-9: with no identity flag, an ANONYMOUS claim is refused (the stub approved it)',
+    anonClaim.status === 401 && anonClaim.body.identity?.approved === false,
+    `HTTP ${anonClaim.status} ${anonClaim.body.identity?.method}`);
+  ok('bounty-9: ...before a single ledger row or claim is written',
+    (await ledgerLen()) === rowsBefore && (await reservedOf('freshhandle'))?.claimedBy == null,
+    `rows ${rowsBefore} -> ${await ledgerLen()}`);
+  const strangerClaim = await call('POST', '/api/bounty/claim', {
+    cookie: other, body: { platform: 'twitch', handle: 'freshhandle', claimant: '0xSTRANGER' },
+  });
+  ok('bounty-9: a signed-in account that does not own the handle is DENIED',
+    strangerClaim.body.identity?.approved === false && (await reservedOf('freshhandle'))?.claimedBy == null,
+    strangerClaim.body.identity?.method);
+
+  // bounty-N3: the verified owner's re-entry rebinds the payee, on the ledger.
+  const reentry = await call('POST', '/api/bounty/claim', {
+    cookie: owner, body: { platform: 'twitch', handle: 'gatestreamer', claimant: 'g-rebound' },
+  });
+  const rebound = (await call('GET', '/api/bounty/admin/ledger?platform=twitch&handle=gatestreamer', { adminKey: ADMIN_KEY }))
+    .body.ledger?.find((r) => r.type === 'IDENTITY_CHECK' && r.meta?.payeeReboundFrom === 'g');
+  ok('bounty-N3: the verified owner re-entering rebinds claimedBy to the payee they name',
+    reentry.body.reclaimed === true && (await reservedOf('gatestreamer'))?.claimedBy === 'g-rebound',
+    `claimedBy=${(await reservedOf('gatestreamer'))?.claimedBy}`);
+  ok('bounty-N3: ...and the change is a ledger row naming the old payee', !!rebound);
+
+  // bounty-7(a): the contributor is the session's account, never the body's.
+  const filed = await call('POST', '/api/bounty/contribute', {
+    cookie: owner, body: { platform: 'twitch', handle: 'gatestreamer', contributor: 'acct_bauthtwitch2', amount: '2' },
+  });
+  ok('bounty-7a: /contribute files under the SIGNED-IN account, not the id in the body',
+    filed.status === 200 && filed.body.contribution?.contributor === 'acct_bauthtwitch1',
+    `contributor=${filed.body.contribution?.contributor}`);
+
+  // bounty-N1: the type must be exactly one video type, and is served that way.
+  const html = Buffer.from('<!doctype html><script>document.title="SCRIPT_RAN"</script>');
+  const pledgeFor = async (cookie) => (await call('POST', '/api/bounty/pledge', {
+    cookie, body: { targets: [{ platform: 'twitch', handle: 'gatestreamer' }], amount: '3', expiresInMs: 86400000 },
+  })).body;
+  const evil = await pledgeFor(other);
+  const evilUp = await fetch(`${APP}${evil.uploadUrl}?durationS=8`, {
+    method: 'POST', headers: { 'Content-Type': 'video/webm, text/html' }, body: html,
+  });
+  ok('bounty-N1: an upload typed "video/webm, text/html" is refused, not stored',
+    evilUp.status === 400, `HTTP ${evilUp.status}`);
+  const fanUp = await fetch(`${APP}${evil.uploadUrl}?durationS=8`, {
+    method: 'POST', headers: { 'Content-Type': 'video/webm' },
+    body: Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(2048, 6)]),
+  }).then((r) => r.json());
+  const privateClip = fanUp.clip?.clipId;
+  ok('bounty-N1: ...while a plain video/webm upload still stores', !!privateClip);
+
+  // ...and mp4 is still one of the two types, served back as exactly that.
+  const mp4Pledge = await pledgeFor(other);
+  const mp4Up = await fetch(`${APP}${mp4Pledge.uploadUrl}?durationS=8`, {
+    method: 'POST', headers: { 'Content-Type': 'video/mp4' }, body: Buffer.alloc(2048, 7),
+  }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+  const mp4Media = await fetch(`${APP}/api/bounty/clip/${mp4Up.body.clip?.clipId}/media`, { headers: { Cookie: other } });
+  ok('bounty-N1: a video/mp4 upload still stores and serves as video/mp4',
+    mp4Up.status === 200 && mp4Media.headers.get('content-type') === 'video/mp4'
+    && mp4Media.headers.get('content-disposition') === 'inline; filename="holler-clip.mp4"',
+    `HTTP ${mp4Up.status} / ${mp4Media.headers.get('content-type')}`);
+
+  // web-5: one pledge per take. A retried submit carrying the same attemptId
+  // gets the first pledge back instead of escrowing again.
+  const attemptId = '3f0c2a52-6b1e-4a7e-9d2f-1c0b8e7a5d41';
+  const pledgeBody = { targets: [{ platform: 'twitch', handle: 'gatestreamer' }], amount: '2', expiresInMs: 86400000, attemptId };
+  const firstTry = await call('POST', '/api/bounty/pledge', { cookie: other, body: pledgeBody });
+  const retry = await call('POST', '/api/bounty/pledge', { cookie: other, body: pledgeBody });
+  const freshTake = await call('POST', '/api/bounty/pledge', { cookie: other, body: { ...pledgeBody, attemptId: '9b1d7c3e-2f4a-4c8b-8e6d-5a0f1b2c3d4e' } });
+  const ownerSame = await call('POST', '/api/bounty/pledge', { cookie: owner, body: pledgeBody });
+  ok('web-5: the same attemptId from the same account returns the FIRST pledge, deduped (it escrowed twice)',
+    retry.status === 200 && retry.body.deduped === true && retry.body.pledge?.id === firstTry.body.pledge?.id
+    && retry.body.uploadUrl === firstTry.body.uploadUrl, `${firstTry.body.pledge?.id} / ${retry.body.pledge?.id}`);
+  ok('web-5: ...a new attempt, or another account with the same id, is a new pledge',
+    freshTake.body.pledge?.id && freshTake.body.pledge.id !== firstTry.body.pledge?.id
+    && ownerSame.body.pledge?.id && ownerSame.body.pledge.id !== firstTry.body.pledge?.id && !ownerSame.body.deduped);
+  const pubCfg = await call('GET', '/api/bounty/config');
+  ok('web-5: the public config carries the clip size limit, so a take can be refused before paying',
+    Number.isFinite(pubCfg.body.clipMaxBytes) && pubCfg.body.clipMaxBytes > 0, `clipMaxBytes=${pubCfg.body.clipMaxBytes}`);
+
+  // bounty-8: an unmoderated clip is PRIVATE.
+  const media = (id, cookie, adminKey) => fetch(`${APP}/api/bounty/clip/${id}/media`, {
+    headers: { ...(cookie ? { Cookie: cookie } : {}), ...(adminKey ? { 'x-bounty-admin-key': adminKey } : {}) },
+  });
+  const pubList = await call('GET', '/api/bounty/clips?platform=twitch&handle=gatestreamer');
+  ok('bounty-8: the PUBLIC clip list leaves the unapproved clip out',
+    pubList.status === 200 && !(pubList.body.clips || []).some((c) => c.clipId === privateClip)
+    && pubList.body.waiting >= 2, `${(pubList.body.clips || []).length} listed, ${pubList.body.waiting} waiting`);
+  ok('bounty-8 / 7b: ...and carries no account ids, no contribution ids and no storage path',
+    !/acct_|contribution|storageRoot/.test(JSON.stringify(pubList.body)) && !pubList.body.storage);
+  const ownList = await call('GET', '/api/bounty/clips?platform=twitch&handle=gatestreamer', { cookie: owner });
+  ok('bounty-8: the streamer still sees every clip waiting for them',
+    (ownList.body.clips || []).some((c) => c.clipId === privateClip) && !ownList.body.storage?.storageRoot);
+  const anonMedia = await media(privateClip);
+  const strangerMedia = await media(privateClip, kickSameName);
+  ok('bounty-8: an anonymous caller cannot play the unapproved clip (it streamed before)',
+    anonMedia.status === 404, `HTTP ${anonMedia.status}`);
+  ok('bounty-8: ...nor can an account that is neither its pledger nor its streamer',
+    strangerMedia.status === 404, `HTTP ${strangerMedia.status}`);
+  const pledgerMedia = await media(privateClip, other);
+  const streamerMedia = await media(privateClip, owner);
+  const adminMedia = await media(privateClip, null, ADMIN_KEY);
+  ok('bounty-8: its pledger, its streamer and the operator can',
+    pledgerMedia.status === 200 && streamerMedia.status === 200 && adminMedia.status === 200,
+    `${pledgerMedia.status}/${streamerMedia.status}/${adminMedia.status}`);
+  ok('bounty-N1: media is served as exactly video/webm, nosniff, with a fixed filename',
+    pledgerMedia.headers.get('content-type') === 'video/webm'
+    && pledgerMedia.headers.get('x-content-type-options') === 'nosniff'
+    && pledgerMedia.headers.get('content-disposition') === 'inline; filename="holler-clip.webm"',
+    `${pledgerMedia.headers.get('content-type')} / ${pledgerMedia.headers.get('x-content-type-options')} / ${pledgerMedia.headers.get('content-disposition')}`);
+  await call('POST', `/api/bounty/clip/${privateClip}/approve`, { cookie: owner, body: { by: 'gatestreamer' } });
+  const approvedMedia = await media(privateClip);
+  const approvedList = await call('GET', '/api/bounty/clips?platform=twitch&handle=gatestreamer');
+  ok('bounty-8: once the streamer approves it, the clip is public',
+    approvedMedia.status === 200 && (approvedList.body.clips || []).some((c) => c.clipId === privateClip),
+    `HTTP ${approvedMedia.status}`);
+
+  // bounty-2: the room route hands the session id only to a keyed overlay,
+  // and the overlay's two writes need that key (or the streamer / operator).
+  const k = new URLSearchParams(String(air.body.overlayPath || '').split('?')[1] || '').get('k');
+  const room = air.body.roomId;
+  ok('bounty-2: (fixture) the dashboard overlay URL carries the room key', !!k && !!room, `room=${room} k=${k ? 'present' : 'absent'}`);
+  const unkeyedCode = await call('GET', `/api/bounty/room/${room}/code`);
+  const keyedCode = await call('GET', `/api/bounty/room/${room}/code?k=${k}`);
+  ok('bounty-2: an UNKEYED room poll gets no session id (it used to get the UUID)',
+    unkeyedCode.status === 200 && unkeyedCode.body.status === 'OPEN' && unkeyedCode.body.airSessionId === null,
+    `airSessionId=${unkeyedCode.body.airSessionId}`);
+  ok('bounty-2: ...a KEYED one does', keyedCode.body.airSessionId === airSessionId);
+  const storeFile = path.join(dataDir, 'bounty.json');
+  const sizeBefore = statSync(storeFile).size;
+  const big = { height: 1, canvasH: 1080, ratio: 0.001, junk: 'x'.repeat(90_000) };
+  const anonBadge = [];
+  for (let i = 0; i < 20; i++) {
+    anonBadge.push((await call('POST', `/api/bounty/air-session/${airSessionId}/badge`, { body: { tooSmall: true, detail: big } })).status);
+  }
+  const anonEnv = await call('POST', `/api/bounty/air-session/${airSessionId}/overlay-env`, {
+    body: { width: 1, height: 1, visibilityState: 'visible', at: Date.now() },
+  });
+  const grew = statSync(storeFile).size - sizeBefore;
+  ok('bounty-2: unkeyed /badge posts are refused', anonBadge.every((s) => s === 401), [...new Set(anonBadge)].join(','));
+  ok('bounty-2: ...as is an unkeyed /overlay-env', anonEnv.status === 401, `HTTP ${anonEnv.status}`);
+  ok('bounty-2: ...so 20 x 90KB of junk no longer grows bounty.json (it grew ~1.8MB)',
+    grew < 64 * 1024, `${(grew / 1024).toFixed(1)}KB`);
+  const keyedBadge = await call('POST', `/api/bounty/air-session/${airSessionId}/badge?k=${k}`, { body: { tooSmall: true, detail: big } });
+  const keyedEnv = await call('POST', `/api/bounty/air-session/${airSessionId}/overlay-env?k=${k}`, {
+    body: { width: 1920, height: 1080, visibilityState: 'visible', at: Date.now() },
+  });
+  ok('bounty-2: the keyed overlay reports both', keyedBadge.status === 200 && keyedEnv.status === 200,
+    `${keyedBadge.status}/${keyedEnv.status}`);
+  const sess = (await call('GET', '/api/bounty/admin/sessions', { adminKey: ADMIN_KEY })).body.sessions
+    ?.find((s) => s.id === airSessionId);
+  const lastViolation = sess?.violations?.[sess.violations.length - 1];
+  ok('bounty-2: the stored badge detail is three numbers, not the client\'s JSON',
+    JSON.stringify(Object.keys(lastViolation?.detail || {}).sort()) === '["canvasH","height","ratio"]',
+    JSON.stringify(lastViolation?.detail || null).slice(0, 80));
+  const streamerBadge = await call('POST', `/api/bounty/air-session/${airSessionId}/badge`, { cookie: owner, body: { tooSmall: false } });
+  ok('bounty-2: the streamer\'s own session also counts as a credential', streamerBadge.status === 200, `HTTP ${streamerBadge.status}`);
+
+  // bounty-14: frames are held only for a contribution still awaiting its clip.
+  const ghost = await call('POST', '/api/bounty/clip/not-a-contribution/frames', { body: { frames: ['data:image/jpeg;base64,AAAA'] } });
+  ok('bounty-14: frames for an id that is no contribution are refused (any string used to be held)',
+    ghost.status === 404, `HTTP ${ghost.status}`);
+  const late = await call('POST', `/api/bounty/clip/${evil.contribution.id}/frames`, { body: { frames: ['data:image/jpeg;base64,AAAA'] } });
+  ok('bounty-14: ...and for a contribution whose clip already landed', late.status === 409, `HTTP ${late.status}`);
+  const fresh = await pledgeFor(other);
+  const early = await call('POST', `${fresh.uploadUrl}/frames`, { body: { frames: ['data:image/jpeg;base64,AAAA', 'not-an-image'] } });
+  ok('bounty-14: a contribution awaiting its clip still gets its frames held',
+    early.status === 200 && early.body.frames === 1, `HTTP ${early.status} frames=${early.body.frames}`);
 } finally {
   srv.kill();
 }

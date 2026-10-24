@@ -311,7 +311,7 @@ const srv = await startGateServer({
   port: APP_PORT, label: 'yt-rumble',
   bountyAuth: { handles: ['youtube:ytstar', 'rumble:rumstar'] },
   env: {
-    BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
+    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
     TWITCH_CLIENT_ID: '', TWITCH_CLIENT_SECRET: '', KICK_CLIENT_ID: '', KICK_CLIENT_SECRET: '',
     YOUTUBE_API_KEY: 'gate-yt-key',
     YOUTUBE_API_BASE: `http://localhost:${STUB}/yt`,

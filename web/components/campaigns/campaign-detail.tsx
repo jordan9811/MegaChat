@@ -50,9 +50,12 @@ const STATUS_PAYOUTS_OFF: Partial<Record<Campaign['status'], string>> = {
   closed: 'No new claims. Owed payouts are queued until they are switched on; the rest refunds.',
 }
 
-/** The claims still in flight after a close: submitted before it, honoured
- *  for the grace window, and what the refund waits for. */
-const IN_FLIGHT: ClaimStatus[] = ['recorded', 'approved', 'aired', 'joined', 'owed', 'releasing']
+/** What the refund waits for after a close (campaign-engine.js maybeRefund):
+ *  the claims still in flight, submitted before it and honoured for the
+ *  grace window, plus every owed claim, which must be intended first. A
+ *  releasing claim's intent is already recorded, so it does not hold the
+ *  refund back. */
+const IN_FLIGHT: ClaimStatus[] = ['recorded', 'approved', 'aired', 'joined', 'owed']
 
 /** The settlement door's word for a payout intent, in the creator's. */
 function doorWord(door: string | null | undefined) {
@@ -74,14 +77,18 @@ const CLAIM_PIP: Record<ClaimStatus, { label: string; tone: Tone }> = {
   paid: { label: 'Paid', tone: 'paid' },
   failed: { label: 'Failed', tone: 'bad' },
   rejected: { label: 'Rejected', tone: 'bad' },
+  expired: { label: 'Expired', tone: 'bad' },
 }
 
-function CopyButton({ value, label }: { value: string; label: string }) {
+/** `what` completes the button's name for a screen reader ("Copy the
+ *  public link", then "Copied the public link"). An aria-label would hide
+ *  the visible Copy / Copied change from it. */
+function CopyButton({ value, what }: { value: string; what: string }) {
   const [copied, setCopied] = useState(false)
   const copy = useCallback(async () => {
     try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch { /* on screen anyway */ }
   }, [value])
-  return <button type="button" onClick={() => void copy()} aria-label={label}>{copied ? 'Copied' : 'Copy'}</button>
+  return <button type="button" onClick={() => void copy()}>{copied ? 'Copied' : 'Copy'}<span className="sr-only"> {what}</span></button>
 }
 
 export function CampaignDetail({ id }: { id: string }) {
@@ -114,7 +121,11 @@ export function CampaignDetail({ id }: { id: string }) {
     } catch (e) {
       setError({ status: e instanceof CampaignsApiError ? e.status : 0, message: e instanceof Error ? e.message : 'Could not load' })
     }
-    listClaims(id).then((d) => setClaims(d.claims)).catch((e) => { setClaims([]); setClaimsError(e instanceof Error ? e.message : 'unavailable') })
+    // A failed load keeps whatever claims are on screen (none, the first
+    // time): "No claims yet" beside "could not be loaded" said two things.
+    listClaims(id)
+      .then((d) => { setClaims(d.claims); setClaimsError(null) })
+      .catch((e) => setClaimsError(e instanceof Error ? e.message : 'unavailable'))
   }, [id])
 
   useEffect(() => { void load() }, [load])
@@ -223,10 +234,13 @@ export function CampaignDetail({ id }: { id: string }) {
   const queued = (claims || []).filter((k) => k.payout && !k.payout.txHash && String(k.payout.door || '').toUpperCase() !== 'DONE' && k.status !== 'failed')
   const sentSum = paidOut.reduce((n, k) => n + (Number(k.payout?.amount) || 0), 0)
   const inFlight = IN_FLIGHT.reduce((n, s) => n + (c.claims?.counts?.[s] || 0), 0)
-  const refundWaiting = c.status === 'closed' && b.refunded === 0 && inFlight > 0
-  // An X read is billed to a funded campaign, so a funded or live one can
-  // freeze lists from X here (a draft cannot).
-  const canChargeX = c.status === 'funded' || c.status === 'live'
+  // Waiting = no refund intent recorded yet. A zero refund is recorded too
+  // (RETAINED, no amount), so `refunded === 0` could not tell the two apart.
+  const refundWaiting = c.status === 'closed' && c.refundDoor == null && inFlight > 0
+  // An X read is billed to a FUNDED USDC campaign: the server refuses a live
+  // one (build lists before opening it) and any custom-token one (X is
+  // billed in dollars), so only that campaign is offered the builder.
+  const canChargeX = c.status === 'funded' && c.reward.type === 'usdc'
   const usedSetIds = [c.rules?.referenceSetId, c.rules?.followedByFromSet?.referenceSetId].filter(Boolean) as string[]
   const usedSets = sets.filter((s) => usedSetIds.includes(s.id))
 
@@ -291,13 +305,13 @@ export function CampaignDetail({ id }: { id: string }) {
           </div>
           <div><dt>Places</dt><dd>{places} of {c.maxClaims} taken · {c.claims?.paid ?? 0} paid</dd></div>
         </dl>
-        <span className="mcp-bar mcp-bar-lg" aria-label={`${b.usedPct}% of the budget paid out`}><i style={{ width: `${b.usedPct}%` }} /></span>
+        <span className="mcp-bar mcp-bar-lg" aria-label={`${b.usedPct}% of the budget owed or paid`}><i style={{ width: `${b.usedPct}%` }} /></span>
         {c.status === 'draft' && fundOff ? <p className="mcp-hint mcp-notice-inline">{FUNDING_OFF_COPY} You can keep editing the draft and checking rules; Fund and Open wait until they are.</p> : null}
         {c.status === 'draft' && !fundOff && follower.blocked ? <p className="mcp-error mcp-notice-inline" role="alert">{follower.warning} Switch the rule off (Edit) to fund, or fund once this server can read X.</p> : null}
       </section>
 
       {approval ? (
-        <ApproveStep ask={approval} explorerUrl={chain.explorerUrl} onApproved={(proof) => fundOrThrow(proof)} onCancel={() => setApproval(null)} />
+        <ApproveStep key={`${approval.amountAtomic}:${approval.allowance ?? ''}:${approval.approveRequired ? 1 : 0}`} ask={approval} explorerUrl={chain.explorerUrl} onApproved={(proof) => fundOrThrow(proof)} onCancel={() => setApproval(null)} />
       ) : null}
       {actionError ? <p role="alert" className="mcp-error">{actionError}</p> : null}
 
@@ -306,7 +320,7 @@ export function CampaignDetail({ id }: { id: string }) {
           <header><span className="mcp-coordinate">Public link</span><h2>Where people claim</h2><p>{c.status === 'live' ? 'Open now.' : c.status === 'closed' ? 'Shows the campaign as closed.' : 'Opens once the campaign is funded and open.'}</p></header>
           <div className="mcp-linkrow">
             <span>{publicUrl}</span>
-            <CopyButton value={publicUrl} label="Copy the public link" />
+            <CopyButton value={publicUrl} what="the public link" />
             <a href={`/c/${c.slug}`} target="_blank" rel="noopener">Open</a>
           </div>
           <header><span className="mcp-coordinate">Share on X</span></header>
@@ -314,7 +328,7 @@ export function CampaignDetail({ id }: { id: string }) {
           {c.status === 'live' ? (
             <div className="mcp-actions">
               <a className="mcp-btn mcp-btn-sm" href={xIntentUrl(share)} target="_blank" rel="noopener">Share on X</a>
-              <span className="mcp-copybtn"><CopyButton value={share} label="Copy the share post" /></span>
+              <span className="mcp-copybtn"><CopyButton value={share} what="the share post" /></span>
             </div>
           ) : (
             <p className="mcp-hint">{c.status === 'closed' ? 'The campaign is closed, so the post is kept for the record only.' : 'The share button appears once the campaign is open to claims — the link 404s until then.'}</p>
@@ -328,7 +342,7 @@ export function CampaignDetail({ id }: { id: string }) {
           {canChargeX ? (
             <>
               {/* Edit is draft-only, so a funded campaign's rules are as set as a live one's. */}
-              <header><span className="mcp-coordinate">Frozen lists from X</span><p>{`This campaign is ${c.status === 'funded' ? 'funded' : 'live'}, so a read of X can be charged to its budget. Its rules are set, so frozen lists are for your next campaign.`}</p></header>
+              <header><span className="mcp-coordinate">Frozen lists from X</span><p>This campaign is funded and not yet open, so a read of X can be charged to its budget until you open it. Its rules are set, so frozen lists are for your next campaign.</p></header>
               {buildingSet ? (
                 <ReferenceSetBuilder chargeTo={c.id} defaultSource="x-following" onCreated={(s) => { setSets((xs) => [s, ...xs]); setBuildingSet(false) }} onCancel={() => setBuildingSet(false)} />
               ) : (
@@ -340,7 +354,7 @@ export function CampaignDetail({ id }: { id: string }) {
       </div>
 
       <section className="mcp-card mcp-claims">
-        <header><span className="mcp-coordinate">Claims</span><h2>{claims == null ? 'Loading…' : claims.length === 0 ? 'No claims yet' : `${claims.length} ${claims.length === 1 ? 'claim' : 'claims'}`}</h2>{claimsError ? <p className="mcp-hint">Claims could not be loaded ({claimsError}).</p> : null}</header>
+        <header><span className="mcp-coordinate">Claims</span><h2>{claims == null ? (claimsError ? 'Not loaded' : 'Loading…') : claims.length === 0 ? 'No claims yet' : `${claims.length} ${claims.length === 1 ? 'claim' : 'claims'}`}</h2>{claimsError ? <p className="mcp-hint">Claims could not be loaded ({claimsError}).</p> : null}</header>
         {claims && claims.length > 0 ? (
           <div className="mcp-table" role="table" aria-label="Claims">
             <div className="mcp-tr mcp-th mcp-claim-row" role="row">
@@ -372,7 +386,7 @@ export function CampaignDetail({ id }: { id: string }) {
                       <><strong>{passed}/{cl.checks.length}</strong>{failed.length > 0 ? <small>not met: {failed.map((x) => checkLabel(x.rule)).join(', ')}</small> : <small>all passed</small>}</>
                     )}
                   </span>
-                  <span role="cell" data-label="Status"><Pip tone={pip.tone}>{pip.label}</Pip>{unkeyed ? <small className="mcp-td-note mcp-td-note-bad">played{unkeyedAt ? ` at ${unkeyedAt}` : ''} through the old overlay link — not counted</small> : null}</span>
+                  <span role="cell" data-label="Status"><Pip tone={pip.tone}>{pip.label}</Pip>{unkeyed ? <small className="mcp-td-note mcp-td-note-bad">played{unkeyedAt ? ` at ${unkeyedAt}` : ''} through the old overlay link — not counted</small> : null}{cl.offAir ? <small className="mcp-td-note">off air: not counting</small> : null}</span>
                   <span role="cell" data-label="Payout" className="mcp-td-payout">
                     {cl.payout ? (<>
                       <strong className="mcp-money">{rewardLabel(cl.payout.amount, cl.payout.symbol)}</strong>

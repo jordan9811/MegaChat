@@ -43,6 +43,7 @@ const ff = (args, what) => {
 
 process.env.DATA_DIR = mkdtempSync(path.join(tmpdir(), 'mc-cap-data-'));
 process.env.BOUNTY_CLAIM = '1';
+process.env.BOUNTY_IDENTITY_STUB = '1';
 process.env.BOUNTY_CAPTURE_WINDOW_MS = '20000';   // 10 segments
 process.env.BOUNTY_CAPTURE_POLL_MS = '250';
 
@@ -114,7 +115,7 @@ try {
     port: appPort, label: 'capture-app',
     bountyAuth: { handles: ['capstreamer'] },
     env: {
-      BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
+      BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true',
       TWITCH_CLIENT_ID: '', TWITCH_CLIENT_SECRET: '', KICK_CLIENT_ID: '', KICK_CLIENT_SECRET: '',
       BOUNTY_CODE_ROTATE_MS: '600000', BOUNTY_CODE_VALIDITY_MS: '600000',
       // The SERVER runs the capture, driven at the stub live stream — so the

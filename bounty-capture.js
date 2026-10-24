@@ -201,6 +201,11 @@ export async function startCapture(airSessionId, {
   if (!bountyConfig.selfCaptureEnabled) return null;
   if (active.has(airSessionId)) return active.get(airSessionId);
   if (!hlsUrl) throw new Error('startCapture requires a live HLS url');
+  if (active.size >= bountyConfig.captureMaxActive) {
+    log.error?.(`[capture] REFUSED for ${airSessionId}: ${active.size} recorders already running `
+      + `(cap ${bountyConfig.captureMaxActive}) — this session verifies from the platform source only`);
+    return null;
+  }
 
   const state = {
     airSessionId, platform, handle, hlsUrl,
@@ -213,6 +218,8 @@ export async function startCapture(airSessionId, {
     // consecutive polls have added nothing.
     lastAdvanceAt: Date.now(),
     noAdvancePolls: 0,
+    // Start of the current run of failed polls; null while polls succeed.
+    errorRunSince: null,
   };
   active.set(airSessionId, state);
 
@@ -222,6 +229,7 @@ export async function startCapture(airSessionId, {
       const res = await fetchImpl(state.hlsUrl, { signal: AbortSignal.timeout(8000) });
       if (!res.ok) throw new Error(`playlist ${res.status}`);
       const body = await res.text();
+      state.errorRunSince = null;
       /**
        * A MASTER PLAYLIST IS NOT A MEDIA PLAYLIST, and parsing one as the
        * other fails SILENTLY in the worst possible way.
@@ -333,12 +341,24 @@ export async function startCapture(airSessionId, {
       // A capture that dies silently is worse than one that never ran: the
       // streamer would be verified against nothing and told nothing.
       state.errors += 1;
+      if (state.errorRunSince == null) state.errorRunSince = Date.now();
       if (state.errors === 1 || state.errors % 10 === 0) {
         log.warn?.(`[capture] ${airSessionId} poll failed (${state.errors}): ${e.message}`);
       }
     } finally {
       if (!state.stopped) {
-        state.pollTimer = setTimeout(poll, bountyConfig.capturePollMs);
+        const now = Date.now();
+        const why = now - state.startedAt > bountyConfig.captureMaxAgeMs
+          ? `recording for ${Math.round((now - state.startedAt) / 60_000)}m, past the ${Math.round(bountyConfig.captureMaxAgeMs / 60_000)}m cap`
+          : state.errorRunSince != null && now - state.errorRunSince > bountyConfig.captureMaxErrorRunMs
+            ? `every poll has failed for ${Math.round((now - state.errorRunSince) / 60_000)}m`
+            : null;
+        if (why) {
+          log.warn?.(`[capture] ${airSessionId} STOPPED ON ITS OWN: ${why} — verification falls back to the platform source`);
+          stopCapture(airSessionId, { log });
+        } else {
+          state.pollTimer = setTimeout(poll, bountyConfig.capturePollMs);
+        }
       }
     }
   };
@@ -508,11 +528,10 @@ export function stopCapture(airSessionId, { log = console } = {}) {
   return true;
 }
 
-/** Is a capture running for this session? The gate asserts on this. */
+/** Is a capture running for this session? _gate-bounty-claim-audit F asserts
+ *  on it: a recorder whose every poll fails stops on its own. */
 export const isCapturing = (airSessionId) => active.has(airSessionId);
 export const activeCount = () => active.size;
-/** Test seam: the live buffer, for asserting the window really rolls. */
-export const _bufferFor = (airSessionId) => active.get(airSessionId)?.buffer || null;
 
 /** Every persisted capture for a session. */
 export function capturesFor(airSessionId) {
@@ -608,5 +627,3 @@ export function purgeExpiredCaptures({ now = Date.now(), log = console } = {}) {
   if (purged) log.log?.(`[capture] retention sweep removed ${purged} capture(s), ${(bytes / 1e6).toFixed(1)}MB`);
   return { purged, bytes };
 }
-
-export const captureDir = () => CAPTURE_DIR;

@@ -19,13 +19,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CircleCheck, CircleAlert, Copy, Plug, MonitorUp, Volume2 } from 'lucide-react'
-import { ObsClient, OBS_ERRORS, ObsError } from '@/lib/obs-client.mjs'
+import { ObsClient, ObsError } from '@/lib/obs-client.mjs'
 import {
   addOverlayToObs, verifyOverlayInObs, MONITOR, type ObsVerifyCheck,
 } from '@/lib/obs-oneclick.mjs'
 import { useObsSceneWatch } from './use-obs-scene-watch'
+import { announceObsPassword, readObsPassword, writeObsPassword } from './obs-password'
 
-const LS_PASSWORD = 'mc_obs_ws_password'
 const LS_MONITOR = 'mc_obs_monitor' // '1' hear (default) | '0' mute locally
 
 type Phase = 'idle' | 'testing' | 'connected' | 'adding' | 'verified' | 'failed'
@@ -77,14 +77,14 @@ export function ObsOneClick({
 
   useEffect(() => {
     try {
-      setPassword(localStorage.getItem(LS_PASSWORD) || '')
+      setPassword(readObsPassword() || '')
       setHearSounds(localStorage.getItem(LS_MONITOR) !== '0')
     } catch { /* storage blocked — fields just start empty */ }
   }, [])
 
   const savePassword = useCallback((v: string) => {
     setPassword(v)
-    try { localStorage.setItem(LS_PASSWORD, v) } catch { /* best-effort */ }
+    writeObsPassword(v)
   }, [])
 
   const copy = useCallback((label: string, text: string) => {
@@ -97,6 +97,9 @@ export function ObsOneClick({
     const client = new ObsClient({ password })
     try {
       await client.connect()
+      // OBS took this password: the overlay health card's visibility watch
+      // starts now, not on the next reload (audit web-6).
+      announceObsPassword()
       await fn(client)
     } finally {
       client.close()

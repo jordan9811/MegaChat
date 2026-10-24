@@ -87,7 +87,6 @@ body:has(.mc-landing) {
   font-family: var(--font-display), var(--font-ui), system-ui, sans-serif;
 }
 
-.mcl-coordinate,
 .mcl-card-n,
 .mcl-entry-card strong,
 .mcl-mini-board > header,
@@ -96,13 +95,6 @@ body:has(.mc-landing) {
 .mcl-pool-row > b,
 .mcl-compat > span {
   font-family: var(--font-code), ui-monospace, monospace;
-}
-
-.mcl-coordinate {
-  color: var(--mcl-dim);
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
 }
 
 /* ── nav ─────────────────────────────────────────────────────────────────── */

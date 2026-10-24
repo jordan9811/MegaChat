@@ -162,7 +162,6 @@ state machine applies to the Next join page only.
 ## Re-verify after future changes
 
 ```
-node _verify-join.mjs full     # needs Chrome; funds a fresh viewer + passkey account from the seller
-node _gate-phase2.mjs
-npm run build:passkey          # if src/passkey-wallet.mjs changed
+node _verify-join.mjs full     # historical: deleted 2026-10-24 (it could not load: Arc fee helpers gone)
+node _gate-phase2.mjs          # historical: deleted 2026-10-24 (it asserted the deleted passkey bundle)
 ```

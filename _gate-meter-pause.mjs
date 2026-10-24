@@ -88,10 +88,14 @@ try {
   ok('2. the seat is granted on points', joined.status === 200 && joined.body.paymentMode === 'points_stream', `${joined.status} ${joined.body.paymentMode}`);
   const seatId = joined.body.seatId || joined.body.seat?.id;
   ok('2. ...and has an id', !!seatId, seatId || JSON.stringify(joined.body).slice(0, 120));
+  // N1: the join response's seat token is what proves this socket holds the
+  // seat; the id alone is public. The gate presents it, as the join page does.
+  const seatToken = joined.body.seatToken;
+  ok('2. ...and the seat token the owner proves itself with', typeof seatToken === 'string' && seatToken.length >= 32);
 
   // ── 3. go live the way the join page does ────────────────────────────────
-  ws.send(JSON.stringify({ type: 'register_seat', seatId }));
-  ws.send(JSON.stringify({ type: 'camera_ready', seatId }));
+  ws.send(JSON.stringify({ type: 'register_seat', seatId, seatToken }));
+  ws.send(JSON.stringify({ type: 'camera_ready', seatId, seatToken }));
   await sleep(3_500);
   const a1 = accrues();
   ok('3. once live, the real tick loop meters the seat: ACCRUE rows appear', a1 >= 2, `${a1} tick(s) in 3.5s`);

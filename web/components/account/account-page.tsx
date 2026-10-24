@@ -26,8 +26,8 @@ import {
   type AccountTier,
   type LinkedAccount,
 } from '@/lib/api'
-import { shortAddr, useAccount } from '@/lib/use-account'
-import { formatDollars } from '@/lib/display-format'
+import { formatDollars, shortAddr } from '@/lib/display-format'
+import { useAccount } from '@/lib/use-account'
 import { BrandText } from '@/components/brand-text'
 import { FeatureTag, type FeatureKind } from '@/components/feature-tag'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -49,6 +49,16 @@ const PROVIDER_LABEL: Record<string, string> = {
 function providerLabel(type: string) {
   return PROVIDER_LABEL[type] || type
 }
+
+// Why a platform login was not linked, in the person's terms. The OAuth
+// callback comes back here with ?link_error=<reason> (auth.js refuse()); the
+// reason codes never reach the screen.
+const LINK_ERROR_COPY: Record<string, string> = {
+  provider_linked: 'That login was not linked: this account already has a different login on that platform. To switch, disconnect the one it has, then connect the new one.',
+  already_linked: 'That login already belongs to another Holler account, so it was not linked here. Sign in with it to use that account.',
+  not_linked: 'That login changed while it was being linked, so nothing was saved. Connect it again.',
+}
+const LINK_ERROR_FALLBACK = 'That login could not be linked. Try connecting it again.'
 
 // The classifier in plain language. Shown to the account holder and nobody
 // else — no feature reads it yet, so this is the only place it surfaces.
@@ -116,8 +126,29 @@ export function AccountPage() {
   const [section, setSection] = useState<'overview' | 'defaults' | 'guests' | 'connections'>('overview')
   const [overview, setOverview] = useState<AccountOverview | null>(null)
   const [linkBusy, setLinkBusy] = useState<string | null>(null)
+  const [linkNotice, setLinkNotice] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => setOrigin(window.location.origin), [])
+
+  // Connecting or refreshing a platform leaves through its sign-in and comes
+  // back here (connectUrl / refreshUrl, returnTo=/account) with ?linked=<p>
+  // or ?link_error=<reason>. Nothing read either, so a refused link looked
+  // like nothing happened. Said once, in Connections, then taken off the URL
+  // so a reload does not say it again.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const linked = params.get('linked')
+    const refused = params.get('link_error')
+    if (!linked && !refused) return
+    setLinkNotice(refused
+      ? { ok: false, text: LINK_ERROR_COPY[refused] || LINK_ERROR_FALLBACK }
+      : { ok: true, text: `${providerLabel(linked || '')} is linked to this account, and its profile details are up to date.` })
+    setSection('connections')
+    params.delete('linked')
+    params.delete('link_error')
+    const rest = params.toString()
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`)
+  }, [])
 
   // Both endpoints are authorized by the identity cookie, so a wallet-only
   // session has nothing to ask for.
@@ -376,6 +407,10 @@ export function AccountPage() {
               {section === 'connections' ? (
                 <section className="mcc-connections-zone" id="connections">
                   <header><span className="mcc-coordinate">Linked sign-ins</span><h2>One identity, multiple ways back in.</h2><p>Every provider below resolves to this same Holler account.</p></header>
+                  {linkNotice ? <p id="link-notice" role={linkNotice.ok ? 'status' : 'alert'} className="hint">{linkNotice.text}</p> : null}
+                  {/* Make primary and Disconnect report here, where they were
+                      clicked; the note used to show only under Room defaults. */}
+                  {note ? <p className="hint">{note}</p> : null}
                   {!identity ? (
                     <div className="mcc-empty-connection"><p>Wallet-only session. Add Google, email, passkey, Twitch, X, or another supported sign-in.</p><button type="button" className="btn" onClick={openSignIn}>Add a sign-in</button></div>
                   ) : accounts == null ? (

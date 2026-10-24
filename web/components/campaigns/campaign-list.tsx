@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react'
 import { listMyCampaigns, type Campaign, CampaignsApiError } from '@/lib/campaigns-api'
 import { FeatureTag } from '@/components/feature-tag'
 import { PageTitle, Pip } from './campaigns-shell'
-import { budgetFigures, fmtDate, offerSentence, placesTaken, rewardLabel } from './rules'
+import { budgetFigures, budgetRowText, fmtDate, offerSentence, placesTaken, rewardLabel } from './rules'
 
 const STATUS_LABEL: Record<Campaign['status'], string> = { draft: 'Draft', funding_pending: 'Confirming', funded: 'Funded', live: 'Live', closed: 'Closed' }
 
@@ -70,7 +70,9 @@ export function CampaignList() {
                 <span role="cell" className="mcp-money">{rewardLabel(c.reward.amount, sym)}</span>
                 <span role="cell" className="mcp-td-budget">
                   <span className="mcp-bar" aria-hidden="true"><i style={{ width: `${b.usedPct}%` }} /></span>
-                  <small>{c.status === 'draft' ? `${rewardLabel(String(b.planned), sym)} planned` : `${rewardLabel(String(b.released), sym)} paid · ${rewardLabel(String(b.left), sym)} left`}</small>
+                  {/* "owed", not "paid": released counts every payout intent,
+                      queued ones included; "left" is the server's remaining. */}
+                  <small>{budgetRowText(c)}</small>
                 </span>
                 <span role="cell" className="mcp-td-claims"><strong>{placesTaken(c)} of {c.maxClaims}</strong><small>{c.claims?.paid ?? 0} paid</small></span>
                 <span role="cell" className="mcp-td-date">{fmtDate(c.deadline)}</span>

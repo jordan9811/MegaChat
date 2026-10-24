@@ -2,7 +2,7 @@
 
 For someone who would contribute to, integrate with, or audit MegaChat.
 
-The system is one Node process: an Express server (`server.js`) that owns every HTTP route, the WebSocket seat lifecycle and the payment meters, and mounts a Next.js app (`web/`) as its fall-through handler for pages. State is JSON files under `DATA_DIR`. There is no database server, no queue, and no second service — the only external systems are a LiveKit SFU for media, the payment chain, and the streaming platforms' public APIs. Source: `server.js` (the `createNextApp({ dev: nextDev, dir: NEXT_DIR })` mount near the end of the file), `rooms-store.js`, `airings-store.js`.
+The system is one Node process: an Express server (`server.js`) that owns every HTTP route, the WebSocket seat lifecycle and the payment meters, and mounts a Next.js app (`web/`) as its fall-through handler for pages. State is JSON files under `DATA_DIR`. There is no database server, no queue, and no second service — the only external systems are a LiveKit SFU for media, the payment chain, the streaming platforms' and X's APIs, Privy for sign-in, and — when configured — a moderation API (`privy-identity.js`, `moderation.js`). Source: `server.js` (the `createNextApp({ dev: nextDev, dir: NEXT_DIR })` mount near the end of the file), `rooms-store.js`, `airings-store.js`.
 
 Pages in this section:
 

@@ -24,12 +24,26 @@ import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import puppeteer from 'puppeteer-core';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = '') => {
   if (c) { pass++; console.log(`  PASS  ${n}${x ? ' — ' + x : ''}`); }
   else { fail++; console.error(`  FAIL  ${n}${x ? ' — ' + x : ''}`); }
 };
+// ── G0. the build under test must not predate the source ──────────────────
+// server.js --prod serves web/.next exactly as it sits on disk: an older build
+// means this grades the PREVIOUS tree and reports it as current ("A browser
+// gate is only as fresh as the last build", CLAUDE.md). Before anything boots.
+{
+  const fresh = assertFreshBuild();
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const PORT = 3350;
 const APP = `http://localhost:${PORT}`;

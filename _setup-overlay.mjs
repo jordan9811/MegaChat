@@ -37,7 +37,7 @@ const { startGateServer } = await import('./_gate-helpers.mjs');
 const srv = await startGateServer({
   port: PORT, dataDir: mkdtempSync(path.join(tmpdir(), 'mc-setup-')),
   label: 'overlay-setup', bountyAuth: { handles: [`kick:${HANDLE}`] },
-  env: { BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '0', KEEP_ORPHAN_ROOMS: 'true' },
+  env: { BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true' },
   readyTimeoutMs: 180_000,
 });
 const post = (p, b, as) => fetch(`${APP}${p}`, {
@@ -71,7 +71,11 @@ try {
   console.log('='.repeat(72));
   console.log('  PUT THIS IN OBS AS A BROWSER SOURCE  (Width 1280, Height 720)');
   console.log('');
-  console.log(`    ${APP}/overlay?bountyRoom=${ROOM}`);
+  // The address the claim page hands a streamer: the room the session was
+  // actually bound to (E37 binds to a room that exists, so --room may not be
+  // it) and the room's overlay key, without which the overlay draws the badge
+  // but its badge and environment reports are refused (audit bounty-2).
+  console.log(`    ${APP}${air.body.overlayPath}`);
   console.log('');
   console.log('  Drag it ABOVE your other sources. A badge should appear within');
   console.log('  ~15 seconds. This will keep a code on screen until you stop it,');
@@ -89,7 +93,7 @@ try {
     await post('/api/bounty/admin/playback', { airSessionId: airId, clipId, durationS: 120 });
     for (let i = 0; i < 12 && Date.now() < deadline; i += 1) {
       await sleep(10_000);
-      const c = await get(`/api/bounty/room/${ROOM}/code`, AS);
+      const c = await get(`/api/bounty/room/${encodeURIComponent(air.body.roomId)}/code`, AS);
       console.log(`[setup] badge should read: ${c.body.code ?? '(none)'}`
         + `   session ${String(c.body.airSessionId || '').slice(0, 8)}…`);
     }

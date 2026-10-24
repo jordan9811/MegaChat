@@ -11,7 +11,7 @@
 // nobody airs it before it expires, which is why every held row shows how
 // long is left.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Mail, Check, X, RefreshCw, Play, MonitorOff, Clock } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import { useRoom } from '@/components/room-provider'
@@ -37,25 +37,35 @@ export function LettersQueueCard() {
 
   const active = mode === 'managing' && !!room?.letters?.enabled
   const producer = room?.letters?.moderation === 'approve'
+  const roomId = room?.id ?? null
+  const roomRef = useRef(roomId)
+  roomRef.current = roomId
 
   const refresh = useCallback(async () => {
     if (!active) return
+    const asked = roomRef.current
     try {
       const data = await lettersAdmin.list()
+      if (roomRef.current !== asked) return // the streamer switched rooms meanwhile
       setLetters(data.letters)
       setOverlayLive(data.overlayLive)
       setError(null)
     } catch (e) {
+      if (roomRef.current !== asked) return
       setError(e instanceof Error ? e.message : 'Failed to load Hollers')
     }
   }, [active, lettersAdmin])
 
   useEffect(() => {
+    // A room switch: the old room's queue, with live Approve and Reject
+    // buttons, must not stay up until the next poll (audit web-20).
+    setLetters([])
+    setError(null)
     if (!active) return
     void refresh()
     const poll = setInterval(() => void refresh(), 5000)
     return () => clearInterval(poll)
-  }, [active, refresh])
+  }, [active, refresh, roomId])
 
   if (!active) return null
 

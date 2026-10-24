@@ -12,6 +12,12 @@
  *   - simulcast: the published video track carries multiple layers
  */
 import { spawn } from 'child_process';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
+// DATA_DIR in the server env below is a scratch dir: this gate booted on the
+// repo's own data/ (audit harness-5). It spends, so the full move to
+// startGateServer waits for a run with the owner present.
 import puppeteer from 'puppeteer-core';
 import { createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -48,7 +54,7 @@ if (health !== 'OK') { console.error('local livekit-server not running'); proces
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
   env: {
-    ...process.env, PORT: '3215',
+    ...process.env, PORT: '3215', DATA_DIR: mkdtempSync(path.join(tmpdir(), 'mc-lk-phase3-')),
     LIVEKIT_URL: 'ws://localhost:7880', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'secret',
     LIVEKIT_SEAT_GRACE_S: '15',
   },
@@ -144,12 +150,12 @@ try {
   });
   await joiner.goto(`${APP}/join?room=${room.id}`, { waitUntil: 'networkidle2', timeout: 60000 });
   await sleep(1500);
-  await joiner.evaluate((seatId) => {
+  await joiner.evaluate(({ seatId, seatToken }) => {
     window.onJoinSuccess({
-      seatId, paymentMode: 'none', remaining: '1', secondsLeft: 600,
+      seatId, seatToken, paymentMode: 'none', remaining: '1', secondsLeft: 600,
       tickPrice: '0.001', tickSeconds: 1, pushUrl: 'https://vdo.ninja/?push=unused',
     });
-  }, join.seatId);
+  }, { seatId: join.seatId, seatToken: join.seatToken });
   await joiner.waitForFunction(
     () => /go live/i.test(document.getElementById('joinBtn')?.textContent || ''),
     { timeout: 25000 },
@@ -256,7 +262,7 @@ try {
   ticking = false;
   await tickLoop;
   await session.close().catch(() => {});
-  await fetch(`${APP}/api/leave/${join.seatId}`, { method: 'POST' });
+  await fetch(`${APP}/api/leave/${join.seatId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seatToken: join.seatToken }) });
   await browser.close();
 } finally {
   app.kill();

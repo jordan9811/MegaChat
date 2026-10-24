@@ -9,7 +9,7 @@ const PORT = 3253;
 const APP = `http://localhost:${PORT}`;
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
-  env: { ...process.env, PORT: String(PORT), BOUNTY_CLAIM: '1',
+  env: { ...process.env, PORT: String(PORT), BOUNTY_CLAIM: '1', LIVEKIT_URL: '',
     DATA_DIR: `${process.env.TEMP || '/tmp'}/bounty-shot-${Date.now()}` },
   stdio: 'ignore', cwd: process.cwd(),
 });

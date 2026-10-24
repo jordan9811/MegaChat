@@ -47,8 +47,8 @@ mkdirSync(path.join(OUT, 'frames'), { recursive: true });
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
   env: {
-    ...process.env, PORT: String(PORT), DATA_DIR: mkdtempSync(path.join(tmpdir(), 'mc-corpus-')),
-    BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
+    ...process.env, PORT: String(PORT), DATA_DIR: mkdtempSync(path.join(tmpdir(), 'mc-corpus-')), LIVEKIT_URL: '',
+    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
     // Long validity so ONE issued code stays live for the whole capture.
     BOUNTY_CODE_ROTATE_MS: '600000', BOUNTY_CODE_VALIDITY_MS: '600000',
   },

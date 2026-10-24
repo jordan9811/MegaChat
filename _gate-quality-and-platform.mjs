@@ -54,7 +54,7 @@ const srv = await startGateServer({
   bountyAuth: { handles: ['qualstreamer', 'kick:qualslug'] },
   port: PORT,
   env: {
-    BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
+    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
     BOUNTY_FIXTURE_PATH: FIXTURE,
     TWITCH_CLIENT_ID: '', TWITCH_CLIENT_SECRET: '', KICK_CLIENT_ID: '', KICK_CLIENT_SECRET: '',
     BOUNTY_CODE_ROTATE_MS: '600000', BOUNTY_CODE_VALIDITY_MS: '600000',

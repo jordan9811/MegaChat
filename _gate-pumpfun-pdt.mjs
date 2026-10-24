@@ -204,7 +204,7 @@ try {
     port: APP_PORT, label: 'pumpfun-pdt',
     bountyAuth: { handles: [`pumpfun:${PF_MINT}`] },
     env: {
-      BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
+      BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
       TWITCH_CLIENT_ID: '', TWITCH_CLIENT_SECRET: '', KICK_CLIENT_ID: '', KICK_CLIENT_SECRET: '',
       BOUNTY_CODE_ROTATE_MS: '4000', BOUNTY_CODE_VALIDITY_MS: '5000',
       BOUNTY_CAPTURE_HLS_URL: `http://localhost:${HLS}/live.m3u8`,
@@ -497,12 +497,14 @@ try {
     bstore.handleKey('pumpfun', '0'.repeat(40)) === null
     && bstore.handleKey('pumpfun', 'abc') === null);
   // The username rule is CORRECT and must not have moved: Foo and foo are one
-  // streamer and must share one pool.
-  ok('E2. usernames still case-fold, still cap at 40, still strip a leading @',
+  // streamer and must share one pool. The length cap is 48 for EVERY platform
+  // since 0e625eb (bounty-store.js handleKey: one pattern, sized for a mint);
+  // this asserted 40 until 2026-10-24 and failed on every run.
+  ok('E2. usernames still case-fold, still cap at 48, still strip a leading @',
     bstore.handleKey('twitch', 'JordanDotFun') === 'twitch:jordandotfun'
     && bstore.handleKey('kick', '@jordandotfun') === 'kick:jordandotfun'
-    && bstore.handleKey('twitch', 'a'.repeat(41)) === null
-    && bstore.handleKey('twitch', 'a'.repeat(40)) === 'twitch:' + 'a'.repeat(40));
+    && bstore.handleKey('twitch', 'a'.repeat(49)) === null
+    && bstore.handleKey('twitch', 'a'.repeat(48)) === 'twitch:' + 'a'.repeat(48));
   const rec = bstore.reserveHandle({ platform: 'pumpfun', handle: MINT58, ttlMs: 864e5 });
   ok('E2. the STORED handle round-trips to the real mint',
     rec.handle === MINT58, rec.handle);

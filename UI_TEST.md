@@ -1,6 +1,6 @@
 # UI test — editorial neon-noir overhaul
 
-Automated gate: `npm run gate:ui-a`
+Automated gate: `npm run gate:ui-a` (historical: deleted 2026-10-24: it asserted the pre-Next dashboard markup)
 
 ## Visual system
 

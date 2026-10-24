@@ -18,9 +18,8 @@
  *     fires refreshCams -> tryEnableCamera at the right moment and ONLY
  *     the right moment (not spuriously when unrelated devices change).
  */
-import { spawn } from 'child_process';
 import puppeteer from 'puppeteer-core';
-import { assertFreshBuild } from './_gate-helpers.mjs';
+import { assertFreshBuild, startGateServer } from './_gate-helpers.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -45,11 +44,13 @@ const APP = `http://localhost:${PORT}`;
   }
 }
 
-const app = spawn(process.execPath, ['server.js', '--prod'], {
-  env: { ...process.env, PORT: String(PORT), LIVEKIT_URL: 'ws://localhost:7880', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'secret' },
-  stdio: 'ignore', cwd: process.cwd(),
+// startGateServer: a scratch data dir (the room below used to be created in
+// the repo's data/), a readiness poll instead of a 9 s sleep, kept stderr,
+// the identity nonce. LiveKit is the local dev SFU, by name.
+const app = await startGateServer({
+  port: PORT, label: 'cam-autoswitch',
+  env: { LIVEKIT_URL: 'ws://localhost:7880', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'secret' },
 });
-await sleep(9000);
 
 const GUM_OVERRIDE = () => {
   const makeStream = () => {

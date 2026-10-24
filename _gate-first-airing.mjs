@@ -181,6 +181,13 @@ const srv = await startGateServer({
     // The real interval is 20s; the gate must not wait 20s per dispatch.
     BOUNTY_BANK_DRAIN_INTERVAL_MS: '1000',
     BOUNTY_FIXTURE_PATH: path.join(SCRATCH, 'pass.json'),
+    // A Twitch API that is configured but answers nothing (a closed local
+    // port): the stream-context check then cannot place the playback in a
+    // broadcast, which is what sends C9 to a person. This used to come from
+    // the operator's REAL Twitch client secret in .env, so every run asked
+    // api.twitch.tv about e37host; startGateServer now blanks that secret.
+    TWITCH_CLIENT_ID: 'gate-client', TWITCH_CLIENT_SECRET: 'gate-secret',
+    TWITCH_ID_BASE: 'http://127.0.0.1:9', TWITCH_API_BASE: 'http://127.0.0.1:9',
   },
 });
 
@@ -211,8 +218,16 @@ try {
   ok('B2 it binds to the room this streamer owns — never the shared default room',
     air.body.roomId === live.id || air.body.roomId === live,
     `${air.body.roomId} vs ${live}`);
-  ok('B3 the response carries the STABLE overlay address, not the by-id form',
-    air.body.overlayPath === `/overlay?room=${live}&bountyRoom=${live}`, air.body.overlayPath);
+  // Keyed since N14: the server derives the room's key from its AUTH_SECRET,
+  // which is the minter's, so the gate derives the same one to compare.
+  const overlayKey = await (async () => {
+    const prev = process.env.AUTH_SECRET;
+    process.env.AUTH_SECRET = auth.authSecret;
+    try { return (await import('./overlay-key.js')).overlayKeyFor(live); }
+    finally { if (prev === undefined) delete process.env.AUTH_SECRET; else process.env.AUTH_SECRET = prev; }
+  })();
+  ok('B3 the response carries the STABLE, KEYED overlay address, not the by-id form',
+    !!overlayKey && air.body.overlayPath === `/overlay?room=${live}&bountyRoom=${live}&k=${overlayKey}`, air.body.overlayPath);
 
   const refused = await post('/api/bounty/air-session',
     { claimId: scene.claim.id, roomId: strangerRoom }, asHost);
@@ -257,12 +272,14 @@ try {
   ok('C8 VERIFICATION SEES THE PLAYBACK — the airing is payable evidence',
     v.status === 200 && (v.body.verification?.verifiedClips || 0) >= 1,
     `result=${v.body.verification?.result} verifiedClips=${v.body.verification?.verifiedClips}`);
-  // Fixture frames have no origin, so the tier table sends this to a person —
-  // correct existing behaviour, and not E37's business to change. Resolving it
-  // is what proves the airing reaches MONEY rather than stopping at evidence.
-  ok('C9 ...and a person is asked, rather than it paying on frames of unknown origin',
-    v.body.release?.skipped === 'pending_review' && !!v.body.review,
-    `skipped=${v.body.release?.skipped}`);
+  // The playback cannot be placed in a known broadcast (the Twitch stand-in
+  // answers nothing), so stream context sends this to a person — correct
+  // existing behaviour, and not E37's business to change. (A fixture verify
+  // computes no confidence tier, so frame origin is not what asks.) Resolving
+  // it is what proves the airing reaches MONEY rather than stopping at evidence.
+  ok('C9 ...and a person is asked, rather than it paying on a broadcast nobody could confirm',
+    v.body.release?.skipped === 'pending_review' && /stream context/.test(v.body.review?.reason || ''),
+    `skipped=${v.body.release?.skipped} reason=${v.body.review?.reason}`);
   const resolved = await post(`/api/bounty/admin/reviews/${v.body.review.id}/resolve`,
     { approve: true, reason: 'gate: fixture frames, airing confirmed', actor: 'gate' }, asAdmin);
   // Approving is itself the release — the reviewer's judgement stands in for

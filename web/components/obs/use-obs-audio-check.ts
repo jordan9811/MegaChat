@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ObsClient } from '@/lib/obs-client.mjs'
 import { checkObsAudio } from '@/lib/obs-audio-check.mjs'
+import { readObsPassword } from './obs-password'
 
 export type ObsAudioProblem = {
   id: string
@@ -21,16 +22,7 @@ export type ObsAudioProblem = {
   fix: null | { label: string; requestType: string; requestData: Record<string, unknown> }
 }
 
-const LS_PASSWORD = 'mc_obs_ws_password'
 const POLL_MS = 15_000
-
-function password() {
-  try {
-    return localStorage.getItem(LS_PASSWORD) || null
-  } catch {
-    return null
-  }
-}
 
 export function useObsAudioCheck({
   enabled,
@@ -52,7 +44,7 @@ export function useObsAudioCheck({
   const runRef = useRef<() => Promise<void>>(async () => {})
 
   const run = useCallback(async () => {
-    const pw = password()
+    const pw = readObsPassword()
     if (!enabled || !mode || !roomId || !pw) {
       setProblems([])
       return
@@ -98,7 +90,7 @@ export function useObsAudioCheck({
 
   /** Send a problem's one fixing request; true when OBS accepted it. */
   const fix = useCallback(async (p: ObsAudioProblem) => {
-    const pw = password()
+    const pw = readObsPassword()
     if (!p.fix || !pw) return false
     let c: ObsClient | null = null
     let ok = false

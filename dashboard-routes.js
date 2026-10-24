@@ -4,12 +4,11 @@
 import {
   resolveRoomConfig,
   createRoomWithPassword,
-  updateRoom,
+  applyRoomUpdate,
   setRoomActive,
   deleteRoom,
   normalizeRoomId,
   verifyRoomPassword,
-  setRoomPassword,
   sanitizeHandle,
   getRoomByHandle,
   setRoomHandle,
@@ -17,7 +16,8 @@ import {
   roomsOwnedBy,
   isRoomOwnedBy,
 } from './rooms-store.js';
-import { validatePaymentToken } from './token-utils.js';
+import { validatePaymentToken, fromAtomic, toAtomic } from './token-utils.js';
+import { rewardBounds } from './rewards.js';
 import { isHandleTakenByIdentity } from './identity-store.js';
 import { readIdentityFromRequest, roomOwnerKey, verifyRoomAccess } from './auth.js';
 import { overlayKeyFor } from './overlay-key.js';
@@ -100,7 +100,6 @@ export function attachDashboardRoutes(app, deps) {
     activeSeats,
     removeParticipant,
     setSeatPinned,
-    atomicToUsdc,
     twitchLiveCached,
     listAirings,
   } = deps;
@@ -148,6 +147,34 @@ export function attachDashboardRoutes(app, deps) {
       config.rewards.rewardTokenSymbol = meta.symbol;
       config.rewards.rewardTokenDecimals = meta.decimals;
     }
+    const outOfBounds = rewardsOutOfBounds(config.rewards);
+    if (outOfBounds) throw Object.assign(new Error(outOfBounds), { code: 'rewards_out_of_bounds' });
+  }
+
+  /**
+   * Why an ENABLED cash or credit reward is outside this server's bounds
+   * (rewards.js rewardBounds: REWARDS_MIN_INTERVAL_S, REWARDS_MAX_EARN,
+   * REWARDS_MAX_CAP), or null. rewards.js clamps at earn time whatever is
+   * stored; refusing the save is what lets the dashboard say why (money H7).
+   * Points are the room's own currency and unbounded. A reward that is off
+   * is not checked: the dashboard sends the whole rewards object, defaults
+   * included, on every save, and a reward that is off earns nothing.
+   */
+  function rewardsOutOfBounds(rw) {
+    if (!rw || rw.enabled !== true || rw.rewardType === 'points') return null;
+    const b = rewardBounds();
+    const decimals = rw.rewardType === 'token' && rw.rewardTokenAddress ? (rw.rewardTokenDecimals ?? 6) : 6;
+    const unit = rw.rewardType === 'token' && rw.rewardTokenAddress ? (rw.rewardTokenSymbol || 'tokens') : 'USDC';
+    if (rw.earnInterval != null && Number(rw.earnInterval) < b.minIntervalS) {
+      return `Rewards can be earned at most every ${b.minIntervalS} seconds on this server.`;
+    }
+    for (const [field, max, label] of [['earnAmount', b.maxEarn, 'Each reward'], ['earnCap', b.maxCap, 'The reward cap']]) {
+      if (rw[field] == null || rw[field] === '') continue;
+      let over;
+      try { over = toAtomic(String(rw[field]), decimals) > toAtomic(max, decimals); } catch { return `${label} must be a plain decimal amount.`; }
+      if (over) return `${label} can be at most ${max} ${unit} on this server.`;
+    }
+    return null;
   }
 
   /** Public create. Signed-in → the room is OWNED (no password needed);
@@ -180,6 +207,7 @@ export function attachDashboardRoutes(app, deps) {
     try {
       await validateConfigTokens(mergedConfig);
     } catch (err) {
+      if (err.code === 'rewards_out_of_bounds') return res.status(400).json({ error: err.message, code: err.code });
       return res.status(400).json({
         error: err.message.includes('reward') ? 'Invalid reward token' : 'Invalid payment token',
         message: err.message,
@@ -197,6 +225,7 @@ export function attachDashboardRoutes(app, deps) {
       if (err.code === 'layout_refused') {
         return res.status(400).json({ error: 'Layout refused', hint: err.message, code: err.code });
       }
+      if (err.code === 'store_refused') return res.status(503).json({ error: err.message, code: err.code });
       return res.status(400).json({ error: err.message });
     }
     console.log(`[dashboard:create] room ${room.id} (${room.name}) created — ${identity ? 'owned by ' + roomOwnerKey(identity) : 'password-only'}`);
@@ -295,8 +324,10 @@ export function attachDashboardRoutes(app, deps) {
         live: !!seat.live,
         pinned: !!seat.pinned,
         paymentMode: seat.paymentMode,
-        remaining: atomicToUsdc(seat.remainingAtomic),
-        spent: atomicToUsdc(seat.spentAtomic),
+        // In the seat's own token. A fixed 6-decimal formatter showed an
+        // 18-decimal token's balance 10^12 times too large (server-7).
+        remaining: fromAtomic(seat.remainingAtomic, seat.paymentTokenDecimals ?? room.paymentTokenDecimals),
+        spent: fromAtomic(seat.spentAtomic, seat.paymentTokenDecimals ?? room.paymentTokenDecimals),
         viewerAddress: seat.viewerAddress,
         joinedAt: seat.joinedAt,
         liveAt: seat.liveAt,
@@ -327,14 +358,13 @@ export function attachDashboardRoutes(app, deps) {
       try {
         await validateConfigTokens(body.config);
       } catch (err) {
+        if (err.code === 'rewards_out_of_bounds') return res.status(400).json({ error: err.message, code: err.code });
         return res.status(400).json({ error: 'Invalid token', message: err.message });
       }
     }
-    if (body.newPassword && typeof body.newPassword === 'string') {
-      if (body.newPassword.length < 4) {
-        return res.status(400).json({ error: 'New password must be at least 4 characters' });
-      }
-      await setRoomPassword(req.roomId, body.newPassword);
+    const newPassword = body.newPassword && typeof body.newPassword === 'string' ? body.newPassword : undefined;
+    if (newPassword && newPassword.length < 4) {
+      return res.status(400).json({ error: 'New password must be at least 4 characters' });
     }
     if (body.handle !== undefined) {
       const clean = body.handle === '' || body.handle === null ? null : sanitizeHandle(body.handle);
@@ -342,15 +372,13 @@ export function attachDashboardRoutes(app, deps) {
         const avail = checkHandleAvailable(req, clean, req.roomId);
         if (!avail.ok) return res.status(avail.status).json({ error: avail.error });
       }
-      try {
-        setRoomHandle(req.roomId, body.handle);
-      } catch (err) {
-        return res.status(err.code === 'handle_taken' ? 409 : 400).json({ error: err.message });
-      }
     }
+    // Every check before any write, and one write: the password and the handle
+    // used to be saved first, so a refused layout answered 400 with both
+    // already applied (stores-7).
     let room;
     try {
-      room = updateRoom(req.roomId, body);
+      room = await applyRoomUpdate(req.roomId, { password: newPassword, handle: body.handle, patch: body });
     } catch (err) {
       // A layout that would bury the verification badge is refused, not
       // clamped — with the reason, so the editor can say why rather than
@@ -358,7 +386,15 @@ export function attachDashboardRoutes(app, deps) {
       if (err.code === 'layout_refused') {
         return res.status(400).json({ error: 'Layout refused', hint: err.message, code: err.code });
       }
-      throw err;
+      if (err.code === 'handle_taken') return res.status(409).json({ error: err.message });
+      if (err.code === 'invalid_handle' || err.code === 'handle_bounty_reserved') {
+        return res.status(400).json({ error: err.message });
+      }
+      if (err.code === 'store_refused') return res.status(503).json({ error: err.message, code: err.code });
+      // Answered, not rethrown: Express 4 never sees a throw from an async
+      // handler, and the request would hang.
+      console.error(`[dashboard] update of room ${req.roomId} failed:`, err);
+      return res.status(500).json({ error: 'Could not save the room' });
     }
     if (!room) return res.status(404).json({ error: 'Room not found' });
     console.log(`[dashboard] updated room ${room.id}`);

@@ -36,8 +36,9 @@ export const ATTRIBUTES = {
   viewCount: 'number',
   // X profile fields added for targeted campaigns (2026-10-23). All come from
   // the SAME single profile lookup; rows written before they existed simply
-  // lack them, and a campaign check that needs one refreshes the link first
-  // (campaign-engine.js) rather than guessing.
+  // lack them. A campaign check reads a missing field as known-missing (it
+  // fails closed) and refreshes the link only when it was never read or its
+  // last read is over a day old (campaign-engine.js `check`) — never by guessing.
   verifiedType: 'string',            // x: 'blue' | 'business' | 'government' | 'none'
   verifiedFollowersCount: 'number',  // x: verified accounts among the followers
   identityVerified: 'boolean',       // x: is_identity_verified
@@ -57,9 +58,6 @@ export const TRUST = {
   reclaim: 60,
   manual: 10,
 };
-
-/** Which provider each source is authoritative for. */
-export const SOURCE_PROVIDER = { 'x-api': 'x', 'twitch-helix': 'twitch', opacity: null, reclaim: null, manual: null };
 
 /** Build one attribute record. Unknown names and bad types are dropped, loudly. */
 export function attr(attribute, value, source, { proof = undefined, fetchedAt = null, log = console } = {}) {

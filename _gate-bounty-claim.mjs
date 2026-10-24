@@ -351,6 +351,42 @@ let ambiguousSessionId = null;
   fsSync.writeFileSync(mediaFile, good);
   ok('O. restoring the bytes makes it readable again', clips.readClip(stored.clipId).ok === true);
 
+  // bounty-N1: the type is ONE video type, whole. "video/webm, text/html"
+  // passed the old prefix check and was served back as the clip's type.
+  const kMime = mk('clipmime');
+  let smuggled = null;
+  try {
+    clips.storeClip({ handleKey: kMime, mime: 'video/webm, text/html', durationS: 8, data: vid(256) });
+  } catch (e) { smuggled = e; }
+  ok('O. a type with a second value after a comma never enters the store (bounty-N1)',
+    /Unsupported recording format/.test(smuggled?.message || ''), smuggled?.message || 'stored');
+  const accepted = ['video/webm;codecs=vp8', 'video/mp4', 'video/mp4;codecs=avc1.42E01E'].map((mime) => {
+    try { return clips.storeClip({ handleKey: kMime, mime, durationS: 8, data: vid(256) }).clipId ? mime : null; }
+    catch (e) { return `${mime} refused: ${e.message}`; }
+  });
+  ok('O. ...while webm and mp4, with or without a codec parameter, are still accepted',
+    accepted.every((m) => m && !m.includes('refused')), accepted.join(', '));
+  // A row stored BEFORE the anchored check: the upload rule cannot reach it,
+  // so reading it must refuse too, or the media route and the bank replay
+  // would still hand those bytes out.
+  {
+    const { createLedger } = await import('./bounty-ledger.js');
+    const { createHash } = await import('crypto');
+    const raw = createLedger({ filePath: clips._paths.INDEX_PATH, kind: 'clip-index' });
+    const oldId = 'pre-anchor-row-smuggled-type';
+    fsSync.writeFileSync(path.join(clips._paths.MEDIA_DIR, `${oldId}.bin`), payload);
+    raw.append({
+      type: clips.CLIP_EVENTS.STORED, clipId: oldId, handleKey: kMime, contributionId: null, contributor: null,
+      mime: 'video/webm, text/html', durationS: 8, bytes: payload.length,
+      sha256: createHash('sha256').update(payload).digest('hex'), at: Date.now(),
+    });
+    clips._reset();
+    const back = clips.readClip(oldId);
+    ok('O. an OLD row whose type smuggles text/html is refused on read, not served (bounty-N1)',
+      back.ok === false && back.error === 'unsupported_type', back.error || 'served');
+    clips.purgeClip(oldId, 'gate cleanup');
+  }
+
   // Limits reject rather than truncate — the fan is charged either way.
   let tooShort = null;
   try {
@@ -714,7 +750,7 @@ console.log(`\n  [server-side subtotal] ${pass} pass, ${fail} fail`);
 // Bounty routes authorize server-side now. Mint the same credentials a real
 // streamer would hold, into THIS server's data dir, and carry them on every
 // request below.
-const { mintBountyAuth, startGateServer } = await import('./_gate-helpers.mjs');
+const { mintBountyAuth, startGateServer, assertFreshBuild } = await import('./_gate-helpers.mjs');
 mkdirSync(`${SCRATCH}-http`, { recursive: true });
 const srv = mintBountyAuth({ handles: ['gateshow', 'revq', 'wm', 'vf'], dataDir: `${SCRATCH}-http` });
 
@@ -733,23 +769,12 @@ const launch = (port, env, label) => startGateServer({
 // from the PRE-merge tree and reported green on a line the merge had removed.
 // A stale build makes every G assertion below a statement about the past;
 // refuse rather than report it.
+// (This was a hand copy of the helper; the helper also watches the build
+// config, web/package.json included.)
 {
-  const newest = (dir) => {
-    let t = 0;
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
-      if (e.name === 'node_modules' || e.name === '.next') continue;
-      const p = path.join(dir, e.name);
-      t = Math.max(t, e.isDirectory() ? newest(p) : fsSync.statSync(p).mtimeMs);
-    }
-    return t;
-  };
-  const buildId = path.join('web', '.next', 'BUILD_ID');
-  const built = fsSync.existsSync(buildId) ? fsSync.statSync(buildId).mtimeMs : 0;
-  const source = Math.max(...['web/app', 'web/components', 'web/lib'].map(newest));
-  const fresh = built > 0 && built >= source;
-  ok('G0. web/.next is newer than web/app, web/components and web/lib', fresh,
-    built ? `built ${new Date(built).toISOString()}, newest source ${new Date(source).toISOString()}` : 'no BUILD_ID — run npm run build');
-  if (!fresh) {
+  const fresh = assertFreshBuild();
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
     console.log('\n  section G skipped: it would judge a page the current source does not produce.');
     console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
     process.exit(1);

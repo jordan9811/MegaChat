@@ -120,6 +120,19 @@ function isDenied(e: unknown) {
   )
 }
 
+// Site storage can be blocked, and then the localStorage getter itself
+// throws. Unguarded inside an effect, that took the whole dashboard down to
+// Next's "Application error" (audit web-22); the booth works without it.
+function lsGet(key: string): string | null {
+  try { return localStorage.getItem(key) } catch { return null }
+}
+function lsSet(key: string, value: string) {
+  try { localStorage.setItem(key, value) } catch { /* not remembered across reloads */ }
+}
+function lsRemove(key: string) {
+  try { localStorage.removeItem(key) } catch { /* nothing was remembered */ }
+}
+
 export function HostCamCard() {
   const { mode, room, seats, hostToken } = useRoom()
   const [armed, setArmed] = useState(false)
@@ -1027,7 +1040,7 @@ export function HostCamCard() {
   // the grant (a prompt is impossible without a fresh user gesture).
   useEffect(() => {
     if (!active || !storageKey) return
-    if (localStorage.getItem(storageKey) !== '1') return
+    if (lsGet(storageKey) !== '1') return
     if (!navigator.permissions?.query) return
     let stale = false
     navigator.permissions
@@ -1037,7 +1050,7 @@ export function HostCamCard() {
         if (st.state === 'granted') {
           setArmed(true)
           void refreshCams()
-        } else localStorage.removeItem(storageKey)
+        } else lsRemove(storageKey)
       })
       .catch(() => {
         /* can't verify — stay disarmed until the next toggle click */
@@ -1088,7 +1101,7 @@ export function HostCamCard() {
       teardown()
       setArmed(false)
       setCamBusyHint(false)
-      if (storageKey) localStorage.removeItem(storageKey)
+      if (storageKey) lsRemove(storageKey)
       return
     }
     // Arming — THIS click is the user gesture: request camera+mic now so
@@ -1122,7 +1135,7 @@ export function HostCamCard() {
       stream.getTracks().forEach((t) => t.stop()) // grant is stored; LED off until a guest arrives
       setCamBusyHint(!camOk)
       setArmed(true)
-      if (storageKey) localStorage.setItem(storageKey, '1')
+      if (storageKey) lsSet(storageKey, '1')
       void refreshCams() // labels are readable now that a grant exists
     } finally {
       setBusy(false)

@@ -20,7 +20,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function boot(port, dataDir) {
   const p = spawn(process.execPath, ['server.js', '--prod'], {
-    env: { ...process.env, PORT: String(port), DATA_DIR: dataDir, KEEP_ORPHAN_ROOMS: 'true' },
+    env: { ...process.env, PORT: String(port), DATA_DIR: dataDir, KEEP_ORPHAN_ROOMS: 'true', LIVEKIT_URL: '' },
     stdio: 'ignore', cwd: process.cwd(),
   });
   await sleep(9000);

@@ -104,23 +104,6 @@ function writeCache(key, url, ttlMs) {
   }
 }
 
-/** Test/gate seam. Not used in production paths. */
-export function _clearAvatarCache() {
-  cache.clear();
-  inflight.clear();
-  if (twitchTimer) clearTimeout(twitchTimer);
-  // Settle anything already queued: dropping the callbacks would leave a
-  // caller awaiting a promise nothing will ever resolve.
-  for (const { settle } of twitchQueue) settle(null);
-  twitchQueue = [];
-  twitchTimer = null;
-}
-
-/** Diagnostics only — sizes, never a credential. */
-export function avatarCacheStats() {
-  return { entries: cache.size, inflight: inflight.size, maxEntries: MAX_ENTRIES };
-}
-
 // ── twitch: micro-batched ───────────────────────────────────────────────────
 // Everything queued before the next tick goes out as ONE Helix call. This is
 // why a 40-row leaderboard is one request: resolveAvatars queues all forty
@@ -230,29 +213,6 @@ function lookup(platform, handle, key, log) {
 }
 
 // ── public API ──────────────────────────────────────────────────────────────
-
-/**
- * One streamer's public profile image.
- * @returns {Promise<string|null>} null means "render the monogram" — no
- *   picture, no such channel, unsupported platform, or the platform was
- *   unreachable. The caller does not need to tell those apart; this module
- *   does, for caching.
- */
-export async function resolveAvatar(platform, handle, { log = console } = {}) {
-  try {
-    const key = avatarKey(platform, handle);
-    if (!key) return null;
-    const hit = readCache(key);
-    if (hit) return hit.url;
-    const [p, h] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
-    if (!SUPPORTED.has(p)) return null; // X, Rumble, anything else: no public image API
-    return await lookup(p, h, key, log);
-  } catch (e) {
-    // Rule 1. Whatever just happened, it is not worth a 500 on the bounty page.
-    try { log.warn(`[platform-avatars] resolveAvatar(${platform}/${handle}) failed: ${e?.message || e}`); } catch {}
-    return null;
-  }
-}
 
 /**
  * A whole leaderboard at once — concurrently, and bounded by a deadline.

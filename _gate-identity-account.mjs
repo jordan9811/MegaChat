@@ -19,6 +19,12 @@
  *   F. an attribute fetch that fails does not block the sign-in
  *   G. attributes are captured at link time, in the one round trip
  *   H. the classifier lands every tier, with its reasons
+ *   I. a DIFFERENT X account authorised while signed in is refused and writes
+ *      nothing — no attributes, no name, no token (2026-10-24: it used to lend
+ *      its follower count to the existing link); the SAME X account again
+ *      refreshes the numbers and the name; an X-only account cannot switch
+ *   J. account errors answer 400/404/409, never 500
+ *   K. channel ownership reads the account's real links, whichever is primary
  *
  * Spends nothing, touches no chain, and reads no key: the mock IdP is the only
  * network it uses.
@@ -29,6 +35,10 @@ import { tmpdir } from 'os';
 import path from 'path';
 
 const SCRATCH = mkdtempSync(path.join(tmpdir(), 'mc-identity-'));
+// Before any product import, so every store this process loads in-process
+// (E and K drive accounts.js and bounty-auth.js) points at scratch, never at
+// the repo's own data/.
+process.env.DATA_DIR = SCRATCH;
 const PORT = 3341, IDP = 3342;
 const APP = `http://localhost:${PORT}`;
 
@@ -50,6 +60,10 @@ const people = {
   'code-x-mallory': { provider: 'x', id: 'x-9', username: 'mallory', created_at: '2021-01-01T00:00:00Z', verified: false, followers: 12, following: 40, tweets: 5 },
   'code-twitch-bob': { provider: 'twitch', id: 'tw-2', login: 'bob', created_at: '2020-01-01T00:00:00Z', broadcaster_type: '', view_count: 10 },
   'code-x-nofetch': { provider: 'x', id: 'x-7', username: 'nofetch', created_at: '2018-01-01T00:00:00Z', verified: false, followers: 5, following: 5, tweets: 1 },
+  // I: the SAME X account as code-x-alice a while later (grown, renamed), and
+  // someone else's big one.
+  'code-x-alice-grown': { provider: 'x', id: 'x-1', username: 'alice_x_renamed', created_at: '2016-02-02T00:00:00Z', verified: false, followers: 20_000, following: 300, tweets: 2600 },
+  'code-x-big': { provider: 'x', id: 'x-8', username: 'big_x', created_at: '2012-01-01T00:00:00Z', verified: false, followers: 250_000, following: 10, tweets: 9000 },
 };
 let failAttributes = false;
 let lastCode = null;
@@ -99,6 +113,9 @@ const srv = await startGateServer({
   port: PORT, dataDir: SCRATCH, label: 'identity',
   env: {
     KEEP_ORPHAN_ROOMS: 'true',
+    // Set, not inherited from .env: I reads the X token row, which exists
+    // only when the token store has a key.
+    AUTH_SECRET: 'gate-identity-secret', X_TOKEN_KEY: 'gate-identity-x-key',
     TWITCH_CLIENT_ID: 'gate-twitch', TWITCH_CLIENT_SECRET: 'gate-twitch-secret',
     TWITCH_AUTH_BASE: `http://localhost:${IDP}/twitch`, TWITCH_API_BASE: `http://localhost:${IDP}/twitch`,
     X_CLIENT_ID: 'gate-x', X_CLIENT_SECRET: 'gate-x-secret',
@@ -180,8 +197,6 @@ try {
     bobAfter.links.length === 1 && me.account.links.length === 2 && accountsFile().links['x:x-1'] === accountId);
 
   // ═══ D. switching primary changes nothing that anyone links to ═══
-  const rooms = await import('./rooms-store.js');
-  process.env.DATA_DIR = SCRATCH;
   const before = {
     handle: me.account.handle,
     usernameLink: `${APP}/${me.account.handle}`,
@@ -269,8 +284,108 @@ try {
     JSON.stringify(classify(cases[5][1], { allowlist: {}, now })) === JSON.stringify(classify(cases[5][1], { allowlist: {}, now })));
   ok('H. the allowlist is checked FIRST — an account that would be suspect is recognised when listed',
     classify(cases[7][1], { allowlist: { x: ['x-5'] }, now }).tier === 'recognized');
+  // Platforms that disagree (2026-10-24): each link is read on its own
+  // numbers and the most cautious read wins. Merged, this X account's
+  // following count met a fresher Twitch follower total and read suspect.
+  const xGood = link('x', 'x-11', [rec('followersCount', 8000), rec('followingCount', 600), rec('accountCreatedAt', '2014-01-01T00:00:00Z')]);
+  const twitchThin = link('twitch', 'tw-11', [{ ...rec('followersCount', 3, 'twitch-helix'), fetchedAt: '2026-09-20T00:00:00Z' }]);
+  const mixed = classify({ links: [xGood, twitchThin] }, { now });
+  ok('H. platforms that disagree are read apart: X alone is plausible, a 3-follower Twitch channel no longer makes it suspect, and the more cautious read (ambiguous) wins',
+    classify({ links: [xGood] }, { now }).tier === 'plausible' && mixed.tier === 'ambiguous', `${mixed.tier}: ${mixed.reasons?.[0]}`);
+  const partnerAndFarm = classify({ links: [link('twitch', 'tw-12', [rec('broadcasterType', 'partner', 'twitch-helix')]),
+    link('x', 'x-12', [rec('followingCount', 4000), rec('followersCount', 3), rec('accountCreatedAt', '2026-09-05T00:00:00Z')])] }, { now });
+  ok('H. ...and a second platform never RAISES trust: a Twitch Partner whose X carries the follow-farm signature reads suspect, not recognised',
+    partnerAndFarm.tier === 'suspect', partnerAndFarm.tier);
   ok('H. thresholds are exported so they can be argued with, not buried',
     THRESHOLDS.recognizedFollowers === 100_000 && THRESHOLDS.plausibleAgeDays === 180 && THRESHOLDS.suspectFollowing === 1000);
+
+  // ═══ I. a second X account never lends its numbers ═══
+  // The defect (2026-10-24): signed in with X account A, authorising X account
+  // B wrote B's follower count onto A's link and stored B's token under this
+  // account, so one big X account made any number of Holler accounts
+  // eligible for the same campaign. Every number below is read off disk.
+  const xLinkOf = (id) => accountsFile().accounts[id]?.links.find((l) => l.provider === 'x') || null;
+  const followersOf = (l) => (l?.attributes || []).find((r) => r.attribute === 'followersCount')?.value;
+  const xRow = (id) => { try { return JSON.parse(readFileSync(path.join(SCRATCH, 'x-tokens.json'), 'utf8')).tokens[id] || null; } catch { return null; } };
+  const linkBefore = xLinkOf(accountId), tokenBefore = xRow(accountId);
+  const borrow = await signIn('x', 'code-x-big', alice);
+  const linkAfter = xLinkOf(accountId);
+  ok('I. signed in with X x-1, authorising a DIFFERENT X account (250,000 followers) is refused, with a reason in the redirect',
+    borrow.status === 302 && /link_error=provider_linked/.test(borrow.headers.get('location') || '') && !/linked=x/.test(borrow.headers.get('location') || ''), borrow.headers.get('location'));
+  ok('I. ...and nothing was written: the link keeps its own id, name, follower count and fetch time',
+    linkAfter.platformId === 'x-1' && linkAfter.username === linkBefore.username && followersOf(linkAfter) === 900
+      && linkAfter.attributesFetchedAt === linkBefore.attributesFetchedAt,
+    `followers ${followersOf(linkAfter)}, fetched ${linkAfter.attributesFetchedAt === linkBefore.attributesFetchedAt ? 'unchanged' : 'CHANGED'}`);
+  ok('I. ...no token was stored for the other account: the row is still x-1’s, untouched, and nobody holds x-8',
+    tokenBefore?.xUserId === 'x-1' && xRow(accountId)?.xUserId === 'x-1' && xRow(accountId)?.savedAt === tokenBefore.savedAt && !accountsFile().links['x:x-8'],
+    `row ${xRow(accountId)?.xUserId}`);
+  // A second Holler account with its own small X account tries the same.
+  await signIn('x', 'code-x-mallory', bob);
+  const bobBorrow = await signIn('x', 'code-x-big', bob);
+  ok('I. ...and so is a second account trying the same: one big X account lends to nobody',
+    /link_error=provider_linked/.test(bobBorrow.headers.get('location') || '') && followersOf(xLinkOf(bobAccount.id)) === 12 && xRow(bobAccount.id)?.xUserId === 'x-9',
+    `bob's X followers ${followersOf(xLinkOf(bobAccount.id))}`);
+  // An X-only account cannot disconnect its last link, so it cannot switch.
+  const xOnlyId = nf.account.id;
+  const xOnlySwitch = await signIn('x', 'code-x-big', nofetch);
+  const xOnlyDrop = await api('/api/account/links/x', nofetch, { method: 'DELETE' });
+  ok('I. an X-only account authorising another X account is refused too, and cannot disconnect its only link (409): switching X is not possible yet (DECISIONS)',
+    /link_error=provider_linked/.test(xOnlySwitch.headers.get('location') || '') && xOnlyDrop.status === 409 && xLinkOf(xOnlyId)?.platformId === 'x-7',
+    `http ${xOnlyDrop.status}`);
+  // The SAME X account again is a refresh: today's numbers and today's name.
+  const refresh = await signIn('x', 'code-x-alice-grown', alice);
+  const refreshed = xLinkOf(accountId);
+  ok('I. re-authorising the SAME X account refreshes its follower count and fetch time',
+    /linked=x/.test(refresh.headers.get('location') || '') && followersOf(refreshed) === 20_000 && refreshed.attributesFetchedAt !== linkBefore.attributesFetchedAt,
+    `followers ${followersOf(refreshed)}`);
+  ok('I. ...and its username (platform logins can be renamed; bounty ownership reads them), on the same link',
+    refreshed.username === 'alice_x_renamed' && refreshed.platformId === 'x-1' && xRow(accountId)?.xUserId === 'x-1', refreshed.username);
+
+  // ═══ J. account errors are the caller's, so never a 500 ═══
+  const badWallet = await api('/api/account/payout-wallet', alice, { method: 'POST', body: JSON.stringify({ address: 'not-a-wallet' }) });
+  const badWalletBody = await badWallet.json().catch(() => ({}));
+  ok('J. a mistyped payout address answers 400 invalid_wallet, not 500', badWallet.status === 400 && badWalletBody.reason === 'invalid_wallet', `http ${badWallet.status}`);
+  const badPrimary = await api('/api/account/primary', alice, { method: 'POST', body: JSON.stringify({ provider: 'kick' }) });
+  ok('J. ...making an unlinked provider primary answers 400 not_linked', badPrimary.status === 400 && (await badPrimary.json()).reason === 'not_linked', `http ${badPrimary.status}`);
+
+  // ═══ K. ownership reads the account's real links, whichever is primary ═══
+  // In-process on its own data dir, against the real accounts.js and
+  // bounty-auth.js. The defect: a Privy-primary streamer who connected Twitch
+  // through our OAuth failed every STREAMER route, and passed after switching
+  // primary, which is a display setting.
+  process.env.DATA_DIR = mkdtempSync(path.join(tmpdir(), 'mc-identity-k-'));
+  A._resetAccountsForTests();
+  const { identityView } = await import('./identity-store.js');
+  const { platformLoginFor, loginProvingHandle } = await import('./bounty-auth.js');
+  const { handleKey } = await import('./bounty-store.js');
+  const streamer = A.upsertAccountForLink({ provider: 'privy', platformId: 'did:privy:k1', username: 'streamer', handle: 'kstreamer' });
+  A.attachLink(streamer.id, { provider: 'twitch', platformId: 'tw-77', username: 'RealStreamer' });
+  const viewOf = (id) => identityView(A.getAccount(id));
+  const asPrivy = viewOf(streamer.id);
+  ok('K. a Privy-primary account with a REAL Twitch link proves that channel, compared through handleKey (any case)',
+    asPrivy.provider === 'privy' && platformLoginFor(asPrivy, 'twitch') === 'RealStreamer'
+      && loginProvingHandle(asPrivy, handleKey('twitch', 'realstreamer')) === 'RealStreamer', String(platformLoginFor(asPrivy, 'twitch')));
+  A.setPrimary(streamer.id, 'twitch');
+  const asTwitch = viewOf(streamer.id);
+  ok('K. ...and switching primary (a display setting) changes nothing about it',
+    loginProvingHandle(asTwitch, handleKey('twitch', 'realstreamer')) === 'RealStreamer' && platformLoginFor(asTwitch, 'twitch') === platformLoginFor(asPrivy, 'twitch'));
+  ok('K. ...while a Twitch login still proves nothing about a Kick handle of the same name',
+    loginProvingHandle(asTwitch, handleKey('kick', 'realstreamer')) === null && platformLoginFor(asTwitch, 'kick') === null);
+  const privyOnly = A.upsertAccountForLink({ provider: 'privy', platformId: 'did:privy:k2', username: 'pq', handle: 'kprivy' });
+  A.setAccountPlatformLogins(privyOnly.id, { twitch: 'pixelqueen' });
+  ok('K. a Privy-only streamer still proves the Twitch login Privy reports', loginProvingHandle(viewOf(privyOnly.id), handleKey('twitch', 'PixelQueen')) === 'pixelqueen');
+  // I's guard one layer down, so no other caller can borrow either: records
+  // about a different login never land on this link, a failed read (null)
+  // never erases good ones, and the link's own id is a refresh.
+  A.attachLink(streamer.id, { provider: 'x', platformId: 'x-own', username: 'own_x', attributes: [{ attribute: 'followersCount', value: 40, source: 'x-api', trust: 100 }] });
+  let borrowed = null;
+  try { A.setLinkAttributes(streamer.id, 'x', [{ attribute: 'followersCount', value: 250_000, source: 'x-api', trust: 100 }], { platformId: 'x-other' }); } catch (e) { borrowed = e; }
+  A.setLinkAttributes(streamer.id, 'x', null, { platformId: 'x-own' });
+  const ownX = A.getAccount(streamer.id).links.find((l) => l.provider === 'x');
+  ok('I. setLinkAttributes refuses records about a DIFFERENT login (409 provider_linked) and a null read keeps the stored ones',
+    borrowed?.code === 'provider_linked' && borrowed.status === 409 && followersOf(ownX) === 40, `${borrowed?.code}, followers ${followersOf(ownX)}`);
+  process.env.DATA_DIR = SCRATCH;
+  A._resetAccountsForTests();
 
   // ═══ the account page's own data ═══
   me = await (await api('/api/account', alice)).json();

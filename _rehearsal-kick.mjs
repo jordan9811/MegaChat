@@ -160,7 +160,7 @@ const srv = await startGateServer({
   port: PORT, dataDir, label: 'kick-rehearsal',
   bountyAuth: { handles: [`kick:${SLUG}`] },
   env: {
-    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '0', KEEP_ORPHAN_ROOMS: 'true',
+    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true',
     KICK_CLIENT_ID: process.env.KICK_CLIENT_ID || '',
     KICK_CLIENT_SECRET: process.env.KICK_CLIENT_SECRET || '',
     // Rehearsal-only: the production rule is 10 minutes. Printed loudly below

@@ -23,13 +23,19 @@
  * capturing HLS and rendering a card all belong to their own layers; this
  * file only remembers what happened and when. It is also append-mostly: a
  * closed airing is history, and history that rewrites itself is not evidence.
+ *
+ * HOW IT IS WRITTEN. Atomically (json-store.js), compact. A broadcast opening
+ * or closing, and the boot's restart mark, write through. Moments and
+ * recordings coalesce into one write within a second (DECISIONS D9): each
+ * used to rewrite the whole file, ~27 MB at the retention bound, per seat
+ * taken. A hard kill can lose that last second of moments. An airings.json
+ * that cannot be read is never treated as empty: the store refuses writes,
+ * logs once, and every recording call quietly does nothing (DECISIONS D3) —
+ * a board that cannot remember must not take a seat or a broadcast with it.
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-
-const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
-const STORE_PATH = path.join(DATA_DIR, 'airings.json');
+import { createJsonStore, dataDir } from './json-store.js';
 
 // Per room, because the interesting question is "what did THIS room do
 // lately", and an unbounded file on a small volume is a slow outage.
@@ -39,45 +45,48 @@ const KEEP_PER_ROOM = 20;
 // the dashboard may want), but callers asking for board content filter it.
 const MAX_MOMENTS = 200;
 
-/** @type {{ airings: any[] }} */
-let state = { airings: [] };
-let loaded = false;
+const store = createJsonStore({
+  file: () => path.join(dataDir(), 'airings.json'),
+  name: 'airings',
+  empty: () => ({ airings: [] }),
+  normalize: (doc) => {
+    if (doc.airings == null) doc.airings = [];
+    if (!Array.isArray(doc.airings)) throw new Error('airings is not a list');
+    return doc;
+  },
+});
 
-function load() {
-  if (loaded) return;
-  loaded = true;
-  try {
-    const raw = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
-    if (raw && Array.isArray(raw.airings)) state.airings = raw.airings;
-  } catch {
-    state = { airings: [] }; // absent or corrupt → start clean, never throw at boot
-  }
-}
+/** @returns {{ airings: any[] }} */
+const state = () => store.data();
 
-function persist() {
+/** May this call record anything? False (and already logged, loudly, once)
+ *  when airings.json could not be read. */
+const writable = () => !store.refusal();
+
+/** Write now, or within a second when `soon`. Never throws: a board that
+ *  cannot remember is a degraded board, not a broken room. */
+function persist({ soon = false } = {}) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(STORE_PATH, JSON.stringify(state, null, 2));
+    if (soon) store.saveSoon();
+    else store.save();
   } catch (e) {
-    // A board that cannot remember is a degraded board, not a broken room —
-    // never let this take a broadcast down with it.
     console.warn(`[airings] could not persist: ${e.message}`);
   }
 }
 
 function prune(roomId) {
-  const mine = state.airings.filter((a) => a.roomId === roomId);
+  const s = state();
+  const mine = s.airings.filter((a) => a.roomId === roomId);
   if (mine.length <= KEEP_PER_ROOM) return;
   const doomed = new Set(
     mine.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0)).slice(KEEP_PER_ROOM).map((a) => a.id),
   );
-  state.airings = state.airings.filter((a) => !doomed.has(a.id));
+  s.airings = s.airings.filter((a) => !doomed.has(a.id));
 }
 
 /** The airing currently open for a room, or null. */
 export function openAiringFor(roomId) {
-  load();
-  return state.airings.find((a) => a.roomId === roomId && a.endedAt == null) || null;
+  return state().airings.find((a) => a.roomId === roomId && a.endedAt == null) || null;
 }
 
 /**
@@ -85,9 +94,9 @@ export function openAiringFor(roomId) {
  * so a restart or a double edge cannot split one broadcast into two cards.
  */
 export function openAiring({ roomId, channel = null, platform = 'twitch', resumeWithinMs = 0 }) {
-  load();
   const existing = openAiringFor(roomId);
   if (existing) return existing;
+  if (!writable()) return null;
   // A blip is not an ending — the same principle the pause logic runs on. A
   // stream that drops and returns inside the grace window REOPENS the airing
   // it just closed instead of starting a second one, because two cards for
@@ -95,7 +104,7 @@ export function openAiring({ roomId, channel = null, platform = 'twitch', resume
   // afford. The moments already recorded keep their offsets, which stay
   // correct because startedAt never moved.
   if (resumeWithinMs > 0) {
-    const last = state.airings
+    const last = state().airings
       .filter((a) => a.roomId === roomId && a.endedAt != null)
       .sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0))[0];
     if (last && Date.now() - last.endedAt <= resumeWithinMs) {
@@ -119,17 +128,17 @@ export function openAiring({ roomId, channel = null, platform = 'twitch', resume
     captureRef: null,
     moments: [],
   };
-  state.airings.push(airing);
+  state().airings.push(airing);
   prune(roomId);
   persist();
   return airing;
 }
 
-/** End the open airing for a room. No-op when none is open. */
+/** End the open airing for a room. No-op when none is open. Writes through,
+ *  taking any moments still held with it. */
 export function closeAiring(roomId, endedAt = Date.now()) {
-  load();
   const a = openAiringFor(roomId);
-  if (!a) return null;
+  if (!a || !writable()) return null;
   a.endedAt = endedAt;
   persist();
   return a;
@@ -142,16 +151,15 @@ export function closeAiring(roomId, endedAt = Date.now()) {
  * throw inside a seat or letter path.
  */
 export function addMoment(roomId, { kind, label = null, at = Date.now(), ref = null }) {
-  load();
   const a = openAiringFor(roomId);
-  if (!a) return null;
+  if (!a || !writable()) return null;
   if (a.moments.length >= MAX_MOMENTS) return null;
   const moment = { at, kind, label, offsetMs: Math.max(0, at - a.startedAt) };
   // What the moment is OF, when there is a thing: a MegaChat's letter id, so
   // the replay can play that clip (aired-clips.js) when the recording cannot.
   if (ref) moment.ref = String(ref);
   a.moments.push(moment);
-  persist();
+  persist({ soon: true });
   return moment;
 }
 
@@ -162,21 +170,20 @@ export function addMoment(roomId, { kind, label = null, at = Date.now(), ref = n
  * window), and a moment can only be opened in the one that covers it.
  */
 export function attachRecording(airingId, { vodId = null, vodUrl = null, captureRef = null, recordings = null }) {
-  load();
-  const a = state.airings.find((x) => x.id === airingId);
-  if (!a) return null;
+  const a = state().airings.find((x) => x.id === airingId);
+  if (!a || !writable()) return null;
   if (vodId !== null) a.vodId = vodId;
   if (vodUrl !== null) a.vodUrl = vodUrl;
   if (captureRef !== null) a.captureRef = captureRef;
   if (Array.isArray(recordings)) a.recordings = recordings;
-  persist();
+  // The poster sweep attaches to hundreds of airings in one pass: one write.
+  persist({ soon: true });
   return a;
 }
 
 /** Everything known about one room, newest first. */
 export function listAirings(roomId, { limit = KEEP_PER_ROOM } = {}) {
-  load();
-  return state.airings
+  return state().airings
     .filter((a) => a.roomId === roomId)
     .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
     .slice(0, limit);
@@ -197,8 +204,7 @@ export function listAirings(roomId, { limit = KEEP_PER_ROOM } = {}) {
  * which also lets through quiet broadcasts when the owner shows them (/dev).
  */
 export function recentAirings({ limit = 12, withContent = true, include = null } = {}) {
-  load();
-  return state.airings
+  return state().airings
     .filter((a) => a.endedAt != null)
     .filter((a) => (include ? include(a) : withContent
       ? a.moments.some((m) => m.kind === 'seat' || m.kind === 'megachat') || !!a.captureRef
@@ -214,9 +220,9 @@ export function recentAirings({ limit = 12, withContent = true, include = null }
  * rest of the broadcast (airing-posters.js seatSpans). Returns how many.
  */
 export function markRestart(at = Date.now()) {
-  load();
+  if (!writable()) return 0;
   let n = 0;
-  for (const a of state.airings) {
+  for (const a of state().airings) {
     if (a.endedAt != null || a.moments.length >= MAX_MOMENTS) continue;
     a.moments.push({ at, kind: 'restart', label: null, offsetMs: Math.max(0, at - a.startedAt) });
     n++;
@@ -225,29 +231,37 @@ export function markRestart(at = Date.now()) {
   return n;
 }
 
+/**
+ * Drop every airing whose room no longer exists. Pruning per room on open
+ * (above) never reached a deleted room, so its airings stayed on the volume
+ * for good (stores-9). The server calls this from its periodic sweep with the
+ * ids of the rooms that exist. Returns how many were dropped.
+ */
+export function pruneToRooms(roomIds) {
+  if (!writable()) return 0;
+  const keep = new Set(roomIds);
+  const s = state();
+  const before = s.airings.length;
+  s.airings = s.airings.filter((a) => keep.has(a.roomId));
+  const dropped = before - s.airings.length;
+  if (dropped) persist();
+  return dropped;
+}
+
 /** Every airing id the store still keeps, open or closed — what a poster may
  *  belong to. Anything on disk for an id not in here was pruned with its airing. */
 export function allAiringIds() {
-  load();
-  return state.airings.map((a) => a.id);
+  return state().airings.map((a) => a.id);
 }
 
 /** Every moment that names a thing (a MegaChat's letter id), with its room. */
 export function momentRefs() {
-  load();
   const out = [];
-  for (const a of state.airings) for (const m of a.moments) if (m.ref) out.push({ ref: m.ref, roomId: a.roomId });
+  for (const a of state().airings) for (const m of a.moments) if (m.ref) out.push({ ref: m.ref, roomId: a.roomId });
   return out;
 }
 
 /** Every airing the store keeps, open or closed, with its room. */
 export function airingRefs() {
-  load();
-  return state.airings.map((a) => ({ id: a.id, roomId: a.roomId }));
-}
-
-/** Test seam — the gates run several servers against one process-wide module. */
-export function _resetForTests() {
-  state = { airings: [] };
-  loaded = true;
+  return state().airings.map((a) => ({ id: a.id, roomId: a.roomId }));
 }

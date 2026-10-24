@@ -46,11 +46,9 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { accountAttributes, bestAttributes } from './attestation/index.js';
+import { bestAttributes } from './attestation/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-export const TIERS = ['recognized', 'plausible', 'ambiguous', 'suspect', 'unknown'];
 
 export const THRESHOLDS = {
   recognizedFollowers: 100_000,
@@ -94,9 +92,15 @@ const daysBetween = (iso, now) => {
  * `{ tier, reasons[] }` for an account. Reasons are plain language and are
  * stored with the result so a person can be shown why they landed where they
  * did. Pure: pass `allowlist` and `now` rather than letting it reach for them.
+ *
+ * EACH LINK IS READ ON ITS OWN NUMBERS, then the reads are combined. Merging
+ * every link's records first paired one platform's follower total with
+ * another's following count: an X account 12 years old, 8,000 followers,
+ * following 600, read SUSPECT the day a 3-follower Twitch channel was linked.
+ * When links disagree the MOST CAUTIOUS read wins (DECISIONS, 2026-10-24):
+ * linking another platform can add caution, never trust.
  */
 export function classify(account, { allowlist = {}, now = Date.now() } = {}) {
-  const reasons = [];
   const links = account?.links || [];
   if (!links.length) return { tier: 'unknown', reasons: ['No platform is linked to this account yet.'] };
 
@@ -108,12 +112,21 @@ export function classify(account, { allowlist = {}, now = Date.now() } = {}) {
     }
   }
 
-  const best = bestAttributes(accountAttributes(account));
+  // 2. Every link that has profile details, read alone; the most cautious read wins.
+  const reads = links.map((l) => classifyLink(bestAttributes(l.attributes || []), now)).filter(Boolean);
+  if (!reads.length) return { tier: 'unknown', reasons: ['No profile details have been fetched for this account yet.'] };
+  return reads.reduce((worst, r) => (CAUTION[r.tier] > CAUTION[worst.tier] ? r : worst));
+}
+
+/** Most trusting first. `unknown` is not on it: a link with no details says nothing. */
+const CAUTION = { recognized: 0, plausible: 1, ambiguous: 2, suspect: 3 };
+
+/** One link's records (one per attribute name), or null when it has none. */
+function classifyLink(best, now) {
+  const reasons = [];
   const has = (k) => Object.prototype.hasOwnProperty.call(best, k);
   const val = (k) => (has(k) ? best[k].value : null);
-  if (!Object.keys(best).length) {
-    return { tier: 'unknown', reasons: ['No profile details have been fetched for this account yet.'] };
-  }
+  if (!Object.keys(best).length) return null;
 
   const followers = val('followersCount');
   const following = val('followingCount');
@@ -121,7 +134,7 @@ export function classify(account, { allowlist = {}, now = Date.now() } = {}) {
   const broadcasterType = val('broadcasterType');
   const ageDays = has('accountCreatedAt') ? daysBetween(val('accountCreatedAt'), now) : null;
 
-  // 2. Recognised: a bar a bought account does not clear.
+  // a. Recognised: a bar a bought account does not clear.
   if (verified === true && typeof followers === 'number' && followers >= THRESHOLDS.recognizedFollowers) {
     return { tier: 'recognized', reasons: [`Verified with ${fmt(followers)} followers — past the ${fmt(THRESHOLDS.recognizedFollowers)} mark where a paid checkmark stops explaining it.`] };
   }
@@ -129,7 +142,7 @@ export function classify(account, { allowlist = {}, now = Date.now() } = {}) {
     return { tier: 'recognized', reasons: ['A Twitch Partner — a status Twitch reviews and nobody can buy.'] };
   }
 
-  // 3. Suspect: the mass-follow signature, and only that.
+  // b. Suspect: the mass-follow signature, and only that.
   if (typeof following === 'number' && following >= THRESHOLDS.suspectFollowing
       && typeof ageDays === 'number' && ageDays < THRESHOLDS.suspectYoungDays) {
     reasons.push(`Follows ${fmt(following)} accounts but is only ${ageDays} days old.`);
@@ -141,7 +154,7 @@ export function classify(account, { allowlist = {}, now = Date.now() } = {}) {
     return { tier: 'suspect', reasons };
   }
 
-  // 4. Plausible: looks like a real person.
+  // c. Plausible: looks like a real person.
   if (typeof ageDays === 'number' && ageDays >= THRESHOLDS.plausibleAgeAloneDays) {
     reasons.push(`The account has existed for ${Math.floor(ageDays / 365)} years.`);
   }
@@ -153,7 +166,7 @@ export function classify(account, { allowlist = {}, now = Date.now() } = {}) {
   if (verified === true && !reasons.length) reasons.push('Verified on X, which costs real money even when it proves nothing else.');
   if (reasons.length) return { tier: 'plausible', reasons };
 
-  // 5. Ambiguous: something is known, none of it decides.
+  // d. Ambiguous: something is known, none of it decides.
   const known = [];
   if (typeof followers === 'number') known.push(`${fmt(followers)} followers`);
   if (typeof following === 'number') known.push(`following ${fmt(following)}`);

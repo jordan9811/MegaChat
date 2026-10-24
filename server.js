@@ -28,15 +28,21 @@ import {
   updateRoom,
   maxEffectiveSeats,
   roomOwnerOf,
+  recordBoot,
+  roomCount,
+  clampRoomName,
+  roomsRefusal,
 } from './rooms-store.js';
 import { attachDashboardRoutes } from './dashboard-routes.js';
-import { getAccount, platformLoginsFor } from './accounts.js';
+import { getAccount } from './accounts.js';
+import { loginProvingHandle } from './bounty-auth.js';
+import { handleKey } from './bounty-store.js';
 import { getStreamsByLogins, twitchApiConfigured, helix } from './twitch-api.js';
-import { openAiring, openAiringFor, closeAiring, addMoment, recentAirings, listAirings, allAiringIds, airingRefs, attachRecording, markRestart, momentRefs } from './airings-store.js';
+import { openAiring, openAiringFor, closeAiring, addMoment, recentAirings, listAirings, allAiringIds, airingRefs, attachRecording, markRestart, momentRefs, pruneToRooms } from './airings-store.js';
 import { snapshotLivePreview, finalizeAiringPoster, readAiringPoster, posterFileFor, sweepAiringPosters, lastEvidenceAt, isListable, quietShown, isQuietBroadcast, setQuietEligibility } from './airing-posters.js';
 import { readAiredClip, airedClipFile, sweepAiredClips, removeAiredClip, airedClipStats } from './aired-clips.js';
 import { getSetting, siteSettingsView, updateSiteSettings, isSiteAdmin } from './site-settings.js';
-import { hiddenWindows } from './overlay-visibility.js';
+import { hiddenWindows, verifyVisibilityLedgerIntegrity } from './overlay-visibility.js';
 import { overlayKeyMatches } from './overlay-key.js';
 import { buildCard } from './room-poster.js';
 import { createActivityManager } from './livekit-activity.js';
@@ -60,7 +66,13 @@ import {
   readTokenMetadata,
   validatePaymentToken,
   citedApproveProblem,
+  signerAddress,
+  keyProblem,
+  sameAddress,
 } from './token-utils.js';
+import { ledgerHealth } from './bounty-ledger.js';
+import { flushPendingWrites } from './json-store.js';
+import { envNum } from './env-num.js';
 import { createCampaignEngine, spenderCollisions, receiptConfirmer } from './campaign-engine.js';
 import { attachCampaignRoutes, campaignJoinMiddleware } from './campaign-routes.js';
 import { createMppMeter, toWebRequest } from './meter-mpp.js';
@@ -75,6 +87,33 @@ try {
   process.loadEnvFile();
 } catch {
   // No .env file — fall back to process.env / defaults below.
+}
+
+// This boot's persistence marker (rooms-store.js): written once, here, after
+// .env is loaded — never as a side effect of importing the store.
+recordBoot();
+
+// ─── Data migrations, before any store is read (DECISIONS D6) ───────────────
+// Run here, inside the one process: run beside a live server (the old
+// `railway ssh` procedure), its caches wrote the old data straight back.
+// Both are idempotent. Every boot reports; MIGRATE_AT_BOOT (comma-separated:
+// accounts, whitelist-identity) is what applies. Accounts first: the
+// whitelist migration resolves handles through the accounts it leaves.
+{
+  const { migrateAccounts } = await import('./_migrate-accounts.mjs');
+  const { migrateWhitelistIdentity } = await import('./_migrate-whitelist-identity.mjs');
+  const apply = new Set(String(process.env.MIGRATE_AT_BOOT || '').split(',').map((s) => s.trim()).filter(Boolean));
+  const run = (name, migrate) => {
+    let r;
+    // A migration that throws is reported by name; the boot goes on, as it
+    // does for a refused one — the data stays exactly as it was found.
+    try { r = migrate({ write: apply.has(name) }); } catch (e) { r = { status: 'failed', reason: e.message }; }
+    if (r.status === 'nothing' || r.status === 'unchanged') return;
+    console.log(`[migrate] ${name}: ${r.status}${r.reason ? ` — ${r.reason}` : ''}`
+      + (r.status === 'report' ? ` (set MIGRATE_AT_BOOT=${name} to apply)` : ''));
+  };
+  run('accounts', migrateAccounts);
+  run('whitelist-identity', migrateWhitelistIdentity);
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -109,7 +148,9 @@ const SEAT_PRICE = process.env.SEAT_PRICE || '0.01';
 const SELLER_PRIVATE_KEY = process.env.SELLER_PRIVATE_KEY || null;
 // How long a paid seat may stay "pending" (paid but camera not approved) before
 // we release it and refund the full prepaid amount.
-const PENDING_CAMERA_TIMEOUT_MS = Number(process.env.PENDING_CAMERA_TIMEOUT_MS || 5 * 60 * 1000);
+// envNum, not Number(): a non-numeric value became NaN here, and setTimeout(NaN)
+// fires at once, ending every paid seat before its camera could start.
+const PENDING_CAMERA_TIMEOUT_MS = envNum('PENDING_CAMERA_TIMEOUT_MS', 5 * 60 * 1000);
 
 // ─── Pass B: pay-per-tick meter ──────────────────────────────────────────────
 // The viewer signs ONE Gateway authorization for up to MAX_SESSION USDC at join.
@@ -119,34 +160,25 @@ const PENDING_CAMERA_TIMEOUT_MS = Number(process.env.PENDING_CAMERA_TIMEOUT_MS |
 // spec's PRE-PAID BLOCKS model: Gateway's EIP-3009 authorizations are single-use
 // (one nonce, one fixed value), so a single signature cannot be partially drawn
 // per tick — we prepay the session cap once and meter locally, no per-tick popups.
-const TICK_SECONDS = Number(process.env.TICK_SECONDS || 10);
+// Read through env-num.js, the same reads rooms-store.js getEnvDefaults makes:
+// a malformed value is its default (with one warning by name), not NaN.
+const TICK_SECONDS = envNum('TICK_SECONDS', 10);
 const TICK_PRICE = process.env.TICK_PRICE || '0.1';
 const MAX_SESSION = process.env.MAX_SESSION || '2';
 
 // Phase 2: passkey stream meter (true per-second on-chain pulls). MetaMask keeps TICK_* above.
-const PASSKEY_TICK_SECONDS = Number(process.env.PASSKEY_TICK_SECONDS || 1);
+const PASSKEY_TICK_SECONDS = envNum('PASSKEY_TICK_SECONDS', 1);
 const PASSKEY_TICK_PRICE = process.env.PASSKEY_TICK_PRICE || '0.001';
 // Documented approach: B — session keys (A) not in SDK yet; streamed pulls via
 // one upfront approve userOp + seller transferFrom each tick (silent after join).
 const PASSKEY_METER_APPROACH = 'B';
 
-// USDC has 6 decimals. Convert a decimal USDC string to atomic units (BigInt).
-function usdcToAtomic(amountStr) {
-  const [whole, frac = ''] = String(amountStr).split('.');
-  const fracPadded = (frac + '000000').slice(0, 6);
-  return BigInt(whole || '0') * 1000000n + BigInt(fracPadded || '0');
-}
-// Format atomic USDC (BigInt) back to a trimmed decimal string.
-function atomicToUsdc(atomic) {
-  const v = BigInt(atomic);
-  const whole = v / 1000000n;
-  const frac = (v % 1000000n).toString().padStart(6, '0').replace(/0+$/, '');
-  return frac ? `${whole}.${frac}` : `${whole}`;
-}
+// USDC has 6 decimals. token-utils.js is the one parser and formatter: this
+// file kept its own copies, which read a signed amount ("-0.5") as +0.5.
+const atomicToUsdc = (atomic) => fromAtomic(atomic, 6);
 
-const TICK_PRICE_ATOMIC = usdcToAtomic(TICK_PRICE);
-const PASSKEY_TICK_PRICE_ATOMIC = usdcToAtomic(PASSKEY_TICK_PRICE);
-const MAX_SESSION_ATOMIC = usdcToAtomic(MAX_SESSION);
+const TICK_PRICE_ATOMIC = toAtomic(TICK_PRICE, 6);
+const PASSKEY_TICK_PRICE_ATOMIC = toAtomic(PASSKEY_TICK_PRICE, 6);
 
 function roomAtomics(roomCfg) {
   const gwDec = 6;
@@ -215,18 +247,22 @@ if (SELLER_PRIVATE_KEY && /^0x[0-9a-fA-F]{64}$/.test(SELLER_PRIVATE_KEY)) {
     sellerWalletClient = null;
   }
 } else {
-  console.warn('[refund] SELLER_PRIVATE_KEY not set — unused-balance refunds disabled.');
+  // Named, never shown: a key that is set but unusable is a different fault
+  // from one that is absent, and "not set" sent people to the wrong one (cc-3).
+  console.warn(`[refund] SELLER_PRIVATE_KEY ${keyProblem(SELLER_PRIVATE_KEY) === 'malformed' ? 'is set but is not a 0x-prefixed 64-hex key' : 'not set'} — unused-balance refunds disabled.`);
 }
 
 // ─── THE SETTLEMENT DOOR ─────────────────────────────────────────────────────
 // Every on-chain write this process makes goes through settlement.js and is
-// recorded there as an intent first (Gate H, Tier 1). Two keys, deliberately:
-// the seller key PULLS ticks into the platform wallet (already live), and
-// PLATFORM_SETTLEMENT_KEY moves money OUT of it — streamer shares, holdback
-// releases, refunds, clawbacks. Unset, outbound intents are recorded and
-// stay PENDING; nothing is lost and the ledger says who is owed what. It must
-// be the key for SELLER_WALLET_ADDRESS, because that is where the pulled
-// money sits; any other address is refused here, not discovered on chain.
+// recorded there as an intent first (Gate H, Tier 1). Two variables: the
+// seller key PULLS ticks into the platform wallet, and PLATFORM_SETTLEMENT_KEY
+// moves money OUT of it — streamer shares, holdback releases, refunds,
+// clawbacks. Unset, outbound intents are recorded and stay PENDING; nothing
+// is lost and the ledger says who is owed what. It must be the key for
+// SELLER_WALLET_ADDRESS, because that is where the pulled money sits; any
+// other address is refused here, not discovered on chain. So in practice the
+// two are ONE account under two names (money-7), and the door serializes its
+// sends per account, not per variable.
 const PLATFORM_SETTLEMENT_KEY = process.env.PLATFORM_SETTLEMENT_KEY || '';
 let platformWalletClient = null;
 if (/^0x[0-9a-fA-F]{64}$/.test(PLATFORM_SETTLEMENT_KEY)) {
@@ -242,7 +278,7 @@ if (/^0x[0-9a-fA-F]{64}$/.test(PLATFORM_SETTLEMENT_KEY)) {
     console.error('[settlement] PLATFORM_SETTLEMENT_KEY unusable — payouts DISABLED:', err.message);
   }
 } else {
-  console.warn('[settlement] PLATFORM_SETTLEMENT_KEY not set — outbound intents are recorded and stay PENDING');
+  console.warn(`[settlement] PLATFORM_SETTLEMENT_KEY ${keyProblem(PLATFORM_SETTLEMENT_KEY) === 'malformed' ? 'is set but is not a 0x-prefixed 64-hex key' : 'not set'} — outbound intents are recorded and stay PENDING`);
 }
 let rewardPoolWalletClient = null;
 if (/^0x[0-9a-fA-F]{64}$/.test(process.env.REWARD_POOL_PRIVATE_KEY || '')) {
@@ -269,12 +305,10 @@ if (/^0x[0-9a-fA-F]{64}$/.test(process.env.CAMPAIGN_SPENDER_KEY || '')) {
     // The spender must be no OTHER signer this server holds — not the seat
     // seller, not the payout wallet, not the reward pool, not the escrow
     // operator or attester. Compared by the address each configured key
-    // resolves to; logged by env var NAME only.
-    const keyAddress = (name) => {
-      const k = process.env[name] || '';
-      if (!/^0x[0-9a-fA-F]{64}$/.test(k)) return null;
-      try { return privateKeyToAccount(k).address; } catch { return null; }
-    };
+    // resolves to, with or without its 0x (normalizeKey: escrow-chain.js
+    // loads both forms, so a guard that saw only one could miss a clash);
+    // logged by env var NAME only.
+    const keyAddress = (name) => signerAddress(process.env[name]);
     const clash = spenderCollisions(acct.address, {
       SELLER_WALLET_ADDRESS, SELLER_PRIVATE_KEY: keyAddress('SELLER_PRIVATE_KEY'),
       PLATFORM_SETTLEMENT_KEY: keyAddress('PLATFORM_SETTLEMENT_KEY'), REWARD_POOL_PRIVATE_KEY: keyAddress('REWARD_POOL_PRIVATE_KEY'),
@@ -299,16 +333,24 @@ const settlement = createSettlement({
     publicClient: createPublicClient({ chain: tempoViemChain, transport: http(RPC_URL) }),
   }),
   platformAddress: SELLER_WALLET_ADDRESS,
+  // The door refuses a reward-pool key that resolves to any other signer this
+  // server holds (N4); it knows its own slots, these two it cannot see.
+  otherSigners: {
+    ESCROW_OPERATOR_KEY: signerAddress(process.env.ESCROW_OPERATOR_KEY),
+    ESCROW_ATTEST_KEY: signerAddress(process.env.ESCROW_ATTEST_KEY),
+  },
 });
 seatEscrow.setSettlement(settlement);
 
 // ─── Targeted reward campaigns (campaign-engine.js) ──────────────────────────
-// Holds no key and signs nothing: the creator's budget comes in by
-// settlement.pull against an allowance to SELLER_WALLET_ADDRESS (the pull
-// signer), rewards and the unspent refund go out as settlement intents that
-// the flush below executes with PLATFORM_SETTLEMENT_KEY. Taking a budget at
-// all also needs CAMPAIGN_FUNDING=1. Reads go through the same Tempo chain
-// object every signer here uses.
+// Holds no key and signs nothing: the creator approves the DEDICATED
+// campaign spender (CAMPAIGN_SPENDER_ADDRESS, from CAMPAIGN_SPENDER_KEY),
+// which pulls the budget by settlement.pull INTO SELLER_WALLET_ADDRESS (the
+// platform wallet); rewards and the unspent refund go out of that wallet as
+// settlement intents that the flush below executes with
+// PLATFORM_SETTLEMENT_KEY. Taking a budget at all also needs
+// CAMPAIGN_FUNDING=1. Reads go through the same Tempo chain object every
+// signer here uses.
 const campaignPublicClient = createPublicClient({ chain: tempoViemChain, transport: http(RPC_URL) });
 const campaignEngine = createCampaignEngine({
   settlement,
@@ -390,6 +432,13 @@ const campaignEngine = createCampaignEngine({
   // Call in campaigns refuse to reserve. Read lazily — `livekit` is built
   // further down this file, and this only runs at request time.
   seatSignalAvailable: () => !!livekit,
+  // The seat as this process holds it. A Call in's clock runs only on a LIVE
+  // seat (GO LIVE: activateSeatLive, when the overlay draws the guest), not on
+  // a camera published during the preview. A seat this process no longer
+  // holds (activeSeats is in memory, so a deploy mid-call empties it) gives
+  // its slot back, and the clock starts again on the guest's new seat. Read
+  // lazily, like the line above: activeSeats is declared further down.
+  seatState: (seatId) => { const s = activeSeats.get(seatId); return !s ? 'gone' : s.live ? 'live' : 'preview'; },
   // Cold review B2: a Call in counts only while the room is ON AIR — the same
   // open-airing record the Holler `aired` hook reads (letters.js addMoment →
   // airings-store.js, opened when Twitch says the room's channel is live).
@@ -405,15 +454,20 @@ const campaignEngine = createCampaignEngine({
 // to the contract, finalize pays the streamer and refunds the viewer. The
 // platform wallet holds no seat money. Two keys, both separate from every
 // payout key (escrow-chain.js); the address comes from the env or the recorded
-// deployment for this chain (contracts/deployments.json).
+// deployment for this chain (contracts/deployments.json). An EMPTY variable
+// also means the recorded deployment, on purpose: production carries it empty
+// beside both escrow keys, so escrow mode is live there (DECISIONS
+// 2026-10-24, money H6). Turning escrow off is unsetting a key, not this.
 const escrowChain = createEscrowChain({
   chain: tempoViemChain, rpcUrl: RPC_URL,
   contractAddress: process.env.ESCROW_CONTRACT_ADDRESS || defaultContractAddress(CHAIN_ID),
   token: { address: USDC_ADDRESS, decimals: 6, symbol: 'USDC' },
   operatorKey: process.env.ESCROW_OPERATOR_KEY, attesterKey: process.env.ESCROW_ATTEST_KEY,
   feeToken: USDC_ADDRESS,
-  tailMs: Number(process.env.SEAT_ESCROW_TAIL_MS || seatEscrow.seatConfig.manualTailMs),
-  reviewMs: Number(process.env.SEAT_ESCROW_REVIEW_MS ?? 24 * 60 * 60_000),
+  tailMs: envNum('SEAT_ESCROW_TAIL_MS', seatEscrow.seatConfig.manualTailMs),
+  // No floor: a gate sets '0'. Unset or empty is the day; '' used to read as
+  // a 0 ms review window.
+  reviewMs: envNum('SEAT_ESCROW_REVIEW_MS', 24 * 60 * 60_000),
 });
 if (escrowChain.enabled) {
   escrowChain.preflight({ force: true }).then((s) => console.log(s.ready
@@ -474,7 +528,9 @@ else console.warn('[meter:mpp] disabled (no SELLER_PRIVATE_KEY) — falling back
 
 // How long a live MPP seat may go without a PAID tick before it is kicked.
 // Covers channel-open latency, tab hiccups, and slow voucher signatures.
-const MPP_STALE_MS = Math.max(10_000, Number(process.env.MPP_STALE_MS || 20_000));
+// (envNum: a malformed value read as NaN, and Math.max(10_000, NaN) is NaN —
+// a stale seat was then never kicked.)
+const MPP_STALE_MS = Math.max(10_000, envNum('MPP_STALE_MS', 20_000));
 
 // Fee headroom reserved from the wallet balance when sizing a channel deposit
 // (Tempo fees come out of the SAME stablecoin). Raw viem estimates the open
@@ -641,9 +697,14 @@ const server = createServer(app);
 // noServer + manual upgrade routing so the Next.js dev/HMR websocket
 // (/_next/*) can coexist on the same port. App clients connect to the root
 // path (ws://host/) exactly as before — connection/message logic unchanged.
-const wss = new WebSocketServer({ noServer: true });
+// Every message this app handles is a few hundred bytes; the ws default (100 MiB)
+// let one unauthenticated socket buffer and parse a 99 MiB frame (server-4).
+const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
-app.use(express.json());
+const jsonBody = express.json();
+// The bounty frames route carries its own 6 MB parser (bounty-routes.js); the
+// global 100 KB one must not answer for it first (audit bounty-14).
+app.use((req, res, next) => (/^\/api\/bounty\/clip\/[^/]+\/frames$/.test(req.path) ? next() : jsonBody(req, res, next)));
 // Passkeys + localStorage require localhost (Circle Console domain). Redirect
 // 127.0.0.1 so Chrome bookmarks don't land on a separate broken origin.
 app.use((req, res, next) => {
@@ -753,9 +814,26 @@ app.get('/api/health', (req, res) => {
     dataDirConfigured: data.configured,
     dataDir: data.dir,
     livekitConfigured: !!livekit,
-    rooms: listRooms().length,
+    rooms: roomCount(),
+    // Every hash-chained ledger this process opened: kind, file name, ok, and
+    // the line a damaged one breaks at. A latched money ledger halts both
+    // money doors (no send, pull or escrow write; intents still record), and
+    // `moneyHalted` says why — null while money can move.
+    ledgers: ledgerHealth(),
+    moneyHalted: moneyHaltedReason(),
   });
 });
+
+/** Why the money doors are halted, or null. summary() folds the settlement
+ *  ledger, and a latched ledger throws on every read: that throw is the
+ *  answer, not a 500 from the one route that has to report it. */
+function moneyHaltedReason() {
+  try {
+    return settlement.summary().halted || escrowChain.status().halted || null;
+  } catch (e) {
+    return e.message;
+  }
+}
 
 app.get('/api/config', (req, res) => {
   const resolved = resolveRoomFromRequest(null, req.query);
@@ -1133,13 +1211,6 @@ function sendInitialState(ws) {
   }));
 }
 
-// Legacy alias — prefer broadcastToRoom for seat events.
-function broadcast(message) {
-  wss.clients.forEach((client) => {
-    if (client.readyState === 1) client.send(JSON.stringify(message));
-  });
-}
-
 // Overlay stinger choices travel with the seat (cosmetic only — the overlay
 // picks the entrance/exit animation from these). Unknown values become null,
 // which the overlay renders with its default animations.
@@ -1202,6 +1273,9 @@ function addParticipant(username, meta = {}) {
     depositTx: meta.depositTx || null,
     refunded: false,
     ownerWs: null,
+    // N1: proof of holding THIS seat. Returned only in the join response
+    // (seatToken), never broadcast; register_seat and camera_ready require it.
+    ownerToken: randomUUID(),
     paymentMode: meta.paymentMode || 'gateway',
     // Whitelisted guests arrive pinned: meter paused, no seat consumed.
     pinned: !!meta.pinned,
@@ -1266,14 +1340,20 @@ function addParticipant(username, meta = {}) {
   return { success: true, seat };
 }
 
-// Promote a paid+pending seat to live once the joiner's camera is publishing.
-// This is what starts the meter and shows the tile on the overlay.
+// Promote a paid+pending seat to live when the joiner hits GO LIVE (the page's
+// camera_ready). It runs BEFORE the camera publishes: in a LiveKit room the
+// tracks stay a local preview until the page hears seat_added from here
+// (NEW-1). This is what starts the meter and shows the tile on the overlay.
 function activateSeatLive(seatId, ws) {
   const seat = activeSeats.get(seatId);
   if (!seat || seat.live) return false;
 
   seat.live = true;
   seat.liveAt = Date.now();
+  // The Call-in clock starts at GO LIVE, not at the next campaign sweep. The
+  // engine re-reads the seat and starts nothing unless the camera is
+  // published and the room is on air (campaigns HANDOFF 9).
+  try { campaignEngine.onSeatEvent(seatId, 'seat_live'); } catch (e) { console.warn(`[campaigns] seat live hook failed: ${e.message}`); }
   // A moment on the room's current airing, if it is on air. Silent no-op when
   // it is not — a seat in a room whose owner never streams is normal.
   try {
@@ -1316,9 +1396,10 @@ function activateSeatLive(seatId, ws) {
       pinned: !!seat.pinned
     }
   });
-  // NOT a campaign signal. camera_ready is sent by whoever holds the seat id,
-  // so a campaign Call in counts only from the signed LiveKit webhook
-  // (campaignSeatSignal, at /api/livekit/webhook), never from here.
+  // NOT a campaign signal by itself. camera_ready is sent by the seat's own
+  // page (it takes the seat token), but the page says when, so a campaign
+  // Call in counts only from the signed LiveKit webhook (campaignSeatSignal,
+  // at /api/livekit/webhook) on a seat this has made live (seatState).
   const modeLabel = seat.paymentMode === 'passkey_stream' ? 'stream meter' : 'prepaid meter';
   console.log(
     `[seat] ${seat.id} (room ${seat.streamRoomId}): camera live — ${modeLabel} `
@@ -1501,8 +1582,11 @@ async function tickPasskeyStreamSeat(seat) {
       removeParticipant(seat.id, 'out_of_funds');
     }
   } catch (err) {
-    console.warn(`[meter:passkey] seat ${seat.id}: pull failed — ${err.message}`);
-    removeParticipant(seat.id, 'out_of_funds');
+    // A halted door (a money ledger is latched corrupt, settlement.js) is our
+    // fault, not the viewer's balance: the seat ends saying so (money H8).
+    const halted = err?.code === 'money_halted';
+    console.warn(`[meter:passkey] seat ${seat.id}: pull ${halted ? 'refused — the money doors are halted' : 'failed'} — ${err.message}`);
+    removeParticipant(seat.id, halted ? 'ledger_corrupt' : 'out_of_funds');
   } finally {
     seat._tickInFlight = false;
   }
@@ -1532,7 +1616,7 @@ function tickAllMeters() {
       // vouchers simply don't exist while offline.
       const roomCfg = resolveRoomConfig(seat.streamRoomId);
       const staleMs = roomCfg?.transport === 'livekit'
-        ? Math.max(MPP_STALE_MS, (Number(process.env.LIVEKIT_SEAT_GRACE_S || 15) + 5) * 1000)
+        ? Math.max(MPP_STALE_MS, (envNum('LIVEKIT_SEAT_GRACE_S', 15) + 5) * 1000)
         : MPP_STALE_MS;
       if (now - (seat.lastPaidAt || seat.liveAt || 0) > staleMs) {
         console.log(`[meter:mpp] seat ${seat.id}: paid ticks stalled — removing`);
@@ -1596,7 +1680,9 @@ const escrowSweep = setInterval(() => {
   escrowChain.finalizeDue()
     .then((o) => { if (o.finalized.length || o.failed.length || o.reconciled) console.log(`[escrow] sweep: finalized ${o.finalized.length}, reconciled ${o.reconciled}, failed ${o.failed.length}, waiting ${o.skipped}`); })
     .catch((e) => console.warn(`[escrow] sweep failed: ${e.message}`));
-}, Number(process.env.SEAT_ESCROW_SWEEP_MS || 30_000));
+  // Floored: every sweep asks the chain RPC (preflight + finalizeDue), and a
+  // malformed value used to read as NaN, which setInterval runs every 1 ms.
+}, envNum('SEAT_ESCROW_SWEEP_MS', 30_000, { min: 5000 }));
 if (typeof escrowSweep.unref === 'function') escrowSweep.unref();
 
 // ─── Settlement flush ────────────────────────────────────────────────────────
@@ -1620,6 +1706,20 @@ const SEAT_RECONNECT_GRACE_MS = Math.max(
   parseInt(process.env.SEAT_RECONNECT_GRACE_MS || '30000', 10) || 30000
 );
 
+/**
+ * Does `token` prove this socket holds the seat (N1)? The token is minted with
+ * the seat (addParticipant: seat.ownerToken) and returned only in the join
+ * response, never broadcast. A seat without one is refused: there is no
+ * id-only path. Compared without an early exit, so its timing says nothing.
+ */
+function seatTokenMatches(seat, token) {
+  const want = seat?.ownerToken;
+  if (typeof want !== 'string' || !want || typeof token !== 'string' || token.length !== want.length) return false;
+  let diff = 0;
+  for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ token.charCodeAt(i);
+  return diff === 0;
+}
+
 // WebSocket connection
 wss.on('connection', (ws, req) => {
   console.log('Client connected');
@@ -1633,6 +1733,11 @@ wss.on('connection', (ws, req) => {
   ws.on('message', (data) => {
     let msg;
     try { msg = JSON.parse(data.toString()); } catch { return; }
+    if (!msg || typeof msg !== 'object') return;
+    // Parsed once, here, for both listeners: watch-to-earn used to parse every
+    // frame again with its own handler (server-4; attachRewards ownListener).
+    // Still isolated: a rewards failure never stops a seat message below.
+    try { rewardsSvc?.handleMessage(ws, msg); } catch (e) { console.warn(`[rewards] message failed: ${e.message}`); }
 
     if (msg.type === 'subscribe_room' && typeof msg.room === 'string') {
       const roomId = normalizeRoomId(msg.room);
@@ -1650,6 +1755,21 @@ wss.on('connection', (ws, req) => {
         sendInitialState(ws);
       }
       return;
+    }
+
+    // N1: a seat id is public (initial_state broadcasts live ones, /api/seats
+    // lists every one), so the id alone proves nothing. Binding a socket as
+    // the seat's owner, or starting its meter, takes the seat token that only
+    // the join response carried. Without it, any visitor could re-bind every
+    // live seat in a room and close the socket: the grace timer then ended
+    // each seat as 'disconnected'.
+    if ((msg.type === 'register_seat' || msg.type === 'camera_ready') && typeof msg.seatId === 'string') {
+      const seat = activeSeats.get(msg.seatId);
+      if (seat && !seatTokenMatches(seat, msg.seatToken)) {
+        console.warn(`[seat] ${seat.id}: ${msg.type} refused — no matching seat token`);
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'seat_refused', seatId: msg.seatId, reason: 'seat_token_mismatch' }));
+        return;
+      }
     }
 
     if (msg.type === 'register_seat' && typeof msg.seatId === 'string') {
@@ -1725,6 +1845,15 @@ try {
     getRoomConfig: resolveRoomConfig,
     settlement,
     usdcAddress: USDC_ADDRESS,
+    // money-1: who earns is the SIGNED-IN account on the socket's upgrade
+    // (the sealed mc_identity cookie), and cash and credit go to that
+    // account's payout wallet, never to a wallet the client names. Cash
+    // needs an owned room (rewards.js, REWARDS_CASH_ALLOWLIST).
+    identityFor: (req) => readIdentityFromRequest(req),
+    payoutWalletFor: (accountId) => getAccount(accountId)?.payoutWallet || null,
+    roomOwnerFor: (roomId) => roomOwnerOf(roomId),
+    // The connection handler above parses each message once and hands it on.
+    ownListener: false,
   });
 } catch (err) {
   console.warn('[rewards] failed to attach, continuing without watch-to-earn:', err.message);
@@ -1842,6 +1971,7 @@ async function tryWhitelistJoin(req, res) {
     message: 'Seat assigned — you are on the guest list. Allow camera access to go live:',
     pushUrl: seat.pushUrl,
     seatId: seat.id,
+    seatToken: seat.ownerToken,
     remaining: '0',
     sessionCap: '0',
     tickPrice: '0',
@@ -1898,6 +2028,7 @@ app.post('/api/livekit/webhook', express.raw({ type: '*/*', limit: '256kb' }), (
       const out = lkWebhooks.handle(event);
       lkBreaker.evaluate();
       campaignSeatSignal(event);
+      kickOrphanSeat(event);
       if (out.deduped) console.log(`[lk-webhook] duplicate ${event.event} ignored (idempotent)`);
     } catch (e) {
       console.error(`[lk-webhook] post-ack processing failed for ${event?.event}: ${e.message}`);
@@ -1930,6 +2061,27 @@ function campaignSeatSignal(event) {
       campaignEngine.onSeatEvent(seatId, 'camera_off');
     }
   } catch (e) { console.warn(`[campaigns] seat signal failed for ${seatId}: ${e.message}`); }
+}
+
+/**
+ * A `seat:<id>` participant with no seat behind it is removed from the SFU
+ * (web-3). removeParticipant kicks the seat's identity once, at release; a
+ * page that was still connecting then (cancelled during "Waiting for camera",
+ * or past the camera timeout) joins AFTER that kick and publishes into a room
+ * that has no seat for it: on camera, unpaid, and on the LiveKit bill. The
+ * webhook announcing it is the first moment it can be removed. A publisher
+ * token exists only for a seat already held, so a held seat in its own room
+ * never reads as an orphan here; the same identity in ANY other room does.
+ */
+function kickOrphanSeat(event) {
+  if (event?.event !== 'participant_joined' && event?.event !== 'track_published') return;
+  const identity = String(event?.participant?.identity || '');
+  const lkRoom = String(event?.room?.name || '');
+  if (!livekit || !identity.startsWith('seat:') || !lkRoom.startsWith('mc-')) return;
+  const seat = activeSeats.get(identity.slice(5));
+  if (seat && livekit.lkRoomName(seat.streamRoomId) === lkRoom) return;
+  console.warn(`[livekit] ${identity} is in ${lkRoom} with no seat there — removing`);
+  void livekit.kickParticipant(lkRoom.slice(3), identity);
 }
 
 /** Webhook-derived usage + breaker state (operator surface). */
@@ -2114,8 +2266,12 @@ app.post('/api/livekit/token', async (req, res) => {
       }
     }
     if (role === 'publisher') {
+      // The seat token, not the id: seat ids are public (/api/seats), and a
+      // publisher token for `seat:<id>` let a visitor join as a paid guest —
+      // LiveKit drops the duplicate identity, so the guest was cut off and the
+      // visitor's camera was on the broadcast (money H3, N1).
       const seat = activeSeats.get(String(seatId || ''));
-      if (!seat || seat.streamRoomId !== roomId) {
+      if (!seat || seat.streamRoomId !== roomId || !seatTokenMatches(seat, req.body?.seatToken)) {
         return res.status(403).json({ error: 'No authorized seat — join first' });
       }
       const token = await livekit.publisherToken(roomId, seat);
@@ -2159,12 +2315,13 @@ app.post('/api/livekit/token', async (req, res) => {
   }
 });
 
-// LiveKit connection quality, reported by the joiner (possession of the
-// seat id — same trust level as camera_ready). Cosmetic signal only.
+// LiveKit connection quality, reported by the joiner (the seat token — same
+// proof as camera_ready). Cosmetic signal only.
 app.post('/api/seat/quality', (req, res) => {
   const { seatId, quality } = req.body || {};
   const seat = activeSeats.get(String(seatId || ''));
   if (!seat) return res.status(404).json({ error: 'Seat not found' });
+  if (!seatTokenMatches(seat, req.body?.seatToken)) return res.status(403).json({ error: 'Not your seat', reason: 'seat_token_mismatch' });
   const q = String(quality || '').toLowerCase();
   if (!['excellent', 'good', 'poor', 'lost', 'unknown'].includes(q)) {
     return res.status(400).json({ error: 'Bad quality value' });
@@ -2176,15 +2333,16 @@ app.post('/api/seat/quality', (req, res) => {
 
 // The guest's page reports that its mic is sending the host's own voice back
 // (web/lib/echo-detector.ts: a speaker, or another tab playing the stream).
-// Same authority as the quality report — possession of the seat id. The
-// streamer's booth names the guest; the guest's page has already told them.
+// Same authority as the quality report — the seat token. The streamer's
+// booth names the guest; the guest's page has already told them.
 app.post('/api/seat/echo', (req, res) => {
   const { seatId, echo, lagS } = req.body || {};
   const seat = activeSeats.get(String(seatId || ''));
   if (!seat) return res.status(404).json({ error: 'Seat not found' });
-  // Seat ids reach every socket in the room, so this is a claim, not proof —
-  // the worst it can do is a wrong line on the booth. Only a CHANGE is
-  // broadcast, and a seat can change it at most every 2s.
+  if (!seatTokenMatches(seat, req.body?.seatToken)) return res.status(403).json({ error: 'Not your seat', reason: 'seat_token_mismatch' });
+  // The seat's own page, but still its own measurement — the worst a wrong
+  // one does is a wrong line on the booth. Only a CHANGE is broadcast, and a
+  // seat can change it at most every 2s.
   const next = echo === true;
   const now = Date.now();
   if (next === !!seat.echoBack) return res.json({ ok: true });
@@ -2295,6 +2453,31 @@ function schedulePendingCameraTimeout(seatId) {
   }, PENDING_CAMERA_TIMEOUT_MS);
 }
 
+/**
+ * Why this request may not spend the seat credit held for `address` in this
+ * room, or null when it may (money-14). Points are the room's own currency
+ * and stay anonymous: they are earned to the wallet the page names. Seat
+ * credit is earned only by a SIGNED-IN account, to its payout wallet
+ * (rewards.js), so spending it takes that account: an address in a request
+ * body is public and proves nothing.
+ */
+function creditRefusal(req, cfg, address) {
+  const rw = cfg.rewards;
+  if (!rw?.enabled || rw.rewardType === 'points') return null;
+  const accountId = readIdentityFromRequest(req)?.accountId || null;
+  if (!accountId) return { status: 401, body: { error: 'Sign in to join with your earned balance', reason: 'sign_in_required' } };
+  if (!sameAddress(getAccount(accountId)?.payoutWallet, address)) {
+    return { status: 403, body: { error: 'This earned balance belongs to another account\'s payout wallet', reason: 'credit_not_yours' } };
+  }
+  // Credit is held in the reward's own units. A token reward that is not the
+  // payment token has its own decimals, and seating it at the payment
+  // token's would misprice every tick.
+  if (rw.rewardType === 'token' && rw.rewardTokenAddress && !sameAddress(rw.rewardTokenAddress, cfg.paymentTokenAddress)) {
+    return { status: 409, body: { error: 'This room\'s reward token is not its payment token, so earned balance cannot buy a seat here', reason: 'credit_token_mismatch' } };
+  }
+  return null;
+}
+
 function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
   const tickPrice = roomCfg.passkeyTickPrice;
   const tickSec = roomCfg.passkeyTickSeconds;
@@ -2327,6 +2510,7 @@ function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
     message: 'Seat assigned! Open this link to go live:',
     pushUrl: seat.pushUrl,
     seatId: seat.id,
+    seatToken: seat.ownerToken,
     roomId: roomCfg.id,
     remaining: fromAtomic(seat.remainingAtomic, dec),
     tickPrice,
@@ -2394,6 +2578,10 @@ app.post('/api/join/passkey', async (req, res) => {
       }
       if (!rw?.enabled) {
         return res.status(400).json({ error: 'Rewards not enabled for this room', roomId });
+      }
+      {
+        const refused = creditRefusal(req, cfg, address);
+        if (refused) return res.status(refused.status).json({ ...refused.body, roomId });
       }
 
       const credit = getCredit(roomId, address);
@@ -2504,7 +2692,9 @@ app.post('/api/join/passkey', async (req, res) => {
         return res.status(502).json({ error: 'Balance lookup failed', message: err.message });
       }
 
-      const credit = getCredit(roomId, address);
+      // Only credit this caller could spend is offered or counted: the join
+      // that follows would refuse the rest (creditRefusal).
+      const credit = rw?.enabled && !creditRefusal(req, cfg, address) ? getCredit(roomId, address) : { atomic: 0n };
       const sym = cfg.paymentTokenSymbol;
 
       if (rw?.enabled && rw.rewardType === 'points' && credit.atomic >= toAtomic(cfg.passkeyTickPrice, 0)) {
@@ -2804,6 +2994,7 @@ app.post('/api/join/mpp', async (req, res) => {
         message: 'Seat assigned! Allow camera access to go live:',
         pushUrl: freeSeat.pushUrl,
         seatId: freeSeat.id,
+        seatToken: freeSeat.ownerToken,
         remaining: '0',
         sessionCap: '0',
         tickPrice: '0',
@@ -2887,6 +3078,7 @@ app.post('/api/join/mpp', async (req, res) => {
       message: 'Seat assigned! Allow camera access to go live:',
       pushUrl: seat.pushUrl,
       seatId: seat.id,
+      seatToken: seat.ownerToken,
       roomId,
       remaining: fromAtomic(sessionAtomic, cfg.paymentTokenDecimals),
       sessionCap: fromAtomic(sessionAtomic, cfg.paymentTokenDecimals),
@@ -2924,13 +3116,28 @@ app.all('/api/meter/tick', async (req, res) => {
         roomId: resolved.roomId
       });
     }
-    const { cfg, atomics } = resolved;
+    const { roomId, cfg, atomics } = resolved;
     const seatId = String(req.query.seat || '');
     const seat = activeSeats.get(seatId) || null;
 
+    // THE SEAT FIRST, BEFORE THE METER (web-2). A voucher is accepted only
+    // for a seat this room holds that has gone LIVE (activateSeatLive: the
+    // overlay draws the guest). The page used to tick when its control socket
+    // was down at GO LIVE, and paid every second for a seat the broadcast
+    // never showed. An unknown seat — one already kicked or left, or one of
+    // another room — pays for nothing either: removing a seat settles its
+    // channel server-side with the newest voucher (refundSeat), so a late
+    // voucher or close has nothing left to buy.
+    if (!seat || seat.streamRoomId !== roomId) {
+      return res.status(404).json({ error: 'No such seat in this room', reason: 'seat_not_found', seatId: seatId || null });
+    }
+    if (!seat.live) {
+      return res.status(409).json({ error: 'This seat is not live yet', reason: 'not_live', seatId: seat.id });
+    }
+
     // Pinned co-host = free seat: acknowledge the tick WITHOUT charging so
     // the client loop keeps running and billing resumes seamlessly on unpin.
-    if (seat && seat.pinned) {
+    if (seat.pinned) {
       seat.lastPaidAt = Date.now();
       return res.json({
         ok: true,
@@ -2952,15 +3159,13 @@ app.all('/api/meter/tick', async (req, res) => {
       // address through the settlement door on sweep. (Channels already open
       // keep the payee they were opened with; none exist in stealth.)
       recipient: SELLER_WALLET_ADDRESS,
-      suggestedDeposit: seat
-        ? fromAtomic(seat.sessionCapAtomic, cfg.paymentTokenDecimals)
-        : cfg.maxSession,
+      suggestedDeposit: fromAtomic(seat.sessionCapAtomic, cfg.paymentTokenDecimals),
     });
 
     if (result.status === 402) return result.respond(res);
 
     const receipt = result.receipt;
-    if (seat && receipt) {
+    if (receipt) {
       if (receipt.channelId) seat.channelId = receipt.channelId;
       // SessionReceipt.spent is RAW atomic units (confirmed on mainnet:
       // '8000' for 8 ticks of 0.001 with 6 decimals) — never re-scale it.
@@ -3006,9 +3211,9 @@ app.all('/api/meter/tick', async (req, res) => {
       });
     }
 
-    // Seat already gone (voucher/close landing after a kick) — acknowledge so
-    // the client can finish its close handshake; settlement is server-owned.
-    return result.respond(res, { ok: true, seat: 'gone' });
+    // Verified, but no receipt to apply (a management action such as the
+    // page's cooperative close): acknowledge, so the client can finish it.
+    return result.respond(res, { ok: true, seatId: seat.id });
   } catch (error) {
     console.error('[meter:mpp] tick error:', error);
     if (!res.headersSent) {
@@ -3028,15 +3233,15 @@ app.post('/api/join', (req, res) => {
   });
 });
 
-// Leave seat
+// Leave seat. Takes the seat token in the JSON body (the join page's leave and
+// its pagehide keepalive both send it): seat ids are public (/api/seats), and
+// an id alone ended any seat in any room (money H3).
 app.post('/api/leave/:seatId', (req, res) => {
   const { seatId } = req.params;
-  const result = removeParticipant(seatId, 'left');
-
-  if (!result.success) {
-    return res.status(404).json({ error: 'Seat not found' });
-  }
-
+  const seat = activeSeats.get(seatId);
+  if (!seat) return res.status(404).json({ error: 'Seat not found' });
+  if (!seatTokenMatches(seat, req.body?.seatToken)) return res.status(403).json({ error: 'Not your seat', reason: 'seat_token_mismatch' });
+  removeParticipant(seatId, 'left');
   res.json({ success: true });
 });
 
@@ -3149,14 +3354,11 @@ const BIG_STAYS_ABOVE = 0.8;
  *  big featured card (a room naming a famous channel would otherwise take the
  *  biggest spot on the board with somebody else's stream). */
 function ownerProvesChannel(roomId, channel) {
-  const login = String(channel || '').trim().replace(/^@/, '').toLowerCase();
+  // The bounty routes' ownership rule, so the two checks cannot disagree:
+  // any proven Twitch login of the owner's account, through handleKey.
   const key = roomOwnerOf(roomId);
-  if (!login || !key) return false;
-  const acct = getAccount(key);
-  if (!acct) return false;
-  const names = [platformLoginsFor(acct).twitch, acct.platformLogins?.twitch]
-    .filter(Boolean).map((n) => String(n).trim().replace(/^@/, '').toLowerCase());
-  return names.includes(login);
+  const acct = key ? getAccount(key) : null;
+  return !!acct && !!loginProvingHandle(acct, handleKey('twitch', channel));
 }
 
 // A quiet broadcast is shown only for a channel its room's owner proved
@@ -3197,7 +3399,7 @@ async function followTick() {
   const liveByLogin = new Map([...streams].map(([l, st]) => [l, st.live]));
 
   const now = Date.now();
-  for (const r of following) {
+  for (const r of following) { try {
     const login = String(r.config.twitchChannel).trim().replace(/^@/, '').toLowerCase();
     if (!liveByLogin.has(login)) continue;
     const live = liveByLogin.get(login);
@@ -3215,21 +3417,25 @@ async function followTick() {
       // real, changed title moves it; an empty title (Twitch sometimes sends
       // one for a second after going live) leaves the name alone.
       const title = streams.get(login)?.title;
-      if (title && title.slice(0, 64) !== r.name) {
-        updateRoom(r.id, { name: title });
-        console.log(`[follow] ${r.id} (${login}) renamed to the stream title`);
-      }
+      // Compared through the store's own cut (by character): an emoji at the
+      // 64th character neither splits nor reads as "changed" every tick (stores-10).
+      const rename = !!title && clampRoomName(title) !== r.name;
+      const risingEdge = !prev || !prev.live;
       // Rising edge, or the first thing we ever saw. Both mean the same thing
       // to the owner: their broadcast is up and their room is not.
-      if (!prev || !prev.live) {
+      if (risingEdge) {
         // The airing records the BROADCAST, so it opens on the edge even when
         // the room was already active — otherwise a room the owner opened by
         // hand before going live would never get a record of the stream.
         openAiring({ roomId: r.id, channel: login, resumeWithinMs: FOLLOW_OFF_CONFIRM_MS });
-        if (!r.active) {
-          updateRoom(r.id, { active: true });
-          console.log(`[follow] ${r.id} (${login}) went live → room active`);
-        }
+      }
+      // One write for both: a rename on the rising edge used to rewrite
+      // rooms.json twice in one tick (server-5).
+      const patch = { ...(rename ? { name: title } : {}), ...(risingEdge && !r.active ? { active: true } : {}) };
+      if (Object.keys(patch).length) {
+        updateRoom(r.id, patch);
+        if (patch.name) console.log(`[follow] ${r.id} (${login}) renamed to the stream title`);
+        if (patch.active) console.log(`[follow] ${r.id} (${login}) went live → room active`);
       }
       // Keep Twitch's live preview while the broadcast is up: it is the only
       // real picture of an ordinary stream we can have without ffmpeg, and it
@@ -3268,7 +3474,11 @@ async function followTick() {
       updateRoom(r.id, { active: false });
       console.log(`[follow] ${r.id} (${login}) dark for ${Math.round((now - offSince) / 1000)}s → room paused`);
     }
-  }
+  } catch (e) {
+    // A write that fails for one room (StoreRefused, ENOSPC) must not skip
+    // every room after it this poll (server-2).
+    console.warn(`[follow] ${r.id}: ${e.message} — the other rooms still poll`);
+  } }
 }
 
 function twitchLiveCached(channel) {
@@ -3386,9 +3596,9 @@ app.get('/api/rooms/:roomId/replay', async (req, res) => {
   const byId = normalizeRoomId(req.params.roomId);
   const id = (byId && resolveRoomConfig(byId) ? byId : null) || getRoomByHandle(req.params.roomId)?.id || null;
   if (!id) return res.status(400).json({ error: 'Invalid room id' });
-  const room = listRooms().find((r) => r.id === id);
-  if (!room || !room.config || room.config.unlisted) return res.status(404).json({ error: 'No such room' });
-  const cfg = room.config;
+  // The one room, not every room resolved to find it (stores-11).
+  const cfg = resolveRoomConfig(id);
+  if (!cfg || cfg.unlisted) return res.status(404).json({ error: 'No such room' });
   const followLive = cfg.twitchChannel && ownerProvesChannel(id, cfg.twitchChannel) ? freshFollow(id) : null;
   // A proven, fresh follow answer decides both ways — the preview probe's 90s
   // cache would otherwise keep a stream that just ended 'live', and hide its replay.
@@ -3665,7 +3875,6 @@ attachDashboardRoutes(app, {
   activeSeats,
   removeParticipant,
   setSeatPinned,
-  atomicToUsdc,
   // Shared with the browse directory on purpose: one cache, one probe budget.
   // The manage page needs the same server-verified answer the browse cards get.
   twitchLiveCached,
@@ -3690,6 +3899,16 @@ attachCampaignRoutes(app, campaignEngine);
 
 await migrateLegacyRoomPasswords();
 
+// Validated once at boot, not on the meter's first tick. A damaged chain is
+// loud here (the ledger logs the damage itself; this says what follows): the
+// meter treats it as "cannot tell" and charges nobody (DECISIONS D4) until
+// the file is repaired and the server restarts.
+try {
+  verifyVisibilityLedgerIntegrity();
+} catch (e) {
+  console.error(`[visibility] the overlay-visibility chain cannot be read (${e.code || e.message}) — the server-driven meter charges no seat until it is repaired and the server restarts`);
+}
+
 // "Follow my stream status" is only real if something asks. FOLLOW_STREAM=0
 // turns the loop off and leaves every room's paused/active state manual, the
 // way it behaved before this existed. Unconfigured Twitch app credentials do
@@ -3705,9 +3924,12 @@ await migrateLegacyRoomPasswords();
 
 const followEnabled = process.env.FOLLOW_STREAM !== '0' && twitchApiConfigured();
 if (followEnabled) {
-  const followTimer = setInterval(() => { void followTick(); }, FOLLOW_POLL_MS);
+  // Caught here: the first tick runs before nextApp.prepare() installs Next's
+  // process handlers, and a rejected tick was an unhandled rejection (server-2).
+  const tick = () => followTick().catch((e) => console.warn(`[follow] tick failed: ${e.message}`));
+  const followTimer = setInterval(tick, FOLLOW_POLL_MS);
   followTimer.unref?.();
-  void followTick(); // first answer at boot, not a minute into it
+  tick(); // first answer at boot, not a minute into it
   console.log(`[follow] watching broadcasts every ${FOLLOW_POLL_MS / 1000}s`);
 } else {
   console.log('[follow] off — room state stays manual'
@@ -3720,14 +3942,16 @@ if (followEnabled) {
 // skipped without Twitch credentials.
 const POSTER_SWEEP_MS = Number(process.env.POSTER_SWEEP_MS) || 10 * 60_000;
 if (AIRING_POSTERS_ON) {
-  const sweep = () => sweepAiringPosters({
+  // Stands down while rooms.json is refused: the store then serves only the
+  // default room, and the sweep tidies the posters of rooms it does not see.
+  const sweep = () => (roomsRefusal() ? Promise.resolve() : sweepAiringPosters({
     airings: recentAirings({ limit: 500, withContent: false }),
     allAirings: airingRefs,
     roomIds: () => listRooms().map((r) => r.id),
     helix,
     apiConfigured: twitchApiConfigured(),
     attachRecording,
-  }).catch((e) => console.warn(`[poster] sweep failed: ${e.message}`));
+  }).catch((e) => console.warn(`[poster] sweep failed: ${e.message}`)));
   const posterTimer = setInterval(sweep, POSTER_SWEEP_MS);
   posterTimer.unref?.();
   setTimeout(sweep, Math.min(60_000, POSTER_SWEEP_MS)).unref?.();
@@ -3737,7 +3961,15 @@ if (AIRING_POSTERS_ON) {
 // their days — whether or not AIRING_POSTERS is on (aired-clips.js).
 function clipSweep() {
   try {
+    // A refused rooms.json serves only the default room: "every other room is
+    // gone" is then the wrong conclusion, and acting on it deletes their clips
+    // and airings. Stand down until it is repaired.
+    if (roomsRefusal()) return;
     const rooms = new Set(listRooms().map((r) => r.id));
+    // A deleted room's airings go too (stores-9): nothing can show them, and
+    // pruning per room on open never reaches a room that is gone.
+    const dropped = pruneToRooms(rooms);
+    if (dropped) console.log(`[airings] dropped ${dropped} airing(s) of deleted rooms`);
     sweepAiredClips(momentRefs().filter((r) => rooms.has(r.roomId)).map((r) => r.ref));
   } catch (e) {
     console.warn(`[aired-clips] sweep failed: ${e.message}`);
@@ -3747,10 +3979,10 @@ setInterval(clipSweep, POSTER_SWEEP_MS).unref?.();
 setTimeout(clipSweep, Math.min(60_000, POSTER_SWEEP_MS)).unref?.();
 
 // ─── Boot cleanup: dump orphan rooms ────────────────────────────────────────
-// Now that the volume persists data, junk test rooms would otherwise pile up
-// forever. Prune everything that isn't the default, isn't the seeded demo, and
-// isn't OWNED by a signed-in identity — so a fresh deploy stays tidy while
-// owned rooms and the demo always survive. Opt out with KEEP_ORPHAN_ROOMS=true.
+// Only rooms NOBODY can manage — no owner and no password (rooms-store.js
+// isOrphanRoom, DECISIONS D1). A password-only room, which the create page
+// offers a signed-out streamer, survives every deploy; so do owned rooms, the
+// default room and the demo. Opt out with KEEP_ORPHAN_ROOMS=true.
 if (process.env.KEEP_ORPHAN_ROOMS !== 'true') {
   try {
     const removed = pruneOrphanRooms({ protectHandles: ['demo'] });
@@ -3892,6 +4124,15 @@ for (const method of ['on', 'addListener', 'prependListener']) {
     return original(event, listener);
   };
 }
+
+// A deploy is a SIGTERM, and Node's default is to die at once — which skips
+// the exit hook that writes what the debounced stores still hold (airing
+// moments, bounty code rotations: DECISIONS D9). Write them, then go.
+process.once('SIGTERM', () => {
+  const n = flushPendingWrites();
+  if (n) console.log(`[shutdown] wrote ${n} held store change(s)`);
+  process.exit(0);
+});
 
 server.listen(PORT, () => {
   console.log(`

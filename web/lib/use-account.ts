@@ -9,10 +9,9 @@
 // and the components are only presentation.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { fetchBalance, fetchIdentity, type Identity } from '@/lib/identity'
 
-// siteAdmin: present (true) only for the site's owner — the account menu then
-// offers the hidden /dev page (site-settings.js).
-export type Identity = { provider: string; username: string; handle: string; siteAdmin?: boolean } | null
+export type { Identity }
 
 export type WalletState = {
   configured: boolean
@@ -44,8 +43,6 @@ function readWallet(): WalletState {
   }
 }
 
-export const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
-
 export function useAccount(menuOpen = false) {
   const [identity, setIdentity] = useState<Identity>(null)
   const [loaded, setLoaded] = useState(false)
@@ -57,9 +54,8 @@ export function useAccount(menuOpen = false) {
   useEffect(() => () => { if (signInTimer.current) clearTimeout(signInTimer.current) }, [])
 
   useEffect(() => {
-    fetch('/api/auth/me')
-      .then((r) => r.json())
-      .then((me) => setIdentity(me?.identity || null))
+    fetchIdentity()
+      .then(setIdentity)
       .catch(() => {})
       .finally(() => setLoaded(true))
   }, [])
@@ -75,18 +71,14 @@ export function useAccount(menuOpen = false) {
   // Privy sign-in mints the handle server-side — pick it up without a reload.
   useEffect(() => {
     const onIdentity = () => {
-      fetch('/api/auth/me')
-        .then((r) => r.json())
-        .then((me) => setIdentity(me?.identity || null))
-        .catch(() => {})
+      fetchIdentity().then(setIdentity).catch(() => {})
     }
     window.addEventListener('megachat:identity', onIdentity)
     return () => window.removeEventListener('megachat:identity', onIdentity)
   }, [])
 
   const refreshBalance = useCallback((address: string) => {
-    fetch(`/api/balance/${address}`)
-      .then((r) => (r.ok ? r.json() : null))
+    fetchBalance(address)
       .then((d) => {
         if (d?.available != null) {
           const n = parseFloat(d.available)
@@ -110,9 +102,13 @@ export function useAccount(menuOpen = false) {
   // nothing hangs waiting on a promise that never settles.
   const openSignIn = useCallback(() => {
     setAuthError(null)
-    if (!window.MegaWallet?.configured) { setAuthError('Sign-in is unavailable on this server.'); return }
-    if (!window.MegaWallet.ready) { setAuthError('Sign-in is still loading. Wait a moment, then retry.'); return }
-    window.MegaWallet.openLogin()
+    const MW = window.MegaWallet
+    // Only an installed bridge can say sign-in is missing. No bridge yet means
+    // the config is still on its way; a configured one that is not ready is
+    // the Privy chunk still downloading (tempo-wallet.tsx).
+    if (MW && !MW.configured) { setAuthError('Sign-in is unavailable on this server.'); return }
+    if (!MW || !MW.ready) { setAuthError('Sign-in is still loading. Wait a moment, then retry.'); return }
+    MW.openLogin()
     if (signInTimer.current) clearTimeout(signInTimer.current)
     signInTimer.current = setTimeout(() => {
       if (!window.MegaWallet?.modalOpen && !window.MegaWallet?.authenticated) {

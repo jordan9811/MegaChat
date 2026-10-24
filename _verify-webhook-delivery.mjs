@@ -12,11 +12,12 @@
  *
  * Cost: ~10 seconds of one participant. Budget for this task is 10 minutes.
  */
-import 'dotenv/config';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { AccessToken } from 'livekit-server-sdk';
 import puppeteer from 'puppeteer-core';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+try { process.loadEnvFile(); } catch { /* env external */ }
+
 const PROD = 'https://megachat.fun';
 const URL = process.env.LIVEKIT_URL;
 const KEY = process.env.LIVEKIT_API_KEY;

@@ -11,7 +11,7 @@ Automated gate: `npm run gate:auth`
 
 ## Legacy rooms
 
-Rooms created before this change (including `default`) get a hashed password from `ROOM_DEFAULT_PASSWORD` in `.env` on first server boot. Default in `.env.example` is `changeme` — change it before production, then set a new password per room in the dashboard.
+Only the `default` room takes a password from `ROOM_DEFAULT_PASSWORD`, at boot, and only while it has none (2026-10-24). There is no fallback value: unset, the default room stays password-less and nobody can manage it from the dashboard until it is set. Set per-room passwords in the dashboard.
 
 ## Manual checks
 
@@ -47,7 +47,7 @@ Rooms created before this change (including `default`) get a hashed password fro
 ## Env
 
 ```env
-ROOM_DEFAULT_PASSWORD=changeme   # legacy migration only
+ROOM_DEFAULT_PASSWORD=   # the default room only, while it has no password
 ```
 
 Remove `STREAMER_DASHBOARD_KEY` from your `.env` if present — it is no longer used.

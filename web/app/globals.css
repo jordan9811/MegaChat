@@ -1,13 +1,13 @@
 @import 'tailwindcss';
-@import 'tw-animate-css';
-@import 'shadcn/tailwind.css';
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --font-heading: var(--font-ui), sans-serif;
   --font-sans: var(--font-ui), sans-serif;
-  --font-mono: var(--font-ui), sans-serif;
+  /* Readouts (addresses, URLs, hashes, numeric cells) are Space Mono, the
+     site's readout face (--font-code, set on <html> by the root layout). */
+  --font-mono: var(--font-code), ui-monospace, monospace;
 
   /* Holler tokens as Tailwind colours: bg-hl-panel, text-f-bounty-ink,
      border-f-callin-line, bg-f-holler-solid text-f-holler-on … */
@@ -526,25 +526,10 @@ html:root {
       0 0 24px rgba(47, 42, 216, calc(0.5 * var(--hl-glow-k))),
       0 0 48px rgba(47, 42, 216, calc(0.32 * var(--hl-glow-k)));
   }
-  .text-glow-lime {
-    text-shadow:
-      0 0 6px rgba(0, 255, 195, calc(0.5 * var(--hl-glow-k))),
-      0 0 20px rgba(0, 255, 195, calc(0.35 * var(--hl-glow-k)));
-  }
-
-  /* Chromatic aberration effect for hero headings (dark only). */
-  .chromatic {
-    text-shadow:
-      -2px 0 rgba(102, 98, 255, calc(0.7 * var(--hl-glow-k))),
-      2px 0 rgba(255, 45, 120, calc(0.7 * var(--hl-glow-k)));
-  }
 
   /* Box glow for CTAs / cards — a neon glow in dark, a soft shadow in light. */
   .glow-magenta {
     box-shadow: var(--hl-glow-strap);
-  }
-  .glow-lime {
-    box-shadow: var(--hl-glow-rewards);
   }
   .glow-cyan {
     box-shadow: var(--hl-glow-callin);
@@ -564,10 +549,6 @@ html:root {
       linear-gradient(var(--grid-line) 1px, transparent 1px),
       linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
     background-size: 42px 42px;
-  }
-
-  .dashed-neon {
-    border: 2px dashed var(--f-rewards-line);
   }
 
   @keyframes neon-pulse {
@@ -623,35 +604,6 @@ html:root {
   .reveal {
     animation: reveal-up 0.7s cubic-bezier(0.22, 0.85, 0.3, 1) backwards;
     animation-delay: var(--reveal-delay, 0s);
-  }
-
-  /* ── Shimmer sweep — a light bar travelling across a clipped element (used on
-     the wordmark + primary CTAs). Apply over a background-clip:text target. ── */
-  @keyframes shimmer-sweep {
-    0% {
-      background-position: -150% 0;
-    }
-    100% {
-      background-position: 250% 0;
-    }
-  }
-  .shimmer {
-    position: relative;
-    overflow: hidden;
-  }
-  .shimmer::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      110deg,
-      transparent 30%,
-      oklch(1 0 0 / 0.28) 48%,
-      transparent 66%
-    );
-    background-size: 220% 100%;
-    animation: shimmer-sweep 4.5s ease-in-out infinite;
-    pointer-events: none;
   }
 
   /* ── Slow gradient pan for animated accent text. ─────────────────────────── */
@@ -810,7 +762,6 @@ html[data-ui='advanced'] .simple-only { display: none !important; }
   --ft-ink: var(--f-holler-ink);
   --ft-bg: var(--f-holler-bg);
   --ft-line: var(--f-holler-line);
-  --ft-ui: var(--f-holler-ui);
   --ft-solid: var(--f-holler-solid);
   --ft-on: var(--f-holler-on);
 }
@@ -819,7 +770,6 @@ html[data-ui='advanced'] .simple-only { display: none !important; }
   --ft-ink: var(--f-callin-ink);
   --ft-bg: var(--f-callin-bg);
   --ft-line: var(--f-callin-line);
-  --ft-ui: var(--f-callin-ui);
   --ft-solid: var(--f-callin-solid);
   --ft-on: var(--f-callin-on);
 }
@@ -828,7 +778,6 @@ html[data-ui='advanced'] .simple-only { display: none !important; }
   --ft-ink: var(--f-bounty-ink);
   --ft-bg: var(--f-bounty-bg);
   --ft-line: var(--f-bounty-line);
-  --ft-ui: var(--f-bounty-ui);
   --ft-solid: var(--f-bounty-solid);
   --ft-on: var(--f-bounty-on);
   --ft-solid-edge: var(--f-bounty-line);
@@ -838,7 +787,6 @@ html[data-ui='advanced'] .simple-only { display: none !important; }
   --ft-ink: var(--f-rewards-ink);
   --ft-bg: var(--f-rewards-bg);
   --ft-line: var(--f-rewards-line);
-  --ft-ui: var(--f-rewards-ui);
   --ft-solid: var(--f-rewards-solid);
   --ft-on: var(--f-rewards-on);
   --ft-solid-edge: var(--f-rewards-line);
@@ -873,12 +821,6 @@ html[data-ui='advanced'] .simple-only { display: none !important; }
   padding: 0;
   border-radius: 50%;
   background: var(--ft-hue);
-}
-/* On a light tint the pale hues fade (lime 1.4:1, cyan 1.2:1, pink 2.9:1),
-   so in light every dot takes an edge in its feature's ink (--f-x-ui). In
-   dark, and inside a dark island, --f-x-ui is the hue and the edge vanishes. */
-.light .ft .ft-dot {
-  box-shadow: inset 0 0 0 1px var(--ft-ui);
 }
 /* Stone: in light a tag is solid — the feature's fill with its own text, the
    dot in the text colour. Lime and cyan fills are ~1.3:1 on a white card, so

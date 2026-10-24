@@ -17,13 +17,19 @@
  *  G. vdo control room: publish path still builds vdo iframes.
  */
 import { spawn } from 'child_process';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
+// DATA_DIR in the server env below is a scratch dir: this gate booted on the
+// repo's own data/ (audit harness-5). It spends, so the full move to
+// startGateServer waits for a run with the owner present.
 import puppeteer from 'puppeteer-core';
 import { createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { tempo } from 'viem/chains';
 import { tempo as tempoClient } from 'mppx/client';
 import { RoomServiceClient } from 'livekit-server-sdk';
-import { assertFreshBuild } from './_gate-helpers.mjs';
+import { assertFreshBuild, DEFAULT_WATCH } from './_gate-helpers.mjs';
 
 try { process.loadEnvFile(); } catch { /* env external */ }
 
@@ -44,7 +50,7 @@ const jwtPayload = (t) => JSON.parse(Buffer.from(t.split('.')[1], 'base64url').t
 // build older than the source grades the PREVIOUS tree. Abort here, before the
 // SFU probe, the spawns, the browser, and (critically) the mainnet wallet.
 {
-  const fresh = assertFreshBuild({ watch: ['web/app', 'web/components', 'web/lib', 'public'] });
+  const fresh = assertFreshBuild({ watch: [...DEFAULT_WATCH, 'public'] });
   ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
   if (!fresh.ok) {
     console.log('\n  refusing to grade a stale build — rebuild and re-run.');
@@ -58,7 +64,7 @@ const health = await fetch('http://localhost:7880/').then((r) => r.text()).catch
 if (health !== 'OK') { console.error('local livekit-server not running on :7880 — start tools/livekit-server.exe --dev'); process.exit(1); }
 
 const boot = (port, extraEnv) => spawn(process.execPath, ['server.js', '--prod'], {
-  env: { ...process.env, PORT: String(port), ...extraEnv },
+  env: { ...process.env, PORT: String(port), DATA_DIR: mkdtempSync(path.join(tmpdir(), 'mc-lk-phase1-')), ...extraEnv },
   stdio: 'ignore', cwd: process.cwd(),
 });
 const appLk = boot(3215, { LIVEKIT_URL: LK_URL, LIVEKIT_API_KEY: LK.key, LIVEKIT_API_SECRET: LK.secret });
@@ -138,7 +144,9 @@ try {
     while (ticking) {
       try {
         const r = await session.fetch(`${APP}${join.tickUrl}`, { method: 'POST' });
-        if (r.ok) tickCount++; else tickErrors++;
+        // 409 not_live: the seat is not live until the page's GO LIVE below,
+        // and the server charges nothing before it (web-2). Not an error.
+        if (r.ok) tickCount++; else if (r.status !== 409) tickErrors++;
       } catch { tickErrors++; }
       await sleep(2500);
     }
@@ -178,12 +186,12 @@ try {
   await sleep(1500);
   // real seat, but paymentMode 'none' so the PAGE doesn't try to tick (the
   // raw-key loop above is the real meter); server liveness is satisfied.
-  await joiner.evaluate((seatId) => {
+  await joiner.evaluate(({ seatId, seatToken }) => {
     window.onJoinSuccess({
-      seatId, paymentMode: 'none', remaining: '1', secondsLeft: 600,
+      seatId, seatToken, paymentMode: 'none', remaining: '1', secondsLeft: 600,
       tickPrice: '0.001', tickSeconds: 1, pushUrl: 'https://vdo.ninja/?push=unused',
     });
-  }, join.seatId);
+  }, { seatId: join.seatId, seatToken: join.seatToken });
 
   await joiner.waitForFunction(
     () => /go live/i.test(document.getElementById('joinBtn')?.textContent || ''),

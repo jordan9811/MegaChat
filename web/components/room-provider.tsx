@@ -43,7 +43,16 @@ import {
 } from '@/lib/api'
 import { backendWsUrl } from '@/lib/backend'
 import { guestName } from '@/lib/display-format'
+import { fetchIdentity } from '@/lib/identity'
 import type { RoomLayout } from '@/lib/api'
+
+/** What a reward starts at when switched on or switched type. Cash and a
+ *  custom token are bounded by the server (rewards.js rewardBounds, in the
+ *  reward's own units); points are the room's own currency and are not. */
+export const REWARD_DEFAULTS = {
+  cash: { earnAmount: '0.01', earnCap: '0.1' },
+  points: { earnAmount: '1', earnCap: '50' },
+} as const
 
 // Tempo mainnet USDC.e — fallback only; the real value is re-read from
 // /api/config on mount.
@@ -121,8 +130,12 @@ const DEFAULT_DRAFT: ConfigDraft = {
   customTokenAddress: '',
   rewardsEnabled: false,
   rewardsEarnInterval: '60',
-  rewardsEarnAmount: '0.1',
-  rewardsEarnCap: '5',
+  // Inside the server's default reward bounds (rewards.js rewardBounds:
+  // REWARDS_MAX_EARN 0.01 per earn, REWARDS_MAX_CAP 0.1 per viewer, an earn at
+  // most every 60 s). 0.1 and 5 were refused with rewards_out_of_bounds the
+  // moment a streamer switched cash rewards on.
+  rewardsEarnAmount: REWARD_DEFAULTS.cash.earnAmount,
+  rewardsEarnCap: REWARD_DEFAULTS.cash.earnCap,
   rewardsType: 'usdc',
   rewardsTokenAddress: '',
   rewardsTokenSymbol: 'TOKEN',
@@ -296,8 +309,8 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     customTokenAddress: isUsdc ? '' : room.paymentTokenAddress,
     rewardsEnabled: !!rw.enabled,
     rewardsEarnInterval: String(rw.earnInterval ?? 60),
-    rewardsEarnAmount: String(rw.earnAmount ?? '0.1'),
-    rewardsEarnCap: String(rw.earnCap ?? '5'),
+    rewardsEarnAmount: String(rw.earnAmount ?? REWARD_DEFAULTS.cash.earnAmount),
+    rewardsEarnCap: String(rw.earnCap ?? REWARD_DEFAULTS.cash.earnCap),
     rewardsType: rw.rewardType || 'usdc',
     rewardsTokenAddress: rw.rewardTokenAddress || '',
     rewardsTokenSymbol: rw.rewardTokenSymbol || 'TOKEN',
@@ -434,12 +447,11 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       if (!h) return
       setDraft((d) => ({ ...d, handle: h }))
     }
-    fetch('/api/auth/me')
-      .then((r) => r.json())
-      .then((me) => {
-        if (me?.identity?.handle) {
+    fetchIdentity()
+      .then((identity) => {
+        if (identity?.handle) {
           setHasIdentity(true)
-          applyName(me.identity.handle)
+          applyName(identity.handle)
         } else applyName(window.MegaWallet?.displayName)
       })
       .catch(() => applyName(window.MegaWallet?.displayName))
@@ -524,12 +536,11 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       if (!identityHandleRef.current) applyName(window.MegaWallet?.displayName)
     }
     const onIdentity = () => {
-      fetch('/api/auth/me')
-        .then((r) => r.json())
-        .then((me) => {
-          if (me?.identity?.handle) {
+      fetchIdentity()
+        .then((identity) => {
+          if (identity?.handle) {
             setHasIdentity(true)
-            applyName(me.identity.handle)
+            applyName(identity.handle)
           }
         })
         .catch(() => {})
@@ -566,12 +577,19 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     if (!roomId) return
     try {
       const data = await getRoomSession(roomId, passwordRef.current)
+      // The streamer switched rooms while this was out: the answer is the old
+      // room's, and writing it would show that room's seats under the new one
+      // (audit web-20).
+      if (roomIdRef.current !== roomId) return
       setRoom(data.room)
       setSeats(data.seats)
       setJoinUrl(data.joinUrl)
       setOverlayUrl(data.overlayUrl)
       setTwitchLive(data.twitchLive === true)
     } catch (err) {
+      // A 401 for a room the streamer has already left must not close the
+      // one they are in now.
+      if (roomIdRef.current !== roomId) return
       if (err instanceof ApiError && err.status === 401) switchRoom()
     }
   }, [switchRoom])

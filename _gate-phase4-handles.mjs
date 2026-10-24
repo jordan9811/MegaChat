@@ -1,12 +1,34 @@
 /**
  * GATE — MEGA Phase 4: persistent handles, /<handle> permanence, demo room.
  * Handles moved from /r/<handle> to bare /<handle>; the old prefix must keep
- * 301ing so links already shared stay alive.
+ * 301ing so links already shared stay alive. `/<handle>` serves the join
+ * page IN PLACE (server.js, since the pretty URL became the real URL): 200,
+ * no redirect, so the address bar keeps the handle.
+ *
+ * Boots its own server (startGateServer, scratch DATA_DIR, money keys
+ * blanked) unless GATE_BASE_URL names one already running.
  */
 import WebSocket from 'ws';
 import puppeteer from 'puppeteer-core';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { startGateServer, assertFreshBuild } from './_gate-helpers.mjs';
 
-const BASE = process.env.GATE_BASE_URL || 'http://localhost:3212';
+const PORT = 3212;
+let srv = null;
+let scratch = null;
+if (!process.env.GATE_BASE_URL) {
+  scratch = mkdtempSync(path.join(tmpdir(), 'mc-phase4-'));
+  srv = await startGateServer({
+    port: PORT, dataDir: scratch, label: 'phase4',
+    // Every live key starts blank (startGateServer, SENSITIVE_ENV).
+    env: { FOLLOW_STREAM: '0', TEMPO_RPC_URL: 'http://127.0.0.1:9' },
+  });
+  // A crash mid-gate must not leave the server behind.
+  process.on('exit', () => srv?.kill());
+}
+const BASE = process.env.GATE_BASE_URL || `http://localhost:${PORT}`;
 const WS_URL = BASE.replace(/^http/, 'ws');
 
 let pass = 0, fail = 0;
@@ -26,11 +48,16 @@ const res = await fetch(`${BASE}/api/dashboard/create`, {
 const { room } = await res.json();
 ok('create claims handle', res.status === 201 && room?.handle === H, `handle=${room?.handle}`);
 
-// /<handle> resolves; old id link keeps working
-const r1 = await fetch(`${BASE}/${H}`, { redirect: 'manual' });
-ok('/<handle> 302 → /join?room=<id>',
-  r1.status === 302 && r1.headers.get('location') === `/join?room=${room.id}`,
-  r1.headers.get('location'));
+// /<handle> resolves IN PLACE; old id link keeps working
+const servesInPlace = async (url) => {
+  const r = await fetch(url, { redirect: 'manual' });
+  const body = await r.text();
+  return { ok: r.status === 200 && !r.headers.get('location') && /<html/i.test(body), status: r.status, location: r.headers.get('location') };
+};
+const r1 = await servesInPlace(`${BASE}/${H}`);
+ok('/<handle> serves the join page in place (200, no redirect)', r1.ok, `${r1.status} ${r1.location || ''}`);
+const unknown = await fetch(`${BASE}/gate_nobody_${H.slice(5)}`, { redirect: 'manual' });
+ok('...an unclaimed name is not a room: it falls through to the 404', unknown.status === 404, `${unknown.status}`);
 const r2 = await fetch(`${BASE}/${H}/overlay`, { redirect: 'manual' });
 ok('/<handle>/overlay 302 → overlay',
   r2.status === 302 && r2.headers.get('location') === `/overlay?room=${room.id}`);
@@ -74,14 +101,16 @@ const upd = await fetch(`${BASE}/api/dashboard/rooms/${room.id}`, {
 });
 const updData = await upd.json();
 ok('handle re-claim from dashboard works', upd.ok && updData.room.handle === H2, updData.room?.handle);
-const r3 = await fetch(`${BASE}/${H2}`, { redirect: 'manual' });
-ok('new handle resolves', r3.status === 302 && r3.headers.get('location') === `/join?room=${room.id}`);
+const r3 = await servesInPlace(`${BASE}/${H2}`);
+const r3cfg = await (await fetch(`${BASE}/api/config?room=${H2}`)).json();
+ok('new handle resolves (in place, and /api/config names the same room)', r3.ok && r3cfg.roomId === room.id, `${r3.status} ${r3cfg.roomId}`);
 
 // ── demo room ────────────────────────────────────────────────────────────────
-const rd = await fetch(`${BASE}/demo`, { redirect: 'manual' });
-ok('/demo resolves', rd.status === 302 && /^\/join\?room=/.test(rd.headers.get('location') || ''));
-const demoRoomId = (rd.headers.get('location') || '').split('room=')[1];
-const demoCfg = await (await fetch(`${BASE}/api/config?room=${demoRoomId}`)).json();
+const rd = await servesInPlace(`${BASE}/demo`);
+// The page resolves its room from the pathname; /api/config takes the handle.
+const demoCfg = await (await fetch(`${BASE}/api/config?room=demo`)).json();
+const demoRoomId = demoCfg.roomId;
+ok('/demo resolves', rd.ok && !!demoRoomId, `${rd.status} ${demoRoomId}`);
 ok('demo room runs dust pricing',
   demoCfg.passkeyTickPrice === '0.001' && demoCfg.passkeyTickSeconds === 1 && demoCfg.maxSession === '0.03',
   `${demoCfg.passkeyTickPrice}/${demoCfg.passkeyTickSeconds}s cap ${demoCfg.maxSession}`);
@@ -106,15 +135,18 @@ ok('demo room has letters + drops on',
   ws.close();
 }
 
-// demo banner + letter button on the join page
-{
+// demo banner + letter button on the join page. A browser check grades the
+// build on disk, so it runs only against a build newer than web/'s source.
+const fresh = assertFreshBuild();
+ok('G0 the web build is newer than its source (the browser checks below grade THIS tree)', fresh.ok, fresh.detail);
+if (fresh.ok) {
   const browser = await puppeteer.launch({
     executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
     headless: 'new',
   });
   const page = await browser.newPage();
   // Deliberately the RETIRED url: a real browser must survive the whole
-  // legacy chain (/r/demo 301 → /demo 302 → /join?room=<id>), which is what
+  // legacy chain (/r/demo 301 → /demo, served in place), which is what
   // anyone clicking an old pasted link actually does.
   await page.goto(`${BASE}/r/demo`, { waitUntil: 'networkidle2' });
   await sleep(1500);
@@ -124,13 +156,15 @@ ok('demo room has letters + drops on',
     letterBtn: getComputedStyle(document.getElementById('letterBtn')).display !== 'none',
     joinIntact: ['username', 'joinBtn', 'priceAmount'].every((id) => !!document.getElementById(id)),
   }));
-  ok('browser survives the legacy /r/demo redirect chain to the join page',
-    /room=/.test(probe.url), probe.url);
+  ok('browser survives the legacy /r/demo redirect and lands on the pretty URL',
+    probe.url === '/demo', probe.url);
   ok('demo banner visible', probe.banner);
   ok('letter button live in demo room', probe.letterBtn);
   ok('join controls intact', probe.joinIntact);
   await browser.close();
 }
 
+if (srv) srv.kill();
+if (scratch) { await sleep(1000); try { rmSync(scratch, { recursive: true, force: true }); } catch { /* OneDrive may hold a file */ } }
 console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

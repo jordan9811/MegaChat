@@ -6,7 +6,7 @@ This page describes the schema, what a link stores, where attributes come from a
 
 ## What changed, and why
 
-Before this layer an identity **was** `provider:platformId`: one row per platform login, its own handle registry, and that string carried in the room owner key, the whitelist pin and the sealed cookie. Linking a second platform would have minted a second person. Since the app has zero users this was a code change, not a data migration — but `_migrate-accounts.mjs` exists anyway, reports by default and writes with `--write`, because the shape has to exist before the day somebody needs it.
+Before this layer an identity **was** `provider:platformId`: one row per platform login, its own handle registry, and that string carried in the room owner key, the whitelist pin and the sealed cookie. Linking a second platform would have minted a second person. Since the app has zero users this was a code change, not a data migration — but `_migrate-accounts.mjs` exists anyway, reports by default and writes with `--write`, because the shape has to exist before the day somebody needs it. Since 2026-10-24 the server also runs it at every boot as a report, and applies it only when `MIGRATE_AT_BOOT` names `accounts` (`server.js`, the boot migration block); it has never been applied on production (`_migrate-accounts.mjs`, header).
 
 Two things were already true and are worth stating, because the shape follows from them:
 
@@ -15,7 +15,7 @@ Two things were already true and are worth stating, because the shape follows fr
 
 ## The schema
 
-`accounts.json`, under `DATA_DIR`, written by `accounts.js`.
+`accounts.json`, under `DATA_DIR`, written by `accounts.js` atomically through `json-store.js`. A file that cannot be read refuses every write — a sign-in then fails (`store_refused`) instead of minting a second account for someone whose record is unreadable.
 
 ```
 accounts: { <accountId>: {
@@ -23,19 +23,20 @@ accounts: { <accountId>: {
   links: [ { provider, platformId, username, handle, linkedAt, attributes, attributesFetchedAt } ],
   reservedHandles: [],
   platformLogins?: { twitch, x },   // names an aggregator reported; no ids
+  payoutWallet?: "0x…",             // where campaign, credit and cash rewards are paid
   roomDefaults?: {}
 } }
 handles: { <handle>: <accountId> }   // canonical AND reserved
 links:   { "<provider>:<platformId>": <accountId> }
 ```
 
-- **One link per provider per account**, and **one account per platform login**. A login already linked elsewhere is refused (`link_taken`) — never moved, never merged. There is nobody to merge, and a merge flow nobody needs is a security surface nobody reviewed.
+- **One link per provider per account**, and **one account per platform login**. A login already linked elsewhere is refused (`link_taken`) — never moved, never merged. There is nobody to merge, and a merge flow nobody needs is a security surface nobody reviewed. A *different* login of a provider this account already has is refused too (`provider_linked`), before anything is read or written: switching X accounts is disconnect, then connect. (An X-only account cannot switch, because its last link cannot be disconnected; see `OPEN-ISSUES.md`.)
 - **`primary`** decides which link supplies the display name. It does **not** decide the handle.
 - **The canonical handle is the account's own.** Adding a link or switching primary changes the display name only, so the room slug, the `/username` link and the OBS overlay URL stay exactly where they were. Asserted by `_gate-identity-account.mjs` section D.
 
 ## The handle is owned by the account, and never auto-freed
 
-The old store released a handle the moment its owner claimed a different one (`identity-store.js:101`, and `OPEN-ISSUES.md`, "A HANDLE IS NOT AN AUTHORIZATION TOKEN"). A name somebody had used — and that a whitelist entry or a room link might still refer to — could then be taken by a stranger.
+The old store released a handle the moment its owner claimed a different one (`delete store.handles[existing.handle]` in `identity-store.js` as it stood before `947207f`, and `OPEN-ISSUES.md`, "A HANDLE IS NOT AN AUTHORIZATION TOKEN"). A name somebody had used — and that a whitelist entry or a room link might still refer to — could then be taken by a stranger.
 
 Now:
 
@@ -75,7 +76,7 @@ Every attribute has one shape, whatever produced it:
 - X OAuth now asks for `offline.access`, and the user token is **stored, encrypted** (`x-token-store.js`). It is used only to read `connection_status` for campaign checks.
 - Following and follower **lists** are now read: as frozen reference sets (ids and handles only), and as the capped fallback of `followedByFromSet`. A claimant's followers are counted and never stored.
 
-**Freshness.** `attributesFetchedAt` is stored per link. Refresh is a re-authorisation: the account page's Refresh button sends the person through that platform's sign-in once more, which an app they have already authorised does not question. No access token is stored, so there is nothing to refresh with in the background — and no background polling exists.
+**Freshness.** `attributesFetchedAt` is stored per link. Refresh is a re-authorisation: the account page's Refresh button sends the person through that platform's sign-in once more, which an app they have already authorised does not question. The same login re-authorising refreshes its attributes **and its username** (platform logins can be renamed, and bounty ownership reads the link's username). Only X's user token is stored (encrypted, `x-token-store.js`, for `connection_status`); Twitch's is kept for the length of the callback only. No background polling exists: the one other refresh is a campaign check, which re-reads an X profile with the app token when the link was never read or its last read is over a day old (`campaign-engine.js` `check`).
 
 ### The two zkTLS adapters
 
@@ -89,6 +90,8 @@ So "Opacity is the mobile one and Reclaim is the web one" is wrong: **both cover
 ## The classifier
 
 `classify(account, { allowlist, now })` in `classifier.js` is **pure**: no disk, no network, no clock of its own. It returns `{ tier, reasons[] }`, and **no feature consumes it** — it is built, tested against fixtures spanning every tier, and shown to the account holder on their own account page. Nothing else reads it.
+
+**Each link is read on its own numbers** (2026-10-24), and when links disagree **the most cautious read wins**: `recognized` < `plausible` < `ambiguous` < `suspect`; a link with no details says nothing. Merging every link's records first paired one platform's follower total with another's following count, so a 12-year-old X account read `suspect` the day a 3-follower Twitch channel was linked. Linking another platform can add caution, never trust. The allowlist still wins first.
 
 | Tier | Meaning | Friction a later feature may add |
 |---|---|---|
@@ -118,7 +121,7 @@ So "Opacity is the mobile one and Reclaim is the web one" is wrong: **both cover
 
 ## What this layer deliberately does not store
 
-No follower lists, no following lists, no mutuals, no graph data of any kind. Counts only. See the data-model page's "deliberately absent" list.
+On a link: no follower lists, no following lists, no mutuals, no graph data of any kind. Counts only. The lists campaigns read since 2026-10-23 are not kept here: a creator's frozen reference set (ids and handles) lives in the campaign store, and a claimant's followers are counted and never stored (`campaign-store.js`; `campaign-engine.js`, the `followedByFromSet` fallback; [campaigns.md](campaigns.md)). See the data-model page's "deliberately absent" list.
 
 ## Where it is
 
@@ -127,8 +130,9 @@ No follower lists, no following lists, no mutuals, no graph data of any kind. Co
 | Store | `accounts.js` → `accounts.json` |
 | Legacy shape | `identity-store.js` — the old identity view over the new store; every caller reads unchanged |
 | Owner key | `roomOwnerKey()` in `auth.js` — now the account id |
-| Linking | `/auth/:provider` and its callback; `GET /api/account`, `POST /api/account/primary`, `DELETE /api/account/links/:provider` |
+| Linking | `/auth/:provider` and its callback; `GET /api/account`, `POST /api/account/primary`, `DELETE /api/account/links/:provider`; `POST /api/account/payout-wallet` (`campaign-routes.js`) |
+| Session | `auth.js` `readIdentityFromRequest` — a sealed `{accountId, iat}` cookie, 30 days from sign-in, `Secure` in production; the seal key from `runtime-env.js` `sessionSecret` |
 | Attributes | `attestation/` — `index.js` (shape, trust, adapters), `x-api.js`, `twitch-helix.js`, `opacity.js`, `reclaim.js` |
 | Classifier | `classifier.js`, `recognized-accounts.json` |
-| Migration | `_migrate-accounts.mjs` — reports by default, `--write` to act |
-| Gate | `_gate-identity-account.mjs` — 46 assertions against a mock IdP through the real OAuth routes |
+| Migration | `_migrate-accounts.mjs` — reports by default, `--write` to act; at every boot as a report, applied under `MIGRATE_AT_BOOT=accounts` |
+| Gate | `_gate-identity-account.mjs` — 65 assertions on 2026-10-24 (46 when the layer shipped) against a mock IdP through the real OAuth routes |

@@ -62,7 +62,7 @@ export type RoomLayout = {
 
 ## A seat
 
-What `/api/seats` and the dashboard's session view carry per seat. `paymentMode` is the string `tickAllMeters()` switches on (`server.js`); `quality` is the link-quality read the booth shows.
+What `/api/seats` and the dashboard's session view carry per seat. `paymentMode` is the string `tickAllMeters()` switches on (`server.js`); `quality` is the link-quality read the booth shows. A seat id is public; acting on a seat — `register_seat` and `camera_ready` over the WebSocket, `POST /api/leave/:seatId`, a publisher token from `/api/livekit/token`, the quality and echo reports — also takes the `seatToken` the join response returned, and is refused without it (`seatTokenMatches`, `server.js`).
 
 <!-- source:web/lib/api.ts#Seat -->
 ```typescript
@@ -149,7 +149,7 @@ export type RecentAiring = {
 
 <!-- source:web/lib/api.ts#GuestEntry -->
 ```typescript
-// web/lib/api.ts — GuestEntry (lines 497–502), embedded by docs:sync
+// web/lib/api.ts — GuestEntry (lines 524–529), embedded by docs:sync
 export type GuestEntry = {
   handle: string
   addedAt: string
@@ -161,7 +161,7 @@ export type GuestEntry = {
 
 <!-- source:web/lib/api.ts#GuestList -->
 ```typescript
-// web/lib/api.ts — GuestList (lines 505–510), embedded by docs:sync
+// web/lib/api.ts — GuestList (lines 532–537), embedded by docs:sync
 export type GuestList = {
   enabled: boolean
   explicit: boolean | null
@@ -225,7 +225,7 @@ The settlement interface, and the only implementation that exists:
 
 <!-- source:bounty-settlement.js#SettlementInterface -->
 ```javascript
-// bounty-settlement.js — SettlementInterface (lines 27–38), embedded by docs:sync
+// bounty-settlement.js — SettlementInterface (lines 30–41), embedded by docs:sync
 /**
  * The contract Run B must satisfy.
  * TODO(run-b): implement RealSettlement — needs a funded operator wallet,
@@ -243,7 +243,7 @@ export class SettlementInterface {
 
 <!-- source:bounty-settlement.js#StubSettlement -->
 ```javascript
-// bounty-settlement.js — StubSettlement (lines 40–72), embedded by docs:sync
+// bounty-settlement.js — StubSettlement (lines 43–75), embedded by docs:sync
 /**
  * Records intent, moves nothing, always succeeds. This is the ONLY
  * implementation that exists in Run A.
@@ -300,7 +300,7 @@ The one source for both the verifier's sampling density and the sentence a strea
 
 <!-- source:bounty-claim.config.js#PLATFORM_PROFILES -->
 ```javascript
-// bounty-claim.config.js — PLATFORM_PROFILES (lines 537–611), embedded by docs:sync
+// bounty-claim.config.js — PLATFORM_PROFILES (lines 552–626), embedded by docs:sync
 /**
  * How verification actually behaves per platform — ONE source of truth for
  * the verifier's sampling density and for the words a streamer reads before
@@ -383,7 +383,7 @@ export const PLATFORM_PROFILES = {
 
 <!-- source:airings-store.js#addMoment -->
 ```javascript
-// airings-store.js — addMoment (lines 138–156), embedded by docs:sync
+// airings-store.js — addMoment (lines 147–164), embedded by docs:sync
 /**
  * Record something worth seeking to. Silently does nothing when the room is
  * not on air — a seat taken in a room whose owner never streams is a normal
@@ -391,16 +391,15 @@ export const PLATFORM_PROFILES = {
  * throw inside a seat or letter path.
  */
 export function addMoment(roomId, { kind, label = null, at = Date.now(), ref = null }) {
-  load();
   const a = openAiringFor(roomId);
-  if (!a) return null;
+  if (!a || !writable()) return null;
   if (a.moments.length >= MAX_MOMENTS) return null;
   const moment = { at, kind, label, offsetMs: Math.max(0, at - a.startedAt) };
   // What the moment is OF, when there is a thing: a MegaChat's letter id, so
   // the replay can play that clip (aired-clips.js) when the recording cannot.
   if (ref) moment.ref = String(ref);
   a.moments.push(moment);
-  persist();
+  persist({ soon: true });
   return moment;
 }
 ```
@@ -408,7 +407,7 @@ export function addMoment(roomId, { kind, label = null, at = Date.now(), ref = n
 
 <!-- source:airings-store.js#attachRecording -->
 ```javascript
-// airings-store.js — attachRecording (lines 158–174), embedded by docs:sync
+// airings-store.js — attachRecording (lines 166–182), embedded by docs:sync
 /**
  * Attach a replay to an airing once something has resolved one. `recordings`
  * is EVERY platform recording that overlaps the airing, with when each
@@ -416,14 +415,14 @@ export function addMoment(roomId, { kind, label = null, at = Date.now(), ref = n
  * window), and a moment can only be opened in the one that covers it.
  */
 export function attachRecording(airingId, { vodId = null, vodUrl = null, captureRef = null, recordings = null }) {
-  load();
-  const a = state.airings.find((x) => x.id === airingId);
-  if (!a) return null;
+  const a = state().airings.find((x) => x.id === airingId);
+  if (!a || !writable()) return null;
   if (vodId !== null) a.vodId = vodId;
   if (vodUrl !== null) a.vodUrl = vodUrl;
   if (captureRef !== null) a.captureRef = captureRef;
   if (Array.isArray(recordings)) a.recordings = recordings;
-  persist();
+  // The poster sweep attaches to hundreds of airings in one pass: one write.
+  persist({ soon: true });
   return a;
 }
 ```
@@ -433,4 +432,4 @@ export function attachRecording(airingId, { vodId = null, vodUrl = null, capture
 
 The routes `server.js` registers directly, in source order: `GET /r/:handle`, `GET /r/:handle/overlay`, `GET /api/health/platforms`, `GET /api/health`, `GET /api/config`, `GET /api/balance/:address`, `POST /api/livekit/webhook`, `GET /api/livekit/burn`, `POST /api/livekit/burn/purge-foreign`, `POST /api/livekit/burn/test-alert`, `POST|DELETE /api/livekit/burn/override`, `POST /api/livekit/prewarm[/progress|/cancel]`, `POST /api/livekit/overlay/beat`, `GET /api/livekit/overlay/health`, `GET /api/livekit/sessions`, `POST /api/livekit/token`, `POST /api/seat/quality`, `POST /api/seat/echo`, `GET /`, `GET /overlay`, `POST /api/join/passkey`, `POST /api/join/mpp`, `ALL /api/meter/tick`, `POST /api/join` (501, retired), `POST /api/leave/:seatId`, `GET /api/seats`, `GET /api/rooms/:roomId/poster.jpg`, `GET /api/airings/:airingId/poster.jpg`, `GET /api/rooms/:roomId/replay`, `GET /api/aired-clips/:id`, `DELETE /api/dashboard/rooms/:roomId/aired-clips/:id`, `GET|PUT /api/site-settings` (the owner only; anyone else gets the not-found answer), `GET /api/rooms/recent`, `GET /api/rooms/public`, `GET /favicon.ico`, `GET /:handle`, `GET /:handle/overlay`.
 
-Attached modules add their own: `/auth/*` (`auth.js`), `/api/letter/*` (`letters.js`), `/api/dashboard/*` (`dashboard-routes.js`), `/api/whitelist/*` (`whitelist-routes.js`), and — only with `BOUNTY_CLAIM=1` — the `/api/bounty/*` set listed by path in `bounty-routes.js` (`guarded.get`/`guarded.post`), every one of which is looked up in `bounty-auth.js`'s policy table at registration.
+Attached modules add their own: `/auth/*`, `/api/auth/*` and `/api/account/*` (`auth.js`), `/api/letter/*` and the dashboard's letter queue (`letters.js`), `/api/dashboard/*` (`dashboard-routes.js`), `/api/whitelist/*` (`whitelist-routes.js`), `/api/rooms/:roomId/overlay-visibility` and `/api/rooms/:roomId/seat-escrow` (`visibility-routes.js`), the campaign set — `/api/campaigns/*`, `/api/campaign-config`, `/api/reference-sets/*`, `/api/tokens/:address`, `POST /api/account/payout-wallet` — each listed with its tier in `campaign-routes.js`, and — only with `BOUNTY_CLAIM=1` — the `/api/bounty/*` set listed by path in `bounty-routes.js` (`guarded.get`/`guarded.post`), every one of which is looked up in `bounty-auth.js`'s policy table at registration.

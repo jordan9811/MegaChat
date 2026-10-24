@@ -29,6 +29,8 @@
  *                previous control; this is at least a credential.
  */
 import { readIdentityFromRequest } from './auth.js';
+import { isSiteAdmin } from './site-settings.js';
+import { provenLoginsFor } from './accounts.js';
 import * as store from './bounty-store.js';
 import * as clips from './bounty-clips.js';
 
@@ -175,29 +177,39 @@ function resolveSubjectKey(req, subject) {
 
 /**
  * What this identity is called ON PLATFORM P, or null when it has no proof
- * there. Two shapes exist:
- *  - legacy direct identities: provider IS the platform, username is the
- *    OAuth login (gates mint these; the old in-house OAuth did too)
- *  - Privy identities: provider is 'privy' and the per-platform logins live
- *    in identity.platformLogins, written from Privy's linked_accounts at
- *    every sign-in. identity.username is the DISPLAY ladder's pick and must
- *    never be read as platform proof — for someone with Twitch and X linked
- *    it is their Twitch name.
+ * there: the strongest of accounts.js `provenLoginsFor` — a real link's
+ * username (our own OAuth), else the name Privy's linked_accounts report.
+ * identity.username is the DISPLAY ladder's pick and is never read as proof:
+ * for someone with Twitch and X linked it is their Twitch name.
  *
- * Until this existed, BOTH ownership checks required provider === platform —
- * which no Privy identity ever satisfies, so with real verification on, no
- * streamer who signed in through the actual front door could claim or pass
- * a STREAMER-tier route on any platform. The gates never saw it because
- * they mint the legacy shape.
+ * It used to read a link only when it was the PRIMARY one, so a Privy-primary
+ * streamer who connected Twitch through our OAuth (the strongest proof the app
+ * has) failed every STREAMER route, and passed after switching primary, which
+ * is a display setting.
  */
 export function platformLoginFor(identity, platform) {
   if (!identity || !platform) return null;
-  if (identity.provider === platform) {
-    const login = String(identity.username || identity.handle || '').trim();
-    return login || null;
-  }
-  const viaLinks = identity.platformLogins?.[platform];
-  return typeof viaLinks === 'string' && viaLinks.trim() ? viaLinks.trim() : null;
+  return provenLoginsFor(identity, platform)[0] || null;
+}
+
+/**
+ * The proven login that makes `who` (an identity view or an account) the owner
+ * of `handleKey`, or null. THE ownership rule: the STREAMER tier, the claim
+ * verifier (bounty-routes.js) and server.js ownerProvesChannel all ask it, so
+ * the checks cannot disagree again.
+ *
+ * NORMALISE THROUGH handleKey, DO NOT RE-IMPLEMENT THE RULE. A lowercase
+ * compare here once duplicated the store's case rule, and the two silently
+ * disagreed the moment the store learned that a pump.fun identity is a
+ * CASE-SENSITIVE base58 mint: the key kept `GnBQjwQ…`, the compare lowercased
+ * the login, and the real owner got a 403 on their own air session. Deriving
+ * the key from each login leaves exactly one place that decides what "the
+ * same handle" means. Callers build `handleKey` with store.handleKey too.
+ */
+export function loginProvingHandle(who, handleKey) {
+  if (!who || !handleKey) return null;
+  const platform = handleKey.slice(0, handleKey.indexOf(':'));
+  return provenLoginsFor(who, platform).find((login) => store.handleKey(platform, login) === handleKey) || null;
 }
 
 /**
@@ -206,28 +218,7 @@ export function platformLoginFor(identity, platform) {
  * Never client-asserted.
  */
 export function identityOwnsHandle(req, handleKey) {
-  if (!handleKey) return false;
-  const identity = readIdentityFromRequest(req);
-  if (!identity) return false;
-  const [platform] = handleKey.split(':');
-  const login = platformLoginFor(identity, platform);
-  if (!login) return false;
-  /**
-   * NORMALISE THROUGH handleKey, DO NOT RE-IMPLEMENT THE RULE.
-   *
-   * This compared `login.toLowerCase()` against the handle half of the key,
-   * which duplicated the store's case rule in a second place — and the two
-   * silently disagreed the moment the store learned that a pump.fun identity
-   * is a CASE-SENSITIVE base58 mint rather than a username. The key kept
-   * `GnBQjwQ…`, this lowercased the login to `gnbqjwq…`, and the real owner of
-   * the handle got a 403 on their own air session.
-   *
-   * Deriving the key from the login means there is exactly one place that
-   * decides what "the same handle" means, so the two can never drift again.
-   * It also fixes the comparison for a mint that a split(':') would mangle if
-   * an identifier ever contained a colon.
-   */
-  return store.handleKey(platform, login) === handleKey;
+  return !!loginProvingHandle(readIdentityFromRequest(req), handleKey);
 }
 
 /**
@@ -278,6 +269,13 @@ export function authorize(policy, { log = console } = {}) {
       }
 
       case TIER.ADMIN: {
+        // THE SITE OWNER'S OWN SIGN-IN IS AN ADMIN CREDENTIAL (audit bounty-N2),
+        // by the rule /dev and the campaign admin routes already use
+        // (site-settings.js isSiteAdmin). The /bounty/admin page sends its
+        // cookie and no key, so every call it made 401'd and the review queue
+        // was curl-only; putting the shared key in a browser would be one more
+        // place for it to leak. The key stays the credential for scripts.
+        if (isSiteAdmin(readIdentityFromRequest(req))) return next();
         if (!adminKeyConfigured()) {
           // Refuse rather than fall open. An unset key must never mean allow.
           log.warn?.('[bounty-auth] BOUNTY_ADMIN_KEY is not set — admin routes refuse');

@@ -1488,3 +1488,779 @@ with its fix reverted. `settlement.js` (the door) is unchanged.
   Originals: `break-4.orig.mjs`, `*.pre-cold4.mjs`; patches in
   `scratchpad/fix-cold-4/`. break.mjs's output is identical to the reviewer's
   last run.
+
+## K7: no public secret in production (2026-10-24)
+
+- **A missing session secret in production gets a per-boot random, not a
+  refusal to boot.** `runtime-env.js` `sessionSecret()` returns `AUTH_SECRET`
+  or `MPP_SECRET_KEY`; with neither, in production, a 256-bit random held for
+  the life of the process, plus one error naming `AUTH_SECRET`. Refusing to
+  boot would take the site down over a variable; the per-boot secret keeps it
+  up and unforgeable, at the honest cost that sessions die on every restart.
+  Development keeps the dev constant. Undo: the `if (!bootSecret)` block in
+  `sessionSecret` (never back to the constant in production).
+- **The overlay key does NOT take the per-boot fallback.** A key that changed
+  on every deploy would silently break every streamer's saved OBS URL;
+  `overlay-key.js` keeps deriving no key at all in production without a
+  secret, logged by name. Undo: none wanted.
+- **Production is `--prod`, then Railway's own variable, then NODE_ENV.**
+  `isProduction()` is `--prod` (the server's switch) OR `RAILWAY_ENVIRONMENT` /
+  `RAILWAY_ENVIRONMENT_NAME` (so a changed start command on Railway still
+  counts) OR `NODE_ENV === 'production'`. NODE_ENV is kept only as an extra
+  signal (the campaigns gate's C10.U(6) probe sets it); nothing relies on it,
+  because Railway never sets it and Next sets it during `prepare()` only, which
+  is why the old NODE_ENV-only overlay check happened to fire at runtime.
+  Undo: the two extra terms in `isProduction`.
+- **The secret error is logged on first use, not at boot.** Static imports
+  evaluate before `server.js` runs `process.loadEnvFile()`, so an eager read
+  would miss a secret kept in .env; `server.js` was not touched. In production
+  the first use is the first request carrying a cookie or starting a sign-in.
+  Undo: n/a.
+- **`x-token-store.js` was read and left alone.** Its key is `X_TOKEN_KEY` or
+  `AUTH_SECRET` or nothing; it never fell back to the constant, and with no
+  key it stores nothing. Switching it to `sessionSecret()` would have made
+  every dev box encrypt tokens under the public constant and production
+  store tokens under a key that dies each boot. `_gate-auth-secret.mjs` E pins
+  the current behaviour, including that a rotated secret reads a stored token
+  as null while the holder row stays (re-link).
+- **The legacy `{provider, platformId}` cookie read stays for now.** No product
+  code mints that shape any more (`auth.js` seals `{accountId}` at every
+  `mc_identity` site), but `mintBountyAuth` and six hand-rolled gate/verify
+  sealers do, so removing the branch would turn most of the gate suite red
+  without making production safer than the secret already does. Undo / next:
+  switch those sealers to `{accountId}`, then delete the branch in
+  `readIdentityFromRequest` (OPEN-ISSUES K7).
+- **Cookie signatures compare in constant time.** `unseal` checks the length
+  first, then `timingSafeEqual`; the `null` return shape is unchanged. Undo:
+  the three lines in `unseal`.
+
+## The audit fix round: identity and sessions (2026-10-24)
+
+One X login per account, sessions that carry a date and die at 30 days, and no
+pre-account cookie. Two entries land with the round's integration pass (the
+classifier change; `server.js` `ownerProvesChannel`). Open items: OPEN-ISSUES Q.
+
+- **Switching X accounts is refused, for now (coordinator's call).** A
+  different X login on an account that already has X is `provider_linked`;
+  disconnect, then connect. An X-only account therefore cannot switch (its last
+  link cannot go). Why: every alternative needs a rule for campaign claims
+  bound to the old X id, and the borrowed-attribute hole (OPEN-ISSUES Q1) was
+  live. Undo: a replace-link flow (Q2), not a revert of the refusal.
+- **The same login re-authorising refreshes its username too.** Platform
+  logins can be renamed and bounty ownership reads the link's username; a stale
+  one keeps proving a name the person no longer holds. Applied on the
+  signed-in refresh and on a plain re-sign-in. Undo: drop `username` from the
+  two `setLinkAttributes` calls in the callback (`auth.js`).
+- **The pre-account `{provider, platformId}` cookie shape is refused.** Its
+  ids are public, so with a leaked or default secret it forged any account; no
+  product code minted it since the account layer. The gate sealers now seal
+  `{accountId, iat}` for the same account. Supersedes K7's "the legacy read
+  stays for now" (above). Undo: the legacy branch in `readIdentityFromRequest`
+  (git history), which also needs the sealers back.
+- **Sessions last 30 days from sign-in, enforced server-side (coordinator's
+  call).** `iat` (ms) is in the seal; a session is refused when it has none, is
+  older than `SESSION_MAX_AGE_MS`, or is dated more than a minute ahead. Hard,
+  not sliding: an active user signs in again every 30 days. Sessions minted
+  before this change carry no `iat`, so the deploy signs everyone out once.
+  Undo: raise `SESSION_MAX_AGE_MS` in `auth.js`.
+- **Cookies are `Secure` exactly when `isProduction()` (coordinator's
+  call).** Production is HTTPS end to end; dev is http://. Under `--prod` on
+  localhost Chrome still accepts Secure cookies, so the gates are unaffected.
+  Undo: the one line in `setCookie`.
+- **Account refusals carry their HTTP status.** `accounts.js`
+  `fail(code, message, status)`: `invalid_*` and `not_linked` 400,
+  `no_account` 404, `not_yours` 403, `*_taken` / `provider_linked` /
+  `last_link` / `handle_in_use` 409; `auth.js` and `campaign-routes.js` answer
+  `err.status`. Undo: n/a.
+- **Channel ownership reads every proven login, by one rule.**
+  `provenLoginsFor` (`accounts.js`): a real link's username, then Privy's
+  `platformLogins` name; `primary` (a display setting) never decides.
+  `bounty-auth.js` `loginProvingHandle` compares each through `handleKey`; the
+  STREAMER tier and the claim verifier use it, and `server.js`
+  `ownerProvesChannel` does once the integration pass lands. Widens the
+  STREAMER tier to holders of a real OAuth link, which is the intent. Undo: the
+  old per-site compares (git history).
+- **When platforms disagree, the most cautious tier wins (coordinator's call;
+  ci-12, lands with the classifier change).** Each link is classified on its
+  own numbers; recognised < plausible < ambiguous < suspect, and the account
+  takes the most cautious tier among links that have details (`unknown` links
+  are ignored; the allowlist still wins first). Linking a platform can add
+  caution, never trust. On purpose: the X-plausible + 3-follower-Twitch
+  fixture reads ambiguous (merged, it read suspect); a Twitch Partner whose X
+  carries the follow-farm signature reads suspect (merged, it read
+  recognised). Undo: take the most favourable non-suspect tier instead (the fix
+  plan's alternative, which reads the first fixture plausible).
+- **X token rows: dead on 400/401 only; unreadable rows skipped, kept.**
+  Supersedes K7's note that "a rotated secret reads a stored token as null
+  while the holder row stays": the row stays on disk but is no longer listed as
+  a holder. Undo: the `dead` checks and `markDead` in `x-token-store.js`.
+- **The gate harness reads `accounts.json` itself**
+  (`_gate-identity-helper.mjs`) instead of importing `accounts.js`: that chain
+  loads `bounty-claim.config.js`, which reads env once at load, and every gate
+  imports the harness. Same lookup as `accountForLink`. `sealIdentityForTests`
+  now throws when no account holds the login (a cookie for nobody is a fixture
+  bug). Undo: import `accountForLink`.
+
+## The audit fix round: housekeeping (2026-10-24)
+
+One reader for numbers in env vars, a runtime folder that cannot be committed,
+and the passkey build script gone. Open items: OPEN-ISSUES P.
+
+- **`data/*` + `!data/.gitkeep` ignores the whole runtime folder.** The
+  per-file list missed 16 store paths, including `x-tokens.json` (OAuth tokens)
+  and `settlement.jsonl`. The per-file `data/` lines stay for their comments;
+  only the duplicated `data/bounty.json` / `data/bounty-ledger.jsonl` block
+  went. Undo: the two lines.
+- **Root ignore rules: `/*.png`, `/audit-*`, `/megachat-*.md`.** No root PNG
+  is tracked; kept gate evidence lives in `join-fix-evidence/` and `screens/`.
+  The four tracked `megachat-*.md` files are unaffected (tracked files ignore
+  `.gitignore`); a new prompt file is committed on purpose with `git add -f`.
+  `blender_mcp.py` stays visible. The 224 MB of `docs/ui-overhaul` images
+  stay: the pages that embed them are published. Undo: the lines.
+- **`build:passkey` and `scripts/build-passkey.mjs` are deleted; the rest of
+  X2 stays.** The script wrote `public/passkey-wallet.bundle.js` into the
+  static root, which fails Gate H at P, at T3 and at the "gone from the pin"
+  check. The run-book lines that told people to run it are gone, and
+  `src/passkey-wallet.mjs`'s header says nothing bundles it. `esbuild` stays
+  (`_gate-ui-local-polish`). Undo: `git checkout 1f06bef --
+  scripts/build-passkey.mjs` plus the script line.
+- **`_gate-gas-floor` and `_gate-phase1` are not retired (coordinator's call;
+  retiring them stays the owner's).** So `src/passkey-wallet.mjs`, its SDK and
+  their two Gate H pins stay (OPEN-ISSUES P8). Undo: retire both gates, then
+  remove X2.
+  **Superseded 2026-10-24 (the audit fix round: harness, below):** both are
+  retired, with six more files that could not run as written.
+  `src/passkey-wallet.mjs`, its SDK and its one remaining Gate H pin stay.
+- **`envNum(name, fallback, { min })` is the one reader** (`env-num.js`).
+  Unset, `''` or whitespace returns the fallback silently: unset means unset.
+  A non-finite value returns the fallback and warns once per name, naming the
+  variable, never its value. `'0'` stays 0, because gates set five variables to
+  0 on purpose. With `min`: a negative value returns the fallback, and a value
+  from 0 up to the floor is raised to the floor; each warns once. Why negative
+  falls back rather than clamping: `seat-escrow.js` already did
+  (`n >= 0 ? n : d`), and clamping a negative money window to 0 would delete
+  the window. Why `min` raises 0 too: no numeric variable documents 0 as "off"
+  (the string flags `LK_BREAKER` / `LAZY_CONNECT` are not numbers); a variable
+  whose 0 does mean off is read without `min`. Undo: delete `env-num.js` and
+  restore the inline readers.
+- **Interval floors (coordinator's call, as housekeeping listed them, plus the
+  bounty lane's own).** None of these documents a 0 meaning, so 0 gets the
+  floor too. Every gate sets at least the floor, so no gate changes.
+
+  | Variable | Floor | Why | Applied in |
+  |---|---|---|---|
+  | `SEAT_SWEEP_MS` | 1000 | ledger maturities and manual releases run on a minutes clock; default 60 s | `seat-escrow.js` |
+  | `SEAT_ESCROW_SWEEP_MS` | 5000 | every tick calls the chain RPC (`preflight` + `finalizeDue`); default 30 s; the gate uses 5000 | `server.js` (integration pass) |
+  | `BOUNTY_BANK_DRAIN_INTERVAL_MS` | 1000 | the interval is also the per-room drain throttle; default 20 s | `bounty-claim.config.js` |
+  | `BOUNTY_PLEDGE_SWEEP_MS` | 1000 | pledge + bank sweep; default 10 min | `bounty-claim.config.js` |
+  | `BOUNTY_CAPTURE_POLL_MS` | 250 | HLS playlist polls against a platform CDN; default 2 s | `bounty-claim.config.js` |
+  | `BOUNTY_CAPTURE_START_RETRY_EVERY_MS` | 1000 | retries a capture start; default 15 s | `bounty-claim.config.js` |
+  | `BOUNTY_CAPTURE_MAX_AGE_MS`, `BOUNTY_CAPTURE_MAX_ERROR_RUN_MS` | 60000 | the recorder caps, new this round | `bounty-claim.config.js` |
+  | `BOUNTY_CAPTURE_MAX_ACTIVE` | 1 | new this round | `bounty-claim.config.js` |
+
+  No floor on `BOUNTY_STREAM_WARMUP_MS`, `BOUNTY_STREAM_TAIL_MS`,
+  `BOUNTY_CAPTURE_FREEZE_DELAY_MS`, `BOUNTY_VOD_SKEW_MS`,
+  `SEAT_ESCROW_REVIEW_MS` or `SEAT_DETECTION_LAG_MS`: gates set them to `'0'`.
+  Undo: drop the `min`.
+- **Relative time is `3m ago`,** the form the codebase uses most
+  (`join-page.ts`, `recent-rail.tsx`, `guest-whitelist.tsx`, against
+  `rules.ts`'s `3 min ago`). The merge is the web lane's (OPEN-ISSUES P6).
+  Undo: pick the other form.
+- **cc-18: `SOURCE_PROVIDER` is deleted rather than `sourceForProvider`
+  derived from it.** A reverse lookup needs a guard (provider `null` would
+  match `opacity: null` and return `'opacity'`); the if-chain is already the
+  single truth, and nothing read the map. Undo: restore the map.
+- **cc-16: `getLiveByLogins` is deleted.** Its batching rationale and its
+  null-means-could-not-ask contract moved onto `getStreamsByLogins`
+  (`twitch-api.js`), which `followTick` calls. Undo: restore the wrapper.
+- **`dotenv/config` is replaced by `try { process.loadEnvFile() } catch {}`**
+  in `_cloud-idle-measure.mjs` and `_verify-webhook-delivery.mjs`, the idiom
+  twenty other gates use. Same precedence (an existing env var wins, tested on
+  Node 24), same values on an eight-shape synthetic `.env`. Neither script was
+  run: both spend LiveKit minutes or hit production. Their `sleep` became
+  `node:timers/promises`. Undo: the two lines in each.
+- **`airing-posters.js` reads `POSTER_VOD_WAIT_MS` through `envNum`;** its
+  three `Number(x) || d` reads stay, because they already read `''` as the
+  default and switching them would turn an explicit `'0'` into a 0 ms snapshot
+  interval. Undo: the one line.
+
+## The audit fix round: bounty (2026-10-24)
+
+A claim needs the real platform login, a clip nobody approved is not public,
+and every write that moves a pool's evidence needs a credential that is not on
+the broadcast. Open items: OPEN-ISSUES R.
+
+- **The real identity verifier is the default (coordinator's call;
+  bounty-9).** `StubIdentityVerifier` runs only under `BOUNTY_IDENTITY_STUB=1`,
+  which also sets `identityStubAutoApprove` (`bounty-claim.config.js`);
+  `BOUNTY_IDENTITY_REAL` is now inert, a no-op alias. A signed-out claim is
+  refused (401) before any write; the stub logs a loud boot warning. Why:
+  production runs `BOUNTY_CLAIM=1` with neither flag, so anyone could claim any
+  handle and bind its payee, and the real owner was then wedged out. Cost, on
+  purpose: YouTube, Rumble and pump.fun cannot be claimed until each has an
+  ownership proof (OPEN-ISSUES R2). Supersedes "Real identity behind
+  BOUNTY_IDENTITY_REAL=1, stub stays default" (2026-07-27). Undo: restore
+  `process.env.BOUNTY_IDENTITY_REAL === '1' ? real : stub` and
+  `BOUNTY_IDENTITY_STUB !== '0'` (`bounty-routes.js`, `bounty-claim.config.js`).
+- **An unmoderated clip is private (coordinator's call; bounty-8).** Public
+  means approved by its streamer, or aired (`isPublicClip`). Until then only
+  its pledger, its streamer and the operator can list or play it; the public
+  `/clips` keeps a `waiting` count, already public on `/program`. Why: the list
+  handed out every clip id, the id was the only credential on the media route,
+  and the media type was the uploader's string. Undo: the `isPublicClip` checks
+  in the two routes.
+- **The overlay's writes need the room key, the streamer's session or the
+  operator key (bounty-2).** The room-code route still returns the code to
+  anyone (it is on the public broadcast); only those credentials get the
+  session id. A deployment with no derivable key still draws badges but accepts
+  no unkeyed reports. Undo: `overlayReportAuthorized`.
+- **The verification source is the server's; operator media always goes to a
+  person (bounty-1).** `frames`, `vodUrl`, `vodStartMs` and `sourceMode` need
+  the admin key; media the request names becomes `frameOrigin: 'operator'`,
+  and every verified operator run opens a review. Why: the admin key is one
+  shared secret, also used by scripts; behind it, forged frames could otherwise
+  still pay at tier 1. Undo: the 403 block and the `operator` cause.
+- **A reviewer's reject is sticky for machines, not for people (bounty-6).**
+  After a reject, a re-verify that finds clips opens a review naming it; a later
+  approval by a person still pays. Undo: the `rejected` cause.
+- **Approving a review pays the evidence it was opened on (bounty-5).**
+  `review.verifiedPlaybacks`, else the session's last verified playbacks, else
+  bare counts, each collapsed to one airing per pledge. A could-not-look attempt
+  (bounty-20) does not wipe the session's last verified playbacks: our outage is
+  not evidence that an airing did not happen. A review opened by that attempt
+  pins an empty list, so approving it pays 0 until a verification that sees
+  something runs. Undo: release on bare counts again (git history).
+- **One OPEN session per claim (bounty-3).** Opening one closes the claim's
+  older OPEN sessions (`supersededBy`); their capture stops after pending
+  freezes settle. "The room's session" means the newest OPEN one everywhere
+  (`bank.openSessionForRoom`). Undo: the supersede loop.
+- **The admin surface authenticates by the site owner's session, not a key in
+  the browser (N2; lands with the `bounty-auth.js` change in the integration
+  pass).** The ADMIN tier accepts `isSiteAdmin`, the rule `/dev` and the
+  campaign admin routes already use. Undo: drop the `isSiteAdmin` line in the
+  ADMIN case.
+- **One pledge per take (web-5).** `attemptId` + account + anchor handle, held
+  10 minutes in memory; a repeat gets the first pledge back (`deduped: true`).
+  In memory on purpose while settlement is a stub (OPEN-ISSUES R18). Undo: the
+  `pledgeAttempts` map in `bounty-routes.js`.
+- **`isCapturing` is kept and wired, not deleted** (housekeeping offered
+  either): `_gate-bounty-claim-audit` F asserts on it. Undo: n/a.
+
+## The audit fix round: campaigns (2026-10-24)
+
+A Call in counts what the server saw on air from a live seat, and nothing it
+could not see; drafts are capped; a stuck funding is written up once per
+reason. Open items: OPEN-ISSUES S.
+
+- **A Call in across a restart: the clock restarts on the new seat
+  (coordinator's call; ci-3).** After a restart, a Call in claim bound to a
+  seat the server no longer holds gives its slot back: when the guest reserves
+  again, in the sweep, and on that seat's `camera_off`. The rejoin starts the
+  clock from zero; the server never credits seconds it could not see. Why:
+  `activeSeats` is in memory, so across the restart the server had no seat and
+  dropped that seat's camera webhooks; it cannot prove the camera stayed up.
+  The audit's "re-arm from the saved `cameraOnAt`" is rejected for that reason.
+  HEAD stranded the claim at `joined` and refused the rejoin
+  (`already_claimed`) until close + 48 h, and a `participant_left` after the
+  restart paid for the whole blind spot. `ended` is exempt from the release,
+  because `removeParticipant` drops the seat from `activeSeats` before it sends
+  `ended`. Undo: delete the `seatState:` line in `server.js`'s
+  `createCampaignEngine` call; an unwired `seatState` reads as "live and
+  present", exactly HEAD. That also undoes the next entry.
+- **A Call in counts only from a LIVE seat (web finding NEW-1).** The
+  on-camera clock needs both the signed `track_published` and the seat live
+  server-side (`seat.live`, set by `activateSeatLive` on GO LIVE, which is when
+  the overlay first draws the guest). `server.js` passes
+  `seatState: (id) => !s ? 'gone' : s.live ? 'live' : 'preview'`. A camera
+  published in the preview starts nothing; the clock starts on the `seat_live`
+  engine event or the next sweep (≤ 15 s). Off air is checked first, so an
+  off-air preview still says `offAir`. Why: the browser published at preview,
+  so a claimant who sat in preview for `minSeconds` on an on-air room was
+  counted as aired while the stream showed nobody. `camera_ready` is
+  client-sent, but only ever a SECOND condition: it can make counting stricter,
+  never looser. Undo: as above.
+- **At most 20 drafts per account (coordinator's call; ci-2).**
+  `MAX_DRAFTS_PER_ACCOUNT` in `campaign-engine.js`; the 21st is
+  `too_many_drafts` (409). Funding, opening or closing a draft makes room; it
+  applies to admins too. Why: drafts cost nothing, any signed-in room owner
+  could make them without limit, and every draft is stored and listed. The gate
+  never holds more than 6 per creator. Undo: raise the constant.
+- **An unbound reservation goes back after 10 minutes, not 2 (ci-18).**
+  `UNBOUND_RELEASE_MS`: the sweep gives back a `recorded` claim bound to no
+  letter and no seat, on a live campaign, once it is this old. Why:
+  `RESERVATION_STALE_MS` (2 min) lets only the same account re-take its slot;
+  the sweep's release lets anyone, so it must never race a bind in flight. The
+  seat join's escrow deposit alone waits up to 120 s for its receipt
+  (`escrow-chain.js`), viem's default up to 180 s. A late bind after a release
+  is refused, and the Holler or seat goes out uncounted, as it does today when
+  `bind` refuses. Undo: change the constant.
+- **`bind()` gives back a slot it refuses (ci-18).** When the campaign closed,
+  passed its deadline or was hidden between `reserve` and `bind`, `bind`
+  releases the slot itself (a `released` ledger row) and returns null, as
+  before. In the engine rather than in `letters.js` as the fix plan said, so
+  both callers (`letters.js`, `campaignJoinMiddleware`) are covered in one
+  place. Undo: drop the `releaseSlot` call in `bind`.
+- **A stuck funding is written up once per reason and re-asked every 10
+  minutes (ci-8).** Each "needs a person" verdict carries a stable code
+  (`funding.needsPersonCode`, e.g. `no-receipt:nonce-unused`); `askPerson`
+  writes `funding-unknown` only when the code changes, `funding-unconfirmed`
+  once per hash, and the stored reason names the attempt time, never elapsed
+  minutes. Codes, not text, because the reason can carry the spender's
+  mined-nonce count, which changes every reconcile. Once `needsPerson` is set
+  and the attempt is past 30 minutes, the sweep re-asks every 10 minutes
+  (`PERSON_RECONCILE_MS`); the admin resolve route still asks at once. The
+  back-off waits for the 30-minute mark so a pull flagged right after a throw
+  still settles on the next sweep when its receipt lands. Undo: set
+  `PERSON_RECONCILE_MS` to 0.
+- **A route `close()` sweeps only its own campaign (ci-5).** `close()` is
+  `closeNow` (the state change) plus `sweepCampaign(id)`; the 15 s sweep closes
+  campaigns past their deadline in place; neither calls the other. Why: K
+  campaigns past a shared deadline recursed K deep, every campaign was walked K
+  times, and a stale snapshot was written back over a closed campaign (the door
+  deduped the second refund; the duplicates were in the informational ledger).
+  Cost: a creator's close no longer pays other campaigns' owed claims as a side
+  effect; the next sweep does. Undo: n/a (the recursion was the defect).
+- **Settled campaigns are skipped by the sweep, per process (ci-2).** A closed
+  campaign that is refunded (or had nothing to refund), holds no X spend, and
+  whose every claim is final goes in an in-memory set; after a restart the
+  first sweep reads each once more. Nothing can reach such a campaign: check,
+  reserve and X spend refuse a closed one, and no claim in a final status
+  moves. Undo: drop the set.
+- **The two grace variables read through `envNum`.**
+  `CAMPAIGN_CLOSE_GRACE_HOURS` and `CAMPAIGN_WALLET_GRACE_DAYS`, keeping the
+  `Math.max` floors (1 h, 1 day). A NaN close grace made every `close()` throw
+  a RangeError, the sweep's deadline closes included; it now reads as the
+  default with one warning (gate C11.8). Undo: the two reads.
+- **`POST /api/account/payout-wallet` pays only the caller's owed claims, 6 a
+  minute per account (ci-2).** `engine.payAccount(accountId)` through a
+  claims-by-account index. Before, any signed-in caller ran the whole sweep on
+  demand, and each call rewrites `accounts.json`. Undo: call the sweep again.
+
+## The audit fix round: stores (2026-10-24)
+
+A store that cannot be read is left alone and refuses writes: nothing is wiped,
+renamed aside or silently re-created. The `server.js` wiring (boot marker,
+migrations, SIGTERM flush) lands in the integration pass. Open items:
+OPEN-ISSUES T.
+
+- **Corrupt stores refuse writes in place; nothing is wiped (coordinator's
+  call; D3).** A store file that exists but is empty, unparsable, the wrong
+  shape or unreadable is left exactly where it is; the store serves a frozen
+  empty view, every write throws `StoreRefused` (`store_refused`), and one loud
+  `REFUSING WRITES` line names it (`json-store.js`). Latched for the life of the
+  process; repair = fix or move the file, restart. Why not the fix plan's
+  rename-aside: the NEXT boot would see "missing", start fresh and write over
+  it, the same silent reset one restart later. The frozen view turns a write
+  path that forgot to check into a TypeError rather than a served-but-unsaved
+  change. Airings never throw (they return null: they must not break a seat or
+  letter path). Dashboard routes map `store_refused` to 503. Undo: in
+  `json-store.js` `load()`, call `quarantineCopy(at)` and fall through to the
+  missing branch instead of setting `refused`.
+- **Observability files are quarantined, not refused.**
+  `livekit-webhook-state.json` and `livekit-sessions.json` that cannot be read
+  are copied to `<file>.corrupt-<iso>`, logged, shown on
+  `stats().stateRestore`, and the tracker starts fresh. Why: they are rebuilt
+  from live events; refusing would freeze the breaker's memory across every
+  later deploy. Undo: drop the quarantine call in `livekit-webhooks.js`
+  `restore()` / `livekit-activity.js` `loadLedger()`.
+- **Only bursty, evidence-backed writes coalesce, ≤ 1 s (coordinator's call;
+  D9).** `saveSoon` for bounty `pushWindowCode` and `pushAirSessionViolation`,
+  airings `addMoment` and `attachRecording`. Everything else writes through:
+  claims, contributions, pledges, reviews, verifications, session open/close,
+  playback windows, airing open/close, the restart mark. `updateAirSession`
+  writes nothing when the patch changes nothing. Held writes flush on
+  `process.exit` and on `flushPendingWrites()` (SIGTERM). Why: write-through on
+  the cold paths keeps every seed-then-boot gate deterministic and the
+  money-adjacent records at full durability. Cost: OPEN-ISSUES T2. Undo:
+  replace the four `saveSoon()` / `persist({ soon: true })` calls with
+  `save()` / `persist()`.
+- **The pruner keeps any room with a password or an owner (coordinator's call;
+  D1).** `isOrphanRoom(rec, { protectHandles })` = not default, not protected,
+  no `ownerKey`, no `passwordHash` (`rooms-store.js`).
+  `migrateLegacyRoomPasswords` hashes only the default room, only from a set
+  `ROOM_DEFAULT_PASSWORD`; no `changeme` fallback. Why: with the old migration
+  running first, every owner-less room had a hash, and the new rule would have
+  kept all of them under one shared password. Side effect: on a box with
+  `KEEP_ORPHAN_ROOMS=true` (dev), rooms an earlier boot hashed with the shared
+  password now count as password rooms and are kept. Undo: drop
+  `&& !rec.passwordHash` in `isOrphanRoom`; restore the old migration body.
+- **Migrations run at boot, report-only unless `MIGRATE_AT_BOOT` names them
+  (coordinator's call; D6).** Both are pure, idempotent functions
+  (`migrateAccounts`, `migrateWhitelistIdentity`); the boot hook in `server.js`
+  runs both every boot in report mode and applies only those named
+  (`accounts,whitelist-identity`), accounts first. Why: `_migrate-accounts` has
+  never run on production, and applying it on the next deploy without the
+  owner asking is a production data change. An env var needs no shell on the
+  volume, so a migration no longer needs `railway ssh`; leaving it set is safe
+  because a second run writes nothing. Undo: pass `write: true`
+  unconditionally in the hook, or remove the hook and run the CLIs with the
+  server stopped.
+- **Overlay visibility unknown → no charge (coordinator's call; D4 meter
+  half).** `visibilityVerdict(roomId)` returns `{ known: false }` instead of
+  throwing on a damaged chain; `seat-escrow.js` `shouldCharge` returns false on
+  it, and the seat holds. "No signal" (a manual paste) still charges. Why: a
+  damaged chain means we cannot tell, and the throw used to abort
+  `tickAllMeters` for every seat after it. Undo: `shouldCharge` back to
+  `latestFor`.
+- **Stores resolve `DATA_DIR` at first load** (rooms, whitelist, airings,
+  visibility; accounts already did), through `json-store.js` `dataDir()`,
+  fallback `<repo>/data`. `bounty-store.js` keeps its import-time resolution so
+  the board, ledger and evidence log can never split. Undo: restore the
+  module-level `DATA_DIR` constants.
+- **`MEGACHAT_MAX_SEATS='0'` now means 1, not 10:** under `envNum` `'0'` is a
+  value, and the store clamps to ≥ 1. Undo: `envNum('MEGACHAT_MAX_SEATS', 10)
+  || 10`.
+- **`x-tokens.json` joins the stores that refuse (added 2026-10-24, after the
+  docs pass found it; OPEN-ISSUES Y1).** `x-token-store.js` is on
+  `createJsonStore`: atomic writes, and a torn, empty or wrong-shaped file
+  (including a `tokens` that is not an object) refuses writes, logged once,
+  left on disk. While refused it lists no holder and serves no token, so a
+  campaign check falls back exactly as when no list member has signed in with
+  X (the capped app-token read, or "not available"); a save throws
+  `StoreRefused`, which the X callback already logs before linking anyway.
+  `dropXToken` never throws, because the disconnect it follows has already
+  happened; it names the account in a warning so whoever repairs the file
+  drops that row too. Why: a re-link for every holder was the cost of one torn
+  write. Undo: restore the module's own `load()` / `save()` (git history).
+
+## The audit fix round: money (2026-10-24)
+
+Cash goes only to a signed-in account's own wallet in rooms the owner named, a
+damaged ledger stops money rather than restarting it from zero, and nothing new
+signs on chain that only stand-ins have seen. Bounty settlement stays a stub.
+Open items: OPEN-ISSUES U.
+
+- **Cash watch-to-earn only in allowlisted owned rooms (coordinator's
+  call).** `REWARDS_CASH_ALLOWLIST`: comma-separated creator account ids; `*`
+  = every owned room; unset or empty = cash off (`rewards.js`). Password-only
+  rooms never pay cash. Cash and credit need a sign-in to earn; watching and
+  points do not. Why: an unauthenticated socket could farm the pool and flood
+  the door (money-1). Undo: unset the variable (cash off); there is no "open to
+  all" switch.
+- **The payee is the signed-in account's payout wallet (coordinator's
+  call),** never `msg.wallet`, which is now used only for points and watch
+  time. Undo: none intended.
+- **A reward is cash or credit, never both; default cash (coordinator's
+  call).** The mode is `rewards.payout === 'credit'` (stored once the
+  room-config change in the integration pass lands), and every `token` reward
+  is credit (no token has a cash path). Why: the old code issued the transfer
+  AND the same amount as seat credit. Undo: n/a.
+- **Server bounds, clamped at earn time in the reward's own units:**
+  `REWARDS_MIN_INTERVAL_S` (default 60), `REWARDS_MAX_EARN` (0.01),
+  `REWARDS_MAX_CAP` (0.1), sized to a ~0.07 USDC pool. Points are exempt (the
+  room's own currency). Undo: raise the variables.
+- **The cap is lifetime per room,** per payout wallet and per account (the
+  larger counts), persisted in `data/rewards-ledger.jsonl`. Points: lifetime
+  per (room, wallet) in memory, so a demo viewer at the demo's 50-point cap no
+  longer refills it by reloading. Why: a per-socket cap was no cap. Undo: key
+  the ledger sums by UTC day for a daily cap.
+- **No reward intent without a pool signer,** and the door disables a pool key
+  that resolves to the platform wallet or another slot (logged by name; the
+  server still boots). Undo: n/a.
+- **One earning socket per account (points: per wallet) per room;** a newer
+  register supersedes the older. Undo: n/a.
+- **The seat token (N1).** `seat.ownerToken = randomUUID()` minted in
+  `addParticipant`, returned only as `seatToken` in the four join responses;
+  `register_seat` and `camera_ready` require it, with no id-only path. Undo:
+  drop the guard block in the WebSocket handler (`server.js`
+  `seatTokenMatches`). The HTTP seat routes are not covered yet (OPEN-ISSUES
+  U3).
+- **A corrupt money ledger latches, both doors stop, `/api/health` reports
+  it, boot continues (coordinator's call).** Intents still record; the error is
+  logged once; `ledgerHealth()` (`bounty-ledger.js`) feeds `/api/health`
+  (integration pass). `verifySeatLedgerIntegrity` runs at boot through
+  `setSettlement` (`seat-escrow.js`): installing the door verifies the ledger
+  it pays from and re-issues refused intents. Why not refuse to boot: the site
+  stays up while the money stays still. Undo: remove the call in
+  `setSettlement`.
+- **Excess decimal places still truncate in `toAtomic` by default** (the fix
+  plan wanted a throw). `server.js` parses the demo room's
+  `passkeyTickPrice '0.001'` at 0 decimals (points) on every passkey terms
+  request; a throw would 500 every demo join. `{ exact: true }` throws, and
+  campaign amounts should use it (OPEN-ISSUES S9). Signs, exponents, extra
+  dots, empty and junk always throw. Undo: n/a.
+- **`SIGN_AHEAD_OUT = ['platform', 'rewardPool']`** (`settlement.js`):
+  outbound transfers are signed ahead and recorded SENT before the send. Escrow
+  writes sign ahead unconditionally. Undo: `[]` (back to
+  writeContract-then-SENT).
+- **Checksum v2: the reader now, the writer one deploy later (coordinator's
+  call; stores D2, two-phase).** This build reads both and writes v1, so it can
+  roll back freely until v2 rows exist. Undo: n/a until the flip (OPEN-ISSUES
+  U6).
+- **Orphaned escrows are attested 0/0 (coordinator's call).** A deposit that
+  failed or went unknown and is later found on chain becomes ORPHAN, is
+  attested 0/0 (a full refund) and finalized; a FINALIZED orphan is logged for
+  a person (`escrow-chain.js`). Undo: skip the ORPHAN pass in `finalizeDue`.
+- **Keys without `0x` stay rejected by the wallet signers (coordinator's
+  call).** `SELLER_PRIVATE_KEY`, `PLATFORM_SETTLEMENT_KEY`,
+  `REWARD_POOL_PRIVATE_KEY` and `CAMPAIGN_SPENDER_KEY` keep viem's rule;
+  accepting a normalised key would START signing with any key stored that way.
+  `normalizeKey` (`token-utils.js`) compares keys (the collision guard) and
+  loads the escrow role keys, which `escrow-chain.js` has always accepted
+  without the prefix (outstanding O17). Undo: n/a.
+
+## The audit fix round: the coordinator's calls (2026-10-24)
+
+Production's escrow keeps running as it does today, and three web calls are
+settled.
+
+- **An empty `ESCROW_CONTRACT_ADDRESS` keeps meaning "the recorded
+  deployment", not "off".** `server.js` passes
+  `process.env.ESCROW_CONTRACT_ADDRESS || defaultContractAddress(CHAIN_ID)` to
+  `createEscrowChain`; on Railway the variable is present but empty and both
+  role keys are set, so escrow mode is live through `contracts/deployments.json`
+  (OPEN-ISSUES K8). Why: making empty mean off (the money lane's proposal)
+  would switch live escrow off on the next deploy, a production change nobody
+  asked for. Cost: OPEN-ISSUES U4 applies to production today. Undo: make empty
+  mean off in that call
+  (`=== undefined ? defaultContractAddress(CHAIN_ID) : value.trim()`).
+- **`--font-mono` resolves to Space Mono.** `web/app/globals.css`
+  `@theme inline`: `--font-mono: var(--font-code), ui-monospace, monospace`
+  (was the UI face). Why: the design system puts readouts (addresses, URLs,
+  hashes, numeric cells) in Space Mono; about 19 `font-mono` elements change
+  face, the intended ones. Undo: restore the one line.
+- **LiveKit publishes the guest's camera and mic only at GO LIVE.** The
+  preview creates the tracks; `publishLivekitTracks` (`web/lib/join-page.ts`)
+  puts them on the room once the server confirms the seat live. Why: the page
+  promised "Nothing is broadcast until you hit GO LIVE" and published at
+  preview (NEW-1, client half); the server-side live-seat rule (campaigns,
+  above) stands either way. Undo: publish in the camera stage again.
+- **Build-time type checking stays off; a typecheck gate instead**
+  (`_gate-typecheck.mjs`). `web/next.config.mjs` keeps `ignoreBuildErrors`.
+  The gate requires `tsc --noEmit -p web` to exit 0, checks a pragma-stripped
+  copy of `web/lib/join-page.ts` for undefined names only, and proves it
+  discriminates on the pre-`bd741f1` file (`perCreditUsd`). Why: build-time
+  checking would not have caught `perCreditUsd` (`join-page.ts` is
+  `@ts-nocheck`), and a type-only error would block Railway from shipping an
+  urgent money fix. Undo: delete the gate; flipping `ignoreBuildErrors` is a
+  separate call.
+
+## The audit fix round: web (2026-10-24)
+
+The page says LIVE only when the server does, a retried take is paid once,
+and Privy loads when someone needs it. Three of the lane's calls are recorded
+above under the coordinator's calls (camera local until GO LIVE, `--font-mono`,
+the typecheck gate). Open items: OPEN-ISSUES V.
+
+- **The live state waits for the server's answer (web-2).** GO LIVE sends
+  `camera_ready` and shows "Going live — tap to cancel"; the page says LIVE,
+  starts the MPP meter and publishes (LiveKit) only on `seat_added` for this
+  seat, or an `initial_state` listing it after a (re)subscribe. Unanswered,
+  it asks again every 5 s (re-subscribe, `register_seat`, `camera_ready`, all
+  idempotent); a reconnect asks at once. `seat_removed` has copy for
+  `camera_timeout` and `disconnected`. Why: a GO LIVE on a closed socket was
+  dropped for good while the page said LIVE, and an MPP seat paid every tick
+  for up to 5 minutes. Undo: the old `fireCameraReady` (send if open, go live
+  locally).
+- **One payment per Holler take (web-4).** The send screen names each take
+  (`attemptId`, a v4 UUID from `getRandomValues` where `randomUUID` is
+  missing). A failed upload keeps the take's letter and upload slot, so Send
+  again re-uploads; a 404 slot asks the server again under the same id; a
+  410 or 507 (refunded) starts a new id. `letters.js` answers a repeated id
+  within 10 minutes, per room and paying wallet, from the letter it already
+  paid for (`deduped: true`), and refuses one already uploaded (409
+  `already_sent`) or still paying (409 `in_flight`), all before any campaign
+  slot or payment. Undo: drop `attemptId` from the client and the `attempts`
+  block from `letters.js`.
+- **One pledge per bounty take, client half (web-5).** `record-flow.tsx` keeps
+  the pledge once made (the terms lock, the button reads "Retry upload"), names
+  the take with `attemptId` (the server half is in the bounty section above),
+  uploads the clip as its bare container (the route refuses a codec list with
+  a comma), and refuses a take over `clipMaxBytes` before any pledge. Undo:
+  the `record-flow.tsx` hunks.
+- **Privy loads lazily (web-1, owner).** `privy-bridge.tsx` holds
+  `PrivyProvider`, the wallet bridge and the `viem/chains` import, rendered by
+  `next/dynamic` (`ssr: false`) in the same slot. When the app id arrives,
+  `tempo-wallet.tsx` starts the download and installs a placeholder
+  `window.MegaWallet` (`configured: true, ready: false`) whose `connect` and
+  `getProvider` wait up to 30 s for the real bridge. A Sign in tap before any
+  bridge exists says "still loading", not "unavailable". A chunk that fails to
+  download falls back to a null component and tells the waiters "Sign-in could
+  not load — refresh and try again" instead of throwing in render, which
+  would unmount the page. `TempoChainContext` / `useTempoChainId` (unused)
+  are deleted. Undo: import Privy in `tempo-wallet.tsx` again and render
+  `PrivyProvider` directly.
+- **One "who am I" and one config per page (web-35, web-37).**
+  `web/lib/identity.ts` `fetchIdentity()` shares one request (fresh for 10 s,
+  re-asked on `megachat:identity`, a failure forgotten) and `fetchBalance()`
+  one per address (5 s); `web/lib/api.ts` `fetchPublicConfig()` shares one
+  `/api/config` per room per page (each caller gets its own copy; a refused or
+  failed answer is forgotten). The join page's `stream:room` event carries the
+  config, and the page re-asks identity on `megawallet:changed` only when who
+  is signed in changed. Undo: the inline fetches.
+- **The OBS visibility watch starts when OBS accepts the password (web-6,
+  web-21).** `components/obs/obs-password.ts` is the one key and reader;
+  `obs-oneclick` announces every successful connect; the health card follows
+  that at once, and another tab's change once typing stops (1 s), never per
+  keystroke: a half-typed password is not worth an OBS login attempt. The
+  visibility hook reports afresh on every room switch. Undo: read the key once
+  on mount again.
+- **The seat token contract is followed (money H1).** The join response's
+  `seatToken` rides `register_seat`, `camera_ready`, the leave, the publisher
+  token request, quality and echo, never logged and never in a URL. The
+  pagehide leave is a keepalive fetch with a JSON body, not `sendBeacon`,
+  which can send only a safelisted type. `seat_refused` ends the seat with a
+  sentence instead of stalling. Undo: drop the field (the server then
+  refuses).
+- **The rewards socket opens only where the room rewards watching.** After the
+  room config says rewards are on; it registers on every open with the wallet
+  optional, reopens after a sign-in (identity is read at the upgrade), backs
+  off 1 s doubling to 15 s, and says "Sign in to earn", "Add a payout wallet on
+  your account to earn" or "Connect a wallet to earn" for those reasons; other
+  reasons stay silent. Undo: connect at init again.
+- **A kicked or removed guest gets the setup controls back**
+  (`setSessionUi(false)` on `seat_removed`, as leave already did): "Add funds
+  to rejoin" was being said with Add funds hidden. Undo: n/a.
+- **The account page reads the link flow's answer.** `?linked=<provider>` and
+  `?link_error=<reason>` (`provider_linked`, `already_linked`, `not_linked`,
+  anything else) are said once in Connections, in words, then taken off the
+  URL; Make primary and Disconnect results show there too. Undo: n/a.
+- **The `?welcome=` toast is deleted (web-40, owner).** It sat after
+  `initAuthUi`'s early return and could never show; `auth.js` `withWelcome`
+  went with it (integration pass). Undo: git history.
+- **The brand SPEC follows `globals.css` (owner).** SPEC §2: the strap is
+  #0a9bff in both themes with `--hl-on-strap` #060a17 text, the glow is
+  `var(--hl-mark-glow)`, the small-size O is magenta `--hl-record`; §3 lists
+  the shipped -bg / -line per feature and theme. Why: the CSS is what ships,
+  and the SPEC contradicted itself (§2 said #2f2ad8 with white text, §3
+  #0a9bff with dark). Undo: `git checkout` the SPEC; the CSS is unchanged
+  either way.
+- **Pacifico stays in the root layout with `preload: false` (web-39).** The
+  house rule loads fonts once, in the root layout; only /legacy paints in it,
+  so the 22,296 B preload on all 21 routes goes and the face loads on use.
+  Undo: drop `preload: false`.
+- **Two `product.css` selectors name their tag to keep their specificity
+  (web-47).** `body small.mcc-preview-note` (0,1,2, as before) and
+  `html body :is(span.mcb-coordinate, span.join-coordinate,
+  span.mcc-coordinate, span.mch-coordinate)` (0,1,3, as before). Why: the dead
+  alternatives were the ones carrying the specificity; dropping them alone
+  would lower it to (0,1,1), and page rules sit in that window
+  (`how-it-works.css:441` `.mch-section-heading span`, `join.css`
+  `.join-mode-zone header > span`). Every element they match is that tag (5
+  `<small>`, 26 `<span>`). Undo: restore the old selectors from git.
+- **`product.css:100` is deleted whole, not trimmed (web-47).** Once its dead
+  alternatives go, its two live classes match nothing under `.mc-create`. Undo:
+  restore the line.
+- **The `tw-animate-css` and `shadcn/tailwind.css` imports are removed.** No
+  class from either is used: the build emitted only `.paused` and `.running`
+  (picked up from prose and state names, carried by no element) and some
+  `@property` rules nothing reads. The packages themselves are the
+  coordinator's uninstall. Undo: the two `@import` lines.
+- **Campaign screens.** The form validates against the server's bounds and
+  sends money as typed (web-11, -26, -27): a text input that showed
+  `String(Number(text))` turned 0.25 into 25, stored as $25 a check, and
+  `String(Number())` sent `5e-7` and rounded 18-decimal amounts. Only a funded
+  USDC campaign is offered "Freeze a list from X" (web-8, slightly stricter
+  than the server). Server-rendered `/c/<slug>` dates are en-US UTC (web-23);
+  the creator dashboard keeps the viewer's zone, since it renders only after a
+  client fetch. One server-side `backendBase()` defaulting to
+  `http://localhost:PORT` (web-38: 127.0.0.1 took `server.js`'s 301 to
+  localhost on every fetch), with `loadCampaign` in React `cache()`. The refund
+  wait reads `refundDoor == null` (web-28: a zero refund is RETAINED with no
+  amount, so `refunded === 0` could not tell waiting from done). Status copy
+  lives in a pure `offer-copy.ts`. Undo: each file's hunks.
+
+## The audit fix round: integration (2026-10-24)
+
+The single `server.js` owner applied every lane's handoff in one sitting.
+Production's escrow keeps running as it does (the coordinator's calls, above).
+Open items: OPEN-ISSUES W.
+
+- **Rewards bounds refuse only an ENABLED cash or credit reward (money H7).**
+  Out of `REWARDS_*` bounds answers 400 `rewards_out_of_bounds`, and the
+  message names the limit. Why: the dashboard sends the whole rewards object
+  on every save, defaults included, and those exceeded the default bounds;
+  refusing a disabled reward would block every save. Undo: the
+  `rewardsOutOfBounds` call.
+- **`/api/meter/tick` looks the seat up first.** 404 for an unknown seat or
+  another room's, 409 `not_live`, both before `mppMeter.handleTick`; the
+  pinned acknowledgement only for a live seat. Why: no voucher should be
+  accepted for air time the overlay never showed. Undo: the block.
+- **An orphaned seat participant is removed on its own webhook.**
+  `participant_joined` or `track_published` for `seat:<id>` with no such seat
+  in that LiveKit room calls `kickParticipant`. Why: `removeParticipant`'s kick
+  ran before such a participant existed. Undo: `kickOrphanSeat`.
+- **Seat credit (not points) needs the signed-in account whose payout wallet
+  earned it (money H4).** 401 signed out, 403 another account, 409 a token
+  reward that is not the payment token; the terms answer offers only credit
+  the caller could spend. Points stay anonymous (OPEN-ISSUES W5). Undo:
+  `creditRefusal`.
+- **Bounty releases are allocated pro rata (money-9).** Recorded on the
+  RELEASE row (`meta.allocations`); a refund returns only the unreleased
+  remainder, never more than the ledger balance (money in − refunded −
+  released), which also bounds pools paid before this. Undo: the allocation
+  and the `poolBalances` uses.
+- **Campaign amounts parse with `{ exact: true }` (money H11)**; the refusal
+  names the token's decimals. Undo: drop the option.
+- **A migration that throws is reported by name and boot goes on**
+  (`[migrate] <name>: failed — …`). Why: the site stays up and the log says
+  which migration to look at. Undo: n/a.
+- **`/api/health` never answers 500 over a latched ledger:** `moneyHalted`
+  carries the latch message. Undo: n/a.
+- **A pull the halted door refuses ends the seat as `ledger_corrupt` (money
+  H8)**, not `out_of_funds`: the viewer's balance was not the reason. Undo:
+  n/a.
+- **`MPP_STALE_MS` and `LIVEKIT_SEAT_GRACE_S` read through `envNum`** (a NaN
+  made a stale MPP seat un-kickable), and `SEAT_ESCROW_SWEEP_MS` keeps the
+  5000 floor from the housekeeping table. Undo: the reads.
+- **Dead code is removed, with a reach proof:** `broadcast()`, `server.js`'s own
+  USDC parser and formatter (`token-utils.js` is the one; `atomicToUsdc`
+  stays as `fromAtomic(x, 6)`), `MAX_SESSION_ATOMIC`, and `auth.js`
+  `withWelcome` (nothing in `web/` or any js/ts/html reads `?welcome=`).
+  Undo: git history.
+- **Gates that touched real state boot their own scratch server.**
+  `_gate-dashboard-phase1` wrote and pruned the repo's `data/rooms.json`
+  (verified untouched after the new run); `_gate-phase4-handles` needed a
+  server someone else had started. Undo: n/a.
+- **`_gate-privy-auth` compares `accounts.json`**, not `identities.json`, which
+  no server writes, so its "nothing minted" case could not fail; it forges
+  `{accountId, iat}` for a real account beside a correctly sealed control.
+  Undo: n/a.
+
+## The audit fix round: harness (2026-10-24)
+
+A gate can no longer spend, or call a paid or third-party API, by accident,
+and the gates that could not run are gone rather than red forever. Open items:
+OPEN-ISSUES X.
+
+- **Gate servers start from a deny-list (harness-9).** `SENSITIVE_ENV` plus
+  every name in the gate's env or `<cwd>/.env` ending `_KEY`, `_SECRET`,
+  `PRIVATE_KEY` or `TOKEN` starts blank in every `startGateServer` child;
+  `keepEnv: ['NAME']` is the only opt-in (a non-array is refused), and
+  `srv.blankedEnv` lists names only. A gate's own `env` still wins
+  (`undefined` now means "not given"). Not blanked, on purpose: platform
+  client ids (public) and `TEMPO_RPC_URL` (a public endpoint, no signer). Why:
+  one list instead of five drifting copies. Undo: drop the blanking spread in
+  `startGateServer` (`_gate-helpers.mjs`).
+- **The bounty identity stub is refused on Railway, not the boot (harness-8).**
+  `BOUNTY_IDENTITY_STUB=1` on Railway logs one error line and uses the real
+  verifier, keyed on `isRailway()` (`runtime-env.js`), never `isProduction()`:
+  gates run `--prod`. Undo: the two lines in `attachBountyRoutes`.
+- **Eight files are retired: `_gate-phase1`, `_gate-phase2`,
+  `_gate-ui-part-a`, `_gate-gas-floor`, `_gate-pin`, `_gate-stability`,
+  `_verify-join` and `scripts/probe-tempo-write.mjs` (supersedes the
+  housekeeping section's "`_gate-gas-floor` and `_gate-phase1` are not
+  retired", above, and OPEN-ISSUES P8).** None could run as written:
+  `_gate-gas-floor`, `_gate-pin`, `_gate-stability` and `_verify-join` import
+  `estimateArcFeesWithFloor`, which `token-utils.js` no longer exports (and the
+  gas floor is an Arc rule); `_gate-phase1`, `_gate-phase2` and
+  `_gate-ui-part-a` assert the deleted `/index.html` and passkey bundle
+  (outstanding E45). Gate H's pin dropped their entries.
+  `src/passkey-wallet.mjs`, its SDK and its Gate H pin stay. Undo: restore
+  them from git history (`git checkout 1f06bef -- <file>`).
+- **`_gate-stale-capture` fails instead of skipping** when its fixture is
+  absent. Why: the real 2026-08-29 captures are gone for good, and a gate that
+  cannot look must not pass for one that looked (launch-readiness row 13 cited
+  it). Undo: restore exit 2.
+- **`_gate-booth-audio` owns the SFU on :7880 for its run** and refuses if one
+  is already up (the operator stops theirs first); its restart touches only its
+  own child, and its exit handler kills it. Undo: restore the precheck and the
+  `taskkill` restart.
+- **`_gate-first-airing` uses a configured-but-dead Twitch stand-in**
+  (`TWITCH_ID_BASE` / `TWITCH_API_BASE` on a closed local port) to reach its
+  review path: with the real secret it asked api.twitch.tv about a fixture
+  login on every run. Undo: n/a.
+- **`_gate-browse-deck` and `_gate-browse-thumb` drive `/legacy`**, the deck's
+  page since the UI overhaul. Undo: n/a.
+- **`package-lock.json` is not in `DEFAULT_WATCH`**: an install rewrites it
+  with no dependency change, which would mark every build stale. Undo: add it.

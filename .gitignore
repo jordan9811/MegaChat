@@ -3,6 +3,13 @@ node_modules/
 .env.*
 !.env.example
 *.log
+# Everything under data/ is runtime state: stores, ledgers, OAuth tokens,
+# posters. A local run without DATA_DIR writes them here, and a per-file list
+# missed sixteen of them (x-tokens.json and settlement.jsonl among them), so
+# the whole folder is ignored except the placeholder that keeps it in git.
+# The per-file data/ lines below predate this rule and stay for their notes.
+data/*
+!data/.gitkeep
 # The live bounty store: pledges, claims, air sessions, verifications and
 # payouts. Same class of runtime state as its neighbours here, but it was
 # missing from this list, so an empty skeleton created by importing
@@ -45,9 +52,14 @@ _tmp-*
 # Go-signal file for --wait-for-go rehearsals; never part of the repo.
 _GO
 
-# runtime pledge ledger — live state, same as the other data/ stores
-data/bounty.json
-data/bounty-ledger.jsonl
+# Screenshots and audit captures dropped at the repo root by agents and
+# one-off shot scripts. No PNG at the root is tracked; gate evidence that is
+# kept lives in its own folder (join-fix-evidence/, screens/).
+/*.png
+/audit-*
+# Session prompt files. The four already tracked stay tracked; a new one is
+# committed on purpose with `git add -f`.
+/megachat-*.md
 
 # local browser-testing identity minter — never ships (see the P0 note: it
 # forges cookies prod currently honors via the fallback secret)

@@ -21,10 +21,7 @@
  * records intent and returns success. See bounty-settlement.js.
  */
 
-const num = (v, d) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : d;
-};
+import { envNum } from './env-num.js';
 
 export const bountyConfig = {
   /** Master flag. OFF unless BOUNTY_CLAIM=1. */
@@ -32,9 +29,9 @@ export const bountyConfig = {
 
   // ── Reservation / expiry ────────────────────────────────────────────────
   /** An unclaimed reserved handle expires after this; contributions refund. */
-  reservationTtlMs: num(process.env.BOUNTY_RESERVATION_TTL_MS, 90 * 24 * 60 * 60_000),
+  reservationTtlMs: envNum('BOUNTY_RESERVATION_TTL_MS', 90 * 24 * 60 * 60_000),
   /** A started claim must complete verification inside this window. */
-  claimTtlMs: num(process.env.BOUNTY_CLAIM_TTL_MS, 14 * 24 * 60 * 60_000),
+  claimTtlMs: envNum('BOUNTY_CLAIM_TTL_MS', 14 * 24 * 60 * 60_000),
 
   // ── Watermark (PLAYBACK-BOUND) ──────────────────────────────────────────
   /**
@@ -47,22 +44,22 @@ export const bountyConfig = {
    * Rotation is per-clip, not wall-clock: MegaChat tiles live ~10s, so the
    * old 60s rotation would have left most clips carrying no code at all.
    */
-  codeRotateMs: num(process.env.BOUNTY_CODE_ROTATE_MS, 4_000),
+  codeRotateMs: envNum('BOUNTY_CODE_ROTATE_MS', 4_000),
   /**
    * Validity after issue. Always additionally CLAMPED to the clip's own end,
    * so two clips' windows can never overlap and one sampled frame can never
    * satisfy two clips.
    */
-  codeValidityMs: num(process.env.BOUNTY_CODE_VALIDITY_MS, 5_000),
+  codeValidityMs: envNum('BOUNTY_CODE_VALIDITY_MS', 5_000),
   /** Code length (excluding the clip namespace prefix). */
-  codeLength: num(process.env.BOUNTY_CODE_LENGTH, 4),
+  codeLength: envNum('BOUNTY_CODE_LENGTH', 4),
   /**
    * Sampling floor. A clip shorter than this cannot host a code long enough
    * to be reliably sampled from a re-encoded stream. Such clips are recorded
    * as BELOW_SAMPLING_FLOOR and pay NOTHING — stated explicitly rather than
    * silently paid for on unverifiable evidence.
    */
-  minClipSeconds: Number(process.env.BOUNTY_MIN_CLIP_SECONDS || 3),
+  minClipSeconds: envNum('BOUNTY_MIN_CLIP_SECONDS', 3),
 
   // ── Clip storage (bounty-clips.js) ──────────────────────────────────────
   /**
@@ -74,19 +71,19 @@ export const bountyConfig = {
    * clip, so storing a partial one is worse than refusing it up front.
    */
   /** Per clip. Matches the 25MB ceiling letters.js already enforces. */
-  clipMaxBytes: num(process.env.BOUNTY_CLIP_MAX_BYTES, 25 * 1024 * 1024),
+  clipMaxBytes: envNum('BOUNTY_CLIP_MAX_BYTES', 25 * 1024 * 1024),
   /**
    * Whole store. Default ~2GB: at the 25MB worst case that is only ~80 clips,
    * at realistic 5-8MB sizes several hundred. Sized for early onboarding on a
    * Railway volume, NOT for scale — see docs/decisions/bounty-clip-storage.md
    * for the object-store swap.
    */
-  clipStoreMaxBytes: num(process.env.BOUNTY_CLIP_STORE_MAX_BYTES, 2 * 1024 * 1024 * 1024),
+  clipStoreMaxBytes: envNum('BOUNTY_CLIP_STORE_MAX_BYTES', 2 * 1024 * 1024 * 1024),
   /** Per handle, so one popular streamer cannot consume the whole volume. */
-  clipsPerHandleMax: num(process.env.BOUNTY_CLIPS_PER_HANDLE, 200),
+  clipsPerHandleMax: envNum('BOUNTY_CLIPS_PER_HANDLE', 200),
   /** How long a contribution may sit with no clip uploaded before it is
    *  refundable as never-delivered. */
-  clipUploadGraceMs: num(process.env.BOUNTY_CLIP_UPLOAD_GRACE_MS, 10 * 60_000),
+  clipUploadGraceMs: envNum('BOUNTY_CLIP_UPLOAD_GRACE_MS', 10 * 60_000),
 
   // ── Pledges (fan-facing program) ────────────────────────────────────────
   /**
@@ -94,13 +91,13 @@ export const bountyConfig = {
    * it, the rest are slashed. Capped so a whale cannot smear one pledge across
    * the whole directory and make every pool read as contested noise.
    */
-  pledgeMaxTargets: num(process.env.BOUNTY_PLEDGE_MAX_TARGETS, 3),
+  pledgeMaxTargets: envNum('BOUNTY_PLEDGE_MAX_TARGETS', 3),
   /** Contributor-set expiry, bounded. Nothing is ever locked indefinitely. */
-  pledgeDefaultExpiryMs: num(process.env.BOUNTY_PLEDGE_DEFAULT_EXPIRY_MS, 7 * 24 * 60 * 60_000),
-  pledgeMinExpiryMs: num(process.env.BOUNTY_PLEDGE_MIN_EXPIRY_MS, 24 * 60 * 60_000),
-  pledgeMaxExpiryMs: num(process.env.BOUNTY_PLEDGE_MAX_EXPIRY_MS, 30 * 24 * 60 * 60_000),
+  pledgeDefaultExpiryMs: envNum('BOUNTY_PLEDGE_DEFAULT_EXPIRY_MS', 7 * 24 * 60 * 60_000),
+  pledgeMinExpiryMs: envNum('BOUNTY_PLEDGE_MIN_EXPIRY_MS', 24 * 60 * 60_000),
+  pledgeMaxExpiryMs: envNum('BOUNTY_PLEDGE_MAX_EXPIRY_MS', 30 * 24 * 60 * 60_000),
   /** How often the expiry sweeper looks for lapsed pledges. */
-  pledgeSweepMs: num(process.env.BOUNTY_PLEDGE_SWEEP_MS, 10 * 60_000),
+  pledgeSweepMs: envNum('BOUNTY_PLEDGE_SWEEP_MS', 10 * 60_000, { min: 1000 }),
 
   // ── Rejection reputation ────────────────────────────────────────────────
   /**
@@ -109,18 +106,18 @@ export const bountyConfig = {
    * subsequent ones refund at this fraction. A streamer declining a clean
    * clip is NOT a policy rejection and always refunds in full.
    */
-  rejectionRefundFraction: Number(process.env.BOUNTY_REJECTION_REFUND_FRACTION || 0.5),
+  rejectionRefundFraction: envNum('BOUNTY_REJECTION_REFUND_FRACTION', 0.5),
   /**
    * A strike requires a CONFIRMED rejection: human-reviewed, or classifier
    * confidence at/above this. A raw flag must never cost anyone money.
    */
-  rejectionConfidenceFloor: Number(process.env.BOUNTY_REJECTION_CONFIDENCE_FLOOR || 0.9),
+  rejectionConfidenceFloor: envNum('BOUNTY_REJECTION_CONFIDENCE_FLOOR', 0.9),
 
   // ── Moderation grading (bounty clips) ───────────────────────────────────
   /** Below this top-category score a clip is CLEAN. */
-  moderationBorderlineFloor: Number(process.env.BOUNTY_MOD_BORDERLINE_FLOOR || 0.4),
+  moderationBorderlineFloor: envNum('BOUNTY_MOD_BORDERLINE_FLOOR', 0.4),
   /** At/above this it is a VIOLATION; between the two it is BORDERLINE. */
-  moderationViolationFloor: Number(process.env.BOUNTY_MOD_VIOLATION_FLOOR || 0.7),
+  moderationViolationFloor: envNum('BOUNTY_MOD_VIOLATION_FLOOR', 0.7),
 
   // ── Stream-context enforcement (pass/fail, NOT payout scaling) ──────────
   /**
@@ -138,10 +135,10 @@ export const bountyConfig = {
    */
   /** No playback counts inside the first N ms of the broadcast. Primary
    *  check: a farmer must sit live for ten minutes before collecting. */
-  streamWarmupMs: num(process.env.BOUNTY_STREAM_WARMUP_MS, 10 * 60_000),
+  streamWarmupMs: envNum('BOUNTY_STREAM_WARMUP_MS', 10 * 60_000),
   /** The stream must continue at least this long past the last counted
    *  playback. Lower importance; closes the dump-and-quit exit. */
-  streamTailMs: num(process.env.BOUNTY_STREAM_TAIL_MS, 60_000),
+  streamTailMs: envNum('BOUNTY_STREAM_TAIL_MS', 60_000),
 
   // ── Stream quality floor (told, not shorted) ────────────────────────────
   /**
@@ -151,7 +148,7 @@ export const bountyConfig = {
    * flagged explicitly so a shortfall never masquerades as normal partial
    * verification. Derived from the same floor the verifier enforces.
    */
-  qualityWarnRatio: Number(process.env.BOUNTY_QUALITY_WARN_RATIO || 1.35),
+  qualityWarnRatio: envNum('BOUNTY_QUALITY_WARN_RATIO', 1.35),
   /**
    * The lowest broadcast height we have MEASURED as reliably verifiable.
    * From the synthetic corpus: 1080p 100%, 720p 100%, 480p 92% (median badge
@@ -160,7 +157,7 @@ export const bountyConfig = {
    * affected verification, because underpaying someone who did the work is
    * the worst failure this system has.
    */
-  minVerifiableHeightPx: num(process.env.BOUNTY_MIN_VERIFIABLE_HEIGHT, 720),
+  minVerifiableHeightPx: envNum('BOUNTY_MIN_VERIFIABLE_HEIGHT', 720),
   /**
    * How far the public live stream lags the encoder. A live frame grab returns
    * the head of the HLS playlist, not "now" — measured at roughly 12-25s on a
@@ -171,7 +168,7 @@ export const bountyConfig = {
    * property (codes bound to one playback instance by nonce) does not depend
    * on this number.
    */
-  liveBroadcastDelayMs: num(process.env.BOUNTY_LIVE_DELAY_MS, 45_000),
+  liveBroadcastDelayMs: envNum('BOUNTY_LIVE_DELAY_MS', 45_000),
   /**
    * How far a Twitch VOD's media timeline sits behind our wall clock.
    *
@@ -190,7 +187,7 @@ export const bountyConfig = {
    * VODs are measured; the widened acceptance window is what keeps a wrong
    * constant from costing a streamer their payout.
    */
-  vodTimelineSkewMs: num(process.env.BOUNTY_VOD_SKEW_MS, 16_000),
+  vodTimelineSkewMs: envNum('BOUNTY_VOD_SKEW_MS', 16_000),
   /**
    * Residual timeline error absorbed by the accepted-code window when the skew
    * was NOT measured — i.e. the fallback path only. When calibration runs, the
@@ -199,7 +196,7 @@ export const bountyConfig = {
    * the clip's own code list either way, so widening can never let one clip's
    * code satisfy a different clip.
    */
-  mediaSkewToleranceMs: num(process.env.BOUNTY_MEDIA_SKEW_TOLERANCE_MS, 20_000),
+  mediaSkewToleranceMs: envNum('BOUNTY_MEDIA_SKEW_TOLERANCE_MS', 20_000),
 
   // ── Self-capture (platform-independent verification) ────────────────────
   /**
@@ -237,9 +234,9 @@ export const bountyConfig = {
    * 75s ÷ 8). That is per CONCURRENT open session, and it is the price of
    * covering the delay spread rather than one point in it.
    */
-  captureWindowMs: num(process.env.BOUNTY_CAPTURE_WINDOW_MS, 75_000),
+  captureWindowMs: envNum('BOUNTY_CAPTURE_WINDOW_MS', 75_000),
   /** How often to re-read the media playlist for new segments. */
-  capturePollMs: num(process.env.BOUNTY_CAPTURE_POLL_MS, 2_000),
+  capturePollMs: envNum('BOUNTY_CAPTURE_POLL_MS', 2_000, { min: 250 }),
   /**
    * How long a frozen capture is kept. It exists to settle a payout and a
    * dispute, so it outlives neither: purged with its pledge, and swept at this
@@ -303,7 +300,7 @@ export const bountyConfig = {
    * only while the window spans the delay spread, and it is easy to violate by
    * changing a neighbour.
    */
-  captureFreezeDelayMs: num(process.env.BOUNTY_CAPTURE_FREEZE_DELAY_MS, 51_000),
+  captureFreezeDelayMs: envNum('BOUNTY_CAPTURE_FREEZE_DELAY_MS', 51_000),
   /**
    * How long to keep retrying the capture-start resolve while a channel is
    * not yet live. THE ORDER THAT MADE THIS NECESSARY: a streamer claims their
@@ -312,9 +309,21 @@ export const bountyConfig = {
    * single-shot resolve gave up permanently. Self-capture never started at
    * all in the real sequence, on any platform.
    */
-  captureStartRetryMs: num(process.env.BOUNTY_CAPTURE_START_RETRY_MS, 15 * 60_000),
-  captureStartRetryEveryMs: num(process.env.BOUNTY_CAPTURE_START_RETRY_EVERY_MS, 15_000),
-  captureRetentionMs: num(process.env.BOUNTY_CAPTURE_RETENTION_MS, 14 * 24 * 60 * 60_000),
+  captureStartRetryMs: envNum('BOUNTY_CAPTURE_START_RETRY_MS', 15 * 60_000),
+  captureStartRetryEveryMs: envNum('BOUNTY_CAPTURE_START_RETRY_EVERY_MS', 15_000, { min: 1000 }),
+  captureRetentionMs: envNum('BOUNTY_CAPTURE_RETENTION_MS', 14 * 24 * 60 * 60_000),
+  /**
+   * When a recorder stops on its own (audit bounty-11). It used to stop only
+   * when its session was ended, and nothing on the web ends one, so an
+   * abandoned session polled its playlist forever — through a 404 too, one
+   * error at a time. A broadcast longer than the age cap or dark for the
+   * whole error run is over as far as capture is concerned; verification then
+   * falls back to the platform source, as it does for any session without one.
+   * The active cap is the backstop on concurrent recorders, loud when hit.
+   */
+  captureMaxAgeMs: envNum('BOUNTY_CAPTURE_MAX_AGE_MS', 12 * 60 * 60_000, { min: 60000 }),
+  captureMaxErrorRunMs: envNum('BOUNTY_CAPTURE_MAX_ERROR_RUN_MS', 30 * 60_000, { min: 60000 }),
+  captureMaxActive: envNum('BOUNTY_CAPTURE_MAX_ACTIVE', 50, { min: 1 }),
   /**
    * Skip platform page resolution and capture this HLS url directly. For
    * environments where the extractor cannot resolve a channel page — a staging
@@ -331,18 +340,18 @@ export const bountyConfig = {
    * fallback. See bounty-timeline-calibration.js for the derivation.
    */
   /** How many playback windows to probe, spread across the session. */
-  calibrationMaxProbes: num(process.env.BOUNTY_CALIBRATION_PROBES, 6),
+  calibrationMaxProbes: envNum('BOUNTY_CALIBRATION_PROBES', 6),
   /** One decode could be luck. Require agreement across at least this many. */
-  calibrationMinPoints: num(process.env.BOUNTY_CALIBRATION_MIN_POINTS, 3),
+  calibrationMinPoints: envNum('BOUNTY_CALIBRATION_MIN_POINTS', 3),
   /**
    * Disagreement past this is a FINDING, not something to average away: the
    * timeline is non-linear or the VOD is unreliable, and it routes to review.
    * Set above one point's quantization (±codeValidityMs/2) so ordinary
    * measurement noise is not mistaken for a broken timeline.
    */
-  calibrationMaxSpreadMs: num(process.env.BOUNTY_CALIBRATION_MAX_SPREAD_MS, 6_000),
+  calibrationMaxSpreadMs: envNum('BOUNTY_CALIBRATION_MAX_SPREAD_MS', 6_000),
   /** Extra slack on the derived acceptance window, over quantization+spread. */
-  calibrationResidualMarginMs: num(process.env.BOUNTY_CALIBRATION_MARGIN_MS, 1_500),
+  calibrationResidualMarginMs: envNum('BOUNTY_CALIBRATION_MARGIN_MS', 1_500),
   /**
    * Hard ceiling on frame grabs, so a bad VOD cannot cost unbounded time.
    * Generous on purpose: the happy path spends ~1 grab per probe because the
@@ -350,9 +359,9 @@ export const bountyConfig = {
    * timeline that is already suspect — and cutting the search short there used
    * to yield a confident answer built from whichever probes agreed.
    */
-  calibrationMaxGrabs: num(process.env.BOUNTY_CALIBRATION_MAX_GRABS, 36),
+  calibrationMaxGrabs: envNum('BOUNTY_CALIBRATION_MAX_GRABS', 36),
   /** Codes offered per probe, nearest-in-time first. See the note on cost. */
-  calibrationCandidateCap: num(process.env.BOUNTY_CALIBRATION_CANDIDATES, 8),
+  calibrationCandidateCap: envNum('BOUNTY_CALIBRATION_CANDIDATES', 8),
   /**
    * The probe ladder is DERIVED, not a hand-written list.
    *
@@ -365,10 +374,10 @@ export const bountyConfig = {
    * finds the values it happens to contain is not a search.
    */
   /** Rung spacing. Under one badge's visibility, with margin. */
-  calibrationLadderStepMs: num(process.env.BOUNTY_CALIBRATION_LADDER_STEP_MS,
-    Math.round(num(process.env.BOUNTY_CODE_VALIDITY_MS, 5_000) * 0.7)),
+  calibrationLadderStepMs: envNum('BOUNTY_CALIBRATION_LADDER_STEP_MS',
+    Math.round(envNum('BOUNTY_CODE_VALIDITY_MS', 5_000) * 0.7)),
   /** Highest delay worth hypothesising. Past the worst yet measured (25s). */
-  calibrationLadderMaxMs: num(process.env.BOUNTY_CALIBRATION_LADDER_MAX_MS, 48_000),
+  calibrationLadderMaxMs: envNum('BOUNTY_CALIBRATION_LADDER_MAX_MS', 48_000),
 
   // ── Anti-malicious-compliance ───────────────────────────────────────────
   /**
@@ -377,9 +386,9 @@ export const bountyConfig = {
    * Detection is the payout trigger, so shrinking the source zeroes the
    * streamer's own money rather than cheating the check.
    */
-  badgeMinHeightRatio: Number(process.env.BOUNTY_BADGE_MIN_RATIO || 0.030),
+  badgeMinHeightRatio: envNum('BOUNTY_BADGE_MIN_RATIO', 0.030),
   /** Absolute floor in CSS px, for very small canvases. */
-  badgeMinHeightPx: num(process.env.BOUNTY_BADGE_MIN_PX, 18),
+  badgeMinHeightPx: envNum('BOUNTY_BADGE_MIN_PX', 18),
 
   // ── Corroborating signals (evidence, never a gate) ──────────────────────
   /**
@@ -395,7 +404,7 @@ export const bountyConfig = {
    * verification comes back empty. See bounty-confidence.js.
    */
   /** How often the claim page asks OBS whether the overlay is on screen. */
-  obsScenePollMs: num(process.env.BOUNTY_OBS_SCENE_POLL_MS, 5_000),
+  obsScenePollMs: envNum('BOUNTY_OBS_SCENE_POLL_MS', 5_000),
   /**
    * Smallest plausible overlay canvas side, in CSS px. The overlay reports its
    * own window.innerWidth/Height, and a browser source shrunk to 1×1 still
@@ -406,7 +415,7 @@ export const bountyConfig = {
    * review for owning an unusual monitor. Only the absurd is flagged, and even
    * then it only asks a human to look.
    */
-  overlayMinCanvasPx: num(process.env.BOUNTY_OVERLAY_MIN_CANVAS_PX, 160),
+  overlayMinCanvasPx: envNum('BOUNTY_OVERLAY_MIN_CANVAS_PX', 160),
   /**
    * Whether self-capture alone (tier 3) may auto-verify. Default YES: most
    * streamers will never connect obs-websocket, and routing all of them to a
@@ -424,19 +433,19 @@ export const bountyConfig = {
    * amount = pool × (ratePerClip × verifiedClips
    *                  + ratePerClipSecond × verifiedClipSeconds)
    */
-  releaseRatePerClip: Number(process.env.BOUNTY_RELEASE_RATE_PER_CLIP || 0.04),
+  releaseRatePerClip: envNum('BOUNTY_RELEASE_RATE_PER_CLIP', 0.04),
   /** Small duration component so a 30s clip beats a 5s one. */
-  releaseRatePerClipSecond: Number(process.env.BOUNTY_RELEASE_RATE_PER_CLIP_SECOND || 0.001),
+  releaseRatePerClipSecond: envNum('BOUNTY_RELEASE_RATE_PER_CLIP_SECOND', 0.001),
   /** Max fraction of the pool releasable from a single air session. */
-  perSessionCapFraction: Number(process.env.BOUNTY_PER_SESSION_CAP || 0.25),
+  perSessionCapFraction: envNum('BOUNTY_PER_SESSION_CAP', 0.25),
   /** Platform match as a fraction of the contributor pool. Tracked as a
    *  SEPARATE ledger entry — never blended into contributor money. */
-  platformMatchFraction: Number(process.env.BOUNTY_PLATFORM_MATCH || 0.25),
+  platformMatchFraction: envNum('BOUNTY_PLATFORM_MATCH', 0.25),
   /** Minimum verifier confidence for a release to count. Since the
    *  detectionRate split this means READ QUALITY — how decisively the decoder
    *  resolved the codes it did resolve — and nothing about how often the
    *  badge was present. The presence half is minDetectionRate below. */
-  minConfidence: Number(process.env.BOUNTY_MIN_CONFIDENCE || 0.6),
+  minConfidence: envNum('BOUNTY_MIN_CONFIDENCE', 0.6),
   /**
    * Fraction of CODE-VALID sampled frames that must actually read the code.
    *
@@ -476,13 +485,13 @@ export const bountyConfig = {
    * _gate-run-b-ocr.mjs computes the found-rate straight from decoder rows
    * and is the right place to source that number.
    */
-  minDetectionRate: Number(process.env.BOUNTY_MIN_DETECTION_RATE || 0.55),
+  minDetectionRate: envNum('BOUNTY_MIN_DETECTION_RATE', 0.55),
   /** Dispute window before a release becomes final. */
-  disputeWindowMs: num(process.env.BOUNTY_DISPUTE_WINDOW_MS, 72 * 60 * 60_000),
+  disputeWindowMs: envNum('BOUNTY_DISPUTE_WINDOW_MS', 72 * 60 * 60_000),
 
   // ── Verifier ────────────────────────────────────────────────────────────
   /** Max codes sampled per verification pass. */
-  sampleSize: num(process.env.BOUNTY_SAMPLE_SIZE, 10),
+  sampleSize: envNum('BOUNTY_SAMPLE_SIZE', 10),
   /**
    * Minimum rendered code height, in captured-frame pixels, for a sample to
    * count. THIS is the real legibility enforcement: a page cannot observe its
@@ -490,7 +499,7 @@ export const bountyConfig = {
    * small browser-source resolution. A code scaled to a smear in the final
    * broadcast is caught here, at verification time, where the money is.
    */
-  minCodePixelHeight: num(process.env.BOUNTY_MIN_CODE_PX, 12),
+  minCodePixelHeight: envNum('BOUNTY_MIN_CODE_PX', 12),
 
   // ── Banking (Pass C Part 3a) ────────────────────────────────────────────
   /**
@@ -499,7 +508,7 @@ export const bountyConfig = {
    * its length was seen, and banking it would replay something the audience
    * already watched.
    */
-  bankCoverFraction: Number(process.env.BOUNTY_BANK_COVER_FRACTION || 0.5),
+  bankCoverFraction: envNum('BOUNTY_BANK_COVER_FRACTION', 0.5),
   /**
    * DRAIN RATE. When the overlay comes back, queued clips replay one at a time
    * with at least this gap between starts. Twenty seconds: longer than the
@@ -507,7 +516,7 @@ export const bountyConfig = {
    * on screen together, and slow enough that a viewer sees a stream resume
    * rather than a backlog dump.
    */
-  bankDrainIntervalMs: num(process.env.BOUNTY_BANK_DRAIN_INTERVAL_MS, 20_000),
+  bankDrainIntervalMs: envNum('BOUNTY_BANK_DRAIN_INTERVAL_MS', 20_000, { min: 1000 }),
   /**
    * EXPIRY. A banked clip refunds when the air session has been closed for
    * this long — the tail covers a session closed by accident and reopened —
@@ -515,19 +524,25 @@ export const bountyConfig = {
    * the stream, not by the pledge: a queued clip is a liability against a
    * broadcast that is over.
    */
-  bankTailMs: num(process.env.BOUNTY_BANK_TAIL_MS, 10 * 60_000),
-  bankMaxHoldMs: num(process.env.BOUNTY_BANK_MAX_HOLD_MS, 12 * 60 * 60_000),
+  bankTailMs: envNum('BOUNTY_BANK_TAIL_MS', 10 * 60_000),
+  bankMaxHoldMs: envNum('BOUNTY_BANK_MAX_HOLD_MS', 12 * 60 * 60_000),
   /** A clip whose replay is ALSO buried re-queues at most this many times. */
-  bankMaxReplays: num(process.env.BOUNTY_BANK_MAX_REPLAYS, 2),
+  bankMaxReplays: envNum('BOUNTY_BANK_MAX_REPLAYS', 2),
 
   // ── Ambiguous-result review ─────────────────────────────────────────────
   /** How long a review may sit before admin flags it loudly. */
-  reviewSlaMs: num(process.env.BOUNTY_REVIEW_SLA_MS, 24 * 60 * 60_000),
+  reviewSlaMs: envNum('BOUNTY_REVIEW_SLA_MS', 24 * 60 * 60_000),
   /** Fixture file driving MockFrameSource / MockCodeChecker. */
   fixturePath: process.env.BOUNTY_FIXTURE_PATH || '',
 
-  /** Identity verification is STUBBED in Run A (real OAuth is Run B). */
-  identityStubAutoApprove: process.env.BOUNTY_IDENTITY_STUB !== '0',
+  /**
+   * The auto-approving identity stub, for unattended test environments ONLY.
+   * Opt-in: it used to be on unless BOUNTY_IDENTITY_STUB was '0', which with
+   * BOUNTY_CLAIM=1 in production let an anonymous request claim any handle and
+   * set its payee (audit bounty-9). The real platform-OAuth verifier is the
+   * default now (bounty-routes.js); never set this on Railway.
+   */
+  identityStubAutoApprove: process.env.BOUNTY_IDENTITY_STUB === '1',
 
   /** Display currency for pools. No real transfer happens in Run A. */
   currency: process.env.BOUNTY_CURRENCY || 'USDC',
@@ -621,6 +636,9 @@ export function bountyClientConfig() {
     disputeWindowMs: bountyConfig.disputeWindowMs,
     releaseRatePerClip: bountyConfig.releaseRatePerClip,
     minClipSeconds: bountyConfig.minClipSeconds,
+    // So the record page can refuse an oversized take BEFORE the fan pays;
+    // the pledge response's clipLimits arrives only after (audit web-5).
+    clipMaxBytes: bountyConfig.clipMaxBytes,
     minVerifiableHeightPx: bountyConfig.minVerifiableHeightPx,
     platformProfiles: PLATFORM_PROFILES,
     /**
@@ -632,7 +650,7 @@ export function bountyClientConfig() {
     obsOneClick: process.env.OBS_ONECLICK === '1',
     obsScenePollMs: bountyConfig.obsScenePollMs,
     overlayMinCanvasPx: bountyConfig.overlayMinCanvasPx,
-    badgeCssPx: num(process.env.BOUNTY_BADGE_CSS_PX, 28),
+    badgeCssPx: envNum('BOUNTY_BADGE_CSS_PX', 28),
   };
 }
 

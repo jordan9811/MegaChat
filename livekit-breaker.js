@@ -17,24 +17,23 @@
  *  - An operator can override, and the override is logged with who and why.
  */
 
-const num = (v, d) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : d;
-};
+import { envNum } from './env-num.js';
 
+// Every number through env-num.js: an EMPTY budget used to read as 0, and a
+// '95%' threshold as NaN — either one switched this breaker off (cc-2).
 export const breakerConfig = {
   enabled: process.env.LK_BREAKER !== '0',
-  dailyBudgetMin: num(process.env.LK_DAILY_BUDGET_MIN, 400),
-  monthlyBudgetMin: num(process.env.LK_MONTHLY_BUDGET_MIN, 4500),
+  dailyBudgetMin: envNum('LK_DAILY_BUDGET_MIN', 400),
+  monthlyBudgetMin: envNum('LK_MONTHLY_BUDGET_MIN', 4500),
   /** Fraction of budget that trips the loud warning. */
-  warnAt: Number(process.env.LK_BREAKER_WARN_AT || 0.75),
+  warnAt: envNum('LK_BREAKER_WARN_AT', 0.75),
   /** Fraction that trips the hard block. Below 1.0 on purpose: stopping
    *  before the provider does keeps the failure ours to explain. */
-  blockAt: Number(process.env.LK_BREAKER_BLOCK_AT || 0.95),
+  blockAt: envNum('LK_BREAKER_BLOCK_AT', 0.95),
   /** Any single session longer than this alarms immediately. */
-  longSessionMin: num(process.env.LK_LONG_SESSION_MIN, 60),
+  longSessionMin: envNum('LK_LONG_SESSION_MIN', 60),
   /** How long an operator override lasts. */
-  overrideTtlMs: num(process.env.LK_OVERRIDE_TTL_MS, 60 * 60_000),
+  overrideTtlMs: envNum('LK_OVERRIDE_TTL_MS', 60 * 60_000),
 };
 
 export function createBreaker({

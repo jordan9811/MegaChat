@@ -21,7 +21,7 @@
 import {
   accountForLink, accountByCanonicalHandle, isHandleTakenByAccount, isHandleFree as accountsHandleFree,
   suggestHandle as accountsSuggestHandle, upsertAccountForLink, claimHandle, setAccountDefaults,
-  setAccountPlatformLogins, getAccount, displayNameFor, _resetAccountsForTests, listAccounts,
+  setAccountPlatformLogins, getAccount, displayNameFor,
 } from './accounts.js';
 import { sanitizeHandle } from './rooms-store.js';
 
@@ -110,15 +110,6 @@ export function setPlatformLogins(provider, platformId, logins) {
     if (typeof v === 'string' && v.trim()) clean[String(k).toLowerCase()] = v.trim().slice(0, 60);
   }
   return identityView(setAccountPlatformLogins(acct.id, clean), provider);
-}
-
-export function _resetIdentitiesForTests() {
-  _resetAccountsForTests();
-}
-
-/** Every account, as identity views. The migration script and the gate read it. */
-export function _allIdentities() {
-  return listAccounts().map((a) => identityView(a));
 }
 
 export { getAccount };

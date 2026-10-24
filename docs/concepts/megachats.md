@@ -7,7 +7,7 @@ A **MegaChat** is a short clip a viewer records from their own camera and pays a
 From the protocol comment at the top of `letters.js`:
 
 1. The viewer pays — one flat charge at the room's letter price, on the same payment machinery a live seat uses (`POST /api/letter/submit`).
-2. The viewer uploads the recording within a grace window (`PUT /api/letter/upload/:id`, ≤ 25 MB, 90 s after payment — `LETTER_MAX_BYTES`, `UPLOAD_GRACE_MS`).
+2. The viewer uploads the recording within a grace window (`PUT /api/letter/upload/:id`, ≤ 25 MB, 90 s after payment — `LETTER_MAX_BYTES`, `UPLOAD_GRACE_MS`). The send screen names each take with an `attemptId`, so a retry after a failed upload is answered from the letter already paid for instead of charging again — within ten minutes, from memory, so a restart inside that window can let one repeat through (`letters.js`, `/api/letter/submit`).
 3. The clip reaches its resting state — straight into the play queue, or held for a person, depending on the room's moderation setting (below).
 4. When the room has a free tile, the scheduler broadcasts `letter_play`; the overlay draws the clip in a tile with the same entrance and exit treatment a live seat gets; `letter_end` follows and the media is dropped shortly after.
 

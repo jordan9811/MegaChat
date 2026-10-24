@@ -35,14 +35,16 @@ owner's other copy word for word (his rule: "dont change the copy, i like text t
 Component `web/components/holler-mark.tsx` (built in the foundation step), plus `BrandText` re-pointed to it so
 every existing `<BrandText />` becomes the new mark.
 - Strap: parallelogram `clip-path: polygon(0 0,100% 0,calc(100% - .4em) 100%,0 100%)`, fill `--hl-strap`
-  (#2f2ad8 both themes), padding `.1em .6em .06em .3em`, text #fff.
+  (#0a9bff both themes), padding `.1em .6em .06em .3em`, text `--hl-on-strap` (#060a17: white is 2.9:1 on azure).
 - Letters: Archivo 900, `font-stretch: 112%` (load Archivo with the `wdth` axis), uppercase, letter-spacing .01em.
 - The O: record button — `width/height .7em; border-radius 50%; background: radial-gradient(circle closest-side,
   var(--hl-record) 0 62%, transparent 63%); box-shadow: inset 0 0 0 .06em var(--hl-record)`.
-  **Below 24px rendered size** the O becomes a **solid** pink dot (the thin ring vanishes at small sizes).
+  **Below 24px rendered size** the O becomes a **solid** magenta (`--hl-record`) dot (the thin ring vanishes at small sizes).
 - Variants: `full` (strap + HOLLER), `icon` (strap fragment "H◉" — app icon, favicon, avatars), `bare`
   (letters only, no strap, for very tight spots).
-- Glow (dark theme only, optional on hero-size marks): `drop-shadow(0 0 18px color-mix(in srgb, #2f2ad8 60%, transparent))`.
+- Glow (optional on hero-size marks, the `hm--glow` variant): `filter: var(--hl-mark-glow)`, which is
+  `drop-shadow(0 0 18px color-mix(in srgb, #0a9bff 55%, transparent))` in dark and a soft shadow,
+  `drop-shadow(0 6px 14px rgba(10,132,230,.24))`, in light.
 
 ## 3. Colour tokens (`web/app/globals.css`, on `:root` = dark, and `.light`)
 Everything reads these. No page keeps its own hard-coded brand/feature hexes.
@@ -73,10 +75,16 @@ the page), `--f-<x>-bg` (tag tint), `--f-<x>-line` (tag border), `--f-<x>-on` (t
 | bounty (readout yellow) | #ffd60a / #ffd60a | #ffd60a / #6b5a00 | #060a17 on #ffd60a |
 | rewards (neon green) | #39ff6a / #39ff6a | #39ff6a / #0a6e2a | #060a17 on #39ff6a |
 
-`-bg` = the hue at 12% alpha (dark; bounty .045, since yellow over the navy goes grey and olive) / 14% (light);
-`-line` = 45% / 55%, except the dark bounty line, 70% (~#b69b11 gold: in dark the yellow lives in the line, not the
-tint), and the light bounty and rewards lines, which are 70% ink mixed into the hue (the pale hue alone
-vanishes on white). `--f-<x>-ui` is a mark that must hold 3:1 on its own (a stripe, an on-dot, a tag dot's edge):
+`-bg` (the tag tint) and `-line` (the tag border), as shipped:
+
+| Feature | `-bg` dark | `-line` dark | `-bg` light (mixed into `--hl-panel`) | `-line` light |
+|---|---|---|---|---|
+| holler | hue at 12% | hue at 45% | hue 14% | #e01fbd at 55% |
+| callin | hue at 14% | hue at 50% | hue 12% | #0a84e6 at 55% |
+| bounty | hue at 4.5% (yellow over the navy goes grey and olive) | hue at 70% (~#b69b11 gold: in dark the yellow lives in the line, not the tint) | hue 14% | 70% ink mixed into the hue |
+| rewards | hue at 10% | hue at 45% | hue 14% | 70% ink mixed into the hue |
+
+The light bounty and rewards lines mix in the ink because the pale hue alone vanishes on white. `--f-<x>-ui` is a mark that must hold 3:1 on its own (a stripe, an on-dot, a tag dot's edge):
 the hue in dark, the ink in light, except bounty in light, which takes its line #977f03 (3.1:1 on the ground,
 3.8:1 on a card; the ink #6b5a00 reads olive beside the neons). Money amounts use bounty yellow-ink. Errors,
 faults and alarms use `--hl-danger` (border at 50%, tint at 10%), never a holler token.

@@ -1,16 +1,11 @@
 import type { PublicRoomCard, RecentAiring } from '@/lib/api'
 import type { BountyPool } from '@/lib/bounty-api'
 import { withBountyExamples } from '@/lib/bounty-examples'
+import { backendBase } from '@/lib/backend-base'
 
 // Server-side data loaders shared by the landing page (/), the app page
 // (/app) and the legacy home (/legacy). All of them are force-dynamic server
 // components, so these run per-request against our own Express process.
-function backendBase(): string {
-  const port = process.env.PORT || '3000'
-  // BASE_URL is the PUBLIC origin and may carry a trailing slash; strip it so
-  // we never build `//api/...`, which resolves to a different host entirely.
-  return (process.env.BASE_URL || `http://127.0.0.1:${port}`).replace(/\/+$/, '')
-}
 
 export async function loadInitialRooms({ withConfig = false } = {}): Promise<PublicRoomCard[]> {
   try {

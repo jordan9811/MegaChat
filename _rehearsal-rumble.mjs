@@ -141,7 +141,7 @@ const srv = await startGateServer({
   port: PORT, dataDir, label: 'rumble-rehearsal',
   bountyAuth: { handles: [`rumble:${HANDLE}`] },
   env: {
-    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '0', KEEP_ORPHAN_ROOMS: 'true',
+    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true',
     RUMBLE_LIVESTREAM_API_URL: process.env.RUMBLE_LIVESTREAM_API_URL || '',
     BOUNTY_STREAM_WARMUP_MS: String(WARMUP_S * 1000),
   },

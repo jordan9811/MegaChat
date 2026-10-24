@@ -139,9 +139,11 @@ export function ClaimFlow({
             className="mt-1.5 w-full rounded-xl border border-border bg-input/30 px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-hl-strap-hi"
           />
           <p className="mt-2 rounded-lg border border-f-bounty-line bg-f-bounty-bg px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-            <strong className="text-f-bounty-ink">Identity check is stubbed in this build.</strong>{' '}
-            It auto-approves and is recorded as <code>STUBBED_APPROVAL</code>. Connecting a real
-            platform account comes next — nothing here moves real funds.
+            {/* The real identity check is the default now (bounty-routes.js);
+                the stub runs only under a test flag. */}
+            <strong className="text-f-bounty-ink">Claim with the account that owns this handle.</strong>{' '}
+            The claim is checked against the platform account you signed in with, so a
+            different account is turned away. Nothing here moves real funds.
           </p>
           {!canClaim && <p className="mt-3 text-sm text-muted-foreground">This is an unfunded example. Create a real bounty before claiming; the setup preview is available here.</p>}
           {error || authError ? <p role="alert" className="mt-2 text-sm text-hl-danger">{error || authError}</p> : null}

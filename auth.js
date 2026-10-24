@@ -9,7 +9,8 @@
  * nothing is faked. Endpoint bases are env-overridable so gates can run a
  * local mock IdP through the REAL code path.
  */
-import { createHmac, randomBytes, createHash } from 'crypto';
+import { createHmac, randomBytes, createHash, timingSafeEqual } from 'crypto';
+import { sessionSecret, isProduction } from './runtime-env.js';
 import { claimIdentity, getIdentity, suggestHandle, setIdentityDefaults, identityView } from './identity-store.js';
 import {
   getAccount, accountForLink, attachLink, detachLink, setPrimary,
@@ -58,11 +59,10 @@ const PROVIDERS = {
   },
 };
 
-const SECRET = () =>
-  process.env.AUTH_SECRET || process.env.MPP_SECRET_KEY || 'megachat-dev-secret';
-
+// AUTH_SECRET || MPP_SECRET_KEY; never the public dev constant in production
+// (runtime-env.js, OPEN-ISSUES K7).
 const sign = (payload) =>
-  createHmac('sha256', SECRET()).update(payload).digest('base64url');
+  createHmac('sha256', sessionSecret()).update(payload).digest('base64url');
 
 function setCookie(res, name, value, { maxAge = 600, httpOnly = true } = {}) {
   const parts = [
@@ -72,6 +72,9 @@ function setCookie(res, name, value, { maxAge = 600, httpOnly = true } = {}) {
     'SameSite=Lax',
   ];
   if (httpOnly) parts.push('HttpOnly');
+  // Production is HTTPS end to end (Railway terminates TLS), so a session
+  // never rides plain HTTP there. Not in dev, where the app is http://.
+  if (isProduction()) parts.push('Secure');
   res.append('Set-Cookie', parts.join('; '));
 }
 
@@ -91,22 +94,42 @@ const seal = (obj) => {
 };
 const unseal = (sealed) => {
   const [payload, sig] = String(sealed || '').split('.');
-  if (!payload || !sig || sign(payload) !== sig) return null;
+  if (!payload || !sig) return null;
+  const want = Buffer.from(sign(payload));
+  const got = Buffer.from(sig);
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return null; // constant-time
   try { return JSON.parse(Buffer.from(payload, 'base64url').toString()); } catch { return null; }
 };
+
+/**
+ * A session lasts 30 days FROM SIGN-IN, enforced here and not only by the
+ * browser's Max-Age: a copied cookie used to work until the secret rotated.
+ * Undo: raise this constant (DECISIONS, sessions).
+ */
+const SESSION_MAX_AGE_MS = 30 * 86_400_000;
+
+/** Sign `accountId` in: `{accountId, iat}`, iat in ms like the OAuth state's `t`. */
+function startSession(res, accountId) {
+  setCookie(res, 'mc_identity', seal({ accountId, iat: Date.now() }), { maxAge: SESSION_MAX_AGE_MS / 1000 });
+}
 
 /**
  * The signed-in identity behind a request, or null. Exported because the
  * dashboard needs to answer "is this handle reserved by THIS person?" — the
  * cookie seal lives here, so the reader does too.
+ *
+ * ONE SHAPE: `{accountId, iat}`. The pre-account `{provider, platformId}`
+ * shape is refused: its ids are public (a Twitch user id), so with a leaked or
+ * default secret it forged any account, and no product code has minted it
+ * since the account layer. A session with no iat, one older than
+ * SESSION_MAX_AGE_MS, or one dated in the future is refused too.
  */
 export function readIdentityFromRequest(req) {
   const sess = unseal(readCookies(req).mc_identity);
-  if (!sess) return null;
-  // The cookie carries the ACCOUNT id now; the older {provider, platformId}
-  // shape still resolves, so a session minted before this layer keeps working.
-  if (sess.accountId) return identityView(getAccount(sess.accountId));
-  return getIdentity(sess.provider, sess.platformId);
+  if (!sess?.accountId || !Number.isFinite(sess.iat)) return null;
+  const age = Date.now() - sess.iat;
+  if (age < -60_000 || age > SESSION_MAX_AGE_MS) return null; // a minute of clock skew
+  return identityView(getAccount(sess.accountId));
 }
 
 /**
@@ -150,16 +173,6 @@ function safeReturnTo(raw) {
   return s.slice(0, 512);
 }
 
-/**
- * The join page shows a "handle is yours" toast off ?welcome=; nowhere else
- * reads it, and the header chip flipping to @handle already says the same
- * thing there — so don't litter every other URL with a dead param.
- */
-function withWelcome(back, handle) {
-  if (!back.startsWith('/join')) return back;
-  return `${back}${back.includes('?') ? '&' : '?'}welcome=${encodeURIComponent(handle)}`;
-}
-
 export function attachAuth(app, { log = console } = {}) {
   const configured = (p) => !!(PROVIDERS[p].clientId() && PROVIDERS[p].clientSecret());
   const redirectUri = (req, p) => `${req.protocol}://${req.get('host')}/auth/${p}/callback`;
@@ -199,7 +212,7 @@ export function attachAuth(app, { log = console } = {}) {
     }
     try {
       const identity = await privyIdentity.identityFromToken(token);
-      setCookie(res, 'mc_identity', seal({ accountId: identity.accountId }), { maxAge: 30 * 86400 });
+      startSession(res, identity.accountId);
       res.json({
         ok: true,
         identity: {
@@ -213,10 +226,9 @@ export function attachAuth(app, { log = console } = {}) {
   });
 
   app.get('/api/auth/me', (req, res) => {
-    // Through readIdentityFromRequest, so BOTH cookie shapes resolve — an
-    // account-id session and a pre-account-layer {provider, platformId} one.
-    // Reading the cookie by hand here is what made a signed-in account look
-    // signed out on the account page.
+    // Through readIdentityFromRequest, the one session reader. Reading the
+    // cookie by hand here is what made a signed-in account look signed out
+    // on the account page.
     const identity = readIdentityFromRequest(req);
     res.json({ identity: identity ? {
       provider: identity.provider, username: identity.username, handle: identity.handle,
@@ -301,8 +313,9 @@ export function attachAuth(app, { log = console } = {}) {
           linkedAt: l.linkedAt,
           attributeCount: (l.attributes || []).length,
           attributesFetchedAt: l.attributesFetchedAt,
-          // Re-authorising is how attributes refresh: no token is stored, and
-          // an app the person already authorised does not ask them again.
+          // Re-authorising is how attributes refresh (only X keeps a token,
+          // encrypted, for campaign checks: x-token-store.js), and an app the
+          // person already authorised does not ask them again.
           refreshUrl: `/auth/${l.provider}?returnTo=/account`,
         })),
       },
@@ -330,7 +343,7 @@ export function attachAuth(app, { log = console } = {}) {
       const account = setPrimary(identity.accountId, String(req.body?.provider || ''));
       res.json({ ok: true, primary: account.primary, handle: account.handle });
     } catch (err) {
-      res.status(err.code === 'not_linked' ? 400 : 500).json({ error: err.message, reason: err.code });
+      res.status(err.status || 500).json({ error: err.message, reason: err.code });
     }
   });
 
@@ -344,7 +357,7 @@ export function attachAuth(app, { log = console } = {}) {
       if (req.params.provider === 'x') dropXToken(identity.accountId);
       res.json({ ok: true, links: account.links.map((l) => l.provider), primary: account.primary });
     } catch (err) {
-      res.status(err.code === 'last_link' ? 409 : 400).json({ error: err.message, reason: err.code });
+      res.status(err.status || 500).json({ error: err.message, reason: err.code });
     }
   });
 
@@ -399,9 +412,9 @@ export function attachAuth(app, { log = console } = {}) {
     }
     if (!req.query.code) return res.status(400).send('Missing authorization code.');
     try {
-      // The access token is kept only for the length of this request: it is
-      // what lets the attribute fetch below happen inside the round trip the
-      // person is already in, and it is never stored.
+      // The access token is what lets the attribute fetch below happen inside
+      // the round trip the person is already in. Kept for this request only,
+      // except X's, which is stored encrypted (below).
       let username, platformId, accessToken = null;
       // X only: the token response, kept ENCRYPTED for campaign checks
       // (x-token-store.js). Never logged.
@@ -526,36 +539,52 @@ export function attachAuth(app, { log = console } = {}) {
       // flow nobody needs is a security surface nobody reviewed.
       const current = readIdentityFromRequest(req);
       const ownerOfLink = accountForLink(p, platformId);
-      if (current && (!ownerOfLink || ownerOfLink.id === current.accountId)) {
+      const refuse = (reason) => res.redirect(302, `${back}${back.includes('?') ? '&' : '?'}link_error=${encodeURIComponent(reason)}`);
+      if (current && ownerOfLink && ownerOfLink.id !== current.accountId) {
+        log.warn(`[auth] refused to link ${p}:${platformId} — already on account ${ownerOfLink.id}`);
+        return refuse('already_linked');
+      }
+      if (current) {
+        // ONE LINK PER PROVIDER, and a DIFFERENT login of a provider this
+        // account already holds is refused before anything is read, written
+        // or stored. It used to fall through to writing the new login's
+        // attributes onto the old login's link and storing the new login's X
+        // token, so one big X account could lend its follower count to any
+        // number of Holler accounts. Switching is disconnect, then connect
+        // (DECISIONS: an X-only account therefore cannot switch yet).
+        const held = current.links?.find((l) => l.provider === p);
+        if (held && held.platformId !== String(platformId)) {
+          log.warn(`[auth] refused ${p}:${platformId} for ${current.accountId} — it already has a different ${p} link`);
+          return refuse('provider_linked');
+        }
         const attributes = await grabAttributes();
         try {
-          attachLink(current.accountId, { provider: p, platformId: String(platformId), username, attributes: attributes ?? null });
+          // The SAME login again is a refresh: today's numbers and today's
+          // name. attachLink would return early and refresh nothing.
+          if (held) setLinkAttributes(current.accountId, p, attributes, { platformId, username });
+          else attachLink(current.accountId, { provider: p, platformId: String(platformId), username, attributes: attributes ?? null });
         } catch (err) {
-          if (err.code === 'provider_linked') {
-            // Same provider, same account, different platform id: refresh the
-            // attributes we hold rather than pretending nothing happened.
-            if (attributes) setLinkAttributes(current.accountId, p, attributes);
-          } else if (err.code !== 'link_taken') {
-            throw err;
-          }
+          // Lost a race during the attribute read (another account took this
+          // login, or this one changed its link). Nothing was written, so no
+          // token is kept and the redirect says why.
+          if (!['link_taken', 'provider_linked', 'not_linked'].includes(err.code)) throw err;
+          log.warn(`[auth] refused ${p}:${platformId} for ${current.accountId} after the attribute read (${err.code})`);
+          return refuse(err.code === 'link_taken' ? 'already_linked' : err.code);
         }
         keepXToken(current.accountId);
         log.log(`[auth] linked ${p} (@${username}) to account ${current.accountId}`);
         return res.redirect(302, `${back}${back.includes('?') ? '&' : '?'}linked=${encodeURIComponent(p)}`);
-      }
-      if (current && ownerOfLink && ownerOfLink.id !== current.accountId) {
-        log.warn(`[auth] refused to link ${p}:${platformId} — already on account ${ownerOfLink.id}`);
-        return res.redirect(302, `${back}${back.includes('?') ? '&' : '?'}link_error=${encodeURIComponent('already_linked')}`);
       }
 
       // Already claimed → straight back in, no ceremony.
       const existing = getIdentity(p, platformId);
       if (existing) {
         const attributes = await grabAttributes();
-        if (attributes) { try { setLinkAttributes(existing.accountId, p, attributes); } catch { /* link vanished */ } }
-        keepXToken(existing.accountId);
-        setCookie(res, 'mc_identity', seal({ accountId: existing.accountId }), { maxAge: 30 * 86400 });
-        return res.redirect(302, withWelcome(back, existing.handle));
+        let stillLinked = true;
+        try { setLinkAttributes(existing.accountId, p, attributes, { platformId, username }); } catch { stillLinked = false; /* link changed during the read */ }
+        if (stillLinked) keepXToken(existing.accountId);
+        startSession(res, existing.accountId);
+        return res.redirect(302, back);
       }
       // First sign-in: claim the platform username DIRECTLY — you're signing
       // in with that name, asking you to click "claim" on it is a dead step.
@@ -565,10 +594,10 @@ export function attachAuth(app, { log = console } = {}) {
           provider: p, platformId: String(platformId), username, handle: username,
         });
         const attributes = await grabAttributes();
-        if (attributes) { try { setLinkAttributes(identity.accountId, p, attributes); } catch { /* link vanished */ } }
+        if (attributes) { try { setLinkAttributes(identity.accountId, p, attributes, { platformId }); } catch { /* link vanished */ } }
         keepXToken(identity.accountId);
-        setCookie(res, 'mc_identity', seal({ accountId: identity.accountId }), { maxAge: 30 * 86400 });
-        return res.redirect(302, withWelcome(back, identity.handle));
+        startSession(res, identity.accountId);
+        return res.redirect(302, back);
       } catch {
         /* handle taken or invalid → fall through to the picker */
       }
@@ -598,12 +627,12 @@ export function attachAuth(app, { log = console } = {}) {
         handle: (req.body && req.body.handle) || pending.username,
       });
       setCookie(res, 'mc_pending_identity', '', { maxAge: 0 });
-      setCookie(res, 'mc_identity', seal({ accountId: identity.accountId }), { maxAge: 30 * 86400 });
+      startSession(res, identity.accountId);
       res.json({
         ok: true,
         identity: { provider: identity.provider, username: identity.username, handle: identity.handle },
         // Carried from the sealed pending cookie: back to wherever they started.
-        next: withWelcome(safeReturnTo(pending.back) || '/', identity.handle),
+        next: safeReturnTo(pending.back) || '/',
       });
     } catch (err) {
       res.status(err.code === 'handle_taken' ? 409 : 400).json({ error: err.message });

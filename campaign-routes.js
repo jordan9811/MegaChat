@@ -40,16 +40,28 @@ function who(req) {
   return { accountId: identity?.accountId || null, isAdmin: isSiteAdmin(identity) || adminKeyMatches(req), identity };
 }
 
-/** X estimates per caller per minute (sliding window, in memory). */
-export const ESTIMATE_PER_MIN = 10;
-const estimateHits = new Map();
-export function estimateAllowed(key, at = Date.now()) {
-  const recent = (estimateHits.get(key) || []).filter((t) => at - t < 60_000);
-  if (recent.length >= ESTIMATE_PER_MIN) { estimateHits.set(key, recent); return false; }
-  recent.push(at); estimateHits.set(key, recent);
-  if (estimateHits.size > 5000) for (const [k, v] of estimateHits) if (!v.some((t) => at - t < 60_000)) estimateHits.delete(k);
-  return true;
+/**
+ * A sliding one-minute window per key, in memory: take(key, limit, at)
+ * counts the call when it fits and answers whether it did. Keys idle for a
+ * minute are dropped once there are more than 5,000, so a flood of distinct
+ * keys cannot grow the map without bound.
+ */
+function perMinute() {
+  const hits = new Map();
+  return (key, limit, at) => {
+    const recent = (hits.get(key) || []).filter((t) => at - t < 60_000);
+    const fits = recent.length < limit;
+    if (fits) recent.push(at);
+    hits.set(key, recent);
+    if (hits.size > 5000) for (const [k, v] of hits) if (!v.some((t) => at - t < 60_000)) hits.delete(k);
+    return fits;
+  };
 }
+
+/** X estimates per caller per minute. */
+export const ESTIMATE_PER_MIN = 10;
+const estimateTake = perMinute();
+export const estimateAllowed = (key, at = Date.now()) => estimateTake(key, ESTIMATE_PER_MIN, at);
 
 /**
  * Eligibility checks per signed-in account per minute (sliding window, in
@@ -60,18 +72,17 @@ export function estimateAllowed(key, at = Date.now()) {
  */
 export const CHECK_PER_MIN = 6;
 export const CHECK_PER_MIN_ALL = 30;
-const checkHits = new Map();
-export function checkAllowed(accountKey, slug, at = Date.now()) {
-  const hit = (key, limit) => {
-    const recent = (checkHits.get(key) || []).filter((t) => at - t < 60_000);
-    if (recent.length >= limit) { checkHits.set(key, recent); return false; }
-    recent.push(at); checkHits.set(key, recent);
-    return true;
-  };
-  const ok = hit(`${accountKey}\u0000${String(slug || '').toLowerCase()}`, CHECK_PER_MIN) && hit(accountKey, CHECK_PER_MIN_ALL);
-  if (checkHits.size > 5000) for (const [k, v] of checkHits) if (!v.some((t) => at - t < 60_000)) checkHits.delete(k);
-  return ok;
-}
+const checkTake = perMinute();
+export const checkAllowed = (accountKey, slug, at = Date.now()) =>
+  checkTake(`${accountKey}\u0000${String(slug || '').toLowerCase()}`, CHECK_PER_MIN, at) && checkTake(accountKey, CHECK_PER_MIN_ALL, at);
+
+/**
+ * Payout-wallet changes per account per minute. Each one rewrites
+ * accounts.json and pays the account's owed claims (engine.payAccount).
+ */
+export const WALLET_PER_MIN = 6;
+const walletTake = perMinute();
+export const walletAllowed = (accountKey, at = Date.now()) => walletTake(accountKey, WALLET_PER_MIN, at);
 
 const send = (res, e) => {
   const status = e.status || 500;
@@ -107,8 +118,8 @@ export const CAMPAIGN_ROUTES = [
     // Refuse BEFORE asking for an approve: nobody should pay gas for an
     // approval this server would then refuse to use.
     if (!fundingEnabled()) throw httpErr(503, 'funding_off', PAID_OFF_MSG);
-    if (!e.fundTerms(c.id, w).pullSigner) throw httpErr(503, 'no_pull_signer', 'This server cannot take a campaign budget right now. Nothing was charged.');
     const terms = e.fundTerms(c.id, w);
+    if (!terms.pullSigner) throw httpErr(503, 'no_pull_signer', 'This server cannot take a campaign budget right now. Nothing was charged.');
     const needsApproval = (extra = {}) => ({ needsApproval: { token: { address: c.token.address, symbol: c.token.symbol, decimals: c.token.decimals }, spender: terms.spender, holder: terms.holder, amountAtomic: c.budget.atomic, sign: terms.sign, ...extra } });
     if (!/^0x[0-9a-fA-F]{40}$/.test(String(req.body?.wallet || ''))) return needsApproval({ walletRequired: true });
     // No approve transaction yet: ask for one, whatever the allowance. The
@@ -147,8 +158,11 @@ export const CAMPAIGN_ROUTES = [
 
   // ── payout wallet: where a claimant is paid ─────────────────────────────
   ['POST', '/api/account/payout-wallet', TIER.FAN, (e, req, w) => {
+    if (!walletAllowed(w.accountId || 'admin')) throw httpErr(429, 'rate_limited', 'Too many wallet changes in a minute. Wait a moment and try again.');
     const a = setAccountPayoutWallet(w.accountId, req.body?.address ?? null);
-    e.sync(); // an owed claim waiting for a wallet gets its intent now
+    // This account's owed claims get their payout intent now. Only theirs:
+    // this used to run the whole sweep, on demand, for any signed-in caller.
+    e.payAccount(w.accountId);
     return { ok: true, payoutWallet: a.payoutWallet || null };
   }],
 
@@ -156,8 +170,11 @@ export const CAMPAIGN_ROUTES = [
   ['GET', '/api/campaigns/admin/all', TIER.ADMIN, (e) => ({ campaigns: e.listManaged({ isAdmin: true, all: true }) })],
   ['POST', '/api/campaigns/admin/c/:id/hide', TIER.ADMIN, (e, req) => ({ campaign: e.manageView(e.setHidden(req.params.id, req.body?.hidden !== false)) })],
   // A campaign stuck in funding_pending (OPEN-ISSUES N12): resolved by the
-  // sweep's own rule, now — back to draft only with no transaction, after
-  // 30 min, and the whole budget still allowed; never marked funded on a guess.
+  // sweep's own rule, now. Back to draft only from chain facts: no
+  // transaction on record after 30 min and no Transfer of the budget on chain
+  // since the attempt, or a signed pull that can no longer land (its nonce
+  // used elsewhere, unknown to every node). Never from the allowance, and
+  // never marked funded on a guess.
   ['POST', '/api/campaigns/admin/c/:id/resolve-funding', TIER.ADMIN, async (e, req) => {
     const out = await e.resolveStuckFunding(req.params.id, { isAdmin: true });
     return { status: out.status, needsPerson: out.needsPerson, campaign: out.campaign ? e.manageView(out.campaign) : null };

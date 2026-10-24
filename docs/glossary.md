@@ -8,22 +8,24 @@ Every term this project invented or reuses oddly, one line each, with the file w
 |---|---|---|
 | **Room** | A streamer's configured space: prices, seat count, layout, switches. One JSON record. | `rooms-store.js` |
 | **Seat** | One viewer's metered place on camera inside a room; lives in memory while the viewer is connected. | `server.js`, `activeSeats` |
+| **Seat token** | The secret a join response hands the person who took the seat (`seatToken`). A seat id is public; registering the seat's socket, going live, leaving, the LiveKit publisher token and the quality and echo reports all take the token as well. | `seatTokenMatches`, `server.js` |
 | **Live seat / Join Stream / Call in** | The live path: your camera on the stream, charged per second. The site calls it *Call in*; the room's switch is `joinStream`. | `server.js`, `/api/join/passkey`; `resolveJoinStream`, `rooms-store.js` |
 | **MegaChat / letter** | A short recorded clip a viewer pays a flat price to have played once on the stream. The code says *letter*; the site says *Holler*. | `letters.js` |
 | **Holler** | The product's name on the site since the 2026-10-20 rebrand, and the site's word for a recorded clip. Only what users read changed: routes, API paths, data keys, CSS prefixes, the `megachat` moment kind and the megachat.fun domain did not, and this handbook keeps the code's words. | `web/app/layout.tsx`; `web/components/feature-tag.tsx` |
-| **Rewards** | Watch-to-earn: a room pays viewers cash, Holler credit or its own token for watching. The site called it *Drops* before the rebrand. | `resolveRewards`, `rooms-store.js`; `rewards.js` |
+| **Rewards** | Watch-to-earn: a room pays viewers for watching in exactly one of cash (USDC from the reward pool, only in an owned room on `REWARDS_CASH_ALLOWLIST`), seat credit, or its own points. Cash and credit need sign-in and go to the account's payout wallet, under a lifetime cap per room. The site called it *Drops* before the rebrand. | `resolveRewards`, `rooms-store.js`; `rewards.js` |
 | **Feature tag** | The small coloured pill that says what a room offers or what a moment was: Holler magenta, Call in azure (the brand pair: the record and the strap), Bounty yellow, Rewards green. | `web/components/feature-tag.tsx`; `web/app/globals.css`, the `--f-*` tokens |
 | **Tick** | The metering unit: `passkeyTickPrice` every `passkeyTickSeconds` (default `0.001` / 1 s). | `getEnvDefaults`, `rooms-store.js` |
 | **Session cap** | The most one seat can spend (`maxSession`, default 2); the amount approved up front. | `rooms-store.js` |
 | **Pinned seat** | The streamer's co-host: rides above the paid cap, meter paused. Whitelisted guests are pinned seats granted at join. | `server.js`, `setSeatPinned`, `tryWhitelistJoin` |
 | **Effective cap** | Configured seats plus active whitelist guests, capped at ten. What every surface reports. | `effectiveMaxSeats`, `server.js` |
 | **The overlay** | The one browser source in OBS that draws tiles, MegaChats and the badge. | `public/overlay.html` |
+| **Overlay key** | `&k=<key>` on the overlay URL a room's manager is handed: an HMAC of the room id under the session secret, so it survives deploys. Only an overlay that presents it counts as the room's real one (a campaign Holler's airing, the bounty badge and environment reports). | `overlay-key.js` |
 | **Stinger** | The entrance/exit animation (and sound) on a tile. | `public/overlay.html`; `letters.js` `FLY_IN_OK` |
 | **Layout** | Where tiles sit on the canvas: origin corner, direction, margin, tile size, gap. On the room record with a version. | `resolveLayout`, `rooms-store.js` |
 | **Lazy connect** | The overlay holds a LiveKit connection only while a seat is being bought or held. Fixed a quota-draining leak. | `livekit-lazy.config.js` |
 | **Burn breaker** | Refuses *new* LiveKit tokens past a budget read from signed webhooks; never cuts a live session. | `livekit-breaker.js` |
-| **Handle** | The name a room lives at (`/<handle>`), or the name a person reserved by signing in. Two registries. | `rooms-store.js`, `identity-store.js` |
-| **Owner key** | `provider:platformId` — the stable id of a signed-in account, stamped on rooms and whitelist lists. | `roomOwnerKey`, `auth.js` |
+| **Handle** | The name a room lives at (`/<handle>`), or the name a person reserved by signing in. Two registries. | `rooms-store.js`, `accounts.js` |
+| **Owner key** | The account id (`acct_…`) — the stable id of a signed-in person across every platform they link, stamped on rooms and whitelist lists. It was `provider:platformId` before the account layer. | `roomOwnerKey`, `auth.js` |
 | **Guest whitelist** | A streamer's standing free list, keyed on the owner, pinned to identities. | `guest-whitelist.js` |
 | **Follow my stream** | The room hides from discovery on the first dark reading and pauses after five minutes; resumes on live. | `followTick`, `server.js` |
 | **Airing** | One record per broadcast a room went through, with moments (seat, seat_leave, megachat). | `airings-store.js` |
@@ -43,9 +45,9 @@ Every term this project invented or reuses oddly, one line each, with the file w
 | **Confidence tier** | Which evidence backed a verification (1 external, 2 self-capture + OBS, 3 self-capture, 4 disagreement). Decides review routing, never amount. | `bounty-confidence.js` |
 | **Stream context** | Warm-up and tail rules: nothing counts in the first ten minutes; the stream must continue past the last counted clip. A gate, not a dial. | `bounty-stream-context.js` |
 | **Evidence chain** | The append-only log everything a payout is computed from is written to. | `bounty-evidence.js` |
-| **Ledger** | The append-only money history with a checksum chain; pools are folded from it. | `bounty-ledger.js` |
+| **Ledger** | The append-only money history: a consecutive sequence and a checksum on every row; pools are folded from it. A damaged one latches and refuses every read and append until a person repairs it. | `bounty-ledger.js` |
 | **Settlement (stub)** | The interface that would pay; the only implementation records an intent and moves nothing. | `bounty-settlement.js` |
-| **Gate H** | The gate that requires every transfer to be accounted for: one settlement door for server-signed transfers, a config pin for the autonomous MPP settle, a call-site pin for client-signed paths — and, as its legacy section, zero transfer-shaped calls in the bounty modules. | `_gate-money.mjs`; `_gate-bounty-claim.mjs` section H |
+| **Gate H** | The gate that requires every transfer to be accounted for: two doors for server-signed money (`settlement.js` for the platform wallet, `escrow-chain.js` for the seat escrow contract), a config pin for the autonomous MPP settle, a call-site pin for client-signed paths — and, as its legacy section, zero transfer-shaped calls in the bounty modules. | `_gate-money.mjs`; `_gate-bounty-claim.mjs` section H |
 | **NOT_SHOWN** | A playback whose required code was never observed; outranks any confidence number. | `bounty-verifier.js` |
 | **SOURCE_UNAVAILABLE** | "We could not look" — routed to review, never a denial. | `frame-sources.js` |
 | **Review queue** | Where ambiguous or disputed verifications wait for a person; blocks release. | `bounty-store.js`, `createReview` |

@@ -39,16 +39,25 @@
  *      Transfer, a foreign send hash, a pull dropped by a same-nonce race, an
  *      off-air Call in, the door's x-cost, the overlay key in production, the
  *      unlock rate limit
+ *   C11 the audit fix round (2026-10-24): a Call in across a restart (the
+ *      seat the server lost gives its slot back; the clock starts again) and
+ *      from the preview (no clock before GO LIVE), the
+ *      claims index and the sweep at 100 × 50 (drafts and settled campaigns
+ *      skipped, the payout-wallet route pays one account and runs no sweep,
+ *      rate-limited; 20 drafts per account), a stuck funding written up once
+ *      and re-asked every 10 min, slots reserved and never bound, the sweep
+ *      closing in place (no close/sync recursion), the offer page reading a
+ *      frozen list's metadata without cloning its ids
  *   D  HTTP: every non-public route refuses an anonymous caller, admin routes
  *      refuse a non-admin, a Holler and a Call in with ?campaign= move a claim
  *      through the real letters queue and join route — the Call in ONLY from a
  *      signed LiveKit webhook, never from the client's camera_ready, and a
  *      Holler counts as aired only while the room is ON AIR (D4b) and only with
  *      the room's KEYED overlay connected (D4c, OPEN-ISSUES N14), a Call in only
- *      on air (D5b), /api/dashboard/unlock rate-limited and keyless for a
+ *      on air (D5b) and only from a seat that went live, never the preview (D5c), /api/dashboard/unlock rate-limited and keyless for a
  *      password (D9) — the public page renders with its share metadata (after
  *      assertFreshBuild)
- *   E  Gate H, run as a subprocess: still 38/0
+ *   E  Gate H, run as a subprocess: green, and at least its 38 cases
  *
  * `--engine-only` runs A–C only (the mutation runs that prove each C10 case
  * discriminates use it; see docs/internal/campaigns.md).
@@ -123,6 +132,8 @@ if (process.argv[2] === '--seed-http') {
   rs.setRoomHandle(call.id, 'gatecall'); rs.setRoomOwner(call.id, owner);
   const R = await seedOne(base('Call in pays', { kind: 'callin', roomHandle: 'gatecall', require: 'joined' }));
   const R2 = await seedOne(base('Call in off air', { kind: 'callin', roomHandle: 'gatestage', require: 'joined' }));
+  // R3: the same offer ON AIR, for a seat that never presses GO LIVE (D5c).
+  const R3 = await seedOne(base('Call in from the preview', { kind: 'callin', roomHandle: 'gatecall', require: 'joined' }));
   // The producer room is ON AIR (an open airing, as followTick records when
   // Twitch says the channel is live); the stage room is not. A Holler counts
   // as aired only on air (D4 vs D4b).
@@ -133,7 +144,7 @@ if (process.argv[2] === '--seed-http') {
   const Q2 = await seedOne(base('Aired Holler unkeyed overlay', { kind: 'holler', roomHandle: 'gateprod', require: 'aired' }));
   const Q3 = await seedOne(base('Aired Holler wrong overlay key', { kind: 'holler', roomHandle: 'gateprod', require: 'aired' }));
   const Q4 = await seedOne(base('Aired Holler keyed overlay too late', { kind: 'holler', roomHandle: 'gateprod', require: 'aired' }));
-  console.log(JSON.stringify({ stage: { id: stage.id }, prod: { id: prod.id }, call: { id: call.id }, P, Q, R, R2, O, Q2, Q3, Q4 }));
+  console.log(JSON.stringify({ stage: { id: stage.id }, prod: { id: prod.id }, call: { id: call.id }, P, Q, R, R2, R3, O, Q2, Q3, Q4 }));
   process.exit(0);
 }
 
@@ -1116,6 +1127,9 @@ console.log('\n── C10.F–K round 2: signature, terms clock, spender, stuck,
   engS.sync(); await sleep(60);
   const short = engS.store.getCampaign(S9.id);
   TRANSFERS.splice(TRANSFERS.indexOf(landed9), 1);   // no such transfer on chain: it never landed
+  // A funding already put to a person is re-asked of the chain every 10 min
+  // (PERSON_RECONCILE_MS), not every sweep (C11.8b).
+  clock += 10 * 60_000;
   engS.sync(); await sleep(60);
   const resolved = engS.store.getCampaign(S9.id);
   ok('C10.I #5 STUCK FUNDING: a mid-pull stop waits for a person for 30 min (the admin route says too soon; non-admins refused)',
@@ -1830,6 +1844,363 @@ function nonceChain({ split = false, rejectSameNonce = false, producerPicks = 'l
   clock = clock0;
 }
 
+// ── C11 the audit fix round (2026-10-24): restart, sweep cost, stuck funding, orphaned slots ──
+// Each case was shown to FAIL with its fix reverted on a copy of the tree
+// (docs/internal/campaigns.md, "Hardening", the audit fix round).
+console.log('\n── C11. audit fixes: a Call in across a restart, the sweep at scale, stuck funding, orphaned slots ─');
+{
+  const clock0 = clock, allowance0 = allowance;
+  allowance = 100_000_000n;
+  const RV = mkdtempSync(path.join(tmpdir(), 'mc-campaigns-r5-'));
+  let nV = 0;
+  const dirV = () => path.join(RV, String(++nV));
+  // A restart is a new engine and a new door over the same files, on the SAME chain (`chain`).
+  const engineAt = (d, over = {}, chain = mockChain()) => { const doorV = createSettlement({ dataDir: d, chain, platformAddress: PLATFORM, log: quiet }); return { door: doorV, e: makeEngine(d, doorV, over), chain }; };
+  const paysFor = (doorV, claimId) => doorV.intentsFor('campaign:pay:').filter((r) => (r.rows?.[0]?.meta || {}).claimId === claimId);
+  const live = async (e, input, wallet) => { const c = await e.createCampaign(holler(input), as(creator)); await fundAs(e, c, wallet); e.open(c.id, as(creator)); return e.store.getCampaign(c.id); };
+  /** Count calls to obj's named methods (those it has), keeping each call's first argument. */
+  const countCalls = (obj, names) => {
+    const n = { calls: 0, args: [] };
+    for (const k of names) if (typeof obj[k] === 'function') { const f = obj[k]; obj[k] = (...a) => { n.calls++; n.args.push(a[0]); return f(...a); }; }
+    return n;
+  };
+  const APPROVED = { kind: 'holler', roomHandle: 'gatestage', require: 'approved' };
+
+  // ── ci-3: a Call in across a restart. server.js activeSeats lives in memory,
+  // so a deploy mid-call leaves the claim bound to a seat nobody holds.
+  {
+    const d = dirV();
+    const alive = new Set();                            // the seats server.js's activeSeats holds (all live)
+    const seatState = (id) => (alive.has(id) ? 'live' : 'gone');
+    let u = engineAt(d, { seatState });
+    rooms.gaterestart = { id: 'room-restart', ownerKey: creator.id, transport: 'livekit' };
+    const CR = await live(u.e, { title: 'Call in across a restart', action: { kind: 'callin', roomHandle: 'gaterestart', require: 'aired', minSeconds: 60 }, budget: { amount: '20' } }, W(0xa501));
+    const g = ['A', 'B', 'C'].map((n, i) => { const a = mkX(`restart${n}`, String(3901 + i)); accounts.setAccountPayoutWallet(a.id, W(0xa510 + i)); return a; });
+    const ids = [];
+    for (const [i, a] of g.entries()) {
+      await u.e.check(CR.slug, as(a));
+      const r = u.e.reserve({ slug: CR.slug, accountId: a.id, kind: 'callin', roomId: 'room-restart' });
+      u.e.bind(r.claimId, { seatId: `S-old-${i}` }); alive.add(`S-old-${i}`);
+      u.e.onSeatEvent(`S-old-${i}`, 'camera_on');
+      ids.push(r.claimId);
+    }
+    clock += 10_000;
+    u.e.stop(); alive.clear();                          // a deploy: the process, and every seat with it
+    u = engineAt(d, { seatState }, u.chain);
+    // C stays on camera five more minutes, then LiveKit says it left
+    // (participant_left reaches the engine for a seat the server lost).
+    clock += 5 * 60_000;
+    u.e.onSeatEvent('S-old-2', 'camera_off');
+    const c1 = u.e.store.getClaim(ids[2]);
+    ok('C11.1 ci-3 A CAMERA_OFF FOR A SEAT THE SERVER LOST (a restart) counts nothing: no clock ran across the restart, so the slot goes back, never owed (it paid for the blind spot)',
+      c1.status === 'eligible' && !c1.seatId && paysFor(u.door, ids[2]).length === 0, `${c1.status}, ${paysFor(u.door, ids[2]).length} payout(s)`);
+    // A rejoins at once, before any sweep has run.
+    const rA = await attempt(() => u.e.reserve({ slug: CR.slug, accountId: g[0].id, kind: 'callin', roomId: 'room-restart' }));
+    u.e.sync();
+    const b1 = u.e.store.getClaim(ids[1]);
+    ok('C11.1 ...the SWEEP gives back a slot whose seat the server lost (it stayed joined until the campaign closed)', b1.status === 'eligible' && !b1.seatId && b1.reservedAtomic == null, b1.status);
+    let a2 = null, onAt = null, onAtWant = null;
+    if (rA.value) {
+      u.e.bind(ids[0], { seatId: 'S-new-0' }); alive.add('S-new-0');
+      onAtWant = new Date(clock).toISOString();
+      u.e.onSeatEvent('S-new-0', 'camera_on');
+      onAt = u.e.store.getClaim(ids[0]).cameraOnAt;
+      for (let s = 0; s < 4; s++) { clock += 15_000; u.e.sync(); }   // a seat the server holds is never given back
+      clock += 1_000;
+      alive.delete('S-new-0'); u.e.onSeatEvent('S-new-0', 'ended');  // removeParticipant: drops the seat, THEN ends it
+      a2 = u.e.store.getClaim(ids[0]);
+    }
+    ok('C11.1 ...the guest\'s REJOIN reserves at once (it was refused already_claimed), the clock starts again on the new seat, and 61 s there makes the claim owed: one payout',
+      code(rA) === 'ok' && onAt === onAtWant && ['owed', 'releasing'].includes(a2?.status) && paysFor(u.door, ids[0]).length === 1,
+      `rejoin ${code(rA)}, clock from ${onAt === onAtWant ? 'the new camera' : onAt}, ${a2?.status || u.e.store.getClaim(ids[0]).status}`);
+    u.e.stop();
+  }
+
+  // ── NEW-1 (web audit): the browser publishes its camera in the PREVIEW, before
+  // GO LIVE, so track_published arrives while the overlay shows nobody. The
+  // clock needs the camera AND a live seat (server.js activateSeatLive).
+  {
+    const state = new Map();                            // seatId → what server.js's seatState answers
+    const u = engineAt(dirV(), { seatState: (id) => state.get(id) || 'gone' });
+    rooms.gatepreview = { id: 'room-preview', ownerKey: creator.id, transport: 'livekit' };
+    const PA = await live(u.e, { title: 'Call in from the preview, aired', action: { kind: 'callin', roomHandle: 'gatepreview', require: 'aired', minSeconds: 60 } }, W(0xa590));
+    const PJ = await live(u.e, { title: 'Call in from the preview, joined', action: { kind: 'callin', roomHandle: 'gatepreview', require: 'joined' } }, W(0xa591));
+    const gp = mkX('previewguest', '3930'); accounts.setAccountPayoutWallet(gp.id, W(0xa592));
+    await u.e.check(PA.slug, as(gp)); await u.e.check(PJ.slug, as(gp));
+    const ra = u.e.reserve({ slug: PA.slug, accountId: gp.id, kind: 'callin', roomId: 'room-preview' });
+    u.e.bind(ra.claimId, { seatId: 'S-prev-a' }); state.set('S-prev-a', 'preview');
+    const rj = u.e.reserve({ slug: PJ.slug, accountId: gp.id, kind: 'callin', roomId: 'room-preview' });
+    u.e.bind(rj.claimId, { seatId: 'S-prev-j' }); state.set('S-prev-j', 'preview');
+    u.e.onSeatEvent('S-prev-a', 'camera_on'); u.e.onSeatEvent('S-prev-j', 'camera_on');   // track_published, still in the preview
+    for (let s = 0; s < 4; s++) { clock += 15_000; u.e.sync(); }
+    clock += 1_000;
+    const a1 = u.e.store.getClaim(ra.claimId), j1 = u.e.store.getClaim(rj.claimId);
+    ok('C11.7 NEW-1 A CAMERA PUBLISHED IN THE PREVIEW (track_published before GO LIVE, the overlay showing nobody) starts no clock: 61 s later, sweeps running, neither claim is joined or owed (require aired AND require joined)',
+      a1.status === 'recorded' && !a1.cameraOnAt && j1.status === 'recorded' && paysFor(u.door, rj.claimId).length === 0, `${a1.status}/${j1.status}`);
+    state.set('S-prev-a', 'live'); u.e.onSeatEvent('S-prev-a', 'seat_live');   // GO LIVE (activateSeatLive)
+    const wentLive = new Date(clock).toISOString();
+    const a2 = u.e.store.getClaim(ra.claimId);
+    state.set('S-prev-j', 'live'); u.e.sync();          // no seat_live event: the next sweep starts it
+    const j2 = u.e.store.getClaim(rj.claimId);
+    clock += 61_000; u.e.onSeatEvent('S-prev-a', 'camera_off');
+    const a3 = u.e.store.getClaim(ra.claimId);
+    ok('C11.7 ...GO LIVE starts the clock from that moment (seat_live, or the next sweep): require joined → owed, and 61 s live → owed for require aired, one payout each',
+      a2.status === 'joined' && a2.cameraOnAt === wentLive && ['owed', 'releasing'].includes(j2.status) && ['owed', 'releasing'].includes(a3.status) && paysFor(u.door, ra.claimId).length === 1 && paysFor(u.door, rj.claimId).length === 1,
+      `${a2.status} from ${a2.cameraOnAt === wentLive ? 'going live' : a2.cameraOnAt}, ${j2.status}, ${a3.status}`);
+    u.e.stop();
+  }
+
+  // ── ci-2: the claims index, the sweep at 100 campaigns × 50 claims, the payout-wallet route, the draft cap
+  {
+    const { createCampaignStore } = await import('./campaign-store.js');
+    const st = createCampaignStore({ dataDir: dirV() });
+    let seed = 7;
+    const rnd = (n) => { seed = (seed * 48271) % 2147483647; return seed % n; };
+    for (let i = 0; i < 400; i++) {
+      const campaignId = `cmp_ix${rnd(12)}`, accountId = `acct_ix${rnd(30)}`, id = `clm_${campaignId}_${accountId}`;
+      st.putClaim({ ...(st.getClaim(id) || {}), id, campaignId, accountId, status: ['eligible', 'recorded', 'owed'][rnd(3)], n: i });
+    }
+    const sameAsScan = (s) => {
+      const all = s.listClaims();
+      const sorted = (ks) => JSON.stringify(ks.map((k) => k.id).sort());
+      return [...new Set(all.map((k) => k.campaignId))].every((cid) => sorted(s.listClaims(cid)) === sorted(all.filter((k) => k.campaignId === cid)))
+        && [...new Set(all.map((k) => k.accountId))].every((aid) => sorted(s.claimsOfAccount(aid)) === sorted(all.filter((k) => k.accountId === aid)))
+        && all.every((k) => JSON.stringify(s.listClaims(k.campaignId).find((x) => x.id === k.id)) === JSON.stringify(k))
+        && s.listClaims('cmp_none').length === 0;
+    };
+    const inMemory = await attempt(() => sameAsScan(st));
+    st._reset();
+    const reloaded = await attempt(() => sameAsScan(st));
+    ok('C11.2 ci-2 the claims INDEX (by campaign, by account) answers exactly what a full scan answers: 400 random writes over 12 campaigns × 30 accounts, and again after a reload from disk',
+      inMemory.value === true && reloaded.value === true, inMemory.error?.message || reloaded.error?.message || `${st.listClaims().length} claims`);
+
+    // 100 live campaigns × 50 claims, 10 drafts, 10 closed campaigns with nothing left, written the way the store writes them.
+    const d1 = mkdtempSync(path.join(RV, 'scale-'));
+    const at = new Date(clock - 86_400_000).toISOString();
+    const camp = (i, status, extra = {}) => {
+      const id = `cmp_sc${String(i).padStart(10, '0')}`;
+      return {
+        id, slug: `scale-${i}`, title: `Scale ${i}`, blurb: 'Send a Holler on my stream and get paid for it.', action: { ...APPROVED, require: 'aired' }, rules: { minFollowers: 1000 }, maxClaims: 100,
+        deadline: new Date(clock + 30 * 86_400_000).toISOString(), reward: { type: 'usdc', amount: '5', atomic: '5000000' }, budget: { amount: '1000', atomic: '1000000000' }, token: { ...USDC },
+        status, hidden: false, creatorAccountId: creator.id, fundingAttempts: status === 'draft' ? 0 : 1, xCostAtomic: '0', refund: null, termsAt: at, createdAt: at, updatedAt: at,
+        funding: status === 'draft' ? null : { state: 'confirmed', wallet: W(0xa520), ref: `campaign:fund:${id}:1`, token: { ...USDC }, atomic: '1000000000', txHash: `0x${'1'.repeat(64)}`, receipt: 'success', at },
+        ...extra,
+      };
+    };
+    const cs = { campaigns: {}, slugs: {} }, ks = { claims: {}, byX: {}, byAccount: {}, byLetter: {}, bySeat: {} };
+    const seedOne = (c, n, statusOf) => {
+      cs.campaigns[c.id] = c; cs.slugs[c.slug] = c.id;
+      for (let j = 0; j < n; j++) {
+        const status = statusOf(j), bound = status === 'recorded' || status === 'paid';
+        const k = { id: `clm_${c.id.slice(4)}_${j}`, campaignId: c.id, accountId: `acct_sc${j}`, xUserId: String(7_000_000 + j), status, checkedAt: at, createdAt: at, updatedAt: at, history: [],
+          ...(bound ? { reservedAtomic: '5000000', reservedAt: at, letterId: `L-${c.id}-${j}` } : {}), ...(status === 'paid' ? { owedAtomic: '5000000' } : {}) };
+        ks.claims[k.id] = k; ks.byAccount[`${c.id}:${k.accountId}`] = k.id; ks.byX[`${c.id}:${k.xUserId}`] = k.id;
+        if (k.letterId) ks.byLetter[k.letterId] = k.id;
+      }
+      return c;
+    };
+    const mix = ['eligible', 'eligible', 'ineligible', 'recorded', 'paid'];
+    const lives = Array.from({ length: 100 }, (_, i) => seedOne(camp(i, 'live'), 50, (j) => mix[j % mix.length]));
+    const drafts = Array.from({ length: 10 }, (_, i) => seedOne(camp(100 + i, 'draft'), 0));
+    const done = Array.from({ length: 10 }, (_, i) => seedOne(camp(200 + i, 'closed', { closedAt: at, closeReason: 'gate', refund: { ref: `campaign:refund:cmp_sc${200 + i}`, atomic: '0', at } }), 10, (j) => (j % 2 ? 'paid' : 'ineligible')));
+    writeFileSync(path.join(d1, 'campaigns.json'), JSON.stringify(cs, null, 2));
+    writeFileSync(path.join(d1, 'campaign-claims.json'), JSON.stringify(ks, null, 2));
+    // The cost it replaced: a listing that walked every claim of every campaign, measured on the same rows.
+    const table = JSON.parse(readFileSync(path.join(d1, 'campaign-claims.json'), 'utf8')).claims;
+    let t0 = performance.now();
+    for (const c of lives) Object.values(table).filter((k) => k.campaignId === c.id).map((k) => JSON.parse(JSON.stringify(k)));
+    const scanMs = performance.now() - t0;
+    const sc = engineAt(d1);
+    sc.e.store.listClaims(lives[0].id);                 // the first read builds the index from the file
+    t0 = performance.now();
+    for (const c of lives) sc.e.store.listClaims(c.id);
+    const indexMs = performance.now() - t0;
+    // Deterministic: count the rows Object.values hands back while 100 listings run.
+    const ov = Object.values;
+    let walked = 0;
+    Object.values = (o) => { const r = ov(o); walked += r.length; return r; };
+    try { for (const c of lives) sc.e.store.listClaims(c.id); } finally { Object.values = ov; }
+    ok('C11.2 ...listClaims(id) reads ONE campaign\'s claims through the index and never walks the claims table (it walked all 5,100 rows per listing)',
+      walked === 0, `100×50: 100 listings ${indexMs.toFixed(1)} ms through the index vs ${scanMs.toFixed(1)} ms by the full scan; ${walked} rows walked`);
+    const listed = countCalls(sc.e.store, ['listClaims']);
+    t0 = performance.now(); sc.e.sync(); const sync1 = performance.now() - t0;
+    const first = listed.args.splice(0);
+    t0 = performance.now(); sc.e.sync(); const sync2 = performance.now() - t0;
+    const second = listed.args.splice(0);
+    const draftIds = new Set(drafts.map((c) => c.id)), doneIds = new Set(done.map((c) => c.id));
+    ok('C11.2 ...the SWEEP never reads a draft (no claims, no holds) and, after one pass, skips a closed campaign with nothing left (refunded, every claim final)',
+      first.length === 110 && !first.some((id) => draftIds.has(id)) && second.length === 100 && !second.some((id) => draftIds.has(id) || doneIds.has(id)),
+      `100×50: sync() ${sync1.toFixed(0)} ms, then ${sync2.toFixed(0)} ms; campaigns listed ${first.length}, then ${second.length}`);
+    sc.e.stop();
+
+    // POST /api/account/payout-wallet: pays THIS account's owed claims, runs no sweep, rate-limited.
+    const routesMod = await import('./campaign-routes.js');
+    const walletRoute = routesMod.CAMPAIGN_ROUTES.find(([m, p]) => m === 'POST' && p === '/api/account/payout-wallet')[3];
+    const pw = engineAt(dirV());
+    const PW = await live(pw.e, { title: 'Owed, waiting for a wallet', action: APPROVED }, W(0xa530));
+    const late = mkX('walletlate', '3910');
+    await pw.e.check(PW.slug, as(late));
+    const rw = pw.e.reserve({ slug: PW.slug, accountId: late.id, kind: 'holler', roomId: 'room-holler' });
+    pw.e.bind(rw.claimId, { letterId: 'L-walletlate' }); pw.e.onLetterEvent('L-walletlate', 'approved');
+    const owedFirst = pw.e.store.getClaim(rw.claimId).status;
+    const walksPW = countCalls(pw.e.store, ['listCampaigns', 'campaignIds']);
+    const setW = await attempt(() => walletRoute(pw.e, { body: { address: W(0xa531) } }, as(late)));
+    const paidNow = pw.e.store.getClaim(rw.claimId);
+    ok('C11.2 ...POST /api/account/payout-wallet pays THAT account\'s owed claim at once and walks no campaign (it ran the whole sweep, for any signed-in caller)',
+      owedFirst === 'owed' && code(setW) === 'ok' && paidNow.status === 'releasing' && paysFor(pw.door, rw.claimId).length === 1 && walksPW.calls === 0,
+      `${owedFirst} → ${paidNow.status}; campaign walks ${walksPW.calls}`);
+    const flood = mkX('walletflood', '3911');
+    const answers = [];
+    for (let i = 0; i < 7; i++) answers.push(await attempt(() => walletRoute(pw.e, { body: { address: W(0xa540 + i) } }, as(flood))));
+    const wa = routesMod.walletAllowed;
+    const win = typeof wa === 'function' ? Array.from({ length: 7 }, (_, i) => wa('gate-wallet-key', i)) : [];
+    ok(`C11.2 ...and it is rate-limited per account: ${routesMod.WALLET_PER_MIN} a minute, the next answered 429, allowed again a minute on`,
+      routesMod.WALLET_PER_MIN === 6 && answers.slice(0, 6).every((r) => code(r) === 'ok') && code(answers[6]) === 'rate_limited' && answers[6].error.status === 429
+        && win.slice(0, 6).every(Boolean) && win[6] === false && wa('gate-wallet-key', 61_010) === true,
+      answers.map(code).join(','));
+    pw.e.stop();
+
+    // At most MAX_DRAFTS_PER_ACCOUNT drafts (DECISIONS.md).
+    const dc = engineAt(dirV());
+    const made = [];
+    for (let i = 0; i < 21; i++) made.push(await attempt(() => dc.e.createCampaign(holler({ title: `Draft number ${i}` }), as(creator))));
+    const madeOk = made.filter((r) => r.value).length;
+    if (made[0].value) dc.e.close(made[0].value.id, as(creator));
+    const again = await attempt(() => dc.e.createCampaign(holler({ title: 'Draft after a close' }), as(creator)));
+    ok('C11.2 ...an account holds at most 20 drafts: the 21st is refused (too_many_drafts, 409), and closing one makes room',
+      madeOk === 20 && code(made[20]) === 'too_many_drafts' && made[20].error.status === 409 && code(again) === 'ok',
+      `${madeOk} made, the next ${code(made[20])}; after a close ${code(again)}`);
+    dc.e.stop();
+  }
+
+  // ── ci-8: a stuck funding is written up once, not once a minute
+  {
+    let mined = 3, receiptWaits = 0;
+    const d = dirV();
+    const doorS = createSettlement({ dataDir: d, chain: mockChain(), platformAddress: PLATFORM, log: quiet });
+    const e = makeEngine(d, doorS, {
+      confirmTx: async () => { receiptWaits++; return null; },
+      readSpenderNonce: async () => mined++,           // the spender keeps mining, still short of the pull's nonce
+      txKnown: async () => true,
+    });
+    const S = await e.createCampaign(holler({ title: 'Stuck with a hash' }), as(creator));
+    const H = `0x${'ab'.repeat(32)}`, ref = `campaign:fund:${S.id}:1`, wallet = W(0xa550);
+    e.store.putCampaign({ ...e.store.getCampaign(S.id), status: 'funding_pending', fundingAttempts: 1, funding: { state: 'pending', wallet, ref, token: USDC, atomic: S.budget.atomic, txHash: H, receipt: null, at: new Date(clock - 31 * 60_000).toISOString() } });
+    // What the door writes before the raw send (settlement.js PULL_SENT), with the nonce it was signed with.
+    doorS._ledger.append({ type: 'PULL_SENT', ref, signer: 'campaignPull', from: wallet, to: PLATFORM, token: USDC, amountAtomic: S.budget.atomic, txHash: H, nonce: 1000, nonceKey: null, meta: { campaignId: S.id }, at: Date.now() });
+    const writes = countCalls(e.store, ['putCampaign']);
+    for (let m = 0; m < 60; m++) { await e.reconcileFunding(S.id); clock += 60_000; }
+    const rows = e.store.ledger().filter((r) => r.campaignId === S.id);
+    const n = (kind) => rows.filter((r) => r.kind === kind).length;
+    const s1 = e.store.getCampaign(S.id);
+    ok('C11.3 ci-8 A STUCK PULL (a hash, no receipt, its nonce not used yet) reconciled once a minute for an hour: ONE funding-unconfirmed row, ONE funding-unknown row, two campaigns.json writes (it was 60 / 60 / 60), and no elapsed minutes in the stored reason',
+      n('funding-unconfirmed') === 1 && n('funding-unknown') === 1 && writes.calls <= 2 && s1.status === 'funding_pending' && /no receipt/.test(s1.funding.needsPerson || '') && !/after \d+ min/.test(s1.funding.needsPerson || ''),
+      `unconfirmed ${n('funding-unconfirmed')}, unknown ${n('funding-unknown')}, writes ${writes.calls}`);
+    receiptWaits = 0;
+    for (let s = 0; s < 40; s++) { e.sync(); await sleep(0); clock += 15_000; }
+    ok('C11.3 ...once a person has been asked, the SWEEP re-asks the chain every 10 min, not every 15 s: 40 sweeps over 10 min make one receipt wait (it was 40)',
+      receiptWaits === 1, `${receiptWaits} receipt wait(s)`);
+    e.stop();
+  }
+
+  // ── ci-18: a slot reserved and never bound goes back
+  {
+    const d = dirV();
+    let u = engineAt(d);
+    const one = await live(u.e, { title: 'One place', maxClaims: 1, action: APPROVED }, W(0xa560));
+    const [pa, pb] = [mkX('slotA', '3920'), mkX('slotB', '3921')];
+    await u.e.check(one.slug, as(pa)); await u.e.check(one.slug, as(pb));
+    const ra = u.e.reserve({ slug: one.slug, accountId: pa.id, kind: 'holler', roomId: 'room-holler' });
+    u.e.stop(); u = engineAt(d, {}, u.chain);           // a restart between the reserve and its bind
+    const early = await attempt(() => u.e.reserve({ slug: one.slug, accountId: pb.id, kind: 'holler', roomId: 'room-holler' }));
+    for (let s = 0; s < 44; s++) { clock += 15_000; u.e.sync(); }   // 11 minutes of sweeps
+    const rb = await attempt(() => u.e.reserve({ slug: one.slug, accountId: pb.id, kind: 'holler', roomId: 'room-holler' }));
+    const ka = u.e.store.getClaim(ra.claimId);
+    ok('C11.4 ci-18 A SLOT RESERVED AND NEVER BOUND (a restart between reserve and bind) holds its place 10 min, then the sweep gives it back and another qualified claimant reserves (it read "full" until the campaign ended)',
+      code(early) === 'full' && ka.status === 'eligible' && code(rb) === 'ok' && u.e.store.ledger().some((r) => r.kind === 'released' && r.claimId === ra.claimId),
+      `at first ${code(early)}; 11 min on A is ${ka.status}, B ${code(rb)}`);
+    const two = await live(u.e, { title: 'Bound in time', maxClaims: 2, action: APPROVED }, W(0xa561));
+    const pc = mkX('slotC', '3922');
+    await u.e.check(two.slug, as(pc));
+    const rc = u.e.reserve({ slug: two.slug, accountId: pc.id, kind: 'holler', roomId: 'room-holler' });
+    for (let s = 0; s < 8; s++) { clock += 15_000; u.e.sync(); }    // a slow payment step: 2 min
+    const bound = u.e.bind(rc.claimId, { letterId: 'L-slotC' });
+    ok('C11.4 ...a bind that arrives inside the window still binds: a slow payment step loses nothing', bound?.status === 'recorded' && bound.letterId === 'L-slotC', bound?.status || 'not bound');
+    const three = await live(u.e, { title: 'Hidden mid-send', maxClaims: 1, action: APPROVED }, W(0xa562));
+    const [pd, pe] = [mkX('slotD', '3923'), mkX('slotE', '3924')];
+    await u.e.check(three.slug, as(pd)); await u.e.check(three.slug, as(pe));
+    const rd = u.e.reserve({ slug: three.slug, accountId: pd.id, kind: 'holler', roomId: 'room-holler' });
+    u.e.setHidden(three.id, true);
+    const refusedBind = u.e.bind(rd.claimId, { letterId: 'L-slotD' });
+    u.e.setHidden(three.id, false);
+    const re = await attempt(() => u.e.reserve({ slug: three.slug, accountId: pe.id, kind: 'holler', roomId: 'room-holler' }));
+    ok('C11.4 ...a bind REFUSED (the campaign was hidden between reserve and bind) gives the slot back at once; letters.js ignores the answer, so the engine does it',
+      refusedBind === null && u.e.store.getClaim(rd.claimId).status === 'eligible' && code(re) === 'ok',
+      `bind ${refusedBind ? 'went through' : 'refused'}, D ${u.e.store.getClaim(rd.claimId).status}, E ${code(re)}`);
+    u.e.stop();
+  }
+
+  // ── ci-5: the sweep closes in place: no close() ↔ sync() recursion, no stale snapshot written back
+  {
+    const u = engineAt(dirV());
+    const dl = new Date(clock + 3_600_000).toISOString();
+    const X1 = await live(u.e, { title: 'Expires first', deadline: dl }, W(0xa570));
+    const X2 = await live(u.e, { title: 'Expires with an orphaned hold', deadline: dl }, W(0xa571));
+    // An X check in flight across a restart leaves a hold from an earlier boot.
+    const x2 = u.e.store.getCampaign(X2.id);
+    u.e.store.putCampaign({ ...x2, xHolds: { xh_earlier: { atomic: '50000', usd: 0.05, why: 'followedBy check', at: x2.updatedAt, boot: 'an-earlier-boot' } } });
+    clock += 2 * 3_600_000;                             // both deadlines pass while the server is down
+    const walks = countCalls(u.e.store, ['listCampaigns', 'campaignIds']);
+    const seq = [];
+    const putC = u.e.store.putCampaign;
+    u.e.store.putCampaign = (c) => { if (c.id === X2.id) seq.push(`${c.status}${c.refund ? '+refund' : ''}`); return putC(c); };
+    u.e.sync();
+    const rows = u.e.store.ledger();
+    const per = (id, kind) => rows.filter((r) => r.campaignId === id && r.kind === kind).length;
+    const firstClosed = seq.indexOf('closed');
+    ok('C11.5 ci-5 TWO CAMPAIGNS PAST THEIR DEADLINE, one with an orphaned X hold: one sync() walks the campaigns ONCE, each gets exactly one closed, one refund and one door refund of its whole budget, and no stale "live" record is written back after the close (it was 4 walks, 2 + 2 rows, live after closed)',
+      walks.calls === 1 && [X1.id, X2.id].every((id) => per(id, 'closed') === 1 && per(id, 'refund') === 1 && u.door.status(`campaign:refund:${id}`)?.amountAtomic === '12000000')
+        && per(X2.id, 'x-hold-orphaned') === 1 && firstClosed >= 0 && !seq.slice(firstClosed).includes('live'),
+      `walks ${walks.calls}; closed ${per(X1.id, 'closed')}/${per(X2.id, 'closed')}, refund ${per(X1.id, 'refund')}/${per(X2.id, 'refund')}; writes ${seq.join(' → ')}`);
+    u.e.stop();
+  }
+
+  // ── ci-11: the public offer page reads a frozen list's name and count without cloning its ids
+  {
+    const u = engineAt(dirV());
+    const ids = Array.from({ length: 20_000 }, (_, i) => String(20_000_000 + i));
+    const bigSet = await u.e.buildSet({ name: 'Big frozen list', source: 'manual', sourceRef: ids.join(',') }, as(creator));
+    const PV = await live(u.e, { title: 'Big list offer', rules: { minFollowers: 10000, referenceSetId: bigSet.id, followedByFromSet: { min: 1, perClaimCostCapUsd: 0.05, referenceSetId: bigSet.id } } }, W(0xa580));
+    const clones = countCalls(u.e.store, ['getSet']);
+    const t0 = performance.now();
+    let view = null;
+    for (let i = 0; i < 20; i++) view = u.e.publicView(PV.slug);
+    const msPer = (performance.now() - t0) / 20;
+    ok('C11.6 ci-11 the PUBLIC OFFER PAGE with a 20,000-id list on both rules clones the list 0 times a view (it was 4) and still shows its name, count and root',
+      clones.calls === 0 && view?.referenceSet?.count === 20_000 && view.referenceSet.root === bigSet.root && view.followedBySet?.id === bigSet.id && view.rules.some((r) => /Big frozen list/.test(r)),
+      `${clones.calls / 20} list clones a view, ${msPer.toFixed(2)} ms a view`);
+    u.e.stop();
+  }
+  // ── env: a malformed grace variable reads as its default (env-num.js)
+  {
+    const u = engineAt(dirV());
+    const G = await live(u.e, { title: 'Grace from a bad variable', action: APPROVED }, W(0xa5a0));
+    const gg = mkX('graceguest', '3940');
+    await u.e.check(G.slug, as(gg));
+    const rg = u.e.reserve({ slug: G.slug, accountId: gg.id, kind: 'holler', roomId: 'room-holler' });
+    u.e.bind(rg.claimId, { letterId: 'L-grace' });
+    process.env.CAMPAIGN_CLOSE_GRACE_HOURS = '48h';
+    const closed = await attempt(() => u.e.close(G.id, as(creator)));
+    delete process.env.CAMPAIGN_CLOSE_GRACE_HOURS;
+    const kg = u.e.store.getClaim(rg.claimId);
+    const want = closed.value ? new Date(Date.parse(closed.value.closedAt) + 48 * 3_600_000).toISOString() : null;
+    ok('C11.8 CAMPAIGN_CLOSE_GRACE_HOURS set to a non-number reads as the 48 h default: the close goes through and honours the submitted Holler (it read NaN, and every close threw)',
+      code(closed) === 'ok' && kg.honourUntil === want, `${code(closed)}${closed.error ? `: ${closed.error.message}` : ''}; honoured until ${kg.honourUntil}`);
+    u.e.stop();
+  }
+  clock = clock0; allowance = allowance0;
+}
+
 eng.stop();
 if (ENGINE_ONLY) {
   console.log(`
@@ -1866,8 +2237,8 @@ const seedRun = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--
 });
 let seeded = null;
 try { seeded = JSON.parse((seedRun.stdout || '').trim().split(String.fromCharCode(10)).pop()); } catch { seeded = null; }
-ok('D0. the HTTP data dir is seeded: three rooms (two on air) and eight funded, live campaigns', !!seeded?.P && !!seeded?.R && !!seeded?.R2 && !!seeded?.Q4 && !!seeded?.call, (seedRun.stderr || '').slice(-300));
-const { stage, prod, call: callRoom, P, Q, R, R2, O, Q2, Q3, Q4 } = seeded || {};
+ok('D0. the HTTP data dir is seeded: three rooms (two on air) and nine funded, live campaigns', !!seeded?.P && !!seeded?.R && !!seeded?.R2 && !!seeded?.R3 && !!seeded?.Q4 && !!seeded?.call, (seedRun.stderr || '').slice(-300));
+const { stage, prod, call: callRoom, P, Q, R, R2, R3, O, Q2, Q3, Q4 } = seeded || {};
 
 const sellerKey = generatePrivateKey();   // fresh and empty: nothing it could sign has funds behind it
 const campaignSpenderKey = generatePrivateKey();   // the dedicated campaign spender: fresh and empty too
@@ -1895,9 +2266,8 @@ try {
     env: {
       ...auth.env, SITE_ADMIN_TWITCH: 'siteboss', CAMPAIGN_FUNDING: '1', KEEP_ORPHAN_ROOMS: 'true',
       SELLER_PRIVATE_KEY: sellerKey, SELLER_WALLET_ADDRESS: privateKeyToAccount(sellerKey).address,
-      CAMPAIGN_SPENDER_KEY: campaignSpenderKey,
-      PLATFORM_SETTLEMENT_KEY: '', REWARD_POOL_PRIVATE_KEY: '', ESCROW_OPERATOR_KEY: '', ESCROW_ATTEST_KEY: '',
-      X_BEARER_TOKEN: '', X_TOKEN_KEY: '', X_CLIENT_ID: '', X_CLIENT_SECRET: '', MODERATION_API_KEY: '',
+      // Every other live key starts blank (startGateServer, SENSITIVE_ENV).
+      CAMPAIGN_SPENDER_KEY: campaignSpenderKey, X_CLIENT_ID: '',
       LETTER_HOLD_TTL_MS: '3600000',
       LIVEKIT_URL: 'ws://127.0.0.1:9', LIVEKIT_API_KEY: LK.key, LIVEKIT_API_SECRET: LK.secret,
     },
@@ -1924,7 +2294,7 @@ try {
   ok(`D1. the ${admins.length} admin routes refuse a signed-in non-admin with 403`, notAdmin.length === 0, notAdmin.join(' | '));
   const viaKey = await call('GET', '/api/campaigns/admin/all', { headers: { 'x-bounty-admin-key': auth.adminKey } });
   const viaOwner = await call('GET', '/api/campaigns/admin/all', { as: 'twitch:siteboss' });
-  ok('D1. ...and admit the bounty admin key and the site owner\'s account', viaKey.status === 200 && viaOwner.status === 200 && viaKey.body.campaigns.length === 8);
+  ok('D1. ...and admit the bounty admin key and the site owner\'s account', viaKey.status === 200 && viaOwner.status === 200 && viaKey.body.campaigns.length === 9);
   const other = await call('GET', `/api/campaigns/${P.id}/claims`, { as: 'x:xalice' });
   ok('D1. a signed-in account cannot read someone else\'s campaign claims', other.status === 403);
 
@@ -2082,7 +2452,10 @@ try {
   ok('D5. xalice\'s campaign Call in gets a seat', join.status === 200 && !!join.body.seatId, `http ${join.status} ${join.body.error || ''}`);
   const rClaim = async () => (await call('GET', `/api/campaigns/${R.slug}/my-claim`, { as: 'x:xalice' })).body.claim;
   ok('D5. the seat is bound to her claim (recorded, not yet counted)', (await rClaim())?.status === 'recorded' && (await rClaim())?.seatId === join.body.seatId);
-  ws.send(JSON.stringify({ type: 'camera_ready', seatId: join.body.seatId }));
+  // GO LIVE, as the client sends it: with the seat token from the join
+  // response (N1). It makes the seat live, the second half of what a Call in
+  // counts from (NEW-1); on its own it counts nothing.
+  ws.send(JSON.stringify({ type: 'camera_ready', seatId: join.body.seatId, seatToken: join.body.seatToken }));
   await sleep(1200);
   ok('D5. CLIENT SIGNAL IGNORED: the client’s camera_ready alone does not count (claim still recorded)', (await rClaim())?.status === 'recorded', (await rClaim())?.status);
   const hook = async (event, opts) => { const q = lkWebhookRequest(event, opts); const x = await fetch(`${APP}/api/livekit/webhook`, { method: 'POST', headers: q.headers, body: q.body }); await sleep(300); return x.status; };
@@ -2107,7 +2480,7 @@ try {
   let rs = null;
   for (let i = 0; i < 10; i++) { rs = (await rClaim())?.status; if (rs === 'releasing') break; await sleep(300); }
   ok('D5. a SIGNED LiveKit track_published (camera, her seat’s identity, this ON-AIR room) → joined → owed → payout intent', rs === 'releasing', `status=${rs}`);
-  await call('POST', `/api/leave/${join.body.seatId}`);
+  await call('POST', `/api/leave/${join.body.seatId}`, { body: { seatToken: join.body.seatToken } });
 
   // D5b — cold review B2: the same Call in offer in a room that is OFF AIR
   // (the stage room has no open airing). A signed camera webhook counts nothing.
@@ -2121,7 +2494,24 @@ try {
     ok('D5b. OFF AIR: a SIGNED camera webhook for a campaign Call in in a room that is not broadcasting is never joined or owed, and the claim says offAir',
       j2.status === 200 && !!j2.body.seatId && st2?.status === 'recorded' && st2.offAir === true && !doorRows().some((x) => x.type === 'INTENT' && (x.meta || {}).campaignId === R2.id),
       `join http ${j2.status}; claim ${st2?.status} offAir=${st2?.offAir}`);
-    await call('POST', `/api/leave/${j2.body.seatId}`);
+    await call('POST', `/api/leave/${j2.body.seatId}`, { body: { seatToken: j2.body.seatToken } });
+  }
+
+  // D5c — NEW-1 (web audit): the browser publishes its camera in the PREVIEW,
+  // before GO LIVE, so LiveKit's track_published arrives while the overlay
+  // shows nobody. On air, signed, her seat: still nothing counts until the
+  // seat is live (server.js seatState reads activeSeats' live flag).
+  {
+    await call('POST', `/api/campaigns/${R3.slug}/check`, { as: 'x:xalice' });
+    const j3 = await call('POST', '/api/join/mpp', { as: 'x:xalice', body: { room: 'gatecall', username: 'xalice', campaign: R3.slug } });
+    const r3Claim = async () => (await call('GET', `/api/campaigns/${R3.slug}/my-claim`, { as: 'x:xalice' })).body.claim;
+    await hook({ id: 'EV_camera_preview', event: 'track_published', room: { name: `mc-${callRoom.id}` }, participant: { identity: `seat:${j3.body.seatId}` }, track: { type: 'VIDEO', source: 'CAMERA' }, createdAt: Math.floor(Date.now() / 1000) });
+    let st3 = null;
+    for (let i = 0; i < 6; i++) { st3 = await r3Claim(); await sleep(300); }
+    ok('D5c. NEW-1 PREVIEW: a SIGNED camera webhook for a campaign Call in, ON AIR, before the guest pressed GO LIVE, is never joined or owed (it was owed at once)',
+      j3.status === 200 && !!j3.body.seatId && st3?.status === 'recorded' && st3.offAir === false && !doorRows().some((x) => x.type === 'INTENT' && (x.meta || {}).campaignId === R3.id),
+      `join http ${j3.status}; claim ${st3?.status} offAir=${st3?.offAir}`);
+    await call('POST', `/api/leave/${j3.body.seatId}`, { body: { seatToken: j3.body.seatToken } });
   }
 
   // D4b — round 2 #2: a fake overlay socket (role:'overlay' is self-declared)
@@ -2168,7 +2558,7 @@ try {
   ok('D6. someone else’s wallet with an approve tx the chain has never seen is refused, and nothing is pulled',
     bogus.status >= 400 && ['approve_invalid', 'approve_unreadable'].includes(bogus.body.reason) && doorRows().filter((x) => x.type === 'PULL').length === pullsBefore, `http ${bogus.status} ${bogus.body.reason}`);
   const mineList = await call('GET', '/api/campaigns/mine', { as: 'twitch:campowner' });
-  ok('D6. GET /api/campaigns/mine lists the creator\'s own campaigns only', mineList.status === 200 && mineList.body.campaigns.length === 9 && (await call('GET', '/api/campaigns/mine', { as: 'x:xbob' })).body.campaigns.length === 0);
+  ok('D6. GET /api/campaigns/mine lists the creator\'s own campaigns only', mineList.status === 200 && mineList.body.campaigns.length === 10 && (await call('GET', '/api/campaigns/mine', { as: 'x:xbob' })).body.campaigns.length === 0);
 
   // D9 — cold review item 6: /api/dashboard/unlock is rate-limited per IP and
   // per room, and a room password alone never gets the overlay key. The
@@ -2248,10 +2638,7 @@ try {
       env: {
         ...auth.env, SITE_ADMIN_TWITCH: 'siteboss', CAMPAIGN_FUNDING: '1', KEEP_ORPHAN_ROOMS: 'true',
         SELLER_PRIVATE_KEY: sellerKey, SELLER_WALLET_ADDRESS: privateKeyToAccount(sellerKey).address,
-        CAMPAIGN_SPENDER_KEY: shared, REWARD_POOL_PRIVATE_KEY: shared,
-        PLATFORM_SETTLEMENT_KEY: '', ESCROW_OPERATOR_KEY: '', ESCROW_ATTEST_KEY: '',
-        X_BEARER_TOKEN: '', X_TOKEN_KEY: '', X_CLIENT_ID: '', X_CLIENT_SECRET: '', MODERATION_API_KEY: '',
-        LIVEKIT_URL: '', LIVEKIT_API_KEY: '', LIVEKIT_API_SECRET: '',
+        CAMPAIGN_SPENDER_KEY: shared, REWARD_POOL_PRIVATE_KEY: shared, X_CLIENT_ID: '',
       },
     });
     const call8 = async (method, p, body) => {
@@ -2279,7 +2666,9 @@ console.log('\n── E. Gate H, unchanged ────────────�
 {
   const g = spawnSync(process.execPath, ['_gate-money.mjs'], { cwd: HERE, encoding: 'utf8', timeout: 240_000 });
   const m = /RESULT: (\d+) pass, (\d+) fail/.exec(g.stdout || '');
-  ok('E. Gate H (node _gate-money.mjs) is 38/0 with campaigns in the tree', !!m && m[1] === '38' && m[2] === '0', m ? `${m[1]}/${m[2]}` : (g.stdout || g.stderr || '').slice(-300));
+  // Green, and no smaller than the 38 cases it had when campaigns landed (the
+  // money lane adds cases; a Gate H that lost some must not pass here).
+  ok('E. Gate H (node _gate-money.mjs) is green, at least its 38 cases, with campaigns in the tree', !!m && Number(m[1]) >= 38 && m[2] === '0', m ? `${m[1]}/${m[2]}` : (g.stdout || g.stderr || '').slice(-300));
 }
 
 console.log(`\nRESULT: ${pass} pass, ${fail} fail`);

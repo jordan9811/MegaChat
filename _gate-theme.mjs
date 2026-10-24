@@ -5,11 +5,26 @@
  * page; checks basic contrast signals (body text vs background luminance).
  */
 import puppeteer from 'puppeteer-core';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 const SHOTS_ONLY = process.argv[2] === 'shots-only';
 let failures = 0;
 const ok = (m) => console.log('  OK ', m);
 const bad = (m) => { failures++; console.error('  FAIL', m); };
+
+// ── G0. the build under test must not predate the source ──────────────────
+// The server on :3000 serves web/.next exactly as it sits on disk: an older
+// build means this grades the PREVIOUS tree ("A browser gate is only as fresh
+// as the last build", CLAUDE.md).
+{
+  const fresh = assertFreshBuild();
+  if (fresh.ok) ok(`G0. the build under test is newer than the source it renders — ${fresh.detail}`);
+  else {
+    bad(`G0. the build under test is older than the source it renders — ${fresh.detail}`);
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    process.exit(1);
+  }
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const lum = (color) => {

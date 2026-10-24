@@ -270,7 +270,9 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
       result: 'NO_PLAYBACK', confidence: 0, verifiedMinutes: 0,
       verifiedClips: 0, verifiedClipSeconds: 0,
     });
-    store.updateAirSession(airSessionId, { verifiedClips: 0, verifiedClipSeconds: 0, verifiedMinutes: 0 });
+    store.updateAirSession(airSessionId, {
+      verifiedClips: 0, verifiedClipSeconds: 0, verifiedMinutes: 0, verifiedPlaybacks: [],
+    });
     return {
       result: 'NO_PLAYBACK', confidence: 0, verifiedClips: 0, verifiedClipSeconds: 0,
       verifiedMinutes: 0, hitRate: 0, attempt: rec, checks: [],
@@ -355,10 +357,21 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
         // extractor must never read as FAIL — that would cost the streamer
         // money over our access problem. Surfaced as its own result and
         // routed to the review queue like AMBIGUOUS.
+        //
+        // RECORDED like every other outcome (audit bounty-20): it returned
+        // without an attempt row, so the session's history skipped it and
+        // the review it opens pointed at no verification. The session's
+        // verified playbacks are left as the last reading that SAW something
+        // — our outage is not evidence that an earlier verified airing did
+        // not happen.
+        const rec = store.recordVerification({
+          airSessionId, checker: checkerName, evidenceRef: null,
+          result: 'SOURCE_UNAVAILABLE', confidence: 0, verifiedMinutes: 0,
+        });
         return {
           airSessionId, result: 'SOURCE_UNAVAILABLE', sourceState: e.state,
           sourceDetail: e.detail, confidence: 0, verifiedClips: 0,
-          verifiedClipSeconds: 0, checks: [], clipVerdicts: [],
+          verifiedClipSeconds: 0, checks: [], clipVerdicts: [], attempt: rec,
         };
       }
       throw e;
@@ -532,11 +545,16 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
     log.warn?.(`[verifier] session ${airSessionId}: ${unreadable} sample(s) unreadable, `
       + `0 readable — reporting SOURCE_UNAVAILABLE rather than scoring our own `
       + `outage against the streamer (${dominant[0]} x${dominant[1]})`);
+    // Recorded, as the mid-loop exit above is and for the same reason.
+    const rec = store.recordVerification({
+      airSessionId, checker: checkerName, evidenceRef: null,
+      result: 'SOURCE_UNAVAILABLE', confidence: 0, verifiedMinutes: 0, detectionRate: 0,
+    });
     return {
       airSessionId, result: 'SOURCE_UNAVAILABLE', sourceState: dominant[0],
       sourceDetail: `${unreadable} sample(s) unreadable, none readable`,
       confidence: 0, verifiedClips: 0, verifiedClipSeconds: 0,
-      detectionRate: 0, checks, clipVerdicts: [],
+      detectionRate: 0, checks, clipVerdicts: [], attempt: rec,
       unreadableSamples: unreadable, readableSamples: 0,
     };
   }
@@ -690,6 +708,11 @@ export async function verifyAirSession(airSessionId, { frameSource, codeChecker,
   store.updateAirSession(airSessionId, {
     verifiedClips, verifiedClipSeconds,
     verifiedMinutes: +(verifiedClipSeconds / 60).toFixed(3),
+    // The playbacks themselves, beside the counts they produced, so a payout
+    // computed later (a reviewer's approval) collapses them to one airing per
+    // pledge the way the automatic release does (audit bounty-5).
+    verifiedPlaybacks: clipVerdicts.filter((c) => c.verified)
+      .map((c) => ({ clipId: c.clipId, playbackId: c.playbackId, durationS: c.durationS, verified: true })),
   });
 
   return {

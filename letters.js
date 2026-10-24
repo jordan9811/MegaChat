@@ -143,6 +143,33 @@ export function attachLetters(app, deps) {
   const store = createLetterStore({ maxBytes: GLOBAL_MAX_BYTES, log });
   let globalBytes = 0;
 
+  /**
+   * One payment per take (audit web-4). The send screen names each take with
+   * an attemptId; a submit that repeats one within ATTEMPT_TTL_MS is answered
+   * from the letter that take already paid for, before any campaign slot or
+   * payment step. So "Send again" after a failed upload, or after a submit
+   * whose response was lost, costs nothing. The key carries the room and the
+   * paying wallet, so an id only ever finds its own payer's letter. Memory
+   * only: a restart inside the window lets one repeat pay again, and the
+   * upload sweep refunds the orphan as it always has.
+   */
+  const ATTEMPT_TTL_MS = 10 * 60_000;
+  const ATTEMPTS_MAX = 5000;
+  const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  /** key → { letterId: string | null (null: a submit is in flight), at } in insertion (age) order */
+  const attempts = new Map();
+  const attemptKey = (roomId, payer, attemptId) =>
+    `${roomId}:${payer ? payer.toLowerCase() : 'free'}:${attemptId.toLowerCase()}`;
+  const noteAttempt = (key, letterId) => {
+    attempts.delete(key); // re-insert at the young end
+    attempts.set(key, { letterId, at: Date.now() });
+    const now = Date.now();
+    for (const [k, a] of attempts) {
+      if (now - a.at <= ATTEMPT_TTL_MS && attempts.size <= ATTEMPTS_MAX) break;
+      attempts.delete(k);
+    }
+  };
+
   /** Write the metadata of everything worth remembering. Cheap; small file. */
   const persist = () => {
     try { store.saveMeta([...byId.values()]); }
@@ -283,7 +310,7 @@ export function attachLetters(app, deps) {
       if (!cfg.letters.enabled) return res.status(403).json({ error: 'MegaChats are not enabled in this room' });
       if (!cfg.active) return res.status(403).json({ error: 'Room is not accepting joins right now' });
 
-      const { username, address, durationS, mime, flyIn, flyOut, replayKeepDays } = req.body || {};
+      const { username, address, durationS, mime, flyIn, flyOut, replayKeepDays, attemptId } = req.body || {};
       if (!username || typeof username !== 'string') {
         return res.status(400).json({ error: 'Username required' });
       }
@@ -292,6 +319,36 @@ export function attachLetters(app, deps) {
       const hasAddress = /^0x[0-9a-fA-F]{40}$/.test(address || '');
       if (!hasAddress && parseFloat(letterPriceFor(cfg)) > 0) {
         return res.status(400).json({ error: 'Wallet address required' });
+      }
+      // A take this payer already sent (see `attempts`): its own letter
+      // answers, and nothing below runs. A page that sends no attemptId (one
+      // from before this) is never deduped.
+      const attempt = typeof attemptId === 'string' && ATTEMPT_ID.test(attemptId)
+        ? attemptKey(cfg.id, hasAddress ? address : null, attemptId)
+        : null;
+      if (attempt) {
+        const prior = attempts.get(attempt);
+        if (prior && Date.now() - prior.at <= ATTEMPT_TTL_MS) {
+          if (prior.letterId === null) {
+            return res.status(409).json({ error: 'This take is still being sent', reason: 'in_flight' });
+          }
+          const sent = byId.get(prior.letterId);
+          if (sent && sent.status === 'awaiting_upload') {
+            log.log(`[letters] ${sent.id} submit repeated (attempt) — answered without a charge`);
+            return res.json({
+              success: true,
+              letterId: sent.id,
+              uploadUrl: `/api/letter/upload/${sent.id}`,
+              price: sent.price,
+              moderation: cfg.letters.moderation,
+              deduped: true,
+            });
+          }
+          if (sent) {
+            return res.status(409).json({ error: 'This take was already sent', reason: 'already_sent', letterId: sent.id, status: sent.status });
+          }
+          // Its letter is gone (refunded and removed): a send now is a new one.
+        }
       }
       const dur = Number(durationS);
       if (!Number.isFinite(dur) || dur <= 0 || dur > cfg.letters.maxSeconds + 1) {
@@ -347,10 +404,15 @@ export function attachLetters(app, deps) {
         catch (e) { return res.status(e.status || 400).json({ error: e.message, reason: e.code || 'campaign_refused' }); }
       }
       const giveBack = (why) => {
+        // The take is no longer in flight: a retry may try again.
+        if (attempt && attempts.get(attempt)?.letterId === null) attempts.delete(attempt);
         if (!campaignClaimId) return;
         try { campaigns.releaseSlot(campaignClaimId, why); } catch { /* the engine logs */ }
         campaignClaimId = null;
       };
+      // Held while the payment step runs, so a second copy of this take
+      // arriving meanwhile is refused rather than charged too.
+      if (attempt) noteAttempt(attempt, null);
       try {
 
       const price = letterPriceFor(cfg);
@@ -392,6 +454,7 @@ export function attachLetters(app, deps) {
         campaigns.bind(campaignClaimId, { letterId: letter.id });
       }
       byId.set(letter.id, letter);
+      if (attempt) noteAttempt(attempt, letter.id);
       log.log(`[letters] ${letter.id} ${parseFloat(price) > 0 ? `paid ${price} by ${address}` : 'free'} in room ${cfg.id}`);
       const body = {
         success: true,

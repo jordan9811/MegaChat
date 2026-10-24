@@ -4,11 +4,7 @@ import { useEffect, useState } from 'react'
 import { Video, Circle, X, Pin, PinOff, Wifi, WifiOff } from 'lucide-react'
 import { GlassCard, CardHeader } from '@/components/glass-card'
 import { useRoom } from '@/components/room-provider'
-
-function shortAddress(addr: string | null) {
-  if (!addr) return '—'
-  return `${addr.slice(0, 4)}…${addr.slice(-4)}`
-}
+import { shortAddr } from '@/lib/display-format'
 
 function elapsedSince(liveAt: number | null, now: number) {
   if (!liveAt) return '—'
@@ -21,12 +17,16 @@ export function OnCameraTable() {
   const { mode, room, seats, kick, pin } = useRoom()
   const [now, setNow] = useState(() => Date.now())
 
-  // Tick the "On for" column while anyone is live.
+  // Tick the "On for" column while anyone is live. Keyed on whether anyone
+  // is, not on the seats array: every meter_update replaces that array, once
+  // a second per paid seat, which tore the interval down before it fired and
+  // froze the clock with two or more guests on (audit web-7).
+  const anyLive = seats.some((s) => s.live)
   useEffect(() => {
-    if (!seats.some((s) => s.live)) return
+    if (!anyLive) return
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
-  }, [seats])
+  }, [anyLive])
 
   const liveCount = seats.filter((s) => s.live).length
   const tokenSymbol = room?.paymentTokenSymbol || 'USDC'
@@ -90,7 +90,7 @@ export function OnCameraTable() {
                     {s.username}
                   </td>
                   <td className="px-3 py-3 font-mono text-xs text-muted-foreground">
-                    {shortAddress(s.viewerAddress)}
+                    {s.viewerAddress ? shortAddr(s.viewerAddress) : '—'}
                   </td>
                   <td className="px-3 py-3 font-mono text-foreground/90">
                     {elapsedSince(s.liveAt, now)}

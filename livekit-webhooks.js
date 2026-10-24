@@ -15,12 +15,9 @@
  * authoritative ledger would be worse than no ledger at all.
  */
 
-import fs from 'fs';
 import path from 'path';
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
-
-const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
-const DEFAULT_STATE_PATH = path.join(DATA_DIR, 'livekit-webhook-state.json');
+import { dataDir, quarantineCopy, readJsonFile, writeJsonAtomic } from './json-store.js';
 
 /** Constant-time compare that tolerates length mismatch without throwing. */
 function safeEqual(a, b) {
@@ -30,10 +27,7 @@ function safeEqual(a, b) {
   return timingSafeEqual(ba, bb);
 }
 
-function b64url(buf) {
-  return Buffer.from(buf).toString('base64')
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
+const b64url = (buf) => Buffer.from(buf).toString('base64url');
 
 /**
  * Verify a LiveKit webhook JWT (HS256, signed with the API secret) and confirm
@@ -95,7 +89,7 @@ export function createWebhookTracker({
   log = console,
   onSession = () => {},
   /** Pass null to opt out of persistence (tests that want a clean tracker). */
-  statePath = DEFAULT_STATE_PATH,
+  statePath = path.join(dataDir(), 'livekit-webhook-state.json'),
   /**
    * Optional async () => Set<`${room}|${identity}`> of who LiveKit says is
    * ACTUALLY connected right now. Supplied by the server from RoomService.
@@ -106,7 +100,7 @@ export function createWebhookTracker({
   const seen = new Map();            // eventId → ts (replay guard)
   const open = new Map();            // `${room}|${identity}` → { startedAt, sid }
   const sessions = [];               // closed, authoritative
-  const pendingLeft = new Map();     // left-before-joined stash
+  const pendingLeft = new Map();     // left-before-joined stash: k → { ts, stashedAt }
   const DEDUPE_TTL_MS = 10 * 60_000;
   const MAX_SESSIONS = 5000;
 
@@ -122,6 +116,8 @@ export function createWebhookTracker({
   let observingSince = Date.now();
   let lastPersistedAt = 0;
   let bootReconcile = { ran: false, policy: null, resumed: 0, closed: 0, confirmed: 0, note: null };
+  /** Set when the state file existed but could not be read (stats().stateRestore). */
+  let restoreFailed = null;
 
   function snapshotState() {
     return {
@@ -135,19 +131,38 @@ export function createWebhookTracker({
   function persist() {
     if (!statePath) return;
     try {
-      const dir = path.dirname(statePath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(statePath, JSON.stringify(snapshotState()), 'utf8');
+      // Atomic: a torn write here reset the observation window at the next
+      // boot, which is how the daily cap gets walked past (see above).
+      writeJsonAtomic(statePath, snapshotState());
     } catch {
       /* metering state is observability; never crash a broadcast over it */
     }
   }
 
+  /**
+   * A state file that exists but cannot be read is copied aside, said out
+   * loud, and the tracker starts fresh — it is rebuilt from live webhooks, so
+   * freezing it (as a store of record does) would only stop the breaker from
+   * remembering anything across every later deploy too. The copy is evidence
+   * of the burn the breaker can no longer see.
+   */
+  function quarantine(state, why) {
+    let keptAt = null;
+    try { keptAt = quarantineCopy(statePath); } catch (e) { why += `; could not copy it aside: ${e.message}`; }
+    restoreFailed = { state, why, keptAt, at: Date.now() };
+    log.error(`[lk-webhook] ⚠ metering state at ${statePath} is ${state} (${why}). `
+      + `${keptAt ? `Kept a copy at ${keptAt}. ` : ''}The observation window restarts NOW: `
+      + 'burn before this boot is invisible to the breaker until the day rolls over.');
+  }
+
   function restore() {
-    if (!statePath || !fs.existsSync(statePath)) return null;
+    if (!statePath) return null;
+    const r = readJsonFile(statePath);
+    if (r.state === 'missing') return null;
+    if (r.state !== 'ok') { quarantine(r.state, r.why); return null; }
     try {
-      const raw = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-      if (!raw || typeof raw !== 'object') return null;
+      const raw = r.data;
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { quarantine('corrupt', 'not a JSON object'); return null; }
       if (Number.isFinite(raw.observingSince)) observingSince = raw.observingSince;
       lastPersistedAt = Number(raw.lastPersistedAt) || 0;
       if (Array.isArray(raw.sessions)) sessions.push(...raw.sessions);
@@ -169,6 +184,10 @@ export function createWebhookTracker({
   function gcSeen() {
     const cutoff = Date.now() - DEDUPE_TTL_MS;
     for (const [id, ts] of seen) if (ts < cutoff) seen.delete(id);
+    // A stashed left whose join never came (a duplicate left, or a join we
+    // missed) is only ever deleted by that join, so without this it is kept
+    // for the life of the process (server-6).
+    for (const [k, v] of pendingLeft) if (v.stashedAt < cutoff) pendingLeft.delete(k);
   }
 
   /**
@@ -421,7 +440,7 @@ export function createWebhookTracker({
       const o = open.get(k);
       if (!o) {
         // Either a duplicate left, or left-before-joined. Stash briefly.
-        pendingLeft.set(k, { ts });
+        pendingLeft.set(k, { ts, stashedAt: Date.now() });
         return { ok: true, stashed: true };
       }
       open.delete(k);
@@ -463,6 +482,9 @@ export function createWebhookTracker({
       // Survives restarts now, so this window is real elapsed observation
       // rather than "time since the last deploy".
       persisted: !!statePath,
+      // Non-null: the saved state could not be read at boot, so the window
+      // above restarted then, and a copy of the bad file was kept.
+      stateRestore: restoreFailed,
       bootReconcile,
       excludedSessions: excludedClosed,
       // Unmetered-by-design identities that we could not classify. Non-empty

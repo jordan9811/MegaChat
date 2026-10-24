@@ -59,7 +59,7 @@ const { bountyConfig } = await import('./bounty-claim.config.js');
 const srv = await startGateServer({
   port: PORT, dataDir: DATA_DIR,
   label: 'overlay-room', bountyAuth: { handles: [`kick:${HANDLE}`] },
-  env: { BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '0', KEEP_ORPHAN_ROOMS: 'true' },
+  env: { BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true' },
   readyTimeoutMs: 180_000,
 });
 const post = (p, b, as) => fetch(`${APP}${p}`, {
@@ -92,6 +92,11 @@ try {
   });
   const claim = await post('/api/bounty/claim',
     { platform: 'kick', handle: HANDLE, claimant: HANDLE }, AS);
+  // The real verifier is the default now; this gate opts into the stub, and
+  // the opt-in must be what decided (bounty-claim.config.js).
+  ok('A. (BOUNTY_IDENTITY_STUB=1) the opt-in stub approved the claim',
+    claim.body.identity?.approved === true && claim.body.identity?.method === 'STUBBED_APPROVAL',
+    claim.body.identity?.method);
   const air = await post('/api/bounty/air-session',
     { claimId: claim.body.claim.id, roomId: ROOM }, AS);
   const airId = air.body.airSession?.id;
@@ -145,6 +150,16 @@ try {
     painted > 100, `${painted} painted pixel(s) on the matrix canvas`);
   ok('C. ...with no page errors', errs.length === 0, errs.slice(0, 2).join(' | ') || 'none');
 
+  // ── C2. ...but an UNKEYED overlay learns no session to report into ──────
+  // It used to: the room route handed the session UUID to whoever polled,
+  // and that UUID was the only credential on /badge and /overlay-env, so any
+  // page that knew a room id could write evidence into its session (audit
+  // bounty-2). Drawing the code is fine — it is on the public broadcast.
+  const envOf = async () => (await get('/api/bounty/admin/sessions', AS)).body.sessions
+    ?.find((s) => s.id === airId)?.overlayEnvLast || null;
+  ok('C2. the unkeyed room overlay wrote NO render-environment report into the session',
+    (await envOf()) === null, JSON.stringify(await envOf()));
+
   // ── D. the by-id form still works, unchanged ───────────────────────────
   // ITS OWN CLIP. Section C's clip is 30s long and C alone waits 20s past the
   // first poll interval, so by here the original playback has ENDED and the
@@ -160,6 +175,8 @@ try {
   await new Promise((r) => setTimeout(r, 20_000));
   const idShown = await byIdPage.evaluate(() => document.getElementById('bounty-badge')?.classList.contains('show'));
   ok('D. the one-click ?bounty=<id> form is untouched', idShown === true);
+  ok('D. ...and without a key its reports are refused too (the id alone is no credential)',
+    (await envOf()) === null, JSON.stringify(await envOf()));
   await byIdPage.close();
 
   // ── F. THE BADGE MUST ROTATE AT THE SERVER'S RATE ──────────────────────
@@ -209,6 +226,24 @@ try {
     ok('F. ...and it rotates at all (a frozen badge proves nothing)',
       distinct > 1, `${distinct} distinct code(s)`);
     await rotatePage.close();
+  }
+
+  // ── G. THE KEYED overlay the dashboard hands out does report ───────────
+  // Its key has to ride on the code, badge and env fetches, not only on the
+  // WebSocket subscribe — the page used to send it there alone, so with the
+  // server fix and the old page a keyed overlay reported nothing either.
+  // After F on purpose: F needs GOR2 still playing, and this needs no clip.
+  {
+    ok('G. (fixture) the dashboard overlay path carries the room key',
+      /[?&]k=[A-Za-z0-9_-]{32}(&|$)/.test(air.body.overlayPath || ''), 'k present');
+    const keyedPage = await browser.newPage();
+    await keyedPage.setViewport({ width: 1280, height: 720 });
+    await keyedPage.goto(`${APP}${air.body.overlayPath}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await new Promise((r) => setTimeout(r, 20_000));
+    const env = await envOf();
+    ok('G. the keyed overlay reported its render environment into the session',
+      env?.width === 1280 && env?.height === 720, JSON.stringify(env));
+    await keyedPage.close();
   }
 
   // ── E. a plain room overlay renders NO badge at all ────────────────────

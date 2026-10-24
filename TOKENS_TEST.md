@@ -13,7 +13,6 @@ Default: Arc USDC `0x3600000000000000000000000000000000000000`.
 
 ```bash
 node _gate-tokens-phase2.mjs
-npm run build:passkey
 npm run gate:dashboard
 ```
 

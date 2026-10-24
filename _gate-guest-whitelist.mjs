@@ -21,14 +21,17 @@
  * WITH a seller key, so the refund/transfer path is live and armed — a gate
  * that disabled it would prove nothing.
  */
-import { createHmac } from 'crypto';
 import { createServer } from 'http';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { startGateServer } from './_gate-helpers.mjs';
+import { sessionCookieFor } from './_gate-identity-helper.mjs';
 
-const PORT = Number(process.env.GATE_PORT || 3390);
+// 3420/3421: it was 3390/3391, the two ports _gate-capture-hardening binds
+// (audit harness-15; the gate catalogue in docs/technical/testing-methodology.md
+// lists every fixed port).
+const PORT = Number(process.env.GATE_PORT || 3420);
 const RPC_PORT = PORT + 1;
 const BASE = `http://localhost:${PORT}`;
 const CHAIN_ID = 4217; // must match the server (TEMPO_CHAIN_ID) or viem rejects the client
@@ -98,11 +101,6 @@ function transferCalls() {
 
 // ─── identities: seal cookies the way auth.js unseals them ─────────────────
 const AUTH_SECRET = `gate-wl-${Date.now()}`;
-function cookieFor(provider, platformId) {
-  const payload = Buffer.from(JSON.stringify({ provider, platformId })).toString('base64url');
-  const sig = createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url');
-  return `mc_identity=${encodeURIComponent(`${payload}.${sig}`)}`;
-}
 /** Handles that must resolve to REAL accounts for the add route to accept. */
 const PEOPLE = {
   streamer: { provider: 'twitch', platformId: '9001', handle: 'gatestreamer' },
@@ -119,7 +117,8 @@ const PEOPLE = {
  * identities.json with a `provider:platformId` row each; since the identity
  * layer an account has its own id and a list of links, and everything
  * owner-keyed — including the whitelist's `identityKey` pin — carries that id.
- * The sealed cookie still names a link, which resolves through `links` below.
+ * The sealed cookie names that account (`{accountId, iat}`, the one session
+ * shape auth.js accepts): the account `links` below maps the login to.
  */
 function seedIdentities(dataDir) {
   const accounts = {};
@@ -140,7 +139,7 @@ function seedIdentities(dataDir) {
 }
 /** The owner key a seeded person carries — their ACCOUNT id. */
 const accountIdOf = (who) => `acct_gw${PEOPLE[who].platformId}`;
-const as = (who) => ({ Cookie: cookieFor(PEOPLE[who].provider, PEOPLE[who].platformId) });
+const as = (who) => ({ Cookie: sessionCookieFor(accountIdOf(who), { secret: AUTH_SECRET }) });
 
 // ─── HTTP helpers ──────────────────────────────────────────────────────────
 async function api(method, url, { who = null, body = null, headers = {} } = {}) {
@@ -294,7 +293,7 @@ try {
 
   // ── D. the master switch ─────────────────────────────────────────────────
   section('D. Master switch');
-  await api('POST', `/api/leave/${guestSeatId}`, { who: 'guest' });
+  await api('POST', `/api/leave/${guestSeatId}`, { who: 'guest', body: { seatToken: gJoin.body?.seatToken } });
   const off = await api('POST', '/api/whitelist/enabled', { who: 'streamer', body: { enabled: false } });
   ok('switch reports itself off', off.status === 200 && off.body?.enabled === false);
   ok('the list survives the switch', off.body?.entries?.length === 1);
@@ -311,7 +310,7 @@ try {
   ok('everyone who was on the list is still on it', on.body?.entries?.some((e) => e.handle === 'gateguest'));
   const backOn = await joinPasskey('guest', paidRoom);
   ok('the guest rides free again', backOn.status === 200 && backOn.body?.free === true);
-  await api('POST', `/api/leave/${backOn.body?.seatId}`, { who: 'guest' });
+  await api('POST', `/api/leave/${backOn.body?.seatId}`, { who: 'guest', body: { seatToken: backOn.body?.seatToken } });
 
   // D2 — LEAVE AND REJOIN FREELY. Point 4 of the spec, and nothing in the 53
   // original assertions ever performed a SECOND join for the same guest — it
@@ -319,16 +318,16 @@ try {
   // grant, a consumed token or a cooldown would all have passed the old gate.
   const r1 = await joinPasskey('guest', paidRoom);
   ok('D2 rejoin: first join is free', r1.status === 200 && r1.body?.free === true, `status ${r1.status}`);
-  await api('POST', `/api/leave/${r1.body?.seatId}`, { who: 'guest' });
+  await api('POST', `/api/leave/${r1.body?.seatId}`, { who: 'guest', body: { seatToken: r1.body?.seatToken } });
   const r2 = await joinPasskey('guest', paidRoom);
   ok('D2 rejoin: SECOND join is free too', r2.status === 200 && r2.body?.free === true, `status ${r2.status}`);
   ok('D2 rejoin: it is a genuinely new seat, not the old one handed back',
     r2.body?.seatId && r2.body.seatId !== r1.body?.seatId, `${r1.body?.seatId} -> ${r2.body?.seatId}`);
-  await api('POST', `/api/leave/${r2.body?.seatId}`, { who: 'guest' });
+  await api('POST', `/api/leave/${r2.body?.seatId}`, { who: 'guest', body: { seatToken: r2.body?.seatToken } });
   const r3 = await joinPasskey('guest', paidRoom);
   ok('D2 rejoin: and a third, so nothing is being consumed',
     r3.status === 200 && r3.body?.free === true, `status ${r3.status}`);
-  await api('POST', `/api/leave/${r3.body?.seatId}`, { who: 'guest' });
+  await api('POST', `/api/leave/${r3.body?.seatId}`, { who: 'guest', body: { seatToken: r3.body?.seatToken } });
 
   // ── E. supersedes room settings, one at a time ───────────────────────────
   section('E. Whitelist supersedes room settings');
@@ -384,7 +383,7 @@ try {
     !cardRow || cardRow.maxSeats === 2, `card maxSeats=${cardRow?.maxSeats}`);
 
   // E2c — and it FALLS again when the guest leaves, or the raise is a leak.
-  await api('POST', `/api/leave/${capGuest.body?.seatId}`, { who: 'guest' });
+  await api('POST', `/api/leave/${capGuest.body?.seatId}`, { who: 'guest', body: { seatToken: capGuest.body?.seatToken } });
   const afterGuest = await seatsIn(capRoom);
   ok('E2c the cap falls back when the guest leaves',
     afterGuest?.maxSeats === 1, `maxSeats=${afterGuest?.maxSeats}`);
@@ -424,7 +423,7 @@ try {
     JSON.stringify(stillThere?.seats?.map((s) => s.id)));
   const afterRemoval = await joinPasskey('guest', paidRoom, { address: '0x' + '7'.repeat(40) });
   ok('but the NEXT join is charged normally', afterRemoval.status === 402, `got ${afterRemoval.status}`);
-  await api('POST', `/api/leave/${liveSeat}`, { who: 'guest' });
+  await api('POST', `/api/leave/${liveSeat}`, { who: 'guest', body: { seatToken: e4.body?.seatToken } });
 
   // ── G. cap ──────────────────────────────────────────────────────────────
   section('G. List cap');

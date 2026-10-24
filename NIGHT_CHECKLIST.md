@@ -96,8 +96,8 @@ Console/network sweep over `/`, `/dashboard`, `/join`, `/overlay`,
 ## Re-run everything
 ```
 node _gate-overlay.mjs stingers   # parts 1+2
-node _gate-pin.mjs                # part 3 (funds a viewer from the seller)
+node _gate-pin.mjs                # part 3 — historical: deleted 2026-10-24 (it could not load)
 node _gate-theme.mjs              # part 4
-node _gate-phase2.mjs             # legacy contract
-node _verify-join.mjs full        # full join flows (needs Circle localhost fix for C/D)
+node _gate-phase2.mjs             # legacy contract — historical: deleted 2026-10-24
+node _verify-join.mjs full        # full join flows — historical: deleted 2026-10-24 (it could not load)
 ```

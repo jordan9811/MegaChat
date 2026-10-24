@@ -21,15 +21,18 @@
  * which reads as "not stored" and costs a re-link, never a leak. With
  * neither set (a local dev box), nothing is stored at all.
  *
+ * A FILE THAT CANNOT BE READ IS LEFT ALONE. Written atomically through
+ * json-store.js. An x-tokens.json that is torn, unparsable or the wrong shape
+ * used to read as "no tokens", and the next X sign-in saved that over every
+ * holder's row; now the store refuses writes (logged once, the file untouched)
+ * and serves no holders until the file is repaired and the process restarts.
+ *
  * NEVER LOGGED. No token, ciphertext or key value is written to a log line.
  */
-import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
+import { createJsonStore, dataDir } from './json-store.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = () => process.env.DATA_DIR || path.join(__dirname, 'data');
 const storePath = () => path.join(dataDir(), 'x-tokens.json');
 
 function key() {
@@ -39,20 +42,26 @@ function key() {
 }
 export const tokenStoreConfigured = () => !!key();
 
-let cache = null;
-function load() {
-  if (cache) return cache;
-  try { cache = JSON.parse(fs.readFileSync(storePath(), 'utf8')); } catch { cache = { tokens: {} }; }
-  cache.tokens ||= {};
-  return cache;
+const tokenStore = createJsonStore({
+  file: storePath,
+  name: 'x-tokens',
+  pretty: true,
+  empty: () => ({ tokens: {} }),
+  normalize: (doc) => {
+    doc.tokens ||= {};
+    // Refused like a parse error: an array here takes rows that JSON.stringify
+    // then drops, and a string or number throws on every save.
+    if (typeof doc.tokens !== 'object' || Array.isArray(doc.tokens)) throw new Error('tokens is not an object');
+    return doc;
+  },
+});
+const load = () => tokenStore.data();
+/** The document, for a change: throws StoreRefused BEFORE anything is touched. */
+function loadForWrite() {
+  tokenStore.assertWritable();
+  return tokenStore.data();
 }
-function save() {
-  const dir = dataDir();
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const tmp = `${storePath()}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(cache, null, 2));
-  fs.renameSync(tmp, storePath());
-}
+const save = () => tokenStore.save();
 
 function seal(obj, k) {
   const iv = randomBytes(12);
@@ -71,11 +80,13 @@ function open(sealed, k) {
   }
 }
 
-/** Store the token response from the X OAuth exchange for this account. */
+/** Store the token response from the X OAuth exchange for this account.
+ *  Throws StoreRefused when x-tokens.json could not be read (auth.js logs it
+ *  and links anyway). */
 export function saveXToken(accountId, xUserId, token) {
   const k = key();
   if (!k || !accountId || !token?.access_token) return false;
-  const store = load();
+  const store = loadForWrite();
   store.tokens[accountId] = {
     xUserId: String(xUserId || ''),
     savedAt: new Date().toISOString(),
@@ -91,27 +102,46 @@ export function saveXToken(accountId, xUserId, token) {
   return true;
 }
 
-export function dropXToken(accountId) {
+/** Never throws: the disconnect it follows has already happened. */
+export function dropXToken(accountId, { log = console } = {}) {
+  if (tokenStore.refusal()) {
+    // The row may still be in the unreadable file, and would be listed again
+    // once it is repaired: name the account, so the repair drops it too.
+    log.warn?.(`[x-tokens] could not drop ${accountId}'s token: the store refuses writes — remove that row when the file is repaired`);
+    return;
+  }
   const store = load();
   if (store.tokens[accountId]) { delete store.tokens[accountId]; save(); }
 }
 
-/** Account ids holding a token, by X user id. No decryption. */
+/**
+ * Account ids holding a USABLE token, by X user id. Skipped: a row whose
+ * refresh X refused (`dead`, until the holder signs in with X again, which
+ * re-saves it) and a row the current key cannot open, which is every row
+ * right after the key rotates. Neither can vouch for anyone, and listing them
+ * made a campaign check walk them all, inside the campaign's X lock. An
+ * unreadable row stays in the file, so restoring the old key restores it.
+ */
 export function holdersByXUserId() {
+  const k = key();
   const out = new Map();
-  for (const [accountId, row] of Object.entries(load().tokens)) if (row.xUserId) out.set(row.xUserId, accountId);
+  if (!k) return out;
+  for (const [accountId, row] of Object.entries(load().tokens)) {
+    if (row.xUserId && !row.dead && open(row.sealed, k)) out.set(row.xUserId, accountId);
+  }
   return out;
 }
 
 /**
  * A usable access token for this account, refreshing it when it has expired.
- * Returns null when there is none, it cannot be decrypted, or the refresh
- * fails — the caller treats that holder as unavailable, never as an error.
+ * Returns null when there is none, it cannot be decrypted, X refused its
+ * refresh before (`dead`), or the refresh fails — the caller treats that
+ * holder as unavailable, never as an error.
  */
 export async function getXAccessToken(accountId, { log = console } = {}) {
   const k = key();
   const row = load().tokens[accountId];
-  if (!k || !row) return null;
+  if (!k || !row || row.dead) return null;
   const t = open(row.sealed, k);
   if (!t) return null;
   if (t.expiresAt > Date.now() + 60_000) return t.accessToken;
@@ -143,15 +173,31 @@ async function refreshOnce(accountId, row, t, clientId, clientSecret, log) {
     });
     const body = await r.json().catch(() => ({}));
     if (!r.ok || !body.access_token) {
-      log.warn?.(`[x-tokens] refresh failed for ${accountId} (http ${r.status}) — holder unavailable until they sign in with X again`);
+      // 400/401 is X refusing the grant itself (revoked, or a refresh token
+      // already spent): retrying can never work, and every check used to POST
+      // again, one holder at a time. Mark the row dead until the holder signs
+      // in with X again. Anything else (5xx, 429) may pass, so the row stays.
+      const refused = r.status === 400 || r.status === 401;
+      if (refused) markDead(accountId, row, `refresh refused (http ${r.status})`);
+      log.warn?.(`[x-tokens] refresh failed for ${accountId} (http ${r.status}) — holder unavailable ${refused ? 'until they sign in with X again' : 'for now'}`);
       return null;
     }
     // X rotates refresh tokens: the old one is dead the moment this returns.
     saveXToken(accountId, row.xUserId, { ...body, refresh_token: body.refresh_token || t.refreshToken });
     return body.access_token;
   } catch {
-    return null;
+    return null; // a timeout or a network error says nothing about the grant: the row stays
   }
 }
 
-export function _resetXTokensForTests() { cache = null; refreshing.clear(); }
+/** Only the row the refresh started from: a sign-in that re-saved it meanwhile is newer. */
+function markDead(accountId, row, why) {
+  const store = loadForWrite();
+  if (store.tokens[accountId]?.sealed !== row.sealed) return;
+  store.tokens[accountId] = { ...store.tokens[accountId], dead: { at: new Date().toISOString(), why } };
+  save();
+}
+
+/** Test seam: forget the document (and any refusal) so the next read comes
+ *  from disk, where DATA_DIR now points. */
+export function _resetXTokensForTests() { tokenStore.reset(); refreshing.clear(); }

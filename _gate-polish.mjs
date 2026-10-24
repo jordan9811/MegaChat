@@ -18,12 +18,12 @@
  *  legible), Simple/Advanced both exercised in item 1.
  */
 import { spawn } from 'child_process';
-import { mkdtempSync, writeFileSync } from 'fs';
+import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
-import { createHmac } from 'crypto';
 import puppeteer from 'puppeteer-core';
 import { assertFreshBuild } from './_gate-helpers.mjs';
+import { sealSessionValue, seedAccountForLink } from './_gate-identity-helper.mjs';
 
 try { process.loadEnvFile(); } catch { /* env external */ }
 
@@ -37,24 +37,15 @@ const ok = (name, cond, extra = '') => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Seeded identity → sealed cookie, same HMAC the server uses.
+// Seeded account → sealed session, same HMAC and shape the server uses. It
+// seeded identities.json until 2026-10-24, which no server has read since the
+// account layer, so item 5 ran signed out.
 const dataDir = mkdtempSync(path.join(tmpdir(), 'mc-polish-'));
-writeFileSync(path.join(dataDir, 'identities.json'), JSON.stringify({
-  identities: {
-    'twitch:gate1': {
-      provider: 'twitch', platformId: 'gate1', username: 'gatestreamer',
-      handle: 'gatestreamer', createdAt: new Date().toISOString(),
-    },
-  },
-  handles: { gatestreamer: 'twitch:gate1' },
-}));
-const seal = (obj) => {
-  const payload = Buffer.from(JSON.stringify(obj)).toString('base64url');
-  return `${payload}.${createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url')}`;
-};
 const identityCookie = {
   name: 'mc_identity',
-  value: encodeURIComponent(seal({ provider: 'twitch', platformId: 'gate1' })),
+  value: encodeURIComponent(sealSessionValue(
+    seedAccountForLink(dataDir, { provider: 'twitch', platformId: 'gate1', username: 'gatestreamer' }),
+    { secret: AUTH_SECRET })),
   domain: 'localhost',
   path: '/',
 };

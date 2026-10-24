@@ -28,6 +28,10 @@ work* with *shown to work*.
 - **Gates over claims.** Behaviour is proven by a `_gate-*.mjs` script that
   runs against real infrastructure, not asserted in a commit message. If you
   change behaviour, extend the gate.
+- **Check what a gate costs before you run it.** The gate catalogue in
+  `docs/technical/testing-methodology.md` lists every harness file; its
+  owner-run list (mainnet money, LiveKit Cloud minutes, live broadcasts, the
+  owner's OBS) is not for agents.
 - **Flags default to the safe side.** `LAZY_CONNECT` defaults ON (it fixes a
   live cost bug); `BOUNTY_CLAIM` defaults OFF (money-adjacent, mainnet app).
 - **Never strip `.env` keys** — it holds the only copy of live secrets.

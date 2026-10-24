@@ -31,10 +31,11 @@
  *
  * Zero external spend: no real Privy credentials exist in this environment.
  */
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
 import path from 'path';
 import { createHmac } from 'crypto';
-import { startGateServer } from './_gate-helpers.mjs';
+import { startGateServer, mintBountyAuth } from './_gate-helpers.mjs';
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = '') => {
@@ -54,8 +55,11 @@ function forgedJwt() {
   return `${header}.${body}.${sig}`;
 }
 
+// accounts.json: what a Privy sign-in mints into since the account layer. This
+// read identities.json, which no server writes any more, so "nothing was
+// minted" compared two absent files and could not fail.
 const identityStoreBytes = (dataDir) => {
-  const f = path.join(dataDir, 'identities.json');
+  const f = path.join(dataDir, 'accounts.json');
   return existsSync(f) ? readFileSync(f, 'utf8') : '<absent>';
 };
 
@@ -83,9 +87,14 @@ try {
 } finally { plain.kill(); }
 
 // ── B. configured-but-fake server: every bad token bounces, mints nothing ─
+// One real account, so the forged-cookie case below is about the SIGNATURE:
+// the same payload, correctly sealed, is that account.
+const dataB = mkdtempSync(path.join(tmpdir(), 'mc-privy-auth-'));
+const authB = mintBountyAuth({ handles: ['privygate'], dataDir: dataB });
 const srv = await startGateServer({
-  port: 3226, label: 'privy-fake-creds',
+  port: 3226, label: 'privy-fake-creds', dataDir: dataB,
   env: {
+    ...authB.env,
     NEXT_PUBLIC_PRIVY_APP_ID: 'gate-fake-app-id', PRIVY_APP_SECRET: 'gate-fake-secret',
     // Blank the legacy providers too: the machine running this gate has real
     // Twitch creds in .env, and inheriting them makes the legacy-route check
@@ -123,11 +132,18 @@ try {
     storeAfter === storeBefore,
     `before=${storeBefore.length}B after=${storeAfter.length}B`);
 
-  // Forged session cookie reads back as nobody.
+  // Forged session cookie reads back as nobody. The CURRENT shape
+  // ({accountId, iat}) for a real account, signed with the wrong key; the
+  // retired {provider, platformId} shape is refused for its shape alone.
+  const realCookie = authB.cookieFor('privygate');
+  const realPayload = decodeURIComponent(realCookie.slice('mc_identity='.length)).split('.')[0];
+  const real = await (await fetch(`${APP}/api/auth/me`, { headers: { Cookie: realCookie } })).json();
+  ok('B. (control) the same payload sealed with the server\'s key IS the account', !!real.identity, JSON.stringify(real).slice(0, 120));
+  const forgedSig = createHmac('sha256', 'attacker-key').update(realPayload).digest('base64url');
   const badCookie = await (await fetch(`${APP}/api/auth/me`, {
-    headers: { Cookie: `mc_identity=${b64url('{"provider":"privy","platformId":"did:privy:x"}')}.forgedsig` },
+    headers: { Cookie: `mc_identity=${encodeURIComponent(`${realPayload}.${forgedSig}`)}` },
   })).json();
-  ok('B. a forged mc_identity cookie is nobody', badCookie.identity === null, JSON.stringify(badCookie));
+  ok('B. a forged mc_identity cookie (a real account, the wrong key) is nobody', badCookie.identity === null, JSON.stringify(badCookie));
 
   // ── C. the deleted flow STAYS deleted ───────────────────────────────────
   // This is the stale gate's replacement duty: 3a8d55e removed the in-house

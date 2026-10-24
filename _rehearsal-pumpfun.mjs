@@ -180,7 +180,7 @@ const srv = await startGateServer({
   // boots, so paying an extra two minutes once beats losing their broadcast.
   readyTimeoutMs: 180_000,
   env: {
-    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '0', KEEP_ORPHAN_ROOMS: 'true',
+    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true',
     BOUNTY_STREAM_WARMUP_MS: String(WARMUP_S * 1000),
   },
 });

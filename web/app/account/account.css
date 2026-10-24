@@ -351,13 +351,6 @@ html:has(.mc-account) ::-webkit-scrollbar-thumb:hover {
   outline-offset: 2px;
 }
 
-/* Section heads — the ledger rules do the dividing, so these stay quiet. */
-.mc-account .sect {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
 /* Ledger row: label left, value right, hairline above. Same shape the
    landing page uses for HOW A SEAT WORKS. */
 .mc-account .row {

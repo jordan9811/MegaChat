@@ -20,7 +20,8 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useUiMode } from '@/lib/ui-mode'
-import { shortAddr, useAccount } from '@/lib/use-account'
+import { shortAddr } from '@/lib/display-format'
+import { useAccount } from '@/lib/use-account'
 
 const itemCls =
   'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-hl-fg transition-colors hover:bg-hl-panel-2'

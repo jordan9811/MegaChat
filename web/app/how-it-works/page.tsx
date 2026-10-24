@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import { Plus_Jakarta_Sans } from 'next/font/google'
 import {
   Compass,
   KeyRound,
@@ -27,14 +26,6 @@ export const metadata: Metadata = {
   description:
     'Record a Holler or join a live broadcast on camera. Learn how to join, create a room, and manage your settings.',
 }
-
-// One UI face across the app, loaded per route — there is no site-wide
-// provider. Same call as the room board's page.
-const ui = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
-  variable: '--font-ui',
-})
 
 const VIEWER_STEPS: Step[] = [
   {
@@ -207,7 +198,7 @@ function FlowColumn({
 export default function HowItWorksPage() {
   const contactHref = contactUrl()
   return (
-    <div className={`mc-how min-h-screen ${ui.variable}`}>
+    <div className="mc-how min-h-screen">
       <header className="mch-product-header">
         <div>
           <span className="mch-product-brand">

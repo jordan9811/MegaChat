@@ -123,7 +123,7 @@ const srv = await startGateServer({
   bountyAuth: { handles: ['calstreamer'] },
   port: PORT,
   env: {
-    BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
+    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
     TWITCH_CLIENT_ID: 'stub', TWITCH_CLIENT_SECRET: 'stub',
     TWITCH_ID_BASE: `http://localhost:${STUB}`, TWITCH_API_BASE: `http://localhost:${STUB}`,
     KICK_CLIENT_ID: '', KICK_CLIENT_SECRET: '',

@@ -175,6 +175,9 @@ const srv = await startGateServer({
   // real HTTP call 401'd and the undefined uploadUrl became the literal URL
   // "http://localhost:3306undefined" — which is exactly how this failed.
   bountyAuth: { handles: [`twitch:${HANDLE}`] },
+  // The real broadcast is checked through the real Twitch API (stream context,
+  // VOD), so the server needs the real client secret from .env.
+  keepEnv: ['TWITCH_CLIENT_SECRET'],
   env: {
     BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
     // REHEARSAL-ONLY WARMUP OVERRIDE. The shipped rule ignores playbacks in the

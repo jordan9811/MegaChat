@@ -7,19 +7,19 @@
 // in the payment path ever reads this value.
 
 import { useSyncExternalStore } from 'react'
+import { UI_MODE_KEY } from './ui-mode-boot'
 
 export type UiMode = 'advanced' | 'simple'
-const KEY = 'mc-ui-mode'
 const EVT = 'mc-ui-mode-changed'
 
-export function getUiMode(): UiMode {
+function getUiMode(): UiMode {
   if (typeof document === 'undefined') return 'advanced'
   return document.documentElement.dataset.ui === 'simple' ? 'simple' : 'advanced'
 }
 
 export function setUiMode(mode: UiMode) {
   try {
-    localStorage.setItem(KEY, mode)
+    localStorage.setItem(UI_MODE_KEY, mode)
   } catch { /* private browsing */ }
   document.documentElement.dataset.ui = mode
   window.dispatchEvent(new CustomEvent(EVT, { detail: mode }))
@@ -35,5 +35,5 @@ export function useUiMode(): UiMode {
   return useSyncExternalStore(subscribe, getUiMode, () => 'advanced')
 }
 
-/** Inline bootstrap for <head>-adjacent injection (runs before paint). */
-export const UI_MODE_BOOT_SCRIPT = `(function(){try{var m=localStorage.getItem('${KEY}');document.documentElement.dataset.ui=(m==='simple'?'simple':'advanced');}catch(e){document.documentElement.dataset.ui='advanced';}})()`
+// The pre-paint script that applies the stored mode lives in ui-mode-boot.ts
+// (a plain module the server layout can import).

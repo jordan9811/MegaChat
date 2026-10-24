@@ -57,6 +57,10 @@ export type BountyClientConfig = {
   disputeWindowMs: number
   releaseRatePerClip: number
   minClipSeconds: number
+  /** Largest clip the upload route takes (BOUNTY_CLIP_MAX_BYTES). The
+   *  recorder refuses a bigger take before any pledge. Absent from a server
+   *  that predates it: then nothing is refused here. */
+  clipMaxBytes?: number
   /** Lowest broadcast height measured as reliably verifiable (720). */
   minVerifiableHeightPx: number
   /** How verification behaves per platform — one source of truth, shared
@@ -242,6 +246,8 @@ export function createPledge(args: {
   contributor: string
   amount: string
   expiresInMs: number
+  /** Names the take: a repeat within 10 minutes gets the first pledge back. */
+  attemptId?: string
 }) {
   return req<{
     ok: boolean
@@ -251,6 +257,8 @@ export function createPledge(args: {
     uploadDeadline: number
     clipLimits: { minSeconds: number; maxBytes: number }
     rejectionPolicy: RejectionPolicy
+    /** true when this answered a repeat of an earlier attempt. */
+    deduped?: boolean
   }>('/api/bounty/pledge', { method: 'POST', body: args })
 }
 

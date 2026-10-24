@@ -25,15 +25,20 @@
  * bounty-confidence.js already say what a client-reported signal is worth.
  * Manual-paste streamers have no obs-websocket and emit NOTHING here — the
  * absence of rows is not evidence against them.
+ *
+ * READ FROM MEMORY. The meter asks `shouldCharge` for every metered seat
+ * every second, and each read used to re-read and re-hash the whole file —
+ * 31-37 ms a call at 10,000 rows, growing with every transition ever recorded
+ * (stores-3). The chain is now validated ONCE, on first use, and indexed by
+ * room and by (room, session); `recordSignal` keeps the index current as it
+ * appends. This module is the file's only writer, and the server is one
+ * process. A chain that fails validation is LATCHED: every later read rethrows
+ * the same LedgerCorrupt, so a caller that catches the first error can never
+ * be served an empty record, nor append onto a damaged file.
  */
-import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createLedger } from './bounty-ledger.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const STORE_PATH = path.join(DATA_DIR, 'overlay-visibility.jsonl');
+import { dataDir } from './json-store.js';
 
 /** The signals this store accepts. Anything else is refused rather than
  *  stored — a typo'd signal name that Part 3 never matches would read as
@@ -49,13 +54,47 @@ export const HIDDEN_REASONS = new Set(['scene', 'disabled', 'offcanvas', 'covere
 
 let ledger = null;
 function getLedger() {
-  if (!ledger) ledger = createLedger({ filePath: STORE_PATH, kind: 'overlay-visibility' });
+  if (!ledger) ledger = createLedger({ filePath: path.join(dataDir(), 'overlay-visibility.jsonl'), kind: 'overlay-visibility' });
   return ledger;
+}
+
+/** roomId → its rows, oldest first; `${roomId}\u0000${sessionKey}` → latest row. */
+let index = null;
+/** The LedgerCorrupt that refused the chain, rethrown on every later read. */
+let corrupt = null;
+
+const sessionSlot = (roomId, sessionKey) => `${roomId}\u0000${sessionKey}`;
+
+function indexRow(r) {
+  if (r.type !== 'overlay_visibility') return;
+  let rows = index.byRoom.get(r.roomId);
+  if (!rows) index.byRoom.set(r.roomId, (rows = []));
+  rows.push(r);
+  if (r.sessionKey != null) index.latestBySession.set(sessionSlot(r.roomId, r.sessionKey), r);
+}
+
+function getIndex() {
+  if (corrupt) throw corrupt;
+  if (index) return index;
+  const l = getLedger();
+  try {
+    l.load(); // validates the whole chain, once
+  } catch (e) {
+    // Latched here; bounty-ledger.js has already logged the damage, once per
+    // file per process — a second line for the same latch was noise (money H13).
+    if (e?.code === 'ledger_corrupt') corrupt = e;
+    throw e;
+  }
+  index = { byRoom: new Map(), latestBySession: new Map() };
+  for (const r of l.all()) indexRow(r);
+  return index;
 }
 
 /** Test seam — the gates point DATA_DIR at a scratch dir per run. */
 export function _resetForTests() {
   ledger = null;
+  index = null;
+  corrupt = null;
 }
 
 /**
@@ -75,15 +114,13 @@ export function recordSignal(roomId, { signal, reason = null, at = Date.now(), d
   if (!SIGNALS.has(signal)) throw new Error(`unknown visibility signal: ${signal}`);
   if (reason !== null && !HIDDEN_REASONS.has(reason)) throw new Error(`unknown hidden reason: ${reason}`);
 
-  const l = getLedger();
-  l.load();
-  const previous = latestFor(roomId, sessionKey);
+  const previous = latestFor(roomId, sessionKey); // validates the chain on first use
   // A repeat of the same (signal, reason) is not a transition. Poll cadence is
   // the client's business; the chain records what changed.
   if (previous && previous.signal === signal && previous.reason === reason) {
     return { appended: false, row: previous, previous };
   }
-  const row = l.append({
+  const row = getLedger().append({
     type: 'overlay_visibility',
     roomId: String(roomId),
     sessionKey: sessionKey ? String(sessionKey) : null,
@@ -95,24 +132,45 @@ export function recordSignal(roomId, { signal, reason = null, at = Date.now(), d
     // human reading a dispute — can re-derive it rather than trust this row.
     measurement: measurement || null,
   });
+  indexRow(row);
   return { appended: true, row, previous };
 }
 
 /** Every row for a room, oldest first. */
 export function signalsFor(roomId, { sessionKey = null, since = null } = {}) {
-  const l = getLedger();
-  l.load();
-  return l.all().filter((r) =>
-    r.type === 'overlay_visibility'
-    && r.roomId === String(roomId)
-    && (sessionKey == null || r.sessionKey === String(sessionKey))
+  const rows = getIndex().byRoom.get(String(roomId)) || [];
+  return rows.filter((r) =>
+    (sessionKey == null || r.sessionKey === String(sessionKey))
     && (since == null || r.at >= since));
 }
 
-/** The most recent row for a room, or null. */
+/** The most recent row for a room (or one session of it), or null. */
 export function latestFor(roomId, sessionKey = null) {
-  const rows = signalsFor(roomId, { sessionKey });
-  return rows.length ? rows[rows.length - 1] : null;
+  const idx = getIndex();
+  if (sessionKey != null) return idx.latestBySession.get(sessionSlot(String(roomId), String(sessionKey))) || null;
+  const rows = idx.byRoom.get(String(roomId));
+  return rows?.length ? rows[rows.length - 1] : null;
+}
+
+/**
+ * The meter's question, without throwing: `{ known: true, latest }`, or
+ * `{ known: false }` when the record cannot be read. Unknown is NOT "no
+ * signal" — a manual-paste room's silence means "charge", a damaged record
+ * means "we cannot tell", and the meter must not charge on it (DECISIONS D4).
+ * The damage itself is logged once, when the chain is first refused.
+ */
+export function visibilityVerdict(roomId) {
+  try {
+    return { known: true, latest: latestFor(roomId) };
+  } catch (e) {
+    return { known: false, error: e?.code || e?.message || 'unreadable' };
+  }
+}
+
+/** Validate the chain now (boot), throwing LedgerCorrupt on damage. */
+export function verifyVisibilityLedgerIntegrity() {
+  getIndex();
+  return { rows: [...index.byRoom.values()].reduce((n, rows) => n + rows.length, 0) };
 }
 
 /**

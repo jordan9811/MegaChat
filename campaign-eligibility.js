@@ -100,13 +100,6 @@ export function normaliseRules(raw = {}) {
   return { rules: r, errors };
 }
 
-/** The X attributes a campaign's rules read (always including the hard rejects). */
-export function requiredAttributes(rules = {}) {
-  const need = new Set(ALWAYS_ATTRS);
-  for (const m of RULE_MENU) if (m.attr && rules[m.key] != null) need.add(m.attr);
-  return [...need];
-}
-
 /** The X link's attributes as {name: {value, fetchedAt}} — x-api source only. */
 export function xAttributes(account) {
   const link = (account?.links || []).find((l) => l.provider === 'x');
@@ -206,9 +199,7 @@ export function evaluate(campaign, account, refSet, extra = {}) {
     if (min == null) return;
     if (missing(attrName) || !fresh) return add(rule, false, unknown(noun));
     const have = Number(v(attrName));
-    add(rule, have >= min, have >= min
-      ? `You have ${fmt(have)} ${noun}; this needs ${fmt(min)}.`
-      : `You have ${fmt(have)} ${noun}; this needs ${fmt(min)}.`);
+    add(rule, have >= min, `You have ${fmt(have)} ${noun}; this needs ${fmt(min)}.`);
   };
   atLeast('minFollowers', 'followersCount', rules.minFollowers, 'followers');
   atLeast('minVerifiedFollowers', 'verifiedFollowersCount', rules.minVerifiedFollowers, 'verified followers');

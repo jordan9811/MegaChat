@@ -1,15 +1,24 @@
 /**
  * Part B rewards gate — optional per-room rewards must not break pay-to-join.
+ *
+ * Booted through startGateServer (verify-money N3): a scratch DATA_DIR, so
+ * the repo's data/ is never written; a readiness poll and a nonce instead of
+ * a fixed sleep; and every signer key from .env BLANKED, with TEMPO_RPC_URL on
+ * a read-only 127.0.0.1 stand-in, so even a USDC case added here could not
+ * sign a real transfer. It used to spawn server.js bare with the local .env.
  */
-import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
+import { startGateServer } from './_gate-helpers.mjs';
+import { startRpcStandIn, readOnlyTokenNode } from './_gate-rpc-standin.mjs';
 
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PORT = process.env.GATE_PORT || 3004;
-const BASE = `http://127.0.0.1:${PORT}`;
+const PORT = Number(process.env.GATE_PORT || 3348);
+// localhost, not 127.0.0.1: server.js 301s 127.0.0.1 to localhost, and fetch
+// turns a redirected POST into a GET (every create here 404'd that way).
+const BASE = `http://localhost:${PORT}`;
 const ROOM_PW = process.env.GATE_ROOM_PASSWORD || 'rewards-gate-secret';
 const ARC_USDC = '0x3600000000000000000000000000000000000000';
 const TEST_WALLET = '0x0000000000000000000000000000000000000001';
@@ -18,30 +27,30 @@ const fails = [];
 function ok(m) { console.log('  ✓', m); }
 function fail(m) { fails.push(m); console.error('  ✗', m); }
 
-let serverProc;
+const rpc = await startRpcStandIn(readOnlyTokenNode());
+let srv = null;
 try {
-  serverProc = spawn('node', ['server.js'], {
-    cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), ROOM_DEFAULT_PASSWORD: 'changeme' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    shell: true,
+  srv = await startGateServer({
+    port: PORT, label: 'rewards-part-b',
+    dataDir: mkdtempSync(path.join(tmpdir(), 'mc-gate-rewards-b-')),
+    // Every live key starts blank (startGateServer, SENSITIVE_ENV).
+    env: { ROOM_DEFAULT_PASSWORD: 'changeme', KEEP_ORPHAN_ROOMS: 'true', TEMPO_RPC_URL: rpc.url },
   });
 } catch (e) {
-  fail('spawn: ' + e.message);
+  fail('boot: ' + e.message);
 }
 
-await sleep(2500);
-
-try {
+if (srv) try {
   for (const p of ['/dashboard', '/', '/overlay']) {
     const res = await fetch(`${BASE}${p}`);
     if (res.status !== 200) fail(`GET ${p} => ${res.status}`);
     else ok(`GET ${p} 200`);
   }
 
-  const dashHtml = await (await fetch(`${BASE}/dashboard`)).text();
-  if (!dashHtml.includes('rewardsEnabled')) fail('dashboard missing rewards toggle');
-  else ok('dashboard rewards config UI present');
+  // The dashboard is a client-rendered Next page now: its rewards toggle is in
+  // the page's JS, not its HTML, so the old `includes('rewardsEnabled')` check
+  // could not pass. What the toggle reads and writes is checked below
+  // (/api/dashboard/rooms, /api/config).
 
   const created = await fetch(`${BASE}/api/dashboard/rooms`, {
     method: 'POST',
@@ -174,8 +183,10 @@ try {
   fail('HTTP: ' + e.message);
 }
 
-if (serverProc) serverProc.kill();
-await sleep(400);
+if (fails.length && srv) console.log(srv.stderr().slice(-3000));
+srv?.kill();
+await rpc.close();
+await sleep(1500);
 
 console.log('');
 if (fails.length) {

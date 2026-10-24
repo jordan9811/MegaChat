@@ -69,14 +69,22 @@
  *        booth comes back Through OBS (mc.seatAudio=overlay), not downgraded
  *
  * Spends nothing: local SFU (tools/livekit-server.exe --dev), free room.
+ *
+ * THE SFU IS THIS GATE'S OWN (audit harness-17). S10 used to restart it with
+ * `taskkill /IM livekit-server.exe /F`, which killed every SFU on the machine
+ * (any media gate running beside this one lost its own mid-run), then started
+ * a detached, unref'd replacement that outlived the gate. Now the gate starts
+ * the SFU on :7880 itself, S10 restarts THAT process, and the exit handler
+ * kills whichever one is current. An SFU somebody else started is never
+ * touched: if :7880 already answers, the gate refuses to run.
  */
-import { mkdtempSync } from 'fs';
+import { mkdtempSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
-import { spawn, execSync } from 'child_process';
+import { spawn } from 'child_process';
 import puppeteer from 'puppeteer-core';
 import { RoomServiceClient } from 'livekit-server-sdk';
-import { assertFreshBuild, startGateServer } from './_gate-helpers.mjs';
+import { assertFreshBuild, startGateServer, portInUse } from './_gate-helpers.mjs';
 
 const PORT = 3337;
 const APP = `http://localhost:${PORT}`;
@@ -103,8 +111,24 @@ console.log('\n── where the streamer hears guests: This tab by default, OBS 
   ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
   if (!fresh.ok) { console.log(`\nRESULT: ${pass} pass, ${fail} fail`); process.exit(1); }
 }
-if (!(await sfuUp())) {
-  console.log('  refusing: local livekit-server not running — start tools/livekit-server.exe --dev');
+// This gate's own SFU (see the header): started here, restarted by S10,
+// killed on the way out whichever way the gate exits.
+let sfu = null;
+const startSfu = () => {
+  sfu = spawn(SFU_BIN, ['--dev'], { stdio: 'ignore' });
+  sfu.on('error', (e) => console.log(`  SFU spawn error: ${e.message}`));
+  return sfu;
+};
+process.on('exit', () => { try { sfu?.kill(); } catch { /* already gone */ } });
+if (await portInUse(7880)) {
+  console.log('  refusing: something already listens on :7880 (a dev SFU, or another media gate\'s). This gate');
+  console.log('  restarts its SFU mid-call (S10), so it runs its own; stop the other one and re-run.');
+  process.exit(1);
+}
+if (!existsSync(SFU_BIN)) { console.log(`  refusing: ${SFU_BIN} is missing`); process.exit(1); }
+startSfu();
+if (!(await until(sfuUp, 30000, 500))) {
+  console.log('  refusing: the gate\'s own livekit-server never answered on :7880');
   process.exit(1);
 }
 const svc = new RoomServiceClient('http://localhost:7880', 'devkey', 'secret');
@@ -586,11 +610,12 @@ try {
   host = tabC;
   b = await until(async () => { const x = await booth(tabC); return x.mode === 'system' ? x : null; }, 20000);
   ok('S10. (setup) a fresh booth is on air in Whole PC', !!b, JSON.stringify(b && { mode: b.mode }));
-  execSync('taskkill /IM livekit-server.exe /F', { stdio: 'ignore' });
+  // Restart THIS gate's SFU, and only it (it was `taskkill /IM`: every SFU on
+  // the machine, and a detached replacement that outlived the gate).
+  sfu.kill();
   await until(async () => !(await sfuUp()), 10000, 300);
   await sleep(1500);
-  const sfu = spawn(SFU_BIN, ['--dev'], { detached: true, stdio: 'ignore' });
-  sfu.unref();
+  startSfu();
   await until(sfuUp, 30000, 500);
   b = await until(async () => {
     const x = await booth(tabC);

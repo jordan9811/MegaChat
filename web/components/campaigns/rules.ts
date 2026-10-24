@@ -5,6 +5,7 @@
 // public page.
 
 import type { ActionKind, ActionRequire, Campaign, ClaimStatus, ReferenceSet, RuleKey, Rules, VerifiedType } from '@/lib/campaigns-api'
+import { formatDollars } from '@/lib/display-format'
 
 export type RuleMeta = {
   key: RuleKey
@@ -29,9 +30,10 @@ export const RULE_MENU: RuleMeta[] = [
   { key: 'hasProfileImage', title: 'Has a profile photo', copy: 'Their X profile has a photo.', on: true },
   { key: 'hasDescription', title: 'Has a bio', copy: 'Their profile description is not empty.', on: true },
   { key: 'referenceSetId', title: 'On a list of mine', copy: 'They are in a frozen set — the accounts you follow, an X List, or ids you paste.', usesSet: true, on: '' },
-  // `enabled: true` is what makes the server enforce this rule; without it
-  // the rule is stored and never checked (campaign-eligibility.js
-  // normaliseRules). The form also verifies the server echoed it on.
+  // A rule that is present is enforced; only `enabled: false` drops it
+  // (campaign-eligibility.js normaliseRules), and the server stores
+  // `enabled: true` on every one it keeps. The caps here are the defaults
+  // the form's cap fields start from.
   { key: 'followedByFromSet', title: 'Followed by people on a list', copy: 'At least this many members of a frozen set follow them. Checking costs X-API calls per claim; the cap bounds that and it comes out of your budget.', usesSet: true, on: { referenceSetId: '', min: 1, perClaimCostCapUsd: 0.5, enabled: true } },
   { key: 'minVerifiedFollowers', title: 'Minimum verified followers', copy: 'Verified accounts following them.', note: 'if X exposes it', on: 10 },
 ]
@@ -124,7 +126,9 @@ export function polishRule(s: string) {
   // a snapshot date the server already made human only loses the word.
   return s
     .replace(/snapshot (\d{4}-\d{2}-\d{2})/, (m, iso: string) => {
-      const d = fmtDate(`${iso}T00:00:00`)
+      // A server-rendered line on /c/<slug>: one fixed locale and zone, so
+      // the HTML and the browser's render agree (see fmtDayUtc).
+      const d = fmtDayUtc(`${iso}T00:00:00Z`)
       return d === '—' ? m : `frozen ${d}`
     })
     .replace(/(\d accounts?, )snapshot /, '$1frozen ')
@@ -234,11 +238,10 @@ export function ruleCount(rules: Rules) {
   return ruleClauses(rules, []).length
 }
 
+/** "$5" for USDC (the site's one dollar format); a custom token keeps its
+ *  own symbol, and anything that is not a number prints as it came. */
 export function rewardLabel(amount: string | number, symbol: string) {
-  const n = Number(amount)
-  if (symbol === 'USDC' && Number.isFinite(n)) {
-    return `$${n.toLocaleString('en-US', { minimumFractionDigits: n % 1 === 0 ? 0 : 2, maximumFractionDigits: 6 })}`
-  }
+  if (symbol === 'USDC' && Number.isFinite(Number(amount))) return formatDollars(amount)
   return `${amount} ${symbol}`
 }
 
@@ -271,6 +274,8 @@ export function xIntentUrl(text: string) {
   return `https://x.com/intent/post?text=${encodeURIComponent(text)}`
 }
 
+/** The creator's dashboard: their own locale and zone. Only for text a
+ *  client renders after a fetch; server-rendered text uses fmtDayUtc. */
 export function fmtDate(iso: string | null | undefined, withTime = false) {
   if (!iso) return '—'
   const d = new Date(iso)
@@ -278,6 +283,17 @@ export function fmtDate(iso: string | null | undefined, withTime = false) {
   return d.toLocaleDateString(undefined, withTime
     ? { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }
     : { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+/** "Oct 29, 2026" in en-US and UTC, the way the server's describeRules
+ *  writes dates. For text that is rendered on the server AND hydrated in a
+ *  browser (/c/<slug>): a local zone or locale renders a different day or
+ *  word order on each side, and React reports the mismatch. */
+export function fmtDayUtc(iso: string | null | undefined) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 /** "just now", "3 min ago", "2 h ago", "5 days ago": how long since the
@@ -312,14 +328,31 @@ export function shortRoot(root: string) {
 }
 
 /** Budget arithmetic in the token's decimal units. A draft has moved
- *  nothing, so "left" is the planned budget. */
+ *  nothing, so "left" is the planned budget. Otherwise "left" is the
+ *  server's own `totals.remaining` (funded minus every reservation, owed
+ *  and paid reward and X-API spend: what a new claimant can still be
+ *  promised); the subtraction is only for a server that does not send it.
+ *  `released` is every payout INTENT, owed or sent, so it reads as "owed". */
 export function budgetFigures(c: Campaign) {
   const planned = Number(c.budget?.amount) || 0
   const funded = Number(c.budget?.funded) || 0
   const released = Number(c.budget?.released) || 0
   const refunded = Number(c.budget?.refunded) || 0
   const total = c.status === 'draft' ? planned : funded || planned
-  const left = Math.max(0, total - released - refunded)
+  const remaining = Number(c.totals?.remaining)
+  const left = c.status === 'draft' ? planned
+    : c.totals?.remaining != null && Number.isFinite(remaining) ? Math.max(0, remaining)
+      : Math.max(0, total - released - refunded)
   const usedPct = total > 0 ? Math.min(100, Math.round((released / total) * 100)) : 0
   return { planned, funded, released, refunded, total, left, usedPct }
+}
+
+/** The list row's budget line: "$100 planned" on a draft, else
+ *  "$15 owed · $56.80 left". */
+export function budgetRowText(c: Campaign) {
+  const b = budgetFigures(c)
+  const sym = c.token?.symbol || 'USDC'
+  return c.status === 'draft'
+    ? `${rewardLabel(String(b.planned), sym)} planned`
+    : `${rewardLabel(String(b.released), sym)} owed · ${rewardLabel(String(b.left), sym)} left`
 }

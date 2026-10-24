@@ -14,13 +14,19 @@
  *  E. vdo control room: return feed still mounts the vdo iframe.
  */
 import { spawn } from 'child_process';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
+// DATA_DIR in the server env below is a scratch dir: this gate booted on the
+// repo's own data/ (audit harness-5). It spends, so the full move to
+// startGateServer waits for a run with the owner present.
 import puppeteer from 'puppeteer-core';
 import { createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { tempo } from 'viem/chains';
 import { tempo as tempoClient } from 'mppx/client';
 import { RoomServiceClient } from 'livekit-server-sdk';
-import { assertFreshBuild } from './_gate-helpers.mjs';
+import { assertFreshBuild, DEFAULT_WATCH } from './_gate-helpers.mjs';
 
 try { process.loadEnvFile(); } catch { /* env external */ }
 
@@ -38,7 +44,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // (the two-week _gate-bounty-claim section G lie). This gate also spends real
 // mainnet dust, so the abort has to land above privateKeyToAccount.
 {
-  const fresh = assertFreshBuild({ watch: ['web/app', 'web/components', 'web/lib', 'public'] });
+  const fresh = assertFreshBuild({ watch: [...DEFAULT_WATCH, 'public'] });
   ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
   if (!fresh.ok) {
     console.log('\n  refusing to grade a stale build — rebuild and re-run.');
@@ -52,7 +58,7 @@ if (health !== 'OK') { console.error('local livekit-server not running'); proces
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
   env: {
-    ...process.env, PORT: '3215',
+    ...process.env, PORT: '3215', DATA_DIR: mkdtempSync(path.join(tmpdir(), 'mc-lk-phase2-')),
     LIVEKIT_URL: 'ws://localhost:7880', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'secret',
   },
   stdio: 'ignore', cwd: process.cwd(),
@@ -178,12 +184,12 @@ try {
   const preEmbed = await joiner.evaluate(() => !!document.querySelector('#streamPreviewMount iframe'));
   ok('pre-slot: delayed Twitch embed mounted', preEmbed);
 
-  await joiner.evaluate((seatId) => {
+  await joiner.evaluate(({ seatId, seatToken }) => {
     window.onJoinSuccess({
-      seatId, paymentMode: 'none', remaining: '1', secondsLeft: 600,
+      seatId, seatToken, paymentMode: 'none', remaining: '1', secondsLeft: 600,
       tickPrice: '0.001', tickSeconds: 1, pushUrl: 'https://vdo.ninja/?push=unused',
     });
-  }, join.seatId);
+  }, { seatId: join.seatId, seatToken: join.seatToken });
   await joiner.waitForFunction(
     () => /go live/i.test(document.getElementById('joinBtn')?.textContent || ''),
     { timeout: 25000 },
@@ -237,7 +243,7 @@ try {
   ticking = false;
   await tickLoop;
   await session.close().catch(() => {});
-  await fetch(`${APP}/api/leave/${join.seatId}`, { method: 'POST' });
+  await fetch(`${APP}/api/leave/${join.seatId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seatToken: join.seatToken }) });
 
   // ── D. letters on a livekit room (transport-independent) ──────────────────
   const rec = await browser.newPage();

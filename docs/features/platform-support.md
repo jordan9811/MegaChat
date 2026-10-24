@@ -25,7 +25,7 @@ Where a platform keeps a replay, a live check that misses a code costs nothing �
 
 ## Identity on each platform
 
-Claiming a bounty handle proves ownership of the platform account through the linked Privy account (`_gate-x-claims.mjs`); Twitch, X and Kick also have a direct OAuth path in `auth.js` that answers 503 without credentials. Kick's OAuth lives on two hosts and conflating them yields opaque 404s (`auth.js`, the `kick` provider comment). YouTube and Rumble are verification targets only — no identity path (`auth.js`, `PROVIDERS`).
+Claiming a bounty handle proves ownership of the platform account through the claimant's signed-in account: a login that platform's own OAuth gave it, on a real link or Privy's linked accounts (`PlatformIdentityVerifier`, `bounty-routes.js`; `_gate-x-claims.mjs`). That is the default since 2026-10-24; the auto-approving stub runs only under `BOUNTY_IDENTITY_STUB=1`, for test environments, and a signed-out claim is refused before anything is written. Only Twitch, Kick and X have an ownership proof (`PlatformIdentityVerifier.SUPPORTED`), so a YouTube, Rumble or pump.fun handle cannot be claimed (`REAL_UNSUPPORTED_PLATFORM`) until its platform gets one — the demo board's pools on those platforms included. Twitch, X and Kick also have a direct OAuth path in `auth.js` that answers 503 without credentials. Kick's OAuth lives on two hosts and conflating them yields opaque 404s (`auth.js`, the `kick` provider comment). YouTube and Rumble are verification targets only — no identity path (`auth.js`, `PROVIDERS`).
 
 ## What this does NOT do
 

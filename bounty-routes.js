@@ -26,8 +26,12 @@ import { getStreamByMint } from './pumpfun-api.js';
 import { resolveAvatars, avatarKey } from './platform-avatars.js';
 import { readIdentityFromRequest, roomOwnerKey } from './auth.js';
 import settlement from './bounty-settlement.js';
-import { policyFor, authorize, TIER, platformLoginFor } from './bounty-auth.js';
-import { overlayKeyFor } from './overlay-key.js';
+import {
+  policyFor, authorize, TIER, platformLoginFor, loginProvingHandle, adminKeyMatches, identityOwnsHandle,
+} from './bounty-auth.js';
+import { overlayKeyFor, overlayKeyMatches } from './overlay-key.js';
+import { isRailway } from './runtime-env.js';
+import { cleanVideoMime } from './aired-clips.js';
 import * as capture from './bounty-capture.js';
 import * as bank from './bounty-bank.js';
 import * as seatEscrow from './seat-escrow.js';
@@ -42,11 +46,11 @@ import {
 } from './rooms-store.js';
 
 /**
- * Identity verification is STUBBED in Run A — real OAuth is Run B.
- * TODO(run-b): replace with a real platform OAuth round-trip proving the
- * claimant controls the target handle. Until then every approval is recorded
- * as STUBBED_APPROVAL in the ledger so no stubbed claim can ever be mistaken
- * for a verified one after the fact.
+ * Who owns a handle. The real check is PlatformIdentityVerifier below; the stub
+ * exists for unattended test environments and runs ONLY under
+ * BOUNTY_IDENTITY_STUB=1. Every stub approval is recorded as STUBBED_APPROVAL
+ * in the ledger so no stubbed claim can ever be mistaken for a verified one
+ * after the fact.
  */
 export class IdentityVerifier {
   async verify(_platform, _handle, _claimant) { throw new Error('not implemented'); }
@@ -61,23 +65,26 @@ export class StubIdentityVerifier extends IdentityVerifier {
 }
 
 /**
- * REAL Twitch ownership proof — activated by BOUNTY_IDENTITY_REAL=1.
+ * REAL platform ownership proof — THE DEFAULT (audit bounty-9, 2026-10-24).
  *
  * A claim is approved only when the REQUESTER'S SIGNED-IN IDENTITY is a
- * Twitch account whose login matches the claimed handle. That identity was
+ * platform account whose login matches the claimed handle. That identity was
  * established by a real OAuth round trip (legacy /auth/twitch or Privy's
- * Twitch login), verified server-side and sealed into the tamper-evident
- * mc_identity cookie — so "I am this channel" is proven by Twitch itself,
- * not asserted in a request body.
+ * linked accounts), verified server-side and sealed into the tamper-evident
+ * mc_identity cookie — so "I am this channel" is proven by the platform
+ * itself, not asserted in a request body.
  *
- * Kept behind its own flag rather than replacing the stub outright: the stub
- * remains the default so unattended test environments keep working, and
- * turning real verification on for production is one explicit env flip that
- * shows up in the boot log. Kick gets the same shape when its credentials
- * exist (OAuth 2.1 + PKCE, auth on id.kick.com, API on api.kick.com — noted
- * for the run that has keys).
+ * It used to sit behind BOUNTY_IDENTITY_REAL=1 with the auto-approving stub as
+ * the default, and production runs BOUNTY_CLAIM=1 without that flag — so an
+ * anonymous request could claim any handle and bind its payee. The stub is
+ * opt-in now (BOUNTY_IDENTITY_STUB=1, test environments only) and
+ * BOUNTY_IDENTITY_REAL is a no-op alias for the default. Platforms outside
+ * SUPPORTED cannot be claimed until their own proof exists.
  */
 export class PlatformIdentityVerifier extends IdentityVerifier {
+  /** Nobody signed out can ever pass this check, so the claim route refuses
+   *  them before it writes a single row. */
+  requiresSignIn = true;
   // X joins because Privy's twitter_oauth hands us the real @handle (proven
   // in _gate-x-claims.mjs, not assumed) — no separate X API agreement is
   // needed for OWNERSHIP; X still has no pullable stream, so verification on
@@ -99,18 +106,18 @@ export class PlatformIdentityVerifier extends IdentityVerifier {
     if (!login) {
       return { approved: false, method: `REAL_NO_${platform.toUpperCase()}_LINK:${identity.provider}` };
     }
-    const owns = login.toLowerCase() === String(handle).toLowerCase();
-    return owns
+    // The one ownership rule (bounty-auth.js loginProvingHandle): any proven
+    // login, compared through handleKey, so a pump.fun mint keeps its case.
+    const proving = loginProvingHandle(identity, store.handleKey(platform, handle));
+    return proving
       ? {
         approved: true,
         method: `${platform.toUpperCase()}_OAUTH_SESSION`,
-        platform, handle, login,
+        platform, handle, login: proving,
       }
       : { approved: false, method: 'REAL_HANDLE_MISMATCH' };
   }
 }
-/** Back-compat name from the Twitch-only iteration. */
-export const TwitchIdentityVerifier = PlatformIdentityVerifier;
 
 /**
  * Playback hooks handed to letters.js. These are the ONLY thing that opens a
@@ -214,8 +221,8 @@ function captureBroadcastObservation(s, { playbackId, clipId, log = console } = 
 }
 
 export function makeClipHooks({ log = console } = {}) {
-  const findOpenSession = (roomId) =>
-    store.listAirSessions().find((s) => s.status === 'OPEN' && s.roomId === roomId) || null;
+  // The same session the overlay's room route draws codes for (bank.js).
+  const findOpenSession = bank.openSessionForRoom;
 
   return {
     onClipPlay(roomId, { clipId, durationS }) {
@@ -272,6 +279,40 @@ export function makeClipHooks({ log = console } = {}) {
  */
 function accountKey(req) {
   return roomOwnerKey(readIdentityFromRequest(req));
+}
+
+/**
+ * May this request see a PRIVATE clip (not yet approved, not yet aired)? Only
+ * the operator, the streamer it was recorded for, and the account that pledged
+ * it. The clip id used to be the whole credential and the public /clips list
+ * handed every id out, so a fan's unmoderated recording streamed to anyone
+ * (audit bounty-8).
+ */
+function maySeePrivateClip(req, clip) {
+  if (!clip) return false;
+  if (adminKeyMatches(req) || identityOwnsHandle(req, clip.handleKey)) return true;
+  const account = accountKey(req);
+  return !!account && account === clip.contributor;
+}
+
+/**
+ * Does this request hold a real credential for an air session's OVERLAY
+ * reports (badge legibility, render environment)? The room's overlay key — the
+ * `&k=` in the overlay URL only the room's streamer is handed — or that
+ * streamer's own session, or the operator key.
+ *
+ * The session UUID alone used to be the credential, and the room-addressed code
+ * route handed it to anyone who knew a room id, so an anonymous caller could
+ * write evidence into another streamer's session and bloat the store without
+ * limit (audit bounty-2). A deployment with no derivable overlay key
+ * (overlay-key.js) still renders the badge; it just accepts no unkeyed reports.
+ */
+function overlayReportAuthorized(req, session) {
+  if (!session) return false;
+  if (session.roomId && overlayKeyMatches(session.roomId, String(req.query?.k || ''))) return true;
+  if (adminKeyMatches(req)) return true;
+  const claim = store.getClaim(session.claimId);
+  return !!claim && identityOwnsHandle(req, claim.handleKey);
 }
 
 /**
@@ -425,6 +466,14 @@ async function startSessionCapture(session, { log = console } = {}) {
       }
       }
     }
+    // Checked once more at the last moment: the session can close (ended, or
+    // superseded by a newer one) while the address resolves, and a recorder
+    // started after that would run with nothing left to stop it.
+    const still = store.getAirSession(session.id);
+    if (!still || still.status !== 'OPEN') {
+      log.log?.(`[capture] session ${session.id} closed while its stream address resolved — capture not started`);
+      return;
+    }
     await capture.startCapture(session.id, {
       hlsUrl, platform: session.platform, handle, log,
       // SURVIVE A MID-BROADCAST STORAGE ROTATION. The recorder pins one media
@@ -473,12 +522,28 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     },
   };
 
-  // BOUNTY_IDENTITY_REAL=1 flips claims from the auto-approving stub to the
-  // session-bound Twitch proof. Loud at boot either way — which verifier is
-  // deciding who owns a handle must never be a surprise.
+  // The session-bound platform proof decides who owns a handle unless a test
+  // environment opts into the auto-approving stub with BOUNTY_IDENTITY_STUB=1.
+  // BOUNTY_IDENTITY_REAL, the old opt-in, now names the default and changes
+  // nothing. Loud at boot either way — which verifier is deciding who owns a
+  // handle must never be a surprise.
+  //
+  // NEVER ON RAILWAY (audit harness-8). The stub used to be one variable away
+  // from production, guarded only by the warning below and a launch-readiness
+  // row. On a deployed box (isRailway(), not isProduction(): every gate runs
+  // --prod and must keep the stub) the variable is refused, the real verifier
+  // decides, and the log says so once.
+  const stubAsked = process.env.BOUNTY_IDENTITY_STUB === '1';
+  const stubRefused = stubAsked && isRailway();
+  if (stubRefused) {
+    log.error('[bounty] BOUNTY_IDENTITY_STUB=1 is set on Railway — REFUSED: the auto-approving stub never decides ownership on a deployed box; PlatformIdentityVerifier is in use. Unset the variable.');
+  }
   const identity = identityVerifier
-    || (process.env.BOUNTY_IDENTITY_REAL === '1' ? new PlatformIdentityVerifier() : new StubIdentityVerifier());
+    || (stubAsked && !stubRefused ? new StubIdentityVerifier() : new PlatformIdentityVerifier());
   log.log(`[bounty] identity verifier: ${identity.constructor.name}`);
+  if (identity instanceof StubIdentityVerifier && bountyConfig.identityStubAutoApprove) {
+    log.warn('[bounty] BOUNTY_IDENTITY_STUB=1 — every claim is approved without proof. Test environments only; never set it on Railway.');
+  }
 
   // Validate the escrow ledger chain BEFORE serving anything. Pools are
   // derived by folding this ledger, so starting on a corrupt one would serve
@@ -620,7 +685,13 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   // reverse would store bytes for a contribution that might never exist.
   guarded.post('/api/bounty/contribute', (req, res) => {
     try {
-      const { platform, handle, contributor, amount, letterRef } = req.body || {};
+      // THE CONTRIBUTOR IS THE ACCOUNT, as on /pledge. This took `contributor`
+      // from the body, so a signed-in caller could file a contribution — and
+      // the strikes and clip ownership that key on it — under any other
+      // account's id (audit bounty-7a). The body's value is ignored.
+      const { platform, handle, amount, letterRef } = req.body || {};
+      const contributor = accountKey(req);
+      if (!contributor) return res.status(401).json({ error: 'Sign in to continue', reason: 'auth_required' });
       const c = escrow.contribute({ platform, handle, contributor, amount, letterRef });
       res.json({
         ok: true,
@@ -665,13 +736,14 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         });
         res.json({ ok: true, clip: out, moderation: moderationConfigured() ? 'queued' : 'not_configured' });
 
+        // The frames are read once, here, or never — release them either way.
+        const frames = pendingFrames.get(contributionId)?.frames || [];
+        dropFrames(contributionId);
         // Moderation runs AT UPLOAD, never at playback: bounty clips air
         // later on someone's live broadcast, and nothing may hold a
         // classifier round-trip over a live stream. Post-ack so the fan's
         // upload latency never includes OpenAI's.
         if (moderationConfigured()) {
-          const frames = pendingFrames.get(contributionId)?.frames || [];
-          pendingFrames.delete(contributionId);
           setImmediate(async () => {
             try {
               const verdict = await moderateMedia({
@@ -696,19 +768,47 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       } catch (e) { fail(res, e); }
     });
 
-  /** What a claiming streamer actually has waiting for them. */
+  /**
+   * What a claiming streamer actually has waiting for them. The streamer and
+   * the operator get every live clip; everyone else gets the PUBLIC ones only
+   * (approved or aired, clips.isPublicClip) with no account or contribution ids,
+   * plus how many are waiting — a number the board already shows. The absolute
+   * storage path never leaves an admin route.
+   */
   guarded.get('/api/bounty/clips', (req, res) => {
     const key = store.handleKey(req.query.platform, req.query.handle);
     if (!key) return res.status(400).json({ error: 'platform and handle required' });
+    const all = clips.listClips(key);
+    if (adminKeyMatches(req) || identityOwnsHandle(req, key)) {
+      const { storageRoot: _root, ...storage } = clips.stats();
+      return res.json({
+        clips: all.map(({ sha256, ...c }) => ({ ...c, sha256Short: sha256.slice(0, 12) })),
+        waiting: all.length,
+        storage,
+      });
+    }
     res.json({
-      clips: clips.listClips(key).map(({ sha256, ...c }) => ({ ...c, sha256Short: sha256.slice(0, 12) })),
-      storage: clips.stats(),
+      clips: all.filter(clips.isPublicClip).map((c) => ({
+        clipId: c.clipId, durationS: c.durationS, storedAt: c.storedAt,
+        playedAt: c.playedAt, playCount: c.playCount,
+        approval: c.approval ? { state: c.approval.state, at: c.approval.at } : null,
+      })),
+      waiting: all.length,
     });
   });
 
-  /** Serve a stored clip. Refuses rather than serving bytes that changed. */
+  /**
+   * Serve a stored clip. Refuses rather than serving bytes that changed, and
+   * refuses a PRIVATE clip to anyone but maySeePrivateClip — with the same 404
+   * as a clip that does not exist, so the route is no existence oracle, and
+   * before any bytes are read, so a refused caller costs no disk.
+   */
   guarded.get('/api/bounty/clip/:clipId/media', (req, res) => {
-    const out = clips.readClip(req.params.clipId);
+    const rec = clips.getClip(req.params.clipId);
+    if (!rec || (!clips.isPublicClip(rec) && !maySeePrivateClip(req, rec))) {
+      return res.status(404).json({ error: 'not_found', hint: 'This clip is no longer available.' });
+    }
+    const out = clips.readClip(rec.clipId);
     if (!out.ok) {
       const code = out.error === 'not_found' ? 404 : 410;
       return res.status(code).json({
@@ -718,7 +818,14 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
           : 'This clip is no longer available.',
       });
     }
-    res.setHeader('Content-Type', out.record.mime);
+    // Exactly one of two video types, never the uploader's string, and no
+    // sniffing: the room-clip route serves the same way (letters.js). A fixed
+    // filename keeps a download from naming itself after anything a fan sent.
+    const mime = cleanVideoMime(out.record.mime);
+    res.setHeader('Content-Type', mime);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `inline; filename="holler-clip.${mime === 'video/mp4' ? 'mp4' : 'webm'}"`);
+    res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Content-Length', String(out.data.length));
     res.send(out.data);
   });
@@ -732,9 +839,24 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
    * Payment note, disclosed here as everywhere: escrow is a ledger and
    * settlement is a stub — no real funds move in this build.
    */
+  /**
+   * ONE PLEDGE PER TAKE (audit web-5). The record page retries an upload that
+   * failed, and a pledge whose response was lost looks failed to the client —
+   * so each retry escrowed the fan's money again. The client names its take
+   * with `attemptId` (a UUID); the same account sending the same attempt for
+   * the same anchor handle within ATTEMPT_TTL_MS gets the first pledge back,
+   * `deduped: true`, and nothing new is written. In memory on purpose: a
+   * restart costs at most one duplicate inside the window, and the map is
+   * pruned by age and capped, so it cannot be grown into a memory lever.
+   */
+  const ATTEMPT_TTL_MS = 10 * 60_000;
+  const ATTEMPT_MAX = 5000;
+  const pledgeAttempts = new Map(); // `${handleKey}:${account}:${attemptId}` → { at, pledgeId, contributionId, body }
+  const isUuid = (s) => typeof s === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
   guarded.post('/api/bounty/pledge', (req, res) => {
     try {
-      const { targets, contributor, amount, expiresInMs } = req.body || {};
+      const { targets, contributor, amount, expiresInMs, attemptId } = req.body || {};
       // THE CONTRIBUTOR IS THE ACCOUNT, NOT A STRING THEY CHOSE.
       //
       // `contributor` used to be whatever the client sent, and strikes attach
@@ -745,11 +867,27 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       // fresh OAuth account, which is friction rather than money, but it is no
       // longer zero.
       const account = accountKey(req);
+      const anchor = Array.isArray(targets) && targets[0] ? store.handleKey(targets[0].platform, targets[0].handle) : null;
+      const attemptKey = isUuid(attemptId) && anchor && account ? `${anchor}:${account}:${attemptId}` : null;
+      const now = Date.now();
+      for (const [k, v] of pledgeAttempts) {
+        if (now - v.at <= ATTEMPT_TTL_MS && pledgeAttempts.size < ATTEMPT_MAX) break;
+        pledgeAttempts.delete(k);
+      }
+      const seen = attemptKey ? pledgeAttempts.get(attemptKey) : null;
+      if (seen) {
+        return res.json({
+          ...seen.body,
+          pledge: store.getPledge(seen.pledgeId) || seen.body.pledge,
+          contribution: store.getContribution(seen.contributionId) || seen.body.contribution,
+          deduped: true,
+        });
+      }
       const out = escrow.pledge({
         targets, contributor: account, amount, expiresInMs,
         displayName: typeof contributor === 'string' ? contributor.slice(0, 64) : null,
       });
-      res.json({
+      const body = {
         ok: true,
         pledge: out.pledge,
         contribution: out.contribution,
@@ -765,7 +903,11 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
           withheldShareGoesTo: 'streamer_pool',
           strikesRequire: 'human review or high-confidence classifier',
         },
-      });
+      };
+      if (attemptKey) {
+        pledgeAttempts.set(attemptKey, { at: now, pledgeId: out.pledge.id, contributionId: out.contribution.id, body });
+      }
+      res.json(body);
     } catch (e) { fail(res, e); }
   });
 
@@ -776,15 +918,45 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
    * frames and upload degrades to transcript-only moderation, same
    * fail-open posture as room MegaChats.
    */
-  const pendingFrames = new Map(); // contributionId → { frames, at }
+  //
+  // BOUNDED, AND ONLY FOR A CONTRIBUTION THAT IS STILL WAITING FOR ITS CLIP.
+  // This took any string as the key and evicted only entries older than 30
+  // minutes once past 200, so inside that window anonymous posts grew the heap
+  // without limit (audit bounty-14: 1,500 posts, +386MB rss). Now the key must
+  // name a HELD contribution with no clip yet — frames for anything else would
+  // never be read — each frame and the whole map have a byte ceiling, and the
+  // oldest entry goes first (a Map iterates in insertion order).
+  const pendingFrames = new Map(); // contributionId → { frames, bytes, at }
+  const FRAMES_TTL_MS = 30 * 60_000;
+  const FRAMES_MAX_ENTRIES = 200;
+  const FRAMES_MAX_BYTES = 32 * 1024 * 1024;
+  const FRAME_MAX_CHARS = 300_000; // the room-recording rule (letters.js)
+  let pendingFrameBytes = 0;
+  const dropFrames = (k) => {
+    const v = pendingFrames.get(k);
+    if (!v) return;
+    pendingFrameBytes -= v.bytes;
+    pendingFrames.delete(k);
+  };
   guarded.post('/api/bounty/clip/:contributionId/frames', express.json({ limit: '6mb' }), (req, res) => {
-    const frames = (req.body?.frames || []).filter((f) => /^data:image\//.test(String(f))).slice(0, 16);
-    pendingFrames.set(req.params.contributionId, { frames, at: Date.now() });
-    // Bound the map — entries are only useful for minutes.
-    if (pendingFrames.size > 200) {
-      const cutoff = Date.now() - 30 * 60_000;
-      for (const [k, v] of pendingFrames) if (v.at < cutoff) pendingFrames.delete(k);
+    const id = req.params.contributionId;
+    const contribution = store.getContribution(id);
+    if (!contribution) return res.status(404).json({ error: 'No such contribution' });
+    if (contribution.status !== 'HELD' || clips.clipForContribution(id)) {
+      return res.status(409).json({ error: 'This contribution is not waiting for its recording' });
     }
+    const frames = (Array.isArray(req.body?.frames) ? req.body.frames : [])
+      .filter((f) => typeof f === 'string' && f.startsWith('data:image/') && f.length < FRAME_MAX_CHARS)
+      .slice(0, 16);
+    const bytes = frames.reduce((a, f) => a + f.length, 0);
+    dropFrames(id);
+    const cutoff = Date.now() - FRAMES_TTL_MS;
+    for (const [k, v] of pendingFrames) {
+      if (v.at >= cutoff && pendingFrames.size < FRAMES_MAX_ENTRIES && pendingFrameBytes + bytes <= FRAMES_MAX_BYTES) break;
+      dropFrames(k);
+    }
+    pendingFrames.set(id, { frames, bytes, at: Date.now() });
+    pendingFrameBytes += bytes;
     res.json({ ok: true, frames: frames.length });
   });
 
@@ -1186,6 +1358,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       if (swept.length) log.log(`[bounty] pledge sweeper refunded ${swept.length} expired pledge(s)`);
     } catch (e) { log.warn(`[bounty] pledge sweep failed: ${e.message}`); }
     try { sweepBank(); } catch (e) { log.warn(`[bank] sweep failed: ${e.message}`); }
+    // The capture retention the posters and the docs promise (14 days by
+    // default), which nothing ran: purgeExpiredCaptures had no caller, so
+    // verification media only ever accumulated (audit bounty-12).
+    try { capture.purgeExpiredCaptures({ log }); } catch (e) { log.warn(`[capture] retention sweep failed: ${e.message}`); }
   }, bountyConfig.pledgeSweepMs);
   if (pledgeSweeper.unref) pledgeSweeper.unref();
 
@@ -1197,6 +1373,17 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       if (!key) return res.status(400).json({ error: 'platform and handle required' });
       const reserved = store.getReservedHandleByKey(key);
       if (!reserved) return res.status(404).json({ error: 'No bounty reserved for that handle' });
+      // SIGNED OUT CAN NEVER PASS THE REAL CHECK, so say so before writing
+      // anything. The route is PUBLIC (it establishes who you are), and the
+      // path below writes a claim record and ~3 ledger rows per denied attempt
+      // — free, unthrottled growth for an anonymous caller.
+      if (identity.requiresSignIn && !readIdentityFromRequest(req)) {
+        return res.status(401).json({
+          error: 'Sign in with the platform account that owns this handle to claim it',
+          reason: 'auth_required',
+          identity: { approved: false, method: 'REAL_NOT_SIGNED_IN' },
+        });
+      }
 
       // RE-ENTRY FOR THE VERIFIED OWNER. Once a claim verifies, the handle
       // advances past CLAIM_PENDING (AWAITING_AIRTIME, AIRING, …) and the
@@ -1222,8 +1409,25 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
               identity: { approved: false, method: idv.method },
             });
           }
+          // THE VERIFIED OWNER NAMES THE PAYEE. claimedBy is the `to` of every
+          // release, and a claim approved earlier — by the stub, or by the
+          // owner with a typo — kept whatever payee it was given: the owner's
+          // re-entry handed it back unchanged (audit bounty-N3). Rebind it to
+          // what the owner sends now, on the ledger, so a payee change is
+          // never silent.
+          let claim = existing;
+          const from = store.getReservedHandleByKey(key).claimedBy || null;
+          if (typeof claimant === 'string' && claimant.trim() && claimant !== from) {
+            store.updateReservedHandle(key, { claimedBy: claimant });
+            claim = store.updateClaim(existing.id, { claimant, verificationMethod: idv.method });
+            store.appendLedger({
+              handleKey: key, claimId: existing.id, type: 'IDENTITY_CHECK',
+              actor: claimant, reason: idv.method,
+              meta: { approved: true, stubbed: idv.method.startsWith('STUBBED'), payeeReboundFrom: from },
+            });
+          }
           return res.json({
-            ok: true, reclaimed: true, claim: existing,
+            ok: true, reclaimed: true, claim,
             identity: { approved: true, method: idv.method },
           });
         }
@@ -1427,6 +1631,20 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       }
 
       const s = store.createAirSession({ claimId, roomId: boundRoomId, platform, watchUrl });
+      // ONE OPEN SESSION PER CLAIM (audit bounty-3). The claim page opens a
+      // session on every Claim click and nothing on the web ends one, so a
+      // revisit left two OPEN: two recorders on one channel, and the hooks and
+      // the overlay disagreeing about which session a code belonged to. The
+      // one just opened is the live one; older ones close here. A capture
+      // stops only after its pending freezes settle, so no clip that already
+      // aired loses its media, and a closed session stays verifiable.
+      const superseded = store.listAirSessions(claimId).filter((o) => o.id !== s.id && o.status === 'OPEN');
+      for (const o of superseded) {
+        store.updateAirSession(o.id, { status: 'CLOSED', endedAt: Date.now(), supersededBy: s.id });
+        void capture.awaitPendingFreezes(o.id)
+          .then(() => capture.stopCapture(o.id, { log }))
+          .catch((e) => log.warn?.(`[capture] could not stop superseded session ${o.id}: ${e?.message}`));
+      }
       // SELF-CAPTURE STARTS WITH THE SESSION AND ONLY WITH THE SESSION. This
       // is the boundary that makes it a verification capture rather than a
       // recording of someone's broadcast — enforced here, not promised in copy.
@@ -1443,6 +1661,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       // dead the moment a streamer tried to go live.
       res.json({
         ok: true, airSession: store.getAirSession(s.id), code: null,
+        superseded: superseded.map((o) => o.id),
         // The STABLE overlay address. `?room=` subscribes the overlay to the
         // room, which is what makes tiles and MegaChats render at all;
         // `?bountyRoom=` resolves the badge code by room, so the same URL
@@ -1498,12 +1717,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   guarded.get('/api/bounty/room/:roomId/code', (req, res) => {
     try {
       const roomId = String(req.params.roomId || '');
-      // Newest OPEN session for this room. A room can accumulate closed
-      // sessions across streams; only a live one can be earning.
-      const open = store.listAirSessions
-        ? store.listAirSessions().filter((s) => s.roomId === roomId && s.status === 'OPEN')
-        : [];
-      const s = open.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+      // The room's OPEN session — the same one the playback hooks issue codes
+      // on (bank.openSessionForRoom). A room accumulates closed sessions
+      // across streams; only a live one can be earning.
+      const s = bank.openSessionForRoom(roomId);
       if (!s) {
         // NOT an error: between streams there is legitimately no session, and
         // the overlay must render nothing rather than break.
@@ -1520,8 +1737,11 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         badgeTooSmall: !!s.badgeTooSmall,
         status: s.status,
         // So the overlay can report env/badge against the right session
-        // without the operator ever pasting an id.
-        airSessionId: s.id,
+        // without the operator ever pasting an id — but ONLY to a keyed
+        // overlay (or the streamer / operator). The id is the address those
+        // reports write to, and a room id is no secret; an unkeyed overlay
+        // still draws the code, which is on the public broadcast anyway.
+        airSessionId: overlayReportAuthorized(req, s) ? s.id : null,
       });
     } catch (e) { fail(res, e); }
   });
@@ -1529,11 +1749,21 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   /** Overlay self-reports badge legibility. See the trust note in bounty-watermark.js. */
   guarded.post('/api/bounty/air-session/:id/badge', (req, res) => {
     try {
+      const s = store.getAirSession(req.params.id);
+      if (!s) return res.status(404).json({ error: 'No such air session' });
+      if (!overlayReportAuthorized(req, s)) {
+        return res.status(401).json({ error: 'This overlay URL carries no key for its room', reason: 'overlay_key_required' });
+      }
       const { tooSmall, detail } = req.body || {};
-      const s = tooSmall
-        ? watermark.reportBadgeTooSmall(req.params.id, detail)
-        : watermark.clearBadgeViolation(req.params.id);
-      res.json({ ok: true, badgeTooSmall: !!s.badgeTooSmall, violations: s.violations.length });
+      // A FEW NUMBERS, NOT THE CLIENT'S JSON, and one violation per flip:
+      // the detail used to be stored verbatim on every post, which is how
+      // 300 posts grew bounty.json to 25.8MB and slowed every unrelated write.
+      const n = (x) => (Number.isFinite(Number(x)) ? +Number(x).toFixed(4) : null);
+      const d = detail && typeof detail === 'object' ? detail : {};
+      const after = !tooSmall ? watermark.clearBadgeViolation(s.id)
+        : s.badgeTooSmall ? s
+          : watermark.reportBadgeTooSmall(s.id, { height: n(d.height), canvasH: n(d.canvasH), ratio: n(d.ratio) });
+      res.json({ ok: true, badgeTooSmall: !!after.badgeTooSmall, violations: (after.violations || []).length });
     } catch (e) { fail(res, e); }
   });
 
@@ -1548,6 +1778,13 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
    */
   guarded.post('/api/bounty/air-session/:id/overlay-env', (req, res) => {
     try {
+      // Evidence that can open a review on someone's payout, so it takes the
+      // same credential as /badge (overlayReportAuthorized).
+      const s = store.getAirSession(req.params.id);
+      if (!s) return res.status(404).json({ error: 'No such air session' });
+      if (!overlayReportAuthorized(req, s)) {
+        return res.status(401).json({ error: 'This overlay URL carries no key for its room', reason: 'overlay_key_required' });
+      }
       const { width, height, visibilityState, at } = req.body || {};
       const rec = watermark.recordOverlayEnv(req.params.id, { width, height, visibilityState, at });
       res.json({ ok: true, canvasAnomaly: rec.canvasAnomaly, detail: rec.detail });
@@ -1572,6 +1809,12 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   guarded.post('/api/bounty/air-session/:id/end', async (req, res) => {
     try {
       const prev = store.getAirSession(req.params.id);
+      // ENDING TWICE IS A NO-OP (audit bounty-17). A second call re-stamped
+      // endedAt and, with the channel offline by then, broadcastEndedAt=now —
+      // which moves the tail check's end and clears the STREAM_ENDED_TOO_SOON
+      // cause, a review cause the streamer could then erase at will. The
+      // first close is the observation.
+      if (prev?.status === 'CLOSED') return res.json({ ok: true, airSession: prev, alreadyClosed: true });
       // OBSERVE WHETHER THE BROADCAST IS STILL RUNNING, once, here. This is the
       // last moment the answer exists: the tail check ("did the stream continue
       // past the last counted playback?") cannot be answered at verify time,
@@ -1659,6 +1902,25 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       const claim = store.getClaim(s.claimId);
       const key = claim.handleKey;
 
+      // THE SERVER CHOOSES THE EVIDENCE (audit bounty-1). `frames` and
+      // `vodUrl` put caller-named media in front of the decoder (and in front
+      // of ffprobe/ffmpeg, verbatim), `vodStartMs` sets the seek, and
+      // `sourceMode` picks which source is read at all. This route took all
+      // four from the session's own streamer, who could hand in frames of
+      // their own making and be released at tier 1. They are operator
+      // controls now — and even the operator's media is not trusted
+      // unattended: it lands as frameOrigin 'operator' below, which a person
+      // confirms before anything is paid. Refused before anything is written.
+      const operatorFields = ['frames', 'vodUrl', 'vodStartMs', 'sourceMode']
+        .filter((f) => req.body?.[f] != null);
+      const operator = adminKeyMatches(req);
+      if (operatorFields.length && !operator) {
+        return res.status(403).json({
+          error: 'The verification source is chosen by the server, not the request',
+          reason: 'operator_only_source', fields: operatorFields,
+        });
+      }
+
       const reserved = store.getReservedHandleByKey(key);
       if (escrow.canTransition(reserved.claimStatus, 'VERIFYING')) {
         escrow.transition({ handleKey: key, to: 'VERIFYING', actor: 'verifier', reason: 'verification started', claimId: claim.id, airSessionId: s.id });
@@ -1696,7 +1958,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         if (preferCapture) {
           log.log?.(`[verify] using self-capture for ${s.id} (${captures.length} window(s))`);
         }
-        frameOrigin = preferCapture ? 'capture' : 'external';
+        // Media the request named is the operator's, whatever it depicts.
+        const operatorMedia = req.body.sourceMode === 'files'
+          || req.body.vodUrl != null || req.body.vodStartMs != null;
+        frameOrigin = operatorMedia ? 'operator' : preferCapture ? 'capture' : 'external';
         sourceOpts = {
           frameSource: frameSourceFor(s.platform, {
             log,
@@ -1879,9 +2144,23 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         if (fresh.includes('CANVAS_ANOMALY')) {
           causes.push(`overlay environment: ${confidence.evidence.overlayEnv.detail}`);
         }
-        if (fresh.includes('UNKNOWN_FRAME_ORIGIN')) {
+        if (fresh.includes('UNKNOWN_FRAME_ORIGIN') && frameOrigin !== 'operator') {
           causes.push('frames of unknown origin — cannot tell whether this came from the platform or our own capture');
         }
+      }
+      if (frameOrigin === 'operator' && v.verifiedClips > 0) {
+        causes.push('frames supplied by the operator, not read by the server from the broadcast — '
+          + 'a person confirms them before anything is paid');
+      }
+      // A PERSON ALREADY SAID NO (audit bounty-6). release() stops only on an
+      // OPEN review, so after a reject the same session could be re-verified
+      // from another source and pay unattended. A rejection is not terminal —
+      // a reviewer may still approve later — but it means no machine verdict
+      // pays this session on its own again.
+      const rejected = store.listReviews({ airSessionId: s.id }).filter((r) => r.state === 'RESOLVED_REJECT');
+      if (rejected.length && v.verifiedClips > 0) {
+        causes.push(`a reviewer rejected this session before (${rejected.map((r) => r.id).join(', ')}) — `
+          + 'a new verification cannot pay it without a person');
       }
       // THE TIER TABLE MUST DECIDE. If the evaluator says "a person looks"
       // and no branch above named a cause — the tier-3 forced-review knob
@@ -1917,12 +2196,21 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
             + 'probably could not read it; that is ours to explain, not the streamer\'s');
         }
       }
+      // What verified, one entry per playback — the auto path pays from this
+      // (collapsed to one airing per pledge) and so must a reviewer's approval.
+      const verifiedPlaybacks = (v.clipVerdicts || []).filter((c) => c.verified)
+        .map((c) => ({ clipId: c.clipId, playbackId: c.playbackId, durationS: c.durationS, verified: true }));
       if (causes.length && !store.hasOpenReview(s.id)) {
         review = store.createReview({
           airSessionId: s.id, claimId: claim.id, handleKey: key,
           verificationId: v.attempt?.id || null, confidence: v.confidence,
           reason: causes.join(' | '),
         });
+        // THE EVIDENCE THE REVIEWER IS JUDGING, pinned to the review (audit
+        // bounty-5). Approval used to pay the session's raw verifiedClips —
+        // every playback, uncollapsed, and from whichever verification ran
+        // last — so the same evidence paid 10 on review and 5 automatically.
+        review = store.updateReview(review.id, { verifiedPlaybacks });
         store.appendLedger({
           handleKey: key, claimId: claim.id, airSessionId: s.id,
           type: 'REVIEW_OPENED', actor: 'verifier',
@@ -1938,8 +2226,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         handleKey: key, claimId: claim.id, airSessionId: s.id,
         verifiedClips: v.verifiedClips, verifiedClipSeconds: v.verifiedClipSeconds,
         // ONE PAYABLE AIRING PER PLEDGE: release() collapses these by contribution.
-        verifiedPlaybacks: (v.clipVerdicts || []).filter((c) => c.verified)
-          .map((c) => ({ clipId: c.clipId, playbackId: c.playbackId, durationS: c.durationS, verified: true })),
+        verifiedPlaybacks,
         confidence: v.confidence,
         detectionRate: v.detectionRate,
         // The tier is WHY this release was allowed to happen unattended (null
@@ -2060,13 +2347,20 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       });
 
       // Approving releases on the reviewer's judgement rather than the
-      // confidence floor that could not decide.
+      // confidence floor that could not decide — against the playbacks the
+      // review was opened on, collapsed to one airing per pledge exactly as
+      // the automatic path pays. A review with no pinned evidence (a banked
+      // clip's expiry, or one opened before this) falls back to the session's
+      // last verified playbacks, and only then to its bare counts.
       let out = null;
       if (approve) {
         const s = store.getAirSession(review.airSessionId);
+        const verifiedPlaybacks = Array.isArray(review.verifiedPlaybacks) ? review.verifiedPlaybacks
+          : Array.isArray(s?.verifiedPlaybacks) ? s.verifiedPlaybacks : null;
         out = escrow.release({
           handleKey: review.handleKey, claimId: review.claimId, airSessionId: review.airSessionId,
           verifiedClips: s?.verifiedClips || 0, verifiedClipSeconds: s?.verifiedClipSeconds || 0,
+          verifiedPlaybacks,
           confidence: 1, // human-adjudicated
           actor: actor || 'admin', idempotencyKey: `release:${review.airSessionId}`, settlement,
         });

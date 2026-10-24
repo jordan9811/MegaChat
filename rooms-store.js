@@ -2,26 +2,24 @@
  * Streamer room config — JSON file persistence (no heavy infra).
  * Secrets stay in .env; per-room economics live here.
  */
-import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { fileURLToPath } from 'url';
 import { hashPassword, verifyPassword } from './room-auth.js';
 // Config-only import: reading the sampling floor so the recording minimum is
 // derived from it. Pulls in no bounty behaviour and is inert when the flag
 // is off.
 import { bountyConfig } from './bounty-claim.config.js';
+import { createJsonStore, dataDir, readJsonFile, writeJsonAtomic } from './json-store.js';
+import { envNum } from './env-num.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // DATA_DIR env points this at a persistent volume in production (Railway's
 // container disk is EPHEMERAL — without it every deploy erases all rooms,
 // handles and identities, which is why claims kept "coming back").
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const STORE_PATH = path.join(DATA_DIR, 'rooms.json');
+const storePath = () => path.join(dataDir(), 'rooms.json');
 
 export const DEFAULT_ROOM_ID = 'default';
 
-const BOOT_MARKER_PATH = path.join(DATA_DIR, 'boot-marker.json');
+const bootMarkerPath = () => path.join(dataDir(), 'boot-marker.json');
 /**
  * Persistence EVIDENCE, not persistence configuration.
  *
@@ -36,36 +34,40 @@ const BOOT_MARKER_PATH = path.join(DATA_DIR, 'boot-marker.json');
  * restart. Not seeing one proves nothing — it is equally consistent with a
  * genuine first boot after this code shipped. So this reports `proven` or
  * `unproven`, and never claims a volume is absent.
+ *
+ * Written by `recordBoot()`, which the server calls once at boot — not at
+ * import, which used to drop a marker into the repo's own data/ whenever a
+ * gate imported this module before pointing DATA_DIR at its scratch dir.
  */
 function readBootHistory() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(BOOT_MARKER_PATH, 'utf8'));
-    return Array.isArray(raw?.boots) ? raw.boots : [];
-  } catch {
-    return [];
-  }
+  const r = readJsonFile(bootMarkerPath());
+  return r.state === 'ok' && Array.isArray(r.data?.boots) ? r.data.boots : [];
 }
 
-const priorBoots = readBootHistory();
-const thisBoot = { id: randomUUID().slice(0, 8), at: new Date().toISOString() };
-try {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(
-    BOOT_MARKER_PATH,
-    JSON.stringify({ boots: [...priorBoots, thisBoot].slice(-20) }, null, 2),
-    'utf8',
-  );
-} catch {
-  /* observability only — never worth failing a boot over */
+let bootEvidence = null; // { priorBoots, thisBoot }, once recordBoot has run
+
+/** Leave this boot's marker. Idempotent within a process. */
+export function recordBoot() {
+  if (bootEvidence) return bootEvidence;
+  const priorBoots = readBootHistory();
+  const thisBoot = { id: randomUUID().slice(0, 8), at: new Date().toISOString() };
+  try {
+    writeJsonAtomic(bootMarkerPath(), { boots: [...priorBoots, thisBoot].slice(-20) }, { pretty: true });
+  } catch {
+    /* observability only — never worth failing a boot over */
+  }
+  bootEvidence = { priorBoots, thisBoot };
+  return bootEvidence;
 }
 
 /** Where rooms/identities actually live, and whether that survives a deploy.
  *  Exposed on /api/health because "did the volume attach?" is otherwise
  *  invisible until data silently vanishes on the next push. */
 export function dataDirInfo() {
+  const { priorBoots, thisBoot } = bootEvidence || { priorBoots: readBootHistory(), thisBoot: null };
   const proven = priorBoots.length > 0;
   return {
-    dir: DATA_DIR,
+    dir: dataDir(),
     // Kept as the same boolean field, but it now means PROVEN rather than
     // merely configured.
     persistent: proven,
@@ -75,7 +77,7 @@ export function dataDirInfo() {
       priorBoots: priorBoots.length,
       firstSeenAt: priorBoots[0]?.at || null,
       lastBootAt: priorBoots[priorBoots.length - 1]?.at || null,
-      thisBootAt: thisBoot.at,
+      thisBootAt: thisBoot?.at || null,
       note: proven
         ? 'a marker written by an earlier boot was still here — this directory survives restarts'
         : 'no earlier boot marker found. This is expected on the first boot after this check shipped '
@@ -89,23 +91,33 @@ export function dataDirInfo() {
 // choice — a room that picked it stays on it even if LiveKit gets configured
 // later. Anything else (explicit 'livekit' or never set) resolves to LiveKit
 // when configured, degrading gracefully back to vdo if the keys vanish.
-const LIVEKIT_CONFIGURED = !!(
+//
+// READ AT CALL TIME, the runtime-env.js rule (audit harness-10). This was a
+// constant computed at import, and server.js imports this module before it
+// runs process.loadEnvFile(), so LiveKit keys that live only in .env (every
+// local run) read as absent here while livekit.js, built after the load, was
+// configured: local rooms defaulted to vdo, production (variables in the
+// process env) to LiveKit, and no local run ever exercised production's
+// default transport.
+const livekitConfigured = () => !!(
   process.env.LIVEKIT_URL && process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET
 );
 function resolveTransport(explicit) {
   if (explicit === 'vdo') return 'vdo';
-  return LIVEKIT_CONFIGURED ? 'livekit' : 'vdo';
+  return livekitConfigured() ? 'livekit' : 'vdo';
 }
 
-/** Env-backed defaults when a room field is omitted. */
+/** Env-backed defaults when a room field is omitted. Numbers go through
+ *  env-num.js: a malformed value (say MAX_SEATS='three') used to read as NaN
+ *  and travel into every room's config. */
 export function getEnvDefaults() {
   return {
-    tickSeconds: Number(process.env.TICK_SECONDS || 10),
+    tickSeconds: envNum('TICK_SECONDS', 10),
     tickPrice: String(process.env.TICK_PRICE || '0.1'),
-    passkeyTickSeconds: Number(process.env.PASSKEY_TICK_SECONDS || 1),
+    passkeyTickSeconds: envNum('PASSKEY_TICK_SECONDS', 1),
     passkeyTickPrice: String(process.env.PASSKEY_TICK_PRICE || '0.001'),
     maxSession: String(process.env.MAX_SESSION || '2'),
-    maxSeats: Math.min(3, Math.max(1, Number(process.env.MAX_SEATS || 3))),
+    maxSeats: Math.min(3, Math.max(1, envNum('MAX_SEATS', 3))),
     // USDC.e on Tempo mainnet (TEMPO_NOTES.md). The legacy USDC_ADDRESS var
     // stays in .env for the Arc branches but is ignored here.
     paymentTokenAddress:
@@ -114,9 +126,12 @@ export function getEnvDefaults() {
     paymentTokenDecimals: 6,
     rewards: {
       enabled: false,
-      earnInterval: Number(process.env.EARN_INTERVAL || 60),
-      earnAmount: String(process.env.EARN_AMOUNT || '0.1'),
-      earnCap: String(process.env.EARN_CAP || '5'),
+      earnInterval: envNum('EARN_INTERVAL', 60),
+      // Inside rewards.js's server bounds (REWARDS_MAX_EARN 0.01, REWARDS_MAX_CAP
+      // 0.1): the old 0.1 / 5 defaults sat above them, so switching rewards on
+      // for an existing room was refused as out of bounds.
+      earnAmount: String(process.env.EARN_AMOUNT || '0.01'),
+      earnCap: String(process.env.EARN_CAP || '0.1'),
       rewardType: 'usdc',
       rewardTokenAddress: null,
     },
@@ -207,7 +222,7 @@ export class LayoutRefused extends Error {
 }
 
 export function maxEffectiveSeats() {
-  return Math.max(1, Number(process.env.MEGACHAT_MAX_SEATS) || 10);
+  return Math.max(1, envNum('MEGACHAT_MAX_SEATS', 10));
 }
 
 /** The canvas the overlay is designed against. Matches the editor's preview. */
@@ -390,56 +405,74 @@ function resolveRewards(cfg, defaults) {
     rewardTokenAddress: r.rewardTokenAddress ?? d.rewardTokenAddress,
     rewardTokenSymbol: r.rewardTokenSymbol ?? null,
     rewardTokenDecimals: r.rewardTokenDecimals ?? null,
+    // A USDC reward is paid as cash unless the room asks for seat credit
+    // (rewards.js reads this; it used to be stripped here, so every USDC
+    // room was cash whatever it stored — money H7).
+    payout: r.payout === 'credit' ? 'credit' : 'cash',
   };
 }
 
-let cache = null;
+// Written through on every change, atomically (json-store.js). A rooms.json
+// that cannot be read is never treated as empty: the store refuses writes and
+// the file stays as it is (DECISIONS D3) — the old loader served `{}`, and the
+// boot path (the password migration, then the demo seed) saved that over the
+// real rooms before anyone could look.
+const rooms = createJsonStore({
+  file: storePath,
+  name: 'rooms',
+  pretty: true,
+  writeIfMissing: true,
+  empty: () => ({ rooms: {} }),
+  normalize: (doc) => {
+    if (!doc.rooms || typeof doc.rooms !== 'object') doc.rooms = {};
+    ensureDefaultRoom(doc);
+    return doc;
+  },
+});
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+const loadStore = () => rooms.data();
+
+/**
+ * Why rooms.json is refused, or null. A sweep that deletes what belongs to
+ * rooms that no longer exist (airings, kept clips, posters) must check this
+ * first: a refused store serves only the default room, and "every other room
+ * is gone" is exactly the wrong conclusion to act on.
+ */
+export function roomsRefusal() {
+  return rooms.refusal();
 }
 
-function loadStore() {
-  if (cache) return cache;
-  ensureDataDir();
-  if (!fs.existsSync(STORE_PATH)) {
-    cache = { rooms: {} };
-    ensureDefaultRoom(cache);
-    saveStore(cache);
-    return cache;
-  }
-  try {
-    cache = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
-    if (!cache.rooms) cache.rooms = {};
-  } catch {
-    cache = { rooms: {} };
-  }
-  ensureDefaultRoom(cache);
-  return cache;
-}
-
-/** Assign hashed default password to legacy rooms missing passwordHash. */
+/**
+ * Give the DEFAULT room a password from ROOM_DEFAULT_PASSWORD when it has none.
+ *
+ * Scoped to the default room, and to an explicitly set variable (stores-13,
+ * stores-15). It used to hash EVERY owner-less room, falling back to the
+ * public string 'changeme': every password-less room on the box then shared
+ * one guessable password, and the boot pruner — which runs after this — could
+ * no longer tell a room nobody can manage from one somebody can (DECISIONS D1).
+ * Unset, the default room stays password-less: listed and joinable, managed by
+ * nobody until the variable is set. Rotating the variable never re-hashes a
+ * room that already has a password; only the dashboard changes one.
+ */
 export async function migrateLegacyRoomPasswords() {
-  const store = loadStore();
-  const defaultPwd = process.env.ROOM_DEFAULT_PASSWORD || 'changeme';
-  let count = 0;
-  for (const rec of Object.values(store.rooms)) {
-    // Owner-only rooms legitimately have no password — never force one on them.
-    if (rec.ownerKey) continue;
-    if (!rec.passwordHash) {
-      rec.passwordHash = await hashPassword(defaultPwd);
-      count++;
-    }
+  const refusal = rooms.refusal();
+  if (refusal) {
+    console.warn(`[rooms] default-room password migration skipped: ${refusal.file} is refused (${refusal.why})`);
+    return;
   }
-  if (count > 0) {
-    saveStore(store);
-    console.log(
-      `[rooms] migrated ${count} legacy room(s) without password — `
-      + 'use ROOM_DEFAULT_PASSWORD from .env, then set a new password in dashboard'
-    );
+  const rec = loadStore().rooms[DEFAULT_ROOM_ID];
+  if (!rec || rec.passwordHash || rec.ownerKey) return;
+  const pwd = process.env.ROOM_DEFAULT_PASSWORD;
+  if (!pwd) {
+    console.log('[rooms] the default room has no password and ROOM_DEFAULT_PASSWORD is unset — nobody can manage it from the dashboard');
+    return;
   }
+  const hash = await hashPassword(pwd);
+  const now = loadStore().rooms[DEFAULT_ROOM_ID];
+  if (!now || now.passwordHash) return; // someone set one during the hash
+  now.passwordHash = hash;
+  saveStore();
+  console.log('[rooms] the default room now takes ROOM_DEFAULT_PASSWORD — set its own password in the dashboard');
 }
 
 export async function verifyRoomPassword(roomId, password) {
@@ -451,18 +484,18 @@ export async function verifyRoomPassword(roomId, password) {
 export async function setRoomPassword(roomId, newPassword) {
   const id = normalizeRoomId(roomId);
   if (!id) return null;
-  const store = loadStore();
-  const rec = store.rooms[id];
+  if (!loadStore().rooms[id]) return null;
+  const hash = await hashPassword(newPassword);
+  rooms.assertWritable();
+  const rec = loadStore().rooms[id];
   if (!rec) return null;
-  rec.passwordHash = await hashPassword(newPassword);
-  saveStore(store);
+  rec.passwordHash = hash;
+  saveStore();
   return true;
 }
 
-function saveStore(store) {
-  ensureDataDir();
-  fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2));
-  cache = store;
+function saveStore() {
+  rooms.save();
 }
 
 function ensureDefaultRoom(store) {
@@ -533,19 +566,15 @@ export function getRoomByHandle(handle) {
 let handleGuard = null;
 export function setHandleGuard(fn) { handleGuard = typeof fn === 'function' ? fn : null; }
 
-/** Claim (or change) a room's handle. Returns the handle, or throws on conflict. */
-export function setRoomHandle(roomId, rawHandle) {
-  const id = normalizeRoomId(roomId);
-  const store = loadStore();
-  const rec = id ? store.rooms[id] : null;
-  if (!rec) throw new Error('Room not found');
-  if (rawHandle == null || rawHandle === '') {
-    delete rec.handle;
-    saveStore(store);
-    return null;
-  }
+/**
+ * The handle `rawHandle` would give room `rec`: null to clear it, or the
+ * sanitized name. Throws, changing nothing, when the name is invalid, another
+ * room holds it, or a bounty reservation vetoes it.
+ */
+function checkedHandle(store, rec, rawHandle) {
+  if (rawHandle == null || rawHandle === '') return null;
   const h = sanitizeHandle(rawHandle);
-  if (!h) throw new Error('Invalid handle: 3-20 chars, letters/numbers/underscore');
+  if (!h) throw Object.assign(new Error('Invalid handle: 3-20 chars, letters/numbers/underscore'), { code: 'invalid_handle' });
   for (const other of Object.values(store.rooms)) {
     if (other.id !== rec.id && other.handle === h) {
       const err = new Error('Handle already taken');
@@ -557,8 +586,24 @@ export function setRoomHandle(roomId, rawHandle) {
   // a streamer's name could be orphaned by anyone grabbing that handle first.
   // Throws (never silently rejects) so the caller surfaces a real reason.
   if (handleGuard) handleGuard(h, rec.id);
-  rec.handle = h;
-  saveStore(store);
+  return h;
+}
+
+function assignHandle(rec, h) {
+  if (h) rec.handle = h;
+  else delete rec.handle;
+}
+
+/** Claim (or change) a room's handle. Returns the handle, or throws on conflict. */
+export function setRoomHandle(roomId, rawHandle) {
+  const id = normalizeRoomId(roomId);
+  const store = loadStore();
+  const rec = id ? store.rooms[id] : null;
+  if (!rec) throw new Error('Room not found');
+  rooms.assertWritable();
+  const h = checkedHandle(store, rec, rawHandle);
+  assignHandle(rec, h);
+  saveStore();
   return h;
 }
 
@@ -681,8 +726,19 @@ function resolvePaymentToken(cfg, defaults) {
   };
 }
 
+/**
+ * A room name, at most 64 CHARACTERS. Cut by code point, not UTF-16 unit:
+ * `.slice(0, 64)` split an emoji in a Twitch title and stored a lone
+ * surrogate (stores-10). server.js compares a stream title through this too,
+ * so the follow loop and the store agree on what "unchanged" means.
+ */
+export function clampRoomName(s) {
+  return Array.from(String(s)).slice(0, 64).join('');
+}
+
 export function createRoom(name, config = {}, passwordHash = null) {
   const store = loadStore();
+  rooms.assertWritable();
   let id;
   do {
     id = randomUUID().replace(/-/g, '').slice(0, 8);
@@ -691,7 +747,7 @@ export function createRoom(name, config = {}, passwordHash = null) {
   const defaults = getEnvDefaults();
   const rec = {
     id,
-    name: String(name || 'My Stream').slice(0, 64),
+    name: clampRoomName(name || 'My Stream'),
     active: true,
     createdAt: new Date().toISOString(),
     passwordHash,
@@ -709,7 +765,7 @@ export function createRoom(name, config = {}, passwordHash = null) {
     if (why) throw new LayoutRefused(why);
   }
   store.rooms[id] = rec;
-  saveStore(store);
+  saveStore();
   return resolveRoomConfig(id);
 }
 
@@ -730,8 +786,9 @@ export function setRoomOwner(roomId, ownerKey) {
   const store = loadStore();
   const rec = id ? store.rooms[id] : null;
   if (!rec || !ownerKey) return null;
+  rooms.assertWritable();
   rec.ownerKey = String(ownerKey);
-  saveStore(store);
+  saveStore();
   return rec.ownerKey;
 }
 
@@ -771,15 +828,14 @@ export function roomsOwnedBy(ownerKey) {
     }));
 }
 
-export function updateRoom(roomId, patch) {
-  const id = normalizeRoomId(roomId);
-  if (!id) return null;
-  const store = loadStore();
-  const rec = store.rooms[id];
-  if (!rec) return null;
-
-  if (patch.name != null) rec.name = String(patch.name).slice(0, 64);
-  if (patch.active != null) rec.active = !!patch.active;
+/**
+ * What `patch` makes of `rec`, computed without touching it. Throws
+ * LayoutRefused when the merged layout would bury the badge.
+ */
+function patchedFields(rec, patch) {
+  const next = {};
+  if (patch.name != null) next.name = clampRoomName(patch.name);
+  if (patch.active != null) next.active = !!patch.active;
   if (patch.config) {
     const merged = { ...(rec.config || {}), ...patch.config };
     if (merged.maxSeats != null) {
@@ -794,9 +850,54 @@ export function updateRoom(roomId, patch) {
       const why = layoutCollision(merged.layout);
       if (why) throw new LayoutRefused(why);
     }
-    rec.config = merged;
+    next.config = merged;
   }
-  saveStore(store);
+  return next;
+}
+
+/**
+ * Apply `patch` (name, active, config) to a room. All or nothing: the record
+ * is changed only after every check has passed. It used to assign the name
+ * and `active` first and refuse the layout after, so a refused save left them
+ * in the served cache and the next unrelated write persisted them (stores-7).
+ */
+export function updateRoom(roomId, patch) {
+  const id = normalizeRoomId(roomId);
+  if (!id) return null;
+  const store = loadStore();
+  const rec = store.rooms[id];
+  if (!rec) return null;
+  rooms.assertWritable();
+  Object.assign(rec, patchedFields(rec, patch));
+  saveStore();
+  return resolveRoomConfig(id);
+}
+
+/**
+ * The dashboard's save: a new password, a handle and a patch, validated
+ * together and written once. Nothing is applied unless all of it is: a
+ * refused layout no longer leaves the new handle and password saved behind a
+ * 400 (stores-7). `password` undefined/empty keeps the current one; `handle`
+ * undefined keeps it, '' or null clears it. Returns the resolved room, or
+ * null when it does not exist; throws LayoutRefused, `handle_taken`,
+ * `invalid_handle`, or StoreRefused, having changed nothing.
+ */
+export async function applyRoomUpdate(roomId, { password, handle, patch = {} } = {}) {
+  const id = normalizeRoomId(roomId);
+  if (!id || !loadStore().rooms[id]) return null;
+  // The one await happens BEFORE the checks, so nothing can change between a
+  // check passing and the write that relies on it.
+  const passwordHash = password ? await hashPassword(password) : null;
+  const store = loadStore();
+  const rec = store.rooms[id];
+  if (!rec) return null;
+  rooms.assertWritable();
+  const fields = patchedFields(rec, patch);
+  const h = handle === undefined ? undefined : checkedHandle(store, rec, handle);
+  Object.assign(rec, fields);
+  if (passwordHash) rec.passwordHash = passwordHash;
+  if (h !== undefined) assignHandle(rec, h);
+  saveStore();
   return resolveRoomConfig(id);
 }
 
@@ -809,34 +910,48 @@ export function deleteRoom(roomId) {
   if (!id || id === DEFAULT_ROOM_ID) return false; // never delete the default
   const store = loadStore();
   if (!store.rooms[id]) return false;
+  rooms.assertWritable();
   delete store.rooms[id];
-  saveStore(store);
+  saveStore();
   return true;
 }
 
+/** How many rooms exist, without resolving any of them (stores-11). */
+export function roomCount() {
+  return Object.keys(loadStore().rooms).length;
+}
+
 /**
- * Remove orphan rooms: everything that is NOT the default, NOT a protected
- * handle (the demo), and has NO ownerKey. Restores the useful part of the old
- * ephemeral behavior (junk test rooms don't pile up) now that the volume makes
- * data durable — while OWNED rooms and the seeded demo always survive. Returns
- * the ids removed.
+ * A room nobody can manage: no owner AND no password (DECISIONS D1). The
+ * default room and protected handles (the demo) are never orphans.
+ *
+ * A password-only room is NOT an orphan. The create page offers signed-out
+ * streamers exactly that room, and the pruner used to delete it on the next
+ * deploy (stores-1). Its password is its admin path, so it stays.
+ */
+export function isOrphanRoom(rec, { protectHandles = [] } = {}) {
+  if (!rec || rec.id === DEFAULT_ROOM_ID) return false;
+  if (rec.handle && protectHandles.includes(rec.handle)) return false;
+  return !rec.ownerKey && !rec.passwordHash;
+}
+
+/**
+ * Remove every orphan room (isOrphanRoom). Restores the useful part of the old
+ * ephemeral behaviour — junk test rooms that nobody could ever manage do not
+ * pile up on the volume — while owned rooms, password rooms and the seeded demo
+ * always survive. Returns the ids removed.
  */
 export function pruneOrphanRooms({ protectHandles = [] } = {}) {
   const store = loadStore();
-  const protect = new Set(protectHandles);
-  const removed = [];
-  for (const rec of Object.values(store.rooms)) {
-    if (rec.id === DEFAULT_ROOM_ID) continue;
-    if (rec.handle && protect.has(rec.handle)) continue;
-    if (rec.ownerKey) continue; // someone owns it — keep
-    removed.push(rec.id);
-    delete store.rooms[rec.id];
-  }
-  if (removed.length) saveStore(store);
-  return removed;
+  const doomed = Object.values(store.rooms).filter((rec) => isOrphanRoom(rec, { protectHandles })).map((rec) => rec.id);
+  if (!doomed.length) return [];
+  rooms.assertWritable();
+  for (const id of doomed) delete store.rooms[id];
+  saveStore();
+  return doomed;
 }
 
 /** Test helper — reset in-memory cache. */
 export function _resetCacheForTests() {
-  cache = null;
+  rooms.reset();
 }

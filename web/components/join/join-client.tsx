@@ -43,30 +43,19 @@ function roomFeatures(cfg: RoomFlags): RoomFeature[] {
 }
 
 // What this room offers, in the room bar. The script owns the room config and
-// announces the resolved room id with `stream:room` (also re-sent when the
-// identity changes); this asks for the same public config once per room id.
+// announces it with `stream:room`, the config itself as the event's detail, so
+// this reads it instead of fetching the same thing a second (and, with the
+// wallet provider's, a third) time (audit web-37).
 function RoomFeatureTags() {
   const [kinds, setKinds] = useState<RoomFeature[]>([])
 
   useEffect(() => {
-    const ctrl = new AbortController()
-    let latest = ''
-    const load = () => {
-      const room = (window as Window & { __streamRoomId?: string }).__streamRoomId
-      if (!room || room === latest) return
-      latest = room
-      fetch('/api/config?room=' + encodeURIComponent(room), { signal: ctrl.signal })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((cfg: RoomFlags | null) => {
-          if (cfg && room === latest) setKinds(roomFeatures(cfg))
-        })
-        .catch(() => { /* the tags are decoration; the console still works */ })
+    const load = (e: Event) => {
+      const cfg = (e as CustomEvent<RoomFlags | null>).detail
+      if (cfg) setKinds(roomFeatures(cfg))
     }
     window.addEventListener('stream:room', load)
-    return () => {
-      ctrl.abort()
-      window.removeEventListener('stream:room', load)
-    }
+    return () => window.removeEventListener('stream:room', load)
   }, [])
 
   if (!kinds.length) return null

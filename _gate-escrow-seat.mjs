@@ -91,8 +91,11 @@ const common = {
   SEAT_ESCROW_TAIL_MS: '5000', SEAT_ESCROW_REVIEW_MS: '0', SEAT_ESCROW_SWEEP_MS: '5000',
   SEAT_DETECTION_LAG_MS: '0', // so buried ticks are the streamer's and the attestation carries a nonzero hidden figure
 };
-const srvA = await startGateServer({ port: 3331, dataDir: DIR_A, label: 'escrow-A', env: { ...authA.env, ...common, ESCROW_CONTRACT_ADDRESS: ESCROW } });
-const srvB = await startGateServer({ port: 3332, dataDir: DIR_B, label: 'escrow-B', env: { ...authB.env, ...common, ESCROW_CONTRACT_ADDRESS: '0x000000000000000000000000000000000000dEaD' } });
+// keepEnv: this is a mainnet run, so the servers need the REAL seller and
+// escrow role signers (startGateServer blanks every live key otherwise).
+const LIVE = ['SELLER_PRIVATE_KEY', 'ESCROW_OPERATOR_KEY', 'ESCROW_ATTEST_KEY'];
+const srvA = await startGateServer({ port: 3331, dataDir: DIR_A, label: 'escrow-A', keepEnv: LIVE, env: { ...authA.env, ...common, ESCROW_CONTRACT_ADDRESS: ESCROW } });
+const srvB = await startGateServer({ port: 3332, dataDir: DIR_B, label: 'escrow-B', keepEnv: LIVE, env: { ...authB.env, ...common, ESCROW_CONTRACT_ADDRESS: '0x000000000000000000000000000000000000dEaD' } });
 const A = 'http://localhost:3331', B = 'http://localhost:3332';
 const post = (base, p, body, headers = {}) => fetch(`${base}${p}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64');
@@ -104,12 +107,12 @@ async function approve(spender, amount) {
   await pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
   return before - (await bal(viewer.address)); // the approve's own fee, in USDC.e
 }
-async function goLive(base, seatId) {
+async function goLive(base, seatId, seatToken) {
   const port = new URL(base).port;
   const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej); });
-  ws.send(JSON.stringify({ type: 'register_seat', seatId }));
-  ws.send(JSON.stringify({ type: 'camera_ready', seatId }));
+  ws.send(JSON.stringify({ type: 'register_seat', seatId, seatToken }));
+  ws.send(JSON.stringify({ type: 'camera_ready', seatId, seatToken }));
   return ws;
 }
 
@@ -147,7 +150,7 @@ try {
   const joinedAt = Date.now();
 
   // meter
-  wsA = await goLive(A, seatA);
+  wsA = await goLive(A, seatA, joinA.body.seatToken);
   await sleep(6_500);
   const accrued1 = rows(DIR_A, 'seat-ledger.jsonl', 'SEAT_ACCRUE').length;
   const pulls = rows(DIR_A, 'settlement.jsonl', 'PULL');
@@ -166,7 +169,7 @@ try {
   const buriedAtomic = BigInt(buried?.fromStreamer || 0) + BigInt(buried?.fromPlatform || 0);
 
   // leave → attest
-  const left = await post(A, `/api/leave/${seatA}`, {});
+  const left = await post(A, `/api/leave/${seatA}`, { seatToken: joinA.body.seatToken });
   ok('7. the viewer leaves', left.status === 200 || left.body.success === true, `http ${left.status}`);
   let attestRow = null;
   for (let i = 0; i < 30 && !attestRow; i++) { await sleep(2000); attestRow = rows(DIR_A, 'escrow-chain.jsonl', 'ATTEST').find((r) => r.phase === 'DONE'); }
@@ -203,9 +206,9 @@ try {
   const sB0 = await bal(STREAMER), vB0 = await bal(viewer.address), sellerB0 = await bal(SELLER);
   const joinB = await post(B, '/api/join/passkey', { username: 'directee', address: viewer.address, room: roomsB.paid.id }, { 'X-Modular-Payment': b64({ type: 'approve', payer: viewer.address, amount: capB.toString(), seller: SELLER, tokenAddress: USDC }) });
   ok('10. the join is granted in direct mode, no deposit', joinB.status === 200 && joinB.body.escrowMode === 'direct' && joinB.body.escrow === null && joinB.body.payoutAddress === STREAMER);
-  wsB = await goLive(B, joinB.body.seatId);
+  wsB = await goLive(B, joinB.body.seatId, joinB.body.seatToken);
   await sleep(7_000);
-  await post(B, `/api/leave/${joinB.body.seatId}`, {});
+  await post(B, `/api/leave/${joinB.body.seatId}`, { seatToken: joinB.body.seatToken });
   await sleep(2_500);
   const pullsB = rows(DIR_B, 'settlement.jsonl', 'PULL').filter((r) => !r.dry);
   ok('11. every tick was a real pull viewer → STREAMER, recorded at the door with the payout address as `to`', pullsB.length >= 4 && pullsB.every((r) => r.to?.toLowerCase() === STREAMER.toLowerCase()), `${pullsB.length} pulls → ${pullsB[0]?.to}`);

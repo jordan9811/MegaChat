@@ -15,15 +15,14 @@
  * settlement.js against a recorded intent (Gate H, Tier 1):
  *
  *   fund    settlement.pull  — creator → platform wallet, by the ERC-20
- *           allowance the creator approved to the platform (seller) wallet in
- *           their browser, the same allowance shape a paid seat uses. Ref
- *           `campaign:fund:<id>:<attempt>`. Refused, without calling pull,
+ *           allowance the creator approved in their browser to the DEDICATED
+ *           campaign spender (CAMPAIGN_SPENDER_KEY's address, never the seat
+ *           pull key). Ref `campaign:fund:<id>:<attempt>`. Refused, without calling pull,
  *           when the door has no pull signer: a dry pull would record a
  *           budget nobody paid. The wallet must cite its own approve tx for
  *           exactly the budget, mined after the terms were last set
  *           (approvalProblem), AND sign an EIP-712 Fund message naming this
- *           campaign (fundSignatureProblem). The allowance is to a DEDICATED
- *           campaign spender (pullSigner), not the seat key. The pulled {token, atomic}
+ *           campaign (fundSignatureProblem). The pulled {token, atomic}
  *           is written into `funding`; payouts and the refund use only that
  *           (moneyToken). `funded` only on THAT transaction's own success
  *           receipt whose logs show the Transfer of the budget (settleFunding);
@@ -59,6 +58,7 @@
 import { randomUUID } from 'crypto';
 import { verifyTypedData as verifyTypedDataEoa, hashTypedData, parseEventLogs, erc20Abi } from 'viem';
 import { toAtomic, fromAtomic } from './token-utils.js';
+import { envNum } from './env-num.js';
 import { getAccount, setLinkAttributes } from './accounts.js';
 import * as xApiDefault from './attestation/x-api.js';
 import * as xTokensDefault from './x-token-store.js';
@@ -72,7 +72,22 @@ const DAY = 86_400_000;
 export const ATTR_MAX_AGE_MS = DAY;
 export const CHECK_VALID_MS = DAY;
 const RESERVATION_STALE_MS = 2 * 60_000;
-const WALLET_GRACE_MS = () => Math.max(DAY, Number(process.env.CAMPAIGN_WALLET_GRACE_DAYS || 14) * DAY);
+/**
+ * A slot reserved on a LIVE campaign and still bound to no Holler and no seat
+ * after this long is given back by the sweep (a restart between reserve and
+ * bind left it orphaned). Longer than any await between the two — a
+ * Holler's payment step, a seat's escrow deposit and its receipt wait — so it
+ * never takes a slot from a bind still in flight.
+ */
+export const UNBOUND_RELEASE_MS = 10 * 60_000;
+/** Drafts one account may hold at once (DECISIONS.md; undo = raise it). A draft costs nothing to make, and every one is stored and listed. */
+export const MAX_DRAFTS_PER_ACCOUNT = 20;
+/** A stuck funding a person has been asked about is re-asked of the chain this often, not every sweep. */
+const PERSON_RECONCILE_MS = 10 * 60_000;
+// envNum: an unset, empty or non-numeric value reads as the default. A
+// non-number used to read as NaN, and a NaN grace made every close() throw
+// (new Date(NaN).toISOString()).
+const WALLET_GRACE_MS = () => Math.max(DAY, envNum('CAMPAIGN_WALLET_GRACE_DAYS', 14) * DAY);
 export const fundingEnabled = () => process.env.CAMPAIGN_FUNDING === '1';
 /** What a person is told when funding is off. Never names the env var. */
 export const PAID_OFF_MSG = 'Paid campaigns aren’t open on this server yet. Nothing was charged.';
@@ -85,7 +100,7 @@ export const MAX_EXTENSION_DAYS = 90;
  * reaches the required state within this window after the close. The refund
  * waits for it, like it waits for owed claims.
  */
-const CLOSE_GRACE_MS = () => Math.max(60 * 60_000, Number(process.env.CAMPAIGN_CLOSE_GRACE_HOURS || 48) * 60 * 60_000);
+const CLOSE_GRACE_MS = () => Math.max(60 * 60_000, envNum('CAMPAIGN_CLOSE_GRACE_HOURS', 48) * 60 * 60_000);
 /** What one X profile / list lookup is held at before it runs (it bills $0.01). */
 const LOOKUP_HOLD_USD = 0.05;
 /** X estimates a campaign gets free (the platform absorbs the $0.01 lookup); after that they are charged. */
@@ -118,9 +133,11 @@ export const FUND_TYPES = {
     { name: 'deadline', type: 'uint256' },
   ],
 };
+/** The Fund message's EIP-712 domain: what the client signs under (fundTerms) and what the server verifies against (fundTypedData). */
+const fundDomain = (chainId) => ({ name: 'Holler Campaigns', version: '1', chainId: Number(chainId) });
 export function fundTypedData({ chainId, campaignId, wallet, token, amountAtomic, deadline }) {
   return {
-    domain: { name: 'Holler Campaigns', version: '1', chainId: Number(chainId) },
+    domain: fundDomain(chainId),
     types: FUND_TYPES, primaryType: 'Fund',
     message: { campaignId: String(campaignId), wallet, token, amountAtomic: BigInt(amountAtomic), deadline: BigInt(deadline) },
   };
@@ -155,6 +172,8 @@ function fail(code, message, status = 400, extra = {}) {
   const e = new Error(message); e.code = code; e.status = status; Object.assign(e, extra); return e;
 }
 const big = (v) => BigInt(v ?? 0);
+/** Dollars to the cent, the way X costs are shown and settled. */
+const roundUsd = (usd) => Math.round(usd * 100) / 100;
 /**
  * Whether a pull's error PROVES nothing was broadcast: the door tagged it
  * preSend (it threw before signing for the chain), or viem's error chain holds
@@ -296,6 +315,25 @@ export function createCampaignEngine({
    */
   seatSignalAvailable = () => false,
   /**
+   * (seatId) → 'live' | 'preview' | 'gone': the seat as the server holds it
+   * (server.js `activeSeats`). A Call in's on-camera clock needs BOTH a
+   * published camera (the signed webhook) AND a live seat:
+   *   live     the guest pressed GO LIVE and the overlay drew them
+   *            (activateSeatLive). The clock may run.
+   *   preview  the seat exists, the guest has not gone live: a camera LiveKit
+   *            says is published is a preview nobody on stream sees. No clock;
+   *            it starts when the seat goes live (a `seat_live` event, or the
+   *            sweep).
+   *   gone     the server no longer holds the seat (activeSeats lives in
+   *            memory, so a restart empties it). Its webhooks are dropped from
+   *            then on, so the slot is given back (when the guest reserves
+   *            again, in the sweep, and on the seat's camera_off) and the
+   *            clock starts over on a new seat. The server never credits
+   *            seconds it could not see (DECISIONS.md).
+   * null (not wired), a throw or any other answer: live and present, as before.
+   */
+  seatState = null,
+  /**
    * The Holler room's overlay, as the server sees it (OPEN-ISSUES N14):
    * (roomId) → { keyedConnected, unkeyedConnected, keyedSeenAt, keyed }.
    * Shown to the creator only; null wiring shows nothing.
@@ -310,6 +348,8 @@ export function createCampaignEngine({
   const checking = new Set();
   const funding = new Set();       // in-process lock: a fund() is between its first and last await
   const reconciling = new Set();   // a sync-started funding reconcile is awaiting a receipt
+  const reconciledAt = new Map();  // campaignId → when the sweep last started its reconcile
+  const settled = new Set();       // closed campaigns the sweep has nothing left to do for (sweepCampaign)
   const seatTimers = new Map();
   const xLocks = new Map();        // campaignId → tail of the X-spend queue
   const usd2usdc = (usd) => BigInt(Math.round((Number(usd) || 0) * 1e6)) * 10n ** BigInt(usdc.decimals - 6);
@@ -379,7 +419,7 @@ export function createCampaignEngine({
     const { rules, errors } = normaliseRules(input.rules ?? existing?.rules ?? {});
     if (errors.length) throw fail('invalid', errors.join('; '));
     for (const sid of [rules.referenceSetId, rules.followedByFromSet?.referenceSetId].filter(Boolean)) {
-      const s = store.getSet(sid);
+      const s = store.getSetMeta(sid);
       if (!s) throw fail('invalid', `Reference set ${sid} does not exist.`);
       if (!isAdmin && s.createdBy !== accountId) throw fail('invalid', 'You can only use reference sets you built.', 403);
     }
@@ -399,19 +439,23 @@ export function createCampaignEngine({
 
   /** {address, symbol, decimals} for a Tempo ERC-20, read on chain once and cached. */
   const tokenCache = new Map();
-  async function tokenInfo(address) {
-    if (!isAddr(address)) throw fail('invalid', 'That is not a token address (0x followed by 40 hex characters).');
+  /** One read of a token's metadata, validated and cached; a failed read answers with HTTP `status`. */
+  async function tokenMeta(address, status) {
     const k = address.toLowerCase();
-    // `campaignAllowed`: whether a campaign may use it here (see customTokenAllowed).
-    const allowed = sameAddr(address, usdc.address) || customTokenAllowed(address);
-    if (tokenCache.has(k)) return { ...tokenCache.get(k), campaignAllowed: allowed };
+    if (tokenCache.has(k)) return tokenCache.get(k);
     let meta;
-    try { meta = await readTokenMeta(address); } catch (e) { throw fail('invalid_token', `That address did not answer as an ERC-20 token on Tempo (${e.shortMessage || e.message}).`, 404); }
+    try { meta = await readTokenMeta(address); } catch (e) { throw fail('invalid_token', `That address did not answer as an ERC-20 token on Tempo (${e.shortMessage || e.message}).`, status); }
     const decimals = Number(meta?.decimals);
-    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) throw fail('invalid_token', 'That token reports no usable decimals.', 404);
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) throw fail('invalid_token', 'That token reports no usable decimals.', status);
     const out = { address, symbol: String(meta.symbol || 'TOKEN').slice(0, 16), decimals };
     tokenCache.set(k, out);
-    return { ...out, campaignAllowed: allowed };
+    return out;
+  }
+
+  async function tokenInfo(address) {
+    if (!isAddr(address)) throw fail('invalid', 'That is not a token address (0x followed by 40 hex characters).');
+    // `campaignAllowed`: whether a campaign may use it here (see customTokenAllowed).
+    return { ...(await tokenMeta(address, 404)), campaignAllowed: sameAddr(address, usdc.address) || customTokenAllowed(address) };
   }
 
   async function resolveToken(input) {
@@ -420,17 +464,20 @@ export function createCampaignEngine({
     if (!sameAddr(input.address, usdc.address) && !customTokenAllowed(input.address)) {
       throw fail('token_not_allowed', 'Custom tokens need an on-chain test first: the platform pays each transfer\'s network fee in the token it moves, so a token that is not an accepted Tempo fee token could be collected but never paid out. This server only takes custom tokens its operator has tested and listed. Use USDC for now.', 409);
     }
-    let meta;
-    try { meta = await readTokenMeta(input.address); } catch (e) { throw fail('invalid_token', `That address did not answer as an ERC-20 token on Tempo (${e.shortMessage || e.message}).`); }
-    const decimals = Number(meta?.decimals);
-    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) throw fail('invalid_token', 'That token reports no usable decimals.');
-    return { type: 'token', token: { address: input.address, decimals, symbol: String(meta.symbol || 'TOKEN').slice(0, 16) } };
+    const { decimals, symbol } = await tokenMeta(input.address, 400);
+    return { type: 'token', token: { address: input.address, decimals, symbol } };
   }
 
   function amounts(token, rewardAmount, budgetAmount) {
     let reward, budget;
-    try { reward = toAtomic(String(rewardAmount), token.decimals); budget = toAtomic(String(budgetAmount), token.decimals); }
-    catch { throw fail('invalid', 'Reward and budget must be numbers.'); }
+    // Exact: money a person typed is refused past the token's precision, never
+    // truncated — "0.0000019" USDC used to become a 0.000001 reward (money H11).
+    try { reward = toAtomic(String(rewardAmount), token.decimals, { exact: true }); budget = toAtomic(String(budgetAmount), token.decimals, { exact: true }); }
+    catch (e) {
+      throw fail('invalid', /decimal places/.test(e.message)
+        ? `Reward and budget can have at most ${token.decimals} decimal places in ${token.symbol || 'this token'}.`
+        : 'Reward and budget must be numbers.');
+    }
     if (reward <= 0n) throw fail('invalid', 'The reward must be above zero.');
     if (budget < reward) throw fail('invalid', 'The budget must cover at least one reward.');
     return {
@@ -441,6 +488,8 @@ export function createCampaignEngine({
 
   async function createCampaign(input, { accountId, isAdmin = false }) {
     if (!accountId) throw fail('auth_required', 'Sign in to create a campaign.', 401);
+    const drafts = store.listCampaigns().filter((x) => x.creatorAccountId === accountId && x.status === 'draft').length;
+    if (drafts >= MAX_DRAFTS_PER_ACCOUNT) throw fail('too_many_drafts', `You have ${MAX_DRAFTS_PER_ACCOUNT} draft campaigns. Fund, open or close one before starting another.`, 409);
     let slug = String(input.slug || '').trim().toLowerCase();
     if (slug) {
       if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(slug) || RESERVED_SLUGS.has(slug)) throw fail('invalid', 'The link name is 3-40 characters: lowercase letters, numbers and dashes.');
@@ -456,9 +505,6 @@ export function createCampaignEngine({
     const d = validateDraft(input, { isAdmin, accountId });
     const { type, token } = await resolveToken(input.reward);
     const a = amounts(token, input.reward?.amount, input.budget?.amount);
-    if (BigInt(a.reward.atomic) * BigInt(d.maxClaims) < BigInt(a.budget.atomic)) {
-      // Fine: maxClaims is the binding limit. Nothing to do; noted for clarity.
-    }
     const at = new Date(now()).toISOString();
     const c = {
       id: `cmp_${randomUUID().replace(/-/g, '').slice(0, 14)}`, slug, ...d,
@@ -541,7 +587,7 @@ export function createCampaignEngine({
       status: c.status,
       // What the funding wallet signs after its approve mines: everything but
       // `wallet` and `deadline`, which the client fills in (fundTypedData).
-      sign: { domain: { name: 'Holler Campaigns', version: '1', chainId: Number(chainId) }, types: FUND_TYPES, primaryType: 'Fund', message: { campaignId: c.id, token: c.token.address, amountAtomic: c.budget.atomic }, maxSeconds: FUND_SIGNATURE_MAX_SECS },
+      sign: { domain: fundDomain(chainId), types: FUND_TYPES, primaryType: 'Fund', message: { campaignId: c.id, token: c.token.address, amountAtomic: c.budget.atomic }, maxSeconds: FUND_SIGNATURE_MAX_SECS },
     };
   }
 
@@ -573,10 +619,10 @@ export function createCampaignEngine({
     if (!spender || !settlement?.hasSigner?.(pullSigner)) throw fail('no_pull_signer', 'This server cannot take a campaign budget right now. Nothing was charged.', 503);
     if (!isAddr(wallet)) throw fail('invalid', 'Connect the wallet that approved the budget.');
     // The wallet a budget is pulled from must PROVE it is the caller's: a
-    // fresh approve transaction it sent, for exactly this budget, after this
-    // campaign existed. A bare address is never enough — the spender is the
-    // same key seat payments approve, so any wallet with leftover seat
-    // allowance could otherwise be pulled into someone else's campaign.
+    // fresh approve transaction it sent, for exactly this budget, after the
+    // money terms were set. A bare address is never enough: any wallet with an
+    // allowance left to the campaign spender (an earlier campaign's, or a
+    // stranger's) could otherwise be pulled into someone else's campaign.
     if (!/^0x[0-9a-fA-F]{64}$/.test(String(approveTx || ''))) throw fail('approve_required', 'Approve the budget from the funding wallet first: that approval is what shows the wallet is yours. Nothing was charged.', 402);
     funding.add(id);
     try {
@@ -660,7 +706,7 @@ export function createCampaignEngine({
     // approve mined in the same second the terms were set is after them.
     if (!(Math.floor(Number(ap.timestampMs) / 1000) >= Math.floor(after / 1000))) return 'it was made before this campaign (or its current budget) existed';
     const ok = (ap.approvals || []).some((l) => sameAddr(l.token, token) && sameAddr(l.owner, wallet) && sameAddr(l.spender, spender) && String(l.value) === String(atomic));
-    if (!ok) return 'it does not approve exactly the budget to the platform from this wallet';
+    if (!ok) return 'it does not approve exactly the budget to the campaign spender from this wallet';
     return null;
   }
 
@@ -722,6 +768,20 @@ export function createCampaignEngine({
     return store.putCampaign({ ...cur, funding: { ...cur.funding, ...patch }, updatedAt: new Date(now()).toISOString() });
   }
 
+  /**
+   * Flag a stuck funding for a person, once per REASON: `code` is stable
+   * (`why` may carry a nonce count or an RPC error that differ from one
+   * reconcile to the next, and comparing the text wrote a ledger row and
+   * rewrote campaigns.json on every sweep). `why` is what a person reads, as
+   * first seen; it never carries elapsed time (render that from funding.at).
+   */
+  function askPerson(id, ref, code, why, extra = {}) {
+    const cur = store.getCampaign(id);
+    if (!cur?.funding || cur.funding.ref !== ref || cur.funding.needsPersonCode === code) return cur;
+    store.appendLedger({ kind: 'funding-unknown', campaignId: id, ref, ...extra, why });
+    return patchFunding(id, ref, { needsPerson: why, needsPersonCode: code });
+  }
+
   /** A pull that moved nothing (threw, ran dry, reverted): back to draft, the attempt on record. */
   function backToDraft(id, ref, why) {
     const cur = store.getCampaign(id);
@@ -761,7 +821,12 @@ export function createCampaignEngine({
       rcpt = null;
     }
     if (!rcpt) {
-      store.appendLedger({ kind: 'funding-unconfirmed', campaignId: id, ref, txHash: hash });
+      // Once per hash: a stuck pull is asked about every sweep, and the
+      // answer "no receipt yet" is news only the first time.
+      if (cur.funding.unconfirmedHash !== hash) {
+        store.appendLedger({ kind: 'funding-unconfirmed', campaignId: id, ref, txHash: hash });
+        return { campaign: patchFunding(id, ref, { unconfirmedHash: hash }), outcome: 'pending' };
+      }
       return { campaign: cur, outcome: 'pending' };
     }
     if (rcpt.status !== 'success') return { campaign: backToDraft(id, ref, `the funding transfer reverted on chain (${hash})`), outcome: 'reverted' };
@@ -820,11 +885,7 @@ export function createCampaignEngine({
         if (stuck.resolve) {
           const v = await stuck.resolve();
           if (v.toDraft) return backToDraft(id, c.funding.ref, v.why);
-          if (c.funding.needsPerson !== v.why) {
-            store.appendLedger({ kind: 'funding-unknown', campaignId: id, ref: c.funding.ref, why: v.why });
-            patchFunding(id, c.funding.ref, { needsPerson: v.why });
-          }
-          return store.getCampaign(id);
+          return askPerson(id, c.funding.ref, `no-pull-row:${v.code}`, v.why);
         }
         if (!c.funding.needsPerson) {
           store.appendLedger({ kind: 'funding-unknown', campaignId: id, ref: c.funding.ref, why: 'no PULL row for this ref: the process stopped mid-pull' });
@@ -848,8 +909,8 @@ export function createCampaignEngine({
       if (out.outcome === 'pending' && now() - Date.parse(c.funding.at || 0) >= STUCK_FUNDING_MS) {
         const dropped = await droppedPullVerdict(store.getCampaign(id), rec, txHash);
         if (dropped.toDraft) return backToDraft(id, c.funding.ref, dropped.why);
-        const why = `transaction ${txHash} has no receipt after ${Math.round((now() - Date.parse(c.funding.at)) / 60_000)} min${dropped.why ? ` (${dropped.why})` : ''}: check it on chain`;
-        if (out.campaign?.funding?.needsPerson !== why) { store.appendLedger({ kind: 'funding-unknown', campaignId: id, ref: c.funding.ref, txHash, why }); return patchFunding(id, c.funding.ref, { needsPerson: why }); }
+        const why = `transaction ${txHash} has no receipt ${STUCK_FUNDING_MS / 60_000}+ min after the attempt (${c.funding.at})${dropped.why ? ` (${dropped.why})` : ''}: check it on chain`;
+        return askPerson(id, c.funding.ref, `no-receipt:${dropped.code}`, why, { txHash });
       }
       return out.campaign;
     } finally {
@@ -871,14 +932,15 @@ export function createCampaignEngine({
     if (!f || f.txHash || now() - Date.parse(f.at || 0) < STUCK_FUNDING_MS) return { resolve: null };
     const mins = Math.round((now() - Date.parse(f.at)) / 60_000);
     return {
+      // `code` names the verdict for askPerson; `why` is the sentence.
       resolve: async () => {
-        if (typeof findFundingTransfer !== 'function') return { toDraft: false, why: 'no transaction on record, and this server cannot search the token\'s transfers: check the funding wallet\'s transfers on chain' };
+        if (typeof findFundingTransfer !== 'function') return { toDraft: false, code: 'unwired', why: 'no transaction on record, and this server cannot search the token\'s transfers: check the funding wallet\'s transfers on chain' };
         let hit;
         try { hit = await findFundingTransfer({ token: f.token.address, from: f.wallet, to: platformAddress, atomic: String(f.atomic), sinceMs: Date.parse(f.at) }); }
-        catch (e) { return { toDraft: false, why: `no transaction on record, and the token's transfers could not be read (${e.shortMessage || e.message}): check the funding wallet on chain` }; }
-        if (hit?.found === true) return { toDraft: false, why: `no pull on record, but a transfer of the whole budget from the funding wallet to the platform wallet is on chain${hit.txHash ? ` (${hit.txHash})` : ''}: the pull may have landed — a person matches it to this campaign` };
+        catch (e) { return { toDraft: false, code: 'transfers-unread', why: `no transaction on record, and the token's transfers could not be read (${e.shortMessage || e.message}): check the funding wallet on chain` }; }
+        if (hit?.found === true) return { toDraft: false, code: 'transfer-found', why: `no pull on record, but a transfer of the whole budget from the funding wallet to the platform wallet is on chain${hit.txHash ? ` (${hit.txHash})` : ''}: the pull may have landed — a person matches it to this campaign` };
         if (hit?.found === false) return { toDraft: true, why: `no transaction after ${mins} min, and no transfer of the budget from the funding wallet to the platform wallet on chain since the attempt: the pull never landed` };
-        return { toDraft: false, why: 'no transaction on record, and the transfer search gave no answer: check the funding wallet on chain' };
+        return { toDraft: false, code: 'no-answer', why: 'no transaction on record, and the transfer search gave no answer: check the funding wallet on chain' };
       },
     };
   }
@@ -893,22 +955,23 @@ export function createCampaignEngine({
    *   2. no node knows the hash (txKnown false — not pending, not mined);
    *   3. no Transfer of the budget from the funding wallet to the platform
    *      wallet since the attempt (findFundingTransfer found: false).
-   * Anything unknown, unwired or unreadable → { toDraft: false } with why.
+   * Anything unknown, unwired or unreadable → { toDraft: false } with a
+   * stable `code` (askPerson compares it) and why.
    */
   async function droppedPullVerdict(c, rec, txHash) {
     const f = c?.funding;
-    if (!f) return { toDraft: false, why: null };
+    if (!f) return { toDraft: false, code: 'no-funding', why: null };
     const nonce = rec?.nonce;
-    if (typeof nonce !== 'number' || rec?.nonceKey) return { toDraft: false, why: 'its signing nonce is not on record' };
-    if (typeof readSpenderNonce !== 'function' || typeof txKnown !== 'function' || typeof findFundingTransfer !== 'function' || !spender) return { toDraft: false, why: 'this server cannot read the spender nonce, the transaction pool and the token transfers' };
+    if (typeof nonce !== 'number' || rec?.nonceKey) return { toDraft: false, code: 'nonce-unrecorded', why: 'its signing nonce is not on record' };
+    if (typeof readSpenderNonce !== 'function' || typeof txKnown !== 'function' || typeof findFundingTransfer !== 'function' || !spender) return { toDraft: false, code: 'unwired', why: 'this server cannot read the spender nonce, the transaction pool and the token transfers' };
     let mined, known, hit;
-    try { mined = Number(await readSpenderNonce(spender)); } catch (e) { return { toDraft: false, why: `the spender nonce could not be read (${e.shortMessage || e.message})` }; }
-    if (!(mined > nonce)) return { toDraft: false, why: `its nonce ${nonce} is not used yet (the spender has ${mined} mined)` };
-    try { known = await txKnown(txHash); } catch (e) { return { toDraft: false, why: `the node could not say whether it knows the transaction (${e.shortMessage || e.message})` }; }
-    if (known !== false) return { toDraft: false, why: 'a node still knows the transaction' };
+    try { mined = Number(await readSpenderNonce(spender)); } catch (e) { return { toDraft: false, code: 'nonce-unread', why: `the spender nonce could not be read (${e.shortMessage || e.message})` }; }
+    if (!(mined > nonce)) return { toDraft: false, code: 'nonce-unused', why: `its nonce ${nonce} is not used yet (the spender has ${mined} mined)` };
+    try { known = await txKnown(txHash); } catch (e) { return { toDraft: false, code: 'pool-unread', why: `the node could not say whether it knows the transaction (${e.shortMessage || e.message})` }; }
+    if (known !== false) return { toDraft: false, code: 'tx-known', why: 'a node still knows the transaction' };
     try { hit = await findFundingTransfer({ token: f.token.address, from: f.wallet, to: platformAddress, atomic: String(f.atomic), sinceMs: Date.parse(f.at) }); }
-    catch (e) { return { toDraft: false, why: `the token's transfers could not be read (${e.shortMessage || e.message})` }; }
-    if (hit?.found !== false) return { toDraft: false, why: hit?.found ? 'a transfer of the budget from the funding wallet is on chain: it may have landed' : 'the transfer search gave no answer' };
+    catch (e) { return { toDraft: false, code: 'transfers-unread', why: `the token's transfers could not be read (${e.shortMessage || e.message})` }; }
+    if (hit?.found !== false) return { toDraft: false, code: hit?.found ? 'transfer-found' : 'no-answer', why: hit?.found ? 'a transfer of the budget from the funding wallet is on chain: it may have landed' : 'the transfer search gave no answer' };
     return { toDraft: true, why: `the pull ${txHash} can no longer land: its nonce ${nonce} was used by another transaction (the spender has ${mined} mined), no node knows it, and no transfer of the budget reached the platform wallet` };
   }
 
@@ -956,6 +1019,17 @@ export function createCampaignEngine({
     // would be overwritten by the pull's own write, or refund a budget whose
     // transfer has not been seen to land.
     if (fundingBusy(id, c)) throw fail('funding_in_progress', FUNDING_BUSY_MSG, 409);
+    closeNow(id, reason);
+    // This campaign's half of the sweep, now: an owed claim gets its intent
+    // and the refund goes out if nothing is pending. Not the whole sweep: the
+    // sweep closes campaigns too, and the two used to recurse into each other.
+    sweepCampaign(id);
+    return store.getCampaign(id);
+  }
+
+  /** The state change of a close, and nothing else: honour what was submitted, expire what was not, write `closed`. */
+  function closeNow(id, reason) {
+    const c = store.getCampaign(id);
     const closedAt = new Date(now()).toISOString();
     const until = new Date(endOf({ ...c, status: 'closed', closedAt }) + CLOSE_GRACE_MS()).toISOString();
     for (const k of store.listClaims(id)) {
@@ -971,10 +1045,8 @@ export function createCampaignEngine({
         store.putClaim(k);
       }
     }
-    const next = store.putCampaign({ ...c, status: 'closed', closedAt, closeReason: reason, updatedAt: closedAt });
+    store.putCampaign({ ...c, status: 'closed', closedAt, closeReason: reason, updatedAt: closedAt });
     store.appendLedger({ kind: 'closed', campaignId: id, reason });
-    sync();
-    return store.getCampaign(id) || next;
   }
 
   function setHidden(id, hidden) {
@@ -1095,7 +1167,7 @@ export function createCampaignEngine({
         asked += 1;
         if (r.ok && r.byId[applicantXId]?.following) count += 1;
       }
-      if (asked > 0) return { count, method: 'connection_status', costUsd: Math.round(spent * 100) / 100, capped, asked };
+      if (asked > 0) return { count, method: 'connection_status', costUsd: roundUsd(spent), capped, asked };
     }
     // Fallback: no token holder could answer. Read the applicant's own
     // followers (app token), capped, and count the ones on the list.
@@ -1106,13 +1178,13 @@ export function createCampaignEngine({
       const budgetUsers = Math.floor((cap - spent) / per + 1e-9);
       if (budgetUsers < 1) { capped = true; break; }
       const page = await xApi.pageUsers({ kind: 'followers', id: applicantXId, maxResults: Math.min(1000, budgetUsers), paginationToken: next, log });
-      if (!page.ok) return { error: page.error === 'rate_limited' ? 'X rate limit; try again in a few minutes' : page.error, count, costUsd: Math.round((spent + (page.costUsd || 0)) * 100) / 100 };
+      if (!page.ok) return { error: page.error === 'rate_limited' ? 'X rate limit; try again in a few minutes' : page.error, count, costUsd: roundUsd(spent + (page.costUsd || 0)) };
       spent += page.costUsd;
       for (const u of page.users) if (onList.has(u.id)) count += 1;
       next = page.nextToken;
     } while (next && count < fb.min);
     if (next && count < fb.min) capped = true;
-    return { count, method: 'followers', costUsd: Math.round(spent * 100) / 100, capped };
+    return { count, method: 'followers', costUsd: roundUsd(spent), capped };
   }
 
   // ── the check ─────────────────────────────────────────────────────────────
@@ -1144,7 +1216,9 @@ export function createCampaignEngine({
       const neverRead = !(link.attributes || []).some((r) => r?.source === 'x-api');
       if (old || neverRead) {
         const r = xApi.appBearerConfigured() ? await xApi.fetchUserById({ userId: link.platformId, log }) : { ok: false, error: 'not-configured' };
-        if (r.ok) { setLinkAttributes(accountId, 'x', withKnownMissing(r.records || [])); account = getAccount(accountId); }
+        // The X id these records are about: accounts.js refuses to write them
+        // onto a different X login (one linked while X was answering).
+        if (r.ok) { setLinkAttributes(accountId, 'x', withKnownMissing(r.records || []), { platformId: link.platformId }); account = getAccount(accountId); }
         else stale = 'Your X details need refreshing and we could not do it from here. Reconnect X (one click) to refresh them.';
       }
       const set = c.rules.referenceSetId ? store.getSet(c.rules.referenceSetId) : null;
@@ -1223,8 +1297,11 @@ export function createCampaignEngine({
       if (room.transport && room.transport !== 'livekit') throw fail('needs_livekit', 'This room is not on the LiveKit camera transport, so a Call in cannot be counted toward this campaign right now.', 409);
       if (!seatSignalAvailable()) throw fail('callin_unverifiable', 'This server cannot see cameras go live right now (no LiveKit webhooks), so a Call in cannot be counted toward this campaign.', 503);
     }
-    const { byAccount: claim } = store.claimFor({ campaignId: c.id, accountId });
+    let { byAccount: claim } = store.claimFor({ campaignId: c.id, accountId });
     if (!claim) throw fail('not_checked', 'Check that you qualify first.', 403);
+    // A Call in whose seat the server lost (a restart) is given back first,
+    // so the guest's rejoin takes a fresh slot on the new seat.
+    if (deadSeat(claim, c)) claim = releaseDeadSeat(claim);
     const staleReservation = claim.status === 'recorded' && !claim.letterId && !claim.seatId && now() - Date.parse(claim.reservedAt || 0) > RESERVATION_STALE_MS;
     if (claim.status !== 'eligible' && !staleReservation) {
       throw fail(claim.status === 'ineligible' ? 'ineligible' : 'already_claimed',
@@ -1257,11 +1334,13 @@ export function createCampaignEngine({
   function bind(claimId, { letterId = null, seatId = null }) {
     const k = store.getClaim(claimId);
     if (!k || k.status !== 'recorded') return null;
-    // Past the deadline (or closed), nothing new is SUBMITTED: a slot reserved
-    // a moment before the deadline but bound after it, inside the sweep's
-    // 15 s, would otherwise be honoured for the 48 h grace.
+    // Past the deadline (or closed, or hidden), nothing new is SUBMITTED: a
+    // slot reserved a moment before the deadline but bound after it, inside
+    // the sweep's 15 s, would otherwise be honoured for the 48 h grace. The
+    // refused slot is given back here, so no caller can leave it reserved
+    // and bound to nothing (letters.js does not look at the answer).
     const c = store.getCampaign(k.campaignId);
-    if (!c || endOf(c) != null || !isOpen(c)) return null;
+    if (!c || endOf(c) != null || !isOpen(c)) { releaseSlot(claimId, 'the campaign closed, passed its deadline or was hidden before this was bound'); return null; }
     if (letterId) k.letterId = letterId;
     if (seatId) k.seatId = seatId;
     return store.putClaim(k);
@@ -1370,10 +1449,16 @@ export function createCampaignEngine({
    *               a camera (video) track — `joined`; the on-camera clock starts
    *   camera_off  that track was unpublished, or the participant left LiveKit
    *   ended       the seat was removed (server.js removeParticipant)
+   *   seat_live   the seat went live (GO LIVE): re-read, nothing more
    * `aired` = the camera stayed published for minSeconds, timed from the
    * webhook, never from the client. The client's `camera_ready` message does
-   * not reach this function at all (it is not a signal anyone can trust:
-   * whoever holds the seat id can send it).
+   * not reach this function as a signal (it is not one anyone can trust:
+   * whoever holds the seat id can send it). It can only make counting
+   * STRICTER: the clock also needs the seat to be live (`seatState`), because
+   * the browser publishes its camera during the preview, before GO LIVE, when
+   * the overlay shows nobody. A camera published in preview starts nothing
+   * (`cameraLive` is remembered); `seat_live`, or the sweep, starts the clock
+   * once the seat is live.
    *
    * ON AIR ONLY (cold review B2): `joined` and `aired` count only while the
    * room is on air — `roomOnAir`, the same open-airing record the Holler
@@ -1433,11 +1518,27 @@ export function createCampaignEngine({
         clearSeatTimer(seatId);
         return store.putClaim(k);
       }
+      if (inPreview(seatId)) {
+        // Published before GO LIVE: the overlay shows nobody yet.
+        k.cameraOnAt = null;
+        k.history = [...(k.history || []), { at: new Date(now()).toISOString(), from: k.status, to: k.status, why: 'camera published in the preview, before GO LIVE: counts from going live' }].slice(-40);
+        clearSeatTimer(seatId);
+        return store.putClaim(k);
+      }
       store.putClaim(k);
       return startSeatClock(store.getClaim(k.id), c);
     }
+    if (event === 'seat_live') {
+      if (IN_FLIGHT.has(k.status) && k.cameraLive && !k.cameraOnAt && callinOnAir(c) && !inPreview(seatId)) return startSeatClock(k, c);
+      return k;
+    }
     if (event === 'camera_off' || event === 'ended') {
       clearSeatTimer(seatId);
+      // A camera going off on a seat the server lost (participant_left after
+      // a restart) counts nothing: no clock ran across the blind spot, so the
+      // slot goes back. Not for `ended`, which removeParticipant sends AFTER
+      // it has dropped the seat from activeSeats.
+      if (event === 'camera_off' && deadSeat(k, c)) return releaseDeadSeat(k);
       let cur = store.getClaim(k.id);
       if (cur.cameraLive) { cur.cameraLive = false; cur = store.putClaim(cur); }
       const onMs = cur.cameraOnAt ? Math.max(0, now() - Date.parse(cur.cameraOnAt)) : 0;
@@ -1451,54 +1552,108 @@ export function createCampaignEngine({
     return k;
   }
 
-  /** The sweep's half of the on-air rule: start or stop a seat's clock when the room's on-air state changed under it. */
+  /** seatState's answer, or null when it is not wired or throws (then nothing changes). */
+  const seatStateOf = (seatId) => { if (typeof seatState !== 'function' || !seatId) return null; try { return seatState(seatId); } catch { return null; } };
+  /** A camera published on a seat whose guest has not pressed GO LIVE: the overlay shows nothing, so nothing counts. */
+  const inPreview = (seatId) => seatStateOf(seatId) === 'preview';
+  /** A Call in in flight on a seat the server no longer holds (a restart emptied activeSeats). */
+  function deadSeat(k, c) {
+    return c?.action?.kind === 'callin' && !!k?.seatId && IN_FLIGHT.has(k.status) && seatStateOf(k.seatId) === 'gone';
+  }
+  const releaseDeadSeat = (k) => { clearSeatTimer(k.seatId); return releaseSlot(k.id, 'the seat ended with a server restart; the on-camera clock starts again on a new seat'); };
+
+  /** The sweep's half of the on-air and go-live rules: start or stop a seat's clock when the room's on-air state, or the seat's, changed under it. */
   function syncSeatClock(k, c) {
     if (c?.action?.kind !== 'callin' || !k.seatId || !IN_FLIGHT.has(k.status)) return;
     const onAir = callinOnAir(c);
     if (k.cameraOnAt && !onAir) stopSeatClock(k, 'the room went off air');
-    else if (!k.cameraOnAt && k.cameraLive && onAir) startSeatClock(k, c);
+    else if (!k.cameraOnAt && k.cameraLive && onAir && !inPreview(k.seatId)) startSeatClock(k, c);
   }
 
   // ── the sweep: deadlines, wallets that arrived, door outcomes, refunds ────
+  /** Every 15 s (start), and per campaign on its close. */
   function sync() {
-    for (const c0 of store.listCampaigns()) {
-      let c = c0;
-      if (c.status === 'funding_pending') { if (!funding.has(c.id)) reconcileFunding(c.id).catch((e) => log.warn?.(`[campaigns] funding reconcile failed for ${c.id}: ${e.message}`)); continue; }
-      // Holds written by an earlier process can never settle: drop them.
-      const orphans = Object.entries(c.xHolds || {}).filter(([, h]) => h.boot !== BOOT_ID);
-      if (orphans.length) {
-        const holds = { ...c.xHolds };
-        for (const [hid, h] of orphans) { delete holds[hid]; store.appendLedger({ kind: 'x-hold-orphaned', campaignId: c.id, holdId: hid, atomic: h.atomic, why: 'held by an earlier process; whatever it spent is absorbed by the platform' }); }
-        c = store.putCampaign({ ...c, xHolds: holds });
+    for (const id of store.campaignIds()) sweepCampaign(id);
+  }
+
+  /** Nothing the sweep does can move a claim in one of these statuses. */
+  const isFinal = (k) => !IN_FLIGHT.has(k.status) && k.status !== 'owed' && k.status !== 'releasing';
+  /** A stuck funding already put to a person is re-asked of the chain every PERSON_RECONCILE_MS, not every sweep. */
+  const reconcileWaits = (c) => !!c.funding?.needsPerson && now() - Date.parse(c.funding.at || 0) >= STUCK_FUNDING_MS
+    && now() - (reconciledAt.get(c.id) ?? -Infinity) < PERSON_RECONCILE_MS;
+
+  /**
+   * One campaign's turn in the sweep. It reads the campaign fresh, never a
+   * snapshot taken before another campaign's work, and closes a campaign past
+   * its deadline in place: the sweep and close() used to call each other, K
+   * expired campaigns recursed K deep, and a stale snapshot was written back.
+   */
+  function sweepCampaign(id) {
+    let c = store.getCampaign(id);
+    // A draft holds no claims and no X holds (both need funding first); a
+    // settled campaign can never change again.
+    if (!c || c.status === 'draft' || settled.has(id)) return;
+    if (c.status === 'funding_pending') {
+      if (!funding.has(id) && !reconcileWaits(c)) {
+        reconciledAt.set(id, now());
+        reconcileFunding(id).catch((e) => log.warn?.(`[campaigns] funding reconcile failed for ${id}: ${e.message}`));
       }
-      if (c.status === 'live' && c.deadline && Date.parse(c.deadline) <= now()) { close(c.id, { system: true, reason: 'deadline passed' }); continue; }
-      const claims = store.listClaims(c.id);
-      const end = c.status === 'closed' ? endOf(c) : null;
-      for (const k of claims) {
-        if (end != null && IN_FLIGHT.has(k.status) && (!submitted(k) || now() > end + CLOSE_GRACE_MS())) {
-          // Honoured after the close, but it did not count within the window.
-          clearTimeout(seatTimers.get(k.seatId)); seatTimers.delete(k.seatId);
-          store.appendLedger({ kind: 'released', campaignId: c.id, claimId: k.id, atomic: k.reservedAtomic, why: 'did not count within the grace window after the campaign closed' });
-          history(k, 'expired', 'did not count within the grace window after the campaign closed');
-          k.reservedAtomic = null;
-          store.putClaim(k);
-          continue;
-        }
-        if (IN_FLIGHT.has(k.status) && k.seatId && !c.hidden && (c.status === 'live' || c.status === 'closed')) { syncSeatClock(k, c); continue; }
-        if (k.status === 'owed') {
-          if (c.status === 'closed' && now() - Date.parse(c.closedAt) > WALLET_GRACE_MS() && !getAccount(k.accountId)?.payoutWallet) {
-            store.appendLedger({ kind: 'forfeited', campaignId: c.id, claimId: k.id, atomic: k.owedAtomic, why: 'no payout wallet within the grace period' });
-            history(k, 'expired', 'no payout wallet within the grace period'); k.reservedAtomic = null;
-            store.putClaim(k);
-          } else tryPay(k.id);
-        } else if (k.status === 'releasing' && k.payout?.ref) {
-          const st = settlement.status(k.payout.ref)?.status;
-          if (st === 'DONE' || st === 'RETAINED') { history(k, 'paid', `door ${st}`); store.putClaim(k); }
-          else if (st === 'FAILED') { history(k, 'failed', 'door FAILED — needs a person'); store.putClaim(k); }
-        }
-      }
-      if (c.status === 'closed' && c.funding && !c.refund) maybeRefund(c.id);
+      return;
     }
+    reconciledAt.delete(id);
+    // Holds written by an earlier process can never settle: drop them.
+    const orphans = Object.entries(c.xHolds || {}).filter(([, h]) => h.boot !== BOOT_ID);
+    if (orphans.length) {
+      const holds = { ...c.xHolds };
+      for (const [hid, h] of orphans) { delete holds[hid]; store.appendLedger({ kind: 'x-hold-orphaned', campaignId: id, holdId: hid, atomic: h.atomic, why: 'held by an earlier process; whatever it spent is absorbed by the platform' }); }
+      c = store.putCampaign({ ...c, xHolds: holds });
+    }
+    if (c.status === 'live' && c.deadline && Date.parse(c.deadline) <= now()) { closeNow(id, 'deadline passed'); c = store.getCampaign(id); }
+    const claims = store.listClaims(id);
+    // Closed, refunded (or nothing to refund), no hold, every claim final:
+    // nothing can reach it any more (no check, reserve or X spend on a closed
+    // campaign), so later sweeps skip it without reading its claims.
+    if (c.status === 'closed' && !Object.keys(c.xHolds || {}).length && (c.refund || fundedAtomic(c) <= 0n) && claims.every(isFinal)) { settled.add(id); return; }
+    const end = c.status === 'closed' ? endOf(c) : null;
+    for (const k of claims) {
+      if (end != null && IN_FLIGHT.has(k.status) && (!submitted(k) || now() > end + CLOSE_GRACE_MS())) {
+        // Honoured after the close, but it did not count within the window.
+        clearSeatTimer(k.seatId);
+        store.appendLedger({ kind: 'released', campaignId: id, claimId: k.id, atomic: k.reservedAtomic, why: 'did not count within the grace window after the campaign closed' });
+        history(k, 'expired', 'did not count within the grace window after the campaign closed');
+        k.reservedAtomic = null;
+        store.putClaim(k);
+        continue;
+      }
+      if (deadSeat(k, c)) { releaseDeadSeat(k); continue; }
+      // Reserved on a live campaign and still bound to nothing: the send or
+      // join that took it never finished (a restart between reserve and bind).
+      if (c.status === 'live' && k.status === 'recorded' && !k.letterId && !k.seatId && now() - Date.parse(k.reservedAt || 0) > UNBOUND_RELEASE_MS) {
+        releaseSlot(k.id, `reserved ${UNBOUND_RELEASE_MS / 60_000}+ min ago and never bound to a Holler or seat`);
+        continue;
+      }
+      if (IN_FLIGHT.has(k.status) && k.seatId && !c.hidden && (c.status === 'live' || c.status === 'closed')) { syncSeatClock(k, c); continue; }
+      if (k.status === 'owed') {
+        if (c.status === 'closed' && now() - Date.parse(c.closedAt) > WALLET_GRACE_MS() && !getAccount(k.accountId)?.payoutWallet) {
+          store.appendLedger({ kind: 'forfeited', campaignId: id, claimId: k.id, atomic: k.owedAtomic, why: 'no payout wallet within the grace period' });
+          history(k, 'expired', 'no payout wallet within the grace period'); k.reservedAtomic = null;
+          store.putClaim(k);
+        } else tryPay(k.id);
+      } else if (k.status === 'releasing' && k.payout?.ref) {
+        const st = settlement.status(k.payout.ref)?.status;
+        if (st === 'DONE' || st === 'RETAINED') { history(k, 'paid', `door ${st}`); store.putClaim(k); }
+        else if (st === 'FAILED') { history(k, 'failed', 'door FAILED — needs a person'); store.putClaim(k); }
+      }
+    }
+    if (c.status === 'closed' && c.funding && !c.refund) maybeRefund(id);
+  }
+
+  /** POST /api/account/payout-wallet: the wallet just arrived, so pay this account's owed claims now (not a whole sweep). */
+  function payAccount(accountId) {
+    if (!accountId) return 0;
+    let n = 0;
+    for (const k of store.claimsOfAccount(accountId)) if (k.status === 'owed' && tryPay(k.id)?.status !== 'owed') n += 1;
+    return n;
   }
 
   function maybeRefund(id) {
@@ -1533,14 +1688,14 @@ export function createCampaignEngine({
       if (!r.ok) throw fail('x_lookup_failed', `X did not return that account (${r.error}).`, 502);
       const n = Number(r.user.followingCount) || 0;
       const requests = Math.max(1, Math.ceil(n / 1000));
-      return { source, sourceRef: r.user.id, label: `Accounts @${r.user.username} follows`, count: n, requests, costUsd: Math.round(n * xApi.X_COST_PER_USER_USD * 100) / 100, lookupCostUsd: r.costUsd, minutes: requests > 300 ? Math.ceil(requests / 300) * 15 : 0 };
+      return { source, sourceRef: r.user.id, label: `Accounts @${r.user.username} follows`, count: n, requests, costUsd: roundUsd(n * xApi.X_COST_PER_USER_USD), lookupCostUsd: r.costUsd, minutes: requests > 300 ? Math.ceil(requests / 300) * 15 : 0 };
     }
     if (source === 'x-list') {
       const r = await xApi.fetchList({ listId: String(sourceRef || '').trim(), log });
       if (!r.ok) throw fail('x_lookup_failed', `X did not return that list (${r.error}).`, 502);
       const n = Number(r.list.memberCount) || 0;
       const requests = Math.max(1, Math.ceil(n / 100));
-      return { source, sourceRef: r.list.id, label: r.list.name ? `X List "${r.list.name}"` : `X List ${r.list.id}`, count: n, requests, costUsd: Math.round(n * xApi.X_COST_PER_USER_USD * 100) / 100, lookupCostUsd: r.costUsd, minutes: requests > 300 ? Math.ceil(requests / 300) * 15 : 0 };
+      return { source, sourceRef: r.list.id, label: r.list.name ? `X List "${r.list.name}"` : `X List ${r.list.id}`, count: n, requests, costUsd: roundUsd(n * xApi.X_COST_PER_USER_USD), lookupCostUsd: r.costUsd, minutes: requests > 300 ? Math.ceil(requests / 300) * 15 : 0 };
     }
     throw fail('invalid', 'source must be manual, x-following or x-list.');
   }
@@ -1630,19 +1785,19 @@ export function createCampaignEngine({
           } while (next);
         });
       } finally {
-        if (holdId) settleX(chargeTo.id, holdId, Math.round(costUsd * 100) / 100, 'set');
+        if (holdId) settleX(chargeTo.id, holdId, roundUsd(costUsd), 'set');
       }
       ids = normaliseIds(ids);
       handles = Object.fromEntries(ids.filter((i) => handles[i]).map((i) => [i, handles[i]]));
     }
-    const prev = supersedes ? store.getSet(supersedes) : null;
+    const prev = supersedes ? store.getSetMeta(supersedes) : null;
     const set = {
       id: `rs_${randomUUID().replace(/-/g, '').slice(0, 14)}`,
       name: label || est?.label || 'Pasted list',
       source, sourceRef: resolvedRef, snapshotAt: new Date(now()).toISOString(),
       ids, handles, count: ids.length, root: merkleRoot(ids),
       version: prev ? (prev.version || 1) + 1 : 1, supersedes: prev?.id || null,
-      createdBy: accountId || 'admin', costUsd: Math.round(costUsd * 100) / 100,
+      createdBy: accountId || 'admin', costUsd: roundUsd(costUsd),
     };
     store.insertSet(set);
     store.appendLedger({ kind: 'reference-set', setId: set.id, count: set.count, root: set.root, costUsd: set.costUsd, by: set.createdBy });
@@ -1651,7 +1806,7 @@ export function createCampaignEngine({
   }
 
   async function refreshSet(setId, opts, who) {
-    const s = store.getSet(setId);
+    const s = store.getSetMeta(setId);
     if (!s) throw fail('not_found', 'No such reference set.', 404);
     if (!who.isAdmin && s.createdBy !== who.accountId) throw fail('forbidden', 'Not your reference set.', 403);
     if (s.source === 'manual') throw fail('invalid', 'A pasted list has no source to refresh from; paste a new one.');
@@ -1660,7 +1815,7 @@ export function createCampaignEngine({
 
   // ── views ─────────────────────────────────────────────────────────────────
   function setFingerprint(id) {
-    const s = id ? store.getSet(id) : null;
+    const s = id ? store.getSetMeta(id) : null;
     return s ? { id: s.id, name: s.name, source: s.source, count: s.count, snapshotAt: s.snapshotAt, root: s.root, version: s.version || 1 } : null;
   }
 
@@ -1669,7 +1824,7 @@ export function createCampaignEngine({
     if (!c || c.hidden || ['draft', 'funding_pending', 'funded'].includes(c.status)) return null;
     const t = totals(c.id);
     const sets = {};
-    for (const sid of [c.rules.referenceSetId, c.rules.followedByFromSet?.referenceSetId].filter(Boolean)) { const s = store.getSet(sid); if (s) sets[sid] = s; }
+    for (const sid of [c.rules.referenceSetId, c.rules.followedByFromSet?.referenceSetId].filter(Boolean)) { const s = store.getSetMeta(sid); if (s) sets[sid] = s; }
     const creator = getAccount(c.creatorAccountId);
     const remaining = t.remaining > 0n ? t.remaining : 0n;
     return {
@@ -1822,7 +1977,7 @@ export function createCampaignEngine({
   return {
     store, totals, tokenInfo,
     createCampaign, updateCampaign, fundTerms, fund, open, close, setHidden,
-    check, reserve, releaseSlot, bind, advance, tryPay, onLetterEvent, onSeatEvent, sync, maybeRefund,
+    check, reserve, releaseSlot, bind, advance, tryPay, payAccount, onLetterEvent, onSeatEvent, sync, maybeRefund,
     estimateSet, estimateForCampaign, buildSet, refreshSet, listSets, getSetView, reconcileFunding, resolveStuckFunding,
     publicView, myClaim, claimView, listManaged, getManaged, manageView, claimsFor,
     start(ms = 15_000) { if (!timer) { timer = setInterval(() => { try { sync(); } catch (e) { log.warn?.(`[campaigns] sync failed: ${e.message}`); } }, ms); timer.unref?.(); } return this; },

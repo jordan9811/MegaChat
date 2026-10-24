@@ -84,7 +84,7 @@ const srv = await startGateServer({
   bountyAuth: { handles: ['ctxstreamer', 'ctxfarmer', 'ctxquitter'] },
   port: PORT,
   env: {
-    BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
+    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
     BOUNTY_FIXTURE_PATH: FIXTURE,
     // Credentials are fake and the hosts are localhost: configured enough to
     // take the real code path, incapable of reaching Twitch.

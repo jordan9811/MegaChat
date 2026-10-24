@@ -36,9 +36,10 @@ export type Rules = {
   referenceSetId?: string
   /** Followed by at least `min` members of a frozen set. Checking this costs
    *  X-API calls per claim; the cap bounds what one claim may spend, and the
-   *  spend comes out of the campaign budget. The server only enforces the
-   *  rule when `enabled` is true, so the form always sends it and checks the
-   *  echo (a rule that is stored but off would never be checked). */
+   *  spend comes out of the campaign budget. A rule that is present is
+   *  enforced; only `enabled: false` drops it (campaign-eligibility.js
+   *  normaliseRules), and the server stores `enabled: true` on every rule it
+   *  keeps. */
   followedByFromSet?: { referenceSetId: string; min: number; perClaimCostCapUsd: number; enabled?: boolean; /** What checking may cost in all; blank = 20% of the budget. */ maxTotalUsd?: number }
 }
 
@@ -134,8 +135,17 @@ export type Campaign = {
   blurb: string
   reward: { type: 'usdc' | 'token'; address?: string | null; amount: string }
   /** `amount` is the plan; funded/released/refunded are what the server has
-   *  moved, decimal strings in the token's units, 0 on a draft. */
-  budget: { amount: string; funded?: string; released?: string; refunded?: string }
+   *  moved, decimal strings in the token's units, 0 on a draft. `released`
+   *  is every payout INTENT (owed, queued or sent), not money that has left;
+   *  `xCost` is what X-API checks have spent from the budget. */
+  budget: { amount: string; funded?: string; released?: string; refunded?: string; xCost?: string }
+  /** The server's own budget arithmetic (campaign-engine.js manageView):
+   *  `remaining` is funded minus every reservation, owed and paid reward and
+   *  X-API spend, which is what can still be promised to a new claimant. */
+  totals?: { funded: string; committed: string; remaining: string; xCost: string; activeCount: number }
+  /** The refund intent's status at the settlement door; null until the
+   *  refund is recorded (a closed campaign still waiting on claims). */
+  refundDoor?: string | null
   token: { address: string | null; symbol: string; decimals: number }
   maxClaims: number
   deadline: string | null
@@ -183,6 +193,8 @@ export type ClaimStatus =
   | 'paid'
   | 'failed'
   | 'rejected'
+  /** The campaign closed (or a wallet never arrived) before it counted. */
+  | 'expired'
 
 export type ClaimCheck = { rule: RuleKey | string; pass: boolean; detail: string }
 
@@ -209,6 +221,15 @@ export type Claim = {
   playedUnauthed?: boolean
   /** ISO; when that play happened. */
   playedUnauthedAt?: string | null
+  /** A Call in's camera was seen while the room was off air, so no on-air
+   *  clock is running: the time is not counting. */
+  offAir?: boolean
+  offAirAt?: string | null
+  /** ISO; when the rules were last read for this claim. */
+  checkedAt?: string | null
+  /** The reward this claim is owed, once it counted. */
+  owed?: { amount: string; symbol: string } | null
+  updatedAt?: string | null
   createdAt: string
 }
 
@@ -280,11 +301,19 @@ export type TokenInfo = {
 
 // ── Transport ───────────────────────────────────────────────────────────────
 
+/** A refusal from the campaign routes. `reason` is the server's code
+ *  (campaign-routes.js send(): e.g. confirm_required) and `body` the whole
+ *  answer, so a caller can act on what came with it: a Freeze refused as
+ *  confirm_required carries the fresh estimate. */
 export class CampaignsApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  reason: string | null
+  body: unknown
+  constructor(status: number, message: string, reason: string | null = null, body: unknown = null) {
     super(message)
     this.status = status
+    this.reason = reason
+    this.body = body
   }
 }
 
@@ -295,12 +324,12 @@ async function req<T>(path: string, opts: { method?: string; body?: unknown } = 
     credentials: 'same-origin',
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   })
-  const data = (await res.json().catch(() => ({}))) as { error?: string; hint?: string }
+  const data = (await res.json().catch(() => ({}))) as { error?: string; hint?: string; reason?: string | null }
   if (!res.ok) {
     const msg = [data.error || (res.status === 404 ? 'Not available on this server' : `Request failed (${res.status})`), data.hint]
       .filter(Boolean)
       .join(' — ')
-    throw new CampaignsApiError(res.status, msg)
+    throw new CampaignsApiError(res.status, msg, typeof data.reason === 'string' ? data.reason : null, data)
   }
   return data as T
 }
@@ -409,9 +438,28 @@ export function listMyReferenceSets() {
   return req<{ sets: ReferenceSet[] }>('/api/reference-sets/mine')
 }
 
+export type ReferenceSetEstimate = { estimatedUsd: number; count?: number }
+
 /** What freezing this set would cost in X-API spend, before committing. */
 export function estimateReferenceSet(body: ReferenceSetRequest) {
-  return req<{ estimatedUsd: number; count?: number }>('/api/reference-sets/estimate', { method: 'POST', body })
+  return req<ReferenceSetEstimate>('/api/reference-sets/estimate', { method: 'POST', body })
+}
+
+/**
+ * The price a Freeze was refused at. When the list grew between Estimate and
+ * Freeze, the server refuses the old price as confirm_required and sends its
+ * fresh estimate (campaign-engine.js buildSet); the builder shows that one,
+ * so the next Freeze confirms the new price instead of re-sending the stale
+ * one forever (each refused attempt still bills a lookup). Null for any
+ * other refusal.
+ */
+export function refusedEstimate(e: unknown): ReferenceSetEstimate | null {
+  if (!(e instanceof CampaignsApiError) || e.reason !== 'confirm_required') return null
+  const est = (e.body as { estimate?: { costUsd?: unknown; count?: unknown } } | null)?.estimate
+  const usd = est?.costUsd == null ? NaN : Number(est.costUsd)
+  if (!est || !Number.isFinite(usd)) return null
+  const count = est.count == null ? NaN : Number(est.count)
+  return Number.isFinite(count) ? { estimatedUsd: usd, count } : { estimatedUsd: usd }
 }
 
 /** Freezes the set. `confirmCostUsd` must echo the estimate the creator saw. */

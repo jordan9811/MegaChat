@@ -4,6 +4,7 @@ import type { Metadata, Viewport } from 'next'
 import { Archivo, Pacifico, Plus_Jakarta_Sans, Space_Mono } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
 import { TempoWalletProvider } from '@/components/providers/tempo-wallet'
+import { UI_MODE_BOOT_SCRIPT } from '@/lib/ui-mode-boot'
 import './globals.css'
 import './product.css'
 
@@ -17,10 +18,14 @@ const ui = Plus_Jakarta_Sans({ variable: '--font-ui', subsets: ['latin'], weight
 // is a real wider cut, not a synthesized one.
 const display = Archivo({ variable: '--font-display', subsets: ['latin'], axes: ['wdth'] })
 const code = Space_Mono({ variable: '--font-code', subsets: ['latin'], weight: ['400', '700'] })
+// Not preloaded: only the legacy hero (/legacy) paints in it, so preloading it
+// put 22 KB of high-priority font on every route. The @font-face stays in the
+// root CSS, and the file downloads when .font-graffiti text first paints.
 const graffiti = Pacifico({
   variable: '--font-graffiti',
   subsets: ['latin'],
   weight: '400',
+  preload: false,
 })
 
 const SITE_URL =
@@ -57,7 +62,7 @@ export const metadata: Metadata = {
         url: '/og.png',
         width: 1200,
         height: 630,
-        alt: 'Holler — the word HOLLER on a deep-violet broadcast strap, the O a red record button',
+        alt: 'Holler — the word HOLLER on an azure broadcast strap, the O a magenta record button',
       },
     ],
   },
@@ -97,12 +102,7 @@ export default function RootLayout({
     >
       <body className="bg-background font-sans antialiased">
         {/* Simple/Advanced presentation mode — applied before paint. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "(function(){try{var m=localStorage.getItem('mc-ui-mode');document.documentElement.dataset.ui=(m==='simple'?'simple':'advanced');}catch(e){document.documentElement.dataset.ui='advanced';}})()",
-          }}
-        />
+        <script dangerouslySetInnerHTML={{ __html: UI_MODE_BOOT_SCRIPT }} />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

@@ -15,10 +15,10 @@
  * the escape hatch is the env var.
  */
 
-const num = (v, d) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : d;
-};
+import { envNum } from './env-num.js';
+
+// Every number through env-num.js: an EMPTY variable used to read as 0, so a
+// cleared LAZY_GRACE_MS hung the overlay up the instant a seat emptied (cc-2).
 
 export const lazyConfig = {
   /** Master flag. LAZY_CONNECT=0 → today's exact behavior (connect on mount). */
@@ -30,7 +30,7 @@ export const lazyConfig = {
    * failure mode that would genuinely look broken on a live broadcast.
    * Minimum 60s per spec; never fires while anyone is mid-pay-flow.
    */
-  graceMs: num(process.env.LAZY_GRACE_MS, 60_000),
+  graceMs: envNum('LAZY_GRACE_MS', 60_000),
 
   /**
    * Earliest credible signal of intent. Descriptive only — nothing reads this
@@ -49,7 +49,7 @@ export const lazyConfig = {
    * anymore — see abandonMs below. It only catches a hold whose client
    * vanished so completely that even the heartbeat stopped.
    */
-  prewarmTtlMs: num(process.env.LAZY_PREWARM_TTL_MS, 5 * 60_000),
+  prewarmTtlMs: envNum('LAZY_PREWARM_TTL_MS', 5 * 60_000),
 
   /**
    * ABANDON CAP — the fix for the pinned finding.
@@ -65,7 +65,7 @@ export const lazyConfig = {
    * back-to-back handoff, abandon protects against someone who was never
    * going to pay.
    */
-  abandonMs: num(process.env.LAZY_ABANDON_MS, 90_000),
+  abandonMs: envNum('LAZY_ABANDON_MS', 90_000),
 
   /**
    * "Actively progressing" — what RESETS the abandon timer. Stated here
@@ -90,24 +90,24 @@ export const lazyConfig = {
   ],
 
   /** Overlay → server liveness ping cadence. */
-  heartbeatIntervalMs: num(process.env.LAZY_HEARTBEAT_MS, 15_000),
+  heartbeatIntervalMs: envNum('LAZY_HEARTBEAT_MS', 15_000),
 
   /** No heartbeat within this → overlay marked unhealthy; new paid joins warn. */
-  heartbeatStaleMs: num(process.env.LAZY_HEARTBEAT_STALE_MS, 45_000),
+  heartbeatStaleMs: envNum('LAZY_HEARTBEAT_STALE_MS', 45_000),
 
   /** Any single LiveKit session open longer than this logs a loud warning. */
-  longSessionWarnMs: num(process.env.LAZY_LONG_SESSION_MS, 60 * 60_000),
+  longSessionWarnMs: envNum('LAZY_LONG_SESSION_MS', 60 * 60_000),
 
   /** Room hygiene. Not a cost lever (empty rooms bill nothing) — see audit. */
-  emptyTimeoutS: num(process.env.LAZY_EMPTY_TIMEOUT_S, 60),
-  departureTimeoutS: num(process.env.LAZY_DEPARTURE_TIMEOUT_S, 20),
+  emptyTimeoutS: envNum('LAZY_EMPTY_TIMEOUT_S', 60),
+  departureTimeoutS: envNum('LAZY_DEPARTURE_TIMEOUT_S', 20),
 
   /** Signal-channel fallback polling interval when the WS path is dead. */
-  signalPollMs: num(process.env.LAZY_SIGNAL_POLL_MS, 4_000),
+  signalPollMs: envNum('LAZY_SIGNAL_POLL_MS', 4_000),
 
   /** Overlay LiveKit connect retry backoff. */
-  connectRetryBaseMs: num(process.env.LAZY_RETRY_BASE_MS, 500),
-  connectRetryMaxMs: num(process.env.LAZY_RETRY_MAX_MS, 15_000),
+  connectRetryBaseMs: envNum('LAZY_RETRY_BASE_MS', 500),
+  connectRetryMaxMs: envNum('LAZY_RETRY_MAX_MS', 15_000),
 
   /**
    * Per-room knob, NOT the default: connect while the streamer is broadcasting

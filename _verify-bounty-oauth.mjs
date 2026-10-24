@@ -13,10 +13,10 @@
  */
 import { spawn } from 'child_process';
 import { createServer } from 'http';
-import { mkdtempSync, writeFileSync, readFileSync } from 'fs';
+import { mkdtempSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
-import { createHmac } from 'crypto';
+import { sessionCookieFor, seedAccountForLink } from './_gate-identity-helper.mjs';
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = '') => {
@@ -29,36 +29,23 @@ const APP = `http://localhost:${PORT}`;
 const AUTH_SECRET = 'oauth-verify-secret';
 
 // ── A. real identity verification over HTTP ─────────────────────────────────
+// One account per login, seeded before the server starts, and a session for
+// each in the one shape auth.js accepts. This seeded identities.json until
+// 2026-10-24, which no server has read since the account layer.
 const dataDir = mkdtempSync(path.join(tmpdir(), 'mc-oauth-'));
-writeFileSync(path.join(dataDir, 'identities.json'), JSON.stringify({
-  identities: {
-    'twitch:tw9': {
-      provider: 'twitch', platformId: 'tw9', username: 'realstreamer',
-      handle: 'realstreamer', createdAt: new Date().toISOString(),
-    },
-    'kick:kk7': {
-      provider: 'kick', platformId: 'kk7', username: 'kickstreamer',
-      handle: 'kickstreamer', createdAt: new Date().toISOString(),
-    },
-  },
-  handles: { realstreamer: 'twitch:tw9', kickstreamer: 'kick:kk7' },
-}));
-const seal = (o) => {
-  const p = Buffer.from(JSON.stringify(o)).toString('base64url');
-  return `${p}.${createHmac('sha256', AUTH_SECRET).update(p).digest('base64url')}`;
-};
-const sessionCookie = `mc_identity=${encodeURIComponent(seal({ provider: 'twitch', platformId: 'tw9' }))}`;
-const kickCookie = `mc_identity=${encodeURIComponent(seal({ provider: 'kick', platformId: 'kk7' }))}`;
+const sessionFor = (link) => sessionCookieFor(seedAccountForLink(dataDir, link), { secret: AUTH_SECRET });
+const sessionCookie = sessionFor({ provider: 'twitch', platformId: 'tw9', username: 'realstreamer' });
+const kickCookie = sessionFor({ provider: 'kick', platformId: 'kk7', username: 'kickstreamer' });
 
 const { startGateServer } = await import('./_gate-helpers.mjs');
 // Harness-spawned: occupied-port refusal, spawn-error surfacing,
 // readiness polling, and a nonce proving the responder is ours.
 const srv = await startGateServer({
   // NO bountyAuth here on purpose: this suite IS the identity test. It seals
-  // its own cookies and seeds its own identities.json, and the harness minter
+  // its own cookies and seeds its own accounts.json, and the harness minter
   // would overwrite both. It only needs the admin key, set in env below.
   port: PORT,
-  // Seeded identities live in this dataDir.
+  // Seeded accounts live in this dataDir.
   dataDir,
   // AUTH_SECRET must match the one the sealed session cookies were signed
   // with — my bulk adoption dropped it because it shared a line with
@@ -126,9 +113,11 @@ try {
   const cross = await post('/api/bounty/claim',
     { platform: 'kick', handle: 'kickstreamer', claimant: 'x' },
     { cookie: sessionCookie }); // a TWITCH session
+  // The verifier names what is missing — this account has no KICK link — and
+  // the session's provider (bounty-routes.js PlatformIdentityVerifier).
   ok('K. a TWITCH session cannot claim a KICK handle (cross-platform is no proof)',
     cross.body.identity?.approved === false
-    && cross.body.identity?.method === 'REAL_WRONG_PROVIDER:twitch',
+    && cross.body.identity?.method === 'REAL_NO_KICK_LINK:twitch',
     cross.body.identity?.method);
 
   const kickRight = await post('/api/bounty/claim',

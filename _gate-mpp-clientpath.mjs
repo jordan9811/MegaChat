@@ -228,14 +228,18 @@ async function joinSeat(username) {
   const ws = new WebSocket(WS_URL);
   await new Promise((r, j) => { ws.on('open', r); ws.on('error', j); });
   ws.send(JSON.stringify({ type: 'subscribe_room', room: ROOM }));
-  ws.send(JSON.stringify({ type: 'register_seat', seatId: join.seatId }));
+  ws.send(JSON.stringify({ type: 'register_seat', seatId: join.seatId, seatToken: join.seatToken }));
   ws.on('message', (raw) => {
     try {
       const m = JSON.parse(raw.toString());
       if (m.type === 'meter_update' && m.seatId === join.seatId) meterUpdates.push(m);
     } catch { /* ignore */ }
   });
-  ws.send(JSON.stringify({ type: 'camera_ready', seatId: join.seatId }));
+  ws.send(JSON.stringify({ type: 'camera_ready', seatId: join.seatId, seatToken: join.seatToken }));
+  await Promise.race([
+    new Promise((resolve) => ws.on('message', (raw) => { try { const m = JSON.parse(raw.toString()); if (m.type === 'seat_added' && m.seat?.id === join.seatId) resolve(); } catch { /* not ours */ } })),
+    new Promise((resolve) => setTimeout(resolve, 5000)),
+  ]); // the server's live answer: ticks before it are refused (409 not_live)
   return { join, ws, meterUpdates };
 }
 
@@ -259,7 +263,7 @@ ok('join accepted', true, `cap=${seat1.join.sessionCap} tick=${seat1.join.tickPr
     !!err && /BigInt|0x|no route/.test(chain), chain.split('\n')[0].slice(0, 110));
   if (TRACE && err) console.log('    old-path error chain:\n    ' + chain);
 }
-await fetch(`${BASE}/api/leave/${seat1.join.seatId}`, { method: 'POST' });
+await fetch(`${BASE}/api/leave/${seat1.join.seatId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seatToken: seat1.join.seatToken }) });
 seat1.ws.close();
 
 // ── Scenarios 2a/2b/2c: FIXED path over the embedded-wallet personalities ──
@@ -306,7 +310,7 @@ async function runFixedScenario(label, providerOpts, expect = 'works') {
       deepError(lastErr).split('\n')[0].slice(0, 100));
     ok(`${label}: no channel was opened`, !session.channelId);
   }
-  await fetch(`${BASE}/api/leave/${join.seatId}`, { method: 'POST' });
+  await fetch(`${BASE}/api/leave/${join.seatId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seatToken: join.seatToken }) });
   ws.close();
   await new Promise((r) => setTimeout(r, 8000));
   const lost = Number(formatUnits(before - await balanceOf(viewer.address), 6));

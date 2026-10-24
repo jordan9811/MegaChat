@@ -4,26 +4,23 @@
  * A streamer names MegaChat handles that may join their stream free, any time:
  * regular co-hosts and recurring guests who come and go without paying per
  * second or waiting for a seat. Per STREAMER, not per room — the list is keyed
- * by the owner key (`provider:platformId`, the same key rooms-store stamps on
- * a room as `ownerKey`), so it applies across every room that streamer owns
+ * by the owner key (the ACCOUNT id, `acct_…`, the same key rooms-store stamps
+ * on a room as `ownerKey`), so it applies across every room that streamer owns
  * without re-adding anyone.
  *
- * JSON persistence, same zero-infra pattern as rooms-store / identity-store,
- * and the same DATA_DIR override so the list survives a deploy.
+ * One JSON document under DATA_DIR, written through atomically on every change
+ * (json-store.js); a file that cannot be read refuses writes rather than
+ * reading as an empty list (DECISIONS D3).
  *
  * This module stores and answers. It does NOT decide who is signed in: the
  * caller resolves the requester from the sealed identity cookie and passes a
  * handle it already trusts (see server.js `whitelistGuestFor`). Never pass a
  * client-supplied handle in here and treat the answer as authorization.
  */
-import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { sanitizeHandle } from './rooms-store.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const STORE_PATH = path.join(DATA_DIR, 'guest-whitelist.json');
+import { createJsonStore, dataDir } from './json-store.js';
+import { envNum } from './env-num.js';
 
 /**
  * How many guests one streamer may list. Capped so the whitelist can't quietly
@@ -31,37 +28,42 @@ const STORE_PATH = path.join(DATA_DIR, 'guest-whitelist.json');
  * circle of regulars, which is what this is for.
  */
 export function whitelistMax() {
-  const raw = Number(process.env.GUEST_WHITELIST_MAX || 20);
-  if (!Number.isFinite(raw)) return 20;
-  return Math.min(200, Math.max(1, Math.floor(raw)));
+  return Math.min(200, Math.max(1, Math.floor(envNum('GUEST_WHITELIST_MAX', 20))));
 }
 
-let cache = null;
+const store = createJsonStore({
+  file: () => path.join(dataDir(), 'guest-whitelist.json'),
+  name: 'guest-whitelist',
+  pretty: true,
+  empty: () => ({ lists: {} }),
+  normalize: (doc) => {
+    if (!doc.lists || typeof doc.lists !== 'object') doc.lists = {};
+    for (const list of Object.values(doc.lists)) if (list && !Array.isArray(list.entries)) list.entries = [];
+    return doc;
+  },
+});
 
-function load() {
-  if (cache) return cache;
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  try {
-    cache = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
-  } catch {
-    cache = { lists: {} };
-  }
-  if (!cache.lists) cache.lists = {};
-  return cache;
-}
+const save = () => store.save();
 
-function save() {
-  fs.writeFileSync(STORE_PATH, JSON.stringify(cache, null, 2));
-}
+// What a streamer who never touched the list has. Shared and frozen: a read
+// must never create a list — it used to insert one per owner key the join
+// path asked about, and the next write persisted all of them (stores-12).
+const NO_LIST = Object.freeze({ enabled: null, entries: Object.freeze([]) });
 
-function rawList(ownerKey) {
-  const store = load();
+/**
+ * The list for `ownerKey`. Reads get the stored list or NO_LIST; only the two
+ * writers that genuinely create one (`addGuest`, `setEnabled`) pass
+ * `create: true`, and they check the store is writable first.
+ */
+function rawList(ownerKey, { create = false } = {}) {
   const key = String(ownerKey || '');
   if (!key) return null;
-  if (!store.lists[key]) store.lists[key] = { enabled: null, entries: [] };
-  const list = store.lists[key];
-  if (!Array.isArray(list.entries)) list.entries = [];
-  return list;
+  if (create) store.assertWritable();
+  const doc = store.data();
+  if (doc.lists[key]) return doc.lists[key];
+  if (!create) return NO_LIST;
+  doc.lists[key] = { enabled: null, entries: [] };
+  return doc.lists[key];
 }
 
 /**
@@ -132,7 +134,7 @@ export function addGuest(ownerKey, handle, identityKey = null) {
     err.code = 'invalid_handle';
     throw err;
   }
-  const list = rawList(ownerKey);
+  const list = rawList(ownerKey, { create: true });
   const existing = list.entries.find((e) => e.handle === clean);
   if (existing) return { added: false, entry: { ...existing } };
   const max = whitelistMax();
@@ -143,13 +145,13 @@ export function addGuest(ownerKey, handle, identityKey = null) {
   }
   const entry = {
     handle: clean,
-    // WHO the handle was when it was added. A handle is a display name that
-    // can be released and re-claimed (identity-store.js frees the old one on
-    // re-claim), so an entry that stores only the string is an authorization
-    // token somebody else can later take. Pinning the identity means a
-    // re-claimed handle stops matching instead of silently inheriting a free
-    // seat. Null for entries written before this existed — those fall back to
-    // handle-only matching and are flagged in the UI.
+    // WHO the handle was when it was added. A handle is a display name, and
+    // one its account explicitly releases (accounts.js releaseHandle) can be
+    // claimed by somebody else, so an entry that stores only the string is an
+    // authorization token somebody else can later take. Pinning the identity
+    // means a re-claimed handle stops matching instead of silently inheriting
+    // a free seat. Null for entries written before this existed — those fall
+    // back to handle-only matching and are flagged in the UI.
     identityKey: identityKey || null,
     addedAt: new Date().toISOString(),
     lastJoinedAt: null,
@@ -164,10 +166,10 @@ export function addGuest(ownerKey, handle, identityKey = null) {
 export function removeGuest(ownerKey, handle) {
   const clean = sanitizeHandle(handle);
   if (!clean) return false;
+  store.assertWritable();
   const list = rawList(ownerKey);
-  const before = list.entries.length;
+  if (!list || !list.entries.some((e) => e.handle === clean)) return false;
   list.entries = list.entries.filter((e) => e.handle !== clean);
-  if (list.entries.length === before) return false;
   save();
   return true;
 }
@@ -177,7 +179,7 @@ export function removeGuest(ownerKey, handle) {
  * touched, so flipping back on restores exactly who was there.
  */
 export function setEnabled(ownerKey, enabled) {
-  const list = rawList(ownerKey);
+  const list = rawList(ownerKey, { create: true });
   if (!list) return null;
   list.enabled = !!enabled;
   save();
@@ -195,13 +197,9 @@ export function recordJoin(ownerKey, handle) {
   const list = rawList(ownerKey);
   const entry = list?.entries.find((e) => e.handle === clean);
   if (!entry) return null;
+  store.assertWritable();
   entry.lastJoinedAt = new Date().toISOString();
   entry.joinCount = (entry.joinCount || 0) + 1;
   save();
   return { ...entry };
-}
-
-/** Test helper — drops the in-memory cache so a fresh DATA_DIR is re-read. */
-export function _resetWhitelistForTests() {
-  cache = null;
 }

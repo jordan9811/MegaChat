@@ -61,7 +61,7 @@ const srv = await startGateServer({
   bountyAuth: { handles: ['expirer', 'judge', 'modq', 'raceanchor', 'racefour', 'racethree', 'racetwo',
     'fanA', 'fanB', 'fanC', 'fanD', 'fanE', 'fanF', 'fanG'] },
   port: PORT,
-  env: { BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
+  env: { BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true',
     // Expiry must be testable inside a gate run.
     BOUNTY_PLEDGE_MIN_EXPIRY_MS: '500',
     // Point the shared moderation pipeline at the in-gate mock.

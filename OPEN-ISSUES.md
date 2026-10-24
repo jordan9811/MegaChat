@@ -3474,10 +3474,60 @@ only in Railway and were not checkable while its API was failing. Names only:
 - **K4 — Railway account:** reconnect GitHub in Account Settings and re-enable
   autodeploy (Railway invalidated its GitHub tokens; pushes do not deploy until
   then); recreate any API tokens; review the audit log for Oct 20-22.
+  **Update 2026-10-24:** the GitHub half is done. Autodeploy is back: the
+  02:22Z deployment of `1f06bef` carried GitHub commit metadata (branch
+  `v0-ui-migration`, author `jordan9811`), so a push deploys again. Still
+  open: recreate the API tokens; review the audit log for Oct 20-22.
 - **K5 — Node and Next:** update this machine's Node from 24.12.0 to 24.22.1
   (Oct 21 security release); production picks up 22.23.4 on rebuild
   (engines 22.x). Upgrade web/ next 16.2.6 -> 16.4.2; until then do not expose
   the local server through cloudflared (GHSA-p293-qw3h-jr36, Windows-only RCE).
+- **K7 — AUTH_SECRET missing on production (found 2026-10-24).** Railway had
+  none of `AUTH_SECRET`, `MPP_SECRET_KEY`, `NODE_ENV`, so `auth.js` sealed
+  every session cookie with the public dev constant: anyone could sign in as
+  any account, by account id or by the legacy `{provider, platformId}` shape
+  (Twitch and X ids are public; the site admin included). Overlay keys were
+  NOT forgeable at runtime: `overlay-key.js` checked `NODE_ENV`, which Next
+  sets to `production` during `prepare()`, so on Railway they were disabled
+  (no campaign Holler could count as aired). The code now refuses the
+  constant in production (`runtime-env.js`: `--prod` or `RAILWAY_ENVIRONMENT`;
+  a per-boot random session secret, logged by name). **The owner must set
+  `AUTH_SECRET` on the Railway service**, and expect every session to reset
+  once and every overlay URL to become keyed (streamers re-copy the OBS
+  overlay URL). Gate: `_gate-auth-secret.mjs` 31/0; its A cases fail on a copy
+  of the tree with the old fallback. The legacy cookie shape is kept for now:
+  no product code mints it, but the gate harness does (`mintBountyAuth` in
+  `_gate-helpers.mjs`, plus hand-rolled sealers in `_gate-identity-helper.mjs`,
+  `_gate-guest-whitelist.mjs`, `_gate-polish.mjs`, `_diag-ui-shots.mjs`,
+  `_verify-bounty-oauth.mjs`, `_verify-twitch-prefill.mjs`); retire the branch
+  in `readIdentityFromRequest` once those seal `{accountId}`.
+  **Update 2026-10-24 (identity lane):** done. `readIdentityFromRequest`
+  (`auth.js`) accepts only `{accountId, iat}`; `mintBountyAuth` and every
+  hand-rolled sealer above seal that shape for the account the link table
+  names. `_gate-auth-secret.mjs` 44/0; its B cases show the legacy shape is
+  refused even when sealed with the current secret. Sessions now carry `iat`
+  and die after 30 days (Q4). Sessions minted before this round carry none and
+  are refused, so this deploy signs everyone out once, the same cost as
+  setting `AUTH_SECRET`: ship the two together.
+- **K8 — Railway variables, read 2026-10-24 (names only).** Three facts the
+  record had wrong or did not have:
+  - `PLATFORM_SETTLEMENT_KEY` is present but EMPTY. The door has no payout
+    signer, so every outbound intent (seat refunds and sweeps, campaign
+    payouts and refunds) records and stays PENDING (`settlement.js`). Among
+    them are buried-seat refunds the old double-refund bug may have inflated
+    (U2): audit them before the key is filled.
+  - `ESCROW_CONTRACT_ADDRESS` is present but EMPTY, and that does not turn
+    escrow off. `server.js` hands `createEscrowChain` the variable or else
+    `defaultContractAddress(CHAIN_ID)`, the recorded deployment
+    (`contracts/deployments.json`). `ESCROW_ATTEST_KEY` and
+    `ESCROW_OPERATOR_KEY` are set, so escrow mode is LIVE on production
+    through that address. Kept on purpose (DECISIONS, 2026-10-24).
+  - No `LK_*` variable exists. The LiveKit breaker runs on its defaults
+    (`livekit-breaker.js`: 400 min/day, 4,500 min/month) before and after this
+    round's `envNum` change, which reads unset as the default exactly as the
+    old reader did.
+
+  Delete or fill the two empty variables (launch-readiness retest row 63).
 
 ## L — Backer's bounty page: revisit, re-up, top up (owner, open 2026-10-23)
 
@@ -3792,3 +3842,956 @@ Campaigns already carry the half-baked signal in all but name (aired needs
 the keyed overlay + on air). Open: the badge component, where the label
 lives on the pool and the campaign record, and whether a backer can require
 a minimum tier when pledging.
+
+## P — Cross-cutting housekeeping: what is left (open 2026-10-24)
+
+**Verdict:** the `data/` ignore hole is closed (`data/*` with `!data/.gitkeep`
+in `.gitignore`), the passkey bundle can no longer be rebuilt into `public/`,
+and numbers in env vars have one reader, `envNum` (`env-num.js`), which every
+module that reads one now uses except `server.js`. Left: three changes that
+alter behaviour, three duplications, two owner calls. `_gate-cross-cutting.mjs`
+35/0.
+
+- **P1 — `server.js` still reads its numbers the old way** (this round's
+  integration list). `SEAT_ESCROW_REVIEW_MS ?? …` reads `''` as a 0 review
+  window; `SEAT_ESCROW_SWEEP_MS || …` reads a non-number as NaN, which
+  `setInterval` runs every 1 ms; `SEAT_ESCROW_TAIL_MS`, `TICK_SECONDS` and
+  `PASSKEY_TICK_SECONDS` read through `||`. None is live today: no `.env` or
+  `.env.example` line sets one empty, and the two empty Railway variables (K8)
+  are not numbers. Adopted this round: `bounty-claim.config.js` (64 reads),
+  `seat-escrow.js`, `rooms-store.js`, `guest-whitelist.js`,
+  `campaign-engine.js`, `livekit-breaker.js`, `livekit-lazy.config.js`,
+  `airing-posters.js` (`POSTER_VOD_WAIT_MS` only; DECISIONS).
+  **Landed 2026-10-24 (integration pass):** `server.js` reads
+  `TICK_SECONDS`, `PASSKEY_TICK_SECONDS`, `SEAT_ESCROW_TAIL_MS`,
+  `SEAT_ESCROW_REVIEW_MS`, `MPP_STALE_MS` and `LIVEKIT_SEAT_GRACE_S` through
+  `envNum`, and `SEAT_ESCROW_SWEEP_MS` with a 5000 floor. Still read the old
+  way: `FOLLOW_POLL_MS`, `FOLLOW_OFF_CONFIRM_MS`, `POSTER_SWEEP_MS` and
+  `SEAT_RECONNECT_GRACE_MS` (a non-number reads as the default), and
+  `PENDING_CAMERA_TIMEOUT_MS` (`Number(x || d)`: a non-number is NaN, so a
+  paid seat's camera timer would fire at once). None is set that way today.
+- **P2 — Config built at import misses `.env`.** `breakerConfig`,
+  `lazyConfig`, `bountyConfig`, `seatConfig`, `airing-posters.js`
+  `VOD_WAIT_MS`, bounty-store's `DATA_DIR` and livekit-activity's ledger path
+  are built when the module loads, before `server.js` calls
+  `process.loadEnvFile()`. A value kept only in a local `.env` is ignored.
+  Production is unaffected: Railway sets real variables, and `.env` sets no
+  `DATA_DIR`. Fix: lazy reads (the cc-37 class). Housekeeping and stores both
+  found it.
+- **P3 — Twelve server fetches have no timeout (cc-5)** [behaviour].
+  `auth.js` (seven: token exchanges and profile reads),
+  `attestation/twitch-helix.js` (two), `attestation/x-api.js`,
+  `privy-identity.js`, `ops-alerts.js`. A stalled endpoint holds an OAuth
+  callback for undici's 300 s `headersTimeout`. Proposed: 15 s on token
+  exchanges, 8 s on metrics. Re-run `_gate-privy-auth`,
+  `_gate-identity-account`, `_gate-x-claims`.
+- **P4 — One sliding-window limiter, written twice (cc-32)** [behaviour:
+  memory and timing]. `campaign-routes.js` folded its three into one helper,
+  `perMinute`; `dashboard-routes.js` `unlockAllowed` is the other copy. Both
+  prune the whole Map on every call once it holds more than 5,000 keys:
+  0.5 µs a call below that, 139.8 µs above (measured on the real
+  `unlockAllowed`). A shared helper must keep both semantics (`perMinute`
+  short-circuits, so a refused per-campaign hit is not counted globally;
+  `unlockAllowed` counts both keys on every call, on purpose) and prune at most
+  once per window. Do not verify with `_gate-dashboard-phase1` (T7).
+- **P5 — Three JSON request helpers in `web/lib` (cc-36)** [behaviour: error
+  text]. `bounty-api.ts` throws a plain `Error` and drops `status` and `hint`;
+  `api.ts` appends " — hint"; `campaigns-api.ts` has its own 404 wording.
+  Merge them with options that keep each module's message.
+- **P6 — Relative time has two forms (cc-35).** `3m ago` is the pick
+  (DECISIONS); `web/lib/rules.ts` still says `3 min ago`. Web.
+- **P7 — The address regex is inlined 16 times, the 64-hex regex 10 times
+  (cc-34).** The helpers now exist (`token-utils.js` `isEvmAddress`,
+  `isTxHash`, `sameAddress`); the inlined copies are not switched over. Keys go
+  through `normalizeKey`, never `isTxHash`.
+- **P8 — X2 stays, on purpose.** `src/passkey-wallet.mjs`,
+  `@circle-fin/modular-wallets-core` (26 packages, 12 MB) and Gate H's pin
+  entries for `src/passkey-wallet.mjs` and `_gate-gas-floor.mjs` remain,
+  because `_gate-gas-floor` and `_gate-phase1` are not retired (DECISIONS,
+  2026-10-24). Only the build script went.
+  **Update 2026-10-24 (harness lane): superseded.** `_gate-gas-floor` and
+  `_gate-phase1` are retired after all, with `_gate-phase2`,
+  `_gate-ui-part-a`, `_gate-pin`, `_gate-stability`, `_verify-join` and
+  `scripts/probe-tempo-write.mjs`: none could run as written (DECISIONS, the
+  audit fix round: harness). `_gate-gas-floor.mjs` left Gate H's pin.
+  `src/passkey-wallet.mjs`, its SDK and its pin entry stay; the file now has
+  no importer, and its header still names the deleted gate (X7).
+- **P9 — `design-assets/` is not ignored (owner call).** 1.45 GB untracked
+  there at the audit's count, mixed with 35 tracked files, five of them
+  launch-video `.mp4` finals. Candidate rules: `design-assets/**/shots/` (no
+  tracked file sits under any `shots/`), and `design-assets/launch-video/*.mp4`
+  with `!` lines for `launch-video-v1-assembly.mp4`, `shotA-couch-yank-v1.mp4`,
+  `shotB-inside-stream-v1.mp4`, `shotB-inside-stream-v2.mp4`,
+  `stinger-preview-v1.mp4`.
+- **P10 — `docs/legacy/README.md` still lists `/index.html` as Live.** The
+  page was deleted in `944aa2c`; Gate H asserts it 404s.
+  **Landed 2026-10-24 (docs pass):** the page says Gone (944aa2c).
+- **P11 — Not done this round:** cc-42 (delete `public/rewards.js`; delete
+  `fixtures/bounty-partial.json` with the `_gate-bounty-claim.mjs` header line
+  that names it); cc-43 (`MORNING_CHECKLIST.md` names `npm run gate:tokens`,
+  which does not exist); `git gc` for four `tmp_obj` files, with OneDrive
+  paused (owner).
+- **P12 — Two gates type into a field no page renders.** `_gate-lk-phase2` and
+  `_gate-phase2-hostfeed` type into `#manage-room-id`, which only
+  `megachat-settings.tsx` rendered, and no page mounted it. It is deleted this
+  round with nine other unreachable components (last copy:
+  `git show 1f06bef:web/components/megachat-settings.tsx`). Both gates also
+  need the seat token (T7).
+
+## Q — Identity and sessions: what is left (open 2026-10-24)
+
+**Verdict:** one X account can no longer lend its numbers to another Holler
+account, sessions expire, and the forgeable legacy cookie is gone (K7 update).
+Left: switching X accounts, "log out everywhere", an account page that says
+nothing when a link is refused, and per-link attributes on `/api/account`.
+`_gate-identity-account.mjs` 63/0; 65/0 once the classifier change and its
+gate case land together (this round's integration list).
+
+**Landed 2026-10-24 (integration pass):** the classifier change and its gate
+case, together: each link is classified on its own numbers and the most
+cautious tier wins (`classifier.js`; DECISIONS, the audit fix round: identity).
+`_gate-identity-account.mjs` 65/0.
+
+- **Q1 — A second X account lent its follower count (found and fixed
+  2026-10-24).** Signed in with X account A, authorising X account B wrote B's
+  attribute records onto A's link (`setLinkAttributes` found the link by
+  provider only) and stored B's token under the account: one big X account
+  made any number of Holler accounts eligible for the same campaign (on HEAD,
+  250,000 followers on both accounts, both eligible). The same callback
+  refreshed nothing when the SAME X account re-authorised (ci-4). Now: a
+  different id of a provider already linked is refused before any read or
+  write (`?link_error=provider_linked`; no attributes, username or token); the
+  same id refreshes attributes and username; a link error after the attribute
+  read redirects with its reason and stores no token; `setLinkAttributes`
+  refuses records about another login (`{ platformId }`, 409), and the
+  campaign engine's `check()` passes it. Gate: `_gate-identity-account.mjs` I
+  (8 cases).
+- **Q2 — X account switching is not possible (owner).** By Q1's rule a
+  different X login is refused while one is linked. An account with two links
+  can disconnect X and connect the other (the token goes with it; campaign
+  claims stay bound to the old X id). An X-only account cannot switch at all:
+  its X link is its last and cannot be disconnected (409 `last_link`). Needs a
+  replace-link flow and a rule for claims bound to the old id.
+- **Q3 — The account page says nothing for `?link_error=` or `?linked=`.** No
+  file under `web/` reads either parameter, so a refused switch (Q1) or an
+  `already_linked` refusal is silent to the person. Web.
+  **Landed 2026-10-24 (web lane):** the account page says each answer once,
+  in words, in Connections, then takes it off the URL
+  (`web/components/account/account-page.tsx`; V1).
+- **Q4 — Sessions last 30 days and cannot be revoked.** A session is
+  `{accountId, iat}`, refused server-side when older than
+  `SESSION_MAX_AGE_MS` (30 days), with no `iat`, or dated more than a minute
+  ahead (`auth.js`). Open: a per-account session epoch for "log out
+  everywhere"; logout clears only the browser's copy.
+- **Q5 — X token holders: dead and unreadable rows are skipped (fixed
+  2026-10-24).** A refresh X refuses (400/401) marks the row dead: no further
+  POSTs, and `holdersByXUserId` stops listing it until the holder signs in with
+  X again. A 5xx, 429, timeout or network error never marks it. A row the
+  current key cannot open is not listed (every row, right after an
+  `AUTH_SECRET` rotation) but stays on disk. Before: 10 then 20 POSTs at 3.1 s
+  per check; after: 10 then 10 (0 ms). Cost: `holdersByXUserId` opens every
+  row, 4.0 ms a call at 1,000 holders, once per check (`x-token-store.js`).
+- **Q6 — Five scripts seeded `identities.json`, which no server has read since
+  2026-09-19.** Their legacy cookies resolved to nobody, so every signed-in
+  case in them ran signed out. Fixed: `_gate-polish`, `_verify-bounty-oauth`,
+  `_verify-twitch-prefill`, `_diag-ui-shots` (they seed `accounts.json`
+  through `seedAccountForLink`). Open: `_gate-x-claims.mjs` (on HEAD's
+  identity code B1–B5 fail signed out, then a TypeError; 16/0 with the
+  identity lane's patch, on this round's integration list).
+  **Landed 2026-10-24 (integration pass):** `_gate-x-claims.mjs` seeds
+  `accounts.json` in its own data dir and seals against it: 16/0.
+- **Q7 — `/api/account` still returns `attributes` merged across platforms**,
+  the same mixing the classifier change removes. The account page shows only
+  `attributeCount` and the classification, so nobody sees it. Follow-up:
+  attributes per link.
+- **Q8 — Text that says no X token is stored** (stale since `bd741f1`): two
+  comments in `auth.js`'s X callback, `docs/internal/account-model.md`
+  ("Freshness"; its linking and classifier sections also need Q1's rule and
+  per-link reads), `docs/technical/data-model.md`,
+  `docs/internal/limitations-register.md` L49. X tokens ARE stored, encrypted
+  (`x-token-store.js` `saveXToken`).
+  **Landed 2026-10-24 (integration pass and docs pass):** the two `auth.js`
+  comments, `account-model.md`, `data-model.md` and L49 now say the X token is
+  stored, encrypted.
+- **Q9 — `_gate-privy-auth.mjs` forges the retired cookie shape.** Its "forged
+  cookie is nobody" case forges `{provider, platformId}`, now refused for two
+  reasons. Forging `{accountId, iat}` with a bad signature keeps the case about
+  the signature. Optional.
+  **Landed 2026-10-24 (integration pass):** it forges `{accountId, iat}` for a
+  real account beside a correctly sealed control, and compares
+  `accounts.json` (it compared `identities.json`, which no server writes, so
+  "nothing minted" could not fail): 17/0.
+
+## R — Bounty: what is left (open 2026-10-24)
+
+**Verdict:** every Tier A bounty finding is fixed, each with a gate case that
+fails on the pre-fix tree, and the identity default flipped: a claim now needs
+the real platform login, so YouTube, Rumble and pump.fun handles cannot be
+claimed at all until those platforms get an ownership check. Left: two owner
+calls, stub-era claims on production, three deferrals, cleanups. Settlement is
+still stub-only.
+
+- **R1 — Fixed this round (record).** Stored XSS through the clip type (N1:
+  `isVideoMime` anchored like `letters.js`, enforced on store and on read;
+  media served with `nosniff`, an inline disposition and
+  `Cache-Control: private, no-store`). Clip privacy (8: `isPublicClip`).
+  Overlay writes need the room key, the streamer's session or the admin key
+  (2: `overlayReportAuthorized`). The real identity verifier by default (9,
+  N4). The verified owner's re-entry rebinds the payee (N3). `/contribute`
+  takes the contributor from the session (7a). Operator-only evidence (1:
+  `frames`, `vodUrl`, `vodStartMs`, `sourceMode` need the admin key and always
+  open a review). A reject is sticky for machines (6). An approved review pays
+  the evidence it was opened on (5). Both `SOURCE_UNAVAILABLE` exits record an
+  attempt (20). One OPEN session per claim (3). `/end` on a CLOSED session is a
+  no-op (17). Recorders stop at 12 h or after 30 min of failed polls, at most
+  50 at once (11, part). Expired captures purge on the pledge sweeper (12,
+  part). One pledge per take (web-5, `attemptId`). The frames route refuses
+  unknown or finished contributions and bounds its map (14, part; R20). Gates:
+  `_gate-bounty-auth` 51/0, `_gate-bounty-claim-audit` 19/0 (new),
+  `_gate-run-b-pipeline` 15/0, `_gate-overlay-room` 18/0, `_gate-obs-ui` 16/0,
+  `_gate-record-flow` 23/0, `_gate-bounty-claim` 105/0 on the last full run
+  (98/0 on the final one, section G refused by a stale build). With the seven
+  product files put back to HEAD: `_gate-bounty-auth` 28/23, the audit gate
+  6/13, `_gate-run-b-pipeline` 12/3, where the cookie-only verify released
+  12.5 (bounty-1 reproduced).
+- **R2 — YouTube, Rumble and pump.fun handles cannot be claimed**
+  (`REAL_UNSUPPORTED_PLATFORM`) until each has an ownership proof. That
+  includes the demo-board pools on those platforms (FlockFantasy is YouTube).
+  Under the stub, anyone could claim them.
+- **R3 — Stub-era claims on production (owner).** A claim approved as
+  `STUBBED_APPROVAL` bound a payee typed by whoever claimed. The ledger's
+  `IDENTITY_CHECK` rows with `stubbed: true` list them. Void each
+  (`/api/bounty/admin/override`) or let the real owner's re-entry rebind it
+  (R1, N3).
+- **R4 — Forfeits go to the streamer who rejected (bounty-7(c), owner
+  call).** The withheld half of a repeat policy rejection goes to the
+  rejecting streamer's pool, and the streamer's reject counts as human review
+  (this file, 2026-07-27, "Rejection reputation"; `bounty-claim.config.js`
+  `rejectionRefundFraction`; `rejectionPolicy` in the pledge response).
+  Documented design, but the reviewer is also the beneficiary. Options: require classifier
+  confidence at the floor, or an admin review, before a strike or forfeit; or
+  refund the withheld share, or hold it for an admin.
+- **R5 — Real playbacks never freeze (bounty-4, deferred on an owner
+  call).** `makeClipHooks.onClipEnd` does not call `scheduleFreeze`. Wiring it
+  starts real disk growth: pump.fun capture needs no yt-dlp, and one freeze is
+  about 28 MB. Retention runs at 14 days (`BOUNTY_CAPTURE_RETENTION_MS`);
+  there is no volume budget. Owner: a retention period or a byte cap on
+  `bounty-captures/`; then wire it and re-run `_gate-self-capture`,
+  `_gate-capture-stall`, `_gate-first-airing`, `_gate-stream-context`.
+- **R6 — `spawnSync` ffmpeg, ffprobe and yt-dlp on the event loop (bounty-10,
+  deferred).** `frame-sources.js`, `bounty-ocr.js`. Dormant in production,
+  which has none of the tools. Before any is installed: async `execFile` with
+  timeouts behind a one- or two-job queue.
+- **R7 — Caller strings still reach ffprobe/ffmpeg (bounty-1, defence in
+  depth).** Only the operator can supply one today. Next: `frame-sources.js`
+  rejects any path outside the capture and work dirs; `bounty-confidence.js`
+  names `'operator'` instead of falling to `UNKNOWN_FRAME_ORIGIN`.
+  `session.watchUrl` (YouTube, Rumble) is still client-supplied at session open
+  and reaches the extractors.
+- **R8 — Capture does not stop when the platform says the channel is
+  offline** (bounty-11, remainder). Only the age, error-run and active caps
+  exist.
+- **R9 — A released clip is never purged** (bounty-12, remainder).
+  `expiredClips` and `purgeForHandle` have no caller, frame PNGs are not
+  unlinked after `findCode` (`frame-sources.js`), and the 2 GB clip store
+  still fills.
+- **R10 — The `/program` fold is O(n²)** (bounty-13): 1,000 pools take 343 ms.
+- **R11 — Boot-seeded demo pools say `seeded:false`, and `realValue` counts
+  `seed:` money** (bounty-15). Fixing it re-baselines the totals in
+  `_gate-bounty-program`.
+- **R12 — The `handleKey` platform allowlist belongs in `bounty-store.js`**
+  (bounty-16).
+- **R13 — Cleanups** (bounty-18/19): the dead WALL_CLOCK branch,
+  `toleranceMs`, four stale comments, two copies of `appToken()`,
+  `parseTwitchDuration` twice, the handle rule and the DEMO list duplicated.
+- **R14 — The lapsed-claim wedge (low).** If a verified owner's claim lapses
+  (`BOUNTY_CLAIM_TTL_MS`, 14 days) while the handle is past CLAIM_PENDING, the
+  owner's next claim gets 409 `illegal_transition`; re-entry hands back only an
+  unexpired VERIFIED claim. No impostor can create this state under the real
+  verifier; the owner's own lapse still does.
+- **R15 — Two claims in one room.** Opening a session closes only the same
+  claim's older sessions. Two claims bound to one room (one broadcast,
+  multistreamed) are both OPEN; `openSessionForRoom` serves the newest, so the
+  other earns nothing.
+- **R16 — Rehearsal overlay URLs are unkeyed.** The `_rehearsal-*` scripts
+  use `?bounty=` or `?bountyRoom=` without `&k=`, so their sessions carry no
+  badge or env evidence. Switch them to `air.body.overlayPath`, as
+  `_setup-overlay` now does, when next run.
+- **R17 — The approval queue shows `from acct_…`.**
+  `web/components/bounty/approval-queue.tsx` renders the contributor's account
+  id to the streamer; the pledge's display name would serve. Web.
+- **R18 — The pledge `attemptId` dedupe is in memory.** A restart inside its
+  10-minute window lets one duplicate through. Fine while settlement is a stub;
+  make it durable before real settlement.
+- **R19 — A pool can pay out more than it holds (money-9, latent).**
+  `bounty-escrow.js`: $1 + $100 in, release to A, refund B → $107.07 out of a
+  $101 pool, remaining -6.07 (the audit's `bounty-overpay.mjs`). Fix: allocate
+  each release to contributions pro rata, refund only a contribution's
+  unreleased remainder, assert releases + refunds ≤ contributions in `getPool`.
+  Latent while settlement is a stub; must land before Run B. Unowned this
+  round.
+  **Landed 2026-10-24 (integration pass):** a release is allocated to
+  contributions pro rata and recorded on the RELEASE row (`meta.allocations`),
+  and a refund returns only a contribution's unreleased remainder, never more
+  than the ledger balance (`bounty-escrow.js`, `poolBalances`).
+  `_gate-integration.mjs` M3. A pool paid under the old arithmetic reads
+  `overdrawn: true` and pays nothing more (W6).
+- **R20 — Frames over 100 KB never reach the frames route** (bounty-14,
+  server half). The global `express.json()` in `server.js` answers 413 before
+  the route's own 6 MB parser runs; client frames (12 × 320 px JPEG) are often
+  bigger, so moderation silently runs frameless. On this round's integration
+  list; re-run `_gate-record-flow`.
+  **Landed 2026-10-24 (integration pass):** the global JSON parser skips
+  `/api/bounty/clip/:id/frames`, so the route's own parser reads the frames
+  (`server.js`). `_gate-record-flow` 23/0 on the integration run; its last
+  run refused a stale build (G0), so it is owed one run on the fresh build.
+- **R21 — Gates that relied on the stub.** `_gate-bounty-program` (38/3; 41/0
+  with the flag), `_gate-yt-rumble` (fails; 32/0 with it) and
+  `_gate-pumpfun-pdt` need `BOUNTY_IDENTITY_STUB: '1'` in their server env.
+  These claim without it and should get it to stay byte-identical:
+  `_corpus-run-b.mjs`, `_diag-decoder-fan.mjs`, `_gate-broadcast-delay.mjs`,
+  `_gate-capture-hardening.mjs`, `_gate-decoder-codes.mjs`,
+  `_gate-quality-and-platform.mjs`, `_gate-self-capture.mjs`,
+  `_gate-stream-context-http.mjs`, `_gate-vod-calibration.mjs`,
+  `_verify-bounty-e2e.mjs`, `_verify-bounty-ui.mjs`. `_verify-bounty-e2e` must
+  also fetch an unapproved clip and `/clips` storage with the streamer cookie.
+  On this round's integration list.
+  **Landed 2026-10-24 (integration pass):** every script listed carries the
+  flag; `_gate-bounty-program` 41/0, `_gate-yt-rumble` 32/0, and
+  `_gate-pumpfun-pdt` 40/0 once the harness lane moved its E2 expectation to
+  the 48-character cap. `_verify-bounty-e2e` fetches the unapproved clip's
+  media with the streamer's cookie.
+- **R22 — The bounty admin page signs in as the site owner (N2), once
+  `bounty-auth.js` lets the ADMIN tier accept `isSiteAdmin`.** Proven on a
+  copy (52/0 with the patch; 51/1 without). `/bounty/admin` already sends
+  same-origin cookies, so `web/` needs no change. On this round's integration
+  list.
+  **Landed 2026-10-24 (integration pass):** the ADMIN tier accepts
+  `isSiteAdmin` (`bounty-auth.js`); `_gate-bounty-auth` 52/0.
+
+## S — Campaigns: what is left (open 2026-10-24)
+
+**Verdict:** the sweep is about 25 times cheaper at scale (`sync()` at 1,000
+campaigns × 50 claims: 11,864 → 458 ms), a Call in counts only from a seat
+that is live, a restart no longer strands or overpays a Call in, drafts are
+capped, and a stuck funding is written up once per reason. Left: the claims
+file's whole-file rewrite, the engine split, remainders.
+`_gate-campaigns.mjs --engine-only` 215/0; full 273/0 before other lanes'
+in-flight edits reached the tree, 270/2 after (D5 waited on the seat token,
+since minted; D7 on a fresh build).
+
+- **S1 — Fixed this round (record).** ci-3, a Call in across a restart, and
+  NEW-1, a Call in counts only from a live seat (both DECISIONS); ci-2, drafts
+  capped, settled campaigns skipped, and `payAccount` for the payout-wallet
+  route; ci-18, an unbound reservation goes back after 10 minutes and `bind()`
+  gives back a slot it refuses; ci-8, a stuck funding written up once per
+  reason and re-asked every 10 minutes; ci-5, a route close sweeps only its own
+  campaign; the two grace variables read through `envNum` (a NaN close grace
+  made every `close()` throw); Q1's `platformId` passed by `check()`.
+  Measured: 100 × `listClaims` at 100 × 50, 77 → 6 ms; `publicView` at
+  1,000 × 50, 13.0 → 0.6 ms; a stuck funding over 60 reconciles, 60 ledger
+  rows → 1. Mutation proof 21/21.
+- **S2 — Every claim write still rewrites the whole claims file.** At
+  1,000 × 50, `campaign-claims.json` is 71 MB and one `putClaim` (every
+  reserve, bind, advance, release) takes about 196 ms of the event loop. Needs
+  per-campaign claim files or SQLite: owner decision 5 in the audit's fix
+  plan. `campaign-store.js` can take the shared atomic writer as it stands
+  (T6).
+- **S3 — The `campaign-engine.js` split (ci-14) is deferred.** 1,945 lines in
+  one closure. Do it as its own change after this round lands, re-pointing the
+  mutation runners (they patch the engine by content) in the same commit.
+  Shape unchanged from the audit: funding, X spend, claims plus the seat
+  clock, views; the engine keeps the composition and the sweep.
+- **S4 — ci-16 remainders.** `followedByFromSet`'s `enabled` flag is still
+  read although `normaliseRules` only stores true (a stored field: removing it
+  needs a read-side fallback for old rows). X's "left this out" has two forms,
+  explicit null and absent (identity's call). The five X fetchers share one
+  skeleton, and x-api and twitch-helix `fetchAttributes` have no timeout on
+  the sign-in path (P3). Four constant-time-compare idioms live in other files.
+  x-api `lookupConnection` computes `byId.followedBy`, which nothing reads.
+- **S5 — `findFundingTransfer` re-reads from its start block every time**
+  (ci-8 part 4, `server.js`, low). The 10-minute back-off bounds it to one
+  growing-span Transfer-log read per stuck campaign every 10 minutes. Fix:
+  cache where each search ended.
+- **S6 — One campaign that throws aborts the rest of that sweep**
+  (unchanged). `start()` logs it and the next sweep tries again. Fix: a
+  try/log around each `sweepCampaign(id)` in `sync()`.
+- **S7 — The seat-liveness check needs one replica.** `activeSeats` is per
+  process: a second replica would read every seat of the first as gone and
+  give back its slots. Same constraint as the funding lock (N21;
+  `docs/internal/campaigns.md`).
+- **S8 — No screen renders a stuck funding's elapsed time.** The stored
+  `needsPerson` reason no longer carries minutes; a view that shows it should
+  compute them from `funding.at`. No web code reads `needsPerson` today.
+- **S9 — Campaign amounts should parse exactly.** `toAtomic`
+  (`token-utils.js`) still truncates excess decimals by default (DECISIONS,
+  money); the engine should pass `{ exact: true }` for the reward and the
+  budget, so a reward with more decimals than its token is refused. On this
+  round's integration list.
+  **Landed 2026-10-24 (integration pass):** both parse with `{ exact: true }`
+  (`campaign-engine.js`), and the refusal names the token's decimals.
+- **S10 — `attestation/index.js` says a campaign check refreshes the link
+  first.** It refreshes only when the last X read is over a day old, and a
+  field X leaves out is a known-missing null that fails closed
+  (`campaign-engine.js` `check`).
+
+## T — Stores: what is left (open 2026-10-24)
+
+**Verdict:** a store file that cannot be read now refuses writes instead of
+reading as empty and being saved over, every write is atomic, bursty writes
+coalesce (≤ 1 s), the pruner keeps password rooms, and migrations become a
+report at every boot. Left: a hard kill inside the 1 s window, memory ahead of
+disk after a failed write, bounty archiving, two stores not yet on the helper,
+and gates that drifted from the product. Nine new store gates, each failing on
+a copy with this lane's files at HEAD.
+
+- **T1 — Fixed this round (record).** stores-1 (`isOrphanRoom`: no owner AND
+  no password; the legacy password migration touches only the default room);
+  stores-2 (`json-store.js`: atomic and refuse-on-unreadable for rooms,
+  whitelist, bounty, airings, LiveKit state and sessions, the boot marker);
+  stores-3/server-1 (visibility index and latch: `shouldCharge` at 10,000 rows,
+  29.8 ms → 0.0001 ms a call); stores-6 (migrations as pure functions);
+  stores-7 (`updateRoom` validates, then applies); stores-9 (a 27,000-code
+  board: 20 rotations were 20 writes, 154 MB, now 1 write within 1 s; 20
+  airing moments, 20 rewrites → 1); stores-10 (`clampRoomName`); stores-11
+  (`roomCount`); stores-12 to 14; stores-15 (no `changeme` fallback in code);
+  server-6 part; server-7 dashboard half. Gates: `_gate-store-atomic` 26/0,
+  `_gate-rooms-store` 27/0, `_gate-dashboard-update` 7/0,
+  `_gate-whitelist-store` 7/0, `_gate-bounty-board` 13/0,
+  `_gate-airings-store` 10/0, `_gate-visibility-index` 12/0,
+  `_gate-livekit-state` 9/0, `_gate-migrations-boot` 11/0. The `server.js`
+  wiring (boot marker, migrations at boot, SIGTERM flush, follow loop,
+  visibility check at boot, sweeps that stand down on a refused rooms store,
+  WebSocket `maxPayload`) is on this round's integration list; `recordBoot()`
+  must land with `rooms-store.js`, or `/api/health` persistence evidence stops
+  advancing.
+- **T2 — A hard kill inside the 1 s window makes a playing bounty session
+  read `evidence_diverged`.** The evidence log has every code (fsync per row);
+  `bounty.json` can lack the last second (`_gate-bounty-board` K1: evidence 3,
+  board 0). `reconcileSessionEvidence` compares counts and `release` returns
+  `skipped: 'evidence_diverged'` until a person reconciles. Fails closed;
+  settlement is stub-only. A SIGTERM no longer does this once the flush lands;
+  SIGKILL, OOM or a host crash still can. Follow-up: rebuild the cached windows
+  from evidence on load.
+- **T3 — A failed write leaves memory ahead of disk.** Every store mutates,
+  then saves; if the atomic write throws (ENOSPC, EIO) the change is served
+  until restart and the next good save persists it. Pre-existing, unchanged.
+- **T4 — Atomic writes cost about 2.6 ms each** here (fsync + rename, 20 KB;
+  in place was 0.14 ms). A pledge writes the board two or three times:
+  4–5 ms → 15–20 ms. The price of refuse-on-unreadable.
+- **T5 — Bounty archiving is deferred (stores-9).** CLOSED sessions still
+  accumulate in `bounty.json`; the dispute window and the collision set
+  (archived codes must stay in it) need a design.
+- **T6 — Two stores and one caller are not on the helper yet.** `accounts.js`:
+  a torn `accounts.json` still reads as empty, so a sign-in re-mints an account
+  for a person whose record is unreadable. `campaign-store.js`: a torn
+  `campaigns.json` reads as "no campaigns", and the next save erases every
+  funded one. `bounty-watermark.js` should ask `isCodeIssued` instead of
+  rebuilding the issued set on every rotation. Exact patches on this round's
+  integration list.
+  **Landed 2026-10-24 (integration pass):** `accounts.js` and
+  `campaign-store.js` are on `createJsonStore` (atomic writes; an unreadable
+  file refuses writes, checked before any change), and `bounty-watermark.js`
+  asks `store.isCodeIssued`. The docs pass found a third store this entry
+  missed, `x-token-store.js`; it is on the helper too (Y1).
+- **T7 — Gates out of date with this round's product changes.**
+  `_gate-phase4-handles` 12/7 (expects a 302 for `/<handle>`; the join page
+  now serves in place, 200). `_gate-first-airing` B3 (expects an unkeyed
+  overlay path; `&k=` has been right since N14). `_verify-bounty-oauth` K
+  (expects `REAL_WRONG_PROVIDER:twitch`; the verifier has returned
+  `REAL_NO_KICK_LINK:twitch` since before this round). `_gate-lk-phase1`,
+  `_gate-lk-phase2`, `_gate-phase2-hostfeed` and the dust gates
+  `_gate-mpp-clientpath`, `_gate-p1-features`, `_gate-escrow-seat`,
+  `_gate-tempo-phase2`, `_gate-tempo-phase3` send `register_seat` /
+  `camera_ready` without the seat token. `_gate-dashboard-phase1` boots a dev
+  server with no `DATA_DIR`, so it writes and prunes the repo's real
+  `data/rooms.json`: give it a scratch `DATA_DIR` through `startGateServer`
+  before anyone runs it again (N25).
+  **Update 2026-10-24 (integration pass):** fixed: `_gate-first-airing` B3
+  (31/0), `_verify-bounty-oauth` K (17/0), the seat token in every gate
+  listed (the five dust gates edited, never run), `_gate-dashboard-phase1` on
+  its own scratch server (the repo's `data/rooms.json` was untouched after
+  the run). Left: `_gate-phase4-handles` (16/1: its browser section refused
+  a stale build), and the room-unlock form the LiveKit gates type into (X3).
+- **T8 — Pages that now say something false** (for the docs pass):
+  `docs/technical/running-it.md` and `docs/features/create-room-and-layout.md`
+  (the pruner removes only rooms with neither an owner nor a password);
+  `.env.example` (`ROOM_DEFAULT_PASSWORD=changeme` ships as a value: blank it;
+  the `KEEP_ORPHAN_ROOMS` comment; add `MIGRATE_AT_BOOT`); `AUTH_TEST.md`.
+  `docs/internal/outstanding.md` O14 is updated in this merge.
+  **Landed 2026-10-24 (integration pass and docs pass):** all five say what
+  the code does; `.env.example` ships `ROOM_DEFAULT_PASSWORD` and
+  `MIGRATE_AT_BOOT` blank.
+- **T9 — One visibility-chain damage logs two latch lines**
+  (`overlay-visibility.js` beside `bounty-ledger.js`); gate V counts the
+  LATCHED line once. Drop one, or pass `log` to `createLedger`.
+  **Landed 2026-10-24 (integration pass, money H13):** `overlay-visibility.js`
+  no longer logs its own line; the ledger's one LATCHED line stands.
+
+## U — Money: what is left (open 2026-10-24)
+
+**Verdict:** the refund bug that recorded several times the real buried
+refund is fixed, a damaged money ledger now stops both doors instead of
+reading as empty, outbound transfers and escrow writes are signed ahead, cash
+watch-to-earn needs a sign-in and an allowlisted owned room, and a seat needs
+its token to register or go live. At risk, in order: the seat-id-only HTTP
+routes (U3, HIGH, unfixed), the inflated buried refunds already PENDING on
+production (U2), escrow seats a redeploy forgets (U4). No money moved this
+round: `PLATFORM_SETTLEMENT_KEY` is empty on Railway (K8).
+
+- **U1 — Fixed this round (record).** money-2: each tick is refunded at most
+  once (`refundedThrough`) and a seat's lifetime refunds are clamped to what it
+  accrued (hide/show every second: door refunds 89,000 / 59,000 atomic,
+  platform / escrow, were 930,000 / 570,000). money-10/N2: the flush takes
+  intents per signer, oldest first, interleaved (a refund behind 600 failing
+  reward intents goes out on the first flush, was the 13th). verify-1/D4: a
+  damaged ledger interior latches (`bounty-ledger.js` `ledgerHealth`,
+  `corruptMoneyLedger`), every read and append rethrows, no seq 1 is written
+  onto it, and both doors halt while a money ledger in their data dir is
+  latched (intents still record). D4 meter half: an unreadable visibility
+  chain charges nobody and the seat holds. A latched door no longer strands a
+  seat: the obligation is kept as `SEAT_DOOR_PENDING` and re-issued once at
+  boot. stores-4: incremental folds (100k rows: `seatRecord` 10.1 → 0.001 ms;
+  one direct-seat tick 38.1 → 5.2 ms). money-1: rewards identity from the
+  sealed cookie, cash only in allowlisted owned rooms, the payee is the
+  account's payout wallet, cash or credit, server bounds, a lifetime cap in
+  `data/rewards-ledger.jsonl`; the door disables a reward-pool key that
+  resolves to another signer (N4). money-3/6/7: `platform` and `rewardPool`
+  transfers signed ahead and recorded SENT before the send, exact receipts, one
+  send lock per account; this closes N20. money-4/11/N5: escrow writes signed
+  ahead, failed deposits read back from the chain, orphans attested 0/0
+  (`_gate-escrow-chain.mjs` 13/0, new, Tier 3). money-8: Gate H's stripper is
+  string-, template- and regex-aware, with 13 call idioms each proven on a
+  synthetic offender. money-13/cc-30: signed, exponent, multi-dot, empty and
+  junk amounts throw (`token-utils.js`). N1: `seat.ownerToken` minted at join,
+  returned as `seatToken`; `register_seat` and `camera_ready` require it. N3:
+  `_gate-rewards-part-b.mjs` boots through `startGateServer` with a scratch
+  `DATA_DIR` and keys blanked (it had failed since the Next migration: a
+  redirected POST became a GET). `SEAT_DETECTION_LAG_MS=0` is no longer
+  needed.
+- **U2 — Buried refunds already recorded on production may be inflated
+  (owner, before the key).** Every PENDING `seat:*:buried:*` intent in
+  production's `data/settlement.jsonl` written before this round may
+  double-count lag ticks. Nothing pays them while `PLATFORM_SETTLEMENT_KEY` is
+  empty (K8); the first flush after it is filled would pay them all. Compare
+  each with its seat's once-only figure, then pay or void by hand. Not
+  automated.
+- **U3 — Every seat-id-only HTTP route is the N1 hole again (HIGH, not
+  fixed).** `POST /api/leave/:seatId` ends any seat at once.
+  `POST /api/livekit/token` with `role: 'publisher'` mints a publisher token
+  for `seat:<id>`, so a visitor can join LiveKit AS a paid guest: LiveKit drops
+  the duplicate identity, the guest is cut off, the attacker's camera is on the
+  broadcast, and a campaign Call in counts it. `/api/seat/quality` and
+  `/api/seat/echo` are cosmetic. Seat ids are public (`/api/seats` lists every
+  seat). Fix: require `seatTokenMatches(seat, req.body?.seatToken)`
+  (`server.js`) on all four, and send the token from the join page's leave
+  beacon, LiveKit token, quality and echo calls, in one commit. On this
+  round's integration list.
+  **Landed 2026-10-24 (integration pass):** all four routes answer 403
+  `seat_token_mismatch` without the seat's token (`server.js`
+  `seatTokenMatches`), and the join page sends it on each, the pagehide leave
+  as a keepalive JSON fetch (`web/lib/join-page.ts`; the two ship in one
+  commit, or LiveKit guests get no publisher token). `_gate-integration.mjs`
+  A8 (52/0) asks all four without the token, and with it where it matters.
+- **U4 — Escrow seats live during a redeploy are never attested (found, not
+  fixed).** Seats live in memory; a redeploy loses them, `removeParticipant`
+  never runs, and at finalize the contract pays an unattested escrow's whole
+  cap to the streamer. Escrow mode is live on production (K8). Needs seat
+  persistence, or a boot-time attest from the seat ledger.
+- **U5 — Holler refunds come out of the platform wallet (owner decision).** A
+  Holler payment goes straight to the room's `cfg.payoutAddress` (the
+  streamer); every Holler refund (`letters.js` → `settlement.refund`, signer
+  `platform`) is paid by the platform wallet. Nothing records whether that is
+  intended. Options: (a) keep it, and account for it as a platform cost (a
+  ledger row or dashboard line per refund, and a cap); (b) hold Holler
+  payments at the door until the upload lands, release to the streamer on air,
+  and refund from the hold.
+- **U6 — The checksum v2 writer is one deploy away (stores-5).** This build
+  reads v1 and v2 (`sumV: 2`, sorted keys at every depth) and still WRITES v1.
+  Next deploy: write `sumV: 2` (one line in append), once this reader is the
+  rollback floor. Rolling back past this build after v2 rows exist would stop
+  every money ledger.
+- **U7 — Sign-ahead has still never run on chain** (N18, now wider: outbound
+  transfers and every escrow write too). Proven against stand-ins only
+  (`_gate-money.mjs` R5, `_gate-escrow-chain.mjs` E1). The live proof is a
+  dust run, owner-run: `_gate-escrow-seat` and `_gate-tempo-phase2`, after both
+  send the seat token (T7).
+- **U8 — The send lock does not cover everything.** mppx's own scheduled
+  settles (Tier 2) sign outside it, and the seat tick pull keeps
+  `writeContract` (viem reads its nonce), so a load-balanced RPC lagging right
+  after a payout could still hand it a used nonce.
+- **U9 — Direct-mode tick pulls are serialized per account.** One prepare +
+  send round trip per pull: fine at today's three seats a room, a queue at
+  dozens of direct seats.
+- **U10 — A viewer who signs in mid-page earns nothing until the rewards
+  socket reconnects.** Identity is read once, at the upgrade. The join page
+  should close and reopen the rewards socket after a sign-in completes. Web.
+  **Landed 2026-10-24 (web lane):** the rewards socket reopens after a
+  sign-in, opens only where the room rewards watching, and backs off 1 s
+  doubling to 15 s (`web/lib/join-page.ts`; V1).
+- **U11 — Gates boot `server.js` with the local `.env`'s real keys.**
+  `_gate-meter-pause` and several others; `startGateServer` does not scrub
+  keys. Points-only today, so nothing signs; a money case added there would
+  sign mainnet transfers.
+  **Landed 2026-10-24 (harness lane), for `startGateServer` gates:** every
+  name in `SENSITIVE_ENV`, and every name ending `_KEY`, `_SECRET`,
+  `PRIVATE_KEY` or `TOKEN`, starts blank in the child; `keepEnv` opts one in
+  by name (`_gate-helpers.mjs`). Still open for the self-booting files (X2).
+- **U12 — Money handoffs not in the tree when this was written** (this
+  round's integration list; close each as it lands): credit-join ownership
+  (money-14 / A8: a passkey join with `useRewardCredit` must come from a
+  signed-in account whose payout wallet is the body's address, and a token
+  credit whose token is not the payment token is refused); the key guard and
+  "set but is not a 0x-prefixed 64-hex key" log lines, by name (cc-3,
+  `signerAddress`, `keyProblem`); `rewards.payout` kept in the room config and
+  a 400 on out-of-bounds rewards; `/api/health` `ledgers` (`ledgerHealth()`)
+  and `moneyHalted`, and a `money_halted` pull ending a seat as
+  `ledger_corrupt`, not `out_of_funds`; each WebSocket message parsed once
+  (`rewardsSvc.handleMessage`). Also `bounty-settlement.js`'s stale "Run B
+  implements RealSettlement" comment.
+  **Landed 2026-10-24 (integration pass), every one:** `creditRefusal` (401
+  signed out, 403 another account, 409 a token reward that is not the
+  payment token); the key lines by name (`keyProblem`); `rewards.payout` kept
+  and a 400 `rewards_out_of_bounds` for an ENABLED cash or credit reward out
+  of bounds (`dashboard-routes.js`); `/api/health` `ledgers` and
+  `moneyHalted`; a halted pull ends the seat `ledger_corrupt`; each
+  WebSocket message parsed once (`attachRewards` `ownListener: false`); the
+  `bounty-settlement.js` comment. `_gate-integration.mjs` 52/0; with every
+  integration edit reverted on a copy, 39 of its cases fail and the 12 that
+  pass are the controls.
+
+## V — Web: what is left (open 2026-10-24)
+
+**Verdict:** a seat now goes LIVE, starts its meter and publishes only on the
+server's answer, a retried Holler or pledge take is charged once, and every
+seat call carries the seat token. At risk: the paid halves of those fixes are
+proven at the mechanism level only (V12; a dust run is the owner's call), and
+the join page still runs on module globals, so a second mount would revive
+the first one's sockets (V3: never link to /join with `next/link`). New gates:
+`_gate-web-fixes.mjs`, `_gate-typecheck.mjs`. Their browser halves, the CSS
+selector diff and the bundle re-measure wait on the fresh build (the web
+lane's second phase, running as this was written).
+
+- **V1 — Fixed this round (record).** web-2 (the page says LIVE only on
+  `seat_added` for its seat, or `initial_state` listing it; unanswered, it
+  asks again every 5 s); web-4 (one payment per Holler take, `attemptId`;
+  `letters.js` answers a repeat within 10 minutes from the letter it already
+  paid for); web-5 (one pledge per take, client half); NEW-1, client half (the
+  camera is a local preview until GO LIVE, `publishLivekitTracks`); the seat
+  token on every seat call (money H1/H3; the pagehide leave is a keepalive
+  JSON fetch, because `sendBeacon` can send only a safelisted type), and
+  `seat_refused` ends the seat with a sentence instead of stalling; web-1
+  (Privy loads lazily through `privy-bridge.tsx`; a chunk that fails to
+  download says "Sign-in could not load" instead of unmounting the page);
+  web-35/37 (one identity request and one `/api/config` per page,
+  `web/lib/identity.ts`, `web/lib/api.ts`); web-6/21 (the OBS visibility watch
+  starts when OBS accepts the password, `obs-password.ts`); the rewards socket
+  (U10); the account page's link answers (Q3); a kicked guest gets the setup
+  controls back; web-40 (the `?welcome=` toast, which could never show, is
+  deleted, and `auth.js` `withWelcome` with it); the CSS lane (`--font-mono`
+  is Space Mono; 795 → 765 classes, from 29 unused and 47 dead rules to none;
+  Pacifico no longer preloads 22,296 B on all 21 routes); the campaign
+  screens (web-8, -11, -23, -26, -27, -28, -38). What / why / undo for each:
+  DECISIONS, the audit fix round: web.
+- **V2 — The product header is hand-built 8 times** (web-16), one TSX and CSS
+  per page. One `<ProductHeader>` needs its own round, with computed-style
+  diffs at 4 widths × 2 themes.
+- **V3 — `web/lib/join-page.ts` runs on module globals** (web-18). A second
+  `initJoinPage` revives the first instance's sockets, and cleanup leaves meter
+  ticks, LiveKit and the camera running. No production impact today: every
+  /join link is a plain `<a>`. **Rule until fixed: never link to /join with
+  `next/link`.**
+- **V4 — The rewards socket is still a second WebSocket in reward rooms**
+  (web-32, rest). Merging it into the seat socket waited on the server parsing
+  each message once, which has landed (U12): unblocked.
+- **V5 — Two viem and noble copies ship** (web-33; Privy pins its own). Since
+  web-1 they cost only a sign-in. Forcing Privy onto our viem (`overrides`)
+  needs a Privy sign-in, embedded signing and an MPP join to prove, and the
+  join spends dust: owner.
+- **V6 — Every full page load by a signed-in user re-posts the Privy token**
+  (web-36), one server-to-Privy REST call each. web-35's shared identity
+  request takes the fan-out; the re-post itself waits for the auth owner.
+- **V7 — The two drawer dialogs on /legacy declare `aria-modal` but never
+  move, trap or restore focus** (web-43). Legacy surface only.
+- **V8 — Campaign client leftovers** (web-44 rest, web-45, web-46 rest): branches
+  for fields the server never sends (`autoModerated`, `payout.error`, the
+  `persist()` echo check), duplicated short-address and atomic formatters, the
+  hard-coded "48 hours" close grace, and the list row's `<a role="row">`, which
+  loses its link role (fix: a `role="row"` div with the link in the title
+  cell, in its own commit with screenshots).
+- **V9 — CSS leftovers** (web-31, web-47 rest, web-50 to web-53). `--neon-*`
+  inks used as button fills fail contrast in light mode on legacy surfaces
+  (`campaign-dashboard.tsx:152` 3.28:1, `hero.tsx:62` 3.05:1); the per-page
+  font-size patches and `.mcc-room-recovery` still live in `product.css`; the
+  strap-ink `color-mix` is written out at 11 sites; there are six switch
+  implementations; 7 of 25 `!important`s patch other components' classes;
+  `create-room.css` is stored minified (reflow it by hand in one isolated
+  commit, never prettier). `--hl-glow-rewards` has no reader and stays on
+  purpose: it is one of the five feature glow tokens.
+- **V10 — `font-mono` does not reach the bounty shell (owner call).**
+  `web/app/product.css:43`, unlayered, forces the UI face onto every `font-*`
+  class inside `.mc-product`, so the `font-mono` readouts on /bounty/s/… and
+  /bounty/mine stay Jakarta. Exempt `font-mono`, or not.
+- **V11 — Lint is deleted, not fixed.** eslint is not installed and no config
+  exists, so `npm run lint` ran nothing; the script is gone from
+  `web/package.json`, and the 21 `eslint-disable` comments in `web/` are
+  inert. Build-time type checking stays off; `_gate-typecheck.mjs` is the
+  check (DECISIONS, the coordinator's calls).
+- **V12 — The paid halves of web-2 and web-4 are proven at the mechanism level
+  only.** The MPP meter starts only in `goLiveNow`, which runs only on the
+  server's live answer (`_gate-web-fixes` J1–J3, on a free room); the paid
+  Holler retry is the free one's client path (J6), and the server dedupe is
+  proven with the stub payment step (L1–L8). A dust run of an MPP join through
+  a dropped socket, and of a paid Holler whose first upload fails, is the
+  owner's call.
+- **V13 — The Holler attempt dedupe is in memory** (`letters.js`, 10 minutes,
+  5,000 keys). A restart inside the window lets one repeat pay again; the 90 s
+  upload sweep refunds the orphan, as before. Make it durable if Hollers move
+  to a held payment (U5).
+- **V14 — Gate coverage.** No gate rendered `/dashboard/campaigns/*` before
+  `_gate-web-fixes.mjs`; the approve step (web-25) still needs a wallet and is
+  checked by hand. `_gate-lk-phase1/2/3` spend mainnet meter dust and were not
+  on the audit's dust list: treat them as owner-run.
+- **V15 — Stale gate premises.** `_gate-overlay-first-guest.mjs`'s header says
+  the first guest "has already published" when the streamer hits GO LIVE;
+  since NEW-1 the guest publishes at GO LIVE, so its F1–F3 still apply but its
+  premise, and `_gate-booth-audio` S13 ("a guest at Camera ready is not
+  played"), now hold trivially. (`_verify-join.mjs:434`, which clicked a
+  `#leaveBtn` no markup renders, is retired: X1.)
+- **V16 — `/c/<slug>` shows the deadline's UTC date without saying so**
+  (web-23 made both sides UTC). A viewer west of UTC sees tomorrow's date for
+  an evening deadline. Adding " UTC" is a copy change: owner.
+- Not repeated here: the approval queue's `from acct_…` is R17; Holler refunds
+  from the platform wallet (web NEW-2) are U5.
+
+## W — Integration: what is left (open 2026-10-24)
+
+**Verdict:** every handoff on this round's integration list is in the tree
+(P1, Q6, R19–R22, S9, T6, T9, U3, U12 and the classifier change: each has a
+landed note above), and `_gate-integration.mjs` (new) is 52/0. With every
+integration edit reverted on a copy, 39 of its cases fail and the 12 that pass
+are its controls; with only the credit check reverted, an anonymous request
+spent a fan's seat credit (200) and the fan's own join then answered 402. At
+risk: the SIGTERM flush is unproven on this machine (W2), and bounty pools paid
+under the old arithmetic now read overdrawn and pay nothing more (W6): read
+production's bounty ledger before Run B.
+
+- **W1 — Fixed this round (record).** The stores wiring: `recordBoot()` at
+  boot (so `/api/health` `thisBootAt` advances), migrations reported at every
+  boot and applied only under `MIGRATE_AT_BOOT`, held store changes written on
+  SIGTERM, the follow loop (titles compared by character, one write per rising
+  edge, one room's failure no longer skips the rest), the visibility chain
+  validated at boot, the poster, clip and airing sweeps standing down while
+  `rooms.json` is refused, and WebSocket `maxPayload` 64 KB (a 100 MiB
+  unauthenticated message cost about 170 ms and 450 MiB). Money: H3/H12
+  (U3), H4, H5, H7, H8, H13, H14 (U12, T9), H11 (S9), money-9 (R19).
+  `/api/meter/tick` looks the seat up first: 404 for an unknown seat or
+  another room's, 409 `not_live`, both before `mppMeter.handleTick`. An
+  orphaned `seat:<id>` LiveKit participant is removed on its own webhook
+  (`kickOrphanSeat`). A WebSocket message that parsed to `null` no longer
+  throws and leaves that socket deaf (A6). Dead code gone: `broadcast()`,
+  `server.js`'s own USDC parser and formatter, `MAX_SESSION_ATOMIC`, `auth.js`
+  `withWelcome`. Gates that touched real state boot their own scratch server
+  (`_gate-dashboard-phase1`, `_gate-phase4-handles`), and the gates of Q6, Q9,
+  R21, R22 and T7 are fixed. `server.js` ships in one commit with
+  `json-store.js`, `env-num.js`, `rooms-store.js`, `airings-store.js`,
+  `overlay-visibility.js`, `bounty-ledger.js`, `token-utils.js`, `rewards.js`,
+  the two `_migrate-*.mjs` exports and `web/lib/join-page.ts`: it imports the
+  first eight's new exports, and without the last LiveKit guests get no
+  publisher token.
+- **W2 — The SIGTERM flush is unproven here.** Node on Windows cannot deliver
+  SIGTERM to a child (`process.kill` ends it outright). The proof is the
+  deploy log: `[shutdown] wrote N held store change(s)` on a deploy that had
+  held writes (launch-readiness).
+- **W3 — `/api/meter/tick` answers 404 for a seat the room no longer holds.**
+  A cooperative close that lands after the seat is gone is refused; removal
+  already settles the channel server-side with the newest voucher
+  (`refundSeat` → `settleChannel`). If server settles ever fail, that close
+  was the backup.
+- **W4 — A USDC-reward credit in a room whose payment token is not 6-decimals
+  is mispriced.** H4 refuses only a token reward that is not the payment
+  token.
+- **W5 — Points credit stays anonymous**, as the money lane decided: anyone
+  naming a wallet spends its points. Unchanged, recorded so nobody reads H4 as
+  covering it.
+- **W6 — Bounty pools paid under the old arithmetic read `overdrawn: true`**
+  in `getPool` (releases + refunds > money in) and release or refund nothing
+  more. Read production's `data/bounty-ledger.jsonl` before Run B. `getPool`
+  `refunded` is still the face value of REFUNDED rows (display only).
+- **W7 — A Windows-only race, found by the gate:** a process reading
+  `airings.json` while the store renames over it makes the write fail
+  (EPERM); memory is pruned, disk is not, and the next sweep sees nothing to
+  drop. Linux (Railway) is unaffected. The T3 class.
+- **W8 — A room whose cash or credit reward is enabled above the server's
+  bounds answers 400 on every dashboard save** (`rewards_out_of_bounds`,
+  `dashboard-routes.js`) until its amounts are lowered to `REWARDS_MAX_EARN` /
+  `REWARDS_MAX_CAP` or the owner raises those. The dashboard's defaults now
+  sit inside the bounds (`web/components/room-provider.tsx`: 0.01 and 0.1,
+  were 0.1 and 5); a room saved earlier with rewards on at the old defaults
+  still hits it. Disabled rewards are never refused.
+- **W9 — Gates owed a run on the fresh build** (skipped here against a stale
+  one): `_gate-board-fold` B0–B2, `_gate-campaigns` D7, `_gate-bounty-claim`
+  G, `_gate-phase4-handles`'s browser section, `_gate-web-fixes`'s browser
+  sections.
+- S5 (the `findFundingTransfer` cursor) stays open. `_gate-pumpfun-pdt` E2,
+  red since `0e625eb`, is fixed (X1).
+
+## X — Gate harness: what is left (open 2026-10-24)
+
+**Verdict:** a gate server can no longer spend or call a paid API by
+accident: every `startGateServer` child starts with every signer, secret and
+token blank unless the gate names it in `keepEnv`, and the bounty identity
+stub is refused on Railway whatever the variable says. Port probes see what
+`server.js` actually binds, ten more browser drivers refuse a stale build, and
+eight files that could not run are retired. At risk: the self-booting scripts
+that bypass the helper get none of this (X2), and three browser gates drive a
+room-unlock form the app no longer has (X3). `_verify-gate-harness.mjs` 31/0;
+the same file against the pre-edit helpers 14/17.
+
+- **X1 — Fixed this round (record).** harness-3: `portInUse` connects on
+  127.0.0.1 and ::1 and tries the `'::'` bind `server.js` makes (the old
+  127.0.0.1 bind probe called a port free while `server.js` held it).
+  harness-9: `SENSITIVE_ENV` plus the suffix rule, `keepEnv` the only opt-in
+  (U11; 36 names blanked on this host). harness-18: the child's cwd is the
+  repo. The identity helper's `secret()` throws without `AUTH_SECRET` /
+  `MPP_SECRET_KEY`, and `mintBountyAuth` merges into an existing
+  `accounts.json`. harness-7: `DEFAULT_WATCH` adds the web config files, and
+  G0 runs in ten more drivers (four checked against the stale build on disk;
+  each refused it).
+  harness-10: `rooms-store.js` reads `livekitConfigured()` at call time, so a
+  `.env` loaded after the import still makes LiveKit the default
+  (`_gate-rooms-store` 30/0; the pre-edit file 29/1). harness-8: `isRailway()`
+  (`runtime-env.js`), and `BOUNTY_IDENTITY_STUB=1` on Railway logs one error
+  and uses the real verifier (`_gate-bounty-claim-audit` 22/0; pre-edit 20/2).
+  harness-6/-5: `_gate-bounty-auth` writes nothing to `data/` (the pre-edit
+  gate wrote `bounty.json` and the ledger there); four gates moved to
+  `startGateServer`. `_gate-first-airing` uses a configured-but-dead Twitch
+  stand-in (with the real secret from `.env` it asked api.twitch.tv about a
+  fixture login on every run): 31/0. `_gate-pumpfun-pdt` E2 expects the
+  48-character cap: 40/0. `_gate-browse-deck`'s section C, which pinned
+  `globals.css` to `eae3f7d` and so could never pass again, is removed, and it
+  and `_gate-browse-thumb` drive `/legacy`. `_gate-booth-audio` owns its SFU
+  on :7880. `_gate-guest-whitelist` moved to 3420/3421 (it collided with
+  `_gate-capture-hardening`). Retired: `_gate-phase1`, `_gate-phase2`,
+  `_gate-ui-part-a`, `_gate-gas-floor`, `_gate-pin`, `_gate-stability`,
+  `_verify-join`, `scripts/probe-tempo-write.mjs` (DECISIONS; P8).
+- **X2 — Self-booting harness files remain** (harness-5): fixed sleeps, no
+  identity nonce, most with stdio ignored, and no key blanking. `_diag-ui-shots`,
+  `_gate-lazy-connect`, `_verify-bounty-e2e`, `_verify-bounty-ui`,
+  `_verify-overlay-id-fallback`, `_verify-persistence-check`,
+  `_verify-twitch-prefill`, `_verify-twitch-thumbnail`, `_verify-two-overlays`;
+  owner-run, scratch `DATA_DIR` only: `_gate-free-megachat`,
+  `_gate-lk-phase1/2/3`, `_gate-p1-features`, `_gate-polish`; outside the
+  catalogue: `_cloud-idle-measure`, `_corpus-run-b`, `_repro-black-tile`,
+  `_shot-bounty`, `_shot-lazy`. Each needs a run to prove the conversion
+  (browser ones a fresh build, owner-run ones dust). Until then the
+  non-owner-run ones name the local SFU or blank `LIVEKIT_URL`.
+- **X3 — Three browser gates drive a room-unlock form that is gone.**
+  `_gate-cam-autoswitch`, `_gate-cohost-booth` and `_gate-lk-phase2` unlock
+  through `#manage-room-id` / "room id + password"; `web/` has neither (the
+  current form is `web/components/room-recovery.tsx`). `_gate-booth-audio`'s
+  unlock helper, shared in shape with booth-picture, echo, howl-guard and
+  overlay-first-guest, timed out waiting for "Unlock room" on `/dashboard`
+  against the old build; unverified on a fresh one. (P12's two gates are the
+  same form.)
+- **X4 — `_gate-stale-capture` is red by design** until a real stalled capture
+  is kept under the repo: the 2026-08-29 files it replays are gone, and it now
+  fails loudly instead of skipping. `_gate-capture-stall` still holds the
+  recorder side. The pages that cited it as live proof now cite
+  `_gate-capture-stall` (L5, launch-readiness row 13), except
+  `docs/verification/README.md`, which this pass did not touch.
+- **X5 — Register L40 is closed for `startGateServer` gates**, open for X2's.
+- **X6 — Deferred, not this round:** scratch dirs never removed
+  (harness-16); gates that need a hand-started server (harness-11); narrowing
+  the stub to YouTube, Rumble and pump.fun and real cookies for the Twitch,
+  Kick and X claimers (harness-8, harness half); a `--i-mean-production`
+  refusal in `_verify-webhook-delivery` (harness-2; owner-run); `?me=` in
+  `_verify-bounty-ui` (harness-20); OBS mocks on 4455 (harness-15);
+  `_gate-cross-cutting` scans for dead imports, bare spawns, duplicate ports
+  and GATE-COST headers.
+- **X7 — `src/passkey-wallet.mjs:7` names the deleted `_gate-gas-floor.mjs`**
+  as its one importer; it has none now.
+- **X8 — The owner-run scripts' key and data changes were decided by reading
+  only** (they spend, so none was run): `_gate-p2-moderation` keeps
+  `SELLER_PRIVATE_KEY`; `_gate-escrow-seat` keeps `SELLER_PRIVATE_KEY`,
+  `ESCROW_OPERATOR_KEY` and `ESCROW_ATTEST_KEY`; `_rehearsal-run-b` keeps
+  `TWITCH_CLIENT_SECRET`; `_gate-free-megachat`, `_gate-lk-phase1/2/3` and
+  `_gate-p1-features` got a scratch `DATA_DIR` only. Unverified behaviour
+  change: the owner-run scripts that boot through `startGateServer` used to
+  inherit `LIVEKIT_*` and so put rooms on LiveKit Cloud; with the LiveKit key
+  and secret blanked they now default to vdo unless they keep those names.
+  The first owner run of each is its proof (launch-readiness row 88).
+
+## Y — Found by the docs pass: what is left (open 2026-10-24)
+
+**Verdict:** the handbook now matches the final code page by page, and
+reading it against the code turned up one store that could still wipe itself
+(fixed, Y1) and four places where the code, its own words and the old pages
+disagree; none moves money today. Two of the owner's status calls rest on
+stale premises (Y6).
+
+- **Y1 — `x-tokens.json` could still be saved over (fixed 2026-10-24).** The
+  X token store read a torn or unparsable file as "no tokens", and the next X
+  sign-in or refresh wrote that over every holder's row (each would have had
+  to re-link X). It is on `json-store.js` now: atomic writes, and a file that
+  is torn, empty or the wrong shape refuses writes, logged once, untouched on
+  disk, with no holder served until it is repaired and the process restarts;
+  rows the current key cannot open still stay on disk (`x-token-store.js`).
+  `_gate-x-token-store.mjs` (new, no server) 36/0; against the pre-change
+  module on a copy, 18 of its cases fail, every one about the refusal or the
+  surviving bytes, while the healthy round trip and the dead-row cases pass
+  on both. `_gate-campaigns.mjs --engine-only` 215/0 after the change.
+- **Y2 — Ending a room: the guard and the words disagree.** `deleteRoom`
+  refuses only the `default` id (`rooms-store.js`), while the End route's
+  comment and its 400 hint say "The default and demo rooms are permanent"
+  (`dashboard-routes.js`). The demo room (handle `demo`, a generated id) can
+  be ended by anyone holding its password, and the next boot seeds a new one
+  (`server.js`). The same
+  route also removes and refunds every live seat BEFORE it asks
+  `deleteRoom`, so ending the default room clears its seats and then answers
+  400. Fix the guard (refuse the demo handle too, and ask before removing
+  seats) or the words.
+- **Y3 — A listed guest is seated even with Join Stream off (owner
+  question).** `tryWhitelistJoin` runs before the Join Stream switch in both
+  join routes (`server.js`), and DECISIONS (Guest whitelist, 2026-09-05)
+  records that price, seat cap, join-stream-off and the watch-time gate are
+  all overridden, on purpose. The pages said the opposite until this pass. If
+  Join Stream off should mean nobody joins, the switch must run first.
+- **Y4 — "Capped at ten" is the default, not the rule.** The effective cap is
+  `MEGACHAT_MAX_SEATS` (default 10, floor 1; `rooms-store.js`
+  `maxEffectiveSeats`); the glossary says ten. True on every deployment that
+  leaves the variable unset.
+- **Y5 — A rejected Holler's payer is not refunded on production today.** The
+  refund is a recorded intent paid from the platform wallet (`letters.js`
+  `refundLetter` → `settlement.refund`), and `PLATFORM_SETTLEMENT_KEY` is
+  present but empty on Railway (K8), so every such refund is PENDING. The
+  pages say "a rejection refunds the payer", which is what the code does once
+  the key is filled. Same root as U5 and K8.
+- **Y6 — Two status calls rest on stale premises (owner; this pass did not
+  edit `docs/internal/needs-a-status-call.md`).** U1 says the join page calls
+  only `/api/join/passkey`; it also calls `/api/join/mpp` (Privy wallets when
+  the MPP meter exists, free rooms, whitelisted guests: `web/lib/join-page.ts`,
+  as outstanding E48 and register L44 already say). U4 asks which badge fix
+  to choose; both shipped in Pass C and L13 is closed (`public/overlay.html`
+  `applyBadgeAnchor`, `rooms-store.js` `layoutCollision`). Restate U1 and
+  close U4. Launch-readiness row 2 and outstanding E32 repeat U1's premise.
+- **Y7 — The boot log prints the generated demo-room password (owner).** When
+  `DEMO_ROOM_PASSWORD` is unset, `server.js` generates one per boot and writes it
+  into the boot line so an operator can find it, which puts a password value into
+  Railway's retained logs. Not changed in code this round: a generated password
+  that is printed nowhere would lock the demo room on Railway until the variable
+  is set. The owner's fix is to set `DEMO_ROOM_PASSWORD` on the service (the line
+  then prints nothing) or to drop the password from the demo room.
+  Launch-readiness row 91.
+- **Y8 — `_gate-board-fold` F4 fails on HEAD and on this tree alike.** Its six
+  "first room above the fold" checks fail pixel-identically against HEAD's build
+  and against the audit round's build (`_gate-board-fold.mjs`), so the red
+  predates the round and is not a regression; the ownership cases B0–B2 pass. The
+  layout expectation needs re-measuring against the current browse deck before
+  the gate means anything again.
+- **Y9 — Server reward defaults moved inside the server's own bounds.** The room
+  defaults were 0.1 per earn / 5 cap while `rewards.js` bounds them at 0.01 /
+  0.1 (REWARDS_MAX_EARN / REWARDS_MAX_CAP), so switching rewards on for an
+  existing room was refused as out of bounds; `rooms-store.js` now defaults to
+  0.01 / 0.1 and the dashboard's new-room defaults match. Whether those bounds are
+  the product's numbers is the owner's call (they are env-overridable).

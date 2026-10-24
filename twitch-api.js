@@ -111,7 +111,9 @@ export async function getStreamByLogin(login, { log = console } = {}) {
 }
 
 /**
- * Liveness for up to 100 logins in ONE Helix call.
+ * Liveness for up to 100 logins in ONE Helix call, with what /helix/streams
+ * already says about each live channel: how many people are watching (the
+ * board gives a big streamer the big featured card) and the stream title.
  *
  * The batching is the whole point. "Follow my stream" has to ask the same
  * question on a loop forever, and asking it per room does not scale: one
@@ -121,24 +123,14 @@ export async function getStreamByLogin(login, { log = console } = {}) {
  *
  * Absence from the response IS the offline signal: /helix/streams returns a
  * row only for channels that are live. So every login asked for gets an
- * explicit true/false back, and the caller never has to infer.
- *
- * @returns {Promise<Map<string,boolean>|null>} login (lowercased) → live.
- *   null means "we could not ask" — unconfigured, HTTP error, timeout — and
- *   MUST NOT be read as "everyone is offline". Anything that pauses a room on
- *   this answer has to treat null as "leave it alone".
- */
-export async function getLiveByLogins(logins, { log = console } = {}) {
-  const streams = await getStreamsByLogins(logins, { log });
-  return streams ? new Map([...streams].map(([l, s]) => [l, s.live])) : null;
-}
-
-/**
- * The same ONE batched call, keeping what /helix/streams already says about
- * each live channel: how many people are watching. The board uses it to give
- * a big streamer the big featured card. Same null contract as getLiveByLogins.
+ * explicit entry back (`live: false` when absent), and the caller never has
+ * to infer.
  *
  * @returns {Promise<Map<string,{live: boolean, viewers: number, title?: string}>|null>}
+ *   login (lowercased) → stream. null means "we could not ask" —
+ *   unconfigured, HTTP error, timeout — and MUST NOT be read as "everyone is
+ *   offline". Anything that pauses a room on this answer has to treat null
+ *   as "leave it alone".
  */
 export async function getStreamsByLogins(logins, { log = console } = {}) {
   if (!twitchApiConfigured()) return null;

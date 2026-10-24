@@ -1,10 +1,11 @@
 // Capture every core screen, desktop + mobile, for a cold-eyes visual audit.
 import { spawn } from 'child_process';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'fs';
+import { mkdtempSync, mkdirSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
-import { createHmac } from 'crypto';
 import puppeteer from 'puppeteer-core';
+import { assertFreshBuild } from './_gate-helpers.mjs';
+import { sealSessionValue, seedAccountForLink } from './_gate-identity-helper.mjs';
 
 try { process.loadEnvFile(); } catch { /* env external */ }
 
@@ -12,19 +13,21 @@ const PORT = 3222, APP = `http://localhost:${PORT}`, AUTH_SECRET = 'ui-shots';
 const OUT = process.argv[2] || 'C:/Users/jorda/AppData/Local/Temp/claude/C--Users-jorda-OneDrive-Documents-video-stream/510666e4-cb6c-4a45-bbb3-5f79e340fa3b/scratchpad/ui-shots';
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// The screens are judged by eye from these shots; a build older than the
+// source would show the PREVIOUS tree, so refuse rather than capture it.
+{
+  const fresh = assertFreshBuild();
+  if (!fresh.ok) { console.error(`refusing to capture a stale build: ${fresh.detail}`); process.exit(1); }
+}
 
+// The account seeded before the server starts; its session is sealed below in
+// the one shape auth.js accepts. This seeded identities.json until 2026-10-24,
+// which no server has read since the account layer.
 const dataDir = mkdtempSync(path.join(tmpdir(), 'mc-uishots-'));
-writeFileSync(path.join(dataDir, 'identities.json'), JSON.stringify({
-  identities: { 'twitch:ui1': { provider: 'twitch', platformId: 'ui1', username: 'yeak__', handle: 'yeak__', createdAt: new Date().toISOString() } },
-  handles: { yeak__: 'twitch:ui1' },
-}));
-const seal = (obj) => {
-  const p = Buffer.from(JSON.stringify(obj)).toString('base64url');
-  return `${p}.${createHmac('sha256', AUTH_SECRET).update(p).digest('base64url')}`;
-};
+const accountId = seedAccountForLink(dataDir, { provider: 'twitch', platformId: 'ui1', username: 'yeak__' });
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
-  env: { ...process.env, PORT: String(PORT), AUTH_SECRET, DATA_DIR: dataDir },
+  env: { ...process.env, PORT: String(PORT), AUTH_SECRET, DATA_DIR: dataDir, LIVEKIT_URL: '' },
   stdio: 'ignore', cwd: process.cwd(),
 });
 await sleep(9000);
@@ -42,7 +45,7 @@ try {
     args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio', '--force-device-scale-factor=1'],
   });
   const page = await browser.newPage();
-  await page.setCookie({ name: 'mc_identity', value: encodeURIComponent(seal({ provider: 'twitch', platformId: 'ui1' })), domain: 'localhost', path: '/' });
+  await page.setCookie({ name: 'mc_identity', value: encodeURIComponent(sealSessionValue(accountId, { secret: AUTH_SECRET })), domain: 'localhost', path: '/' });
 
   const shot = async (name, url, { w = 1280, h = 900, full = true, after = null } = {}) => {
     await page.setViewport({ width: w, height: h });

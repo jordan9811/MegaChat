@@ -409,8 +409,11 @@ export function refundRejectedClip({
     return { refunded: c.amount, withheld: '0', strike: true, rows };
   }
 
-  // Graduated: partial refund, remainder forfeits INTO the streamer's pool.
-  const amount = parseFloat(c.amount);
+  // Graduated: partial refund, remainder forfeits INTO the streamer's pool —
+  // both of what the contribution still holds, since a release may already
+  // have drawn on it (money-9).
+  const balances = store.poolBalances(c.handleKey);
+  const amount = store.fromMicros(Math.min(balances.left.get(c.id) ?? store.toMicros(c.amount), Math.max(0, balances.balance)));
   const back = +(amount * bountyConfig.rejectionRefundFraction).toFixed(6);
   const withheld = +(amount - back).toFixed(6);
 
@@ -572,16 +575,26 @@ export function refund({
     }
   }
 
+  // What each one still holds: a release drew on them pro rata, and only the
+  // unreleased remainder comes back — never more than the pool holds (money-9).
+  const balances = store.poolBalances(handleKey);
+  let poolLeft = Math.max(0, balances.balance);
   for (const c of targets) {
+    const back = Math.min(balances.left.get(c.id) ?? store.toMicros(c.amount), poolLeft);
+    // Untouched by any release: the amount exactly as it was contributed.
+    const amount = back === store.toMicros(c.amount) ? c.amount : String(store.fromMicros(back));
     const { row, deduped } = store.appendLedger({
-      handleKey, type: 'REFUND', amount: c.amount, bucket: 'contributor',
+      handleKey, type: 'REFUND', amount, bucket: 'contributor',
       actor, reason: note ? `${spec.text} — ${note}` : spec.text,
       idempotencyKey: `refund:${c.id}`,
       meta: {
         contributionId: c.id, contributor: c.contributor,
         refundReason: reason, reference,
+        // Set only when a release already drew on it: what it was, and what is left.
+        ...(back !== store.toMicros(c.amount) ? { contributed: c.amount } : {}),
       },
     });
+    if (!deduped) poolLeft -= back;
     if (!deduped) {
       store.updateContribution(c.id, { status: 'REFUNDED' });
       // The fan's money and the fan's recording go back together. Leaving the
@@ -595,7 +608,7 @@ export function refund({
         console.warn(`[bounty] clip purge failed for contribution ${c.id}: ${e.message}`);
       }
       // TODO(run-b): real settlement. Stub records intent only.
-      settlement?.refund({ to: c.contributor, amount: c.amount, ref: c.id });
+      settlement?.refund({ to: c.contributor, amount, ref: c.id });
     }
     refunds.push(row);
   }
@@ -668,6 +681,33 @@ export function payablePlaybacks(verifiedPlaybacks = []) {
     collapsed: list.filter((u) => u.alsoVerified.length)
       .map((u) => ({ unit: u.unit, paid: u.playbackId, notPaid: u.alsoVerified })),
   };
+}
+
+/**
+ * Split `amountMicros` across the HELD contributions in proportion to what
+ * each still holds (`left`: contributionId → micro-units), largest remainder
+ * first, so the parts sum to the amount exactly and none exceeds what its
+ * contribution holds. Returns `[{ contributionId, amount }]`, amounts in
+ * dollars at 6 places, for the RELEASE row (money-9).
+ */
+export function allocateRelease(left, amountMicros) {
+  const entries = [...left].filter(([, m]) => m > 0);
+  const total = entries.reduce((a, [, m]) => a + BigInt(m), 0n);
+  let want = BigInt(Math.max(0, amountMicros));
+  if (want > total) want = total;
+  if (want === 0n) return [];
+  const parts = entries.map(([id, m]) => {
+    const exact = want * BigInt(m);
+    return { id, cap: BigInt(m), got: exact / total, rem: exact % total };
+  });
+  let rest = want - parts.reduce((a, p) => a + p.got, 0n);
+  // The micro-units the floors left over go to the largest remainders; ties
+  // by id, so the same pool always splits the same way.
+  for (const p of [...parts].sort((x, y) => (y.rem > x.rem ? 1 : y.rem < x.rem ? -1 : x.id < y.id ? -1 : 1))) {
+    if (rest === 0n) break;
+    if (p.got < p.cap) { p.got += 1n; rest -= 1n; }
+  }
+  return parts.filter((p) => p.got > 0n).map((p) => ({ contributionId: p.id, amount: store.fromMicros(Number(p.got)) }));
 }
 
 /**
@@ -771,6 +811,9 @@ export function release({
 
   const matchAmount = +(amount * bountyConfig.platformMatchFraction).toFixed(6);
   const finalAt = Date.now() + bountyConfig.disputeWindowMs;
+  // Drawn from the contributions pro rata, and the row says from which: a
+  // refund afterwards returns only what a contribution still holds (money-9).
+  const allocations = allocateRelease(store.poolBalances(handleKey).left, store.toMicros(amount));
 
   const { row: contribRow } = store.appendLedger({
     handleKey, claimId, airSessionId,
@@ -785,6 +828,7 @@ export function release({
       rawVerifiedClips: payable?.rawVerifiedClips ?? verifiedClips,
       payableClips: verifiedClips,
       collapsed: payable?.collapsed?.length ? payable.collapsed : null,
+      allocations,
     },
   });
   // Separate row, separate bucket — never blended into the contributor pool.
@@ -827,5 +871,3 @@ export function adminOverride({ handleKey, to, actor, reason, claimId = null, ai
     meta: { override: true },
   });
 }
-
-export { store };

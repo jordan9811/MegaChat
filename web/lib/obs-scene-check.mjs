@@ -159,16 +159,3 @@ export async function checkOverlayVisible(client, {
     };
   }
 }
-
-/** Does this state mean "the overlay was not reaching the broadcast"? */
-export function stateIsNotVisible(state) {
-  return state === SCENE_STATE.HIDDEN
-    || state === SCENE_STATE.NOT_IN_SCENE
-    || state === SCENE_STATE.ZERO_AREA
-    || state === SCENE_STATE.OFF_CANVAS;
-}
-
-/** Did we get an answer at all? NO_CONNECTION and ERROR are "we cannot see". */
-export function stateIsConclusive(state) {
-  return state === SCENE_STATE.VISIBLE || stateIsNotVisible(state);
-}

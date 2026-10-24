@@ -28,6 +28,9 @@ import {
   type BountyClientConfig, type ProgramPool, type RejectionPolicy,
 } from '@/lib/bounty-api'
 import { FeatureTag } from '@/components/feature-tag'
+import { newAttemptId } from '@/lib/attempt-id'
+import { fetchIdentity } from '@/lib/identity'
+import { recorderMime } from '@/lib/recorder-mime'
 
 type Stage = 'idle' | 'recording' | 'preview' | 'terms' | 'sending' | 'done' | 'error'
 
@@ -38,6 +41,8 @@ type Stage = 'idle' | 'recording' | 'preview' | 'terms' | 'sending' | 'done' | '
 const CHOICE_ON = 'border-hl-strap-hi bg-hl-strap/15 text-foreground'
 const CHOICE_OFF = 'border-border text-muted-foreground'
 const BOUNTY_SOLID = 'bg-f-bounty-solid text-f-bounty-on'
+
+const MB = (n: number) => `${(n / (1024 * 1024)).toFixed(1)} MB`
 
 const EXPIRY_CHOICES = [
   { label: '3 days', ms: 3 * 86_400_000 },
@@ -65,6 +70,16 @@ export function RecordFlow({
   const framesRef = useRef<string[]>([])
   const frameTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startedAtRef = useRef(0)
+  // The take's playback URL holds the whole recording in memory until revoked.
+  const previewUrlRef = useRef<string | null>(null)
+  const mountedRef = useRef(true)
+  // ONE PLEDGE PER TAKE (audit web-5). attemptId names the take on the pledge
+  // (the server answers a repeat with the first pledge, bounty-routes.js), and
+  // pledgeRef keeps the pledge once it exists, so a failed upload retries the
+  // UPLOAD and never escrows the fan's money a second time.
+  const attemptIdRef = useRef<string | null>(null)
+  const pledgeRef = useRef<{ uploadUrl: string } | null>(null)
+  const [pledged, setPledged] = useState(false)
 
   const [stage, setStage] = useState<Stage>('idle')
   const [elapsed, setElapsed] = useState(0)
@@ -86,9 +101,8 @@ export function RecordFlow({
   useEffect(() => {
     if (stage !== 'terms') return
     let gone = false
-    fetch('/api/auth/me', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => { if (!gone) setSignedIn(!!d.identity) })
+    fetchIdentity()
+      .then((identity) => { if (!gone) setSignedIn(!!identity) })
       .catch(() => { if (!gone) setSignedIn(null) })
     return () => { gone = true }
   }, [stage])
@@ -97,13 +111,28 @@ export function RecordFlow({
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
   }, [])
-  useEffect(() => () => {
-    stopTracks()
-    if (frameTimerRef.current) clearInterval(frameTimerRef.current)
-  }, [stopTracks])
+  const setPreviewUrl = useCallback((b: Blob | null) => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+    previewUrlRef.current = b ? URL.createObjectURL(b) : null
+    return previewUrlRef.current
+  }, [])
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      stopTracks()
+      setPreviewUrl(null)
+      if (frameTimerRef.current) clearInterval(frameTimerRef.current)
+    }
+  }, [stopTracks, setPreviewUrl])
 
   async function startRecording() {
     setError(null)
+    // Asked first: MediaRecorder throws on a format the browser cannot
+    // record (Safari has no WebM), and that used to leave the camera on.
+    const mime = recorderMime()
+    if (!mime) { setError('This browser cannot record video here.'); return }
+    stopTracks() // a second Record must not orphan the first capture
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       streamRef.current = stream
@@ -114,24 +143,40 @@ export function RecordFlow({
 
       chunksRef.current = []
       framesRef.current = []
-      const rec = new MediaRecorder(stream, { mimeType: 'video/webm' })
+      const rec = new MediaRecorder(stream, { mimeType: mime })
       recRef.current = rec
       rec.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data) }
       rec.onstop = () => {
-        const dur = Math.max(1, Math.ceil((Date.now() - startedAtRef.current) / 1000))
-        setDurationS(dur)
-        const b = new Blob(chunksRef.current, { type: 'video/webm' })
-        setBlob(b)
         stopTracks()
         if (frameTimerRef.current) clearInterval(frameTimerRef.current)
-        const vv = videoRef.current!
+        // Unmounted mid-take (the cleanup stopped the tracks, which stops the
+        // recorder): nothing left to show it in.
+        const vv = videoRef.current
+        if (!mountedRef.current || !vv) return
+        const dur = Math.max(1, Math.ceil((Date.now() - startedAtRef.current) / 1000))
+        setDurationS(dur)
+        // The bare type, no codec list: the clip route refuses a codec list with a
+        // comma in it (video/webm;codecs=vp8,opus), as letters.js does.
+        const b = new Blob(chunksRef.current, { type: mime.split(';')[0] })
+        setBlob(b)
         vv.srcObject = null
-        vv.src = URL.createObjectURL(b)
+        vv.src = setPreviewUrl(b) || ''
         vv.muted = false
         vv.controls = true
+        // A new take is a new pledge.
+        attemptIdRef.current = newAttemptId()
+        pledgeRef.current = null
+        setPledged(false)
         // Too short to verify on stream → never offer to pay for it.
         if (dur < config.minClipSeconds) {
           setError(`That take was ${dur}s — it needs at least ${config.minClipSeconds}s to be verifiable on stream. Nothing was charged. Go again.`)
+          setStage('idle')
+          return
+        }
+        // Too big for the clip route: refused here, before any pledge, not
+        // after the money is escrowed and the upload is turned away.
+        if (config.clipMaxBytes && b.size > config.clipMaxBytes) {
+          setError(`That take is ${MB(b.size)}, over the ${MB(config.clipMaxBytes)} limit. Nothing was charged. Record a shorter one.`)
           setStage('idle')
           return
         }
@@ -163,6 +208,10 @@ export function RecordFlow({
         if (recRef.current?.state !== 'recording') clearInterval(tick)
       }, 500)
     } catch (e) {
+      // Whatever failed (the permission, the recorder), the camera goes off.
+      stopTracks()
+      if (frameTimerRef.current) clearInterval(frameTimerRef.current)
+      if (videoRef.current) videoRef.current.srcObject = null
       setError(e instanceof Error ? e.message : 'Camera unavailable')
     }
   }
@@ -175,32 +224,52 @@ export function RecordFlow({
     setBlob(null)
     setStage('idle')
     setError(null)
+    // Reached only before a pledge (the error stage offers a retry, not a
+    // re-record), so nothing is left behind; cleared all the same.
+    attemptIdRef.current = null
+    pledgeRef.current = null
+    setPledged(false)
     const v = videoRef.current
     if (v) { v.src = ''; v.controls = false }
+    setPreviewUrl(null)
   }
 
   async function paySubmit() {
     if (!blob) return
     if (!(parseFloat(amount) > 0)) { setError('Enter a positive amount'); return }
+    if (config.clipMaxBytes && blob.size > config.clipMaxBytes) {
+      setError(`That take is ${MB(blob.size)}, over the ${MB(config.clipMaxBytes)} limit. Record a shorter one.`)
+      return
+    }
     setStage('sending')
     setError(null)
     try {
-      const targets = [
-        target,
-        ...extraTargets.map((k) => {
-          const [platform, handle] = k.split(':')
-          return { platform, handle }
-        }),
-      ]
-      // THE pay moment — escrow is written here, after preview and terms.
-      const pledge = await createPledge({
-        targets, contributor: contributor.trim(), amount, expiresInMs: expiryMs,
-      })
-      setPolicy(pledge.rejectionPolicy)
+      let pledge = pledgeRef.current
+      if (!pledge) {
+        const targets = [
+          target,
+          ...extraTargets.map((k) => {
+            const [platform, handle] = k.split(':')
+            return { platform, handle }
+          }),
+        ]
+        attemptIdRef.current = attemptIdRef.current || newAttemptId()
+        // THE pay moment — escrow is written here, after preview and terms.
+        const out = await createPledge({
+          targets, contributor: contributor.trim(), amount, expiresInMs: expiryMs,
+          attemptId: attemptIdRef.current,
+        })
+        pledge = { uploadUrl: out.uploadUrl }
+        pledgeRef.current = pledge
+        setPledged(true)
+        setPolicy(out.rejectionPolicy)
+      }
       // Frames ride ahead so moderation has them when the media lands.
       if (framesRef.current.length) {
         await postFrames(pledge.uploadUrl, framesRef.current).catch(() => { /* fail-open */ })
       }
+      // Idempotent per contribution server-side: a retry of an upload that
+      // did land answers with the stored clip.
       await uploadClip(pledge.uploadUrl, blob, durationS)
       setStage('done')
     } catch (e) {
@@ -268,12 +337,14 @@ export function RecordFlow({
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="text-sm font-medium text-foreground">Bounty amount ({config.currency})</span>
-              <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal"
+              {/* The terms lock once the pledge exists: a retry uploads under
+                  the pledge already made, so the form must show its terms. */}
+              <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" disabled={pledged}
                 className="mt-1 w-full rounded-xl border border-border bg-input/30 px-3.5 py-2.5 text-sm text-foreground" />
             </label>
             <label className="block">
               <span className="text-sm font-medium text-foreground">Display name <span className="font-normal text-muted-foreground">(optional)</span></span>
-              <input value={contributor} onChange={(e) => setContributor(e.target.value)}
+              <input value={contributor} onChange={(e) => setContributor(e.target.value)} disabled={pledged}
                 placeholder="Shown beside your bounty"
                 className="mt-1 w-full rounded-xl border border-border bg-input/30 px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground" />
               {/* The money keys to the signed-in ACCOUNT, not to this string —
@@ -289,7 +360,7 @@ export function RecordFlow({
             </span>
             <div className="mt-1.5 flex flex-wrap gap-2">
               {EXPIRY_CHOICES.map((c) => (
-                <button key={c.ms} type="button" onClick={() => setExpiryMs(c.ms)}
+                <button key={c.ms} type="button" onClick={() => setExpiryMs(c.ms)} disabled={pledged}
                   aria-pressed={expiryMs === c.ms}
                   className={`rounded-full border px-3.5 py-1.5 text-xs font-bold ${expiryMs === c.ms ? CHOICE_ON : CHOICE_OFF}`}>
                   {c.label}
@@ -311,7 +382,7 @@ export function RecordFlow({
                   const k = `${p.platform}:${p.handle}`
                   const on = extraTargets.includes(k)
                   return (
-                    <button key={k} type="button"
+                    <button key={k} type="button" disabled={pledged}
                       onClick={() => setExtraTargets((cur) => on
                         ? cur.filter((x) => x !== k)
                         : cur.length >= 2 ? cur : [...cur, k])}
@@ -345,8 +416,13 @@ export function RecordFlow({
           <button type="button" disabled={stage === 'sending' || signedIn === false} onClick={paySubmit}
             className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.02] active:scale-[.97] disabled:opacity-60 ${BOUNTY_SOLID}`}>
             <Send className="size-4" />
-            {stage === 'sending' ? 'Sending…' : `Pay ${amount} ${config.currency} & send`}
+            {stage === 'sending' ? 'Sending…' : pledged ? 'Retry upload' : `Pay ${amount} ${config.currency} & send`}
           </button>
+          {pledged && stage === 'error' ? (
+            <p className="text-xs text-muted-foreground">
+              Your pledge is in. Retrying sends this take again, with no second payment.
+            </p>
+          ) : null}
           {signedIn === false ? (
             <p className="text-xs text-f-bounty-ink">
               Sign in first (top right) — the bounty and any refund attach to your account.

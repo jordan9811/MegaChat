@@ -15,7 +15,7 @@ A viewer records a clip from their camera on the join page, sees the clip total 
 ## How it works
 
 - **Recording** happens in the browser; the join page enforces the room's `minSeconds`/`maxSeconds` from `/api/config.letters` (`server.js`, the `letters` block of `/api/config`).
-- **Paying** is `POST /api/letter/submit` at the room's flat letter price, then the upload within 90 s (`letters.js`, header). A clip that misses the upload window is refunded (`letters.js`, "reject (or upload expiry) refunds the payer").
+- **Paying** is `POST /api/letter/submit` at the room's flat letter price, then the upload within 90 s (`letters.js`, header). A clip that misses the upload window is refunded (`letters.js`, "reject (or upload expiry) refunds the payer"). Each take is sent with an `attemptId`: a repeat of it within 10 minutes, from the same room and paying wallet, is answered from the letter that take already paid for, so *Send again* after a failed upload or a lost response costs nothing (`letters.js`, `attempts`). The record is in memory, so a restart inside the window can let one repeat pay again; the upload sweep refunds that orphan.
 - **Moderation**, when the room asks for it, holds the clip in a queue the streamer sees on the dashboard (`web/lib/api.ts`, `listLetters`, `forcePlayLetter`, `approveLetter`, `rejectLetter`; `dashboard-routes.js`). AI screening runs before that when a key is configured (`moderation.js`).
 - **Producer mode** (`moderation: 'approve'`) splits that queue into two piles on the dashboard card: *Waiting for review*, and *Ready to air* — approved clips the scheduler deliberately will not touch. A mod presses **Air it** on the one the show wants, which is the same route as *Play now* (`POST /api/dashboard/rooms/:roomId/letters/:id/play`, which accepts both `queued` and `ready`). In `auto` rooms nothing changes: approving queues the clip and the scheduler airs it.
 - **Nothing is held indefinitely.** A clip waiting on a person is refunded after `LETTER_HOLD_TTL_MS` (default 6 h) — `review_expired` if nobody reviewed it, `never_aired` if it was approved and never aired (`letters.js`). The dashboard row counts down to that moment.
@@ -25,7 +25,7 @@ A viewer records a clip from their camera on the join page, sees the clip total 
 
 ## How to use it
 
-- **Viewer:** on the room page choose *Send a Holler*, record, review, pay, send. In a free room there is no payment step (`web/lib/join-page.ts`, `isFreeRoom`).
+- **Viewer:** on the room page choose *Send a Holler*, record, review, pay, send. In a free room there is no payment step (`web/lib/join-page.ts`, `letterIsFree`).
 - **Streamer:** MegaChats are on by default (`resolveLetters`, `enabled: l.enabled !== false`). Set a flat price or leave it derived; choose `approve` if you want to see clips before they play; set AI strictness. All on the create/manage room page.
 - **Mod, in producer mode:** watch what is in *Waiting for review* and approve or reject it. Approving parks the clip in *Ready to air* — nothing reaches the stream yet. When the show wants one, press **Air it**. Each row shows how long before the payer is refunded automatically.
 
@@ -42,7 +42,7 @@ A viewer records a clip from their camera on the join page, sees the clip total 
 
 ## What this does NOT do
 
-- **It does not keep your clip** after it plays, except in the bounty program (`letters.js`; `bounty-clips.js`).
+- **It does not keep your clip** after it plays, with two exceptions: a copy for the replay of the recorded broadcast it completed on, for no longer than the days you were shown before sending (`aired-clips.js`), and the bounty program (`letters.js`; `bounty-clips.js`).
 - **It does not moderate without a key.** With no `MODERATION_API_KEY`, AI screening reports unconfigured and only the streamer's approve setting applies (`moderation.js`).
 - **It does not promise when a clip plays.** A full room queues it; the scheduler plays it when a tile frees (`letters.js`). In producer mode it makes no promise at all: a `ready` clip plays when a mod airs it, or never, in which case the payer is refunded.
 - **It does not let a held clip leak onto the stream.** `ready` is skipped by the scheduler on purpose; `_gate-megachat-producer.mjs` proves the discrimination by running the same clip through an `auto` room, which airs it unaided, and an `approve` room, which does not.

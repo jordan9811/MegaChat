@@ -5,7 +5,6 @@ Automated gate: `npm run gate:rewards-b`
 ## Prerequisites
 
 ```bash
-npm run build:passkey
 npm start
 ```
 

@@ -63,9 +63,6 @@ ok('B1 every registry slug names a SUMMARY.md entry', unlisted.length === 0,
 
 const SURFACES = [
   'web/components/site-footer.tsx',
-  'web/components/product-shell.tsx',
-  // The bounty pages' frame since the Holler rebrand; product-shell.tsx above
-  // is the same header but no page mounts it any more.
   'web/components/bounty/bounty-shell.tsx',
   'web/components/account/account-page.tsx',
   'web/components/landing/landing.tsx',

@@ -27,9 +27,6 @@ import { ThemeToggle } from '@/components/theme-toggle'
 // "demand more" is literally what the product does.
 const START_LINE = 'Choose a streamer and platform. Add the amount and terms on the next screen.'
 
-// Mirrors sanitizeHandle in rooms-store.js — the only shape /<handle> serves.
-const ROOM_HANDLE = /^[a-z0-9_]{3,20}$/
-
 // Values are the STORE's keys, not display labels. 'pump.fun' here would
 // build a pool key distinct from the existing 'pumpfun' one — two escrow
 // balances for one streamer. platformLabel() handles the display side.
@@ -52,7 +49,6 @@ function platformLabel(p: string | null): string {
   return k.charAt(0).toUpperCase() + k.slice(1)
 }
 
-const money = formatDollars
 
 function poolHref(p: { platform: string | null; handle: string | null }): string {
   return p.platform && p.handle
@@ -201,8 +197,8 @@ function Row({
     total <= 0
       ? 'Nothing pledged yet'
       : contestedTotal > 0
-        ? `${money(guaranteed)} ${currency} locked to this name, ${money(contestedTotal)} ${currency} also pledged to ${rivals} other ${rivals === 1 ? 'streamer' : 'streamers'}`
-        : `${money(guaranteed)} ${currency}, all locked to this name`
+        ? `${formatDollars(guaranteed)} ${currency} locked to this name, ${formatDollars(contestedTotal)} ${currency} also pledged to ${rivals} other ${rivals === 1 ? 'streamer' : 'streamers'}`
+        : `${formatDollars(guaranteed)} ${currency}, all locked to this name`
 
   return (
     <div className={`lb-row${claimed ? ' is-claimed' : ''}${selected ? ' is-selected' : ''}`}>
@@ -247,17 +243,17 @@ function Row({
           ) : (
             <>
               <span className="text-[15px] font-[700] tabular-nums text-f-bounty-ink">
-                {money(guaranteed)} {currency}
+                {formatDollars(guaranteed)} {currency}
               </span>
               {contestedTotal > 0 ? (
                 <span className="text-[13px] tabular-nums text-f-bounty-ink">
-                  +{money(contestedTotal)} contested
+                  +{formatDollars(contestedTotal)} contested
                 </span>
               ) : null}
               {claimed ? (
                 <span className={`text-[12px] ${pool.releasedContributor > 0 ? 'text-f-rewards-ink' : 'text-[var(--mcc-faint)]'}`}>
                   {pool.releasedContributor > 0
-                    ? `${money(pool.releasedContributor)} paid out so far`
+                    ? `${formatDollars(pool.releasedContributor)} paid out so far`
                     : 'nothing paid out yet'}
                 </span>
               ) : contestedTotal > 0 ? (
@@ -386,14 +382,14 @@ export function BountyProgram() {
               </div>
               {totals ? (
                 <div className="mcb-totals">
-                  <span><small>{examples.count ? 'Example total' : 'Ledger balance'}</small><strong>{money(examples.count ? examples.unique : totals.realValue)}</strong><em>counted once</em></span>
+                  <span><small>{examples.count ? 'Example total' : 'Ledger balance'}</small><strong>{formatDollars(examples.count ? examples.unique : totals.realValue)}</strong><em>counted once</em></span>
                   <i aria-hidden="true" />
-                  <span><small>Visible across pools</small><strong>{money(examples.count ? examples.visible : totals.displayedTotal)}</strong><em>{examples.count ? 'examples only' : 'contested value repeats'}</em></span>
+                  <span><small>Visible across pools</small><strong>{formatDollars(examples.count ? examples.visible : totals.displayedTotal)}</strong><em>{examples.count ? 'examples only' : 'contested value repeats'}</em></span>
                 </div>
               ) : null}
             </section>
 
-            {examples.count > 0 && <p className="mcb-example-notice">Example amounts, not funded: $100 per name plus one shared $100. Funded pools replace their examples. Current ledger balance: {money(totals?.realValue || 0)}.</p>}
+            {examples.count > 0 && <p className="mcb-example-notice">Example amounts, not funded: $100 per name plus one shared $100. Funded pools replace their examples. Current ledger balance: {formatDollars(totals?.realValue || 0)}.</p>}
             {loadError && <p role="alert" className="mcb-example-notice">{loadError}</p>}
 
             <div className="mcb-board-layout">
@@ -440,10 +436,10 @@ export function BountyProgram() {
                         </FeatureTag>
                       </div>
                     ) : null}
-                    <div className="mcb-detail-total"><strong>{money(activeTotal)}</strong><span>{active.displayOnly ? 'Example, not funded' : 'potential bounty'}</span></div>
+                    <div className="mcb-detail-total"><strong>{formatDollars(activeTotal)}</strong><span>{active.displayOnly ? 'Example, not funded' : 'potential bounty'}</span></div>
                     <div className="mcb-detail-split">
-                      <span><i className="is-locked" /><b>{money(activeGuaranteed)} {currency} locked</b><small>Reserved for this streamer.</small></span>
-                      <span><i className="is-contested" /><b>{money(activeContested)} {currency} contested</b><small>{activeRivals > 0 ? `${activeRivals + 1} streamers can claim this portion.` : 'No competing names.'}</small></span>
+                      <span><i className="is-locked" /><b>{formatDollars(activeGuaranteed)} {currency} locked</b><small>Reserved for this streamer.</small></span>
+                      <span><i className="is-contested" /><b>{formatDollars(activeContested)} {currency} contested</b><small>{activeRivals > 0 ? `${activeRivals + 1} streamers can claim this portion.` : 'No competing names.'}</small></span>
                     </div>
                     <a href={poolHref(active)} className="mcb-detail-action">Open bounty</a>
                     {!active.claimed && <a href={`${poolHref(active)}?claim=1`} className="mcb-claim-action">{active.displayOnly ? 'Preview claim setup' : 'Claim this bounty'}</a>}

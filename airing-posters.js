@@ -49,6 +49,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { getSetting } from './site-settings.js';
+import { envNum } from './env-num.js';
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 export const AIRING_POSTER_DIR = path.join(DATA_DIR, 'airing-posters');
@@ -81,8 +82,9 @@ const EDGE_END_MS = 5 * 60_000; // end cards
 const QUIET_MIN_MS = 5 * 60_000;
 const CANDIDATES_KEPT_AFTER_CLOSE_MS = 60 * 60_000; // a blip can reopen an airing; keep them that long
 const SWEEP_WINDOW_MS = 14 * 24 * 60 * 60_000;
-// Recordings appear minutes after the end. `??`, not `||`: a gate sets 0.
-const VOD_WAIT_MS = Number(process.env.POSTER_VOD_WAIT_MS ?? 10 * 60_000);
+// Recordings appear minutes after the end. A gate sets 0, which envNum keeps;
+// an empty or malformed value is the default, not a 0 ms wait.
+const VOD_WAIT_MS = envNum('POSTER_VOD_WAIT_MS', 10 * 60_000);
 const RETRY_STEPS_MS = [10, 30, 120, 360, 1440].map((m) => m * 60_000);
 
 const safeId = (id) => String(id || '').replace(/[^a-z0-9-]/gi, '');
@@ -519,12 +521,4 @@ export async function sweepAiringPosters({ airings, allAirings, roomIds, helix, 
   } finally {
     sweeping = false;
   }
-}
-
-/** Test seam. */
-export function _resetForTests() {
-  metaMemo.clear();
-  lastSnap.clear();
-  retry.clear();
-  totalCandidates = null;
 }

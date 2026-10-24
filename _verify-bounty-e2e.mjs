@@ -32,8 +32,8 @@ const srv = mintBountyAuth({ handles: ['e2estreamer'], dataDir });
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
   env: {
-    ...process.env, PORT: String(PORT), DATA_DIR: dataDir, ...srv.env,
-    BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true',
+    ...process.env, PORT: String(PORT), DATA_DIR: dataDir, LIVEKIT_URL: '', ...srv.env,
+    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true',
   },
   stdio: ['ignore', 'pipe', 'pipe'], cwd: process.cwd(),
 });
@@ -107,7 +107,9 @@ try {
     typeof waiting.body.storage?.pctUsed === 'number', JSON.stringify(waiting.body.storage?.pctUsed));
 
   // ── 4. THE THING THE WHOLE MECHANIC PROMISES: play the clip back ───────
-  const media = await fetch(`${APP}/api/bounty/clip/${clipId}/media`);
+  // As the streamer: an unmoderated clip is private (bounty-8) — only its
+  // pledger, its streamer and the operator can play it.
+  const media = await fetch(`${APP}/api/bounty/clip/${clipId}/media`, { headers: { Cookie: srv.cookieFor('e2estreamer') } });
   const mediaBuf = Buffer.from(await media.arrayBuffer());
   ok('4. THE STREAMER CAN ACTUALLY RETRIEVE THE RECORDING',
     media.status === 200, `HTTP ${media.status}`);

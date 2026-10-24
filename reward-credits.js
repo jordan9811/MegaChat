@@ -56,7 +56,3 @@ export function parseRewardAmount(amountStr, decimals) {
 export function formatRewardAmount(atomic, decimals) {
   return fromAtomic(atomic, decimals);
 }
-
-export function _resetCreditsForTests() {
-  store.clear();
-}

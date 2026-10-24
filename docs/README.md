@@ -1,6 +1,6 @@
 # MegaChat
 
-MegaChat puts a viewer's camera on a streamer's live broadcast, for a price the streamer sets, for as long as the viewer stays. The streamer adds one browser source to OBS; the viewer opens a link, pays per second, and appears in a tile on the stream. When they leave, the tile goes and whatever they did not spend comes back to them. Source: the room config and seat lifecycle in `server.js` (`/api/config`, `/api/join`, `removeParticipant`) and the product description in `web/app/layout.tsx`.
+MegaChat puts a viewer's camera on a streamer's live broadcast, for a price the streamer sets, for as long as the viewer stays. The streamer adds one browser source to OBS; the viewer opens a link, pays per second, and appears in a tile on the stream. When they leave, the tile goes and whatever they did not spend comes back to them. Source: the room config and seat lifecycle in `server.js` (`/api/config`, `/api/join/*`, `removeParticipant`) and the product description in `web/app/layout.tsx`.
 
 There are two ways to be on the stream:
 

@@ -1,4 +1,6 @@
 import type { Metadata } from 'next'
+import { cache } from 'react'
+import { backendBase } from '@/lib/backend-base'
 import { CampaignsHeader } from '@/components/campaigns/campaigns-shell'
 import { SiteFooter, contactUrl } from '@/components/site-footer'
 import { CampaignOffer } from '@/components/campaign-offer/campaign-offer'
@@ -12,12 +14,10 @@ import { rewardLabel } from '@/components/campaigns/rules'
 
 export const dynamic = 'force-dynamic'
 
-function backendBase(): string {
-  const port = process.env.PORT || '3000'
-  return (process.env.BASE_URL || `http://127.0.0.1:${port}`).replace(/\/+$/, '')
-}
-
-async function loadCampaign(slug: string): Promise<PublicCampaign | null> {
+// One fetch per request for the metadata AND the page. Next's own fetch
+// dedupe does not apply: a fetch with a `signal` opts out of it, so without
+// cache() every render read the campaign twice.
+const loadCampaign = cache(async (slug: string): Promise<PublicCampaign | null> => {
   try {
     const r = await fetch(`${backendBase()}/api/campaigns/${encodeURIComponent(slug)}`, {
       cache: 'no-store',
@@ -29,7 +29,7 @@ async function loadCampaign(slug: string): Promise<PublicCampaign | null> {
   } catch {
     return null
   }
-}
+})
 
 function actionWords(c: PublicCampaign) {
   return c.action.kind === 'callin' ? 'Call in' : 'Holler'

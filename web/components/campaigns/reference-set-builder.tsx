@@ -6,16 +6,19 @@
 // snapshot date and root. No list of people is shown or held here.
 //
 // Two sources read X and cost lookups, which the server charges to a FUNDED
-// campaign of the creator's; a draft has nothing to charge, so on the form
-// those two are locked and pasted ids (free) are the default. The detail
-// page of a funded or live campaign mounts the same builder with the X
-// sources open (ReferenceSetBuilder).
+// USDC campaign of the creator's (not a live one: lists are built before a
+// campaign opens). A draft has nothing to charge, so on the form those two
+// are locked and pasted ids (free) are the default. The detail page of a
+// funded USDC campaign mounts the same builder with the X sources open
+// (ReferenceSetBuilder).
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createReferenceSet,
   estimateReferenceSet,
+  refusedEstimate,
   type ReferenceSet,
+  type ReferenceSetEstimate,
   type ReferenceSetSource,
 } from '@/lib/campaigns-api'
 import { fmtDate, fmtInt, shortRoot } from './rules'
@@ -63,15 +66,17 @@ export function FrozenSet({ set }: { set: ReferenceSet }) {
       <span>frozen {fmtDate(set.snapshotAt)}</span>
       <span className="mcp-root">
         <code title={set.root}>{shortRoot(set.root)}</code>
-        <button type="button" onClick={() => void copy()} aria-label="Copy the set root">{copied ? 'Copied' : 'Copy'}</button>
+        {/* Visible Copy / Copied, completed for a screen reader by the
+            hidden words; an aria-label would hide the change. */}
+        <button type="button" onClick={() => void copy()}>{copied ? 'Copied' : 'Copy'}<span className="sr-only"> the set root</span></button>
       </span>
     </div>
   )
 }
 
-/** The builder alone: source, estimate, freeze. `chargeTo` is the FUNDED (or
- *  live) campaign an X read is billed to; without it the two X sources are
- *  locked and only pasted ids can be frozen. */
+/** The builder alone: source, estimate, freeze. `chargeTo` is the FUNDED
+ *  campaign an X read is billed to; without it the two X sources are locked
+ *  and only pasted ids can be frozen. */
 export function ReferenceSetBuilder({
   chargeTo,
   onCreated,
@@ -86,7 +91,7 @@ export function ReferenceSetBuilder({
   const [source, setSource] = useState<ReferenceSetSource>(chargeTo ? defaultSource : 'manual')
   const [sourceRef, setSourceRef] = useState('')
   const [name, setName] = useState('')
-  const [estimate, setEstimate] = useState<{ estimatedUsd: number; count?: number } | null>(null)
+  const [estimate, setEstimate] = useState<ReferenceSetEstimate | null>(null)
   const [busy, setBusy] = useState<'estimate' | 'freeze' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -123,7 +128,13 @@ export function ReferenceSetBuilder({
       setSourceRef('')
       setName('')
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not freeze the set')
+      const fresh = refusedEstimate(e)
+      if (fresh) {
+        setEstimate(fresh)
+        setError(`The list changed: it now costs about $${fresh.estimatedUsd.toFixed(2)}. Freeze again to confirm.`)
+      } else {
+        setError(e instanceof Error ? e.message : 'Could not freeze the set')
+      }
     } finally {
       setBusy(null)
     }
@@ -212,13 +223,14 @@ export function ReferenceSetPicker({
   onCreated: (set: ReferenceSet) => void
   loadError: string | null
   /** Reading an X list costs a lookup that is charged to a FUNDED campaign
-   *  of the creator's; the server refuses an X-sourced estimate without one. */
+   *  of the creator's; the server refuses an X-sourced estimate without one,
+   *  and refuses a live one. (The form only edits drafts today.) */
   campaignId?: string
   campaignStatus?: string
 }) {
   const [building, setBuilding] = useState(sets.length === 0)
   const chosen = sets.find((s) => s.id === value) || null
-  const chargeTo = campaignStatus === 'funded' || campaignStatus === 'live' ? campaignId : undefined
+  const chargeTo = campaignStatus === 'funded' ? campaignId : undefined
 
   return (
     <div className="mcp-setpicker">

@@ -20,14 +20,11 @@
  * reads the live in-memory set plus whatever the current boot accumulated).
  */
 
-import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { lazyConfig } from './livekit-lazy.config.js';
+import { dataDir, quarantineCopy, readJsonFile, writeJsonAtomic } from './json-store.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const LEDGER_PATH = path.join(DATA_DIR, 'livekit-sessions.json');
+const LEDGER_PATH = path.join(dataDir(), 'livekit-sessions.json');
 
 /** Rolling in-memory ledger; flushed to disk best-effort. */
 const sessions = [];
@@ -35,21 +32,30 @@ const MAX_LEDGER = 5000;
 
 function persist() {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(LEDGER_PATH, JSON.stringify(sessions.slice(-MAX_LEDGER)), 'utf8');
+    writeJsonAtomic(LEDGER_PATH, sessions.slice(-MAX_LEDGER));
   } catch {
     /* ledger is observability, never worth crashing a broadcast over */
   }
 }
 
+/**
+ * A ledger that exists but cannot be read is not fatal and not silently
+ * empty either: it is copied aside and said out loud, then the ledger starts
+ * fresh. It is observability, rebuilt from what the overlays report — but a
+ * quiet reset reads as "no sessions in the last 24 h", the one thing a leak
+ * investigation must not be told by accident.
+ */
 function loadLedger() {
-  try {
-    if (!fs.existsSync(LEDGER_PATH)) return;
-    const raw = JSON.parse(fs.readFileSync(LEDGER_PATH, 'utf8'));
-    if (Array.isArray(raw)) sessions.push(...raw);
-  } catch {
-    /* corrupt ledger is not fatal */
+  const r = readJsonFile(LEDGER_PATH);
+  if (r.state === 'missing') return;
+  if (r.state === 'ok' && Array.isArray(r.data)) {
+    sessions.push(...r.data);
+    return;
   }
+  let kept = null;
+  try { kept = quarantineCopy(LEDGER_PATH); } catch { /* reported below as not kept */ }
+  console.error(`[lk-session] ⚠ ${LEDGER_PATH} is ${r.state === 'ok' ? 'not a list' : r.state}`
+    + `${r.why ? ` (${r.why})` : ''} — starting a fresh ledger; ${kept ? `the old one is kept at ${kept}` : 'the old one could NOT be copied aside'}`);
 }
 loadLedger();
 

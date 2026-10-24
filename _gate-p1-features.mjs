@@ -11,6 +11,12 @@
  */
 import WebSocket from 'ws';
 import { spawn } from 'child_process';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
+// DATA_DIR in the server env below is a scratch dir: this gate booted on the
+// repo's own data/ (audit harness-5). It spends, so the full move to
+// startGateServer waits for a run with the owner present.
 import puppeteer from 'puppeteer-core';
 import { createWalletClient, createPublicClient, http, erc20Abi, formatUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -43,7 +49,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 }
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
-  env: { ...process.env, PORT: '3220' }, stdio: 'ignore', cwd: process.cwd(),
+  env: { ...process.env, PORT: '3220', DATA_DIR: mkdtempSync(path.join(tmpdir(), 'mc-p1-features-')) }, stdio: 'ignore', cwd: process.cwd(),
 });
 await sleep(9000);
 
@@ -156,14 +162,14 @@ try {
   const wsB = new WebSocket(WS_URL);
   await new Promise((res, rej) => { wsB.on('open', res); wsB.on('error', rej); });
   wsB.send(JSON.stringify({ type: 'subscribe_room', room: roomB.id }));
-  wsB.send(JSON.stringify({ type: 'camera_ready', seatId: seatB.seatId }));
+  wsB.send(JSON.stringify({ type: 'camera_ready', seatId: seatB.seatId, seatToken: seatB.seatToken }));
   await sleep(400);
   for (let i = 0; i < 3; i++) { await sess.fetch(`${APP}${seatB.tickUrl}`, { method: 'POST' }); await sleep(1100); }
   const dashB = await (await fetch(`${APP}/api/dashboard/rooms/${roomB.id}`, { headers: { 'X-Room-Password': 'p1-gate' } })).json();
   const spentB = parseFloat(dashB.seats.find((s) => s.id === seatB.seatId)?.spent || '0');
   ok('B: ticks charge the room\'s own price (0.002/s × 3)', Math.abs(spentB - 0.006) < 0.0021, `spent=${spentB}`);
   await sess.close().catch(() => {});
-  await fetch(`${APP}/api/leave/${seatB.seatId}`, { method: 'POST' });
+  await fetch(`${APP}/api/leave/${seatB.seatId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seatToken: seatB.seatToken }) });
   wsB.close();
   const pageB = await browser.newPage();
   await pageB.goto(`${APP}/join?room=${roomB.id}`, { waitUntil: 'networkidle2', timeout: 60000 });
@@ -200,7 +206,7 @@ try {
   const joinC2Data = await joinC2.json();
   ok('C: after ~10s of watching the join passes', joinC2.ok && !!joinC2Data.seatId,
     joinC2.ok ? joinC2Data.seatId.slice(0, 8) : JSON.stringify(joinC2Data));
-  if (joinC2Data.seatId) await fetch(`${APP}/api/leave/${joinC2Data.seatId}`, { method: 'POST' });
+  if (joinC2Data.seatId) await fetch(`${APP}/api/leave/${joinC2Data.seatId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seatToken: joinC2Data.seatToken }) });
   wsC.close();
 
   // ── D. inheritance ───────────────────────────────────────────────────────

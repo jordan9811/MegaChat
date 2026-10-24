@@ -1,17 +1,27 @@
 /**
  * Phase 1 streamer dashboard automated gate.
+ *
+ * Everything it writes goes to a SCRATCH data directory, in this process and
+ * in the server it boots (startGateServer, --prod, money keys blanked). It
+ * used to import rooms-store with no DATA_DIR and spawn a dev server with
+ * none either, so it wrote — and the boot pruner then pruned — the repo's
+ * real data/rooms.json.
  */
-import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import path from 'node:path';
 import fs from 'fs';
-import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 import { simulateStreamUntilEmpty } from './passkey-meter.js';
-import { resolveRoomConfig, _resetCacheForTests } from './rooms-store.js';
+import { startGateServer } from './_gate-helpers.mjs';
 
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PORT = process.env.GATE_PORT || 3002;
-const BASE = `http://127.0.0.1:${PORT}`;
+const SCRATCH = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-dash-p1-'));
+process.env.DATA_DIR = SCRATCH; // before rooms-store first reads its file
+const { resolveRoomConfig, _resetCacheForTests } = await import('./rooms-store.js');
+
+const PORT = Number(process.env.GATE_PORT || 3002);
+// localhost, not 127.0.0.1: server.js 301s the latter, and fetch turns a
+// redirected POST into a GET.
+const BASE = `http://localhost:${PORT}`;
 const ROOM_PW = process.env.GATE_ROOM_PASSWORD || 'dashboard-gate-secret';
 const fails = [];
 
@@ -36,21 +46,19 @@ try {
   fail('passkey-meter: ' + e.message);
 }
 
-let serverProc;
+let srv = null;
 try {
-  serverProc = spawn('node', ['server.js'], {
-    cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), ROOM_DEFAULT_PASSWORD: 'changeme' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    shell: true,
+  srv = await startGateServer({
+    port: PORT, dataDir: SCRATCH, label: 'dashboard-phase1',
+    // Every live key starts blank (startGateServer, SENSITIVE_ENV).
+    env: { FOLLOW_STREAM: '0', TEMPO_RPC_URL: 'http://127.0.0.1:9' },
   });
+  process.on('exit', () => srv?.kill());
 } catch (e) {
-  fail('spawn: ' + e.message);
+  fail('server: ' + e.message);
 }
 
-await sleep(2500);
-
-try {
+if (srv) try {
   for (const p of ['/', '/overlay', '/dashboard']) {
     const res = await fetch(`${BASE}${p}`);
     if (res.status !== 200) fail(`GET ${p} returned ${res.status}`);
@@ -79,13 +87,16 @@ try {
   if (roomCfg.passkeyTickPrice !== '0.002') fail('room config not persisted');
   else ok('room config readable by join page');
 
-  const storePath = path.join(ROOT, 'data', 'rooms.json');
-  if (!fs.existsSync(storePath)) fail('data/rooms.json not written');
-  else ok('rooms.json persisted on disk');
+  const storePath = path.join(SCRATCH, 'rooms.json');
+  const onDisk = fs.existsSync(storePath) ? JSON.parse(fs.readFileSync(storePath, 'utf8')) : null;
+  if (!onDisk?.rooms?.[roomId]) fail('rooms.json in the scratch data dir does not hold the new room');
+  else ok('rooms.json persisted on disk (scratch data dir)');
 
+  // Nothing bundles the passkey wallet into public/ any more (housekeeping,
+  // 2026-10-24; Gate H asserts the same): this used to expect a 200.
   const bundle = await fetch(`${BASE}/passkey-wallet.bundle.js`);
-  if (bundle.status !== 200) fail('passkey bundle not served');
-  else ok('passkey bundle still served');
+  if (bundle.status !== 404) fail(`passkey bundle answered ${bundle.status}, not 404`);
+  else ok('passkey bundle is not served (404)');
 
   const badAuth = await fetch(`${BASE}/api/dashboard/rooms/${createData.room.id}`, {
     headers: { 'X-Room-Password': 'wrong' },
@@ -97,8 +108,9 @@ try {
   fail('HTTP: ' + e.message);
 }
 
-if (serverProc) serverProc.kill();
-await sleep(400);
+if (srv) srv.kill();
+await sleep(1000);
+try { fs.rmSync(SCRATCH, { recursive: true, force: true }); } catch { /* OneDrive may hold a file */ }
 
 console.log('');
 if (fails.length) {

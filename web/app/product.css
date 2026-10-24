@@ -7,30 +7,9 @@ body :is(.mc-product-brand, .mcc-brand, .mcb-product-brand .bc, .mcc-product-bra
 body :is(.mc-product-brand, .mcc-brand, .mcb-product-brand .bc, .mcc-product-brand .bc, .mch-product-brand .bc, .mcj-product-brand .bc, .mc-booth-brand) { font-size: var(--hl-hdr-mark); line-height: 1; display: inline-flex; align-items: center; }
 body :is(.mcb-product-header, .mcj-product-header, .mcc-product-header, .mch-product-header) { height: var(--hl-hdr-h); box-sizing: border-box; }
 .mc-product {
-  /* One accent (the strap azure) across the product screens; every value is
-     a Holler token, so the scope follows the light/dark theme. */
-  --background: var(--hl-bg);
-  --foreground: var(--hl-fg);
-  --card: var(--hl-panel);
-  --card-foreground: var(--hl-fg);
-  --popover: var(--hl-panel-2);
-  --popover-foreground: var(--hl-fg);
-  --primary: var(--hl-strap);
-  --primary-foreground: #ffffff;
-  --secondary: var(--hl-panel-2);
-  --secondary-foreground: var(--hl-fg);
-  --muted: var(--hl-panel-2);
-  --muted-foreground: var(--hl-muted);
-  --accent: var(--hl-panel-2);
-  --accent-foreground: var(--hl-fg);
-  --border: var(--hl-line);
-  --input: var(--hl-line-2);
-  --ring: var(--hl-strap-hi);
-  --neon-magenta: var(--hl-strap-hi);
-  --neon-violet: var(--hl-strap-hi);
-  --neon-cyan: var(--hl-strap-hi);
-  --neon-lime: var(--f-rewards-ink);
-  --neon-amber: var(--f-bounty-ink);
+  /* The theme variables (--background, --primary, the --neon-* inks …) come
+     from globals.css, which derives them from the Holler tokens for both
+     themes. Only the corner radius is the product screens' own. */
   --radius: 2px;
   color: var(--foreground);
   background: linear-gradient(var(--hl-grid) 1px, transparent 1px), linear-gradient(90deg, var(--hl-grid) 1px, transparent 1px), radial-gradient(ellipse at 0 0, color-mix(in srgb, var(--hl-strap) 9%, transparent) 0, transparent 40rem), var(--background);
@@ -54,8 +33,6 @@ body:has(.mc-product) { background: var(--hl-bg); }
 .mc-product-create { border: 1px solid var(--hl-strap-hi); color: var(--hl-strap-hi); padding: 0 12px; }
 .mc-product h1 { font-family: var(--font-display), var(--font-ui), sans-serif; font-size: clamp(30px, 3vw, 44px); font-weight: 800; letter-spacing: -.02em; line-height: 1.08; }
 .mc-product h2 { letter-spacing: -.02em; }
-/* The neon vars now resolve to text-safe inks, so text on a neon fill takes the page ground colour (≥4.5:1 in both themes). */
-.mc-product .text-white[class*='bg-[var(--neon-'] { color: var(--hl-bg); }
 
 .mcc-room-recovery { margin: 0 0 20px; border: 1px solid var(--hl-line); background: var(--hl-panel); color: var(--hl-muted); font-size: 14px; }
 .mcc-room-recovery summary { padding: 14px 18px; cursor: pointer; color: var(--hl-strap-hi); font-weight: 600; }
@@ -69,7 +46,6 @@ body:has(.mc-product) { background: var(--hl-bg); }
 .mcc-owned-rooms { display: flex; gap: 12px; flex-wrap: wrap; padding: 0 18px 18px; }
 .mcc-owned-rooms button { background: var(--hl-panel-2); color: var(--hl-fg); }
 .mcc-owned-rooms span { margin-left: 20px; color: var(--hl-strap-hi); }
-body .mcc-progress { text-transform: none; }
 
 /* Readable label floor across scoped product screens; display typography is separate. */
 body :is(.mc-product, .mc-create, .mc-join, .mc-bounty, .mc-account, .mc-how, .mc-landing) :is([class*='text-[9'], [class*='text-[10'], [class*='text-[11']) { font-size: 12px; }
@@ -91,15 +67,15 @@ body .mc-product-header :is(nav, .mc-product-links) > a[aria-current='page'] { c
 body :is(.mcb-product-actions, .mcj-product-actions, .mch-product-actions, .mcc-product-actions) > a,
 body .mc-product-create { align-items: center; height: var(--hl-hdr-ctl); min-height: 0; padding: 0 14px; font-size: 13px; font-weight: 700; }
 body .mc-product-create { display: inline-flex; }
-body :is(.mcc-progress, .mcc-preview-note, .mcc-module-copy > span) { font-size: 12px; letter-spacing: .025em; font-weight: 600; }
+/* The next two selectors name the tag (and `html`) to keep the specificity they had while they also listed
+   classes that no longer exist, (0,1,2) and (0,1,3), so no page rule that lost to them can win now. Every
+   element they match is that tag (all .mcc-preview-note are <small>, all coordinates <span>). */
+body small.mcc-preview-note { font-size: 12px; letter-spacing: .025em; font-weight: 600; }
 /* Readouts and section coordinates read like a HUD: mono, small caps, wide tracking. */
-body :is(.mcb-coordinate, .join-coordinate, .mcc-coordinate, .mch-coordinate, .mcc-advanced-head span, .mcc-preview-head > div > span) { font-family: var(--font-code), ui-monospace, monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; font-weight: 400; }
+html body :is(span.mcb-coordinate, span.join-coordinate, span.mcc-coordinate, span.mch-coordinate) { font-family: var(--font-code), ui-monospace, monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; font-weight: 400; }
 body :is(.mcb-hero h1, .mcc-identity-hero h1, .mch-hero h1) { font-family: var(--font-display), var(--font-ui), sans-serif; font-size: clamp(36px, 4vw, 54px); letter-spacing: -.02em; line-height: 1.02; font-weight: 800; }
 body :is(.mcb-totals small, .mcb-totals em, .mcb-detail-person p, .mcb-detail-total span, .mcb-detail-split small, .mcb-anatomy small) { font-size: 13px; line-height: 1.5; }
 body :is(.mcb-detail-action, .mcb-claim-action, .mcc-section-nav a, .mcc-signout, .join-advanced summary) { font-size: 14px; }
-body .mc-create :is(.lbl, .hint, .tabchip, .mcc-switch, .mcc-identity-field > span:first-child, .mcc-charging > span:first-child) { font-size: 13px; letter-spacing: 0; }
-body .mc-create .mcc-section-title :is(h1,h2) { font-size: 21px; }
-body .mc-create .mcc-module-copy strong { font-size: 16px; }
 body .mc-join :is(#priceLabel, #walletInfo, #passkeyFundNote, #camHint, #letterStatus, .join-trust-line) { font-size: 13px; }
 body .mc-join .join-mode-zone h2 { font-size: 22px; letter-spacing: -.02em; }
 body .mc-bounty .mcb-totals { min-width: 285px; }
@@ -109,8 +85,8 @@ body .mc-bounty .lb-row.is-claimed { opacity: 1; }
 body .mc-bounty :is(.mcb-leaderboard h2, .mcb-create-bounty h2, .mcb-detail-person h2) { font-family: var(--font-display), var(--font-ui), sans-serif; font-weight: 700; letter-spacing: -.02em; }
 body .mc-how .mch-flow p { font-size: 14px; line-height: 1.6; }
 body .mc-how .mch-flow h3 { font-size: 16px; }
-body .mc-how :is(.mch-flow li > span, .mch-section-heading > span, .mch-stats dd, .mch-stats dd span, .mch-footer a) { font-size: 12px; letter-spacing: .025em; }
-body .mc-how :is(.mch-tree-root h2, .mch-tree-result h2, .mch-section-heading h2) { letter-spacing: -.025em; }
+body .mc-how :is(.mch-flow li > span, .mch-section-heading > span, .mch-footer a) { font-size: 12px; letter-spacing: .025em; }
+body .mc-how :is(.mch-tree-result h2, .mch-section-heading h2) { letter-spacing: -.025em; }
 /* Below 1024px the one-row header no longer fits (it wrapped Sign in under the nav at 820px), so it becomes two rows:
    the mark, tag, theme toggle and account on top; the page links (one strip that scrolls sideways, scrollbar hidden)
    and Create room below. Same elements, same DOM order; CSS order only. About 100px tall on a phone, down from 153. */

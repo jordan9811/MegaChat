@@ -23,8 +23,7 @@ MetaMask path still uses `TICK_SECONDS=10`, `TICK_PRICE=0.1` (unchanged).
 ## Automated gate (headless)
 
 ```bash
-npm run build:passkey
-node _gate-phase2.mjs
+node _gate-phase2.mjs   # historical: deleted 2026-10-24 (it asserted the deleted passkey bundle)
 ```
 
 Checks: stream meter math (dry-run to zero), server boot, `GET /` 200, `/api/config` passkey tick fields, bundle serves `authorizeSessionGasless`.
@@ -41,7 +40,7 @@ Checks: stream meter math (dry-run to zero), server boot, `GET /` 200, `/api/con
 
 **Steps**
 
-1. `npm run build:passkey && npm start`
+1. `npm start`
 2. Open **http://localhost:3000** (not 127.0.0.1 — passkey domain).
 3. DevTools → Console: should be clean on load (no module/TDZ errors).
 4. Enter username → **Sign in with Passkey** → complete Face ID / platform auth.

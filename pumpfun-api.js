@@ -62,9 +62,6 @@ const API_BASE = () => (process.env.PUMPFUN_API_BASE || 'https://livestream-api.
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
   + '(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36';
 
-/** Always available: the endpoint needs no credential of ours. */
-export const pumpfunApiConfigured = () => true;
-
 /**
  * The HLS master playlist for a stream, derived from its thumbnail URL.
  *

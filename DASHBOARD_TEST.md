@@ -10,7 +10,7 @@ Per-room join economics live in **`data/rooms.json`** (gitignored). Secrets stay
 npm run gate:dashboard
 ```
 
-Also run `npm run gate:phase2` to confirm passkey meter math still passes.
+Also run `npm run gate:phase2` to confirm passkey meter math still passes (historical: deleted 2026-10-24, with its alias: it asserted the Arc-era passkey bundle).
 
 ---
 

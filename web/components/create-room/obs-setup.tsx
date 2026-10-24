@@ -12,6 +12,7 @@ import { ChevronDown } from 'lucide-react'
 import { CopyRow } from '@/components/copy-row'
 import { ObsOneClick } from '@/components/obs/obs-oneclick'
 import { useRoom } from '@/components/room-provider'
+import { fetchPublicConfig } from '@/lib/api'
 import { withOverlayKey } from '@/lib/overlay-key'
 
 export function ObsSetup() {
@@ -22,9 +23,9 @@ export function ObsSetup() {
   useEffect(() => {
     if (!room?.id) return
     let cancelled = false
-    fetch(`/api/config?room=${encodeURIComponent(room.id)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((c) => { if (!cancelled && c?.obsOneClick) setOneClick(true) })
+    // The shared per-page config answer (lib/api.ts), not a request of its own.
+    fetchPublicConfig(room.id)
+      .then(({ ok, body }) => { if (!cancelled && ok && body.obsOneClick) setOneClick(true) })
       .catch(() => { /* the manual route is always there */ })
     return () => { cancelled = true }
   }, [room?.id])

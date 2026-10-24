@@ -35,6 +35,3 @@ export function checkOverlayVisible(
   client: ObsClient | null,
   opts?: { inputName?: string; now?: number },
 ): Promise<SceneVisibility>
-
-export function stateIsNotVisible(state: string): boolean
-export function stateIsConclusive(state: string): boolean

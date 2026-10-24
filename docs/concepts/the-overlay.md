@@ -22,9 +22,11 @@ The overlay talks to the server over a WebSocket for seat and MegaChat events, a
 
 A separate breaker refuses *new* LiveKit connections when webhook-measured consumption crosses a budget, and never cuts an existing session mid-broadcast (`livekit-breaker.js`, "Blocking refuses NEW connections only").
 
+**The URL carries the room's key.** The overlay URL a room's manager is handed ends in `&k=<key>`, an HMAC of the room id under the server's session secret, so the same room always gets the same URL and it survives deploys (`overlay-key.js`). The overlay sends the key when it subscribes and on every bounty fetch — the room code, badge reports, environment reports (`public/overlay.html`). An overlay without it still draws tiles and MegaChats, but it is not the room's real overlay: a campaign Holler does not count as aired on it (`letters.js`, `hasAuthedOverlay`), and the bounty routes refuse its badge and environment reports unless the request carries the streamer's own session or the operator key instead (`overlayReportAuthorized`, `bounty-routes.js`). In production with neither `AUTH_SECRET` nor `MPP_SECRET_KEY` set there is no key at all, so no overlay counts.
+
 ## Adding it to OBS
 
-Either paste the overlay URL into a browser source by hand, or use **Add to OBS**, which writes every browser-source setting that matters for the badge to stay legible — full canvas size, position 0,0, scale 1, no bounds, no reload on scene switch, own audio channel (`web/lib/obs-oneclick.mjs`, the settings table in the header). The [OBS setup](../features/obs-setup.md) page covers both paths and what each does not check.
+Either paste the overlay URL — key included — into a browser source by hand, or use **Add to OBS**, which writes every browser-source setting that matters for the badge to stay legible — full canvas size, position 0,0, scale 1, no bounds, no reload on scene switch, own audio channel (`web/lib/obs-oneclick.mjs`, the settings table in the header). The [OBS setup](../features/obs-setup.md) page covers both paths and what each does not check.
 
 ## What this does NOT do
 

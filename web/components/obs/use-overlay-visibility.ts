@@ -73,9 +73,13 @@ export function useOverlayVisibility({
   const lastPosted = useRef<string | null>(null)
 
   useEffect(() => {
+    // Every (re)start reports afresh: the last post was for the room (or the
+    // password) this effect ran for before. Kept across a room switch, the
+    // new room's first state matched the old one's key and was never posted,
+    // so a hidden overlay in the new room went on billing (audit web-21).
+    lastPosted.current = null
     if (!enabled || !roomId || !password) {
       setLast(null)
-      lastPosted.current = null
       return
     }
     let stopped = false

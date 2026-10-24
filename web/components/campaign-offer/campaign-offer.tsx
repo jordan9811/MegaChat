@@ -12,96 +12,24 @@
 // action's own colour (holler magenta / call-in azure).
 //
 // Money reads as "$5" for USDC; only a custom token shows its symbol
-// (rewardLabel). Dates are human ("Oct 28, 2026"), never ISO.
+// (rewardLabel). Dates are human ("Oct 28, 2026"), never ISO, and in UTC
+// wherever the server renders them (offer-copy.ts fmtDate).
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, X as Cross } from 'lucide-react'
 import { HollerMark } from '@/components/holler-mark'
 import { FeatureTag } from '@/components/feature-tag'
 import { explorerTxUrl, getChainInfo } from '@/lib/campaigns-api'
-import { allUnread, fmtClock, isUnreadCheck, joinAnd, polishRule, rewardLabel, UNREAD_CHECK } from '@/components/campaigns/rules'
+import { shortAddr } from '@/lib/display-format'
+import { allUnread, isUnreadCheck, joinAnd, polishRule, rewardLabel, UNREAD_CHECK } from '@/components/campaigns/rules'
+import { fmtDate, statusCopy, type Kind } from './offer-copy'
 import type { CampaignCheck, CampaignClaim, MyClaim, PublicCampaign, SetFingerprint } from './types'
-
-type Kind = 'holler' | 'callin'
-
-const fmtDate = (iso: string | null | undefined) => {
-  if (!iso) return null
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-}
-
-const fmtDateTime = (iso: string | null | undefined) => {
-  if (!iso) return null
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
-
-type StatusContext = {
-  kind: Kind
-  /** The campaign is closed (by its creator or by its deadline). */
-  closed: boolean
-  /** Every failed check is unread X data: nothing has been judged yet. */
-  unread: boolean
-  claim: CampaignClaim
-  /** The room's moderation, when the campaign view carries it. */
-  moderation: string | null | undefined
-}
-
-/** What the claimant's status line says, per action and per state. The
- *  Holler is sent; a Call in is a live seat, so "send" is wrong for it.
- *  Every sentence here is a claim about what the server will do, so each
- *  one is gated on what the server has actually said. */
-function statusCopy({ kind, closed, unread, claim, moderation }: StatusContext): string {
-  const act = kind === 'callin' ? 'Call in to claim your place.' : 'Send your Holler to claim your place.'
-  const thing = kind === 'callin' ? 'your seat' : 'your Holler'
-  const honour = closed && claim.honourUntil ? fmtDateTime(claim.honourUntil) : null
-  // N14: it played, through the streamer's OLD overlay link, so the server
-  // could not confirm it aired. Not a verdict on the claimant; the fix is on
-  // the streamer's side. Said before anything else while it is still waiting,
-  // with the time it played when the server recorded one.
-  if (claim.playedUnauthed && (claim.status === 'recorded' || claim.status === 'approved')) {
-    const at = fmtClock(claim.playedUnauthedAt)
-    return `This played${at ? ` at ${at}` : ''}, but through an overlay link that can’t confirm it aired. The streamer needs to update their OBS overlay link before it can count.${honour ? ` It still counts if it airs before ${honour}.` : ''}`
-  }
-  switch (claim.status) {
-    case 'ineligible': return unread ? 'We couldn’t read your X account yet.' : 'You do not qualify for this one.'
-    case 'eligible': return `You qualify. ${act}`
-    case 'recorded':
-      if (honour) return `This campaign has closed, but ${thing} still counts if it ${kind === 'callin' ? 'goes on air' : 'airs'} before ${honour}.`
-      return kind === 'callin' ? 'Your seat is reserved. Waiting for it to count.' : 'Sent. Waiting for it to count.'
-    case 'approved': {
-      // An auto-moderated room "approves" with nobody looking, so "Cleared"
-      // is the honest word; "Approved by the stream" only when a person did.
-      const auto = claim.autoModerated === true || moderation === 'auto'
-      const manual = claim.autoModerated === false || moderation === 'approve'
-      const cleared = auto ? 'Cleared for the stream.' : manual ? 'Approved by the stream.' : 'Cleared.'
-      if (honour) return `${cleared} This campaign has closed, but ${thing} still counts if it airs before ${honour}.`
-      return `${cleared} It counts once it airs.`
-    }
-    case 'aired': return 'It aired. Your reward is being lined up.'
-    case 'joined':
-      if (honour) return `You are on camera. This campaign has closed, but your seat still counts if it reaches the minimum before ${honour}.`
-      return 'You are on camera. Stay on to count.'
-    case 'owed': return 'You earned it. Your reward is owed to you.'
-    case 'releasing':
-      if (claim.payoutsEnabled === false) return 'Reward recorded. Payouts are queued on this server and will be sent when they’re switched on.'
-      if (claim.payoutsEnabled === true) return 'Reward recorded. It’s being sent from the Holler wallet; you’ll see the transaction here.'
-      return 'Reward recorded. You’ll see the transaction here once it’s sent.'
-    case 'paid': return 'Paid.'
-    case 'failed': return 'The payment did not go through. The creator has been told.'
-    case 'rejected': return 'The stream turned this one down.'
-    case 'expired': return 'The campaign closed before this counted.'
-    default: return claim.status
-  }
-}
 
 async function jsonOrThrow<T>(r: Response): Promise<T> {
   const d = (await r.json().catch(() => ({}))) as T & { error?: string }
   if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`)
   return d
 }
-
-const shortHex = (h: string) => `${h.slice(0, 6)}…${h.slice(-4)}`
 
 const primaryCta = 'inline-flex items-center justify-center rounded-lg bg-hl-strap px-5 py-3 text-[15px] font-bold text-hl-on-strap transition-colors hover:bg-hl-strap-hover disabled:opacity-50'
 const secondaryCta = 'inline-flex items-center justify-center rounded-lg border border-hl-strap-hi px-4 py-2.5 text-[14px] font-bold text-hl-strap-hi transition-colors hover:bg-hl-strap hover:text-hl-on-strap disabled:opacity-50'
@@ -381,7 +309,7 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
         ) : null}
         {claim?.payout ? (
           <p className="mt-4 text-[13px] text-hl-dim">
-            <span className="font-semibold text-f-bounty-ink">{rewardLabel(claim.payout.amount, claim.payout.symbol)}</span> to <code className="font-[family-name:var(--font-code)]">{shortHex(claim.payout.to)}</code>
+            <span className="font-semibold text-f-bounty-ink">{rewardLabel(claim.payout.amount, claim.payout.symbol)}</span> to <code className="font-[family-name:var(--font-code)]">{shortAddr(claim.payout.to)}</code>
             {claim.payout.txHash
               ? <> · <a href={explorerTxUrl(explorerUrl, claim.payout.txHash)} target="_blank" rel="noopener" className="font-semibold text-hl-strap-hi hover:underline">transaction {claim.payout.txHash.slice(0, 10)}…</a></>
               : payoutsOff

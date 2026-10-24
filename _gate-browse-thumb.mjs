@@ -15,9 +15,8 @@
  *  D. (opportunistic) if a live channel is found at runtime, its card DOES
  *     render the preview <img>. Skipped, not failed, when nothing is live.
  */
-import { spawn } from 'child_process';
 import puppeteer from 'puppeteer-core';
-import { assertFreshBuild } from './_gate-helpers.mjs';
+import { assertFreshBuild, startGateServer } from './_gate-helpers.mjs';
 
 let pass = 0, fail = 0, skip = 0;
 const ok = (name, cond, extra = '') => {
@@ -30,7 +29,7 @@ const PORT = 3219;
 const APP = `http://localhost:${PORT}`;
 
 // ── G0. the build under test must not predate the source ────────────────────
-// This gate drives the Next landing at /#browse, which `server.js --prod`
+// This gate drives the Next page at /legacy#browse, which `server.js --prod`
 // serves from web/.next exactly as it sits on disk. A stale build means we
 // grade the PREVIOUS tree and report it as current. Runs before the external
 // Twitch probes, the server spawn and puppeteer, so a stale tree costs nothing.
@@ -62,10 +61,10 @@ for (const ch of ['twitch', 'riotgames', 'valorant', 'esl_csgo', 'monstercat', '
 }
 console.log(liveChannel ? `  [setup] live channel for positive case: ${liveChannel}` : '  [setup] no live channel found — positive case will be skipped');
 
-const app = spawn(process.execPath, ['server.js', '--prod'], {
-  env: { ...process.env, PORT: String(PORT) }, stdio: 'ignore', cwd: process.cwd(),
-});
-await sleep(9000);
+// startGateServer: a scratch data dir (these rooms used to be created in the
+// repo's data/), a readiness poll instead of a 9 s sleep, kept stderr, the
+// identity nonce, and no live key from .env.
+const app = await startGateServer({ port: PORT, label: 'browse-thumb' });
 
 const mk = (name, cfg) => fetch(`${APP}/api/dashboard/create`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -100,7 +99,10 @@ try {
   const browser = await puppeteer.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: 'new' });
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 2200 });
-  await page.goto(`${APP}/#browse`, { waitUntil: 'networkidle2', timeout: 60000 });
+  // The browse grid lives on the previous home page, which the UI overhaul
+  // moved to /legacy; the new landing at / has no #browse, so every card read
+  // null there.
+  await page.goto(`${APP}/legacy#browse`, { waitUntil: 'networkidle2', timeout: 60000 });
   await page.evaluate(() => document.getElementById('browse')?.scrollIntoView());
   await sleep(2500);
 

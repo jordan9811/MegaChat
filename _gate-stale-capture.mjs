@@ -55,11 +55,19 @@ const ok = (n, c, x = '') => {
 };
 
 // The recorded broadcast is the fixture. Without it this gate cannot make its
-// claim, and MUST say so rather than pass vacuously.
+// claim, and it FAILS rather than skip (audit harness-14, 2026-10-24). It used
+// to exit 2 with a SKIP line, which a suite runner reads as "not green, not
+// red", and the docs kept citing it as one of two gates holding the standard
+// while it asserted nothing. The files lived in another session's scratchpad
+// and a temp dir, and both are gone: this gate stays red until a real stalled
+// capture is preserved under the repo (OPEN-ISSUES). _gate-capture-stall still
+// holds the recorder side of the same standard.
 if (!existsSync(`${EVIDENCE}/bounty.json`) || !existsSync(CAPTURES)) {
-  console.log('SKIP: the 2026-08-29 pump.fun capture files are not on this host.');
-  console.log('      This gate asserts nothing without them — it does not pass by default.');
-  process.exit(2);
+  ok('0. the 2026-08-29 pump.fun capture files this gate is built on are present', false,
+    `missing ${!existsSync(`${EVIDENCE}/bounty.json`) ? `${EVIDENCE}/bounty.json` : CAPTURES}`);
+  console.log('\n  This gate asserts nothing without them; it does not pass, or skip, by default.');
+  console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+  process.exit(1);
 }
 
 const { grabFrame, CaptureFrameSource, SOURCE_STATES } = await import('./frame-sources.js');

@@ -1,8 +1,10 @@
 /**
- * Circle Modular Wallets (passkey) client — browser source (bundled before serve).
+ * Circle Modular Wallets (passkey) client — Arc-era browser source.
  * Arc Testnet chain path: /arcTestnet (Circle skill Transport URL Path Segments).
  *
- * Edit this file, then run: npm run build:passkey
+ * Nothing bundles or serves this file any more: the browser bundle was deleted
+ * in 944aa2c and its build script removed on 2026-10-24. Its one importer is
+ * _gate-gas-floor.mjs (Arc-only).
  */
 import { createPublicClient, encodeFunctionData, erc20Abi, formatUnits, parseUnits } from 'viem';
 import { arcTestnet } from 'viem/chains';

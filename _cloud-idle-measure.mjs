@@ -17,11 +17,12 @@
  * phase connects real participants and is the only part that spends.
  */
 import { spawn } from 'child_process';
+import { setTimeout as sleep } from 'node:timers/promises';
 import puppeteer from 'puppeteer-core';
 import { RoomServiceClient } from 'livekit-server-sdk';
-import 'dotenv/config';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+try { process.loadEnvFile(); } catch { /* env external */ }
+
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const PORT = 3260;
 const APP = `http://localhost:${PORT}`;

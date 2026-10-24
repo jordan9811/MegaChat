@@ -237,46 +237,6 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, var(--hl-panel-2) 0%, var(--hl-panel) 240px);
 }
 
-/* Two-way path switch (record a Holler / call in), each tab in its own
-   feature colour. */
-.join-path-switch {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  border-bottom: 1px solid var(--mcj-rule);
-}
-
-.join-path-switch a {
-  min-height: 68px;
-  display: grid;
-  grid-template-columns: 24px 1fr;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  border-bottom: 3px solid transparent;
-  background: var(--mcj-sunk);
-  color: var(--mcj-faint);
-  text-decoration: none;
-}
-
-.join-path-switch a:first-child {
-  border-right: 1px solid var(--mcj-rule);
-  border-bottom-color: var(--f-holler);
-  background: var(--f-holler-bg);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .join-path-switch a:hover {
-    color: var(--mcj-fg);
-    background: color-mix(in srgb, var(--hl-fg) 6%, var(--mcj-sunk));
-  }
-  .join-path-switch a:first-child:hover { background: var(--f-holler-bg); }
-}
-
-.join-path-switch b { color: var(--f-callin-ink); font-size: 12px; }
-.join-path-switch a:first-child b { color: var(--f-holler-ink); }
-.join-path-switch span { display: flex; flex-direction: column; gap: 2px; font-size: 12px; font-weight: 750; }
-.join-path-switch small { color: var(--mcj-faint); font-size: 9px; font-weight: 500; }
-
 .join-console-body {
   display: flex;
   flex-direction: column;
@@ -459,7 +419,6 @@ body .mc-join .join-mode-zone h2 { margin: 7px 0 6px; font-family: var(--font-di
 }
 
 .join-stinger-grid label { display: flex; flex-direction: column; gap: 6px; }
-.join-stinger-grid .sp-wrap { grid-column: 1 / -1; }
 
 /* The header reads the shared header tokens (bar height, mark size, nav type,
    control height), so it matches every other product page. The fallbacks are
@@ -919,12 +878,10 @@ a.addr {
   display: flex;
   flex-direction: column;
 }
-#camRetryBtn,
-#leaveBtn {
+#camRetryBtn {
   display: none;
 }
-#camRetryBtn.show,
-#leaveBtn.show {
+#camRetryBtn.show {
   display: inline-flex;
 }
 
@@ -1438,12 +1395,10 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
   .join-media-stage { height: 350px; min-height: 350px; }
   .join-preview-idle { padding: 24px; }
   .join-console-body { padding: 20px 16px; }
-  .join-path-switch a { padding: 10px 12px; }
   .join-price-zone > div { align-items: flex-start; flex-direction: column; gap: 5px; }
   #priceLabel { max-width: none; text-align: left; }
   .join-wallet-row,
   .join-stinger-grid { grid-template-columns: 1fr; }
-  .join-stinger-grid .sp-wrap { grid-column: auto; }
 }
 
 /* Reduced motion: the pulsing lights hold still and buttons do not move. The

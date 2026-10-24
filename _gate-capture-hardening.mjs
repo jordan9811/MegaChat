@@ -336,7 +336,7 @@ try {
     port: APP_PORT, label: 'hardening-app',
     bountyAuth: { handles: ['hardseen', 'hardhidden', 'hardmanual'] },
     env: {
-      BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
+      BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
       // No platform credentials AT ALL: if verification ever reaches a VOD it
       // fails outright, so a verdict proves the self-capture was the source.
       TWITCH_CLIENT_ID: '', TWITCH_CLIENT_SECRET: '',
@@ -614,7 +614,7 @@ try {
     port: APP_PORT, label: 'hardening-tier3-knob',
     bountyAuth: { handles: ['hardknob'] },
     env: {
-      BOUNTY_CLAIM: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
+      BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true', MODERATION_API_KEY: '',
       TWITCH_CLIENT_ID: '', TWITCH_CLIENT_SECRET: '',
       KICK_CLIENT_ID: '', KICK_CLIENT_SECRET: '',
       BOUNTY_CODE_ROTATE_MS: '4000', BOUNTY_CODE_VALIDITY_MS: '5000',

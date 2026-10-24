@@ -178,11 +178,12 @@ export function issueCodeForWindow(airSessionId, playbackId, { now = Date.now() 
   if (now < win.startedAt || now >= win.endsAt) return null;
 
   const ns = namespaceFor(airSessionId, playbackId);
-  const live = new Set(store.allIssuedCodes());
+  // The store keeps the set of every issued code: this used to rebuild it from
+  // every session on every rotation (stores-9).
   let code = null;
   for (let i = 0; i < 50; i++) {
     const candidate = `${ns}-${randomBody(bountyConfig.codeLength)}`;
-    if (!live.has(candidate)) { code = candidate; break; }
+    if (!store.isCodeIssued(candidate)) { code = candidate; break; }
   }
   if (!code) throw new Error('Could not allocate a unique watermark code');
 

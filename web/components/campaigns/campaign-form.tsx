@@ -35,6 +35,7 @@ import { useAccount } from '@/lib/use-account'
 import { FeatureTag } from '@/components/feature-tag'
 import { ApproveStep, connectedWallet, type ApprovalAsk, type FundProof } from './approve-step'
 import { ReferenceSetPicker } from './reference-set-builder'
+import { amountProblem, amountToSend, countProblems, parseCostCaps } from './form-rules'
 import {
   ACTION_LABEL,
   COMPLIANCE_NOTICE,
@@ -66,7 +67,15 @@ type Draft = {
   require: ActionRequire
   minSeconds: string
   rules: Rules
+  /** The "followed by" rule's two X-API cost caps, as typed. Text, not
+   *  numbers: they are parsed only in toInput (form-rules.ts parseCostCaps),
+   *  so a decimal point survives the keystroke that types it. */
+  capText: string
+  capTotalText: string
 }
+
+/** The "followed by" rule as the menu switches it on. */
+const FOLLOWED_BY_ON = RULE_MENU.find((m) => m.key === 'followedByFromSet')!.on as NonNullable<Rules['followedByFromSet']>
 
 function toLocalInput(d: Date) {
   const p = (n: number) => String(n).padStart(2, '0')
@@ -91,10 +100,13 @@ function blankDraft(): Draft {
     require: 'aired',
     minSeconds: '30',
     rules: { minFollowers: 1000 },
+    capText: String(FOLLOWED_BY_ON.perClaimCostCapUsd),
+    capTotalText: '',
   }
 }
 
 function fromCampaign(c: Campaign): Draft {
+  const fb = c.rules?.followedByFromSet
   return {
     title: c.title,
     blurb: c.blurb,
@@ -109,6 +121,8 @@ function fromCampaign(c: Campaign): Draft {
     require: c.action.require,
     minSeconds: String(c.action.minSeconds ?? 30),
     rules: c.rules || {},
+    capText: String(fb?.perClaimCostCapUsd ?? FOLLOWED_BY_ON.perClaimCostCapUsd),
+    capTotalText: fb?.maxTotalUsd != null ? String(fb.maxTotalUsd) : '',
   }
 }
 
@@ -198,34 +212,45 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
       ? 'Queued once the action counts: this server’s payouts are off, so rewards wait until they are switched on.'
       : 'Paid out automatically once the action counts — or queued, if this server’s payouts are off.'
 
+  // The token's own decimals bound what can be typed (USDC has 6). Unknown
+  // until a custom token resolves; the token problem covers that case.
+  const decimals = draft.tokenMode === 'usdc' ? 6 : token?.decimals ?? null
+  const caps = useMemo(() => parseCostCaps(draft.capText, draft.capTotalText), [draft.capText, draft.capTotalText])
+
   const problems = useMemo(() => {
     const out: string[] = []
     if (!draft.title.trim()) out.push('Give the campaign a title.')
-    if (!(reward > 0)) out.push('The reward must be more than zero.')
+    const rewardBad = decimals != null ? amountProblem(draft.rewardAmount, decimals, symbol, 'reward') : null
+    if (rewardBad) out.push(rewardBad)
+    else if (!(reward > 0)) out.push('The reward must be more than zero.')
     if (draft.tokenMode === 'token' && !token) out.push(tokenState === 'error' ? 'The custom token could not be read.' : 'Enter a Tempo token address and wait for it to resolve.')
     if (draft.tokenMode === 'token' && token && token.campaignAllowed === false) out.push('This server does not take that token for campaigns yet: custom tokens need an on-chain test first.')
-    if (!(budget > 0)) out.push('Set a budget.')
+    const budgetBad = decimals != null ? amountProblem(draft.budgetAmount, decimals, symbol, 'budget') : null
+    if (budgetBad) out.push(budgetBad)
+    else if (!(budget > 0)) out.push('Set a budget.')
     else if (reward > 0 && budget < reward) out.push('The budget is smaller than one reward.')
-    if (!(maxClaims >= 1)) out.push('Max claims must be at least 1.')
+    out.push(...countProblems(maxClaims, minSeconds, draft.actionKind === 'callin'))
     const dl = new Date(draft.deadline)
     if (!draft.deadline || Number.isNaN(dl.getTime())) out.push('Pick a deadline.')
     else if (dl.getTime() < Date.now()) out.push('The deadline is in the past.')
     else if (dl.getTime() > Date.now() + MAX_DEADLINE_DAYS * DAY_MS) out.push(`The deadline can be at most ${MAX_DEADLINE_DAYS} days out.`)
     if (!draft.roomHandle.trim()) out.push('Choose the room the action happens in.')
-    if (draft.actionKind === 'callin' && !(minSeconds >= 10)) out.push('Minimum time on camera is at least 10 seconds.')
     if ('referenceSetId' in draft.rules && !draft.rules.referenceSetId) out.push('"On a list of mine" has no list chosen yet.')
     if (fb && !fb.referenceSetId) out.push('"Followed by people on a list" has no list chosen yet.')
+    if (fb) out.push(...caps.problems)
     if (draft.rules.verifiedTypes && draft.rules.verifiedTypes.length === 0) out.push('Pick at least one checkmark type, or switch that rule off.')
     return out
-  }, [draft, reward, budget, maxClaims, minSeconds, token, tokenState, fb])
+  }, [draft, reward, budget, maxClaims, minSeconds, token, tokenState, fb, decimals, symbol, caps])
 
+  // Money goes out exactly as typed (form-rules.ts amountToSend), never as
+  // String(Number(typed)), and the caps are parsed from their text here.
   const toInput = useCallback((): CampaignInput => ({
     title: draft.title.trim(),
     blurb: draft.blurb.trim(),
     reward: draft.tokenMode === 'usdc'
-      ? { type: 'usdc', amount: String(reward) }
-      : { type: 'token', address: token!.address, amount: String(reward) },
-    budget: { amount: String(budget) },
+      ? { type: 'usdc', amount: amountToSend(draft.rewardAmount) }
+      : { type: 'token', address: token!.address, amount: amountToSend(draft.rewardAmount) },
+    budget: { amount: amountToSend(draft.budgetAmount) },
     maxClaims,
     deadline: new Date(draft.deadline).toISOString(),
     action: {
@@ -234,11 +259,22 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
       require: draft.require,
       ...(draft.actionKind === 'callin' ? { minSeconds } : {}),
     },
-    // followedByFromSet is only enforced when `enabled` rides along.
+    // A rule that is present is enforced (campaign-eligibility.js
+    // normaliseRules); `enabled: true` is sent for clarity, never required.
     rules: draft.rules.followedByFromSet
-      ? { ...draft.rules, followedByFromSet: { ...draft.rules.followedByFromSet, enabled: true } }
+      ? {
+          ...draft.rules,
+          followedByFromSet: {
+            referenceSetId: draft.rules.followedByFromSet.referenceSetId,
+            min: draft.rules.followedByFromSet.min,
+            perClaimCostCapUsd: caps.perClaim ?? 0,
+            enabled: true,
+            // Blank: the server's default of 20% of the budget.
+            ...(caps.total != null ? { maxTotalUsd: caps.total } : {}),
+          },
+        }
       : draft.rules,
-  }), [draft, reward, budget, maxClaims, minSeconds, token])
+  }), [draft, maxClaims, minSeconds, token, caps])
 
   // ── Save / fund ──────────────────────────────────────────────────────────
   const [busy, setBusy] = useState<'save' | 'fund' | null>(null)
@@ -250,9 +286,10 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
   const [chain, setChain] = useState<{ explorerUrl: string; usdcAddress: string | null }>({ explorerUrl: 'https://explore.tempo.xyz', usdcAddress: null })
   useEffect(() => { getChainInfo().then(setChain).catch(() => {}) }, [])
 
-  // Saves, then reads the server's echo back: a "followed by" rule the
-  // server stored without `enabled` would sit in the campaign and never be
-  // checked, so that is an error here, not a quiet save.
+  // Saves, then reads the server's echo back. The server stores every
+  // "followed by" rule it keeps with `enabled: true` (present = enforced), so
+  // this can only fire against an older server that kept the rule switched
+  // off; there it is an error, not a quiet save. (Recorded for removal.)
   const persist = useCallback(async () => {
     const input = toInput()
     const saved = await (savedId ? updateCampaign(savedId, input) : createCampaign(input))
@@ -318,12 +355,16 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
       const meta = RULE_MENU.find((m) => m.key === k)!
       ;(next as Record<string, unknown>)[k] = typeof meta.on === 'object' && meta.on !== null ? JSON.parse(JSON.stringify(meta.on)) : meta.on
     }
-    setRules(next)
+    // Switching "followed by" on starts its caps from the menu's default,
+    // the same as the rest of the rule.
+    if (k === 'followedByFromSet' && !hasRule(k)) patch({ rules: next, capText: String(FOLLOWED_BY_ON.perClaimCostCapUsd), capTotalText: '' })
+    else setRules(next)
   }
   const setNumber = (k: RuleKey, raw: string) => setRules({ ...draft.rules, [k]: Math.max(0, Math.floor(Number(raw) || 0)) })
 
   const sentence = rulesSentence(draft.rules, sets)
-  const rewardText = Number.isFinite(reward) && reward > 0 ? rewardLabel(String(reward), symbol) : `— ${symbol}`
+  // The typed text, so a custom token's 18 decimals read back as typed.
+  const rewardText = Number.isFinite(reward) && reward > 0 ? rewardLabel(amountToSend(draft.rewardAmount), symbol) : `— ${symbol}`
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const publicUrl = campaign ? `${origin}/c/${campaign.slug}` : `${origin}/c/…`
   const share = shareText({ reward: rewardText, action: draft.actionKind, sentence, rules: ruleCount(draft.rules), url: publicUrl })
@@ -484,10 +525,14 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
           ) : followerChecksOff ? (
             <p className="mcp-hint">Save keeps it private. {followerWarning} Switch the rule off to fund, or fund once this server can read X.</p>
           ) : (
-            <p className="mcp-hint">Save keeps it private. Fund pulls <strong className="mcp-money">{rewardLabel(String(budget), symbol)}</strong> from your wallet; you open it to claims from the campaign page.</p>
+            <p className="mcp-hint">Save keeps it private. Fund pulls <strong className="mcp-money">{rewardLabel(amountToSend(draft.budgetAmount), symbol)}</strong> from your wallet; you open it to claims from the campaign page.</p>
           )}
+          {/* Keyed on the ask: when fund answers needsApproval again (a short
+              allowance), that is a new step, not the old one left on a
+              disabled "Approved" button with a stale mined approve. */}
           {approval ? (
             <ApproveStep
+              key={`${approval.id}:${approval.ask.amountAtomic}:${approval.ask.allowance ?? ''}:${approval.ask.approveRequired ? 1 : 0}`}
               ask={approval.ask}
               explorerUrl={chain.explorerUrl}
               onApproved={(proof) => tryFund(approval.id, proof)}
@@ -565,8 +610,8 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
             <ReferenceSetPicker sets={sets} loadError={setsError} campaignId={campaign?.id} campaignStatus={campaign?.status} value={f.referenceSetId} onChange={(id) => set({ referenceSetId: id })} onCreated={(s) => setSets((xs) => [s, ...xs])} />
             <div className="mcp-fields two">
               <label className="mcp-field"><span>Followed by at least</span><span className="mcp-unit-input"><input inputMode="numeric" value={f.min} onChange={(e) => set({ min: Math.max(1, Math.floor(Number(e.target.value) || 1)) })} /><b>members</b></span></label>
-              <label className="mcp-field"><span>X-API cost cap per claim</span><span className="mcp-money-input"><span>$</span><input inputMode="decimal" value={f.perClaimCostCapUsd} onChange={(e) => set({ perClaimCostCapUsd: Math.max(0, Number(e.target.value) || 0) })} /><b>USD</b></span><small className="mcp-money-note">Comes out of the campaign budget, per claim checked.</small></label>
-              <label className="mcp-field"><span>X-API cost cap in total</span><span className="mcp-money-input"><span>$</span><input inputMode="decimal" placeholder="20% of budget" value={f.maxTotalUsd ?? ''} onChange={(e) => set({ maxTotalUsd: e.target.value.trim() === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })} /><b>USD</b></span><small className="mcp-money-note">Every applicant is checked, qualifying or not. Past this, checks stop and applicants are told why. Blank: 20% of the budget.</small></label>
+              <label className="mcp-field"><span>X-API cost cap per claim</span><span className="mcp-money-input"><span>$</span><input inputMode="decimal" aria-label="X-API cost cap per claim" value={draft.capText} onChange={(e) => patch({ capText: e.target.value })} /><b>USD</b></span><small className="mcp-money-note">Comes out of the campaign budget, per claim checked.</small></label>
+              <label className="mcp-field"><span>X-API cost cap in total</span><span className="mcp-money-input"><span>$</span><input inputMode="decimal" aria-label="X-API cost cap in total" placeholder="20% of budget" value={draft.capTotalText} onChange={(e) => patch({ capTotalText: e.target.value })} /><b>USD</b></span><small className="mcp-money-note">Every applicant is checked, qualifying or not. Past this, checks stop and applicants are told why. Blank: 20% of the budget.</small></label>
             </div>
           </>
         )

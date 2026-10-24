@@ -71,26 +71,30 @@ const ok = (n, c, x = '') => {
 
 // ── B. the decisions, over HTTP with REAL verification on ─────────────────
 const DATA = mkdtempSync(path.join(tmpdir(), 'mc-xclaims-'));
-// Seed identities EXACTLY as identityFromToken writes them: provider 'privy',
-// the DID as platformId, username from the display ladder, platformLogins
-// from the linked accounts.
+// Seed ACCOUNTS exactly as identityFromToken leaves them: one 'privy' link
+// (the DID as platformId, username from the display ladder) and the
+// platformLogins Privy's linked accounts report. This wrote identities.json
+// until 2026-10-24, which no server has read since the account layer, so
+// every signed-in case here ran signed out.
 const DID = 'did:privy:gatestreamer';
 const DID_GOOGLE = 'did:privy:gatefan';
-writeFileSync(path.join(DATA, 'identities.json'), JSON.stringify({
-  identities: {
-    [`privy:${DID}`]: {
-      provider: 'privy', platformId: DID, username: 'pixelqueen', handle: 'pixelqueen',
-      createdAt: new Date().toISOString(),
-      platformLogins: { twitch: 'pixelqueen', x: 'pixel_on_x' },
-    },
-    [`privy:${DID_GOOGLE}`]: {
-      provider: 'privy', platformId: DID_GOOGLE, username: 'gfan', handle: 'gfan',
-      createdAt: new Date().toISOString(),
+{
+  const now = new Date().toISOString();
+  const acct = (id, did, username, platformLogins) => ({
+    id, handle: username, primary: 'privy', createdAt: now, reservedHandles: [],
+    links: [{ provider: 'privy', platformId: did, username, handle: username, linkedAt: now, attributes: null, attributesFetchedAt: null }],
+    ...(platformLogins ? { platformLogins } : {}),
+  });
+  writeFileSync(path.join(DATA, 'accounts.json'), JSON.stringify({
+    accounts: {
+      acct_xclaims_pixel: acct('acct_xclaims_pixel', DID, 'pixelqueen', { twitch: 'pixelqueen', x: 'pixel_on_x' }),
       // Google-only sign-in: no platformLogins at all.
+      acct_xclaims_gfan: acct('acct_xclaims_gfan', DID_GOOGLE, 'gfan', null),
     },
-  },
-  handles: { pixelqueen: `privy:${DID}`, gfan: `privy:${DID_GOOGLE}` },
-}));
+    handles: { pixelqueen: 'acct_xclaims_pixel', gfan: 'acct_xclaims_gfan' },
+    links: { [`privy:${DID}`]: 'acct_xclaims_pixel', [`privy:${DID_GOOGLE}`]: 'acct_xclaims_gfan' },
+  }, null, 2));
+}
 
 const AUTH_SECRET = 'x-claims-gate-secret';
 process.env.AUTH_SECRET = AUTH_SECRET; // the helper seals with the same secret
@@ -107,8 +111,8 @@ const srv = await startGateServer({
 });
 try {
   const APP = 'http://localhost:3242';
-  const cookie = sealIdentityForTests({ provider: 'privy', platformId: DID });
-  const googleCookie = sealIdentityForTests({ provider: 'privy', platformId: DID_GOOGLE });
+  const cookie = sealIdentityForTests({ provider: 'privy', platformId: DID, dataDir: DATA });
+  const googleCookie = sealIdentityForTests({ provider: 'privy', platformId: DID_GOOGLE, dataDir: DATA });
   const admin = { 'x-bounty-admin-key': 'x-claims-admin' };
   const post = (p, body, extra = {}) => fetch(`${APP}${p}`, {
     method: 'POST',

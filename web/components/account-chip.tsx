@@ -10,8 +10,8 @@
 // handle, your balance, or a way out.
 
 import { useEffect, useRef, useState } from 'react'
-import { shortAddr, useAccount } from '@/lib/use-account'
-import { formatDollars } from '@/lib/display-format'
+import { formatDollars, shortAddr } from '@/lib/display-format'
+import { useAccount } from '@/lib/use-account'
 
 // `accent` colours the signed-in dot only. The Sign in button is always the
 // strap azure with white text, so whatever accent a page passes, its label

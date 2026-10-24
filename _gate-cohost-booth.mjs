@@ -16,12 +16,12 @@
  *  E. denied path: getUserMedia throws NotAllowedError → "Camera blocked"
  *     guidance, checkbox stays unchecked.
  */
-import { spawn } from 'child_process';
 import puppeteer from 'puppeteer-core';
 import { RoomServiceClient } from 'livekit-server-sdk';
-import { assertFreshBuild } from './_gate-helpers.mjs';
+import { assertFreshBuild, startGateServer } from './_gate-helpers.mjs';
 
-try { process.loadEnvFile(); } catch { /* env external */ }
+// (This used to loadEnvFile() here. Nothing in the gate reads the
+// environment; the load only handed every live key in .env to the server.)
 
 const PORT = 3216;
 const APP = `http://localhost:${PORT}`;
@@ -49,14 +49,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const health = await fetch('http://localhost:7880/').then((r) => r.text()).catch(() => null);
 if (health !== 'OK') { console.error('local livekit-server not running — start tools/livekit-server.exe --dev'); process.exit(1); }
 
-const app = spawn(process.execPath, ['server.js', '--prod'], {
-  env: {
-    ...process.env, PORT: String(PORT),
-    LIVEKIT_URL: 'ws://localhost:7880', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'secret',
-  },
-  stdio: 'ignore', cwd: process.cwd(),
+// startGateServer: a scratch data dir (rooms used to be created in the repo's
+// data/), a readiness poll instead of a 9 s sleep, kept stderr, the identity
+// nonce. LiveKit is the local dev SFU, by name.
+const app = await startGateServer({
+  port: PORT, label: 'cohost-booth',
+  env: { LIVEKIT_URL: 'ws://localhost:7880', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'secret' },
 });
-await sleep(9000);
 
 const svc = new RoomServiceClient('http://localhost:7880', 'devkey', 'secret');
 // Counts the host's VIDEO tracks, not all tracks. A booth that fails to get a

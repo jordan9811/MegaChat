@@ -7,7 +7,10 @@
  * worst thing this feature could ship, so real settlement is deliberately
  * ABSENT rather than written-but-disabled: there is no signer, no contract
  * call, no transfer, and no code path that could become one by flipping a
- * boolean. Run B implements `RealSettlement` against this interface.
+ * boolean. The app's real money door now exists — settlement.js, with its
+ * own interface (intents by ref, signers by slot) — and bounty payouts are
+ * not wired to it; Run B decides whether they go through it or through an
+ * implementation of the interface below.
  *
  * The stub's job is to record INTENT precisely enough that Run B can replay
  * it: who would have been paid, how much, from which bucket, against which

@@ -6,44 +6,50 @@
  * ... unless i opt out."
  */
 import { spawn } from 'child_process';
-import { mkdtempSync, writeFileSync } from 'fs';
+import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
-import { createHmac } from 'crypto';
 import puppeteer from 'puppeteer-core';
+import { assertFreshBuild } from './_gate-helpers.mjs';
+import { sealSessionValue, seedAccountForLink } from './_gate-identity-helper.mjs';
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = '') => {
   if (c) { pass++; console.log(`  PASS  ${n}${x ? ' — ' + x : ''}`); }
   else { fail++; console.error(`  FAIL  ${n}${x ? ' — ' + x : ''}`); }
 };
+// ── G0. the build under test must not predate the source ──────────────────
+// server.js --prod serves web/.next exactly as it sits on disk: an older build
+// means this grades the PREVIOUS tree and reports it as current ("A browser
+// gate is only as fresh as the last build", CLAUDE.md). Before anything boots.
+{
+  const fresh = assertFreshBuild();
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const PORT = 3280;
 const APP = `http://localhost:${PORT}`;
 const AUTH_SECRET = 'twitch-prefill-secret';
 
+// The account seeded before the server starts, and its session in the one
+// shape auth.js accepts. This seeded identities.json until 2026-10-24, which
+// no server has read since the account layer.
 const dataDir = mkdtempSync(path.join(tmpdir(), 'mc-twitch-'));
-writeFileSync(path.join(dataDir, 'identities.json'), JSON.stringify({
-  identities: {
-    'twitch:tp1': {
-      provider: 'twitch', platformId: 'tp1', username: 'wwse',
-      handle: 'wwse', createdAt: new Date().toISOString(),
-    },
-  },
-  handles: { wwse: 'twitch:tp1' },
-}));
-const seal = (o) => {
-  const p = Buffer.from(JSON.stringify(o)).toString('base64url');
-  return `${p}.${createHmac('sha256', AUTH_SECRET).update(p).digest('base64url')}`;
-};
 const cookie = {
   name: 'mc_identity',
-  value: encodeURIComponent(seal({ provider: 'twitch', platformId: 'tp1' })),
+  value: encodeURIComponent(sealSessionValue(
+    seedAccountForLink(dataDir, { provider: 'twitch', platformId: 'tp1', username: 'wwse' }),
+    { secret: AUTH_SECRET })),
   domain: 'localhost', path: '/',
 };
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
-  env: { ...process.env, PORT: String(PORT), AUTH_SECRET, DATA_DIR: dataDir, KEEP_ORPHAN_ROOMS: 'true' },
+  env: { ...process.env, PORT: String(PORT), AUTH_SECRET, DATA_DIR: dataDir, KEEP_ORPHAN_ROOMS: 'true', LIVEKIT_URL: '' },
   stdio: 'ignore', cwd: process.cwd(),
 });
 await sleep(10000);

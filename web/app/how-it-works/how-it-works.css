@@ -41,7 +41,6 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   --mcc-accent-ink: color-mix(in srgb, var(--hl-strap-hi) 72%, var(--hl-fg));
   --mcc-accent-tint: color-mix(in srgb, var(--hl-strap) 12%, transparent);
   --mcc-live: var(--mcc-accent-ink);
-  --mcc-warn: var(--f-bounty-ink);
   --mch-chatter: var(--f-holler);
   --mch-chatter-ink: var(--f-holler-ink);
   --mch-streamer: var(--hl-strap-hi);
@@ -457,13 +456,6 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   line-height: 1;
 }
 
-.mch-rail-icon {
-  width: 21px;
-  height: 21px;
-  margin-bottom: 54px;
-  color: var(--mcc-warn);
-}
-
 .mch-faq-section {
   padding: 58px 56px 64px;
   border-top: 1px solid var(--mcc-rule);
@@ -628,42 +620,12 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
     display: none;
   }
 
-  .mch-flow-grid,
-  .mch-clock-grid {
+  .mch-flow-grid {
     grid-template-columns: 1fr;
-  }
-
-  .mch-tree-branch {
-    display: none;
   }
 
   .mch-flow-grid {
     margin-top: 18px;
-  }
-
-  .mch-clock-grid > div,
-  .mch-clock-grid > div:first-child {
-    border-top: 1px solid var(--mcc-rule);
-    border-left: 0;
-  }
-
-  .mch-clock-grid > div:first-child {
-    border-top: 0;
-  }
-
-  .mch-rails-grid,
-  .mch-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .mch-rails-grid > div:nth-child(odd),
-  .mch-stats > div:nth-child(odd) {
-    border-left: 0;
-  }
-
-  .mch-rails-grid > div:nth-child(n + 3),
-  .mch-stats > div:nth-child(n + 3) {
-    border-top: 1px solid var(--mcc-rule);
   }
 }
 
@@ -682,8 +644,6 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 
   .mch-hero,
   .mch-tree-section,
-  .mch-clock-section,
-  .mch-rails-section,
   .mch-faq-section,
   .mch-cta {
     padding: 38px 20px;
@@ -716,28 +676,6 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 
   .mch-section-heading h2 {
     font-size: 31px;
-  }
-
-  .mch-rails-grid,
-  .mch-stats {
-    grid-template-columns: 1fr;
-  }
-
-  .mch-rails-grid > div,
-  .mch-rails-grid > div:nth-child(odd),
-  .mch-stats > div,
-  .mch-stats > div:nth-child(odd) {
-    border-top: 1px solid var(--mcc-rule);
-    border-left: 0;
-  }
-
-  .mch-rails-grid > div:first-child,
-  .mch-stats > div:first-child {
-    border-top: 0;
-  }
-
-  .mch-rail-icon {
-    margin-bottom: 28px;
   }
 
   .mch-cta > div > div,

@@ -110,6 +110,22 @@ try {
 
   await post('/api/bounty/admin/playback/end', { airSessionId: airId, clipId: 'PIPE1' });
 
+  // ── THE STREAMER CANNOT HAND IN THEIR OWN EVIDENCE (audit bounty-1) ──────
+  // `post` sends the admin key beside the cookie, so every verify below would
+  // pass an operator-key fix whether or not the streamer alone is refused.
+  // This one carries the cookie and nothing else — the same frames the
+  // operator sends next, from the session's own streamer, which used to
+  // verify tier 1 and release unattended.
+  const forged = await fetch(`${APP}/api/bounty/air-session/${airId}/verify`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: srv.cookieFor('pipestreamer') },
+    body: JSON.stringify({ mode: 'real', sourceMode: 'files', frames }),
+  }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+  const pool0 = await get('/api/bounty/pool-view?platform=twitch&handle=pipestreamer');
+  ok('bounty-1: the streamer\'s own frames, cookie only, are refused before anything runs',
+    forged.status === 403 && forged.body.reason === 'operator_only_source', `HTTP ${forged.status} ${forged.body.reason || ''}`);
+  ok('bounty-1: ...and nothing is released', pool0.body.view.releasedContributor === 0,
+    `released=${pool0.body.view.releasedContributor}`);
+
   // ── verification, the whole distance over HTTP ───────────────────────────
   const v1 = await post(`/api/bounty/air-session/${airId}/verify`, {
     mode: 'real', sourceMode: 'files', frames,
@@ -123,8 +139,16 @@ try {
   ok('...with the measured pixel height on every check (anti-shrink data present)',
     (v1.body.verification?.checks || []).every((c) => Number.isFinite(c.pixelHeight) && c.pixelHeight > 0),
     JSON.stringify((v1.body.verification?.checks || []).map((c) => c.pixelHeight)));
+  // Frames the REQUEST supplied are the operator's, whatever they show, and an
+  // operator key is one shared secret: they open a review rather than paying
+  // unattended, and a person's approval releases them.
+  ok('operator-supplied frames open a review instead of releasing unattended (bounty-1)',
+    v1.body.frameOrigin === 'operator' && /supplied by the operator/.test(v1.body.review?.reason || '')
+    && v1.body.release?.skipped === 'pending_review',
+    `origin=${v1.body.frameOrigin} skipped=${v1.body.release?.skipped}`);
+  await post(`/api/bounty/admin/reviews/${v1.body.review?.id}/resolve`, { approve: true, reason: 'gate: operator frames inspected' });
   const pool1 = await get('/api/bounty/pool-view?platform=twitch&handle=pipestreamer');
-  ok('the release is COMPUTED from verified playbacks (and stays stubbed)',
+  ok('the release is COMPUTED from verified playbacks once a person approves (and stays stubbed)',
     pool1.body.view.releasedContributor > 0, `released=${pool1.body.view.releasedContributor}`);
 
   // ── SOURCE_UNAVAILABLE: could-not-look is not a FAIL ─────────────────────

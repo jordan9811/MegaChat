@@ -7,7 +7,7 @@ Branch: **`streamer-dashboard`**
 | Part | Gate | Commit | Live doc |
 |------|------|--------|----------|
 | **Baseline** | — | `baseline: before part A/B UX and rewards pass` | — |
-| **Part A — UX overhaul** | `npm run gate:ui-a` ✓ | `part A: app-wide UX overhaul` | [UI_TEST.md](UI_TEST.md) |
+| **Part A — UX overhaul** | `npm run gate:ui-a` ✓ (historical: deleted 2026-10-24) | `part A: app-wide UX overhaul` | [UI_TEST.md](UI_TEST.md) |
 | **Part B — Optional rewards** | `npm run gate:rewards-b` ✓ | `part B: optional rewards primitive (first pass)` | [REWARDS_TEST.md](REWARDS_TEST.md) |
 | **Auth — Per-room passwords** | `npm run gate:auth` ✓ | `auth: per-room passwords + entry flow` | [AUTH_TEST.md](AUTH_TEST.md) |
 
@@ -17,12 +17,11 @@ Branch: **`streamer-dashboard`**
 |-------|------|-----|
 | Dashboard + rooms | `npm run gate:dashboard` | [DASHBOARD_TEST.md](DASHBOARD_TEST.md) |
 | Pluggable token | `npm run gate:tokens` | [TOKENS_TEST.md](TOKENS_TEST.md) |
-| Passkey join fix | `npm run gate:phase2` | [PHASE2_TEST.md](PHASE2_TEST.md) |
+| Passkey join fix | `npm run gate:phase2` (historical: deleted 2026-10-24) | [PHASE2_TEST.md](PHASE2_TEST.md) |
 
 ## Before you test live
 
 ```bash
-npm run build:passkey
 npm start
 ```
 
@@ -60,10 +59,10 @@ Optional: `REWARD_POOL_PRIVATE_KEY` for on-chain USDC reward payout (otherwise l
 ## Automated gates
 
 ```bash
-npm run gate:ui-a
+npm run gate:ui-a        # historical: deleted 2026-10-24
 npm run gate:rewards-b
 npm run gate:auth
 npm run gate:dashboard
 npm run gate:tokens
-npm run gate:phase2
+npm run gate:phase2      # historical: deleted 2026-10-24
 ```

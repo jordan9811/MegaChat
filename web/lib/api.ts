@@ -276,15 +276,42 @@ export async function listPublicRooms() {
   return { rooms }
 }
 
+// One /api/config request per room per page. The wallet provider, the
+// dashboard and the join page each need it at boot, and asked for it three
+// times on /join (audit web-37). The raw answer is shared so every caller keeps
+// its own error handling; each gets its own copy of the body, so one reader
+// changing its config cannot change another's. A failed or refused request is
+// forgotten, so the next caller asks again.
+type ConfigAnswer = { ok: boolean; status: number; body: Record<string, unknown> }
+const configAnswers = new Map<string, Promise<ConfigAnswer>>()
+
+export function fetchPublicConfig(room = 'default'): Promise<ConfigAnswer> {
+  let p = configAnswers.get(room)
+  if (!p) {
+    const mine: Promise<ConfigAnswer> = fetch(`${backendHttpUrl()}/api/config?room=${encodeURIComponent(room)}`)
+      .then(async (res) => ({ ok: res.ok, status: res.status, body: await res.json().catch(() => ({})) }))
+    mine.then((a) => { if (!a.ok) configAnswers.delete(room) }, () => configAnswers.delete(room))
+    configAnswers.set(room, mine)
+    p = mine
+  }
+  return p.then((a) => ({ ...a, body: structuredClone(a.body) }))
+}
+
 /** Public room + chain config (also exposes the real Arc USDC address). */
-export function getPublicConfig(room = 'default') {
-  return request<{
+export async function getPublicConfig(room = 'default') {
+  const { ok, status, body } = await fetchPublicConfig(room)
+  if (!ok) {
+    const data = body as { error?: string; hint?: string }
+    throw new ApiError(status, [data.error || `Request failed (${status})`, data.hint].filter(Boolean).join(' — '))
+  }
+  return body as {
     roomId?: string
     roomName?: string
     usdcAddress: string
     paymentTokenSymbol: string
     livekitConfigured?: boolean
-  }>(`/api/config?room=${encodeURIComponent(room)}`)
+    privy?: { appId?: string | null }
+  }
 }
 
 export function createRoom(

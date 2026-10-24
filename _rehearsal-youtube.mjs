@@ -136,7 +136,7 @@ const srv = await startGateServer({
   port: PORT, dataDir, label: 'youtube-rehearsal',
   bountyAuth: { handles: [`youtube:${HANDLE}`] },
   env: {
-    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_REAL: '0', KEEP_ORPHAN_ROOMS: 'true',
+    BOUNTY_CLAIM: '1', BOUNTY_IDENTITY_STUB: '1', KEEP_ORPHAN_ROOMS: 'true',
     BOUNTY_STREAM_WARMUP_MS: String(WARMUP_S * 1000),
   },
 });

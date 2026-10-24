@@ -82,11 +82,15 @@ const setMode = (m) => fetch('http://localhost:3997/__mode', { method: 'POST', b
 // a nonce that the responder is OUR process. This suite is why that exists —
 // it spent three days driving a zombie server that held :3222.
 const { startGateServer } = await import('./_gate-helpers.mjs');
+// keepEnv: the MegaChats are paid for real, so the server needs the REAL
+// seller signer from .env (startGateServer blanks it otherwise). That is
+// what puts this gate on the owner-run list.
 const plainSrv = await startGateServer({
-  port: 3221, label: 'no-key', env: { MODERATION_API_KEY: '', MODERATION_API_BASE: '' },
+  port: 3221, label: 'no-key', keepEnv: ['SELLER_PRIVATE_KEY'],
+  env: { MODERATION_API_KEY: '', MODERATION_API_BASE: '' },
 });
 const moddedSrv = await startGateServer({
-  port: 3222, label: 'mock-key',
+  port: 3222, label: 'mock-key', keepEnv: ['SELLER_PRIVATE_KEY'],
   env: { MODERATION_API_KEY: 'mock-key', MODERATION_API_BASE: 'http://localhost:3997/v1' },
 });
 const plain = plainSrv.child;

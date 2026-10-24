@@ -344,10 +344,6 @@ body:has(.mc-camp) { background: var(--hl-bg); }
 .mcp-card .mcp-share { margin: 6px 0 12px; }
 .mcp-copybtn button { height: 36px; padding: 0 14px; border: 1px solid var(--mcp-rule-2); border-radius: 0; background: transparent; color: var(--hl-muted); font-size: 12.5px; font-weight: 700; }
 .mcp-notice-inline { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--mcp-rule); }
-.mcp-rulelist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
-.mcp-rulelist li { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; padding: 9px 0; border-top: 1px solid var(--mcp-rule); font-size: 12.5px; }
-.mcp-rulelist code { font-family: var(--font-code), ui-monospace, monospace; font-size: 11.5px; color: var(--mcp-accent-ink); }
-.mcp-rulelist span { color: var(--hl-muted); overflow-wrap: anywhere; }
 .mcp-claims > header { margin-bottom: 14px; }
 .mcp-claims .mcp-table { box-shadow: none; }
 .mcp-danger-row { display: flex; justify-content: flex-start; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--mcp-rule); }

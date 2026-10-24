@@ -41,7 +41,7 @@ export type CampaignClaim = {
   checkedAt: string | null
   xUsername: string | null
   owed: { amount: string; symbol: string } | null
-  payout: { to: string; door: string | null; amount: string; symbol: string; txHash: string | null } | null
+  payout: { to: string; door: string | null; intentRef?: string; amount: string; symbol: string; txHash: string | null } | null
   needsWallet: boolean
   /** Set on a claim submitted before the campaign closed: it still counts
    *  if it reaches the required state before this (ISO). Absent otherwise. */
@@ -56,6 +56,11 @@ export type CampaignClaim = {
    *  it. The streamer has to update their OBS overlay link. */
   playedUnauthed?: boolean
   playedUnauthedAt?: string | null
+  /** A Call in's camera was seen while the room was off air and no on-air
+   *  clock is running, so the time is not counting (claimView.offAir). */
+  offAir?: boolean
+  offAirAt?: string | null
+  updatedAt?: string | null
 }
 
 export type MyClaim = {

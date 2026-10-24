@@ -62,7 +62,7 @@ await new Promise((resolve, reject) => {
   ws.on('error', reject);
 });
 ws.send(JSON.stringify({ type: 'subscribe_room', room: ROOM }));
-ws.send(JSON.stringify({ type: 'register_seat', seatId: join.seatId }));
+ws.send(JSON.stringify({ type: 'register_seat', seatId: join.seatId, seatToken: join.seatToken }));
 ws.on('message', (raw) => {
   try {
     const msg = JSON.parse(raw.toString());
@@ -70,7 +70,11 @@ ws.on('message', (raw) => {
     if (msg.type === 'seat_removed' && msg.seatId === join.seatId) seatRemovedReason = msg.reason;
   } catch { /* ignore */ }
 });
-ws.send(JSON.stringify({ type: 'camera_ready', seatId: join.seatId }));
+ws.send(JSON.stringify({ type: 'camera_ready', seatId: join.seatId, seatToken: join.seatToken }));
+await Promise.race([
+  new Promise((resolve) => ws.on('message', (raw) => { try { const m = JSON.parse(raw.toString()); if (m.type === 'seat_added' && m.seat?.id === join.seatId) resolve(); } catch { /* not ours */ } })),
+  new Promise((resolve) => setTimeout(resolve, 5000)),
+]); // the server's live answer: ticks before it are refused (409 not_live)
 console.log('seat live — starting paid ticks');
 
 // ── MPP session: first tick opens the channel, then vouchers ─────────────
@@ -127,7 +131,7 @@ const closeReceipt = await session.close().catch((e) => {
 ok('cooperative close returned receipt', !!closeReceipt, closeReceipt
   ? `spent=${closeReceipt.spent} tx=${closeReceipt.txHash?.slice(0, 14)}…`
   : '');
-await fetch(`${BASE}/api/leave/${join.seatId}`, { method: 'POST' });
+await fetch(`${BASE}/api/leave/${join.seatId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seatToken: join.seatToken }) });
 
 // settlement + refund land on-chain (sub-second finality + margin)
 await new Promise((r) => setTimeout(r, 8000));

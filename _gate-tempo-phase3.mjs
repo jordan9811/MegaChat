@@ -106,7 +106,7 @@ const ws = new WebSocket(WS_URL);
 await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej); });
 ws.send(JSON.stringify({ type: 'subscribe_room', room: roomId }));
 ws.on('message', (raw) => { try { events.push(JSON.parse(raw.toString())); } catch { /* */ } });
-ws.send(JSON.stringify({ type: 'camera_ready', seatId: join.seatId }));
+ws.send(JSON.stringify({ type: 'camera_ready', seatId: join.seatId, seatToken: join.seatToken }));
 await new Promise((r) => setTimeout(r, 800));
 const added = events.find((e) => e.type === 'seat_added' && e.seat?.id === join.seatId);
 ok('seat_added broadcast to overlay', !!added);

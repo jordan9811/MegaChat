@@ -11,8 +11,14 @@
  *    verdict round-trip completes; absent → straight to queued.
  */
 import { spawn } from 'child_process';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
+// DATA_DIR in the server env below is a scratch dir: this gate booted on the
+// repo's own data/ (audit harness-5). It spends, so the full move to
+// startGateServer waits for a run with the owner present.
 import puppeteer from 'puppeteer-core';
-import { assertFreshBuild } from './_gate-helpers.mjs';
+import { assertFreshBuild, DEFAULT_WATCH } from './_gate-helpers.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -32,7 +38,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // two weeks on copy the merged source no longer produced. This gate drives
 // /join (Next) AND /overlay (public/), so both trees are watched.
 {
-  const fresh = assertFreshBuild({ watch: ['web/app', 'web/components', 'web/lib', 'public'] });
+  const fresh = assertFreshBuild({ watch: [...DEFAULT_WATCH, 'public'] });
   ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
   if (!fresh.ok) {
     console.log('\n  refusing to grade a stale build — rebuild and re-run.');
@@ -42,7 +48,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 }
 
 const app = spawn(process.execPath, ['server.js', '--prod'], {
-  env: { ...process.env, PORT: String(PORT) },
+  env: { ...process.env, PORT: String(PORT), DATA_DIR: mkdtempSync(path.join(tmpdir(), 'mc-free-megachat-')) },
   stdio: ['ignore', 'pipe', 'pipe'], cwd: process.cwd(),
 });
 app.stdout.on('data', (d) => {

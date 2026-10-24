@@ -59,7 +59,6 @@ const DEFS = {
 };
 
 const isSetting = (k) => Object.hasOwn(DEFS, k);
-export const SETTING_NAMES = Object.keys(DEFS);
 
 const EMPTY = () => ({ values: {}, updatedAt: null, updatedBy: null, history: [], adminAccountIds: [] });
 
@@ -218,9 +217,4 @@ export function isSiteAdmin(identity) {
     return false;
   }
   return true;
-}
-
-export function _resetSiteSettingsForTests() {
-  cache = null;
-  readFailed = false;
 }

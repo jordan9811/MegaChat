@@ -1124,7 +1124,12 @@
       // Resolved from the room response; needed for the /badge and
       // /overlay-env reports, which are still addressed by session id.
       let resolvedSessionId = airSessionId;
-      const codeUrl = () => (airSessionId
+      // The room's overlay key rides on every bounty request, not only on the
+      // WebSocket subscribe: the server hands out the session id, and accepts
+      // the badge and environment reports, only from a keyed overlay. Without
+      // a key the badge still draws; it just reports nothing.
+      const keyed = (url) => (overlayKey ? `${url}?k=${encodeURIComponent(overlayKey)}` : url);
+      const codeUrl = () => keyed(airSessionId
         ? `/api/bounty/air-session/${encodeURIComponent(airSessionId)}/code`
         : `/api/bounty/room/${encodeURIComponent(bountyRoom)}/code`);
 
@@ -1167,7 +1172,7 @@
         reportedTooSmall = tooSmall;
         try {
           if (!resolvedSessionId) return;
-          await fetch(`/api/bounty/air-session/${encodeURIComponent(resolvedSessionId)}/badge`, {
+          await fetch(keyed(`/api/bounty/air-session/${encodeURIComponent(resolvedSessionId)}/badge`), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tooSmall, detail }),
@@ -1210,11 +1215,13 @@
         // Only on CHANGE. A steady 1920×1080 visible overlay would otherwise
         // write one evidence record every few seconds for the whole broadcast.
         const key = `${w}x${h}:${vis}`;
-        if (key === lastEnvKey) return;
+        // No session yet is NOT "reported": in room mode the id arrives with
+        // the first code response, after this first call. Marking the key
+        // here first meant a room-mode overlay never reported at all.
+        if (key === lastEnvKey || !resolvedSessionId) return;
         lastEnvKey = key;
         try {
-          if (!resolvedSessionId) return;
-          await fetch(`/api/bounty/air-session/${encodeURIComponent(resolvedSessionId)}/overlay-env`, {
+          await fetch(keyed(`/api/bounty/air-session/${encodeURIComponent(resolvedSessionId)}/overlay-env`), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ width: w, height: h, visibilityState: vis, at: Date.now() }),

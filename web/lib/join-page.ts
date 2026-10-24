@@ -14,12 +14,21 @@
  *     gone — funding is a plain TIP-20 transfer on Tempo.
  */
 
-import { formatDollars, guestName } from '@/lib/display-format';
+import { fetchPublicConfig } from '@/lib/api';
+import { newAttemptId } from '@/lib/attempt-id';
+import { formatDollars, guestName, shortAddr } from '@/lib/display-format';
 import { startEchoDetector } from '@/lib/echo-detector';
+import { fetchIdentity } from '@/lib/identity';
+import { recorderMime } from '@/lib/recorder-mime';
 
 let CONFIG = null;
 let account = null;
 let mySeatId = null;
+// The seat's proof of ownership, from the join response (money lane N1): a
+// seat id is public, so register_seat, camera_ready, leave, the publisher
+// token, quality and echo all carry this too. Memory only: never logged,
+// never in a URL.
+let mySeatToken = null;
 let hasWallet = false;
 let walletMode = null; // null | 'metamask' | 'privy'
 let streamRoomId = 'default';
@@ -75,12 +84,11 @@ function getProvider() {
 }
 
 async function loadConfig() {
-  const res = await fetch('/api/config?room=' + encodeURIComponent(streamRoomId));
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Failed to load room config');
-  }
-  CONFIG = await res.json();
+  // Shared with the wallet provider, which asks for the default room's config
+  // at the same moment (lib/api.ts): one request, not two.
+  const res = await fetchPublicConfig(streamRoomId);
+  if (!res.ok) throw new Error(String(res.body.error || 'Failed to load room config'));
+  CONFIG = res.body;
   const roomName = document.getElementById('joinRoomName');
   if (roomName) roomName.textContent = CONFIG.roomName || 'Room';
   const roomState = document.getElementById('joinRoomState');
@@ -95,7 +103,9 @@ async function loadConfig() {
     }
   }
   window.__streamRoomId = streamRoomId;
-  window.dispatchEvent(new CustomEvent('stream:room'));
+  // The config rides the event, so the room bar's feature tags (join-client)
+  // read it instead of asking the server for the same thing again.
+  window.dispatchEvent(new CustomEvent('stream:room', { detail: CONFIG }));
   const earnedRow = document.getElementById('earnedRow');
   if (earnedRow) {
     earnedRow.style.display = (CONFIG.rewards && CONFIG.rewards.enabled) ? '' : 'none';
@@ -169,10 +179,6 @@ function applyFreeRoomUi() {
   }
   const meter = document.getElementById('meter');
   if (meter) meter.classList.remove('show');
-}
-
-function fmtAmount(usdc) {
-  return formatDollars(usdc);
 }
 
 // ─── Human-readable transaction errors (display only) ───────────────────────
@@ -261,8 +267,8 @@ async function humanTxErrorHtml(err, ctx) {
       } catch { /* balance display is best-effort */ }
       amt = { have, need: ctx && ctx.need != null ? parseFloat(ctx.need) : null };
     }
-    const haveTxt = amt.have != null && isFinite(amt.have) ? fmtAmount(trimAmt(amt.have)) : null;
-    const needTxt = amt.need != null && isFinite(amt.need) ? fmtAmount(trimAmt(amt.need)) : null;
+    const haveTxt = amt.have != null && isFinite(amt.have) ? formatDollars(trimAmt(amt.have)) : null;
+    const needTxt = amt.need != null && isFinite(amt.need) ? formatDollars(trimAmt(amt.need)) : null;
     const line =
       haveTxt != null && needTxt != null
         ? `Not enough balance — you have ${haveTxt}, this costs ${needTxt}.`
@@ -308,7 +314,7 @@ function updateReplayKeepNote() {
 // join page threw a ReferenceError in simple mode with the wallet configured.
 function perCreditUsd() {
   const tickPrice = parseFloat((CONFIG && (CONFIG.passkeyTickPrice || CONFIG.tickPrice)) || '0.001') || 0.001;
-  return fmtAmount(tickPrice).replace(/^\$/, '');
+  return formatDollars(tickPrice).replace(/^\$/, '');
 }
 
 function updatePriceDisplay() {
@@ -321,12 +327,12 @@ function updatePriceDisplay() {
   const mc = CONFIG.letters && CONFIG.letters.enabled ? CONFIG.letters : null;
   if (mc) {
     const total = Number(mc.price ?? Number(tickPrice) * mc.maxSeconds / tickSec);
-    if (amt) amt.textContent = `${fmtAmount(total / mc.maxSeconds)} /second`;
+    if (amt) amt.textContent = `${formatDollars(total / mc.maxSeconds)} /second`;
     // The backend charges a flat clip price, including shorter takes.
-    if (lbl) lbl.textContent = `Clip total: ${fmtAmount(total)} · Max: ${mc.maxSeconds} seconds`;
+    if (lbl) lbl.textContent = `Clip total: ${formatDollars(total)} · Max: ${mc.maxSeconds} seconds`;
   } else if (joinStreamEnabled()) {
-    if (amt) amt.textContent = `${fmtAmount(Number(tickPrice) / tickSec)} /second`;
-    if (lbl) lbl.textContent = roomIsFree() ? 'Call in · Free' : `Call in · Spend limit: ${fmtAmount(CONFIG.maxSession)}`;
+    if (amt) amt.textContent = `${formatDollars(Number(tickPrice) / tickSec)} /second`;
+    if (lbl) lbl.textContent = roomIsFree() ? 'Call in · Free' : `Call in · Spend limit: ${formatDollars(CONFIG.maxSession)}`;
   } else {
     if (amt) amt.textContent = '—';
     if (lbl) lbl.textContent = 'Nothing is enabled in this room right now.';
@@ -339,10 +345,8 @@ function applyFeatureVisibility() {
   const on = joinStreamEnabled();
   const joinBtn = document.getElementById('joinBtn');
   const action = document.getElementById('liveSeatAction');
-  const leaveBtn = document.getElementById('leaveBtn');
   if (joinBtn) joinBtn.style.display = on ? '' : 'none';
   if (action) action.style.display = on ? '' : 'none';
-  if (leaveBtn && !on) leaveBtn.classList.remove('show');
 }
 
 function formatTimeLeft(seconds) {
@@ -357,8 +361,8 @@ function showMeter(remaining, spent, secondsLeft) {
   lastMeter = { remaining, spent, secondsLeft };
   const box = document.getElementById('meter');
   box.classList.add('show');
-  document.getElementById('meterRemaining').textContent = fmtAmount(remaining);
-  document.getElementById('meterSpent').textContent = fmtAmount(spent);
+  document.getElementById('meterRemaining').textContent = formatDollars(remaining);
+  document.getElementById('meterSpent').textContent = formatDollars(spent);
   document.getElementById('meterTime').textContent = formatTimeLeft(secondsLeft);
 }
 
@@ -368,31 +372,11 @@ function b64encode(obj) {
   // UTF-8 safe base64
   return btoa(unescape(encodeURIComponent(json)));
 }
-function b64decode(str) {
-  return JSON.parse(decodeURIComponent(escape(atob(str))));
-}
 function strip0x(h) { return h.startsWith('0x') ? h.slice(2) : h; }
 function pad32(hexNo0x) { return hexNo0x.toLowerCase().padStart(64, '0'); }
 function encodeAddress(addr) { return pad32(strip0x(addr)); }
 function encodeUint(value) { return pad32(BigInt(value).toString(16)); }
 
-// parse a decimal USDC string into 6-decimal atomic units (BigInt)
-function parseUsdc(amountStr) {
-  const [whole, frac = ''] = String(amountStr).split('.');
-  const fracPadded = (frac + '000000').slice(0, 6);
-  return BigInt(whole || '0') * 1000000n + BigInt(fracPadded || '0');
-}
-function formatUsdc(atomic) {
-  const v = BigInt(atomic);
-  const whole = v / 1000000n;
-  const frac = (v % 1000000n).toString().padStart(6, '0').replace(/0+$/, '');
-  return frac ? `${whole}.${frac}` : `${whole}`;
-}
-function randomNonce() {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
 function ensureEthereum() {
   const eth = getProvider();
@@ -454,7 +438,7 @@ async function mountCampaignBanner(slug) {
   const rewardAmount = String((c.reward && c.reward.amount) || '0');
   const rewardSymbol = String((c.reward && c.reward.symbol) || '');
   const reward = rewardSymbol === 'USDC' && Number.isFinite(Number(rewardAmount))
-    ? `$${escapeHtml(Number(rewardAmount).toLocaleString('en-US', { minimumFractionDigits: Number(rewardAmount) % 1 === 0 ? 0 : 2, maximumFractionDigits: 6 }))}`
+    ? escapeHtml(formatDollars(rewardAmount))
     : `${escapeHtml(rewardAmount)} ${escapeHtml(rewardSymbol)}`;
   // The action the campaign does not pay for leaves the sidebar.
   const other = document.getElementById(kind === 'holler' ? 'liveSeatAction' : 'megachatAction');
@@ -463,12 +447,12 @@ async function mountCampaignBanner(slug) {
   let priceLine = '';
   if (kind === 'holler') {
     const cfg = lettersCfg();
-    if (cfg && parseFloat(cfg.price) > 0) priceLine = `This room charges <strong>${fmtAmount(cfg.price)}</strong> per Holler; the campaign pays you <strong>${reward}</strong> once it counts.`;
+    if (cfg && parseFloat(cfg.price) > 0) priceLine = `This room charges <strong>${formatDollars(cfg.price)}</strong> per Holler; the campaign pays you <strong>${reward}</strong> once it counts.`;
     else priceLine = `Sending a Holler here is free; the campaign pays you <strong>${reward}</strong> once it counts.`;
   } else if (!roomIsFree()) {
     const tickPrice = (CONFIG && (CONFIG.passkeyTickPrice || CONFIG.tickPrice)) || '0';
     const tickSec = (CONFIG && CONFIG.passkeyTickSeconds) || 1;
-    priceLine = `This room charges <strong>${fmtAmount(Number(tickPrice) / tickSec)}</strong> per second on camera; the campaign pays you <strong>${reward}</strong> once it counts.`;
+    priceLine = `This room charges <strong>${formatDollars(Number(tickPrice) / tickSec)}</strong> per second on camera; the campaign pays you <strong>${reward}</strong> once it counts.`;
   } else {
     priceLine = `Calling in here is free; the campaign pays you <strong>${reward}</strong> once it counts.`;
   }
@@ -495,7 +479,8 @@ async function mountCampaignBanner(slug) {
 
 // ─── Join button state machine ────────────────────────────────────────────
 // ONE button morphs through the whole flow (no separate Go Live button):
-//   idle → busy (connect/authorize) → awaiting-camera → go-live → live
+//   idle → busy (connect/authorize) → awaiting-camera → go-live → going-live → live
+// going-live: GO LIVE was pressed and the server has not confirmed it yet.
 // Click routing lives in the joinBtn handler; every transition goes through
 // setJoinState so no code path can leave the label out of sync again.
 let joinBtnState = 'idle';
@@ -508,6 +493,7 @@ const JOIN_BTN_STATES = {
   busy: { label: '⏳ Processing…', disabled: true },
   'awaiting-camera': { label: '⏳ Waiting for camera — tap to cancel', disabled: false },
   'go-live': { label: '🎥 Go Live', disabled: false },
+  'going-live': { label: '⏳ Going live — tap to cancel', disabled: false },
   live: { label: "🔴 You're LIVE — tap to leave", disabled: false },
 };
 
@@ -605,7 +591,7 @@ function onJoinButtonClick() {
   if (joinBtnState === 'idle') { prewarmOverlay(); return joinSeat(); }
   // The same control exits the flow: cancel a hung camera wait, or leave
   // the stream while live (audit P0-1 — no dead-ends, no button pairs).
-  if (joinBtnState === 'awaiting-camera' || joinBtnState === 'live') {
+  if (joinBtnState === 'awaiting-camera' || joinBtnState === 'going-live' || joinBtnState === 'live') {
     return leaveStream();
   }
   // busy: disabled — ignore stray clicks.
@@ -617,7 +603,6 @@ async function connectMetaMask() {
 }
 
 const PRIVY_SIGNIN_LABEL = '🔐 Sign in — Google, email or passkey';
-const PRIVY_CREATE_LABEL = '✨ Google, email or passkey';
 
 /** The window bridge installed by components/providers/tempo-wallet.tsx. */
 function getMegaWallet() {
@@ -636,14 +621,18 @@ async function getActiveProvider() {
 
 /**
  * Privy embedded wallet connect (email / social / passkey — one modal covers
- * both new and returning users, so 'register' vs 'login' only changes labels).
+ * both new and returning users).
  */
-async function connectPrivyWallet(mode) {
+async function connectPrivyWallet() {
   const btn = document.getElementById('passkeyBtn');
-  const createBtn = document.getElementById('passkeyCreateBtn');
-  const clicked = mode === 'register' ? (createBtn || btn) : btn;
   const MW = getMegaWallet();
-  if (!MW || !MW.configured) {
+  if (!MW) {
+    // The bridge appears once the room config arrives (tempo-wallet.tsx); a
+    // tap before then is early, not a server without sign-in.
+    showMessage('Sign-in is still loading. Wait a moment, then retry.', 'error');
+    return null;
+  }
+  if (!MW.configured) {
     showMessage(
       'Privy sign-in is not configured on this server yet (set NEXT_PUBLIC_PRIVY_APP_ID in .env and restart). MetaMask still works below.',
       'error'
@@ -652,8 +641,7 @@ async function connectPrivyWallet(mode) {
   }
   try {
     btn.disabled = true;
-    if (createBtn) createBtn.disabled = true;
-    clicked.textContent = '⏳ Waiting for sign-in…';
+    btn.textContent = '⏳ Waiting for sign-in…';
     walletMode = 'privy';
     updatePriceDisplay();
     account = null; // clear any stale MetaMask address
@@ -676,10 +664,6 @@ async function connectPrivyWallet(mode) {
     if (!(account && walletMode === 'privy')) {
       btn.disabled = false;
       btn.textContent = PRIVY_SIGNIN_LABEL;
-      if (createBtn) {
-        createBtn.disabled = false;
-        createBtn.textContent = PRIVY_CREATE_LABEL;
-      }
     }
   }
 }
@@ -755,13 +739,6 @@ async function ensureTempoChain() {
   }
 }
 
-// Display-only: middle-truncated address so the connected line never wraps.
-// Full address stays available via the title tooltip AND click-to-copy.
-function shortAddr(addr) {
-  const a = String(addr || '');
-  return a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
-}
-
 // Copy helper with a plain-http fallback: Privy needs a secure origin, but
 // MetaMask can run on http where navigator.clipboard is unavailable — fall
 // back to a hidden textarea + execCommand there.
@@ -788,7 +765,9 @@ async function copyText(text) {
   }
 }
 
-// Clickable, abbreviated address chip that copies the FULL value.
+// Clickable, abbreviated address chip that copies the FULL value. The cut
+// (shortAddr, display-format.ts) keeps the connected line from wrapping; the
+// full address stays in the title tooltip and the copy.
 function addrChip(address) {
   const full = String(address || '');
   return (
@@ -800,8 +779,10 @@ function addrChip(address) {
   );
 }
 
-// Delegated on #walletInfo so it survives the innerHTML rerenders.
-function onWalletInfoCopyClick(e) {
+// Delegated on #walletInfo AND #message (the Add funds message carries the
+// same chip, and in Simple mode it is the only one on screen), so it survives
+// the innerHTML rerenders of both (audit web-17).
+function onAddrCopyClick(e) {
   const btn = e.target.closest && e.target.closest('.addr-copy');
   if (!btn) return;
   const full = btn.getAttribute('data-copy');
@@ -824,7 +805,6 @@ function renderWallet() {
   const info = document.getElementById('walletInfo');
   const connectBtn = document.getElementById('connectBtn');
   const passkeyBtn = document.getElementById('passkeyBtn');
-  const passkeyCreateBtn = document.getElementById('passkeyCreateBtn');
   const fundNote = document.getElementById('passkeyFundNote');
   const dep = document.getElementById('depositBtn');
   const join = document.getElementById('joinBtn');
@@ -860,7 +840,6 @@ function renderWallet() {
 
   if (fundNote) fundNote.style.display = 'none';
   if (dep) { dep.style.display = ''; dep.style.gridColumn = ''; }
-  if (passkeyCreateBtn) passkeyCreateBtn.style.display = '';
   if (privyChoice) privyChoice.style.display = '';
   connectBtn.style.display = '';
 
@@ -884,7 +863,6 @@ function renderWallet() {
   const MW = getMegaWallet();
   const privyReady = !!(MW && MW.configured);
   passkeyBtn.disabled = !privyReady;
-  if (passkeyCreateBtn) passkeyCreateBtn.disabled = !privyReady;
   if (!hasWallet) {
     connectBtn.textContent = '🦊 No MetaMask detected';
     info.innerHTML =
@@ -934,7 +912,7 @@ async function waitForTx(hash, provider) {
 async function fundWallet() {
   if (!account) {
     const MW = getMegaWallet();
-    if (MW && MW.configured) await connectPrivyWallet('login');
+    if (MW && MW.configured) await connectPrivyWallet();
     else await connectMetaMask();
   }
   if (!account) return;
@@ -1150,7 +1128,7 @@ async function joinSeatMpp(username) {
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
     const detail = data.available != null
-      ? ` (available ${fmtAmount(data.available)})`
+      ? ` (available ${formatDollars(data.available)})`
       : '';
     throw new Error((data.hint || data.error || 'Cannot join') + detail);
   }
@@ -1173,7 +1151,7 @@ async function joinSeatMetered(username, { retry = false } = {}) {
   const terms = await first.json().catch(() => ({}));
   if (!first.ok) {
     const detail = terms.available != null
-      ? ` (available ${fmtAmount(terms.available)})`
+      ? ` (available ${formatDollars(terms.available)})`
       : '';
     throw new Error((terms.hint || terms.error || 'Cannot join') + detail);
   }
@@ -1280,7 +1258,7 @@ async function joinSeat() {
       // twice made the two look broken.
       setJoinState('busy', '🔐 Connecting your balance…');
       prewarmProgress('wallet-connect'); // slow wallet UI must not read as abandonment
-      const addr = await connectPrivyWallet('auto');
+      const addr = await connectPrivyWallet();
       if (!addr) {
         // Wallet dismissed/rejected — a real bail path. Release now rather
         // than making the overlay wait out the abandon cap.
@@ -1326,13 +1304,45 @@ let camFallbackTimer = null;
 let camErrorTimer = null;
 let camMsgBound = false;
 
+// GO LIVE is a request; the seat is live when the SERVER says so. serverLive
+// is that answer for this seat: seat_added naming it, or initial_state listing
+// it after a (re)subscribe. Until it arrives nothing bills and nothing says
+// LIVE. A GO LIVE pressed while the socket was down used to be lost for good,
+// while the page said "You're LIVE", an MPP seat paid every tick, and the
+// overlay never drew the guest until the 5-minute camera timeout (audit web-2).
+let serverLive = false;
+// This camera stage is showing live (UI, meter, LiveKit publish). Separate
+// from serverLive: a stage rebuilt after a camera failure starts un-live on a
+// seat the server already has live.
+let stageLive = false;
+let liveAskTimer = null;
+const LIVE_ASK_RETRY_MS = 5000;
+
+// A seat message on the control socket. Returns whether it went out.
+function sendSeat(type) {
+  if (!mySeatId || !ws || ws.readyState !== 1) return false;
+  ws.send(JSON.stringify({ type, seatId: mySeatId, seatToken: mySeatToken }));
+  return true;
+}
+
+// A seat-scoped POST: the id and its token ride every one.
+function seatPost(url, body, init = {}) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, seatToken: mySeatToken }),
+    ...init,
+  });
+}
+
 function onJoinSuccess(data) {
   mySeatId = data.seatId;
+  mySeatToken = data.seatToken || null;
   lastJoinData = data;
+  serverLive = false;
+  stageLive = false;
   // Bind this WS to the seat so closing the tab instantly frees + refunds it.
-  if (ws.readyState === 1) {
-    ws.send(JSON.stringify({ type: 'register_seat', seatId: mySeatId }));
-  }
+  sendSeat('register_seat');
   setSessionUi(true);
   if (!data.free) showMeter(data.remaining, '0', data.secondsLeft);
   prewarmProgress('seat-granted');
@@ -1346,7 +1356,7 @@ function onJoinSuccess(data) {
     ? ` · <a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">authorization tx</a>`
     : '';
   const meterNote =
-    `${fmtAmount(data.tickPrice)} every ${data.tickSeconds}s while live`;
+    `${formatDollars(data.tickPrice)} every ${data.tickSeconds}s while live`;
   const refundNote = 'Your unused balance stays yours when you leave.';
   showMessage(
     `✅ Authorized! Allow camera access above, then hit GO LIVE on the same button. Metering
@@ -1362,6 +1372,7 @@ function startCameraStage(data) {
   // LiveKit rooms publish via the SDK — the vdo iframe path never runs.
   if (isLivekitRoom()) return void startLivekitCameraStage(data);
   cameraLiveFired = false;
+  stageLive = false;
   const stage = document.getElementById('cameraStage');
   const pub = document.getElementById('camPublisher');
   const det = document.getElementById('camDetector');
@@ -1442,19 +1453,64 @@ function setCamStatus(cls, text) {
   document.getElementById('camStatusText').textContent = text;
 }
 
-// Tell the server the camera is live -> the tile appears and the meter starts.
+// GO LIVE (the button, or the vdo detector): ask the server to put the seat
+// live. The tile appears and the meter starts on its answer (onSeatLive).
 function fireCameraReady(source) {
   if (cameraLiveFired || !mySeatId) return;
   cameraLiveFired = true;
   clearTimeout(camFallbackTimer);
   clearTimeout(camErrorTimer);
-  if (ws.readyState === 1) {
-    ws.send(JSON.stringify({ type: 'camera_ready', seatId: mySeatId }));
+  console.log(`[camera] GO LIVE via ${source}`);
+  // A stage rebuilt after a camera failure, on a seat the server already has
+  // live: the answer is in, nothing to ask.
+  if (serverLive) return goLiveNow();
+  setJoinState('going-live');
+  askToGoLive();
+}
+
+function askToGoLive() {
+  clearTimeout(liveAskTimer);
+  if (!mySeatId || !cameraLiveFired || serverLive) return;
+  if (sendSeat('camera_ready')) {
+    setCamStatus('', 'Going live…');
+  } else {
+    // The control socket is down. ws.onopen asks again the moment it is back.
+    setCamStatus('', 'Reconnecting…');
+    document.getElementById('camHint').textContent =
+      'Reconnecting — you go live the moment the connection is back.';
   }
-  console.log(`[camera] camera_ready fired via ${source}`);
+  liveAskTimer = setTimeout(() => {
+    // Still no answer on an open socket. Subscribing again makes the server
+    // list the room's live seats (initial_state), which answers either way;
+    // register_seat makes a seat it has lost say so (seat_removed). Then ask
+    // again: camera_ready is a no-op for a seat that is already live.
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'subscribe_room', room: streamRoomId }));
+      sendSeat('register_seat');
+    }
+    askToGoLive();
+  }, LIVE_ASK_RETRY_MS);
+}
+
+// The server's answer: this seat is live.
+function onSeatLive() {
+  serverLive = true;
+  clearTimeout(liveAskTimer);
+  if (cameraLiveFired && !stageLive) goLiveNow();
+}
+
+function goLiveNow() {
+  stageLive = true;
+  clearTimeout(liveAskTimer);
+  // LiveKit: the camera was local-only until now, so nothing reaches the
+  // room before GO LIVE (NEW-1: a campaign Call in cannot count preview
+  // time) and the track the overlay receives always has a tile to land in.
+  if (isLivekitRoom()) void publishLivekitTracks();
   // MPP seats: the meter is client-driven — start streaming paid ticks now.
   // The first tick opens the escrow channel (one silent wallet transaction).
-  if (lastJoinData && lastJoinData.paymentMode === 'mpp_session') {
+  // Once per seat: a camera stage rebuilt mid-seat must not open a second
+  // channel next to the one already streaming.
+  if (lastJoinData && lastJoinData.paymentMode === 'mpp_session' && !mppTickTimer) {
     startMppTicks(lastJoinData);
   }
   setJoinState('live');
@@ -1479,15 +1535,21 @@ function fireCameraReady(source) {
 // goodbye message so failure paths can keep their own error on screen.
 async function leaveStream(quiet) {
   const seatId = mySeatId;
+  const seatToken = mySeatToken;
   releasePrewarm(); // the seat's own vacate starts the overlay grace timer
   if (!seatId) return;
   setJoinState('busy', '⏳ Leaving…');
   // Stop reacting to this seat locally right away so the meter stops instantly.
   mySeatId = null;
+  mySeatToken = null;
   stopMppTicks(true); // close the channel → unspent deposit refunds from escrow
   teardownCameraStage();
   try {
-    await fetch(`/api/leave/${seatId}`, { method: 'POST' });
+    await fetch(`/api/leave/${seatId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seatToken }),
+    });
   } catch (e) {
     console.warn('leave request failed (server still drops seat on disconnect)', e);
   }
@@ -1512,6 +1574,9 @@ function goLive() { fireCameraReady('manual'); }
 function teardownCameraStage() {
   clearTimeout(camFallbackTimer);
   clearTimeout(camErrorTimer);
+  clearTimeout(liveAskTimer);
+  serverLive = false;
+  stageLive = false;
   teardownLivekit();
   // Live slot over (leave/kick/removal all land here): drop the real-time
   // host feed, bring the delayed spectate embed back.
@@ -1520,26 +1585,28 @@ function teardownCameraStage() {
   const stage = document.getElementById('cameraStage');
   const pub = document.getElementById('camPublisher');
   const det = document.getElementById('camDetector');
-  const leaveBtn = document.getElementById('leaveBtn');
   if (pub) pub.src = 'about:blank';
   if (det) det.src = 'about:blank';
   if (stage) stage.classList.remove('show');
-  if (leaveBtn) leaveBtn.classList.remove('show');
   cameraLiveFired = false;
 }
 
 // Rebuild the camera stage after a permission failure.
 function retryCamera() {
+  const data = lastJoinData;
+  // Only for the seat still held: a leave in the 200 ms gap must not bring
+  // the camera back up for a seat that is gone.
+  const restart = (start) => setTimeout(() => { if (data && mySeatId === data.seatId) start(data); }, 200);
   if (isLivekitRoom()) {
     teardownLivekit();
-    if (lastJoinData) setTimeout(() => startLivekitCameraStage(lastJoinData), 200);
+    restart(startLivekitCameraStage);
     return;
   }
   const pub = document.getElementById('camPublisher');
   const det = document.getElementById('camDetector');
   pub.src = 'about:blank';
   det.src = 'about:blank';
-  if (lastJoinData) setTimeout(() => startCameraStage(lastJoinData), 200);
+  restart(startCameraStage);
 }
 
 function showMessage(html, type) {
@@ -1861,6 +1928,10 @@ let lkHostFeedCleanup = null;
 async function mountLivekitHostFeed(wrap, mount) {
   if (!lkRoom) return;
   const lk = await import('livekit-client');
+  // Mounted again after a camera rebuild (a new Room): drop the listeners
+  // and audio of the room that was torn down before following this one.
+  if (lkHostFeedCleanup) { lkHostFeedCleanup(); lkHostFeedCleanup = null; }
+  if (!lkRoom) return;
   const hostIdentity = 'host:' + ((CONFIG && CONFIG.roomId) || streamRoomId);
   let video = mount.querySelector('video');
   if (!video) {
@@ -1912,7 +1983,7 @@ async function mountLivekitHostFeed(wrap, mount) {
     }
     applyHostPicture();
   };
-  const onHostAttributes = (changed, participant) => {
+  const onHostAttributes = (_changed, participant) => {
     if (participant && participant.identity === hostIdentity) applyHostPicture();
   };
   applyHostPicture();
@@ -1956,11 +2027,7 @@ async function mountLivekitHostFeed(wrap, mount) {
     if (echoRetry) { clearTimeout(echoRetry); echoRetry = null; }
     const want = echoShown != null;
     if (!mySeatId || echoSent === want) return;
-    fetch('/api/seat/echo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ seatId: mySeatId, echo: want, lagS: echoShown }),
-    })
+    seatPost('/api/seat/echo', { seatId: mySeatId, echo: want, lagS: echoShown })
       .then((r) => {
         if (r.ok || r.status === 404) { echoSent = want; return; } // 404: the seat is gone
         echoRetry = setTimeout(sendEcho, 5000);
@@ -1978,7 +2045,10 @@ async function mountLivekitHostFeed(wrap, mount) {
     const gen = ++echoGen;
     if (echoWatch) { echoWatch.stop(); echoWatch = null; }
     const micPub = [...lkRoom.localParticipant.audioTrackPublications.values()][0];
-    const micTrack = (micPub && micPub.track) || null;
+    // The mic is published at GO LIVE, in parallel with this feed mounting:
+    // until its publication exists, the local track it will publish is the
+    // same object, so the detector starts on that.
+    const micTrack = (micPub && micPub.track) || lkLocalTracks.find((t) => t.kind === 'audio') || null;
     if (micTrack !== echoMicTrack) {
       if (echoMicTrack) echoMicTrack.off(lk.TrackEvent.Restarted, rearmEcho);
       if (micTrack) micTrack.on(lk.TrackEvent.Restarted, rearmEcho);
@@ -2010,7 +2080,7 @@ async function mountLivekitHostFeed(wrap, mount) {
       else if (pub.setSubscribed) pub.setSubscribed(true);
     }
   }
-  const onSub = (track, pub, participant) => attachIfHost(track, participant);
+  const onSub = (track, _pub, participant) => attachIfHost(track, participant);
   lkRoom.on(lk.RoomEvent.TrackSubscribed, onSub);
   lkRoom.on(lk.RoomEvent.ParticipantAttributesChanged, onHostAttributes);
   lkRoom.on(lk.RoomEvent.ParticipantConnected, onHostPresence);
@@ -2041,15 +2111,39 @@ async function mountLivekitHostFeed(wrap, mount) {
 // Joiner publish path for rooms with transport === 'livekit'. Same UI state
 // machine as vdo: stage → camera preview → GO LIVE → live. The vdo iframes
 // are simply never created for these rooms.
+//
+// The camera and mic are LOCAL during the preview: created here, shown in the
+// self-view, and published only once the seat is live (goLiveNow). That makes
+// the hint's promise true, and it means a campaign Call in, which counts from
+// LiveKit's track_published, can never count preview time (owner decision on
+// audit NEW-1).
 let lkRoom = null;
 let lkLocalVideo = null;
+let lkLocalTracks = [];
+// Bumped by every stage start and every teardown. A stage still starting
+// checks it after each await and stops itself when it has moved on, so a
+// cancel during the token fetch, the SDK download, the connect or the
+// permission prompt cannot leave the camera captured and publishing after
+// the viewer left (audit web-3).
+let lkStageGen = 0;
+
+function stopLkLocalTracks() {
+  for (const t of lkLocalTracks) { try { t.stop(); } catch { /* already ended */ } }
+  lkLocalTracks = [];
+}
 
 function isLivekitRoom() {
   return CONFIG && CONFIG.transport === 'livekit';
 }
 
 async function startLivekitCameraStage(data) {
+  const gen = ++lkStageGen;
+  const stale = () => gen !== lkStageGen;
+  // A rejoin used to overwrite lkRoom while the old room was still connected.
+  if (lkRoom) { try { lkRoom.disconnect(); } catch { /* already down */ } lkRoom = null; }
+  stopLkLocalTracks();
   cameraLiveFired = false;
+  stageLive = false;
   const stage = document.getElementById('cameraStage');
   const pub = document.getElementById('camPublisher');
   const det = document.getElementById('camDetector');
@@ -2064,16 +2158,16 @@ async function startLivekitCameraStage(data) {
     'Your camera preview is below (LiveKit). Nothing is broadcast until you hit GO LIVE.';
 
   try {
-    const tokRes = await fetch('/api/livekit/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room: streamRoomId, role: 'publisher', seatId: data.seatId }),
-    });
+    const tokRes = await seatPost('/api/livekit/token', { room: streamRoomId, role: 'publisher', seatId: data.seatId });
     const tok = await tokRes.json().catch(() => ({}));
+    if (stale()) return;
     if (!tokRes.ok || !tok.token) throw new Error(tok.error || `token failed (${tokRes.status})`);
 
     const lk = await import('livekit-client');
-    lkRoom = new lk.Room({
+    if (stale()) return;
+    // Built into a local and handed to lkRoom at once, so a teardown during
+    // connect() can reach it and disconnect it.
+    const room = new lk.Room({
       adaptiveStream: true,
       // dynacast: layers nobody subscribes to PAUSE at the publisher — the
       // viewer's uplink (usually the real bottleneck) stops paying for
@@ -2082,8 +2176,19 @@ async function startLivekitCameraStage(data) {
       // simulcast for smooth degradation (phase 3 requirement, on by default)
       publishDefaults: { simulcast: true },
     });
-    await lkRoom.connect(tok.url || (CONFIG && CONFIG.livekitUrl), tok.token);
-    await lkRoom.localParticipant.enableCameraAndMicrophone();
+    lkRoom = room;
+    await room.connect(tok.url || (CONFIG && CONFIG.livekitUrl), tok.token);
+    if (stale()) { room.disconnect(); return; }
+    // createTracks, not enableCameraAndMicrophone: that one publishes at once,
+    // and livekit-client 2.20.1 never stops the tracks it made when the
+    // publish fails. These stay ours until goLiveNow publishes them.
+    const tracks = await room.localParticipant.createTracks({ audio: true, video: true });
+    if (stale()) {
+      for (const t of tracks) { try { t.stop(); } catch { /* ended */ } }
+      room.disconnect();
+      return;
+    }
+    lkLocalTracks = tracks;
 
     // Local self-view in the SAME frame the vdo iframe used.
     const frame = pub ? pub.parentElement : stage.querySelector('.cam-frame');
@@ -2094,11 +2199,11 @@ async function startLivekitCameraStage(data) {
       lkLocalVideo.className = 'lk-self'; // sized by join.css, stays IN the frame
       frame.appendChild(lkLocalVideo);
     }
-    const camPub = [...lkRoom.localParticipant.videoTrackPublications.values()][0];
-    if (camPub && camPub.track && lkLocalVideo) camPub.track.attach(lkLocalVideo);
+    const cam = tracks.find((t) => t.kind === 'video');
+    if (cam && lkLocalVideo) cam.attach(lkLocalVideo);
 
     // Phase-3 payoff: auto-reconnect + connection-quality signals.
-    lkRoom.on(lk.RoomEvent.ConnectionStateChanged, (state) => {
+    room.on(lk.RoomEvent.ConnectionStateChanged, (state) => {
       const s = String(state);
       console.log('[livekit] connection state:', s);
       // LiveKit reports 'signalReconnecting' first, then 'reconnecting' —
@@ -2115,27 +2220,55 @@ async function startLivekitCameraStage(data) {
         if (joinBtnState === 'live') setCamStatus('live', "You're LIVE on stream");
       }
     });
-    lkRoom.on(lk.RoomEvent.ConnectionQualityChanged, (quality, participant) => {
-      if (participant !== lkRoom.localParticipant) return;
+    room.on(lk.RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+      if (participant !== room.localParticipant) return;
       renderLkQuality(String(quality));
       reportLkQuality(String(quality), data.seatId);
     });
 
-    // Published — same UX beat as the vdo detector firing.
-    if (joinBtnState === 'awaiting-camera') {
+    if (serverLive) {
+      // Rebuilt mid-seat (Retry after a camera failure): the seat is already
+      // live, so the camera goes straight back on air without a second GO LIVE.
+      cameraLiveFired = true;
+      goLiveNow();
+    } else if (joinBtnState === 'awaiting-camera') {
+      // Camera up — same UX beat as the vdo detector firing.
       setJoinState('go-live');
       setCamStatus('', 'Camera ready — hit GO LIVE');
       document.getElementById('camHint').textContent =
         'Camera connected over LiveKit. Hit GO LIVE above to start your stream.';
     }
   } catch (err) {
-    console.error('[livekit] publish failed:', err);
+    // A cancel's own disconnect surfaces here as an error: not a failure.
+    if (stale()) return;
+    console.error('[livekit] camera stage failed:', err);
     setCamStatus('error', 'Camera failed — ' + (err?.message || 'unknown'));
     retryBtn.classList.add('show');
   }
 }
 
+// GO LIVE, confirmed: put the preview's camera and mic on the room.
+async function publishLivekitTracks() {
+  const room = lkRoom;
+  const gen = lkStageGen;
+  const tracks = lkLocalTracks;
+  if (!room || !tracks.length) return;
+  try {
+    await Promise.all(tracks.map((t) => room.localParticipant.publishTrack(t)));
+  } catch (err) {
+    if (gen !== lkStageGen) return; // torn down meanwhile; teardown stopped them
+    console.error('[livekit] publish failed:', err);
+    // The library leaves a track whose publish failed running: stop them, or
+    // the camera stays on with nothing showing it.
+    stopLkLocalTracks();
+    setCamStatus('error', 'Camera failed — ' + (err?.message || 'unknown'));
+    document.getElementById('camRetryBtn').classList.add('show');
+  }
+}
+
 function teardownLivekit() {
+  lkStageGen++; // a stage still starting stops at its next await
+  stopLkLocalTracks();
   if (lkRoom) {
     try { lkRoom.disconnect(); } catch { /* already down */ }
     lkRoom = null;
@@ -2166,11 +2299,7 @@ function renderLkQuality(q) {
 function reportLkQuality(q, seatId) {
   if (q === lastReportedQuality || !seatId) return;
   lastReportedQuality = q;
-  fetch('/api/seat/quality', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ seatId, quality: q }),
-  }).catch(() => { /* cosmetic signal — never block on it */ });
+  seatPost('/api/seat/quality', { seatId, quality: q }).catch(() => { /* cosmetic signal — never block on it */ });
 }
 
 // ─── Letter mode: record → preview → pay flat → one-shot upload ─────────────
@@ -2186,6 +2315,24 @@ let letterDurationS = 0;
 let myLetterId = null;
 let letterFrames = [];
 let letterFrameTimer = null;
+// The take on screen, by name: { id, letterId, uploadUrl }. Made when a take
+// is recorded, dropped when it is replaced or the stage closes. A Send that
+// fails AFTER paying keeps letterId and uploadUrl, so "Send again" retries the
+// upload instead of paying again, and the server answers a repeated id from
+// the letter it already paid for (letters.js), which covers a submit whose
+// answer was lost (audit web-4).
+let letterAttempt = null;
+let letterPreviewUrl = null;
+
+const newLetterAttempt = () => ({ id: newAttemptId(), letterId: null, uploadUrl: null });
+
+// The recorded take plays back from a blob URL; each one holds the whole
+// recording in memory until revoked.
+function setLetterPreview(video, blob) {
+  if (letterPreviewUrl) URL.revokeObjectURL(letterPreviewUrl);
+  letterPreviewUrl = blob ? URL.createObjectURL(blob) : null;
+  if (video) video.src = letterPreviewUrl || '';
+}
 
 function lettersCfg() {
   return CONFIG && CONFIG.letters && CONFIG.letters.enabled ? CONFIG.letters : null;
@@ -2206,7 +2353,7 @@ function initLetterUi() {
   // Short label — "· up to 10s" pushed the button onto two wrapped lines on
   // mobile, and the recorder stage states the cap the moment it opens.
   btn.textContent = parseFloat(cfg.price) > 0
-      ? `📼 Send a Holler — ${fmtAmount(cfg.price)}`
+      ? `📼 Send a Holler — ${formatDollars(cfg.price)}`
       : '📼 Send a Holler — FREE';
 }
 
@@ -2248,7 +2395,7 @@ async function openLetterStage() {
   letterState = 'idle';
   letterBlob = null;
   letterButtons({ record: true, redo: false, send: false });
-  setLetterStatus(`${cfg.minSeconds ?? 3}–${cfg.maxSeconds}s · ${fmtAmount(cfg.price)} per clip, including shorter takes.`);
+  setLetterStatus(`${cfg.minSeconds ?? 3}–${cfg.maxSeconds}s · ${formatDollars(cfg.price)} per clip, including shorter takes.`);
 }
 
 function closeLetterStage() {
@@ -2263,20 +2410,11 @@ function closeLetterStage() {
     letterStream.getTracks().forEach((t) => t.stop());
     letterStream = null;
   }
-  if (video) {
-    video.srcObject = null;
-    video.src = '';
-  }
+  if (video) video.srcObject = null;
+  setLetterPreview(video, null);
+  letterAttempt = null;
   if (stage) stage.style.display = 'none';
   letterState = 'idle';
-}
-
-function pickRecorderMime() {
-  const candidates = ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
-  for (const m of candidates) {
-    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
-  }
-  return '';
 }
 
 function toggleLetterRecording() {
@@ -2290,12 +2428,13 @@ function toggleLetterRecording() {
     return;
   }
 
-  const mime = pickRecorderMime();
+  const mime = recorderMime();
   if (!mime) {
     showMessage('❌ This browser cannot record video (no MediaRecorder).', 'error');
     return;
   }
   letterChunks = [];
+  letterAttempt = null; // a new take is a new send
   letterRecorder = new MediaRecorder(letterStream, { mimeType: mime });
   letterRecorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) letterChunks.push(e.data);
@@ -2323,7 +2462,7 @@ function toggleLetterRecording() {
     letterState = 'preview';
     // Preview the take: swap the live camera for the recorded blob.
     video.srcObject = null;
-    video.src = URL.createObjectURL(letterBlob);
+    setLetterPreview(video, letterBlob);
     video.muted = false;
     video.controls = true;
     recordBtn.textContent = '⏺ Record';
@@ -2340,8 +2479,9 @@ function toggleLetterRecording() {
       );
       return;
     }
+    letterAttempt = newLetterAttempt();
     letterButtons({ record: false, redo: true, send: true });
-    setLetterStatus(`${letterDurationS}s recorded. Send for ${fmtAmount(cfg.price)}.`);
+    setLetterStatus(`${letterDurationS}s recorded. Send for ${formatDollars(cfg.price)}.`);
   };
   letterRecorder.start();
   letterState = 'recording';
@@ -2360,8 +2500,9 @@ function toggleLetterRecording() {
 async function redoLetter() {
   const video = document.getElementById('letterVideo');
   letterBlob = null;
+  letterAttempt = null;
   letterState = 'idle';
-  video.src = '';
+  setLetterPreview(video, null);
   video.srcObject = letterStream;
   video.muted = true;
   video.controls = false;
@@ -2381,59 +2522,38 @@ async function sendLetter() {
   const letterIsFree = !(parseFloat(cfg.price) > 0);
   if (!account && !letterIsFree) {
     const MW = getMegaWallet();
-    if (MW && MW.configured) await connectPrivyWallet('login');
+    if (MW && MW.configured) await connectPrivyWallet();
     else await connectMetaMask();
     if (!account) return;
   }
+  const attempt = letterAttempt || (letterAttempt = newLetterAttempt());
   letterState = 'sending';
-  setLetterStatus(letterIsFree ? 'Sending…' : `Paying ${fmtAmount(cfg.price)}…`);
   try {
-    // Free letters skip the payment session entirely — plain fetch, no wallet.
-    // The stub must still quack like a session: close() gets called after
-    // submit, and a missing method threw right there, killing the upload
-    // ("Sending…" then silence).
-    // Paid ones ride a one-voucher session at the flat price (same rails as ticks).
-    const session = letterIsFree
-      ? { fetch: (u, i) => fetch(u, i), close: async () => {} }
-      : await buildMppManager(cfg.price);
-    const resp = await session.fetch(
-      `/api/letter/submit?room=${encodeURIComponent(streamRoomId)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          room: streamRoomId,
-          username,
-          address: account,
-          durationS: letterDurationS,
-          mime: letterBlob.type || 'video/webm',
-          replayKeepDays: shownKeepDays,
-          ...stingerSelections(), ...campaignField(),
-        }),
-      },
-    );
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok || !data.letterId) {
-      throw new Error(data.error || `Holler submit failed (${resp.status})`);
+    let upData = null;
+    // Twice at most: an upload slot the server no longer has (404) is asked
+    // for again under the same take id, and the server decides whether that
+    // pays (letters.js: a take it already has costs nothing).
+    for (let round = 0; round < 2 && !upData; round++) {
+      if (!attempt.uploadUrl) {
+        setLetterStatus(letterIsFree ? 'Sending…' : `Paying ${formatDollars(cfg.price)}…`);
+        const sent = await submitLetter(cfg, username, letterIsFree, attempt.id);
+        if (sent.alreadySent) {
+          closeLetterStage();
+          showMessage('📮 That take was already sent — no second charge.', 'success');
+          return;
+        }
+        attempt.letterId = sent.letterId;
+        attempt.uploadUrl = sent.uploadUrl;
+      }
+      myLetterId = attempt.letterId;
+      try {
+        upData = await uploadLetter(attempt);
+      } catch (err) {
+        if (err.status !== 404 || round === 1) throw err;
+        attempt.letterId = null;
+        attempt.uploadUrl = null;
+      }
     }
-    session.close().catch(() => { /* nothing unspent; channel just closes */ });
-    myLetterId = data.letterId;
-    // Frames ride ahead of the clip so an AI review has them at hand.
-    if (letterFrames.length) {
-      await fetch(`/api/letter/frames/${data.letterId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ frames: letterFrames }),
-      }).catch(() => { /* review falls back to transcript-only */ });
-    }
-    setLetterStatus('Uploading your clip…');
-    const up = await fetch(data.uploadUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': letterBlob.type || 'video/webm' },
-      body: letterBlob,
-    });
-    const upData = await up.json().catch(() => ({}));
-    if (!up.ok) throw new Error(upData.error || 'Upload failed');
     closeLetterStage();
     // overlayLive: false = the streamer's OBS overlay isn't connected, so the
     // clip HOLDS in the queue — saying "on stream shortly" there was a lie
@@ -2454,46 +2574,104 @@ async function sendLetter() {
     // The person is looking at the RECORDING STAGE, not the page banner —
     // a blank status line here read as "nothing happened". Show the reason
     // right where their eyes are; the banner still carries the full story.
-    setLetterStatus('❌ ' + shortTxReason(err?.message) + ' — your take is still here, try Send again.');
+    const why = '❌ ' + shortTxReason(err?.message);
+    if (err && (err.status === 410 || err.status === 507)) {
+      // The server refunded this take's payment, so the next Send is a new
+      // payment, under a new name.
+      letterAttempt = newLetterAttempt();
+      setLetterStatus(why + '. Send again to pay and upload it.');
+    } else if (letterAttempt && letterAttempt.uploadUrl) {
+      setLetterStatus(why + ' — your take is still here, and Send again only retries the upload.');
+    } else {
+      setLetterStatus(why + ' — your take is still here, try Send again.');
+    }
     await showTxError('Holler failed', err, { need: cfg && cfg.price });
   }
+}
+
+// The paid half of a send: one voucher at the flat price, named by the take.
+// Free letters skip the payment session entirely — plain fetch, no wallet.
+// The stub must still quack like a session: close() gets called after
+// submit, and a missing method threw right there, killing the upload
+// ("Sending…" then silence).
+async function submitLetter(cfg, username, letterIsFree, attemptId) {
+  // Paid ones ride a one-voucher session at the flat price (same rails as ticks).
+  const session = letterIsFree
+    ? { fetch: (u, i) => fetch(u, i), close: async () => {} }
+    : await buildMppManager(cfg.price);
+  const resp = await session.fetch(
+    `/api/letter/submit?room=${encodeURIComponent(streamRoomId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: streamRoomId,
+        username,
+        address: account,
+        durationS: letterDurationS,
+        mime: letterBlob.type || 'video/webm',
+        replayKeepDays: shownKeepDays,
+        attemptId,
+        ...stingerSelections(), ...campaignField(),
+      }),
+    },
+  );
+  const data = await resp.json().catch(() => ({}));
+  // This take reached the streamer on an earlier Send whose answer was lost.
+  if (resp.status === 409 && data.reason === 'already_sent') return { alreadySent: true };
+  if (!resp.ok || !data.letterId) {
+    throw new Error(data.error || `Holler submit failed (${resp.status})`);
+  }
+  session.close().catch(() => { /* nothing unspent; channel just closes */ });
+  return { letterId: data.letterId, uploadUrl: data.uploadUrl };
+}
+
+// The unpaid half: frames, then the clip, to the slot the payment opened. The
+// error carries the status, because a 410/507 means the server refunded.
+async function uploadLetter(attempt) {
+  // Frames ride ahead of the clip so an AI review has them at hand.
+  if (letterFrames.length) {
+    await fetch(`/api/letter/frames/${attempt.letterId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ frames: letterFrames }),
+    }).catch(() => { /* review falls back to transcript-only */ });
+  }
+  setLetterStatus('Uploading your clip…');
+  const up = await fetch(attempt.uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': letterBlob.type || 'video/webm' },
+    body: letterBlob,
+  });
+  const upData = await up.json().catch(() => ({}));
+  if (!up.ok) {
+    const err = new Error(upData.error || 'Upload failed');
+    err.status = up.status;
+    throw err;
+  }
+  return upData;
 }
 
 // ─── Identity (minted by Privy sign-in, server-verified) ────────────────────
 // No chooser here anymore: the header pill opens Privy's modal, which covers
 // Twitch / X / Google / email / passkey in ONE step, and the server mints the
-// handle from that verified session. This just reflects the result.
+// handle from that verified session. This just prefills the username with it.
 async function initAuthUi() {
-  const who = document.getElementById('authIdentity');
   const prefill = (name) => {
     const input = document.getElementById('username');
     // Never clobber something the viewer typed themselves.
     if (input && input.dataset.userEdited !== 'true' && name) input.value = name.slice(0, 20);
   };
   try {
-    const me = await (await fetch('/api/auth/me')).json();
-    const identity = me.identity || null;
-    if (identity) {
-      if (who) { who.style.display = ''; who.textContent = `Signed in as @${identity.handle}`; }
-      prefill(identity.handle);
-      return;
-    }
+    // Shared with the header and every other reader on the page (lib/identity.ts).
+    const identity = await fetchIdentity();
+    if (identity) return prefill(identity.handle);
     // No server handle (e.g. the mint is failing) but a Privy session exists —
-    // still greet them by name and prefill it. Being signed in must never
-    // look like being anonymous.
+    // still prefill their name. Being signed in must never look like being
+    // anonymous.
     const MW = getMegaWallet();
-    if (MW && MW.authenticated && MW.displayName) {
-      if (who) { who.style.display = ''; who.textContent = `Signed in as @${MW.displayName}`; }
-      prefill(MW.displayName);
-      return;
-    }
-    if (who) who.style.display = 'none';
+    if (MW && MW.authenticated && MW.displayName) prefill(MW.displayName);
   } catch { /* identity optional */ }
-
-  const welcome = new URLSearchParams(location.search).get('welcome');
-  if (welcome) {
-    showMessage(`Handle <strong>@${escapeHtml(welcome)}</strong> is yours. Your link is megachat.fun/${escapeHtml(welcome)}.`, 'success');
-  }
 }
 
 async function init() {
@@ -2529,26 +2707,41 @@ function initRewardsClient(wsUrl) {
   let rws = null;
   let cfg = null;
   let reconnectTimer = null;
+  let retries = 0;
+  let started = false;
 
   function getRoomId() {
     return window.__streamRoomId || 'default';
   }
 
+  // The seat socket's capped backoff: 1 s doubling to 15 s, plus jitter. It
+  // used to retry every 3 s forever, from every open tab (audit web-32).
+  function scheduleRetry() {
+    const delay = Math.min(15000, 1000 * 2 ** Math.min(retries, 4)) + Math.floor(Math.random() * 400);
+    retries += 1;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, delay);
+  }
+
   function connect() {
     if (abort.signal.aborted) return;
+    let sock;
     try {
-      rws = new WebSocket(wsUrl);
+      sock = new WebSocket(wsUrl);
     } catch (e) {
       console.warn('[rewards] ws connect failed', e);
+      scheduleRetry();
       return;
     }
+    rws = sock;
 
-    rws.addEventListener('open', () => {
+    sock.addEventListener('open', () => {
+      retries = 0;
       sendVisibility();
       registerWallet();
     });
 
-    rws.addEventListener('message', (event) => {
+    sock.addEventListener('message', (event) => {
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
       switch (msg.type) {
@@ -2567,11 +2760,14 @@ function initRewardsClient(wsUrl) {
       }
     });
 
-    rws.addEventListener('close', () => {
-      reconnectTimer = setTimeout(connect, 3000);
+    sock.addEventListener('close', () => {
+      // A page that has gone, or a socket this client replaced on purpose
+      // (sign-in, below): nothing to retry.
+      if (abort.signal.aborted || sock !== rws) return;
+      scheduleRetry();
     });
 
-    rws.addEventListener('error', () => { /* close handler will retry */ });
+    sock.addEventListener('error', () => { /* close handler will retry */ });
   }
 
   function send(obj) {
@@ -2580,10 +2776,11 @@ function initRewardsClient(wsUrl) {
     }
   }
 
+  // Sent on every open, wallet or not: cash and credit rewards pay the
+  // signed-in account (the server reads it at the socket's upgrade), and a
+  // connected wallet only adds points and watch time (money-1).
   function registerWallet() {
-    if (wallet) {
-      send({ type: 'rewards_register', wallet, roomId: getRoomId() });
-    }
+    send({ type: 'rewards_register', roomId: getRoomId(), ...(wallet ? { wallet } : {}) });
   }
 
   function sendVisibility() {
@@ -2596,11 +2793,24 @@ function initRewardsClient(wsUrl) {
     registerWallet();
   }
 
+  // What the viewer can do about a room that rewards watching but not them,
+  // yet (rewards_config.reason). Every other reason is not theirs to fix, so
+  // the hint just stays away.
+  const REWARDS_ACTION = {
+    sign_in_required: 'Watching earns rewards in this room. Sign in to earn.',
+    payout_wallet_required: 'Watching earns rewards in this room. Add a payout wallet on your account to earn.',
+    wallet_required: 'Watching earns rewards in this room. Connect a wallet to earn.',
+  };
+
   function updateLabel() {
     // Watch-to-earn hint on the spectate surface (drops accrue while the
-    // tab is visible and a wallet is connected — same rules as always).
+    // tab is visible).
     const drops = document.getElementById('streamPreviewDrops');
-    if (drops) drops.style.display = cfg && cfg.enabled ? '' : 'none';
+    const action = cfg && !cfg.enabled ? REWARDS_ACTION[cfg.reason] : null;
+    if (drops) {
+      drops.style.display = cfg && (cfg.enabled || action) ? '' : 'none';
+      drops.textContent = action || 'Watching earns rewards in this room';
+    }
     const el = document.getElementById('earnedRow');
     if (!el || !cfg) return;
     if (!cfg.enabled) {
@@ -2610,9 +2820,11 @@ function initRewardsClient(wsUrl) {
     el.style.display = '';
     const label = el.querySelector('span');
     if (label) {
-      label.textContent = cfg.dryRun
-        ? 'earned toward join (sim)'
-        : 'earned toward join';
+      // Cash goes to the account's payout wallet; credit and points count
+      // toward a seat in this room.
+      label.textContent = cfg.payout === 'cash'
+        ? 'Earned'
+        : cfg.dryRun ? 'earned toward join (sim)' : 'earned toward join';
     }
   }
 
@@ -2623,8 +2835,10 @@ function initRewardsClient(wsUrl) {
     const el = document.getElementById('rewardsEarned');
     if (el) {
       const sym = msg.symbol || 'USDC';
-      const amount = msg.joinBalance != null ? msg.joinBalance : (msg.earnedSession != null ? msg.earnedSession : '0');
-      el.textContent = (/^USDC(?:\.e)?$/i.test(sym) ? fmtAmount(amount) : `${amount} ${sym}`) + (msg.capped ? ' (cap)' : '');
+      // Credit and points: the balance a seat can spend. Cash: the lifetime
+      // amount earned in this room (there is no per-session figure any more).
+      const amount = msg.joinBalance != null ? msg.joinBalance : (msg.earned != null ? msg.earned : '0');
+      el.textContent = (/^USDC(?:\.e)?$/i.test(sym) ? formatDollars(amount) : `${amount} ${sym}`) + (msg.capped ? ' (cap)' : '');
     }
   }
 
@@ -2634,7 +2848,28 @@ function initRewardsClient(wsUrl) {
     if (e.detail && e.detail.account) setWallet(e.detail.account);
   }, { signal: abort.signal });
 
-  window.addEventListener('stream:room', () => registerWallet(), { signal: abort.signal });
+  // No socket at all in a room that pays nothing for watching (most rooms):
+  // the room, and whether it rewards, is known once its config has loaded.
+  window.addEventListener('stream:room', (e) => {
+    if (started) return registerWallet();
+    const roomCfg = (e && e.detail) || CONFIG;
+    if (!roomCfg || !roomCfg.rewardsEnabled) return;
+    started = true;
+    connect();
+  }, { signal: abort.signal });
+
+  // The server learns who is signed in once, at the socket's upgrade (cash and
+  // credit rewards pay the signed-in account, money-1), so a sign-in on this
+  // page needs a new socket for its watch time to count.
+  window.addEventListener('megachat:identity', () => {
+    if (!started || abort.signal.aborted) return;
+    const old = rws;
+    rws = null;
+    clearTimeout(reconnectTimer);
+    retries = 0;
+    if (old) { try { old.close(); } catch { /* already closed */ } }
+    connect();
+  }, { signal: abort.signal });
 
   // NEVER window.ethereum here. This used to ask it for accounts the moment the
   // page loaded — and with more than one wallet extension installed (MetaMask +
@@ -2654,8 +2889,6 @@ function initRewardsClient(wsUrl) {
     } catch { /* a provider without events is still a provider */ }
   });
 
-  connect();
-
   return () => {
     clearTimeout(reconnectTimer);
     if (rws) { try { rws.close(); } catch { /* ignore */ } }
@@ -2669,6 +2902,7 @@ export function initJoinPage({ wsUrl }) {
   streamRoomId = parseStreamRoomFromUrl();
   window.__streamRoomId = streamRoomId;
   mySeatId = null;
+  mySeatToken = null;
   abort = new AbortController();
   camMsgBound = false;
 
@@ -2704,7 +2938,10 @@ export function initJoinPage({ wsUrl }) {
       if (ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'subscribe_room', room: streamRoomId }));
         if (mySeatId) {
-          ws.send(JSON.stringify({ type: 'register_seat', seatId: mySeatId }));
+          sendSeat('register_seat');
+          // A GO LIVE the server has not answered (pressed while the socket
+          // was down, or its answer lost with the old socket) goes out again.
+          if (cameraLiveFired && !serverLive) askToGoLive();
         }
       }
     };
@@ -2744,7 +2981,14 @@ export function initJoinPage({ wsUrl }) {
         return;
       }
       if (!mySeatId) return;
-      if (msg.type === 'meter_update' && msg.seatId === mySeatId) {
+      // The server putting this seat live: the broadcast when it happens, or
+      // the room's live list on a (re)subscribe if that broadcast was missed.
+      if (
+        (msg.type === 'seat_added' && msg.seat && msg.seat.id === mySeatId)
+        || (msg.type === 'initial_state' && Array.isArray(msg.seats) && msg.seats.some((s) => s && s.id === mySeatId))
+      ) {
+        onSeatLive();
+      } else if (msg.type === 'meter_update' && msg.seatId === mySeatId) {
         showMeter(msg.remaining, msg.spent, msg.secondsLeft);
       } else if (msg.type === 'seat_removed' && msg.seatId === mySeatId) {
         document.getElementById('meterTime').textContent = '0:00';
@@ -2768,11 +3012,44 @@ export function initJoinPage({ wsUrl }) {
             '⚠️ Connection was down too long — your seat ended and unused balance was returned. Rejoin when ready.',
             'error'
           );
+        } else if (msg.reason === 'camera_timeout') {
+          // These two used to end the seat without a word (audit web-2).
+          showMessage(
+            roomIsFree()
+              ? '⚠️ Your camera never went live, so the seat ended. Rejoin when your camera is ready.'
+              : '⚠️ Your camera never went live, so the seat ended. Unspent balance stays in your wallet — rejoin when your camera is ready.',
+            'error'
+          );
+        } else if (msg.reason === 'disconnected') {
+          showMessage(
+            roomIsFree()
+              ? '⚠️ Your connection dropped for too long, so the seat ended. Rejoin when you are back.'
+              : '⚠️ Your connection dropped for too long, so the seat ended. Unspent balance stays in your wallet — rejoin when you are back.',
+            'error'
+          );
         }
         stopMppTicks(true); // server already settles on kick; close is a no-op race
         teardownCameraStage();
         mySeatId = null;
+        mySeatToken = null;
         setJoinState('idle');
+        // The setup controls come back, as after a leave: "Add funds to
+        // rejoin" was said with the Add funds button still hidden.
+        setSessionUi(false);
+      } else if (msg.type === 'seat_refused' && msg.seatId === mySeatId) {
+        // The server would not take this tab's word that it holds the seat
+        // (its token did not match: a stale tab, or a bug). Logged without
+        // the token. Nothing here can put the seat on air, so stop billing
+        // and showing it as ours rather than stall; the server ends the
+        // unclaimed seat on its own timer.
+        console.warn(`[seat] ${msg.type} for ${msg.seatId}: ${msg.reason}`);
+        stopMppTicks(true);
+        teardownCameraStage();
+        mySeatId = null;
+        mySeatToken = null;
+        setJoinState('idle');
+        setSessionUi(false);
+        showMessage('⚠️ This tab could not confirm it holds that seat, so it is not on air. Join again to take a fresh seat.', 'error');
       }
     };
   };
@@ -2781,9 +3058,13 @@ export function initJoinPage({ wsUrl }) {
   // Deliberate exits (tab close / navigate away) still free the seat
   // instantly: the WS close alone now has a reconnect grace on the server,
   // so fire an explicit leave beacon.
+  // keepalive fetch, not sendBeacon: the leave carries the seat token as JSON,
+  // and a beacon can only send a safelisted content type.
   window.addEventListener('pagehide', (e) => {
     if (mySeatId && !e.persisted) {
-      try { navigator.sendBeacon(`/api/leave/${mySeatId}`); } catch { /* best effort */ }
+      try {
+        seatPost(`/api/leave/${mySeatId}`, {}, { keepalive: true }).catch(() => { /* best effort */ });
+      } catch { /* best effort */ }
     }
   }, { signal: abort.signal });
 
@@ -2793,15 +3074,12 @@ export function initJoinPage({ wsUrl }) {
     if (el) el.addEventListener('click', fn, { signal: abort.signal });
   };
   on('connectBtn', connectMetaMask);
-  on('passkeyBtn', () => connectPrivyWallet('login'));
-  on('passkeyCreateBtn', () => connectPrivyWallet('register'));
+  on('passkeyBtn', () => connectPrivyWallet());
   on('depositBtn', fundWallet);
   // ONE button through the whole flow: Join Stream → (connect/authorize) →
   // Waiting for camera → Go Live → You're LIVE.
   on('joinBtn', onJoinButtonClick);
   on('camRetryBtn', retryCamera);
-  // Wrapped: the click MouseEvent must not land in leaveStream's `quiet` arg.
-  on('leaveBtn', () => leaveStream());
   // Re-render presentation on Simple/Advanced toggle (values unchanged).
   window.addEventListener('mc-ui-mode-changed', () => {
     updatePriceDisplay();
@@ -2831,9 +3109,21 @@ export function initJoinPage({ wsUrl }) {
 
   // Privy sign-in mints the handle server-side — reflect it without a reload.
   window.addEventListener('megachat:identity', () => { void initAuthUi(); }, { signal: abort.signal });
-  // Privy session can land after first paint — re-render the identity line so
-  // a returning viewer sees their name without a refresh.
-  window.addEventListener('megawallet:changed', () => { void initAuthUi(); }, { signal: abort.signal });
+  // A Privy session can land after first paint: prefill its name without a
+  // refresh. megawallet:changed fires on every bridge update (the modal
+  // opening, the SDK getting ready), so only a change in who is signed in
+  // asks again (audit web-35).
+  const walletWho = () => {
+    const MW = getMegaWallet();
+    return MW && MW.authenticated ? `in:${MW.displayName || ''}` : 'out';
+  };
+  let lastWalletWho = walletWho(); // init() below asks for this state
+  window.addEventListener('megawallet:changed', () => {
+    const who = walletWho();
+    if (who === lastWalletWho) return;
+    lastWalletWho = who;
+    void initAuthUi();
+  }, { signal: abort.signal });
 
   // Letter mode controls (button hidden unless the room enables letters).
   on('letterBtn', () => void openLetterStage());
@@ -2842,8 +3132,9 @@ export function initJoinPage({ wsUrl }) {
   on('letterSendBtn', () => void sendLetter());
   on('letterCancelBtn', closeLetterStage);
   // Click-to-copy the connected address (delegated: the chip is re-injected
-  // whenever renderWallet rewrites #walletInfo).
-  on('walletInfo', onWalletInfoCopyClick);
+  // whenever renderWallet rewrites #walletInfo or fundWallet writes #message).
+  on('walletInfo', onAddrCopyClick);
+  on('message', onAddrCopyClick);
 
   const usernameEl = document.getElementById('username');
   if (usernameEl) {
@@ -2889,6 +3180,7 @@ export function initJoinPage({ wsUrl }) {
     cleanupRewards();
     clearTimeout(camFallbackTimer);
     clearTimeout(camErrorTimer);
+    clearTimeout(liveAskTimer);
     clearTimeout(wsReconnectTimer);
     // ws always points at the CURRENT socket (reconnects rebind it).
     try { ws.close(); } catch { /* ignore */ }

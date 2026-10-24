@@ -354,6 +354,26 @@ const lastDispatchAt = new Map();
 export function _resetDispatchPacing() { lastDispatchAt.clear(); }
 
 /**
+ * THE session a room is running: its newest OPEN one (the last opened wins a
+ * tie). ONE answer for everyone who asks — the playback hooks that open code
+ * windows, the overlay's room-addressed code route, and this dispatcher. They
+ * used to ask three ways (oldest, newest, newest), so a room holding two OPEN
+ * sessions issued codes on one while the overlay drew the other's, and nothing
+ * verified (audit bounty-3). Opening a session also closes the claim's older
+ * open ones now (bounty-routes.js), so two should not arise; this keeps the
+ * answer single if they do. Here rather than in the store because the bank is
+ * the module that already reasons about rooms and their sessions.
+ */
+export function openSessionForRoom(roomId) {
+  let best = null;
+  for (const s of store.listAirSessions()) {
+    if (s.roomId !== roomId || s.status !== 'OPEN') continue;
+    if (!best || (s.startedAt || 0) >= (best.startedAt || 0)) best = s;
+  }
+  return best;
+}
+
+/**
  * Approved, paid-for clips that have never aired, for the OPEN session in
  * this room. This is the population E37 found had no path to the overlay.
  *
@@ -366,9 +386,7 @@ export function _resetDispatchPacing() { lastDispatchAt.clear(); }
  * has made; filed rather than invented.
  */
 export function firstAiringCandidates(roomId, { now = Date.now() } = {}) {
-  const session = store.listAirSessions()
-    .filter((s) => s.roomId === roomId && s.status === 'OPEN')
-    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+  const session = openSessionForRoom(roomId);
   if (!session) return [];
   const claim = store.getClaim(session.claimId);
   if (!claim) return [];

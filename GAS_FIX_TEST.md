@@ -22,7 +22,7 @@ files (bundle excluded, then regenerated from fixed source).
 | 1 | `src/passkey-wallet.mjs:28-67` | client fee helper `arcFeesWithFloor()` | Prefers Circle's own bundler oracle (`circle_getUserOperationGasPrice`, medium tier), falls back to `estimateFeesPerGas`, **always clamps to the 1 gwei floor** |
 | 2 | `src/passkey-wallet.mjs:141` | `createBundlerClient` → `userOperation.estimateFeesPerGas` hook | Fee source for **every** userOp prepared through the bundler client — no future call can silently fall back to the raw estimate |
 | 3 | `src/passkey-wallet.mjs:226-233` | **approve userOp** in `authorizeSessionGasless()` (the failing join op; `payJoinGasless` aliases it) | Explicit `maxFeePerGas`/`maxPriorityFeePerGas` passed to `sendUserOperation` — belt-and-suspenders with the hook |
-| 4 | `public/passkey-wallet.bundle.js` | browser bundle | Rebuilt via `npm run build:passkey`; both frontends (`web/lib/join-page.ts` and legacy `public/index.html`) load **this same bundle**, and Express serves it `no-store`, so no stale copy survives |
+| 4 | `public/passkey-wallet.bundle.js` | browser bundle | Historical: the bundle was deleted in 944aa2c and its `build:passkey` script removed on 2026-10-24. At the time, both frontends (`web/lib/join-page.ts` and legacy `public/index.html`) loaded **this same bundle**, and Express served it `no-store`, so no stale copy survived |
 | 5 | `token-utils.js:18-41` | shared server floor: `MIN_PRIORITY_FEE_WEI`, `clampFeesToArcFloor()`, `estimateArcFeesWithFloor()` | Single implementation used by all server-side writes |
 | 6 | `server.js:160-164, 235` | **refund transfer** (`refundSeat` → `writeContract transfer`) | Spreads `...(await arcFeesWithFloor())` (cached 30 s) |
 | 7 | `server.js:800` | **per-tick `transferFrom`** (`tickPasskeyStreamSeat` → `writeContract`) — the seller pull that meters passkey streams every second | Spreads `...(await arcFeesWithFloor())` |
@@ -39,7 +39,7 @@ files (bundle excluded, then regenerated from fixed source).
 
 ## Verification — live against the real Circle bundler (2026-07-02)
 
-Runner: `node _gate-gas-floor.mjs` (kept in repo alongside the other `_gate-*.mjs` gates).
+Runner: `node _gate-gas-floor.mjs` (historical: deleted 2026-10-24: it could no longer load once `token-utils.js` dropped the Arc fee helpers it imports).
 It stubs `window`/`location.hostname` and injects the page `Origin` so the domain-locked
 Circle client key authenticates exactly like the real join page, then drives the **actual
 `initModularClients()`/bundler client from `src/passkey-wallet.mjs`** with a throwaway
@@ -93,8 +93,7 @@ Key results:
 ## To re-verify after any future change
 
 ```
-npm run build:passkey        # if src/passkey-wallet.mjs changed
-node _gate-gas-floor.mjs     # must print GATE PASS
+node _gate-gas-floor.mjs     # historical: deleted 2026-10-24 (Arc is gone)
 ```
 
 Restart `node server.js` to activate the server-side fee changes (an already-running dev

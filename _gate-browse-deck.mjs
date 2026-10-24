@@ -1,22 +1,27 @@
 /**
  * GATE — browse deck (feat/browse-deck).
  *
- *  A. deck ON (default): /#browse mounts the full deck — banner, bounty
+ *  A. deck ON (default): /legacy#browse mounts the full deck — banner, bounty
  *     board, featured carousel, lobby chat, the classic grid (search
  *     included) below the fold, categories stub. Hero scroll cue + nav both
  *     target the deck's #browse anchor.
  *  B. BROWSE_DECK=0: the classic directory mounts EXACTLY as before — its
  *     own #browse section, search box, no deck modules anywhere.
- *  C. hero freeze: zero diff vs the branch base for the hero and everything
- *     above the browse section.
+ *  (C, "zero diff vs the branch base eae3f7d for the hero", guarded the
+ *  2026-07-24 merge, not a behaviour; the Holler rebrand has since changed
+ *  three of its five files, so it failed on every run. Removed 2026-10-24,
+ *  audit harness-13.)
  *  D. copy rules: no "15 second" claims anywhere on the landing page (the
  *     seeded surfaces must respect the shipped copy rules too).
  *  E. claim drawer opens portaled to <body> (not trapped in the rail's
  *     stacking context) and closes on Escape.
+ *
+ *  The deck lives on the previous home page, which the UI overhaul moved to
+ *  /legacy (web/app/page.tsx serves it at / only with UI_OVERHAUL=0). The gate
+ *  drove / and failed on the new landing, which has no #browse at all.
  */
-import { spawn, execSync } from 'child_process';
 import puppeteer from 'puppeteer-core';
-import { assertFreshBuild } from './_gate-helpers.mjs';
+import { assertFreshBuild, startGateServer } from './_gate-helpers.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -25,13 +30,12 @@ const ok = (name, cond, extra = '') => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const BASE = 'eae3f7d'; // branch point on v0-ui-migration
 const chrome = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 
 // ── G0. the build under test must be newer than the source ──────────────────
 // server.js --prod serves web/.next as it sits on disk: an older build means
 // this gate grades the PREVIOUS tree and reports it as current. Runs before
-// the first execSync, the first spawn and puppeteer.launch, so a stale tree
+// the first server boot and puppeteer.launch, so a stale tree
 // costs nothing.
 {
   const fresh = assertFreshBuild();
@@ -43,28 +47,19 @@ const chrome = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
   }
 }
 
-// ── C. hero freeze (git-level, exact) ───────────────────────────────────────
-const heroDiff = execSync(
-  `git diff ${BASE}..HEAD -- web/components/hero.tsx web/components/site-header.tsx web/components/glitch-background.tsx web/app/globals.css web/components/wordmark.tsx`,
-  { encoding: 'utf8' },
-).trim();
-ok('C. hero + above-browse files: ZERO diff vs branch base', heroDiff === '');
-
-const launch = (port, env = {}) =>
-  spawn(process.execPath, ['server.js', '--prod'], {
-    env: { ...process.env, PORT: String(port), ...env },
-    stdio: 'ignore', cwd: process.cwd(),
-  });
+// Each boot is a startGateServer: its own scratch data dir (this used to run
+// on the repo's data/), a readiness poll instead of a 9 s sleep, kept stderr,
+// the identity nonce, and no live key from .env.
+const launch = (port, env = {}) => startGateServer({ port, env, label: `browse-deck:${port}` });
 
 const browser = await puppeteer.launch({ executablePath: chrome, headless: 'new' });
 
 // ── A + D + E: deck ON ──────────────────────────────────────────────────────
-const appOn = launch(3220);
-await sleep(9000);
+const appOn = await launch(3220);
 try {
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
-  await page.goto('http://localhost:3220/#browse', { waitUntil: 'networkidle2', timeout: 60000 });
+  await page.goto('http://localhost:3220/legacy#browse', { waitUntil: 'networkidle2', timeout: 60000 });
   await page.evaluate(() => document.getElementById('browse')?.scrollIntoView());
   await sleep(2000);
 
@@ -126,12 +121,11 @@ try {
 }
 
 // ── B: BROWSE_DECK=0 restores the classic directory ─────────────────────────
-const appOff = launch(3221, { BROWSE_DECK: '0' });
-await sleep(9000);
+const appOff = await launch(3221, { BROWSE_DECK: '0' });
 try {
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
-  await page.goto('http://localhost:3221/#browse', { waitUntil: 'networkidle2', timeout: 60000 });
+  await page.goto('http://localhost:3221/legacy#browse', { waitUntil: 'networkidle2', timeout: 60000 });
   await sleep(1500);
   const b = await page.evaluate(() => {
     const browse = document.getElementById('browse');

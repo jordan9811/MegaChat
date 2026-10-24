@@ -10,13 +10,10 @@
 // broadcast. This card is how the streamer sees that BEFORE it happens.
 
 import { useEffect, useState } from 'react'
-import { Radio, CircleAlert, CircleCheck, Moon, EyeOff } from 'lucide-react'
+import { Radio, CircleAlert, Moon, EyeOff } from 'lucide-react'
 import { useRoom } from '@/components/room-provider'
-import { useOverlayVisibility, VISIBILITY_POLL_MS } from '@/components/obs/use-overlay-visibility'
-
-/** The obs-websocket password the one-click flow stored. It never leaves this
- *  browser — read here only to open the same local connection. */
-const LS_OBS_PASSWORD = 'mc_obs_ws_password'
+import { useOverlayVisibility } from '@/components/obs/use-overlay-visibility'
+import { useObsPassword } from '@/components/obs/obs-password'
 
 /** Plain-English cause, in the streamer's terms, not OBS's. */
 const HIDDEN_COPY: Record<string, string> = {
@@ -56,12 +53,10 @@ const POLL_MS = 5000
 export function OverlayHealthCard() {
   const { room, mode } = useRoom()
   const [health, setHealth] = useState<Health | null>(null)
-  const [obsPassword, setObsPassword] = useState<string | null>(null)
+  // The obs-websocket password the one-click flow stored, current as soon as
+  // OBS accepts it (obs-password.ts). It never leaves this browser.
+  const obsPassword = useObsPassword()
   const [seatMoney, setSeatMoney] = useState<SeatMoney | null>(null)
-
-  useEffect(() => {
-    try { setObsPassword(localStorage.getItem(LS_OBS_PASSWORD) || null) } catch { /* private mode */ }
-  }, [])
 
   // Guest-seat money: pending, released, held back — and for a manual-paste
   // room, why it holds longer and until when (Pass C Part 3c).

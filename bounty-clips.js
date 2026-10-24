@@ -173,6 +173,25 @@ function fold() {
 const isLive = (c) => !c.purgedAt;
 
 /**
+ * THE WHOLE VALUE, NOT A PREFIX — the same rule letters.js applies to a room
+ * recording. The old check was /^video\/(webm|mp4)/, so "video/webm, text/html"
+ * was stored and echoed back as the clip's Content-Type: a fan's upload ran as
+ * a page on the app's own origin (audit bounty-N1). Parameters are allowed
+ * (`;codecs=vp8`), a second type after a comma is not.
+ */
+const VIDEO_MIME = /^video\/(webm|mp4)(;[^,]*)?$/i;
+export const isVideoMime = (mime) => VIDEO_MIME.test(String(mime || ''));
+
+/**
+ * An UNMODERATED CLIP IS PRIVATE (DECISIONS 2026-10-24). It becomes public once
+ * the streamer it was recorded for approves it, or once it has aired — at that
+ * point it has been on a broadcast anyway. Until then only its pledger, that
+ * streamer and an operator may list or play it; the bounty routes enforce that
+ * against this one rule.
+ */
+export const isPublicClip = (c) => !!c && (c.approval?.state === 'APPROVED' || c.playCount > 0);
+
+/**
  * Store a fan's recording against a reserved handle.
  *
  * Rejects rather than truncates on every limit: a clip we cannot keep whole
@@ -184,7 +203,7 @@ export function storeClip({ handleKey, contributionId, contributor, mime, durati
   if (!trust.ok) throw new Error(`Clip index is not trustworthy: ${trust.error}`);
   if (!handleKey) throw new Error('handleKey required');
   if (!Buffer.isBuffer(data) || data.length === 0) throw new Error('Clip data required');
-  if (!/^video\/(webm|mp4)/.test(String(mime || ''))) {
+  if (!isVideoMime(mime)) {
     throw new Error('Unsupported recording format');
   }
   const dur = Number(durationS);
@@ -252,6 +271,10 @@ export function getClip(clipId) {
 export function readClip(clipId) {
   const rec = getClip(clipId);
   if (!rec) return { ok: false, error: 'not_found' };
+  // Rows stored before the anchored check can still carry a smuggled second
+  // type. Refuse them on the way out too: the media route, the bank replay and
+  // anything else reading through here then never handle those bytes at all.
+  if (!isVideoMime(rec.mime)) return { ok: false, error: 'unsupported_type', record: rec };
   const data = readMedia(clipId);
   if (!data) return { ok: false, error: 'media_missing', record: rec };
   const sha256 = createHash('sha256').update(data).digest('hex');

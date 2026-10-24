@@ -13,6 +13,7 @@
  */
 import WebSocket from 'ws';
 import puppeteer from 'puppeteer-core';
+import { assertFreshBuild } from './_gate-helpers.mjs';
 
 const BASE = process.env.GATE_BASE_URL || 'http://localhost:3212';
 const WS_URL = BASE.replace(/^http/, 'ws');
@@ -22,6 +23,20 @@ const ok = (name, cond, extra = '') => {
   if (cond) { pass++; console.log(`  PASS  ${name}${extra ? ' — ' + extra : ''}`); }
   else { fail++; console.error(`  FAIL  ${name}${extra ? ' — ' + extra : ''}`); }
 };
+// ── G0. the build under test must not predate the source ──────────────────
+// The hand-started server on this machine serves web/.next exactly as it sits
+// on disk: an older build means this grades the PREVIOUS tree ("A browser gate
+// is only as fresh as the last build", CLAUDE.md). A GATE_BASE_URL elsewhere is
+// graded by that server's own build, which this machine cannot see.
+if (/^https?:\/\/(localhost|127\.0\.0\.1)[:/]/.test(BASE)) {
+  const fresh = assertFreshBuild();
+  ok('G0. the build under test is newer than the source it renders', fresh.ok, fresh.detail);
+  if (!fresh.ok) {
+    console.log('\n  refusing to grade a stale build — rebuild and re-run.');
+    console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
+    process.exit(1);
+  }
+}
 
 // ── 1. Room with channel + fast rewards; sanitize check ─────────────────────
 const mk = async (name, config) => {
