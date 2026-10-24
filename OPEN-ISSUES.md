@@ -3770,3 +3770,25 @@ Payouts are real intents at the settlement door; taking a budget needs
   then exits 127 on a libuv assertion at teardown (Windows, Node 24.12),
   twice in a row. Neither touches the round-4 files; port the first to
   `startGateServer` and a temp data dir.
+
+## O — Liveness tiers for bounties and campaigns (owner's idea, not yet built, 2026-10-23)
+
+The owner: bounty verification "preps for adversarial status", but after that
+a lower-intensity uptime check would protect a backer against a streamer who
+"isn't paying attention or forgets", and viewers should see how protected
+they are as a red / yellow / green badge with hover details. Checked today:
+nothing of this exists. Every "liveness" in the tree is channel-is-live
+(`twitchLiveCached`, `followTick`), and `docs/features/follow-my-stream.md`
+states the gap itself ("It does not confirm that the streamer is showing the
+overlay"). Proposed tiers, each a label a pool/campaign carries:
+- **Naked (red):** channel-live only. The streamer could go live with no
+  overlay and claim.
+- **Half-baked (yellow):** the keyed overlay (N14) is connected while the
+  broadcast is up, checked every follow tick, plus the room on air. Cheap,
+  continuous, no badge code — protects against forgetting, not against fraud.
+- **Bounty-grade (green):** today's adversarial path: the badge code on the
+  real frames (`bounty-verifier.js`, `verifyAirSession`).
+Campaigns already carry the half-baked signal in all but name (aired needs
+the keyed overlay + on air). Open: the badge component, where the label
+lives on the pool and the campaign record, and whether a backer can require
+a minimum tier when pledging.
