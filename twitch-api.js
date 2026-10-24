@@ -138,7 +138,7 @@ export async function getLiveByLogins(logins, { log = console } = {}) {
  * each live channel: how many people are watching. The board uses it to give
  * a big streamer the big featured card. Same null contract as getLiveByLogins.
  *
- * @returns {Promise<Map<string,{live: boolean, viewers: number}>|null>}
+ * @returns {Promise<Map<string,{live: boolean, viewers: number, title?: string}>|null>}
  */
 export async function getStreamsByLogins(logins, { log = console } = {}) {
   if (!twitchApiConfigured()) return null;
@@ -150,7 +150,10 @@ export async function getStreamsByLogins(logins, { log = console } = {}) {
     const j = await helix(`/streams?${list.map((l) => `user_login=${encodeURIComponent(l)}`).join('&')}`);
     const out = new Map(list.map((l) => [l, { live: false, viewers: 0 }]));
     for (const s of j.data || []) {
-      if (s?.user_login) out.set(String(s.user_login).toLowerCase(), { live: true, viewers: Number(s.viewer_count) || 0 });
+      // The stream title rides along: a room that follows its broadcast takes
+      // it as its name (server.js followTick), so the board says what the
+      // stream says.
+      if (s?.user_login) out.set(String(s.user_login).toLowerCase(), { live: true, viewers: Number(s.viewer_count) || 0, title: typeof s.title === 'string' ? s.title.trim() : '' });
     }
     return out;
   } catch (e) {

@@ -3210,6 +3210,15 @@ async function followTick() {
       const threshold = bigStreamViewers();
       const big = prev?.big ? viewers >= threshold * BIG_STAYS_ABOVE : viewers >= threshold;
       followState.set(r.id, { live: true, offSince: null, viewers, big, at: now });
+      // The room's name follows the stream's title while the broadcast is up,
+      // so the board and the Twitch directory say the same thing. Only a
+      // real, changed title moves it; an empty title (Twitch sometimes sends
+      // one for a second after going live) leaves the name alone.
+      const title = streams.get(login)?.title;
+      if (title && title.slice(0, 64) !== r.name) {
+        updateRoom(r.id, { name: title });
+        console.log(`[follow] ${r.id} (${login}) renamed to the stream title`);
+      }
       // Rising edge, or the first thing we ever saw. Both mean the same thing
       // to the owner: their broadcast is up and their room is not.
       if (!prev || !prev.live) {

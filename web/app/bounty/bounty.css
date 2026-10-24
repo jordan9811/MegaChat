@@ -30,6 +30,10 @@ body:has(.mc-bounty) {
      The owner's #ffd60a is near-white on a light ground (1.1:1), so in light
      each yellow fill also carries a hairline in the bounty ink. */
   --mcb-fill: var(--f-bounty);
+  /* The stacked bar's two halves (owner, 2026-10-23): money locked to THIS
+     name alone is solid green; money also pledged to rivals is the yellow
+     hatch. Two colours, two meanings, so the split reads without the legend. */
+  --mcb-locked: var(--f-rewards);
   --mcb-edge: transparent;
   --mcb-gap: color-mix(in srgb, var(--f-bounty) 26%, var(--hl-bg));
   --mcb-mark: var(--f-bounty);
@@ -95,7 +99,7 @@ body:has(.mc-bounty) {
   background: var(--mcc-rule);
 }
 .mc-bounty .track-locked {
-  background: var(--mcb-fill);
+  background: var(--mcb-locked);
   box-shadow: inset 0 0 0 1px var(--mcb-edge);
 }
 .mc-bounty .hatch {
@@ -105,7 +109,7 @@ body:has(.mc-bounty) {
 /* Locked money is lit; contested money is not. Dark only (SPEC §5). Half
    strength: eight lit bars in a column glow as one block, not as a cue. */
 :root:not(.light) .mc-bounty .track .track-locked {
-  box-shadow: 0 0 6px color-mix(in srgb, var(--f-bounty) 19%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--f-rewards) 19%, transparent);
 }
 
 /* ── AVATAR FALLBACK ──────────────────────────────────────────────────────
@@ -439,7 +443,7 @@ body:has(.mc-bounty) {
 .mcb-detail-split { display: flex; flex-direction: column; gap: 15px; }
 .mcb-detail-split > span { display: grid; grid-template-columns: 9px 1fr; column-gap: 10px; }
 .mcb-detail-split i { grid-row: 1 / 3; width: 7px; height: 100%; }
-.mcb-detail-split i.is-locked { background: var(--mcb-fill); box-shadow: inset 0 0 0 1px var(--mcb-edge); }
+.mcb-detail-split i.is-locked { background: var(--mcb-locked); box-shadow: inset 0 0 0 1px var(--mcb-edge); }
 .mcb-detail-split i.is-contested { background: repeating-linear-gradient(135deg, var(--mcb-fill) 0 3px, var(--mcb-gap) 3px 6px); box-shadow: inset 0 0 0 1px var(--mcb-edge); }
 .mcb-detail-split b { font-size: 11px; }
 .mcb-detail-split small { margin-top: 3px; color: var(--mcc-faint); font-size: 9px; line-height: 1.45; }
