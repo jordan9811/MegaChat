@@ -3528,6 +3528,14 @@ only in Railway and were not checkable while its API was failing. Names only:
     old reader did.
 
   Delete or fill the two empty variables (launch-readiness retest row 63).
+  **Update 2026-11-04:** `ESCROW_CONTRACT_ADDRESS` deleted from Railway. It was
+  empty, and `server.js` reads `ESCROW_CONTRACT_ADDRESS || defaultContractAddress(CHAIN_ID)`,
+  so escrow runs on the recorded deployment in `contracts/deployments.json`
+  exactly as before; set the variable only to point at a different contract.
+  `PLATFORM_SETTLEMENT_KEY` stays empty until the buried-seat refunds are
+  audited. Also deleted as unread: `ARC_CHAIN_ID`, `ARC_RPC_URL`, the three
+  `CIRCLE_*`, `EXPLORER_URL`, `FACILITATOR_URL`, `GATEWAY_WALLET_ADDRESS`,
+  `USDC_ADDRESS`. Set: `NEXT_PUBLIC_SITE_URL`, `BASE_URL` (hollertv.com).
 
 ## L — Backer's bounty page: revisit, re-up, top up (owner, open 2026-10-23)
 
