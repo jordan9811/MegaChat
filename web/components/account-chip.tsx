@@ -99,7 +99,7 @@ export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string
             >
               Your room link
               <span className="mt-0.5 block font-[600] text-hl-strap-hi dark:text-[color-mix(in_srgb,var(--hl-strap-hi)_72%,var(--hl-fg))]">
-                megachat.fun/{identity.handle}
+                hollertv.com/{identity.handle}
               </span>
             </a>
           ) : null}

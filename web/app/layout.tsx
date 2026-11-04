@@ -33,7 +33,7 @@ const graffiti = Pacifico({
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ||
-  'https://megachat.fun'
+  'https://hollertv.com'
 const SITE_TITLE = 'Holler — Skip the chat. Be the stream.'
 const SITE_DESC =
   'Viewers pay per-second in USDC to put their camera on your live broadcast. One-tap passkey to go live, unused balance refunds automatically. Turn chat into content.'
