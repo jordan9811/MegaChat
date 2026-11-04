@@ -4842,3 +4842,13 @@ product.
   - Circle is unused on `v0-ui-migration` (its only code fed the passkey
     bundle deleted 2026-10-24): `CIRCLE_CLIENT_KEY` can be removed from
     Railway and the Circle console needs nothing.
+- **Z9 — Prove you own a pump.fun or Rumble channel (research first).**
+  Neither platform is known to offer "sign in with" OAuth the way Twitch,
+  Kick and X do: pump.fun identity is the creator's Solana wallet, and Rumble
+  issues per-channel livestream API keys. So this is channel-ownership proof,
+  not a login button: a signature from the pump.fun creator wallet, or a code
+  the streamer posts on the Rumble channel or reads in through their API key.
+  Payoff: a pump.fun or Rumble streamer could claim a reserved handle and its
+  bounty pool the way a Twitch or Kick streamer does by signing in, instead of
+  relying only on the on-stream badge. Confirm what each platform offers before
+  building anything.
