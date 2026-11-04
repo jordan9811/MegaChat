@@ -4871,3 +4871,10 @@ product.
   room: it must not appear to users anywhere (board, browse, links) once the
   site is public, and it goes away at full deploy. Its password is left as is
   by the owner's call (launch-readiness row 72).
+- **Z11 — Domain cleanup (owner: not needed until launch, 2026-11-04).**
+  Redirect megachat.fun permanently to hollertv.com (every path, so old OBS
+  overlay links, room links and sign-in callbacks keep working), then do the
+  Z8 provider tidy-up (drop the megachat callbacks and Privy domains). Pairs
+  with Z10 (hide the test room). Claude reminds the owner of Z10/Z11 at each
+  status check until done.
+
