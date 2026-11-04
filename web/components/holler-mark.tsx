@@ -9,6 +9,11 @@
 //            parent — header lockups — which also uses the solid dot.
 //   glow     an azure drop-shadow on hero-size marks; dark theme only (light
 //            gets a soft shadow instead).
+//
+// Two looks share this one component. Retro (the default): lowercase holler
+// in Outfit, the o a round SMPTE test card. Classic: the strap above. Both are
+// rendered and the stylesheet shows one by <html data-style> (.hm-retro in
+// app/globals.css), so the switch needs no re-render and no flash.
 
 export type HollerMarkVariant = 'full' | 'icon' | 'bare'
 
@@ -33,6 +38,9 @@ export function HollerMark({
         <span className="hm-l">H</span>
         <span className="hm-o" />
         {variant === 'icon' ? null : <span className="hm-l">LLER</span>}
+      </span>
+      <span className="hm-retro" aria-hidden="true">
+        h<span className="hm-tc" />{variant === 'icon' ? null : 'ller'}
       </span>
     </span>
   )

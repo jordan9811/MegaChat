@@ -1,10 +1,11 @@
 // NOTE: @vercel/analytics was removed — the app deploys on Railway, so the
 // injected /_vercel/insights/script.js could only ever 404 on every page.
 import type { Metadata, Viewport } from 'next'
-import { Archivo, Pacifico, Plus_Jakarta_Sans, Space_Mono } from 'next/font/google'
+import { Archivo, Outfit, Pacifico, Plus_Jakarta_Sans, Space_Mono } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
 import { TempoWalletProvider } from '@/components/providers/tempo-wallet'
 import { UI_MODE_BOOT_SCRIPT } from '@/lib/ui-mode-boot'
+import { STYLE_BOOT_SCRIPT } from '@/lib/style-mode-boot'
 import './globals.css'
 import './product.css'
 
@@ -18,6 +19,8 @@ const ui = Plus_Jakarta_Sans({ variable: '--font-ui', subsets: ['latin'], weight
 // is a real wider cut, not a synthesized one.
 const display = Archivo({ variable: '--font-display', subsets: ['latin'], axes: ['wdth'] })
 const code = Space_Mono({ variable: '--font-code', subsets: ['latin'], weight: ['400', '700'] })
+// Retro look: the wordmark and the headlines (globals.css "Retro look").
+const retro = Outfit({ variable: '--font-retro', subsets: ['latin'], weight: ['600', '700', '800'] })
 // Not preloaded: only the legacy hero (/legacy) paints in it, so preloading it
 // put 22 KB of high-priority font on every route. The @font-face stays in the
 // root CSS, and the file downloads when .font-graffiti text first paints.
@@ -82,9 +85,10 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   colorScheme: 'dark light',
+  // the Retro look's grounds (the default look): warm paper and studio black
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#e6e3ee' },
-    { media: '(prefers-color-scheme: dark)', color: '#070b14' },
+    { media: '(prefers-color-scheme: light)', color: '#e9e3d7' },
+    { media: '(prefers-color-scheme: dark)', color: '#0e0d0c' },
   ],
 }
 
@@ -97,12 +101,14 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${ui.variable} ${graffiti.variable} ${display.variable} ${code.variable}`}
+      className={`${ui.variable} ${graffiti.variable} ${display.variable} ${code.variable} ${retro.variable}`}
       data-scroll-behavior="smooth"
     >
       <body className="bg-background font-sans antialiased">
         {/* Simple/Advanced presentation mode — applied before paint. */}
         <script dangerouslySetInnerHTML={{ __html: UI_MODE_BOOT_SCRIPT }} />
+        {/* Retro/Classic look — applied before paint. */}
+        <script dangerouslySetInnerHTML={{ __html: STYLE_BOOT_SCRIPT }} />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

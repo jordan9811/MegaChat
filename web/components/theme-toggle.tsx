@@ -3,9 +3,12 @@
 // Sun/moon switch for every page header (SPEC §5). The theme is unknown on the
 // server, so until mount it renders an inert ring of the same size — no layout
 // shift and no wrong icon flashing. Styles: .hl-tt in app/globals.css.
+// The Retro/Classic look switch rides along in front of it, so every header
+// that offers light/dark offers the look too.
 
 import { useTheme } from 'next-themes'
 import { useEffect, useState } from 'react'
+import { StyleToggle } from '@/components/style-toggle'
 
 function SunIcon() {
   return (
@@ -31,18 +34,26 @@ export function ThemeToggle({ className }: { className?: string }) {
   useEffect(() => setMounted(true), [])
 
   if (!mounted) {
-    return <span className={['hl-tt', 'hl-tt--placeholder', className].filter(Boolean).join(' ')} aria-hidden="true" />
+    return (
+      <>
+        <StyleToggle className={className} />
+        <span className={['hl-tt', 'hl-tt--placeholder', className].filter(Boolean).join(' ')} aria-hidden="true" />
+      </>
+    )
   }
 
   const dark = resolvedTheme !== 'light'
   return (
-    <button
-      type="button"
-      className={['hl-tt', className].filter(Boolean).join(' ')}
-      aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-      onClick={() => setTheme(dark ? 'light' : 'dark')}
-    >
-      {dark ? <SunIcon key="sun" /> : <MoonIcon key="moon" />}
-    </button>
+    <>
+      <StyleToggle className={className} />
+      <button
+        type="button"
+        className={['hl-tt', className].filter(Boolean).join(' ')}
+        aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+        onClick={() => setTheme(dark ? 'light' : 'dark')}
+      >
+        {dark ? <SunIcon key="sun" /> : <MoonIcon key="moon" />}
+      </button>
+    </>
   )
 }

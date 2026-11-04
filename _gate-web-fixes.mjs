@@ -62,6 +62,10 @@ import { randomBytes, randomUUID, createHash } from 'crypto';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+// The tree before these fixes. The "HEAD" comparisons below were written while
+// the fixes were still uncommitted; once they landed in 768fbf1, HEAD was the
+// fix itself, so the before-and-after cases compared the fix with itself.
+const PRE_FIX = '1f06bef';
 const LETTERS_CHILD_FLAG = '--letters-child';
 const CAMPAIGN_SCREENS_SEED_FLAG = '--seed-campaign-screens';
 
@@ -228,7 +232,7 @@ async function lettersSection() {
   let copy = null;
   try {
     copy = treeCopy('mc-webfix-letters-head-');
-    writeFileSync(path.join(copy, 'letters.js'), execFileSync('git', ['show', 'HEAD:letters.js'], { cwd: HERE }));
+    writeFileSync(path.join(copy, 'letters.js'), execFileSync('git', ['show', `${PRE_FIX}:letters.js`], { cwd: HERE }));
     const o = runLettersChild(path.join(copy, 'letters.js'));
     if (o.error) ok('HEAD: the letters route ran', false, o.error);
     else {
@@ -1072,10 +1076,11 @@ async function cssNodeChecks({ ok, repo }) {
   const archivo800 = routes.filter(([r]) => fam[r].some((x) => /^Archivo w800\b/.test(x)));
   ok('CSS2. web-12: no route preloads the page-level static Archivo 800', archivo800.length === 0,
     `${archivo800.length} routes${archivo800.length ? ': ' + archivo800.map(([r]) => r).join(', ') : ''}`);
-  // HEAD: 5 or 6 files (158,680 B / 173,116 B); after: the root layout's four, 136,384 B everywhere
+  // HEAD: 5 or 6 files (158,680 B / 173,116 B); after: the root layout's own set, the same everywhere.
+  // Five since the Retro look: Outfit (the wordmark and the retro headlines) joined the four.
   const sets = new Set(routes.map(([r]) => [...fam[r]].sort().join(' ; ')));
-  ok('CSS3. web-12/39: every route preloads the same four root-layout faces (Jakarta, Archivo variable, Space Mono 400/700)',
-    sets.size === 1 && routes.every(([r]) => fam[r].length === 4), [...sets].join(' | '));
+  ok('CSS3. web-12/39: every route preloads the same five root-layout faces (Jakarta, Archivo variable, Space Mono 400/700, Outfit)',
+    sets.size === 1 && routes.every(([r]) => fam[r].length === 5 && fam[r].some((x) => x.startsWith('Outfit'))), [...sets].join(' | '));
   // GUARD (HEAD: true as well): preload:false keeps the face; it only stops the preload
   ok('CSS4. guard: Pacifico still has an @font-face in the built CSS (it loads on use)', /@font-face\{font-family:[^;]*Pacifico/.test(css));
   // HEAD: `.font-mono,.font-sans{font-family:var(--font-ui), sans-serif}`
@@ -1092,7 +1097,7 @@ async function cssNodeChecks({ ok, repo }) {
   ok('CSS7. web-48/40: the dead rules are gone from the built CSS', still.length === 0, still.join(', '));
   // GUARD: the two product.css selectors that lost dead alternatives keep HEAD's specificity exactly
   const now = readFileSync(path.join(repo, 'web', 'app', 'product.css'), 'utf8');
-  const head = execFileSync('git', ['show', 'HEAD:web/app/product.css'], { cwd: repo, encoding: 'utf8' });
+  const head = execFileSync('git', ['show', `${PRE_FIX}:web/app/product.css`], { cwd: repo, encoding: 'utf8' });
   const sel = (src, re) => { const m = src.match(re); return m ? m[1].trim() : null; };
   const pairs = [
     [/\n(body :is\(\.mcc-progress, \.mcc-preview-note[^{]*)\{/, /\n(body small\.mcc-preview-note)\s*\{/],
@@ -1197,7 +1202,7 @@ const cssBrowserChecks = {
 
   // cc-27. GUARD: the built page's pre-paint script is byte-identical to HEAD's inline string.
   async bootScriptByteIdentical({ ok, APP, repo }) {
-    const head = execFileSync('git', ['show', 'HEAD:web/app/layout.tsx'], { cwd: repo, encoding: 'utf8' });
+    const head = execFileSync('git', ['show', `${PRE_FIX}:web/app/layout.tsx`], { cwd: repo, encoding: 'utf8' });
     const want = JSON.parse(head.match(/__html:\s*\n?\s*("(?:[^"\\]|\\.)*")/)[1]);
     const html = await (await fetch(`${APP}/`)).text();
     const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);

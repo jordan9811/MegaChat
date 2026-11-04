@@ -2264,3 +2264,32 @@ OPEN-ISSUES X.
   page since the UI overhaul. Undo: n/a.
 - **`package-lock.json` is not in `DEFAULT_WATCH`**: an install rewrites it
   with no dependency change, which would mark every build stale. Undo: add it.
+
+## 2026-11-04 — The Retro look is the default; Classic stays one switch away
+
+The owner picked the test-card o wordmark and asked for a light retro redesign
+across every page, as the default, with a switch back to the current look.
+
+- **Two looks, one switch.** `<html data-style>` is `retro` (default) or
+  `classic`, set before paint by `STYLE_BOOT_SCRIPT` (`web/lib/style-mode-boot.ts`)
+  from `localStorage['holler-style']`, flipped by the button beside the sun/moon
+  (`web/components/style-toggle.tsx`, rendered by `ThemeToggle`, so every header
+  that offers light/dark offers it). Anything but "classic" is retro, so a blocked
+  storage or no JS paints retro. Undo: make the boot script default to `classic`.
+- **All of Retro is one block** at the end of `web/app/globals.css` ("Retro look"),
+  every rule scoped to `html:not([data-style='classic'])`. Classic is therefore the
+  site exactly as it shipped before. Undo: delete the block and the toggle.
+- **The changes, from the product (a call-in show → 70s–80s broadcast TV):** the
+  wordmark is lowercase holler with a round SMPTE test card for the o (both marks
+  render in `HollerMark`; CSS shows one); headlines use Outfit, the wordmark's
+  face (body Jakarta and Space Mono readouts unchanged); no glow (flat colour);
+  warm neutrals (studio black #0e0d0c in place of navy, warm paper #e9e3d7 in
+  place of lilac grey); soft corners on buttons and fields (zero specificity, so
+  pills and explicit radii keep theirs) and on the named hand-built cards; the
+  landing film's playhead runs as colour bars. The four feature colours stay:
+  they are already test-pattern colours.
+- **The browser toolbar colour** (`themeColor`) follows the default look.
+- **`_gate-web-fixes.mjs` compares its "before" cases with `1f06bef`** (`PRE_FIX`),
+  not `HEAD`: they were written before the fixes were committed, and once they
+  landed in 768fbf1 HEAD was the fix itself, so L-D, CSS8 and CSS15 compared the
+  fix with itself. CSS3 now expects five preloaded faces (Outfit joined). Undo: n/a.

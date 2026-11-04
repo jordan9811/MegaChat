@@ -4795,3 +4795,34 @@ stale premises (Y6).
   existing room was refused as out of bounds; `rooms-store.js` now defaults to
   0.01 / 0.1 and the dashboard's new-room defaults match. Whether those bounds are
   the product's numbers is the owner's call (they are env-overridable).
+
+## Z — Launch run-up: the final GTM list (open 2026-10-26)
+
+The owner's list of what happens between now and public launch, in rough
+order. The launch film is deliberately last, so it can show the finished
+product.
+
+- **Z1 — Landing "three ways in" cards: direction B, C as fallback.** The
+  owner rejected the current cards (three equal boxes read templated) and
+  reviewed three mocks in `design-assets/landing-cards/landing-cards-mock.html`.
+  A (mixed-size bento) is rejected. **B (game modes: a full-bleed still per
+  card, title over it, colour stripe on top) is the plan, IF real product
+  stills can be captured that work and look good** (a Holler playing on a
+  stream with its badge; a streamer and guest face to face; the bounty board
+  or a claim). **C (type only: big glowing verbs "Say it." / "Sit in." / "Back
+  them." with one mono readout each) is the fallback** if the stills don't hold
+  up. Both keep the bigger Archivo titles, solid feature-colour buttons, and no
+  "01 02 03". Stills are captured from the real product, not stock; a Seedance
+  roll is only on the owner's yes.
+- **Z2 — Overlay final pass: say which feature is on screen.** A tile on the
+  overlay must make it obvious whether it is a **Call in** (a live person, on
+  camera now) or a **Holler** (a recorded clip playing back), in that feature's
+  colour and tag, so a viewer of the stream can tell live from recorded at a
+  glance. Applies to `public/overlay.html` and the dashboard's overlay preview.
+  Check every overlay surface after, and keep the bounty badge legible.
+- **Z3 — UI fix pass** across the app (the owner's outstanding UI list).
+- **Z4 — Docs and roadmap update** to match what ships.
+- **Z5 — Reserved names for launch** (item M).
+- **Z6 — Backer's bounty page** (item L), if it is in the launch cut.
+- **Z7 — Launch film, last:** redo the launch video on the finished product
+  (`design-assets/launch-video/`).

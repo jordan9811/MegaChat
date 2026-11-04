@@ -901,3 +901,187 @@ html[data-ui='advanced'] .simple-only { display: none !important; }
     color: var(--hl-fg);
   }
 }
+
+/* ── Retro look (the default · components/style-toggle.tsx) ──────────────────
+   Holler is a call-in show for the internet, so the look borrows 70s–80s
+   broadcast TV: the wordmark is lowercase holler with a test-card o, headlines
+   share its typeface, colour is flat (printed, not glowing), the blacks are a
+   warm studio black and the paper is warm, and screens, cards and buttons have
+   a CRT's soft corners. The four feature colours stay: magenta, azure, yellow
+   and green are already test-pattern colours. Everything here is scoped to
+   html:not([data-style="classic"]), so the Classic switch turns it all off and
+   the neon look underneath is untouched. No JS (or blocked storage) = retro. */
+
+/* the wordmark: one of the two renderings in HollerMark, shown by the look */
+.hm .hm-retro {
+  display: none;
+}
+html:not([data-style='classic']) .hm .hm-strap {
+  display: none;
+}
+html:not([data-style='classic']) .hm .hm-retro {
+  display: inline-flex;
+  align-items: baseline;
+  color: inherit;
+  font-family: var(--font-retro), 'Outfit', var(--font-ui), sans-serif;
+  /* lowercase reads smaller than the strap's caps at the same size */
+  font-size: 1.62em;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  text-transform: none;
+}
+html:not([data-style='classic']) .hm.hm--icon .hm-retro {
+  font-size: 1.3em;
+}
+/* the o: a round SMPTE test card (seven bars, the castellation strip, the
+   bottom row), in the letters' x-height */
+/* font-size inherit: page headers set `… span { font-size: 11px }` at (0,1,1)
+   inside the lockup, and the o is a span (see the .hm comment above) */
+.hm .hm-tc {
+  display: inline-block;
+  flex: none;
+  position: relative;
+  top: -0.005em;
+  width: 0.53em;
+  height: 0.53em;
+  margin: 0 0.03em 0 0.035em;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  font-size: inherit;
+  background:
+    linear-gradient(to right, #c0c0c0 0 14.28%, #c0c000 14.28% 28.57%, #00c0c0 28.57% 42.86%, #00c000 42.86% 57.14%, #c000c0 57.14% 71.43%, #c00000 71.43% 85.71%, #0000c0 85.71% 100%) 0 0 / 100% 67% no-repeat,
+    linear-gradient(to right, #0000c0 0 14.28%, #131313 14.28% 28.57%, #c000c0 28.57% 42.86%, #131313 42.86% 57.14%, #00c0c0 57.14% 71.43%, #131313 71.43% 85.71%, #c0c0c0 85.71% 100%) 0 72.8% / 100% 8% no-repeat,
+    linear-gradient(to right, #00214c 0 17.86%, #ffffff 17.86% 35.72%, #32006a 35.72% 53.58%, #131313 53.58% 100%) 0 100% / 100% 25% no-repeat;
+}
+
+/* headlines in the wordmark's face; body and readouts keep theirs */
+html:not([data-style='classic']) {
+  --font-display: var(--font-retro), 'Outfit', var(--font-ui), sans-serif;
+}
+html:not([data-style='classic']) :is(h1, h2, h3) {
+  font-family: var(--font-retro), 'Outfit', var(--font-ui), sans-serif;
+  font-stretch: normal;
+  font-variation-settings: normal;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+html:not([data-style='classic']) h3 {
+  font-weight: 700;
+  letter-spacing: -0.012em;
+}
+
+/* warm neutrals: studio black (dark, and every .dark scope inside light) */
+html:not([data-style='classic']):not(.light),
+html:not([data-style='classic']) .dark {
+  --hl-bg: #0e0d0c;
+  --hl-panel: #171513;
+  --hl-panel-2: #201d1a;
+  --hl-line: rgba(255, 238, 214, 0.1);
+  --hl-line-2: rgba(255, 238, 214, 0.18);
+  --hl-fg: #f4efe6;
+  --hl-muted: #b6ad9f;
+  --hl-dim: #978e80;
+  --hl-bar: rgba(14, 13, 12, 0.92);
+  --hl-grid: rgba(255, 238, 214, 0.014);
+}
+/* …and warm paper in light */
+html.light:not([data-style='classic']) {
+  --hl-bg: #e9e3d7;
+  --hl-panel: #fbf8f2;
+  --hl-panel-2: #f3eee4;
+  --hl-line: #d4cab7;
+  --hl-line-2: #bdb19b;
+  --hl-fg: #15120e;
+  --hl-muted: #4a4337;
+  --hl-dim: #5f5749;
+  --hl-bar: rgba(251, 248, 242, 0.92);
+}
+
+/* flat colour: no glow anywhere */
+html:not([data-style='classic']),
+html:not([data-style='classic']) .dark,
+html:not([data-style='classic']) .light {
+  --hl-glow-k: 0;
+  --hl-mark-glow: none;
+  --hl-glow-strap: none;
+  --hl-glow-holler: none;
+  --hl-glow-callin: none;
+  --hl-glow-bounty: none;
+  --hl-glow-rewards: none;
+}
+html:not([data-style='classic']) .mc-landing,
+html:not([data-style='classic']) .mc-landing .mcl-bounty.dark {
+  --mcl-neon-shadow: none;
+  --mcl-strap-shadow: none;
+  --mcl-bounty-shadow: none;
+  --mcl-dot-glow: none;
+}
+
+/* soft corners. Buttons and fields at zero specificity, so anything that
+   already sets its own radius (pills, round icons, Tailwind's rounded-*) keeps
+   it; full-width bands stay square. */
+:where(html:not([data-style='classic'])) :where(button, a, select, textarea, input:not([type='checkbox'], [type='radio'], [type='range'])) {
+  border-radius: 8px;
+}
+/* buttons that the classic look squares on purpose */
+html:not([data-style='classic']) :is(.mcj-action, .mcj-secondary, .mcj-mini) {
+  border-radius: 8px;
+}
+/* the bounty shell squares every rounded-* to 2px (product.css); retro hands
+   them back the radius their Tailwind class asked for */
+html:not([data-style='classic']) .mc-product [class*='rounded-']:not([role='switch']) {
+  border-radius: revert-layer;
+}
+/* the hand-built cards and screens: rounded with their contents clipped, so a
+   flush picture or header cannot poke out of the corner */
+html:not([data-style='classic']) :is(.mcl-entry-card, .mcr-feat, .mcr-board, .mcr-card, .mcr-recent, .mcr-open, .mcr-intro, .mcb-leaderboard, .mcp-card, .mcp-preview-card, .mcc-stream-card) {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* the one logo echo: the film's playhead runs as colour bars */
+html:not([data-style='classic']) .mcl-film-progress {
+  height: 4px;
+}
+html:not([data-style='classic']) .mcl-film-progress i {
+  background: linear-gradient(90deg, #c0c0c0 0 14.28%, #c0c000 14.28% 28.57%, #00c0c0 28.57% 42.86%, #00c000 42.86% 57.14%, #c000c0 57.14% 71.43%, #c00000 71.43% 85.71%, #0000c0 85.71% 100%);
+  box-shadow: none;
+}
+
+/* the look switch: a small text pill at the header control height */
+.hl-st.hl-st {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  height: var(--hl-hdr-ctl);
+  min-width: 4.6rem;
+  padding: 0 12px;
+  border: 1px solid var(--hl-line-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--hl-muted);
+  font: 600 12px/1 var(--font-ui), system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.hl-st.hl-st:active {
+  transform: scale(0.97);
+}
+.hl-st.hl-st:focus-visible {
+  outline: 2px solid var(--hl-strap-hi);
+  outline-offset: 2px;
+}
+.hl-st.hl-st--placeholder {
+  cursor: default;
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .hl-st.hl-st:hover {
+    background: var(--hl-panel-2);
+    color: var(--hl-fg);
+  }
+}
