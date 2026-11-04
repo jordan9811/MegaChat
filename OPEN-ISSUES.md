@@ -4866,3 +4866,8 @@ product.
   bounty pool the way a Twitch or Kick streamer does by signing in, instead of
   relying only on the on-stream badge. Confirm what each platform offers before
   building anything.
+- **Z10 — Hide and retire the test room before launch.** The room the code
+  calls `default` is the owner's test stub for quick iteration, not a product
+  room: it must not appear to users anywhere (board, browse, links) once the
+  site is public, and it goes away at full deploy. Its password is left as is
+  by the owner's call (launch-readiness row 72).
