@@ -15,6 +15,7 @@ import { claimIdentity, getIdentity, suggestHandle, setIdentityDefaults, identit
 import {
   getAccount, accountForLink, attachLink, detachLink, setPrimary,
   setLinkAttributes, LINKABLE_PROVIDERS, PROVIDER_LABELS,
+  getAccountPrefs, setAccountPrefs,
 } from './accounts.js';
 import { fetchForProvider, bestAttributes, accountAttributes } from './attestation/index.js';
 import { classify, loadAllowlist } from './classifier.js';
@@ -266,6 +267,28 @@ export function attachAuth(app, { log = console } = {}) {
     }
     const updated = setIdentityDefaults(identity.provider, identity.platformId, body);
     res.json({ ok: true, defaults: updated?.roomDefaults || null });
+  });
+
+  /**
+   * Account preferences (accounts.js setAccountPrefs): validated keys, not a
+   * blob. `bountyMinTier` is the liveness tier a backer's pledges release at
+   * (liveness.js): 'green' (badge-verified only, the default) or 'yellow'
+   * (the overlay check is enough).
+   */
+  app.get('/api/account/prefs', (req, res) => {
+    const identity = readIdentityFromRequest(req);
+    if (!identity?.accountId) return res.status(401).json({ error: 'Sign in first', reason: 'auth_required' });
+    res.json({ prefs: getAccountPrefs(identity.accountId) });
+  });
+  app.put('/api/account/prefs', (req, res) => {
+    const identity = readIdentityFromRequest(req);
+    if (!identity?.accountId) return res.status(401).json({ error: 'Sign in first', reason: 'auth_required' });
+    try {
+      const prefs = setAccountPrefs(identity.accountId, req.body?.prefs ?? req.body ?? {});
+      res.json({ ok: true, prefs });
+    } catch (e) {
+      res.status(e.status || 400).json({ error: e.message, reason: e.code || 'invalid_prefs' });
+    }
   });
 
   /** Linked accounts (raw Privy REST — the SDK drops twitch/x). */

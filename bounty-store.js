@@ -244,10 +244,21 @@ export const CONTRIBUTION_STATUSES = ['UNFUNDED', 'HELD', 'REFUNDED', 'ABANDONED
 /** Did money ever come in for this contribution? What the pool folds count. */
 export const moneyCameIn = (c) => !!c && c.status !== 'UNFUNDED' && c.status !== 'ABANDONED';
 
-export function addContribution({ handleKey: key, contributor, amount, letterRef, pledgeId, status = 'HELD' }) {
+/**
+ * The liveness tier a contribution's backer requires before it releases
+ * (liveness.js): 'green' = badge-verified airtime only (the default);
+ * 'yellow' = a finished broadcast with the keyed overlay up is enough too.
+ * Set from the account's preference at pledge time; a release of tier
+ * 'yellow' draws only on 'yellow' contributions (bounty-escrow.js release).
+ */
+export const PLEDGE_TIERS = ['green', 'yellow'];
+export const tierOf = (c) => (c?.minTier === 'yellow' ? 'yellow' : 'green');
+
+export function addContribution({ handleKey: key, contributor, amount, letterRef, pledgeId, status = 'HELD', minTier = 'green' }) {
   const store = loadForWrite();
   if (!store.reservedHandles[key]) throw new Error(`No reserved handle ${key}`);
   if (!CONTRIBUTION_STATUSES.includes(status)) throw new Error(`bad contribution status ${status}`);
+  if (!PLEDGE_TIERS.includes(minTier)) throw new Error(`bad tier ${minTier}`);
   const rec = {
     id: randomUUID(),
     handleKey: key,
@@ -257,6 +268,7 @@ export function addContribution({ handleKey: key, contributor, amount, letterRef
     pledgeId: pledgeId || null,
     createdAt: Date.now(),
     status,
+    minTier,
   };
   store.contributions[rec.id] = rec;
   save();
@@ -280,9 +292,10 @@ export function addContribution({ handleKey: key, contributor, amount, letterRef
  */
 export const PLEDGE_STATUSES = ['UNFUNDED', 'OPEN', 'CLAIMED', 'EXPIRED', 'ABANDONED'];
 
-export function addPledge({ contributor, amount, targets, contributionId, expiresAt, status = 'OPEN' }) {
+export function addPledge({ contributor, amount, targets, contributionId, expiresAt, status = 'OPEN', minTier = 'green' }) {
   const store = loadForWrite();
   if (!PLEDGE_STATUSES.includes(status)) throw new Error(`bad pledge status ${status}`);
+  if (!PLEDGE_TIERS.includes(minTier)) throw new Error(`bad tier ${minTier}`);
   const rec = {
     id: randomUUID(),
     contributor,
@@ -291,6 +304,7 @@ export function addPledge({ contributor, amount, targets, contributionId, expire
     contributionId,              // the ONE escrow row (lives on the anchor)
     expiresAt,
     status,
+    minTier,                     // liveness tier the backer requires (PLEDGE_TIERS)
     winner: null,
     claimedAt: null,
     createdAt: Date.now(),

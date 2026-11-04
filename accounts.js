@@ -354,6 +354,40 @@ export function setAccountPayoutWallet(accountId, address) {
   return clone(acct);
 }
 
+// ── Preferences ─────────────────────────────────────────────────────────────
+// Small, validated, account-level choices (unlike roomDefaults, which is an
+// opaque prefill blob). Today: the bounty tier a backer requires.
+/** The tiers a backer can require of their pledges (liveness.js BACKER_TIERS). */
+export const BOUNTY_MIN_TIERS = ['green', 'yellow'];
+export const DEFAULT_PREFS = Object.freeze({ bountyMinTier: 'green' });
+
+/** The account's preferences, every key present (defaults filled in). */
+export function getAccountPrefs(accountId) {
+  const acct = accountId ? load().accounts[accountId] : null;
+  const p = acct?.prefs || {};
+  return { bountyMinTier: BOUNTY_MIN_TIERS.includes(p.bountyMinTier) ? p.bountyMinTier : DEFAULT_PREFS.bountyMinTier };
+}
+
+/** Set preferences. Unknown keys are refused, bad values are refused; nothing is written on a refusal. */
+export function setAccountPrefs(accountId, patch) {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) fail('invalid_prefs', 'prefs must be an object', 400);
+  const clean = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (k === 'bountyMinTier') {
+      if (!BOUNTY_MIN_TIERS.includes(v)) fail('invalid_prefs', `bountyMinTier must be one of ${BOUNTY_MIN_TIERS.join(', ')}`, 400);
+      clean[k] = v;
+    } else {
+      fail('invalid_prefs', `unknown preference ${k}`, 400);
+    }
+  }
+  const store = loadForWrite();
+  const acct = store.accounts[accountId];
+  if (!acct) fail('no_account', 'No such account', 404);
+  acct.prefs = { ...(acct.prefs || {}), ...clean };
+  save();
+  return getAccountPrefs(accountId);
+}
+
 /** Room-create prefill. Display data only; every room revalidates its config. */
 export function setAccountDefaults(accountId, defaults) {
   const store = loadForWrite();

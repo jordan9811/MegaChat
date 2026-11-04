@@ -32,6 +32,7 @@ import {
 // amount to Holler's bounty spender, then signs that it means THIS pledge.
 import { ApproveStep, connectedWallet, type ApprovalAsk } from '@/components/campaigns/approve-step'
 import { getChainInfo } from '@/lib/campaigns-api'
+import { getAccountPrefs } from '@/lib/api'
 import { FeatureTag } from '@/components/feature-tag'
 import { newAttemptId } from '@/lib/attempt-id'
 import { fetchIdentity } from '@/lib/identity'
@@ -88,6 +89,10 @@ export function RecordFlow({
   const [approval, setApproval] = useState<PledgeApprovalAsk | null>(null)
   const [explorerUrl, setExplorerUrl] = useState('https://explore.tempo.xyz')
   const realMoney = config.money?.mode === 'real'
+  // The liveness tier this pledge releases at: the account's preference
+  // (Account → Bounty protection), green (badge-verified only) by default.
+  const [minTier, setMinTier] = useState<'green' | 'yellow'>('green')
+  useEffect(() => { getAccountPrefs().then((p) => setMinTier(p.prefs.bountyMinTier)).catch(() => {}) }, [])
   useEffect(() => { if (realMoney) getChainInfo().then((c) => setExplorerUrl(c.explorerUrl)).catch(() => {}) }, [realMoney])
   const [pledged, setPledged] = useState(false)
 
@@ -267,7 +272,7 @@ export function RecordFlow({
         // THE pay moment — escrow is written here, after preview and terms.
         const out = await createPledge({
           targets, contributor: contributor.trim(), amount, expiresInMs: expiryMs,
-          attemptId: attemptIdRef.current,
+          attemptId: attemptIdRef.current, minTier,
         })
         pledge = { uploadUrl: out.uploadUrl, id: out.pledge.id, funded: !out.requiresFunding }
         pledgeRef.current = pledge
@@ -436,6 +441,15 @@ export function RecordFlow({
               ) : null}
             </div>
           ) : null}
+
+          {/* Which check releases this money, BEFORE the pay button. */}
+          <p className="text-xs text-muted-foreground" title={minTier === 'yellow'
+            ? 'Releases for badge-verified airtime, and a slice after any broadcast that kept the keyed overlay up at least 10 minutes. Protects against a forgotten overlay, not against fraud.'
+            : 'Releases only for airtime the badge verified on the real frames. The strongest protection.'}>
+            Releases at{' '}
+            <span className={`lv lv--${minTier}`} aria-hidden="true"><span className="lv-dot" />{minTier === 'yellow' ? 'Yellow or better' : 'Green only'}</span>
+            {' '}· <a href="/account#bounties" className="underline decoration-hl-strap-hi decoration-2 underline-offset-2">change in account settings</a>
+          </p>
 
           {/* The rejection policy, BEFORE the pay button. */}
           <div className="rounded-xl border border-f-bounty-line bg-f-bounty-bg p-3">

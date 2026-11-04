@@ -134,6 +134,20 @@ export function openAiring({ roomId, channel = null, platform = 'twitch', resume
   return airing;
 }
 
+/**
+ * One liveness sample on the open airing (liveness.js): was the room's keyed
+ * overlay on the broadcast at `at`? The airing's `overlay` record is what the
+ * yellow-tier release reads when the broadcast ends — ms the overlay was
+ * connected, ms sampled in all. No airing open: nothing to record.
+ */
+export function recordOverlaySample(roomId, { connected, at = Date.now(), maxGapMs = 60_000, fold }) {
+  const a = openAiringFor(roomId);
+  if (!a || !writable() || typeof fold !== 'function') return null;
+  a.overlay = fold(a.overlay || null, { connected: !!connected, at, maxGapMs });
+  persist({ soon: true });
+  return a.overlay;
+}
+
 /** End the open airing for a room. No-op when none is open. Writes through,
  *  taking any moments still held with it. */
 export function closeAiring(roomId, endedAt = Date.now()) {

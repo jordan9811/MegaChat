@@ -253,6 +253,8 @@ export type PublicRoomCard = {
   viewers?: number | null
   /** Live with enough viewers to earn the big featured card (server's BOARD_BIG_VIEWERS). */
   bigStream?: boolean
+  /** Which check stands behind money here right now (server liveness.js); absent from older servers. */
+  liveness?: { tier: 'off' | 'red' | 'yellow' | 'green'; label?: string; onAir?: boolean; channelLive?: boolean; overlayConnected?: boolean; overlayRecent?: boolean; verifying?: boolean; overlayConnectedMs?: number | null; sampledMs?: number | null } | null
   createdAt: string
   letters?: Pick<LettersConfig, 'enabled' | 'price' | 'maxSeconds'>
   joinStream?: Pick<JoinStreamConfig, 'enabled'>
@@ -563,6 +565,15 @@ export function setGuestWhitelistEnabled(enabled: boolean) {
 }
 
 /** Save (object) or clear (null) the identity's room defaults. */
+/** Account preferences (validated keys): the liveness tier a backer's pledges release at. */
+export type AccountPrefs = { bountyMinTier: 'green' | 'yellow' }
+export function getAccountPrefs() {
+  return request<{ prefs: AccountPrefs }>('/api/account/prefs')
+}
+export function saveAccountPrefs(prefs: Partial<AccountPrefs>) {
+  return request<{ ok: boolean; prefs: AccountPrefs }>('/api/account/prefs', { method: 'PUT', body: { prefs } })
+}
+
 export function saveAccountDefaults(defaults: Record<string, unknown> | null) {
   return request<{ ok: boolean; defaults: Record<string, unknown> | null }>(
     '/api/account/defaults',

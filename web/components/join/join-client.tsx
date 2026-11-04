@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { FeatureTag } from '@/components/feature-tag'
+import { LivenessBadge, type Liveness } from '@/components/liveness-badge'
 import { HollerMark } from '@/components/holler-mark'
 import { StingerPreview } from '@/components/join/stinger-preview'
 import { initJoinPage } from '@/lib/join-page'
@@ -65,6 +66,27 @@ function RoomFeatureTags() {
       {kinds.map((k) => <FeatureTag key={k} kind={k} />)}
     </span>
   )
+}
+
+// Which check stands behind money in this room right now (server
+// liveness.js): read every 30s from the public liveness route, keyed by the
+// room in the URL (?room=<id>, or the pretty /<handle> path).
+const LIVENESS_POLL_MS = 30_000
+function RoomLiveness() {
+  const [liveness, setLiveness] = useState<Liveness | null>(null)
+  useEffect(() => {
+    const key = new URLSearchParams(window.location.search).get('room') || window.location.pathname.split('/').filter(Boolean)[0] || ''
+    if (!key || key === 'join') return
+    let stop = false
+    const load = () => fetch(`/api/rooms/${encodeURIComponent(key)}/liveness`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!stop && d?.tier) setLiveness(d as Liveness) })
+      .catch(() => {})
+    void load()
+    const t = setInterval(load, LIVENESS_POLL_MS)
+    return () => { stop = true; clearInterval(t) }
+  }, [])
+  return <LivenessBadge liveness={liveness} />
 }
 
 // Presentation only. The script writes the status message and the replay's
@@ -129,6 +151,7 @@ export function JoinClient() {
         <span className="join-live-label" id="joinRoomState">Room entrance</span>
         <strong id="joinRoomName">Loading room...</strong>
         <RoomFeatureTags />
+        <RoomLiveness />
         <span>Your camera stays private until you confirm.</span>
       </div>
 

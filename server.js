@@ -38,7 +38,8 @@ import { getAccount } from './accounts.js';
 import { loginProvingHandle } from './bounty-auth.js';
 import { handleKey } from './bounty-store.js';
 import { getStreamsByLogins, twitchApiConfigured, helix } from './twitch-api.js';
-import { openAiring, openAiringFor, closeAiring, addMoment, recentAirings, listAirings, allAiringIds, airingRefs, attachRecording, markRestart, momentRefs, pruneToRooms } from './airings-store.js';
+import { openAiring, openAiringFor, closeAiring, addMoment, recentAirings, listAirings, allAiringIds, airingRefs, attachRecording, markRestart, momentRefs, pruneToRooms, recordOverlaySample } from './airings-store.js';
+import { classify as classifyLiveness, accumulate as accumulateOverlay, publicLiveness } from './liveness.js';
 import { snapshotLivePreview, finalizeAiringPoster, readAiringPoster, posterFileFor, sweepAiringPosters, lastEvidenceAt, isListable, quietShown, isQuietBroadcast, setQuietEligibility } from './airing-posters.js';
 import { readAiredClip, airedClipFile, sweepAiredClips, removeAiredClip, airedClipStats } from './aired-clips.js';
 import { getSetting, siteSettingsView, updateSiteSettings, isSiteAdmin } from './site-settings.js';
@@ -53,7 +54,7 @@ import { bountyConfig } from './bounty-claim.config.js';
 import * as seatEscrow from './seat-escrow.js';
 import { listAirings as listAiringsForSeats } from './airings-store.js';
 import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
-import { attachBountyRoutes, makeClipHooks } from './bounty-routes.js';
+import { attachBountyRoutes, makeClipHooks, onAiringClosed as bountyAiringClosed, isVerifyingRoom } from './bounty-routes.js';
 import { createBountyMoney } from './bounty-money.js';
 import { setBountySettlement } from './bounty-settlement.js';
 import { attachMoneyRoutes } from './money-routes.js';
@@ -3374,6 +3375,46 @@ function hiddenByBroadcast(room) {
   return !!st && st.live === false;
 }
 
+// ─── Liveness tiers (liveness.js, OPEN-ISSUES O → built 2026-11-04) ─────────
+// Which check stands behind money on this room right now: off / red (live,
+// no keyed overlay) / yellow (on air with the keyed overlay) / green (badge
+// verification running). Read on demand for cards and pages; the overlay is
+// also SAMPLED into the open airing every LIVENESS_SAMPLE_MS, so a finished
+// broadcast knows how long the overlay was up (the yellow-tier release).
+const LIVENESS_SAMPLE_MS = envNum('LIVENESS_SAMPLE_MS', 30_000, { min: 1000 });
+function roomLiveness(roomId) {
+  const cfg = resolveRoomConfig(roomId);
+  if (!cfg) return null;
+  const open = openAiringFor(roomId);
+  const ov = overlayKeyState(roomId);
+  const followLive = cfg.twitchChannel && ownerProvesChannel(roomId, cfg.twitchChannel) ? freshFollow(roomId) : null;
+  const channelLive = !!cfg.twitchChannel && (followLive ? followLive.live === true : twitchLiveCached(cfg.twitchChannel));
+  const verifying = isVerifyingRoom(roomId);
+  const tier = classifyLiveness({ channelLive, onAir: !!open, overlayConnected: ov.keyedConnected, overlayRecent: ov.keyed, verifying });
+  return {
+    tier, onAir: !!open, channelLive, overlayConnected: ov.keyedConnected, overlayRecent: ov.keyed, verifying,
+    overlayConnectedMs: open?.overlay?.connectedMs ?? null, sampledMs: open?.overlay?.sampledMs ?? null, airingId: open?.id || null,
+  };
+}
+function livenessTick() {
+  const now = Date.now();
+  for (const r of listRooms()) {
+    try {
+      if (!openAiringFor(r.id)) continue;
+      recordOverlaySample(r.id, { connected: hasAuthedOverlay(r.id), at: now, maxGapMs: 2 * LIVENESS_SAMPLE_MS, fold: accumulateOverlay });
+    } catch (e) {
+      console.warn(`[liveness] ${r.id}: sample failed — ${e.message}`);
+    }
+  }
+}
+const livenessTimer = setInterval(livenessTick, LIVENESS_SAMPLE_MS);
+livenessTimer.unref?.();
+/** A broadcast ended: the pools its owner claimed may release on the yellow tier. */
+function afterAiringClosed(airing) {
+  try { bountyAiringClosed(airing, { ownerKey: roomOwnerOf(airing.roomId), log: console }); }
+  catch (e) { console.warn(`[liveness] airing ${airing?.id}: close hook failed — ${e.message}`); }
+}
+
 async function followTick() {
   const following = [];
   for (const r of listRooms()) {
@@ -3443,6 +3484,7 @@ async function followTick() {
       const closed = closeAiring(r.id, offSince);
       // The poster is picked now, from the previews kept while it was live.
       if (closed && AIRING_POSTERS_ON) finalizeAiringPoster(closed);
+      if (closed) afterAiringClosed(closed);
     } else if (!prev) {
       // First look since a restart, and the broadcast is dark — but an airing
       // is still open: the stream ended while the server was down. Close it at
@@ -3453,6 +3495,7 @@ async function followTick() {
         const closed = closeAiring(r.id, lastEvidenceAt(stale));
         console.log(`[follow] ${r.id} (${login}) ended while the server was down → airing closed`);
         if (closed && AIRING_POSTERS_ON) finalizeAiringPoster(closed);
+        if (closed) afterAiringClosed(closed);
       }
     }
     followState.set(r.id, { live: false, offSince, at: now });
@@ -3784,6 +3827,16 @@ app.get('/api/rooms/recent', (req, res) => {
 // Public browse directory — active rooms that haven't opted out (unlisted).
 // Reuses rooms-store + the live seat map; no duplicated state. Sorted hottest
 // first: live on-camera count, then queued viewers (paid, camera pending).
+/** One room's liveness tier (liveness.js), by id or handle. Public: it is what the card and the join page show. */
+app.get('/api/rooms/:roomId/liveness', (req, res) => {
+  const byId = normalizeRoomId(req.params.roomId);
+  const id = (byId && resolveRoomConfig(byId) ? byId : null) || getRoomByHandle(req.params.roomId)?.id || null;
+  if (!id) return res.status(400).json({ error: 'Invalid room id' });
+  const cfg = resolveRoomConfig(id);
+  if (!cfg || cfg.unlisted) return res.status(404).json({ error: 'No such room' });
+  res.json({ roomId: id, ...publicLiveness(roomLiveness(id)) });
+});
+
 app.get('/api/rooms/public', (req, res) => {
   const rooms = [];
   for (const r of listRooms()) {
@@ -3839,6 +3892,8 @@ app.get('/api/rooms/public', (req, res) => {
       // a rebuild.
       viewers: followLive?.live ? (followLive.viewers ?? null) : null,
       bigStream: !!(followLive?.live && followLive.big),
+      // Which check stands behind money here right now (liveness.js).
+      liveness: publicLiveness(roomLiveness(r.id)),
       createdAt: r.createdAt,
     });
   }
@@ -3854,7 +3909,7 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 // Creator bounty (Run A). Mounts NOTHING when BOUNTY_CLAIM is off, so an
 // unflagged deploy is byte-identical to before. Escrow is a ledger only —
 // settlement is a record-intent stub, no funds move. See HANDOFF-BOUNTY.md.
-attachBountyRoutes(app, { money: process.env.BOUNTY_FUNDING === '1' ? bountyMoney : null });
+attachBountyRoutes(app, { money: process.env.BOUNTY_FUNDING === '1' ? bountyMoney : null, roomLiveness });
 // Admin: the door's intents (list, void) — the audit before PLATFORM_SETTLEMENT_KEY lands (launch-readiness row 63).
 attachMoneyRoutes(app, { settlement, seatEscrow });
 

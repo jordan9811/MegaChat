@@ -1085,3 +1085,55 @@ html:not([data-style='classic']) .mcl-film-progress i {
     color: var(--hl-fg);
   }
 }
+
+/* ── Liveness badge (components/liveness-badge.tsx; server liveness.js) ──────
+   Which check stands behind money on a room right now. Same grammar as the
+   feature tags (.ft): a pill with a dot, the tier's colour from the feature
+   tokens — rewards green = badge-verified, bounty yellow = overlay up, the
+   danger orange = live with no overlay, muted = offline. Hover for why. */
+.lv {
+  --lv-hue: var(--hl-dim);
+  --lv-ink: var(--hl-muted);
+  --lv-bg: transparent;
+  --lv-line: var(--hl-line-2);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--lv-line);
+  border-radius: 999px;
+  background: var(--lv-bg);
+  color: var(--lv-ink);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  vertical-align: middle;
+  cursor: help;
+}
+.lv--green { --lv-hue: var(--f-rewards); --lv-ink: var(--f-rewards-ink); --lv-bg: var(--f-rewards-bg); --lv-line: var(--f-rewards-line); }
+.lv--yellow { --lv-hue: var(--f-bounty); --lv-ink: var(--f-bounty-ink); --lv-bg: var(--f-bounty-bg); --lv-line: var(--f-bounty-line); }
+.lv--red { --lv-hue: var(--hl-danger); --lv-ink: var(--hl-danger); --lv-bg: color-mix(in srgb, var(--hl-danger) 12%, transparent); --lv-line: color-mix(in srgb, var(--hl-danger) 50%, transparent); }
+.lv .lv-dot {
+  display: block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lv-hue);
+}
+.lv--yellow .lv-dot, .lv--green .lv-dot {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lv-hue) 25%, transparent);
+}
+.lv--md { gap: 7px; padding: 4px 10px; font-size: 12px; }
+.lv--md .lv-dot { width: 7px; height: 7px; }
+.light .lv--green { --lv-bg: var(--f-rewards-solid); --lv-ink: var(--f-rewards-on); --lv-line: var(--f-rewards-line); }
+.light .lv--yellow { --lv-bg: var(--f-bounty-solid); --lv-ink: var(--f-bounty-on); --lv-line: var(--f-bounty-line); }
+.light .lv--green .lv-dot, .light .lv--yellow .lv-dot { background: currentColor; box-shadow: none; }
+.light .dark .lv--green { --lv-bg: var(--f-rewards-bg); --lv-ink: var(--f-rewards-ink); }
+.light .dark .lv--yellow { --lv-bg: var(--f-bounty-bg); --lv-ink: var(--f-bounty-ink); }
+.light .dark .lv--green .lv-dot, .light .dark .lv--yellow .lv-dot { background: var(--lv-hue); }

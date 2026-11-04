@@ -152,7 +152,7 @@ export function createBountyMoney({
   }
 
   // ── the SettlementInterface: what bounty-escrow.js calls ──────────────────
-  function release({ amount, bucket = 'contributor', ref, ledgerRowId = null, handleKey = null, claimId = null, airSessionId = null, payeeAccount = null, to = null }) {
+  function release({ amount, bucket = 'contributor', ref, ledgerRowId = null, handleKey = null, claimId = null, airSessionId = null, payeeAccount = null, to = null, tier = 'green' }) {
     const rowId = ledgerRowId || ref;
     const amountAtomic = atomicOf(amount);
     const doorRef = releaseRef(rowId);
@@ -176,7 +176,7 @@ export function createBountyMoney({
       log.log?.(`[bounty-money] release ${doorRef}: ${amount} ${token.symbol} owed to ${payeeAccount || to || 'the claimant'} — no payout wallet yet`);
       return { ok: true, owed: true, ref: doorRef };
     }
-    const r = door.release({ signer: 'platform', to: wallet, token, amountAtomic: amountAtomic.toString(), bucket: bucket === 'platform_match' ? 'bounty-match' : 'bounty', ref: doorRef, meta: { handleKey, claimId, airSessionId, rowId, payeeAccount, ledgerBucket: bucket } });
+    const r = door.release({ signer: 'platform', to: wallet, token, amountAtomic: amountAtomic.toString(), bucket: bucket === 'platform_match' ? 'bounty-match' : 'bounty', ref: doorRef, meta: { handleKey, claimId, airSessionId, rowId, payeeAccount, ledgerBucket: bucket, tier } });
     log.log?.(`[bounty-money] release intent ${doorRef}: ${amount} ${token.symbol} (${bucket}) → ${wallet} [${r.status}]`);
     return { ok: true, ref: doorRef, status: r.status, deduped: !!r.deduped, retained: !!r.retained };
   }
@@ -220,7 +220,7 @@ export function createBountyMoney({
       if (!isAddr(wallet)) continue;
       for (const row of store.listLedger({ handleKey: rec.key, type: 'RELEASE' })) {
         if (door.status(releaseRef(row.id))) continue;
-        const r = release({ amount: row.amount, bucket: row.bucket, ref: row.id, ledgerRowId: row.id, handleKey: rec.key, claimId: row.claimId, airSessionId: row.airSessionId, payeeAccount: rec.claimedByAccount });
+        const r = release({ amount: row.amount, bucket: row.bucket, ref: row.id, ledgerRowId: row.id, handleKey: rec.key, claimId: row.claimId, airSessionId: row.airSessionId, payeeAccount: rec.claimedByAccount, tier: row.meta?.tier || 'green' });
         if (r.ok && !r.owed) n += 1;
       }
     }

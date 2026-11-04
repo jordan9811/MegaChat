@@ -2356,3 +2356,33 @@ mock chain; the real server, the real adapter and an RPC stand-in over HTTP;
 the flag-off discriminator), `_gate-money.mjs` with the new VD and BP
 sections, `_gate-bounty-auth.mjs` 52/0 with the four new routes in the table.
 
+## 2026-11-04 — Liveness tiers: a label on the check, not a new check
+
+- **Three tiers, read from signals the server already had.** The follow
+  loop (channel live, airing open), the keyed overlay's socket, and the
+  bounty air sessions already said everything a tier needs; `liveness.js`
+  only names it. Undo: delete the module and the badge; nothing else
+  depends on the label.
+- **Yellow releases per broadcast, green per clip.** The badge proves a clip
+  aired; the overlay sample proves only that the overlay was up, so its unit
+  is the broadcast (overlay up ≥ 10 min) and its amount a fixed fraction of
+  the money whose backers allowed it, never the green-only money. Undo: set
+  `BOUNTY_YELLOW_RELEASE_FRACTION=0` (the sample and the badge stay).
+- **The backer's minimum lives on the account, not on the pledge form.** The
+  owner's call: it is niche, so a setting under Account → Bounty protection
+  with the record page pointing at it, inherited by each pledge (and
+  overridable in the body for a later UI). Undo: default the preference and
+  hide the setting.
+- **The sampler under-credits on purpose.** A gap counts only when both of
+  its samples saw the overlay and never beyond two intervals, so a flapping
+  or briefly-reconnected overlay earns less than it was up, and one that was
+  gone earns nothing. Undo: credit a gap on either end.
+- **`AWAITING_AIRTIME → PARTIALLY_RELEASED` joins the transition table.** A
+  yellow release has no verification pass; routing it through VERIFYING
+  would misstate what happened. Undo: remove the entry and step through
+  VERIFYING in `releaseYellow`.
+- **Verifying without the overlay is not green.** An open air session with
+  no keyed overlay connected reads red or yellow, never green: a session
+  alone proves nothing is on screen. Undo: n/a (gate A1).
+
+Gates: `_gate-liveness.mjs` 47/0; the bounty gates re-run green.

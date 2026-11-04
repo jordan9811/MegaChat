@@ -19,10 +19,13 @@ import {
   disconnectAccountLink,
   getAccountDefaults,
   getAccountOverview,
+  getAccountPrefs,
   listLinkedAccounts,
   saveAccountDefaults,
+  saveAccountPrefs,
   setAccountPrimary,
   type AccountOverview,
+  type AccountPrefs,
   type AccountTier,
   type LinkedAccount,
 } from '@/lib/api'
@@ -123,7 +126,13 @@ export function AccountPage() {
   const [note, setNote] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [origin, setOrigin] = useState('')
-  const [section, setSection] = useState<'overview' | 'defaults' | 'guests' | 'connections'>('overview')
+  const [section, setSection] = useState<'overview' | 'defaults' | 'bounties' | 'guests' | 'connections'>(
+    typeof window !== 'undefined' && window.location.hash === '#bounties' ? 'bounties' : 'overview',
+  )
+  // Bounty protection: the liveness tier this account's pledges release at.
+  const [prefs, setPrefs] = useState<AccountPrefs | null>(null)
+  const [prefsBusy, setPrefsBusy] = useState(false)
+  const [prefsError, setPrefsError] = useState<string | null>(null)
   const [overview, setOverview] = useState<AccountOverview | null>(null)
   const [linkBusy, setLinkBusy] = useState<string | null>(null)
   const [linkNotice, setLinkNotice] = useState<{ ok: boolean; text: string } | null>(null)
@@ -157,6 +166,7 @@ export function AccountPage() {
     listLinkedAccounts()
       .then((d) => setAccounts(d.accounts))
       .catch(() => setAccounts([]))
+    getAccountPrefs().then((p) => setPrefs(p.prefs)).catch(() => {})
     getAccountDefaults()
       .then((d) => setDefaults(d.defaults))
       .catch(() => {})
@@ -308,6 +318,7 @@ export function AccountPage() {
                 <span>Account</span>
                 <button type="button" aria-current={section === 'overview' ? 'page' : undefined} onClick={() => setSection('overview')}>Overview</button>
                 <button type="button" aria-current={section === 'defaults' ? 'page' : undefined} onClick={() => setSection('defaults')}>Room defaults</button>
+                <button type="button" aria-current={section === 'bounties' ? 'page' : undefined} onClick={() => setSection('bounties')}>Bounty protection</button>
                 <button type="button" aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}>Guest list</button>
                 <button type="button" aria-current={section === 'connections' ? 'page' : undefined} onClick={() => setSection('connections')}>Connections</button>
               </div>
@@ -360,6 +371,36 @@ export function AccountPage() {
                     </button>
                   </section>
                 </div>
+              ) : null}
+
+              {section === 'bounties' ? (
+                <section className="mcc-settings-zone" id="bounties">
+                  <header>
+                    <div><span className="mcc-coordinate">Bounty protection</span><h2>When does your pledge pay out?</h2><p>Every pledge you make releases at the tier you pick here. Change it any time; pledges already made keep theirs.</p></div>
+                  </header>
+                  {!identity ? (
+                    <p className="hint">Add a sign-in before choosing a tier.</p>
+                  ) : !prefs ? (
+                    <p className="hint">Loading…</p>
+                  ) : (
+                    <div className="mcc-setting-rows" role="radiogroup" aria-label="Minimum liveness tier">
+                      {([
+                        ['green', 'Green only', 'Pays only for airtime the badge verified on the real frames. The strongest protection, and the default.'],
+                        ['yellow', 'Yellow or better', 'Also releases a slice after any broadcast that kept the keyed overlay up for at least 10 minutes. Protects against a forgotten overlay, not against fraud.'],
+                      ] as const).map(([tier, label, copy]) => (
+                        <label key={tier} className="flex cursor-pointer items-start gap-3 py-2">
+                          <input type="radio" name="bountyMinTier" value={tier} checked={prefs.bountyMinTier === tier} disabled={prefsBusy}
+                            onChange={() => {
+                              setPrefsBusy(true); setPrefsError(null)
+                              saveAccountPrefs({ bountyMinTier: tier }).then((r) => setPrefs(r.prefs)).catch((e) => setPrefsError(e instanceof Error ? e.message : 'Could not save')).finally(() => setPrefsBusy(false))
+                            }} />
+                          <span><span className={`lv lv--${tier}`} aria-hidden="true"><span className="lv-dot" />{label}</span><br /><small className="hint">{copy}</small></span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {prefsError ? <p role="alert" className="hint">{prefsError}</p> : null}
+                </section>
               ) : null}
 
               {section === 'defaults' ? (

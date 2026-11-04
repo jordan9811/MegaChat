@@ -43,6 +43,19 @@ export const bountyConfig = {
    */
   fundingAbandonMs: envNum('BOUNTY_FUNDING_ABANDON_MS', 60 * 60_000, { min: 60_000 }),
 
+  // ── Liveness tiers (liveness.js, OPEN-ISSUES O → built 2026-11-04) ─────────
+  /**
+   * The YELLOW tier release: a finished broadcast on which the claimant's
+   * keyed overlay was connected for at least this long releases a slice of
+   * the pool money whose backers allowed the yellow tier. Minutes, not
+   * seconds, so a streamer who opens OBS for a moment earns nothing.
+   */
+  yellowMinMs: envNum('BOUNTY_YELLOW_MIN_MS', 10 * 60_000, { min: 1000 }),
+  /** That slice, as a fraction of the yellow-allowed pool, per broadcast (the per-session cap still applies). */
+  yellowReleaseFraction: envNum('BOUNTY_YELLOW_RELEASE_FRACTION', 0.1),
+  /** How often the server samples the overlay into the open airing. */
+  livenessSampleMs: envNum('LIVENESS_SAMPLE_MS', 30_000, { min: 1000 }),
+
   // ── Reservation / expiry ────────────────────────────────────────────────
   /** An unclaimed reserved handle expires after this; contributions refund. */
   reservationTtlMs: envNum('BOUNTY_RESERVATION_TTL_MS', 90 * 24 * 60 * 60_000),
@@ -647,6 +660,8 @@ export function bountyClientConfig() {
     enabled: bountyConfig.enabled,
     /** Real money: a pledge needs the fan's wallet (approve + sign) before it counts. */
     fundingEnabled: bountyConfig.fundingEnabled,
+    /** Liveness tiers: what a yellow-tier release needs, and the backer default. */
+    tiers: { yellowMinMs: bountyConfig.yellowMinMs, yellowReleaseFraction: bountyConfig.yellowReleaseFraction, defaultMinTier: 'green' },
     currency: bountyConfig.currency,
     codeRotateMs: bountyConfig.codeRotateMs,
     badgeMinHeightRatio: bountyConfig.badgeMinHeightRatio,

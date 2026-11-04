@@ -265,6 +265,23 @@ export type PoolView = BountyPool & {
   contestedTotal: number
   contested: { pledgeId: string; amount: number; rivals: number; expiresAt: number }[]
   openPledges: number
+  /** Money each liveness tier can release (server liveness.js): badge-only backers, and backers who allowed the overlay check. */
+  tiers?: { greenOnly: number; yellowOk: number; yellowReleased: number }
+}
+
+/** The claimant's room right now (server liveness.js); null before a claim. */
+export type PoolLiveness = {
+  tier: 'off' | 'red' | 'yellow' | 'green'
+  label?: string
+  roomId?: string
+  handle?: string | null
+  onAir?: boolean
+  channelLive?: boolean
+  overlayConnected?: boolean
+  overlayRecent?: boolean
+  verifying?: boolean
+  overlayConnectedMs?: number | null
+  sampledMs?: number | null
 }
 
 export type ProgramPool = PoolView & {
@@ -288,7 +305,7 @@ export async function getProgram() {
 }
 
 export function getPoolView(platform: string, handle: string) {
-  return req<{ view: PoolView; reserved: { claimedBy?: string | null; seeded?: boolean } | null; clips: number }>(
+  return req<{ view: PoolView; reserved: { claimedBy?: string | null; seeded?: boolean } | null; clips: number; liveness?: PoolLiveness | null }>(
     `/api/bounty/pool-view?platform=${encodeURIComponent(platform)}&handle=${encodeURIComponent(handle)}`,
   )
 }
@@ -306,6 +323,8 @@ export function createPledge(args: {
   contributor: string
   amount: string
   expiresInMs: number
+  /** The liveness tier this pledge releases at; the account preference when absent. */
+  minTier?: 'green' | 'yellow'
   /** Names the take: a repeat within 10 minutes gets the first pledge back. */
   attemptId?: string
 }) {
@@ -376,6 +395,8 @@ export type MyContribution = {
   next: string
   /** Real money: where the funding stands (null in ledger-only mode). */
   funding?: PledgeFunding | null
+  /** The liveness tier this pledge releases at. */
+  minTier?: 'green' | 'yellow'
   /** Real money: where a refund stands on the settlement door, or null. */
   refund?: 'pending' | 'paid' | 'failed' | 'voided' | null
   clip: {

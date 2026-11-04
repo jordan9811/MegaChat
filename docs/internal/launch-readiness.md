@@ -120,6 +120,8 @@ Every path that touches escrow, settlement, payout, verification, the whitelist,
 | 90 | **`_gate-stale-capture` is red by design:** its 2026-08-29 captures are gone, and it fails rather than skips. Not a regression, and row 13 no longer rests on it; keeping a real stalled capture under the repo brings it back | `_gate-stale-capture.mjs`; `OPEN-ISSUES.md` X4 | — | ☐ |
 | 91 | **The boot log prints the generated demo-room password when `DEMO_ROOM_PASSWORD` is unset:** `server.js` writes the value into the boot line so an operator can find it, which puts a password into Railway's retained logs. Set `DEMO_ROOM_PASSWORD` on the service (the line then prints nothing), or decide the demo room needs no fixed password | `server.js` (demo-room boot block); `OPEN-ISSUES.md` Y7 | **owner: set the variable** | ☐ |
 
+| 90 | **Yellow-tier release on a real broadcast (LV3):** a follow room with a claimed pool, the keyed overlay in OBS for 10+ minutes, the stream ends; the pool's `RELEASE` row carries `tier: yellow`, the pool page shows it under Yellow released, and the door intent goes DONE on the next flush. Then the same with the overlay OFF: `too_short`, nothing released | `liveness.js`; `bounty-escrow.js` `releaseYellowForAiring`; `_gate-liveness.mjs` B4 | **prod; owner-run** | ☐ |
+
 ## What leaving stealth changes in these docs
 
 When the app launches: remove the text of `docs/_snippets/pre-launch.md`, run `npm run docs:sync --write` (every page's snippet region empties), record the retest results in the table above, and change this page's first paragraph. The rule is written in `CONTRIBUTING-DOCS.md`.

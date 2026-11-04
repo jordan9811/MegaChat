@@ -40,7 +40,8 @@ import fs from 'node:fs';
 import { buildPoster, buildCard, posterPathFor } from './room-poster.js';
 import { listAirings, attachRecording } from './airings-store.js';
 import { saveAiringPoster } from './airing-posters.js';
-import { getAccount as getAccountForPayout } from './accounts.js';
+import { getAccount as getAccountForPayout, getAccountPrefs } from './accounts.js';
+import { TIER_LABEL, publicLiveness } from './liveness.js';
 import {
   resolveRoomConfig, updateRoom, normalizeRoomId,
   createRoom, setRoomOwner, roomOwnerOf, roomsOwnedBy,
@@ -496,7 +497,7 @@ async function startSessionCapture(session, { log = console } = {}) {
   }
 }
 
-export function attachBountyRoutes(app, { log = console, identityVerifier, money = null } = {}) {
+export function attachBountyRoutes(app, { log = console, identityVerifier, money = null, roomLiveness = null } = {}) {
   if (!bountyConfig.enabled) {
     log.log('[bounty] BOUNTY_CLAIM off — no routes mounted, no surfaces rendered');
     return { mounted: false };
@@ -507,6 +508,25 @@ export function attachBountyRoutes(app, { log = console, identityVerifier, money
   // door intents. Without it (ledger-only), everything below behaves exactly
   // as it shipped: ledger rows, the record-only stub, no money.
   const realMoney = !!money && bountyConfig.fundingEnabled;
+  /**
+   * LIVENESS of a claimed pool (liveness.js): the best tier among the rooms
+   * the verified owner holds, the on-air one first. Null before a claim, or
+   * when server.js did not wire a reader.
+   */
+  function claimantLiveness(reserved) {
+    if (!reserved?.claimedByAccount || typeof roomLiveness !== 'function') return null;
+    let best = null;
+    for (const room of roomsOwnedBy(reserved.claimedByAccount)) {
+      let l;
+      try { l = roomLiveness(room.id); } catch { continue; }
+      if (!l) continue;
+      const rank = ['off', 'red', 'yellow', 'green'].indexOf(l.tier);
+      if (!best || rank > best.rank) best = { rank, roomId: room.id, handle: room.handle || null, ...publicLiveness(l) };
+    }
+    if (!best) return null;
+    const { rank: _r, ...view } = best;
+    return view;
+  }
   if (bountyConfig.fundingEnabled && !money) {
     log.error('[bounty] BOUNTY_FUNDING=1 but no money engine was handed to attachBountyRoutes — pledges will be refused (nothing can fund them)');
   }
@@ -909,9 +929,14 @@ export function attachBountyRoutes(app, { log = console, identityVerifier, money
           deduped: true,
         });
       }
+      // THE LIVENESS TIER the backer requires (liveness.js): the account's
+      // preference, which the body may override for this pledge.
+      const prefs = getAccountPrefs(account);
+      const minTier = ['green', 'yellow'].includes(req.body?.minTier) ? req.body.minTier : prefs.bountyMinTier;
       const out = escrow.pledge({
         targets, contributor: account, amount, expiresInMs,
         displayName: typeof contributor === 'string' ? contributor.slice(0, 64) : null,
+        minTier,
       });
       const body = {
         ok: true,
@@ -1061,10 +1086,14 @@ export function attachBountyRoutes(app, { log = console, identityVerifier, money
   guarded.get('/api/bounty/pool-view', (req, res) => {
     const key = store.handleKey(req.query.platform, req.query.handle);
     if (!key) return res.status(400).json({ error: 'platform and handle required' });
+    const reserved = store.getReservedHandleByKey(key);
     res.json({
       view: escrow.poolView(key),
-      reserved: store.getReservedHandleByKey(key),
+      reserved,
       clips: clips.listClips(key).length,
+      // The claimant's room right now (liveness.js), null before a claim.
+      liveness: claimantLiveness(reserved),
+      tierLabels: TIER_LABEL,
     });
   });
 
@@ -1084,6 +1113,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier, money
       ...escrow.poolView(r.key),
       seeded: !!r.seeded,
       claimed: !!r.claimedBy,
+      liveness: claimantLiveness(r),
       // A pool with no fan money behind it is promotional by definition,
       // whoever created it.
       promotional: !!r.seeded || (store.listContributions(r.key).length === 0),
@@ -1198,6 +1228,8 @@ export function attachBountyRoutes(app, { log = console, identityVerifier, money
         targets: p.targets, pledgeStatus: p.status, winner: p.winner,
         expiresAt: p.expiresAt, state, next,
         funding: fundingState,
+        // The liveness tier this pledge releases at (liveness.js).
+        minTier: p.minTier || 'green',
         // Real money: where a refund stands on the door ('pending' | 'paid' | 'failed' | 'voided'), or null.
         refund: realMoney && c?.status === 'REFUNDED' ? money.refundState(c.id) : null,
         clip: clip ? {
@@ -2528,3 +2560,30 @@ export function attachBountyRoutes(app, { log = console, identityVerifier, money
   log.log(`[bounty] ${registeredRoutes.length} routes mounted, all behind bounty-auth policy`);
   return { mounted: true, routes: registeredRoutes };
 }
+
+/**
+ * A broadcast ended (server.js follow loop → airings-store.js closeAiring):
+ * the yellow-tier release for every pool the room's owner has claimed
+ * (bounty-escrow.js releaseYellowForAiring). Nothing when the program is off.
+ */
+export function onAiringClosed(airing, { ownerKey, log = console } = {}) {
+  if (!bountyConfig.enabled || !airing || !ownerKey) return [];
+  try {
+    const out = escrow.releaseYellowForAiring({ airing, ownerKey, settlement });
+    for (const r of out) {
+      if (r.rows?.length && !r.deduped) log.log?.(`[bounty] yellow-tier release for ${r.handleKey}: ${r.released} + match ${r.match} (airing ${airing.id})`);
+      else if (r.skipped) log.log?.(`[bounty] no yellow-tier release for ${r.handleKey}: ${r.skipped}${r.detail ? ` ${JSON.stringify(r.detail)}` : ''}`);
+    }
+    return out;
+  } catch (e) {
+    log.warn?.(`[bounty] yellow-tier release failed for airing ${airing.id}: ${e.message}`);
+    return [];
+  }
+}
+
+/** Is badge verification running for this room right now (an OPEN bounty air session bound to it)? */
+export function isVerifyingRoom(roomId) {
+  if (!bountyConfig.enabled || !roomId) return false;
+  try { return store.listAirSessions().some((s) => s.roomId === roomId && s.status === 'OPEN'); } catch { return false; }
+}
+

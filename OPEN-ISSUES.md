@@ -3835,7 +3835,7 @@ Payouts are real intents at the settlement door; taking a budget needs
   twice in a row. Neither touches the round-4 files; port the first to
   `startGateServer` and a temp data dir.
 
-## O — Liveness tiers for bounties and campaigns (owner's idea, not yet built, 2026-10-23)
+## O — Liveness tiers for bounties and campaigns (owner's idea 2026-10-23; BUILT 2026-11-04, section LV)
 
 The owner: bounty verification "preps for adversarial status", but after that
 a lower-intensity uptime check would protect a backer against a streamer who
@@ -4926,4 +4926,50 @@ real door with a mock chain for every refusal and every receipt outcome.
   `docs/verification/README.md`) still describe settlement as a stub. They
   carry the owner's uncommitted edits and were not touched; they need a
   real-money pass once those edits land.
+
+## LV — Liveness tiers (2026-11-04, the owner's "do 3")
+
+**Verdict:** every room now carries a tier saying which check stands behind
+money on it right now, read from signals the server already had, and a
+backer can let a pledge release on the cheaper check. `_gate-liveness.mjs`
+47/0 (the classifier table, the sampler, the yellow release against the
+escrow with a discriminating airing, the routes over HTTP).
+
+- **LV1 — The tiers** (`liveness.js`): off; **red** live with no keyed
+  overlay on the broadcast; **yellow** on air with the keyed overlay
+  connected (or seen in the last ten minutes); **green** on air, overlay up,
+  and a bounty air session open (the badge is being read). Public at
+  `GET /api/rooms/:id/liveness` and on every `/api/rooms/public` card; the
+  badge (`web/components/liveness-badge.tsx`) sits on room cards, the join
+  page strip, and the pool page once claimed.
+- **LV2 — The sample.** Every `LIVENESS_SAMPLE_MS` (30 s) the server folds
+  whether the room's keyed overlay is connected into the OPEN airing
+  (`airings-store.js recordOverlaySample`, `liveness.js accumulate`): a gap
+  is credited only when both ends saw the overlay, never more than two
+  intervals. The record is what the yellow release reads.
+- **LV3 — The yellow release** (`bounty-escrow.js release`, `tier:
+  'yellow'`; `releaseYellowForAiring` from the follow loop's close hook):
+  when a broadcast ends with the overlay up for `BOUNTY_YELLOW_MIN_MS` (10
+  min), `BOUNTY_YELLOW_RELEASE_FRACTION` (0.1) of the money whose backers
+  allowed the tier is released, drawn from those contributions only, capped
+  by the per-session cap and what they still hold, once per airing and
+  handle, with the platform match in its own row. The state table gained
+  `AWAITING_AIRTIME → PARTIALLY_RELEASED` for it. Green-only money is never
+  touched. It rides the same settlement facade as every release (real money
+  when `BOUNTY_FUNDING=1`).
+- **LV4 — The backer's choice.** `bountyMinTier` on the account
+  (`accounts.js` prefs; `GET/PUT /api/account/prefs`; Account → Bounty
+  protection): green only (default) or yellow or better. A pledge inherits
+  it (`minTier` on the pledge and the contribution; the record page shows
+  it and links to the setting; the body may override per pledge). The pool
+  view splits held money into `tiers.greenOnly` / `tiers.yellowOk`.
+- **LV5 — What yellow does not prove:** that the overlay was on the
+  BROADCAST. A keyed overlay in a browser tab that is not in the OBS scene
+  samples the same. That is the tier's stated limit (protects against
+  forgetting, not fraud); the scene check (`web/lib/obs-scene-check.mjs`) could harden
+  it later. Only follow rooms (a Twitch channel the owner proved) get
+  airings, so only they can release on yellow today.
+- **LV6 — Not built:** a backer requiring a tier at pledge time in the UI
+  (the setting is account-level, by the owner's call); the badge on the
+  campaign offer page; a Kick/other-platform follow for airings.
 

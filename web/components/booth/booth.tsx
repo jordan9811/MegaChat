@@ -12,6 +12,7 @@ import { BOARD_RECENT_CAP, featureKinds, roomPresentation } from '@/lib/room-bro
 import './booth.css'
 import { BrandText } from '@/components/brand-text'
 import { FeatureTag } from '@/components/feature-tag'
+import { LivenessBadge } from '@/components/liveness-badge'
 import { HollerMark } from '@/components/holler-mark'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { RecentRail } from './recent-rail'
@@ -139,6 +140,8 @@ function Stage({
           <i aria-hidden="true" />
           {state}
         </span>
+        {/* Which check stands behind money here right now; nothing when offline. */}
+        <LivenessBadge liveness={room.liveness} />
         <span className="mcr-tag">{rate}</span>
       </span>
     </Tag>

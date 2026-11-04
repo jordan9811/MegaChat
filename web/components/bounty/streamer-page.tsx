@@ -15,10 +15,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { Radio, Users, CircleCheck, Swords, Mic } from 'lucide-react'
 import {
   getBountyConfig, getPoolView, getProgram,
-  type BountyClientConfig, type PoolView, type ProgramPool,
+  type BountyClientConfig, type PoolView, type ProgramPool, type PoolLiveness,
 } from '@/lib/bounty-api'
 import { bountyKey } from '@/lib/bounty-examples'
 import { FeatureTag } from '@/components/feature-tag'
+import { LivenessBadge } from '@/components/liveness-badge'
+import { formatDollars } from '@/lib/display-format'
 import { RecordFlow } from './record-flow'
 import { ApprovalQueue } from './approval-queue'
 import { ClaimFlow } from './claim-flow'
@@ -39,6 +41,7 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
   const [config, setConfig] = useState<BountyClientConfig | null | 'loading'>('loading')
   const [view, setView] = useState<PoolView | null>(null)
   const [claimedBy, setClaimedBy] = useState<string | null>(null)
+  const [liveness, setLiveness] = useState<PoolLiveness | null>(null)
   const [clipCount, setClipCount] = useState(0)
   const [others, setOthers] = useState<ProgramPool[]>([])
   const [twitchLive, setTwitchLive] = useState<boolean | null>(null)
@@ -51,6 +54,7 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
       const v = await getPoolView(platform, handle)
       setView(v.view)
       setClaimedBy(v.reserved?.claimedBy ?? null)
+      setLiveness(v.liveness ?? null)
       setClipCount(v.clips)
     } catch { /* transient */ }
   }, [platform, handle])
@@ -121,6 +125,8 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
                 not on Holler yet
               </span>
             )}
+            {/* Which check stands behind the money right now, once claimed. */}
+            {claimedBy && liveness ? <LivenessBadge liveness={liveness} showOff /> : null}
             {/* On air: the solid record magenta with white ink (SPEC §3). */}
             {twitchLive === true ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-f-holler-solid px-2 py-0.5 text-[10px] font-bold tracking-normal text-f-holler-on">
@@ -149,6 +155,13 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
               {view.guaranteed.toLocaleString()} <span className="text-sm">{currency}</span>
             </p>
             <p className="mt-0.5 text-[11px] text-muted-foreground">theirs alone the moment they claim</p>
+            {view.tiers ? (
+              <p className="mt-1.5 text-[11px] text-muted-foreground" title="Backers choose the tier their pledge releases at: Green only pays for badge-verified airtime; Yellow or better also releases a slice after a broadcast that kept the keyed overlay up. Set yours under Account → Bounty protection.">
+                <span className="lv lv--green" aria-hidden="true"><span className="lv-dot" />Green only</span> {formatDollars(view.tiers.greenOnly)}
+                {' · '}
+                <span className="lv lv--yellow" aria-hidden="true"><span className="lv-dot" />Yellow ok</span> {formatDollars(view.tiers.yellowOk)}
+              </p>
+            ) : null}
           </div>
           <div className="rounded-2xl border border-border/70 bg-card/50 p-4">
             <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">

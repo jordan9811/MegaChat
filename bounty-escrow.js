@@ -49,7 +49,10 @@ export const ALLOWED_TRANSITIONS = {
   RESERVED:           ['CLAIM_PENDING', 'EXPIRED', 'VOID'],
   CLAIM_PENDING:      ['CLAIM_VERIFIED', 'RESERVED', 'EXPIRED', 'VOID'],
   CLAIM_VERIFIED:     ['AWAITING_AIRTIME', 'DISPUTED', 'VOID'],
-  AWAITING_AIRTIME:   ['VERIFYING', 'EXPIRED', 'DISPUTED', 'VOID'],
+  // PARTIALLY_RELEASED straight from AWAITING_AIRTIME: the yellow-tier
+  // release (liveness.js) pays on a finished broadcast with no badge
+  // verification pass, so there is no VERIFYING step to go through.
+  AWAITING_AIRTIME:   ['VERIFYING', 'PARTIALLY_RELEASED', 'EXPIRED', 'DISPUTED', 'VOID'],
   VERIFYING:          ['PARTIALLY_RELEASED', 'AWAITING_AIRTIME', 'DISPUTED', 'VOID'],
   PARTIALLY_RELEASED: ['VERIFYING', 'RELEASED', 'DISPUTED', 'VOID'],
   RELEASED:           ['DISPUTED'],           // only a dispute reopens a release
@@ -161,8 +164,9 @@ export function contribute({ platform, handle, contributor, amount, letterRef, a
  * because "how many pools can one dollar appear in" is a money-display
  * invariant, not a UI preference.
  */
-export function pledge({ targets, contributor, amount, expiresInMs, actor = 'fan', displayName = null }) {
+export function pledge({ targets, contributor, amount, expiresInMs, actor = 'fan', displayName = null, minTier = 'green' }) {
   assertEnabled();
+  if (!store.PLEDGE_TIERS.includes(minTier)) throw new Error(`minTier must be one of ${store.PLEDGE_TIERS.join(', ')}`);
   // `contributor` is now the ACCOUNT key (provider:platformId) supplied by the
   // route from the sealed identity — never a client string, because strikes
   // attach to it. Refuse rather than silently accept an anonymous pledge: the
@@ -203,11 +207,12 @@ export function pledge({ targets, contributor, amount, expiresInMs, actor = 'fan
   // mode writes the row now, exactly as before. A seeded (`seed:`) pledge is
   // ledger-only in either mode: the demo board never has money behind it.
   const requiresFunding = bountyConfig.fundingEnabled && !String(contributor).startsWith('seed:');
-  const c = store.addContribution({ handleKey: anchor, contributor, amount, status: requiresFunding ? 'UNFUNDED' : 'HELD' });
+  const c = store.addContribution({ handleKey: anchor, contributor, amount, status: requiresFunding ? 'UNFUNDED' : 'HELD', minTier });
   const p = store.addPledge({
     contributor, amount, targets: clean.map((t) => t.key),
     contributionId: c.id, expiresAt: Date.now() + ttl,
     status: requiresFunding ? 'UNFUNDED' : 'OPEN',
+    minTier,
   });
   store.updateContribution(c.id, { pledgeId: p.id });
   if (!requiresFunding) {
@@ -217,7 +222,7 @@ export function pledge({ targets, contributor, amount, expiresInMs, actor = 'fan
       reason: clean.length === 1
         ? 'pledge for unclaimed handle'
         : `pledge contested across ${clean.length} handles — first claim takes it`,
-      meta: { contributionId: c.id, pledgeId: p.id, targets: clean.map((t) => t.key) },
+      meta: { contributionId: c.id, pledgeId: p.id, targets: clean.map((t) => t.key), minTier },
     });
   }
   return { pledge: p, contribution: c, requiresFunding };
@@ -244,7 +249,7 @@ export function markPledgeFunded(pledgeId, { funding, actor = 'fan' } = {}) {
       ? 'pledge for unclaimed handle — funded'
       : `pledge contested across ${p.targets.length} handles — first claim takes it — funded`,
     idempotencyKey: `fund:${p.id}`,
-    meta: { contributionId: c.id, pledgeId: p.id, targets: [...p.targets], funding: { ref: funding.ref, txHash: funding.txHash || null, wallet: funding.wallet || null, atomic: funding.atomic || null } },
+    meta: { contributionId: c.id, pledgeId: p.id, targets: [...p.targets], minTier: store.tierOf(c), funding: { ref: funding.ref, txHash: funding.txHash || null, wallet: funding.wallet || null, atomic: funding.atomic || null } },
   });
   store.updateContribution(c.id, { status: 'HELD' });
   const pledge = store.updatePledge(p.id, { status: 'OPEN', funding, fundedAt: Date.now() });
@@ -367,12 +372,25 @@ export function poolView(key) {
     });
   }
   const guaranteed = Math.max(0, pool.totalContributed - contestedAnchored);
+  // What each liveness tier can release (liveness.js): HELD money whose
+  // backers require the badge only, and HELD money whose backers also allowed
+  // the yellow (overlay-check) tier. Both drawn from what is still held.
+  const bal = store.poolBalances(key);
+  let greenOnly = 0;
+  let yellowOk = 0;
+  for (const [id, left] of bal.left) {
+    if (store.tierOf(store.getContribution(id)) === 'yellow') yellowOk += left; else greenOnly += left;
+  }
+  const yellowReleased = store.listLedger({ handleKey: key, type: 'RELEASE' })
+    .filter((r) => r.bucket === 'contributor' && r.meta?.tier === 'yellow')
+    .reduce((a, r) => a + parseFloat(r.amount || '0'), 0);
   return {
     ...pool,
     guaranteed: +guaranteed.toFixed(6),
     contestedTotal: +contestedIn.toFixed(6),
     contested,
     openPledges: openHere.length,
+    tiers: { greenOnly: store.fromMicros(greenOnly), yellowOk: store.fromMicros(yellowOk), yellowReleased: +yellowReleased.toFixed(6) },
   };
 }
 
@@ -822,9 +840,22 @@ export function release({
   // with one payable airing per pledge (payablePlaybacks). Callers that only
   // have counts (fixtures) keep their behaviour exactly as it was.
   verifiedPlaybacks = null,
+  // LIVENESS TIER (liveness.js). 'green' (default): this is badge-verified
+  // airtime, gated and priced exactly as before. 'yellow': a finished
+  // broadcast on which the claimant's keyed overlay stayed connected for at
+  // least bountyConfig.yellowMinMs (`overlayConnectedMs`, read from the
+  // airing's sampled record), which releases a slice of ONLY the money whose
+  // backers allowed the yellow tier. No badge evidence is involved, so the
+  // evidence and confidence gates do not apply; the pool caps still do.
+  tier = 'green',
+  airingId = null,
+  overlayConnectedMs = null,
+  broadcastMs = null,
 }) {
   assertEnabled();
   if (!idempotencyKey) throw new Error('release requires an idempotencyKey');
+  if (tier === 'yellow') return releaseYellow({ handleKey, claimId, airSessionId, airingId, overlayConnectedMs, broadcastMs, actor, idempotencyKey, settlement });
+  if (tier !== 'green') throw new Error(`unknown release tier ${tier}`);
 
   let payable = null;
   if (Array.isArray(verifiedPlaybacks)) {
@@ -907,6 +938,7 @@ export function release({
       + `${confidenceTier != null ? `, tier ${confidenceTier}` : ''})`,
     idempotencyKey,
     meta: {
+      tier: 'green',
       verifiedClips, verifiedClipSeconds, confidence, confidenceTier, disputeWindowEndsAt: finalAt, final: false,
       // Evidence count vs paid count. Equal unless a pledge aired more than
       // once; when they differ, `collapsed` names which playback paid.
@@ -930,7 +962,7 @@ export function release({
   // payout wallet (claimedByAccount, set by the claim route) and records a
   // settlement intent per row; a claimant with no wallet yet is OWED and paid
   // the moment they set one (bounty-money.js payOwed).
-  const payee = { to: rec?.claimedBy || null, payeeAccount: rec?.claimedByAccount || null, handleKey, claimId, airSessionId };
+  const payee = { to: rec?.claimedBy || null, payeeAccount: rec?.claimedByAccount || null, handleKey, claimId, airSessionId, tier: 'green' };
   settlement?.release({ ...payee, amount, bucket: 'contributor', ref: contribRow.id, ledgerRowId: contribRow.id });
   settlement?.release({ ...payee, amount: matchAmount, bucket: 'platform_match', ref: matchRow.id, ledgerRowId: matchRow.id });
 
@@ -942,6 +974,92 @@ export function release({
   }
 
   return { rows: [contribRow, matchRow], deduped: false, released: amount, match: matchAmount, payable };
+}
+
+/**
+ * THE YELLOW-TIER RELEASE (liveness.js). A broadcast ended; the server
+ * sampled the claimant's keyed overlay on it every LIVENESS_SAMPLE_MS and
+ * it was connected for `overlayConnectedMs`. If that clears
+ * bountyConfig.yellowMinMs, release `yellowReleaseFraction` of the money
+ * whose backers allowed this tier: drawn from those contributions only,
+ * capped by the per-session cap of that money and by what it still holds.
+ * Green-only money is never touched here. Idempotent per airing and handle.
+ */
+function releaseYellow({ handleKey, claimId = null, airSessionId = null, airingId, overlayConnectedMs, broadcastMs = null, actor = 'liveness', idempotencyKey, settlement }) {
+  const existing = store.findByIdempotencyKey(idempotencyKey);
+  if (existing) return { rows: [existing], deduped: true, released: 0, match: 0, tier: 'yellow' };
+  const ms = Number(overlayConnectedMs) || 0;
+  if (ms < bountyConfig.yellowMinMs) return { rows: [], deduped: false, released: 0, match: 0, tier: 'yellow', skipped: 'too_short', detail: { overlayConnectedMs: ms, needMs: bountyConfig.yellowMinMs } };
+  const rec = store.getReservedHandleByKey(handleKey);
+  if (!rec) throw new Error(`No reserved handle ${handleKey}`);
+  const bal = store.poolBalances(handleKey);
+  const yellowLeft = new Map();
+  let yellowHeldTotal = 0; // original amounts of the yellow-allowed HELD money
+  for (const [id, left] of bal.left) {
+    const c = store.getContribution(id);
+    if (store.tierOf(c) !== 'yellow') continue;
+    yellowLeft.set(id, left);
+    yellowHeldTotal += store.toMicros(c.amount);
+  }
+  const stillHeld = [...yellowLeft.values()].reduce((a, m) => a + m, 0);
+  const raw = Math.round(yellowHeldTotal * bountyConfig.yellowReleaseFraction);
+  const cap = Math.round(yellowHeldTotal * bountyConfig.perSessionCapFraction);
+  const micros = Math.max(0, Math.min(raw, cap, stillHeld, Math.max(0, bal.balance)));
+  if (micros <= 0) return { rows: [], deduped: false, released: 0, match: 0, tier: 'yellow', skipped: 'nothing_to_release' };
+  const amount = store.fromMicros(micros);
+  const matchAmount = +(amount * bountyConfig.platformMatchFraction).toFixed(6);
+  const finalAt = Date.now() + bountyConfig.disputeWindowMs;
+  const allocations = allocateRelease(yellowLeft, micros);
+  const minutes = Math.round(ms / 60_000);
+  const { row: contribRow } = store.appendLedger({
+    handleKey, claimId, airSessionId,
+    type: 'RELEASE', amount, bucket: 'contributor', actor,
+    reason: `yellow tier: keyed overlay on the broadcast ${minutes} min (airing ${airingId})`,
+    idempotencyKey,
+    meta: { tier: 'yellow', airingId, overlayConnectedMs: ms, broadcastMs, disputeWindowEndsAt: finalAt, final: false, allocations },
+  });
+  const { row: matchRow } = store.appendLedger({
+    handleKey, claimId, airSessionId,
+    type: 'RELEASE', amount: matchAmount, bucket: 'platform_match', actor,
+    reason: `platform match @ ${bountyConfig.platformMatchFraction} (yellow tier)`,
+    idempotencyKey: `${idempotencyKey}:match`,
+    meta: { tier: 'yellow', airingId, overlayConnectedMs: ms, disputeWindowEndsAt: finalAt, final: false },
+  });
+  const payee = { to: rec.claimedBy || null, payeeAccount: rec.claimedByAccount || null, handleKey, claimId, airSessionId, tier: 'yellow' };
+  settlement?.release({ ...payee, amount, bucket: 'contributor', ref: contribRow.id, ledgerRowId: contribRow.id });
+  settlement?.release({ ...payee, amount: matchAmount, bucket: 'platform_match', ref: matchRow.id, ledgerRowId: matchRow.id });
+  const after = store.getPool(handleKey);
+  const target = after.remaining <= 0.000001 ? 'RELEASED' : 'PARTIALLY_RELEASED';
+  if (canTransition(rec.claimStatus, target)) {
+    transition({ handleKey, to: target, actor, reason: 'yellow-tier release recorded', claimId, airSessionId });
+  }
+  return { rows: [contribRow, matchRow], deduped: false, released: amount, match: matchAmount, tier: 'yellow' };
+}
+
+/** Handle states in which a claimed pool can release on airtime. */
+const RELEASABLE = new Set(['AWAITING_AIRTIME', 'VERIFYING', 'PARTIALLY_RELEASED']);
+
+/**
+ * A broadcast ended on a room (airings-store.js closeAiring, from the follow
+ * loop): every pool the room's OWNER has claimed gets its yellow-tier release
+ * from the airing's overlay record. Nothing for an unclaimed pool, a room
+ * nobody owns, or an airing nobody sampled.
+ */
+export function releaseYellowForAiring({ airing, ownerKey, settlement }) {
+  assertEnabled();
+  const out = [];
+  if (!airing?.id || !ownerKey) return out;
+  const ms = Number(airing.overlay?.connectedMs) || 0;
+  const broadcastMs = airing.endedAt && airing.startedAt ? Math.max(0, airing.endedAt - airing.startedAt) : null;
+  for (const rec of store.listReservedHandles()) {
+    if (rec.claimedByAccount !== ownerKey || !RELEASABLE.has(rec.claimStatus)) continue;
+    const r = release({
+      handleKey: rec.key, tier: 'yellow', airingId: airing.id, overlayConnectedMs: ms, broadcastMs,
+      actor: 'liveness', idempotencyKey: `release:yellow:${airing.id}:${rec.key}`, settlement,
+    });
+    out.push({ handleKey: rec.key, ...r });
+  }
+  return out;
 }
 
 /** Manual admin override — reason is REQUIRED and lands in the ledger. */

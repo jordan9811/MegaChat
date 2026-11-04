@@ -149,7 +149,7 @@ export type RecentAiring = {
 
 <!-- source:web/lib/api.ts#GuestEntry -->
 ```typescript
-// web/lib/api.ts — GuestEntry (lines 524–529), embedded by docs:sync
+// web/lib/api.ts — GuestEntry (lines 526–531), embedded by docs:sync
 export type GuestEntry = {
   handle: string
   addedAt: string
@@ -161,7 +161,7 @@ export type GuestEntry = {
 
 <!-- source:web/lib/api.ts#GuestList -->
 ```typescript
-// web/lib/api.ts — GuestList (lines 532–537), embedded by docs:sync
+// web/lib/api.ts — GuestList (lines 534–539), embedded by docs:sync
 export type GuestList = {
   enabled: boolean
   explicit: boolean | null
@@ -198,7 +198,7 @@ export const STATES = [
 
 <!-- source:bounty-escrow.js#ALLOWED_TRANSITIONS -->
 ```javascript
-// bounty-escrow.js — ALLOWED_TRANSITIONS (lines 43–61), embedded by docs:sync
+// bounty-escrow.js — ALLOWED_TRANSITIONS (lines 43–64), embedded by docs:sync
 /**
  * The single source of truth for legal movement. Read this table before
  * changing any flow — if a transition isn't listed, it cannot happen.
@@ -208,7 +208,10 @@ export const ALLOWED_TRANSITIONS = {
   RESERVED:           ['CLAIM_PENDING', 'EXPIRED', 'VOID'],
   CLAIM_PENDING:      ['CLAIM_VERIFIED', 'RESERVED', 'EXPIRED', 'VOID'],
   CLAIM_VERIFIED:     ['AWAITING_AIRTIME', 'DISPUTED', 'VOID'],
-  AWAITING_AIRTIME:   ['VERIFYING', 'EXPIRED', 'DISPUTED', 'VOID'],
+  // PARTIALLY_RELEASED straight from AWAITING_AIRTIME: the yellow-tier
+  // release (liveness.js) pays on a finished broadcast with no badge
+  // verification pass, so there is no VERIFYING step to go through.
+  AWAITING_AIRTIME:   ['VERIFYING', 'PARTIALLY_RELEASED', 'EXPIRED', 'DISPUTED', 'VOID'],
   VERIFYING:          ['PARTIALLY_RELEASED', 'AWAITING_AIRTIME', 'DISPUTED', 'VOID'],
   PARTIALLY_RELEASED: ['VERIFYING', 'RELEASED', 'DISPUTED', 'VOID'],
   RELEASED:           ['DISPUTED'],           // only a dispute reopens a release
@@ -297,7 +300,7 @@ The one source for both the verifier's sampling density and the sentence a strea
 
 <!-- source:bounty-claim.config.js#PLATFORM_PROFILES -->
 ```javascript
-// bounty-claim.config.js — PLATFORM_PROFILES (lines 568–642), embedded by docs:sync
+// bounty-claim.config.js — PLATFORM_PROFILES (lines 581–655), embedded by docs:sync
 /**
  * How verification actually behaves per platform — ONE source of truth for
  * the verifier's sampling density and for the words a streamer reads before
@@ -380,7 +383,7 @@ export const PLATFORM_PROFILES = {
 
 <!-- source:airings-store.js#addMoment -->
 ```javascript
-// airings-store.js — addMoment (lines 147–164), embedded by docs:sync
+// airings-store.js — addMoment (lines 161–178), embedded by docs:sync
 /**
  * Record something worth seeking to. Silently does nothing when the room is
  * not on air — a seat taken in a room whose owner never streams is a normal
@@ -404,7 +407,7 @@ export function addMoment(roomId, { kind, label = null, at = Date.now(), ref = n
 
 <!-- source:airings-store.js#attachRecording -->
 ```javascript
-// airings-store.js — attachRecording (lines 166–182), embedded by docs:sync
+// airings-store.js — attachRecording (lines 180–196), embedded by docs:sync
 /**
  * Attach a replay to an airing once something has resolved one. `recordings`
  * is EVERY platform recording that overlaps the airing, with when each
