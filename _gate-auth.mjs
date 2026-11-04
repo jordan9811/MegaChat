@@ -43,15 +43,9 @@ try {
     else ok(`GET ${p} 200`);
   }
 
-  // The legacy static dashboard moved to /dashboard.html when Next took over
-  // /dashboard; the password-field markers under test live in the legacy page.
-  const dashHtml = await (await fetch(`${BASE}/dashboard.html`)).text();
-  if (dashHtml.includes('STREAMER_DASHBOARD_KEY')) fail('dashboard still references global key');
-  else ok('global dashboard key removed from UI');
-  if (!dashHtml.includes('createRoomPassword')) fail('create flow missing room password');
-  else ok('create flow has room password field');
-  if (!dashHtml.includes('manageRoomId')) fail('manage flow missing room id');
-  else ok('manage flow has room id + password');
+  const legacyDash = await fetch(`${BASE}/dashboard.html`);
+  if (legacyDash.status !== 404) fail(`legacy /dashboard.html answered ${legacyDash.status}, not 404`);
+  else ok('legacy static dashboard is gone (404)');
 
   const created = await fetch(`${BASE}/api/dashboard/create`, {
     method: 'POST',

@@ -859,7 +859,6 @@ const PINNED = {
   '_gate-polish.mjs': 3,
   'scripts/deploy-escrow.mjs': 1,   // deployContract — the escrow's one deploy path
   'scripts/fund-escrow-roles.mjs': 1, // a capped USDC.e transfer to a role wallet for gas, mainnet, flag-guarded
-  'src/passkey-wallet.mjs': 1,
   'web/components/campaigns/approve-step.tsx': 1, // a campaign creator's ONE approve of the budget to the pull spender (campaign-engine.js funding), 2026-10-23
   'web/lib/join-page.ts': 5,
 };

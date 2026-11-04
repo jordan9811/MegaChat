@@ -120,9 +120,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ─── Tempo mainnet constants (eip155:4217) ───────────────────────────────────
-// Env-driven; TEMPO_* vars live ALONGSIDE the legacy ARC_* vars (append-only
-// .env policy) — this branch reads only the TEMPO_* ones. Values verified in
-// TEMPO_NOTES.md. Real chain, real money: default prices stay at dust levels.
+// Env-driven (TEMPO_* vars); values verified in TEMPO_NOTES.md. Real chain,
+// real money: default prices stay at dust levels.
 const CHAIN_ID = Number(process.env.TEMPO_CHAIN_ID || 4217);
 const NETWORK = `eip155:${CHAIN_ID}`; // CAIP-2 identifier
 const RPC_URL = process.env.TEMPO_RPC_URL || 'https://rpc.tempo.xyz';
@@ -143,8 +142,7 @@ const SELLER_WALLET_ADDRESS =
 const SEAT_PRICE = process.env.SEAT_PRICE || '0.01';
 
 // Seller private key — only used to REFUND the unused prepaid balance back to a
-// viewer when they leave. This is a plain ERC-20 transfer, NOT part of the
-// Gateway verify/settle payment path. Refunds are skipped if it isn't set.
+// viewer when they leave. Refunds are skipped if it isn't set.
 const SELLER_PRIVATE_KEY = process.env.SELLER_PRIVATE_KEY || null;
 // How long a paid seat may stay "pending" (paid but camera not approved) before
 // we release it and refund the full prepaid amount.
@@ -152,21 +150,11 @@ const SELLER_PRIVATE_KEY = process.env.SELLER_PRIVATE_KEY || null;
 // fires at once, ending every paid seat before its camera could start.
 const PENDING_CAMERA_TIMEOUT_MS = envNum('PENDING_CAMERA_TIMEOUT_MS', 5 * 60 * 1000);
 
-// ─── Pass B: pay-per-tick meter ──────────────────────────────────────────────
-// The viewer signs ONE Gateway authorization for up to MAX_SESSION USDC at join.
-// We settle that nanopayment once (batch-settled on Arc by Circle Gateway), then
-// meter it down by TICK_PRICE every TICK_SECONDS. When the prepaid balance can no
-// longer cover the next tick we auto-kick the seat ('out_of_funds'). This is the
-// spec's PRE-PAID BLOCKS model: Gateway's EIP-3009 authorizations are single-use
-// (one nonce, one fixed value), so a single signature cannot be partially drawn
-// per tick — we prepay the session cap once and meter locally, no per-tick popups.
-// Read through env-num.js, the same reads rooms-store.js getEnvDefaults makes:
-// a malformed value is its default (with one warning by name), not NaN.
-const TICK_SECONDS = envNum('TICK_SECONDS', 10);
-const TICK_PRICE = process.env.TICK_PRICE || '0.1';
+// The most one seat can spend (USDC), the amount approved up front.
 const MAX_SESSION = process.env.MAX_SESSION || '2';
 
-// Phase 2: passkey stream meter (true per-second on-chain pulls). MetaMask keeps TICK_* above.
+// Stream meter (per-second pulls). Read through env-num.js, the same reads
+// rooms-store.js getEnvDefaults makes: a malformed value is its default, not NaN.
 const PASSKEY_TICK_SECONDS = envNum('PASSKEY_TICK_SECONDS', 1);
 const PASSKEY_TICK_PRICE = process.env.PASSKEY_TICK_PRICE || '0.001';
 // Documented approach: B — session keys (A) not in SDK yet; streamed pulls via
@@ -177,15 +165,11 @@ const PASSKEY_METER_APPROACH = 'B';
 // file kept its own copies, which read a signed amount ("-0.5") as +0.5.
 const atomicToUsdc = (atomic) => fromAtomic(atomic, 6);
 
-const TICK_PRICE_ATOMIC = toAtomic(TICK_PRICE, 6);
 const PASSKEY_TICK_PRICE_ATOMIC = toAtomic(PASSKEY_TICK_PRICE, 6);
 
 function roomAtomics(roomCfg) {
-  const gwDec = 6;
   const pkDec = roomCfg.paymentTokenDecimals;
   return {
-    tickPriceAtomic: toAtomic(roomCfg.tickPrice, gwDec),
-    gatewayMaxSessionAtomic: toAtomic(roomCfg.maxSession, gwDec),
     passkeyTickPriceAtomic: toAtomic(roomCfg.passkeyTickPrice, pkDec),
     maxSessionAtomic: toAtomic(roomCfg.maxSession, pkDec),
   };
@@ -209,9 +193,8 @@ function resolveRoomFromRequest(body, query) {
 
 // ─── Refund wallet (seller -> viewer) ────────────────────────────────────────
 // Used ONLY to return the unused prepaid USDC when a viewer leaves. Plain ERC-20
-// transfer via viem. NOTE: the Arc 1-gwei priority-fee floor was Arc-specific
-// and is deliberately NOT ported — Tempo takes standard fee estimation and
-// charges fees in the sender's stablecoin (TEMPO_NOTES.md).
+// transfer via viem. Tempo takes standard fee estimation and charges fees in
+// the sender's stablecoin (TEMPO_NOTES.md).
 // The chain object every server-side signer uses. It is built from viem's OWN
 // Tempo definition because that is what carries the Tempo TRANSACTION
 // serializer: through a bare object, a `feeToken` is silently dropped, the
@@ -705,8 +688,8 @@ const jsonBody = express.json();
 // The bounty frames route carries its own 6 MB parser (bounty-routes.js); the
 // global 100 KB one must not answer for it first (audit bounty-14).
 app.use((req, res, next) => (/^\/api\/bounty\/clip\/[^/]+\/frames$/.test(req.path) ? next() : jsonBody(req, res, next)));
-// Passkeys + localStorage require localhost (Circle Console domain). Redirect
-// 127.0.0.1 so Chrome bookmarks don't land on a separate broken origin.
+// Privy's allowed origins and localStorage are per origin: redirect
+// 127.0.0.1 to localhost so Chrome bookmarks don't land on a separate broken origin.
 app.use((req, res, next) => {
   if (req.hostname === '127.0.0.1') {
     const port = Number(process.env.PORT || 3000);
@@ -732,10 +715,8 @@ function staticJsHeaders(res, filePath) {
   }
 }
 
-// index: false — the app root (/) is owned by the Next.js frontend below. The
-// Arc-era viewer page that used to sit at /index.html was deleted on
-// 2026-09-17: it still carried a client-signed Circle Gateway deposit that the
-// server could not refuse. Nothing serves an index from public/ any more.
+// index: false — the app root (/) is owned by the Next.js frontend below.
+// Nothing serves an index from public/.
 app.use(express.static('public', {
   index: false,
   etag: false,
@@ -752,7 +733,6 @@ app.get('/r/:handle', (req, res) =>
 app.get('/r/:handle/overlay', (req, res) =>
   res.redirect(301, `/${encodeURIComponent(req.params.handle)}/overlay`));
 
-// Expose the Arc / Gateway config the frontend needs to build payments.
 // Boot/infra truth in one place: is data durable across deploys, and did the
 // seeded rooms come back? Cheap to curl, saves guessing from the outside.
 /**
@@ -920,15 +900,13 @@ app.get('/api/config', (req, res) => {
     meterMode: mppMeter ? 'mpp_session' : 'allowance',
     // SESSION 2 — the seat escrow contract, and whether paid seats use it now.
     escrow: (() => { const s = escrowChain.status(); return { enabled: s.enabled, address: s.address, mode: s.mode, reason: s.reason || null, chainId: CHAIN_ID }; })(),
-    // Legacy key kept null so the old Arc pages degrade cleanly if opened.
-    modularWallets: null,
     privy: PRIVY_APP_ID ? { appId: PRIVY_APP_ID } : null
   });
 });
 
-// Read a wallet's available Circle Gateway balance (what it can spend to join).
-// Returns the available + pending amounts and the spendable session amount
-// (min(available, MAX_SESSION)) so the UI can preview "Remaining".
+// Read a wallet's on-chain balance (what it can spend to join): the available
+// amount and the spendable session amount (min(available, MAX_SESSION)) so the
+// UI can preview "Remaining".
 app.get('/api/balance/:address', async (req, res) => {
   const { address } = req.params;
   if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) {
@@ -942,8 +920,7 @@ app.get('/api/balance/:address', async (req, res) => {
     });
   }
   const { cfg, atomics } = resolved;
-  // Tempo: every wallet mode (Privy embedded, MetaMask) reads the same
-  // on-chain TIP-20 balance — the Circle Gateway ledger no longer exists.
+  // Every wallet mode (Privy embedded, MetaMask) reads the same TIP-20 balance.
   const minTick = atomics.passkeyTickPriceAtomic;
   try {
     const bal = await getOnChainTokenBalance(
@@ -1276,13 +1253,11 @@ function addParticipant(username, meta = {}) {
     // N1: proof of holding THIS seat. Returned only in the join response
     // (seatToken), never broadcast; register_seat and camera_ready require it.
     ownerToken: randomUUID(),
-    paymentMode: meta.paymentMode || 'gateway',
+    paymentMode: meta.paymentMode,
     // Whitelisted guests arrive pinned: meter paused, no seat consumed.
     pinned: !!meta.pinned,
     guestHandle: meta.guestHandle || null,
     sessionCapAtomic: meta.sessionCapAtomic ?? remainingAtomic,
-    gatewayTickSeconds: roomCfg.tickSeconds,
-    gatewayTickPriceAtomic: atomics.tickPriceAtomic,
     passkeyTickSeconds: roomCfg.passkeyTickSeconds,
     // E42 — a points seat is priced in whole points (0 decimals), not the
     // room's USDC tick price; the credit join passes its own atomics.
@@ -1323,7 +1298,7 @@ function addParticipant(username, meta = {}) {
           symbol: seat.paymentTokenSymbol || 'USDC', decimals: seat.paymentTokenDecimals ?? 6,
           address: (seat.paymentMode === 'credit_stream' || seat.paymentMode === 'points_stream') ? null : (seat.paymentTokenAddress || USDC_ADDRESS),
         },
-        tickMs: (seat.passkeyTickSeconds ?? seat.gatewayTickSeconds ?? 1) * 1000, at: now,
+        tickMs: (seat.passkeyTickSeconds ?? 1) * 1000, at: now,
         mode: seat.escrowMode,
       });
     } catch (e) { console.warn(`[seat-escrow] open failed for ${seatId}: ${e.message}`); }
@@ -1366,12 +1341,8 @@ function activateSeatLive(seatId, ws) {
   seat.lastPaidAt = Date.now();
   if (ws) { ws.__seatId = seatId; seat.ownerWs = ws; }
 
-  const tickPrice = seat.paymentMode === 'gateway'
-    ? seat.gatewayTickPriceAtomic
-    : seat.passkeyTickPriceAtomic;
-  const tickSec = seat.paymentMode === 'gateway'
-    ? seat.gatewayTickSeconds
-    : seat.passkeyTickSeconds;
+  const tickPrice = seat.passkeyTickPriceAtomic;
+  const tickSec = seat.passkeyTickSeconds;
   const ticksLeft = tickPrice > 0n
     ? Number(seat.remainingAtomic / tickPrice)
     : 0;
@@ -1481,36 +1452,6 @@ function removeParticipant(seatId, reason = 'left') {
   refundSeat(seat).catch((e) => console.error('[refund] unexpected error:', e));
 
   return { success: true };
-}
-
-// ─── Pass B meter (MetaMask/Gateway prepaid block) ─────────────────────────
-function tickPrepaidSeat(seat) {
-  const tickPrice = seat.gatewayTickPriceAtomic ?? TICK_PRICE_ATOMIC;
-  const tickSec = seat.gatewayTickSeconds ?? TICK_SECONDS;
-  if (seat.remainingAtomic < tickPrice) {
-    removeParticipant(seat.id, 'out_of_funds');
-    return;
-  }
-
-  seat.remainingAtomic -= tickPrice;
-  seat.spentAtomic += tickPrice;
-  try { seatEscrow.accrue(seat.id, tickPrice, { at: Date.now() }); } catch (e) { console.warn(`[seat-escrow] accrue failed: ${e.message}`); }
-
-  const ticksLeft = tickPrice > 0n ? Number(seat.remainingAtomic / tickPrice) : 0;
-  const secondsLeft = ticksLeft * tickSec;
-
-  broadcastMeterUpdate(seat, {
-    seatId: seat.id,
-    remaining: atomicToUsdc(seat.remainingAtomic),
-    spent: atomicToUsdc(seat.spentAtomic),
-    secondsLeft,
-    minutesLeft: Math.floor(secondsLeft / 60),
-    mode: 'gateway'
-  });
-
-  if (seat.remainingAtomic < tickPrice) {
-    removeParticipant(seat.id, 'out_of_funds');
-  }
 }
 
 // ─── Phase 2 passkey stream meter: on-chain transferFrom each tick ─────────
@@ -1641,11 +1582,6 @@ function tickAllMeters() {
       tickPasskeyStreamSeat(seat)
         .then(() => { seat.lastMeterAt = now; })
         .catch((e) => console.error(`[meter:passkey] seat ${seat.id} unexpected:`, e));
-    } else {
-      const interval = (seat.gatewayTickSeconds ?? TICK_SECONDS) * 1000;
-      if (now - (seat.lastMeterAt || 0) < interval) continue;
-      tickPrepaidSeat(seat);
-      seat.lastMeterAt = now;
     }
   }
 }
@@ -2527,7 +2463,6 @@ function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
   };
 }
 
-// Passkey/modular smart account join — NO Gateway x402 middleware or transfer lookup.
 // Targeted reward campaigns: a Call in sent with `campaign` in the body
 // reserves the signed-in account's slot, binds it to the seat the join route
 // answers with, and gives it back when the route answers anything else.
@@ -2734,7 +2669,7 @@ app.post('/api/join/passkey', async (req, res) => {
           rewardBalance: rw?.enabled ? fromAtomic(credit.atomic, cfg.paymentTokenDecimals) : undefined,
           needAtLeast: cfg.passkeyTickPrice,
           tokenSymbol: sym,
-          hint: 'Fund your smart account on Arc Testnet.',
+          hint: 'Fund your wallet with USDC on Tempo.',
           path: 'passkey',
           roomId
         });
@@ -3220,17 +3155,6 @@ app.all('/api/meter/tick', async (req, res) => {
       res.status(500).json({ error: 'Tick failed', message: error.message });
     }
   }
-});
-
-// Legacy Circle Gateway join (Arc) — retired on Tempo. MetaMask viewers go
-// through the same unified meter as embedded wallets from Phase 2 onward.
-app.post('/api/join', (req, res) => {
-  res.status(501).json({
-    error: 'The Gateway prepaid join was retired in the Tempo migration.',
-    hint: 'Use the join page flow (unified meter) — POST /api/join/passkey.',
-    redirect: '/api/join/passkey',
-    path: 'gateway'
-  });
 });
 
 // Leave seat. Takes the seat token in the JSON body (the join page's leave and
@@ -4038,8 +3962,7 @@ try {
 // The Next app in web/ (dashboard, /join page, /_next assets) runs INSIDE this
 // process as the fallthrough handler: every request Express doesn't claim
 // (APIs, /overlay, public/ static) is handed to Next. Why this direction and
-// not Next API routes: the meter interval, seat Map, WebSocket server, and
-// Gateway facilitator are long-lived singletons that must not be re-created
+// not Next API routes: the meter interval, seat Map and WebSocket server are long-lived singletons that must not be re-created
 // per route — mounting Next here keeps all payment/meter/WS logic untouched.
 const NEXT_DIR = path.join(__dirname, 'web');
 const nextDev = !process.argv.includes('--prod')
@@ -4144,7 +4067,6 @@ server.listen(PORT, () => {
 ║  Overlay: http://localhost:${PORT}/overlay   ║
 ╠═══════════════════════════════════════════╣
 ║  Chain:   ${NETWORK} (Tempo)
-║  Meter (legacy prepaid): ${TICK_PRICE} USDC / ${TICK_SECONDS}s
 ║  Meter (stream):   ${PASSKEY_TICK_PRICE} USDC / ${PASSKEY_TICK_SECONDS}s  [approach ${PASSKEY_METER_APPROACH}]
 ║  Session cap:      ${MAX_SESSION} USDC
 ║  Seller:  ${SELLER_WALLET_ADDRESS}

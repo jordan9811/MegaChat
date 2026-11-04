@@ -50,7 +50,7 @@ export const metadata: Metadata = {
     'pay per second',
     'OBS overlay',
     'passkey wallet',
-    'Arc network',
+    'Tempo',
   ],
   openGraph: {
     type: 'website',

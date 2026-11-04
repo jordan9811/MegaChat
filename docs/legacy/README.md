@@ -33,7 +33,7 @@ deleted for real, this tag is the recovery point.
 
 **Legacy — only the vanilla pages use these:**
 
-- `public/dashboard.html` — the original dashboard
+- `public/dashboard.html` — the original dashboard (deleted 2026-11-04 with the Arc cleanup)
 - `public/app-theme.css`, `public/theme.js`
 - Gone: `public/index.html`, the original viewer, and `public/passkey-wallet.bundle.js` (both deleted in 944aa2c; nothing rebuilds the bundle); `public/rewards.js`, deleted 2026-10-24 because no page loaded it — the watch-to-earn client is `initRewardsClient` in `web/lib/join-page.ts`
 

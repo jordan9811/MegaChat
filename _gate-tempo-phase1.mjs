@@ -8,7 +8,7 @@
  *     seller + test viewer wallets (proves RPC + token wiring end to end).
  *  3. Legacy rooms with persisted Arc token addresses resolve to the Tempo
  *     token (read-time remap; rooms.json on disk must stay untouched).
- *  4. The retired Gateway join returns 501.
+ *  4. (retired: the Gateway join stub was removed with the Arc code, 2026-11-04)
  *  5. /join serves the Next page with the Privy-era buttons.
  *  6. Direct RPC sanity: eth_chainId === 0x1079.
  */
@@ -41,7 +41,7 @@ ok('rpcUrl is Tempo', /rpc\.tempo\.xyz/.test(cfg.rpcUrl), cfg.rpcUrl);
 ok('explorer is Tempo', /explore\.tempo\.xyz/.test(cfg.explorerUrl), cfg.explorerUrl);
 ok('usdc is Tempo USDC.e', /^0x20c0/i.test(cfg.usdcAddress), cfg.usdcAddress);
 ok('room token remapped to Tempo', /^0x20c0/i.test(cfg.paymentTokenAddress), cfg.paymentTokenAddress);
-ok('legacy modularWallets gone', cfg.modularWallets === null);
+ok('legacy modularWallets gone', !('modularWallets' in cfg));
 if (cfg.privy?.appId) ok('privy app id configured', true, 'set');
 else note('privy app id', 'NEXT_PUBLIC_PRIVY_APP_ID empty — Privy modal cannot open until set');
 
@@ -64,14 +64,6 @@ else {
 }
 const roomsRaw = readFileSync(new URL('./data/rooms.json', import.meta.url), 'utf8');
 ok('rooms.json still carries Arc addresses on disk (not rewritten)', roomsRaw.includes('0x3600000000000000000000000000000000000000'));
-
-console.log('\n— 4. retired Gateway join —');
-const gj = await fetch(`${BASE}/api/join`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ username: 'gate', room: 'default' }),
-});
-ok('POST /api/join → 501', gj.status === 501, String(gj.status));
 
 console.log('\n— 5. /join page serves the Privy-era UI —');
 const page = await (await fetch(`${BASE}/join?room=default`)).text();
