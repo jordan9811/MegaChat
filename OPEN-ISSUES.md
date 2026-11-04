@@ -4875,8 +4875,8 @@ product.
   Redirect megachat.fun permanently to hollertv.com (every path, so old OBS
   overlay links, room links and sign-in callbacks keep working), then do the
   Z8 provider tidy-up (drop the megachat callbacks and Privy domains). Pairs
-  with Z10 (hide the test room). Claude reminds the owner of Z10/Z11 at each
-  status check until done.
+  with Z10 (hide the test room). The owner picks both up himself; no reminders
+  (his call, 2026-11-04).
 
 ## BM — Bounty real money (2026-11-04, owner's explicit go: "go on 4")
 
