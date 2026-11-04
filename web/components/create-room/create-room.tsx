@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronRight, Gift, LockKeyhole, MessageSquareText, Pause, Play, Video, type LucideIcon } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Check, ChevronRight, Gift, LockKeyhole, MessageSquareText, Pause, Play, Video, type LucideIcon } from 'lucide-react'
 import { AccountChip } from '@/components/account-chip'
 import { BrandText } from '@/components/brand-text'
 import { FeatureTag, type FeatureKind } from '@/components/feature-tag'
@@ -37,12 +37,24 @@ function PriceInput({ value, onCommit, label, suffix }: { value: string; onCommi
   return <span className="mcc-money-input"><span>$</span><input aria-label={label} inputMode="decimal" value={raw} onChange={(event) => { if (/^\d*\.?\d{0,6}$/.test(event.target.value)) setRaw(event.target.value) }} onFocus={(event) => event.currentTarget.select()} onBlur={() => { const next = cleanPrice(raw, value); setRaw(next); onCommit(next) }} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} />{suffix ? <b>{suffix}</b> : null}</span>
 }
 
+// Always a field: it looks typeable, so it needs no "click to rename" line.
 function InlineText({ value, onChange, placeholder, label, sanitize, className = '' }: { value: string; onChange: (value: string) => void; placeholder: string; label: string; sanitize?: (value: string) => string; className?: string }) {
-  const [editing, setEditing] = useState(false)
-  const ref = useRef<HTMLInputElement>(null)
-  useEffect(() => { if (editing) ref.current?.select() }, [editing])
-  if (editing) return <input ref={ref} autoFocus className={`mcc-inline-input ${className}`} aria-label={label} value={value} placeholder={placeholder} onChange={(event) => onChange(sanitize ? sanitize(event.target.value) : event.target.value)} onBlur={() => setEditing(false)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === 'Escape') event.currentTarget.blur() }} />
-  return <button type="button" className={`mcc-inline ${className}`} aria-label={`${label} — click to change`} onClick={() => setEditing(true)}>{value || placeholder}</button>
+  return <input className={`mcc-inline-input ${className}`} aria-label={label} value={value} placeholder={placeholder} spellCheck={false} onChange={(event) => onChange(sanitize ? sanitize(event.target.value) : event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === 'Escape') event.currentTarget.blur() }} />
+}
+
+// Shows only after the person has typed in this field, and only while
+// managing (autosave): saving, then a check that fades out.
+function SaveMark({ touched, state }: { touched: boolean; state: 'saved' | 'saving' | 'error' }) {
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    if (!touched) return
+    setShown(true)
+    if (state !== 'saved') return
+    const t = setTimeout(() => setShown(false), 1800)
+    return () => clearTimeout(t)
+  }, [touched, state])
+  if (!touched) return null
+  return <span className="mcc-savemark" data-state={state} data-shown={shown} role="status" aria-live="polite">{state === 'saving' ? 'Saving' : state === 'error' ? 'Not saved' : <><Check size={13} strokeWidth={2.4} aria-hidden="true" />Saved</>}</span>
 }
 
 function Segment<T extends string | number>({ value, onChange, label, options }: { value: T; onChange: (value: T) => void; label: string; options: readonly { value: T; label: string }[] }) {
@@ -110,6 +122,8 @@ export function CreateRoom() {
   const [saveDefault, setSaveDefault] = useState(false)
   const [shareWithMods, setShareWithMods] = useState(false)
   const [password, setPassword] = useState('')
+  const [touchedName, setTouchedName] = useState(false)
+  const [touchedHandle, setTouchedHandle] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [seatSeconds, setSeatSeconds] = useState(20)
@@ -171,7 +185,7 @@ export function CreateRoom() {
     <header className="mcc-header"><div className="mcc-header-inner"><span className="mcc-brand-lockup"><a href="/?stay=1" className="mcc-brand"><BrandText /></a><i /><span>{managing ? 'Your room' : 'New room'}</span></span><nav aria-label="Product navigation"><a href="/app">Rooms</a><a href="/bounty">Bounties</a><a href="/dashboard/campaigns">Campaigns</a><a href="/how-it-works">How it works</a></nav><div className="mcc-header-end"><ThemeToggle /><span className="mcc-account"><AccountChip /></span></div></div></header>
     <main className="mcc-shell">
       {!hasIdentity ? <RoomRecovery /> : null}
-      <section className="mcc-identity" aria-label="Room identity"><div><span className="mcc-eyebrow">Room name</span><InlineText value={draft.name} onChange={(name) => updateDraft({ name })} placeholder="Name your room" label="Room name" /><small>{managing ? 'Click to rename · saves as you type' : hasIdentity ? `Suggested from your linked ${draft.twitchChannel ? 'Twitch' : 'streaming account'} · click to change` : 'Suggested name · click to change'}</small></div><div><span className="mcc-eyebrow">Your room link</span><span className="mcc-room-url">hollertv.com/<InlineText className="mcc-handle" value={draft.handle} onChange={(handle) => updateDraft({ handle })} sanitize={(value) => value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20)} placeholder={identityHandle || 'yourname'} label="Your link" /></span><small>{managing ? 'Your permanent link · click the name to change it' : hasIdentity ? 'Reserved by your sign-in · click the name to change' : 'Suggested link · easy to override'}</small></div></section>
+      <section className="mcc-identity" aria-label="Room identity"><div><span className="mcc-eyebrow">Room name</span><span className="mcc-field-row"><InlineText value={draft.name} onChange={(name) => { setTouchedName(true); updateDraft({ name }) }} placeholder="Name your room" label="Room name" />{managing ? <SaveMark touched={touchedName} state={saveState} /> : null}</span></div><div><span className="mcc-eyebrow">Your room link</span><span className="mcc-field-row"><span className="mcc-room-url">hollertv.com/<InlineText className="mcc-handle" value={draft.handle} onChange={(handle) => { setTouchedHandle(true); updateDraft({ handle }) }} sanitize={(value) => value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20)} placeholder={identityHandle || 'yourname'} label="Your link" /></span>{managing ? <SaveMark touched={touchedHandle} state={saveState} /> : null}</span></div></section>
 
       {managing && room ? <section className="mcc-status" aria-label="Room status" data-active={!!room.active}>
         <div className="mcc-status-live"><i aria-hidden="true" /><span><strong>{room.active ? 'Live · taking joins' : 'Paused · no new joins'}</strong><small>{endError ? endError : saveState === 'saving' ? 'Saving changes…' : saveState === 'error' ? (saveError || 'Changes not saved') : 'Changes save automatically while you stream.'}</small></span></div>
