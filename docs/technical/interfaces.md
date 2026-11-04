@@ -177,7 +177,7 @@ The states and the transition table are the whole contract for money movement: a
 
 <!-- source:bounty-escrow.js#STATES -->
 ```javascript
-// bounty-escrow.js — STATES (lines 24–38), embedded by docs:sync
+// bounty-escrow.js — STATES (lines 27–41), embedded by docs:sync
 export const STATES = [
   'ACCUMULATING',
   'RESERVED',
@@ -198,7 +198,7 @@ export const STATES = [
 
 <!-- source:bounty-escrow.js#ALLOWED_TRANSITIONS -->
 ```javascript
-// bounty-escrow.js — ALLOWED_TRANSITIONS (lines 40–58), embedded by docs:sync
+// bounty-escrow.js — ALLOWED_TRANSITIONS (lines 43–61), embedded by docs:sync
 /**
  * The single source of truth for legal movement. Read this table before
  * changing any flow — if a transition isn't listed, it cannot happen.
@@ -225,28 +225,25 @@ The settlement interface, and the only implementation that exists:
 
 <!-- source:bounty-settlement.js#SettlementInterface -->
 ```javascript
-// bounty-settlement.js — SettlementInterface (lines 30–41), embedded by docs:sync
-/**
- * The contract Run B must satisfy.
- * TODO(run-b): implement RealSettlement — needs a funded operator wallet,
- * the escrow contract address, and an idempotent on-chain submit path keyed
- * off the ledger row id so a retry cannot double-pay.
- */
+// bounty-settlement.js — SettlementInterface (lines 35–43), embedded by docs:sync
 export class SettlementInterface {
   /** @param {{to:string|null, amount:string, bucket:string, ref:string}} _ */
   release(_) { throw new Error('not implemented'); }
   /** @param {{to:string, amount:string, ref:string}} _ */
   refund(_) { throw new Error('not implemented'); }
+  /** Everything owed and not yet paid, for the admin view. */
+  pending() { return []; }
+  get mode() { return 'unknown'; }
 }
 ```
 <!-- /source -->
 
 <!-- source:bounty-settlement.js#StubSettlement -->
 ```javascript
-// bounty-settlement.js — StubSettlement (lines 43–75), embedded by docs:sync
+// bounty-settlement.js — StubSettlement (lines 45–77), embedded by docs:sync
 /**
- * Records intent, moves nothing, always succeeds. This is the ONLY
- * implementation that exists in Run A.
+ * Records intent, moves nothing, always succeeds. The ledger-only
+ * implementation, and the only one when BOUNTY_FUNDING is unset.
  */
 export class StubSettlement extends SettlementInterface {
   constructor({ log = console } = {}) {
@@ -256,8 +253,9 @@ export class StubSettlement extends SettlementInterface {
     this.log = log;
   }
 
+  get mode() { return 'ledger-only'; }
+
   release({ to, amount, bucket, ref }) {
-    // TODO(run-b): real transfer. Intentionally does nothing on chain.
     const intent = { kind: 'release', to: to || null, amount: String(amount), bucket, ref, at: Date.now() };
     this.intents.push(intent);
     this.log.log(`[bounty-settlement] STUB release intent — ${amount} (${bucket}) → ${to || 'unassigned'} [ref ${ref}] — NO FUNDS MOVED`);
@@ -265,14 +263,13 @@ export class StubSettlement extends SettlementInterface {
   }
 
   refund({ to, amount, ref }) {
-    // TODO(run-b): real refund. Intentionally does nothing on chain.
     const intent = { kind: 'refund', to, amount: String(amount), bucket: 'contributor', ref, at: Date.now() };
     this.intents.push(intent);
     this.log.log(`[bounty-settlement] STUB refund intent — ${amount} → ${to} [ref ${ref}] — NO FUNDS MOVED`);
     return { ok: true, stubbed: true, intent };
   }
 
-  /** Everything that would have been paid, for the admin view and Run B. */
+  /** Everything that would have been paid, for the admin view. */
   pending() {
     return [...this.intents];
   }
@@ -300,7 +297,7 @@ The one source for both the verifier's sampling density and the sentence a strea
 
 <!-- source:bounty-claim.config.js#PLATFORM_PROFILES -->
 ```javascript
-// bounty-claim.config.js — PLATFORM_PROFILES (lines 552–626), embedded by docs:sync
+// bounty-claim.config.js — PLATFORM_PROFILES (lines 568–642), embedded by docs:sync
 /**
  * How verification actually behaves per platform — ONE source of truth for
  * the verifier's sampling density and for the words a streamer reads before

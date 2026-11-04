@@ -272,7 +272,8 @@ export type FundSignTerms = {
   domain: { name: string; version: string; chainId: number }
   types: Record<string, { name: string; type: string }[]>
   primaryType: string
-  message: { campaignId: string; token: string; amountAtomic: string }
+  /** The server's message fields (a campaign names `campaignId`, a bounty pledge `pledgeId`); the client adds `wallet` and `deadline`. */
+  message: Record<string, string>
   maxSeconds?: number
 }
 /** What a fund call cites once the wallet approved and signed. */

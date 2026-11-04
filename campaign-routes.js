@@ -163,8 +163,13 @@ export const CAMPAIGN_ROUTES = [
     // This account's owed claims get their payout intent now. Only theirs:
     // this used to run the whole sweep, on demand, for any signed-in caller.
     e.payAccount(w.accountId);
+    // ...and whatever else pays this account by its payout wallet (the
+    // bounty money engine's owed releases, server.js onPayoutWallet).
+    try { req.campaignHooks?.onPayoutWallet?.(w.accountId); } catch (err) { console.warn('[campaigns] onPayoutWallet hook failed:', err.message); }
     return { ok: true, payoutWallet: a.payoutWallet || null };
   }],
+  /** The signed-in account's payout wallet, for pages that need to ask for one. */
+  ['GET', '/api/account/payout-wallet', TIER.FAN, (e, req, w) => ({ payoutWallet: (w.accountId && getAccount(w.accountId)?.payoutWallet) || null })],
 
   // ── admin: moderation and abuse controls only ───────────────────────────
   ['GET', '/api/campaigns/admin/all', TIER.ADMIN, (e) => ({ campaigns: e.listManaged({ isAdmin: true, all: true }) })],
@@ -208,9 +213,10 @@ export const CAMPAIGN_ROUTES = [
   }],
 ];
 
-function guard(tier) {
+function guard(tier, hooks = {}) {
   return (req, res, next) => {
     const w = who(req);
+    req.campaignHooks = hooks;
     if (tier === TIER.FAN && !w.accountId && !w.isAdmin) {
       return res.status(401).json({ error: 'Sign in to continue', reason: 'auth_required' });
     }
@@ -222,12 +228,13 @@ function guard(tier) {
   };
 }
 
-export function attachCampaignRoutes(app, engine) {
+export function attachCampaignRoutes(app, engine, { onPayoutWallet = null } = {}) {
+  const hooks = { onPayoutWallet };
   // Registered in table order: literal paths (mine, admin/…) come before the
   // ones with a parameter in the same position, and 'mine', 'admin' and
   // 'manage' are reserved slugs besides.
   for (const [method, path, tier, handler] of CAMPAIGN_ROUTES) {
-    app[method.toLowerCase()](path, guard(tier), async (req, res) => {
+    app[method.toLowerCase()](path, guard(tier, hooks), async (req, res) => {
       try { res.json(await handler(engine, req, req.campaignWho)); }
       catch (e) { send(res, e); }
     });

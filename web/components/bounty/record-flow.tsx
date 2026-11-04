@@ -24,15 +24,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Circle, Square, RotateCcw, Send, ShieldAlert, Clock } from 'lucide-react'
 import {
-  createPledge, postFrames, uploadClip,
-  type BountyClientConfig, type ProgramPool, type RejectionPolicy,
+  createPledge, fundPledge, postFrames, uploadClip,
+  type BountyClientConfig, type ProgramPool, type RejectionPolicy, type PledgeApprovalAsk, type PledgeFundProof,
 } from '@/lib/bounty-api'
+// Real money: the same approve-and-sign step a campaign creator uses to fund a
+// budget, with the pledge's words. The wallet approves exactly the pledge
+// amount to Holler's bounty spender, then signs that it means THIS pledge.
+import { ApproveStep, connectedWallet, type ApprovalAsk } from '@/components/campaigns/approve-step'
+import { getChainInfo } from '@/lib/campaigns-api'
 import { FeatureTag } from '@/components/feature-tag'
 import { newAttemptId } from '@/lib/attempt-id'
 import { fetchIdentity } from '@/lib/identity'
 import { recorderMime } from '@/lib/recorder-mime'
 
-type Stage = 'idle' | 'recording' | 'preview' | 'terms' | 'sending' | 'done' | 'error'
+type Stage = 'idle' | 'recording' | 'preview' | 'terms' | 'funding' | 'sending' | 'done' | 'error'
 
 // Colour roles (Holler SPEC §3): the recording itself is the holler magenta —
 // the Record button, the REC light, the finished take. Money and the bounty
@@ -78,7 +83,12 @@ export function RecordFlow({
   // pledgeRef keeps the pledge once it exists, so a failed upload retries the
   // UPLOAD and never escrows the fan's money a second time.
   const attemptIdRef = useRef<string | null>(null)
-  const pledgeRef = useRef<{ uploadUrl: string } | null>(null)
+  const pledgeRef = useRef<{ uploadUrl: string; id?: string; funded?: boolean } | null>(null)
+  // Real money: the pledge the server asked us to fund, and the approve step's ask.
+  const [approval, setApproval] = useState<PledgeApprovalAsk | null>(null)
+  const [explorerUrl, setExplorerUrl] = useState('https://explore.tempo.xyz')
+  const realMoney = config.money?.mode === 'real'
+  useEffect(() => { if (realMoney) getChainInfo().then((c) => setExplorerUrl(c.explorerUrl)).catch(() => {}) }, [realMoney])
   const [pledged, setPledged] = useState(false)
 
   const [stage, setStage] = useState<Stage>('idle')
@@ -259,10 +269,22 @@ export function RecordFlow({
           targets, contributor: contributor.trim(), amount, expiresInMs: expiryMs,
           attemptId: attemptIdRef.current,
         })
-        pledge = { uploadUrl: out.uploadUrl }
+        pledge = { uploadUrl: out.uploadUrl, id: out.pledge.id, funded: !out.requiresFunding }
         pledgeRef.current = pledge
         setPledged(true)
         setPolicy(out.rejectionPolicy)
+        // Real money: nothing is charged yet. The wallet approves and signs
+        // next; the upload waits until the pledge is funded.
+        if (out.requiresFunding && out.funding?.needsApproval) {
+          setApproval(out.funding.needsApproval)
+          setStage('funding')
+          return
+        }
+      }
+      if (pledge.funded === false) {
+        // A retry after the wallet step was cancelled: ask again.
+        setStage('funding')
+        return
       }
       // Frames ride ahead so moderation has them when the media lands.
       if (framesRef.current.length) {
@@ -276,6 +298,20 @@ export function RecordFlow({
       setError(e instanceof Error ? e.message : 'Submit failed')
       setStage('error')
     }
+  }
+
+  /** Real money: the wallet approved and signed — pull the pledge, then send the take. */
+  async function fundAndSend(proof: PledgeFundProof) {
+    const pledge = pledgeRef.current
+    if (!pledge?.id) throw new Error('No pledge to fund. Start again.')
+    const wallet = await connectedWallet()
+    const r = await fundPledge(pledge.id, { wallet, approveTx: proof.approveTx, signature: proof.signature, typedData: proof.typedData })
+    if ('needsApproval' in r && r.needsApproval) { setApproval(r.needsApproval); return }
+    if (!('ok' in r) || !r.ok) throw new Error('The pledge could not be funded.')
+    pledge.funded = true
+    pledgeRef.current = pledge
+    setApproval(null)
+    await paySubmit()
   }
 
   const unclaimedOthers = otherPools
@@ -332,7 +368,7 @@ export function RecordFlow({
         </div>
       ) : null}
 
-      {stage === 'terms' || stage === 'sending' || stage === 'error' ? (
+      {stage === 'terms' || stage === 'funding' || stage === 'sending' || stage === 'error' ? (
         <div className="mt-4 space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
@@ -409,18 +445,27 @@ export function RecordFlow({
             <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs leading-relaxed text-muted-foreground">
               <li>The streamer reviews every clip before it airs. If they simply pass on yours, you get a <strong className="text-foreground">full refund</strong>.</li>
               <li>If a clip breaks the content rules: first time is a full refund with a warning on your account; after that, rejected clips refund at <strong className="text-foreground">50%</strong>, and the rest goes to the streamer&apos;s bounty pool — not to us.</li>
-              <li>No real money moves in this preview build — the escrow is a ledger and payouts are recorded, not sent.</li>
+              {realMoney
+                ? <li>Your wallet approves <strong className="text-foreground">exactly this amount</strong> and signs for this pledge; it is then held in Holler&apos;s pool wallet and any refund comes back from there.</li>
+                : <li>No real money moves in this preview build — the escrow is a ledger and payouts are recorded, not sent.</li>}
             </ul>
           </div>
 
-          <button type="button" disabled={stage === 'sending' || signedIn === false} onClick={paySubmit}
+          {approval && stage === 'funding' ? (
+            approval.spender ? (
+              <ApproveStep subject="pledge" ask={approval as ApprovalAsk} explorerUrl={explorerUrl}
+                onApproved={(proof) => fundAndSend(proof as PledgeFundProof)}
+                onCancel={() => { setStage('terms') }} />
+            ) : <p role="alert" className="text-sm text-hl-danger">This server can&apos;t take pledges right now (no bounty spender is configured). Nothing was charged.</p>
+          ) : null}
+          <button type="button" disabled={stage === 'sending' || stage === 'funding' || signedIn === false} onClick={paySubmit}
             className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.02] active:scale-[.97] disabled:opacity-60 ${BOUNTY_SOLID}`}>
             <Send className="size-4" />
-            {stage === 'sending' ? 'Sending…' : pledged ? 'Retry upload' : `Pay ${amount} ${config.currency} & send`}
+            {stage === 'sending' ? 'Sending…' : stage === 'funding' ? 'Approve in wallet above' : pledged ? (pledgeRef.current?.funded === false ? 'Fund & send' : 'Retry upload') : realMoney ? `Pledge ${amount} ${config.currency} — approve in wallet` : `Pay ${amount} ${config.currency} & send`}
           </button>
           {pledged && stage === 'error' ? (
             <p className="text-xs text-muted-foreground">
-              Your pledge is in. Retrying sends this take again, with no second payment.
+              {pledgeRef.current?.funded === false ? 'Your pledge is recorded but not funded yet; nothing has been charged.' : 'Your pledge is in. Retrying sends this take again, with no second payment.'}
             </p>
           ) : null}
           {signedIn === false ? (

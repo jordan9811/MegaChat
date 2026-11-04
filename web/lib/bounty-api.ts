@@ -73,6 +73,53 @@ export type BountyClientConfig = {
   obsScenePollMs?: number
   /** Smallest plausible overlay canvas side, CSS px. */
   overlayMinCanvasPx?: number
+  /** Real money (BOUNTY_FUNDING=1): a pledge needs the fan's wallet before it counts. */
+  fundingEnabled?: boolean
+  /** What the server's money looks like: ledger-only, or real with the
+   *  spender a fan's wallet approves and the platform wallet that holds pools. */
+  money?: {
+    mode: 'ledger-only' | 'real'
+    /** Real mode and a spender is configured: pledges can be funded right now. */
+    fundingOpen?: boolean
+    spender?: string | null
+    holder?: string
+    token?: string
+  }
+}
+
+/** The funding ask a pledge answers with: the same envelope a campaign's Fund step uses. */
+export type PledgeApprovalAsk = {
+  token: { address: string; symbol: string; decimals: number }
+  /** The bounty spender the wallet approves (only pulls pledges). */
+  spender: string | null
+  /** The platform wallet the pledge is pulled INTO; it holds pools and pays releases and refunds. */
+  holder?: string
+  amountAtomic: string
+  walletRequired?: boolean
+  approveRequired?: boolean
+  allowance?: string
+  holds?: boolean
+  sign?: {
+    domain: { name: string; version: string; chainId: number }
+    types: Record<string, { name: string; type: string }[]>
+    primaryType: string
+    message: Record<string, string>
+    maxSeconds?: number
+  }
+}
+export type PledgeFundProof = {
+  approveTx: string
+  signature: string
+  typedData: { domain: PledgeApprovalAsk['sign'] extends infer S ? (S extends { domain: infer D } ? D : never) : never; types: Record<string, { name: string; type: string }[]>; primaryType: string; message: Record<string, string> }
+}
+/** Where a real-money pledge stands, as the server tells its owner. */
+export type PledgeFunding = {
+  state: 'unfunded' | 'pulling' | 'pending' | 'funded' | 'needs_person' | 'abandoned' | 'short' | 'unproven' | 'failed' | 'ledger-only' | string
+  txHash?: string | null
+  wallet?: string | null
+  at?: string | null
+  needsPerson?: string | null
+  failures?: number
 }
 
 export type PlatformProfile = {
@@ -135,7 +182,20 @@ export function getClaim(id: string) {
     platformProfile: PlatformProfile | null
     disputeWindowEndsAt: number | null
     ledger: { id: string; type: string; amount: string; bucket: string; at: number; reason: string | null }[]
+    /** Real money: the payout wallet releases go to, and whether one is still needed. Null in ledger-only mode. */
+    payout: {
+      account: string | null
+      wallet: string | null
+      needsWallet: boolean
+      releases: { rowId: string; bucket: string; amount: string; state: 'owed' | 'pending' | 'paid' | 'failed' | 'voided' }[]
+      mine: boolean
+    } | null
   }>(`/api/bounty/claim/${encodeURIComponent(id)}`)
+}
+
+/** Set the signed-in account's payout wallet (shared with campaign rewards); owed bounty releases pay to it at once. */
+export function setPayoutWallet(address: string) {
+  return req<{ ok: true; payoutWallet: string | null }>('/api/account/payout-wallet', { method: 'POST', body: { address } })
 }
 
 export function startAirSession(claimId: string, platform: string, roomId?: string) {
@@ -251,8 +311,12 @@ export function createPledge(args: {
 }) {
   return req<{
     ok: boolean
-    pledge: { id: string; targets: string[]; expiresAt: number }
-    contribution: { id: string }
+    pledge: { id: string; targets: string[]; expiresAt: number; status?: string }
+    contribution: { id: string; status?: string }
+    /** Real money: the pledge is UNFUNDED until the wallet funds it (the
+     *  upload is refused until then); `funding.needsApproval` is the ask. */
+    requiresFunding?: boolean
+    funding?: { needsApproval: PledgeApprovalAsk; fundUrl: string } | null
     uploadUrl: string
     uploadDeadline: number
     clipLimits: { minSeconds: number; maxBytes: number }
@@ -260,6 +324,27 @@ export function createPledge(args: {
     /** true when this answered a repeat of an earlier attempt. */
     deduped?: boolean
   }>('/api/bounty/pledge', { method: 'POST', body: args })
+}
+
+export type FundPledgeResult =
+  | { ok: true; pledge: { id: string; status: string }; funding: PledgeFunding; contribution?: { id: string; status: string } | null; already?: boolean }
+  | { ok?: false; needsApproval: PledgeApprovalAsk }
+
+/** Fund a real-money pledge: pulls the amount once the wallet approved and signed, or asks for the approval. */
+export function fundPledge(pledgeId: string, body: { wallet: string; approveTx?: string | null; signature?: string; typedData?: PledgeFundProof['typedData'] }) {
+  return req<FundPledgeResult>(`/api/bounty/pledge/${encodeURIComponent(pledgeId)}/fund`, { method: 'POST', body })
+}
+
+/** The signed-in fan's own pledge: status, funding state, whether a clip can be uploaded yet. */
+export function getPledge(pledgeId: string) {
+  return req<{
+    pledge: { id: string; status: string; amount: string; targets: string[]; expiresAt: number }
+    contribution: { id: string; status: string } | null
+    funding: PledgeFunding
+    needsApproval: PledgeApprovalAsk | null
+    uploadUrl: string
+    canUpload: boolean
+  }>(`/api/bounty/pledge/${encodeURIComponent(pledgeId)}`)
 }
 
 export function postFrames(uploadUrl: string, frames: string[]) {
@@ -289,6 +374,10 @@ export type MyContribution = {
   expiresAt: number
   state: string
   next: string
+  /** Real money: where the funding stands (null in ledger-only mode). */
+  funding?: PledgeFunding | null
+  /** Real money: where a refund stands on the settlement door, or null. */
+  refund?: 'pending' | 'paid' | 'failed' | 'voided' | null
   clip: {
     clipId: string
     durationS: number

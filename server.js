@@ -54,6 +54,9 @@ import * as seatEscrow from './seat-escrow.js';
 import { listAirings as listAiringsForSeats } from './airings-store.js';
 import { lazyConfig, lazyClientConfig } from './livekit-lazy.config.js';
 import { attachBountyRoutes, makeClipHooks } from './bounty-routes.js';
+import { createBountyMoney } from './bounty-money.js';
+import { setBountySettlement } from './bounty-settlement.js';
+import { attachMoneyRoutes } from './money-routes.js';
 import { verifyRoomAccess, readIdentityFromRequest, roomOwnerKey } from './auth.js';
 import { isWhitelisted, recordJoin as recordWhitelistJoin } from './guest-whitelist.js';
 import { attachWhitelistRoutes } from './whitelist-routes.js';
@@ -307,12 +310,44 @@ if (/^0x[0-9a-fA-F]{64}$/.test(process.env.CAMPAIGN_SPENDER_KEY || '')) {
     console.warn('[campaigns] CAMPAIGN_SPENDER_KEY unusable — campaign funding disabled:', err.message);
   }
 }
+// The bounty spender (2026-11-04): a DEDICATED key that only pulls funded
+// pledges (bounty-money.js pullSigner 'bountyPull'). Fans approve THIS
+// address — never the seat spender, never the campaign spender — so an
+// allowance granted for a pledge can be spent by nothing else, and the
+// reverse. It pulls into SELLER_WALLET_ADDRESS (the platform wallet), which
+// holds the pool and pays releases and refunds with PLATFORM_SETTLEMENT_KEY.
+// It must hold a little USDC for its own fees. Unset, or the same address as
+// any other signer: pledges refuse to fund, in plain words. Built on viem's
+// Tempo chain (E49). Nothing here is live until BOUNTY_FUNDING=1.
+let bountySpenderClient = null;
+let BOUNTY_SPENDER_ADDRESS = null;
+if (/^0x[0-9a-fA-F]{64}$/.test(process.env.BOUNTY_SPENDER_KEY || '')) {
+  try {
+    const acct = privateKeyToAccount(process.env.BOUNTY_SPENDER_KEY);
+    const keyAddress = (name) => signerAddress(process.env[name]);
+    const clash = spenderCollisions(acct.address, {
+      SELLER_WALLET_ADDRESS, SELLER_PRIVATE_KEY: keyAddress('SELLER_PRIVATE_KEY'),
+      PLATFORM_SETTLEMENT_KEY: keyAddress('PLATFORM_SETTLEMENT_KEY'), REWARD_POOL_PRIVATE_KEY: keyAddress('REWARD_POOL_PRIVATE_KEY'),
+      ESCROW_OPERATOR_KEY: keyAddress('ESCROW_OPERATOR_KEY'), ESCROW_ATTEST_KEY: keyAddress('ESCROW_ATTEST_KEY'),
+      CAMPAIGN_SPENDER_KEY: keyAddress('CAMPAIGN_SPENDER_KEY'),
+    });
+    if (clash.length) {
+      console.error(`[bounty-money] BOUNTY_SPENDER_KEY resolves to the same address as ${clash.join(', ')} — pledge funding DISABLED: bounties need their own spender`);
+    } else {
+      bountySpenderClient = createWalletClient({ account: acct, chain: tempoViemChain, transport: http(RPC_URL) });
+      BOUNTY_SPENDER_ADDRESS = acct.address;
+    }
+  } catch (err) {
+    console.warn('[bounty-money] BOUNTY_SPENDER_KEY unusable — pledge funding disabled:', err.message);
+  }
+}
 const settlement = createSettlement({
   chain: viemChainAdapter({
     pull: sellerWalletClient,
     platform: platformWalletClient,
     rewardPool: rewardPoolWalletClient,
     campaignPull: campaignSpenderClient,
+    bountyPull: bountySpenderClient,
     publicClient: createPublicClient({ chain: tempoViemChain, transport: http(RPC_URL) }),
   }),
   platformAddress: SELLER_WALLET_ADDRESS,
@@ -335,23 +370,15 @@ seatEscrow.setSettlement(settlement);
 // CAMPAIGN_FUNDING=1. Reads go through the same Tempo chain object every
 // signer here uses.
 const campaignPublicClient = createPublicClient({ chain: tempoViemChain, transport: http(RPC_URL) });
-const campaignEngine = createCampaignEngine({
-  settlement,
-  // Budgets are pulled BY the campaign spender INTO the platform wallet, which
-  // holds them and pays every reward and refund (PLATFORM_SETTLEMENT_KEY must
-  // resolve to this same address, see the door above).
-  platformAddress: SELLER_WALLET_ADDRESS,
-  spender: CAMPAIGN_SPENDER_ADDRESS,
-  pullSigner: 'campaignPull',
-  chainId: CHAIN_ID,
-  usdc: { address: USDC_ADDRESS, decimals: 6, symbol: 'USDC' },
-  readAllowance: (token, owner) => (CAMPAIGN_SPENDER_ADDRESS ? readTokenAllowance(token, owner, CAMPAIGN_SPENDER_ADDRESS, RPC_URL, CHAIN_ID) : 0n),
+// ─── Chain reads shared by the campaign and bounty money engines ─────────────
+// Receipts, approvals, nonces and Transfer-log searches, all through the one
+// Tempo public client. Reads only; the signing lives in settlement.js.
+const chainReads = {
   // The funding wallet's EIP-712 consent (N10). The Tempo public client
   // answers for an EOA locally (mode 'eoa' tries ECDSA first) and for a
   // contract wallet through ERC-1271 / ERC-6492, and for Tempo's P256 /
   // WebAuthn signature envelopes.
   verifyFundSignature: (args) => campaignPublicClient.verifyTypedData({ ...args, mode: 'eoa' }),
-  readTokenMeta: (address) => readTokenMetadata(address, RPC_URL, CHAIN_ID),
   // Cold review B1: viem's replacement check OFF (a receipt for another hash
   // that took this one's nonce is no answer), the receipt's hash must be the
   // one asked about, and its logs go to the engine, which credits only the
@@ -409,6 +436,21 @@ const campaignEngine = createCampaignEngine({
     }
     return { found: false };
   },
+};
+const campaignEngine = createCampaignEngine({
+  settlement,
+  // Budgets are pulled BY the campaign spender INTO the platform wallet, which
+  // holds them and pays every reward and refund (PLATFORM_SETTLEMENT_KEY must
+  // resolve to this same address, see the door above).
+  platformAddress: SELLER_WALLET_ADDRESS,
+  spender: CAMPAIGN_SPENDER_ADDRESS,
+  pullSigner: 'campaignPull',
+  chainId: CHAIN_ID,
+  // The chain reads both money engines share (chainReads above).
+  ...chainReads,
+  usdc: { address: USDC_ADDRESS, decimals: 6, symbol: 'USDC' },
+  readAllowance: (token, owner) => (CAMPAIGN_SPENDER_ADDRESS ? readTokenAllowance(token, owner, CAMPAIGN_SPENDER_ADDRESS, RPC_URL, CHAIN_ID) : 0n),
+  readTokenMeta: (address) => readTokenMetadata(address, RPC_URL, CHAIN_ID),
   resolveRoom: (handle) => { const cfg = getRoomByHandle(handle); return cfg ? { id: cfg.id, ownerKey: roomOwnerOf(cfg.id), transport: cfg.transport || null } : null; },
   // A Call in counts only from a SIGNED LiveKit webhook (track_published for
   // the seat's identity, see /api/livekit/webhook). No LiveKit, no webhooks:
@@ -452,6 +494,28 @@ const escrowChain = createEscrowChain({
   // a 0 ms review window.
   reviewMs: envNum('SEAT_ESCROW_REVIEW_MS', 24 * 60 * 60_000),
 });
+
+// ─── Creator bounty: real money (bounty-money.js, 2026-11-04) ────────────────
+// Off unless BOUNTY_FUNDING=1. Then a pledge is pulled by the bounty spender
+// into the platform wallet through the door, and every release and refund is
+// a settlement intent paid with PLATFORM_SETTLEMENT_KEY. Installed on the
+// bounty settlement facade so bounty-escrow.js needs no branching.
+const bountyMoney = createBountyMoney({
+  door: settlement,
+  token: { address: USDC_ADDRESS, decimals: 6, symbol: 'USDC' },
+  platformAddress: SELLER_WALLET_ADDRESS,
+  spender: BOUNTY_SPENDER_ADDRESS,
+  pullSigner: 'bountyPull',
+  chainId: CHAIN_ID,
+  readAllowance: (token, owner) => (BOUNTY_SPENDER_ADDRESS ? readTokenAllowance(token, owner, BOUNTY_SPENDER_ADDRESS, RPC_URL, CHAIN_ID) : 0n),
+  verifyPledgeSignature: chainReads.verifyFundSignature,
+  confirmTx: chainReads.confirmTx,
+  readApproval: chainReads.readApproval,
+  findFundingTransfer: chainReads.findFundingTransfer,
+  readSpenderNonce: chainReads.readSpenderNonce,
+  txKnown: chainReads.txKnown,
+});
+if (process.env.BOUNTY_FUNDING === '1') setBountySettlement(bountyMoney);
 if (escrowChain.enabled) {
   escrowChain.preflight({ force: true }).then((s) => console.log(s.ready
     ? `[escrow] ready — ${escrowChain.address} (operator ${escrowChain.operatorAddress}, attester ${escrowChain.attesterAddress}, tail ${escrowChain.tailMs} ms, review ${escrowChain.reviewMs} ms)`
@@ -3790,7 +3854,9 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 // Creator bounty (Run A). Mounts NOTHING when BOUNTY_CLAIM is off, so an
 // unflagged deploy is byte-identical to before. Escrow is a ledger only —
 // settlement is a record-intent stub, no funds move. See HANDOFF-BOUNTY.md.
-attachBountyRoutes(app);
+attachBountyRoutes(app, { money: process.env.BOUNTY_FUNDING === '1' ? bountyMoney : null });
+// Admin: the door's intents (list, void) — the audit before PLATFORM_SETTLEMENT_KEY lands (launch-readiness row 63).
+attachMoneyRoutes(app, { settlement, seatEscrow });
 
 attachDashboardRoutes(app, {
   baseUrl: BASE_URL,
@@ -3819,7 +3885,10 @@ attachVisibilityRoutes(app);
 // Targeted reward campaigns — the offer page, the check, a creator's own
 // campaigns and reference sets, and the admin moderation controls
 // (campaign-routes.js; every route listed with its tier).
-attachCampaignRoutes(app, campaignEngine);
+attachCampaignRoutes(app, campaignEngine, {
+  // A payout wallet just set also pays this account's OWED bounty releases.
+  onPayoutWallet: (accountId) => { if (process.env.BOUNTY_FUNDING === '1') bountyMoney.payAccount(accountId); },
+});
 
 await migrateLegacyRoomPasswords();
 

@@ -690,9 +690,13 @@ let ambiguousSessionId = null;
   const offenders = files.filter((f) => banned.test(readFileSync(f, 'utf8')));
   ok('H. NO real transfer/settlement call in any bounty module', offenders.length === 0,
     offenders.join(',') || `${files.length} files scanned`);
+  // 2026-11-04: bounty-settlement.js is a facade — the record-only stub in
+  // ledger-only mode, the door adapter (bounty-money.js) when BOUNTY_FUNDING=1.
+  // Neither holds a key; bounty money reaches the chain only through
+  // settlement.js (Gate H LEGACY says the same from the money side).
   const settlementSrc = readFileSync('bounty-settlement.js', 'utf8');
-  ok('H. settlement module is stub-only and says so',
-    /NO FUNDS MOVE/i.test(settlementSrc) && /TODO\(run-b\)/.test(settlementSrc));
+  ok('H. the bounty settlement module holds no signer: it delegates (stub or door adapter)',
+    /setBountySettlement/.test(settlementSrc) && /StubSettlement/.test(settlementSrc) && !/from 'viem/.test(settlementSrc));
 }
 
 // ── J. ledger integrity: torn final recovers, interior corruption refuses ──

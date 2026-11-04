@@ -17,6 +17,11 @@ const REVIEWING = 'border-hl-strap-hi/50 bg-hl-strap/10 text-foreground'
 const GOOD = 'border-f-rewards-line bg-f-rewards-bg text-f-rewards-ink'
 
 const STATE_LABEL: Record<string, { label: string; cls: string }> = {
+  // Real money: before the wallet funds the pledge, nothing is charged.
+  unfunded: { label: 'Not funded', cls: WAITING },
+  funding_pending: { label: 'Funding — confirming', cls: REVIEWING },
+  funding_needs_person: { label: 'Funding — being checked', cls: REVIEWING },
+  abandoned: { label: 'Not funded — closed', cls: 'border-border text-muted-foreground' },
   pending_upload: { label: 'Waiting for upload', cls: WAITING },
   pending_moderation: { label: 'In review', cls: REVIEWING },
   awaiting_claim: { label: 'Awaiting claim', cls: WAITING },
@@ -89,7 +94,10 @@ export function MyPledges({ initialMe: _ignored }: { initialMe?: string }) {
                     <span className="text-f-bounty-ink">{r.amount}</span> → {r.targets.map((t) => t.split(':')[1]).join(' / ')}
                     {r.targets.length > 1 && r.winner ? ` (won by ${r.winner.split(':')[1]})` : ''}
                   </span>
-                  <span className="block text-xs text-muted-foreground">{r.next}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {r.next}
+                    {r.refund === 'paid' ? ' Refund sent.' : r.refund === 'pending' ? ' Refund on its way.' : r.refund === 'failed' ? ' The refund transfer failed; a person is on it.' : ''}
+                  </span>
                 </span>
                 {r.pledgeStatus === 'OPEN' ? (
                   <span className="shrink-0 text-[10px] text-muted-foreground">

@@ -40,6 +40,7 @@ import fs from 'node:fs';
 import { buildPoster, buildCard, posterPathFor } from './room-poster.js';
 import { listAirings, attachRecording } from './airings-store.js';
 import { saveAiringPoster } from './airing-posters.js';
+import { getAccount as getAccountForPayout } from './accounts.js';
 import {
   resolveRoomConfig, updateRoom, normalizeRoomId,
   createRoom, setRoomOwner, roomOwnerOf, roomsOwnedBy,
@@ -495,10 +496,19 @@ async function startSessionCapture(session, { log = console } = {}) {
   }
 }
 
-export function attachBountyRoutes(app, { log = console, identityVerifier } = {}) {
+export function attachBountyRoutes(app, { log = console, identityVerifier, money = null } = {}) {
   if (!bountyConfig.enabled) {
     log.log('[bounty] BOUNTY_CLAIM off — no routes mounted, no surfaces rendered');
     return { mounted: false };
+  }
+  // REAL MONEY (BOUNTY_FUNDING=1): `money` is bounty-money.js, installed on
+  // the settlement facade by server.js. With it, a pledge is UNFUNDED until
+  // the fan's wallet funds it through the door, and releases and refunds are
+  // door intents. Without it (ledger-only), everything below behaves exactly
+  // as it shipped: ledger rows, the record-only stub, no money.
+  const realMoney = !!money && bountyConfig.fundingEnabled;
+  if (bountyConfig.fundingEnabled && !money) {
+    log.error('[bounty] BOUNTY_FUNDING=1 but no money engine was handed to attachBountyRoutes — pledges will be refused (nothing can fund them)');
   }
   /**
    * EVERY route registers through this, and it looks the path up in
@@ -595,7 +605,12 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     }
   }
 
-  log.warn('[bounty] BOUNTY_CLAIM ON — escrow is a LEDGER ONLY. Settlement is stubbed; no funds move.');
+  if (realMoney) {
+    const s = money.summary();
+    log.warn(`[bounty] BOUNTY_CLAIM ON — REAL MONEY (BOUNTY_FUNDING=1): pledges are pulled by the bounty spender ${s.spender || '(unset: BOUNTY_SPENDER_KEY)'} into ${s.platformAddress}; releases and refunds are settlement intents (payout key ${s.payoutSigner ? 'set' : 'NOT set: they stay PENDING'}). pull signer ${s.pullSigner ? 'ready' : 'MISSING — no pledge can be funded'}.${s.ledgerOnlyHeld ? ` ${s.ledgerOnlyHeld} ledger-only contribution(s) on the board have no money behind them and will never pay — run seed-clear.` : ''}`);
+  } else {
+    log.warn(`[bounty] BOUNTY_CLAIM ON — escrow is a LEDGER ONLY. Settlement is stubbed; no funds move.${bountyConfig.fundingEnabled ? ' (BOUNTY_FUNDING=1 is set but no money engine was wired)' : ''}`);
+  }
 
   /**
    * DEMO BOARD. Runs once, on the first boot that finds no pools at all, so
@@ -622,6 +637,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     { platform: 'twitch', handle: 'fchwpo' },
   ];
   try {
+    // REAL MONEY: no demo board. A seeded pool is money nobody put in, and on
+    // a board where pledges are real it would be shown beside them as if it
+    // were. The owner clears any earlier seed with /admin/seed-clear.
+    if (bountyConfig.fundingEnabled) throw Object.assign(new Error('real-money mode seeds nothing'), { seedSkipped: true });
     // Per name, not once per store: a name added to this list later still
     // gets its pool on the next boot, and a name that already has one — seeded
     // or pledged by a real fan — is left exactly as it is.
@@ -642,7 +661,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     }
     if (added) log.warn(`[bounty] demo board seeded — ${added} new pool(s) of ${DEMO_TARGETS.length} listed. NOT REAL MONEY; clear before settlement.`);
   } catch (e) {
-    log.warn(`[bounty] demo seed skipped: ${e.message}`);
+    if (!e.seedSkipped) log.warn(`[bounty] demo seed skipped: ${e.message}`);
   }
 
   // Protect reserved handles from being claimed as ordinary room handles.
@@ -666,7 +685,14 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
   };
 
   // ── Public: bounty board ─────────────────────────────────────────────────
-  guarded.get('/api/bounty/config', (_req, res) => res.json(bountyClientConfig()));
+  guarded.get('/api/bounty/config', (_req, res) => {
+    const cfg = bountyClientConfig();
+    if (!realMoney) return res.json({ ...cfg, money: { mode: 'ledger-only' } });
+    const s = money.summary();
+    // What a fan's wallet needs to fund a pledge, and nothing a fan should not
+    // see: no key names, no counts of other people's intents.
+    res.json({ ...cfg, money: { mode: 'real', fundingOpen: s.fundingEnabled && s.pullSigner, spender: s.spender, holder: s.platformAddress, token: s.token } });
+  });
 
   guarded.get('/api/bounty/pools', (_req, res) => {
     res.json({ pools: store.listPools(), currency: bountyConfig.currency });
@@ -891,6 +917,12 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         ok: true,
         pledge: out.pledge,
         contribution: out.contribution,
+        // REAL MONEY: the pledge is UNFUNDED until the fan's wallet approves
+        // the bounty spender and signs for it; the clip upload below is
+        // refused until then (the contribution must be HELD). The ask has the
+        // same shape a campaign's Fund step answers with.
+        requiresFunding: !!out.requiresFunding,
+        funding: out.requiresFunding ? { needsApproval: money.needsApproval(out.pledge.id, { accountId: account }, { approveRequired: true }), fundUrl: `/api/bounty/pledge/${encodeURIComponent(out.pledge.id)}/fund` } : null,
         uploadUrl: `/api/bounty/clip/${encodeURIComponent(out.contribution.id)}`,
         uploadDeadline: Date.now() + bountyConfig.clipUploadGraceMs,
         clipLimits: { minSeconds: bountyConfig.minClipSeconds, maxBytes: bountyConfig.clipMaxBytes },
@@ -909,6 +941,71 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       }
       res.json(body);
     } catch (e) { fail(res, e); }
+  });
+
+  // ── Funding a pledge (real money only) ──────────────────────────────────
+  //
+  // Body {wallet, approveTx?, signature?, typedData?}. Answers {ok, pledge}
+  // once the pull's receipt shows the amount arrive, or {needsApproval} when
+  // the wallet has not approved the bounty spender for exactly the pledge
+  // amount, has not signed the Pledge message, or named no wallet — the same
+  // envelope POST /api/campaigns/:id/fund uses, so the web's approve step is
+  // shared. The money engine refuses before asking for anything it would
+  // then refuse to use (funding off, no spender).
+  const moneyErr = (res, e) => res.status(e.status || 500).json({ error: e.message, reason: e.code || null, ...(e.allowance ? { allowance: e.allowance } : {}) });
+  guarded.post('/api/bounty/pledge/:pledgeId/fund', async (req, res) => {
+    if (!realMoney) return res.status(503).json({ error: 'Paid pledges aren’t open on this server yet. Nothing was charged.', reason: 'funding_off' });
+    const who = { accountId: accountKey(req), isAdmin: adminKeyMatches(req) };
+    try {
+      const id = String(req.params.pledgeId);
+      const terms = money.fundTerms(id, who);
+      if (!terms.fundingEnabled) return res.status(503).json({ error: 'Paid pledges aren’t open on this server yet. Nothing was charged.', reason: 'funding_off' });
+      if (!terms.pullSigner) return res.status(503).json({ error: 'This server cannot take a pledge right now. Nothing was charged.', reason: 'no_pull_signer' });
+      if (terms.status !== 'UNFUNDED') return res.json({ ok: true, pledge: store.getPledge(id), funding: money.fundingView(store.getPledge(id)), already: true });
+      const b = req.body || {};
+      if (!/^0x[0-9a-fA-F]{40}$/.test(String(b.wallet || ''))) return res.json({ needsApproval: money.needsApproval(id, who, { walletRequired: true }) });
+      if (!/^0x[0-9a-fA-F]{64}$/.test(String(b.approveTx || ''))) return res.json({ needsApproval: money.needsApproval(id, who, { approveRequired: true }) });
+      try {
+        const pledge = await money.fund(id, { wallet: b.wallet, approveTx: b.approveTx, signature: b.signature || null, typedData: b.typedData || null }, who);
+        res.json({ ok: true, pledge, funding: money.fundingView(pledge), contribution: store.getContribution(pledge.contributionId) });
+      } catch (e) {
+        if (e.code === 'insufficient_allowance') return res.json({ needsApproval: money.needsApproval(id, who, { allowance: e.allowance || '0' }) });
+        moneyErr(res, e);
+      }
+    } catch (e) { moneyErr(res, e); }
+  });
+
+  /** The fan's own pledge: its status, its funding state, and what to do next. */
+  guarded.get('/api/bounty/pledge/:pledgeId', (req, res) => {
+    const p = store.getPledge(String(req.params.pledgeId));
+    if (!p) return res.status(404).json({ error: 'No such pledge' });
+    const who = { accountId: accountKey(req), isAdmin: adminKeyMatches(req) };
+    if (!who.isAdmin && p.contributor !== who.accountId) return res.status(403).json({ error: 'This is not your pledge', reason: 'wrong_account' });
+    const c = store.getContribution(p.contributionId);
+    res.json({
+      pledge: p, contribution: c,
+      funding: realMoney ? money.fundingView(p) : { state: 'ledger-only' },
+      needsApproval: realMoney && p.status === 'UNFUNDED' && !(p.funding && p.funding.state !== 'failed') ? money.needsApproval(p.id, who, { approveRequired: true }) : null,
+      uploadUrl: `/api/bounty/clip/${encodeURIComponent(p.contributionId)}`,
+      canUpload: c?.status === 'HELD',
+    });
+  });
+
+  /** Admin: resolve one pledge stuck in funding by the sweep's own rule, now (chain facts only). */
+  guarded.post('/api/bounty/admin/pledge/:pledgeId/resolve-funding', async (req, res) => {
+    if (!realMoney) return res.status(409).json({ error: 'ledger-only mode: nothing to resolve', reason: 'funding_off' });
+    try { res.json(await money.resolveStuckFunding(String(req.params.pledgeId))); } catch (e) { moneyErr(res, e); }
+  });
+
+  /** Admin / gates: run the real-money sweep now — reconcile, abandon, pay what is owed. */
+  guarded.post('/api/bounty/admin/sync-funding', async (_req, res) => {
+    if (!realMoney) return res.status(409).json({ error: 'ledger-only mode: nothing to sync', reason: 'funding_off' });
+    try {
+      const sync = await money.sync();
+      const abandoned = money.abandonSweep();
+      const paid = money.payOwed();
+      res.json({ ok: true, sync, abandoned, paid, pending: money.pending().length });
+    } catch (e) { moneyErr(res, e); }
   });
 
   /**
@@ -1038,7 +1135,19 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       const reserved = c ? store.getReservedHandleByKey(c.handleKey) : null;
       let state = 'pending_upload';
       let next = 'Upload your recording — the pledge refunds if none arrives.';
-      if (c?.status === 'REFUNDED') {
+      const fundingState = realMoney ? money.fundingView(p) : null;
+      if (p.status === 'ABANDONED' || c?.status === 'ABANDONED') {
+        state = 'abandoned';
+        next = 'This pledge was never funded, so nothing was charged. Pledge again whenever you like.';
+      } else if (p.status === 'UNFUNDED' || c?.status === 'UNFUNDED') {
+        // Real money: nothing has been charged yet. The fan's wallet still has
+        // to approve and sign, or the chain is still answering.
+        state = fundingState?.state === 'needs_person' ? 'funding_needs_person'
+          : fundingState && fundingState.state !== 'unfunded' ? 'funding_pending' : 'unfunded';
+        next = state === 'unfunded' ? 'Finish funding from your wallet — nothing is charged until the pledge is funded.'
+          : state === 'funding_pending' ? 'Your wallet sent the pledge; waiting for the chain to confirm it.'
+            : 'The funding transfer needs a person to look at it. Nothing more is charged.';
+      } else if (c?.status === 'REFUNDED') {
         const reasonRow = store.listLedger({ handleKey: c.handleKey })
           .filter((r) => r.type === 'REFUND' && r.meta?.contributionId === c.id).pop();
         const why = reasonRow?.meta?.refundReason || 'refunded';
@@ -1066,9 +1175,19 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
           next = `Waiting for ${reserved?.handle || 'the streamer'} to claim. Refunds automatically if the pledge expires first.`;
         } else if (clip.approval?.state === 'APPROVED') {
           state = clip.playCount > 0 ? 'played' : 'approved';
-          next = clip.playCount > 0
-            ? 'Played on stream. Payout accounting runs against the pool (settlement not yet live).'
-            : 'Approved — waits for the streamer to play it on air.';
+          if (state === 'played' && realMoney) {
+            // Real money: the pool's release for this clip — the RELEASE rows
+            // whose allocations drew on this contribution — and the door's
+            // word on whether the streamer has been paid.
+            const paidRows = store.listLedger({ handleKey: c.handleKey, type: 'RELEASE' })
+              .filter((r) => r.bucket === 'contributor' && (r.meta?.allocations || []).some((a) => a.contributionId === c.id));
+            if (paidRows.length && paidRows.every((r) => money.payoutState(r.id) === 'paid')) state = 'paid';
+          }
+          next = state === 'paid'
+            ? 'Played on stream and the streamer has been paid from the pool.'
+            : clip.playCount > 0
+              ? (realMoney ? 'Played on stream. The streamer is paid from the pool once the airtime verifies.' : 'Played on stream. Payout accounting runs against the pool (settlement not yet live).')
+              : 'Approved — waits for the streamer to play it on air.';
         } else {
           state = 'claimed_pending_review';
           next = 'The streamer reviews every clip before it can air.';
@@ -1078,6 +1197,9 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
         pledgeId: p.id, contributionId: c?.id || null, amount: p.amount,
         targets: p.targets, pledgeStatus: p.status, winner: p.winner,
         expiresAt: p.expiresAt, state, next,
+        funding: fundingState,
+        // Real money: where a refund stands on the door ('pending' | 'paid' | 'failed' | 'voided'), or null.
+        refund: realMoney && c?.status === 'REFUNDED' ? money.refundState(c.id) : null,
         clip: clip ? {
           clipId: clip.clipId, durationS: clip.durationS,
           moderation: clip.moderation, approval: clip.approval, playCount: clip.playCount,
@@ -1086,9 +1208,11 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
     });
     res.json({
       contributions: mine.sort((a, b) => (b.expiresAt || 0) - (a.expiresAt || 0)),
-      states: ['pending_upload', 'pending_moderation', 'awaiting_claim', 'claimed_pending_review',
+      states: ['unfunded', 'funding_pending', 'funding_needs_person', 'abandoned', 'pending_upload', 'pending_moderation', 'awaiting_claim', 'claimed_pending_review',
         'approved', 'played', 'paid', 'expired_refunded', 'declined_refunded', 'rejected_policy', 'refunded'],
-      note: '`paid` becomes reachable when real settlement lands; today releases are ledger entries only.',
+      note: realMoney
+        ? 'Real money: a pledge is charged only once it is funded; `paid` means the streamer was paid from the pool through the settlement door.'
+        : '`paid` becomes reachable when real settlement is on (BOUNTY_FUNDING=1); today releases are ledger entries only.',
     });
   });
 
@@ -1266,6 +1390,9 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
    * goes live.
    */
   guarded.post('/api/bounty/admin/seed-pledge', (req, res) => {
+    // A seeded pledge is money nobody put in. Fine on a ledger-only board,
+    // wrong on a board where the other pledges are real.
+    if (realMoney) return res.status(409).json({ error: 'Real-money mode: the board is not seeded. Pledge with a wallet instead.', reason: 'real_money' });
     try {
       const { targets, amount, expiresInMs, label } = req.body || {};
       if (!Array.isArray(targets) || !targets.length) {
@@ -1357,6 +1484,15 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       const swept = escrow.sweepExpiredPledges({ settlement });
       if (swept.length) log.log(`[bounty] pledge sweeper refunded ${swept.length} expired pledge(s)`);
     } catch (e) { log.warn(`[bounty] pledge sweep failed: ${e.message}`); }
+    if (realMoney) {
+      // Real money: ask the chain about pulls nobody is driving, abandon
+      // pledges never funded, and record the payout intents for owners who
+      // have set a wallet since their airtime verified.
+      money.sync().then((s) => { if (s.funded.length || s.failed.length) log.log(`[bounty-money] sync: ${s.funded.length} funded, ${s.failed.length} back to unfunded, ${s.pending} pending, ${s.person} for a person`); })
+        .catch((e) => log.warn(`[bounty-money] sync failed: ${e.message}`));
+      try { const a = money.abandonSweep(); if (a.length) log.log(`[bounty-money] abandoned ${a.length} never-funded pledge(s)`); } catch (e) { log.warn(`[bounty-money] abandon sweep failed: ${e.message}`); }
+      try { const n = money.payOwed(); if (n) log.log(`[bounty-money] recorded ${n} owed payout intent(s)`); } catch (e) { log.warn(`[bounty-money] payOwed failed: ${e.message}`); }
+    }
     try { sweepBank(); } catch (e) { log.warn(`[bank] sweep failed: ${e.message}`); }
     // The capture retention the posters and the docs promise (14 days by
     // default), which nothing ran: purgeExpiredCaptures had no caller, so
@@ -1418,7 +1554,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
           let claim = existing;
           const from = store.getReservedHandleByKey(key).claimedBy || null;
           if (typeof claimant === 'string' && claimant.trim() && claimant !== from) {
-            store.updateReservedHandle(key, { claimedBy: claimant });
+            // The ACCOUNT behind the verified owner is who a release pays
+            // (bounty-money.js resolves its payout wallet); claimedBy stays
+            // the name they gave.
+            store.updateReservedHandle(key, { claimedBy: claimant, claimedByAccount: accountKey(req) || store.getReservedHandleByKey(key).claimedByAccount || null });
             claim = store.updateClaim(existing.id, { claimant, verificationMethod: idv.method });
             store.appendLedger({
               handleKey: key, claimId: existing.id, type: 'IDENTITY_CHECK',
@@ -1473,7 +1612,7 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       if (idv.approved) {
         escrow.transition({ handleKey: key, to: 'CLAIM_VERIFIED', actor: 'identity', reason: idv.method, claimId: claim.id });
         escrow.transition({ handleKey: key, to: 'AWAITING_AIRTIME', actor: 'system', reason: 'awaiting broadcast', claimId: claim.id });
-        store.updateReservedHandle(key, { claimedBy: claimant || null });
+        store.updateReservedHandle(key, { claimedBy: claimant || null, claimedByAccount: accountKey(req) || null });
         // Contested pledges resolve at the moment of a VERIFIED claim, and
         // nowhere else. claimPledges is synchronous by contract, so two
         // claims racing through the awaits above cannot split a pledge —
@@ -1532,6 +1671,16 @@ export function attachBountyRoutes(app, { log = console, identityVerifier } = {}
       reviews: reviews.map((r) => ({ id: r.id, state: r.state, openedAt: r.openedAt, resolvedAt: r.resolvedAt })),
       disputeWindowEndsAt: latest?.meta?.disputeWindowEndsAt || null,
       ledger,
+      // Real money: where the streamer is paid, and what is waiting on a
+      // wallet. The claimant sets one on this page (the account's payout
+      // wallet, shared with campaign rewards).
+      payout: realMoney ? (() => {
+        const rec = store.getReservedHandleByKey(claim.handleKey);
+        const acct = rec?.claimedByAccount || null;
+        const wallet = acct ? (getAccountForPayout(acct)?.payoutWallet || null) : null;
+        const rows = releases.map((r) => ({ rowId: r.id, bucket: r.bucket, amount: r.amount, state: money.payoutState(r.id) }));
+        return { account: acct, wallet, needsWallet: !wallet && rows.some((r) => r.state === 'owed'), releases: rows, mine: acct === accountKey(req) };
+      })() : null,
     });
   });
 

@@ -26,6 +26,22 @@ import { envNum } from './env-num.js';
 export const bountyConfig = {
   /** Master flag. OFF unless BOUNTY_CLAIM=1. */
   enabled: process.env.BOUNTY_CLAIM === '1',
+  /**
+   * REAL MONEY. OFF unless BOUNTY_FUNDING=1 (2026-11-04). Off: ledger-only
+   * mode, exactly what shipped before — a pledge is a ledger row, nothing is
+   * pulled, and bounty-settlement.js records intents that pay nobody. On: a
+   * pledge is UNFUNDED until the fan's wallet approves the dedicated bounty
+   * spender (BOUNTY_SPENDER_KEY) and signs for THIS pledge, and the amount is
+   * pulled into the platform wallet through settlement.js; releases and
+   * refunds are settlement intents paid with PLATFORM_SETTLEMENT_KEY
+   * (bounty-money.js). The demo board does not seed in this mode.
+   */
+  fundingEnabled: process.env.BOUNTY_FUNDING === '1',
+  /**
+   * An UNFUNDED pledge the fan never finished funding is abandoned after
+   * this (its recording, if any, is purged): the fan can simply pledge again.
+   */
+  fundingAbandonMs: envNum('BOUNTY_FUNDING_ABANDON_MS', 60 * 60_000, { min: 60_000 }),
 
   // ── Reservation / expiry ────────────────────────────────────────────────
   /** An unclaimed reserved handle expires after this; contributions refund. */
@@ -629,6 +645,8 @@ export const platformProfile = (p) => PLATFORM_PROFILES[String(p || '').toLowerC
 export function bountyClientConfig() {
   return {
     enabled: bountyConfig.enabled,
+    /** Real money: a pledge needs the fan's wallet (approve + sign) before it counts. */
+    fundingEnabled: bountyConfig.fundingEnabled,
     currency: bountyConfig.currency,
     codeRotateMs: bountyConfig.codeRotateMs,
     badgeMinHeightRatio: bountyConfig.badgeMinHeightRatio,

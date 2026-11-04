@@ -240,3 +240,43 @@ raised are not above and matter in practice:
     funding per reason, one `funding-unconfirmed` per hash
     (`campaign-engine.js` `askPerson`). Many rows for one ref means the
     once-only guard regressed.
+
+## Switching on real-money bounties
+
+Built 2026-11-04 (`OPEN-ISSUES.md` BM). Production stays in ledger-only mode
+until step 5. The order matters; each step is a gate for the next. Env var
+names only.
+
+1. `_gate-bounty-money.mjs` 0 fail and `_gate-money.mjs` 0 fail on the build
+   that deploys.
+2. **Clear the demo board:** `POST /api/bounty/admin/seed-clear` (admin key).
+   In real-money mode the board is not seeded and the seed route refuses;
+   a seeded pool left behind shows beside real pledges and pays nobody.
+3. **Audit the PENDING door intents before `PLATFORM_SETTLEMENT_KEY` lands**
+   (row 63): `GET /api/money/intents?status=PENDING` lists every one with, for
+   a `seat:*:buried:*` refund, the seat's accrued total and the sum every
+   pending refund on that seat asks for (`seats[].exceedsAccrued`). Void the
+   wrong ones with `POST /api/money/intents/<ref>/void {why}`; the first flush
+   pays the rest.
+4. **Mint `BOUNTY_SPENDER_KEY`:** a fresh key used nowhere else (the boot
+   refuses one that matches any other signer, by name), funded with a little
+   USDC for fees. Confirm on chain nothing has approved it yet.
+5. **Set `PLATFORM_SETTLEMENT_KEY`** (the key for `SELLER_WALLET_ADDRESS`; the
+   boot refuses any other), then `BOUNTY_FUNDING=1`. Decide
+   `BOUNTY_PLATFORM_MATCH` first: at its default the platform wallet pays a
+   25% match on every release as its own intent (BM4).
+6. Deploy and read the boot log: `[bounty] BOUNTY_CLAIM ON — REAL MONEY …
+   pull signer ready … payout key set`, no `BOUNTY_SPENDER_KEY resolves to the
+   same address` line, no `ledger-only contribution(s) … will never pay`
+   (`bounty-routes.js`, the real-money boot line).
+7. **One $1 pledge end to end, owner-run:** pledge from a wallet you hold
+   (approve + sign), see the pull land in the platform wallet, upload the clip,
+   claim the handle with the owning account, set the payout wallet on the
+   claim page, air the clip on a real broadcast, verify, and watch the two
+   release intents (contributor and match) go DONE on the next flush.
+   Reconcile on chain: one Transfer fan → platform of exactly the pledge, one
+   platform → payout wallet per release. Then let a second $1 pledge expire
+   and watch its refund go DONE to the funding wallet.
+8. Watch `data/bounty-ledger.jsonl` for `FUNDING` rows with `event:
+   "unknown"` and `/api/money/intents` for FAILED rows for the first week.
+

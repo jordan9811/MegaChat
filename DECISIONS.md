@@ -2293,3 +2293,66 @@ across every page, as the default, with a switch back to the current look.
   not `HEAD`: they were written before the fixes were committed, and once they
   landed in 768fbf1 HEAD was the fix itself, so L-D, CSS8 and CSS15 compared the
   fix with itself. CSS3 now expects five preloaded faces (Outfit joined). Undo: n/a.
+
+## 2026-11-04 — Bounty real money, through the one door (owner's go: "go on 4")
+
+- **The campaign money pattern, not a new one.** A pledge is funded the way a
+  campaign budget is: the fan's wallet approves exactly the amount to a
+  dedicated spender and signs an EIP-712 message naming this pledge, the
+  spender pulls it into the platform wallet through `settlement.js`, and only
+  a success receipt whose own Transfer log shows the amount arrive makes the
+  pledge OPEN. Releases and refunds are door intents keyed by the bounty
+  ledger row, paid by the flush with `PLATFORM_SETTLEMENT_KEY`. Undo: unset
+  `BOUNTY_FUNDING` (ledger-only mode is the old behaviour, untouched; gate C
+  of `_gate-bounty-money.mjs` shows the two modes disagree).
+- **A dedicated bounty spender (`BOUNTY_SPENDER_KEY`, slot `bountyPull`).**
+  One key per path, as the campaign round decided: an allowance a fan grants
+  for a pledge can be spent by nothing else, and a seat or campaign allowance
+  cannot fund a pledge. Costs the owner one more key with a little USDC for
+  fees. Undo: n/a (reusing `campaignPull` would merge two allowance surfaces).
+- **A facade, not a second door.** `bounty-settlement.js` keeps its interface
+  and swaps implementations at boot (stub, or `bounty-money.js`), so no caller
+  in `bounty-escrow.js`, `bounty-bank.js` or the routes changed its call.
+  Neither implementation holds a key; Gate H LEGACY now proves that instead
+  of "the stub is still the stub". Undo: `setBountySettlement(null)`.
+- **UNFUNDED is invisible money.** An unfunded pledge counts in no pool, takes
+  no clip, wins no claim and is never swept as money; it is ABANDONED after
+  `BOUNTY_FUNDING_ABANDON_MS` unless a pull is in flight. The alternative —
+  showing the pledge and hiding it later — is the "money nobody put in"
+  problem the demo seed already had. Undo: n/a.
+- **The receipt decides, rule for rule as campaigns.** Reverted → unfunded and
+  retryable; no receipt → pending, reconciled by the sweep; a Transfer short
+  of the pledge or missing → a person, and the fan cannot retry (a retry could
+  charge twice); a receipt for another hash proves nothing; a pull that threw
+  after it may have been sent stays locked until the chain answers or the
+  Transfer-log search decides. Undo: n/a.
+- **A release with no payout wallet is OWED, not RETAINED.** The door would
+  record "no payee" as RETAINED (paid by not moving), which for a bounty is
+  wrong: the money is the fan's pool, owed to the owner. So the engine
+  records nothing on the door until the wallet exists, then `payOwed`
+  records it, idempotent on the ref. Undo: enqueue with `to: null`.
+- **The contributor bucket is capped from the door, not the pool.** Belt and
+  braces: releases plus refunds already on the door for a handle, plus this
+  one, never exceed what its confirmed fundings sum to, whatever the pool
+  arithmetic says. Ledger-only and seeded money has no confirmed funding and
+  so caps at zero — it pays nobody even if it sits on the board. Undo: drop
+  the check in `bounty-money.js release()`.
+- **`void` is the only way off PENDING that is not a send.** For intents a bug
+  recorded wrong before the payout key lands (the pre-round buried-seat
+  refunds, launch-readiness row 63); only PENDING, with who and why on the
+  row. Undo: n/a (Gate H VD).
+- **The demo board does not seed in real-money mode, and the admin seed route
+  refuses.** A seeded pool beside real pledges is a fake pool on a real board.
+  `seed-clear` keeps working so the owner can clear an earlier seed. Undo:
+  drop the `fundingEnabled` guard in the seed block.
+- **Four handbook pages were left stale on purpose.** The protected pages
+  (`docs/concepts/bounties.md`, `money-and-metering.md`,
+  `features/bounty-program.md`, `verification/README.md`) carry the owner's
+  uncommitted edits; they still say settlement is a stub and need a pass once
+  those edits land (OPEN-ISSUES BM7).
+
+Gates: `_gate-bounty-money.mjs` 84/0 (engine against the real door with a
+mock chain; the real server, the real adapter and an RPC stand-in over HTTP;
+the flag-off discriminator), `_gate-money.mjs` with the new VD and BP
+sections, `_gate-bounty-auth.mjs` 52/0 with the four new routes in the table.
+

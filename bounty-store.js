@@ -229,9 +229,25 @@ export function updateReservedHandle(key, patch) {
 
 // ── BountyContribution ──────────────────────────────────────────────────────
 
-export function addContribution({ handleKey: key, contributor, amount, letterRef, pledgeId }) {
+/**
+ * Contribution status:
+ *   UNFUNDED   real-money mode (BOUNTY_FUNDING=1): the pledge exists, the fan's
+ *              wallet has not funded it yet. Counts in NO pool figure and can
+ *              take no clip; it becomes HELD when the pull confirms, or
+ *              ABANDONED when the fan walks away (bounty-money.js).
+ *   HELD       money in the pool (ledger-only mode: from the moment of the
+ *              pledge; real mode: once the pull's receipt is seen).
+ *   REFUNDED   gone back to the fan (bounty-escrow.js refund).
+ *   ABANDONED  never funded; nothing to refund.
+ */
+export const CONTRIBUTION_STATUSES = ['UNFUNDED', 'HELD', 'REFUNDED', 'ABANDONED'];
+/** Did money ever come in for this contribution? What the pool folds count. */
+export const moneyCameIn = (c) => !!c && c.status !== 'UNFUNDED' && c.status !== 'ABANDONED';
+
+export function addContribution({ handleKey: key, contributor, amount, letterRef, pledgeId, status = 'HELD' }) {
   const store = loadForWrite();
   if (!store.reservedHandles[key]) throw new Error(`No reserved handle ${key}`);
+  if (!CONTRIBUTION_STATUSES.includes(status)) throw new Error(`bad contribution status ${status}`);
   const rec = {
     id: randomUUID(),
     handleKey: key,
@@ -240,7 +256,7 @@ export function addContribution({ handleKey: key, contributor, amount, letterRef
     letterRef: letterRef || null,
     pledgeId: pledgeId || null,
     createdAt: Date.now(),
-    status: 'HELD',
+    status,
   };
   store.contributions[rec.id] = rec;
   save();
@@ -255,8 +271,18 @@ export function addContribution({ handleKey: key, contributor, amount, letterRef
 // other targets. First claim wins; the rest see it vanish, which is why pool
 // DISPLAY leads with guaranteed money (see escrow.poolView).
 
-export function addPledge({ contributor, amount, targets, contributionId, expiresAt }) {
+/**
+ * Pledge status: UNFUNDED (real-money mode, before the pull confirms) |
+ * OPEN | CLAIMED | EXPIRED | ABANDONED (never funded). Only an OPEN pledge is
+ * claimable, sweepable or shown as money. In real mode the pledge record
+ * also carries `funding` (bounty-money.js: the wallet, the door ref, the
+ * pull's hash and receipt state) and `fundingAttempts` / `fundingFailures`.
+ */
+export const PLEDGE_STATUSES = ['UNFUNDED', 'OPEN', 'CLAIMED', 'EXPIRED', 'ABANDONED'];
+
+export function addPledge({ contributor, amount, targets, contributionId, expiresAt, status = 'OPEN' }) {
   const store = loadForWrite();
+  if (!PLEDGE_STATUSES.includes(status)) throw new Error(`bad pledge status ${status}`);
   const rec = {
     id: randomUUID(),
     contributor,
@@ -264,7 +290,7 @@ export function addPledge({ contributor, amount, targets, contributionId, expire
     targets: [...targets],       // handleKeys, anchor first
     contributionId,              // the ONE escrow row (lives on the anchor)
     expiresAt,
-    status: 'OPEN',              // OPEN | CLAIMED | EXPIRED
+    status,
     winner: null,
     claimedAt: null,
     createdAt: Date.now(),
@@ -675,7 +701,9 @@ export function poolBalances(key, { contributions = listContributions(key), rows
   }
   // A forfeit row is a refunded contribution's withheld share, still in the
   // pool: the money came in once, with the contribution it was withheld from.
-  const moneyIn = contributions.filter((c) => !c.forfeitOfClip).reduce((a, c) => a + toMicros(c.amount), 0);
+  // An UNFUNDED or ABANDONED contribution never came in at all (real-money
+  // mode, before the pull confirms): it is money on nobody's books.
+  const moneyIn = contributions.filter((c) => !c.forfeitOfClip && moneyCameIn(c)).reduce((a, c) => a + toMicros(c.amount), 0);
   const left = new Map();
   for (const c of contributions) {
     if (c.status === 'HELD') left.set(c.id, Math.max(0, toMicros(c.amount) - (releasedBy.get(c.id) || 0)));
@@ -712,7 +740,8 @@ export function getPool(key) {
     platform: reserved?.platform || null,
     handle: reserved?.handle || null,
     status: reserved?.claimStatus || null,
-    contributionCount: contributions.length,
+    // Only money that came in: an unfunded pledge is not a contribution yet.
+    contributionCount: contributions.filter(moneyCameIn).length,
     totalContributed: +held.toFixed(6),
     refunded: +refunded.toFixed(6),
     releasedContributor: +releasedContributor.toFixed(6),

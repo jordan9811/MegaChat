@@ -65,14 +65,20 @@
  *                   signed-ahead pull its txHash is the SIGNED hash, never the
  *                   node's answer (kept as nodeHash when it differs).
  *   CHANNEL_SETTLE  an MPP channel settle, recorded with its txHash
+ *   VOID            a PENDING intent a person withdrew (void: by, why). Terminal:
+ *                   never sent. The only way off PENDING that is not a send —
+ *                   for intents a bug recorded wrong (the pre-round buried-seat
+ *                   refunds, launch-readiness row 63) before the payout key lands.
  *
  * ── What this is not ─────────────────────────────────────────────────────
- * Not the bounty settlement. `bounty-settlement.js` stays the stub, so the
- * legacy Gate H section — "the bounty feature is inert" — keeps meaning what
- * it always meant. Not a client-side door: money a viewer signs in their own
- * wallet (the session-cap approve, the channel open) never passes through
- * here, and Gate H Tier 3 pins those call sites rather than pretending to
- * mediate them.
+ * Not a second door for bounties: since 2026-11-04 bounty money comes through
+ * HERE too (bounty-money.js: a pledge is pulled by the dedicated `bountyPull`
+ * spender, releases and refunds are intents), and `bounty-settlement.js`
+ * holds no signer — it delegates. The legacy Gate H section still proves no
+ * bounty module names a signing call. Not a client-side door: money a viewer
+ * signs in their own wallet (the session-cap approve, the channel open) never
+ * passes through here, and Gate H Tier 3 pins those call sites rather than
+ * pretending to mediate them.
  */
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -88,20 +94,22 @@ const DEFAULT_DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 export const INTENT_KINDS = new Set(['release', 'refund']);
 export const SIGNERS = new Set(['platform', 'rewardPool']);
 /**
- * Who may PULL (transferFrom into the platform wallet): the seat key, and a
- * dedicated campaign spender. Two keys, two spenders, so an allowance granted
- * to one can never be spent by the other path (campaign-engine.js pullSigner).
+ * Who may PULL (transferFrom into the platform wallet): the seat key, a
+ * dedicated campaign spender, and a dedicated bounty spender. One key per
+ * path, so an allowance granted to one can never be spent by another
+ * (campaign-engine.js pullSigner; bounty-money.js pullSigner).
  */
-export const PULL_SIGNERS = new Set(['pull', 'campaignPull']);
+export const PULL_SIGNERS = new Set(['pull', 'campaignPull', 'bountyPull']);
 /**
  * Pull slots whose transferFrom is signed locally and its hash recorded
- * (PULL_SENT) BEFORE the raw transaction is sent. Only the campaign spender
- * for now: a campaign budget is one large pull whose loss would double-charge
- * a creator on retry, and that path is not live until CAMPAIGN_FUNDING=1. The
- * seat tick pull (live, small, one ref per tick, never retried) keeps
- * writeContract until this path has been seen on chain (DECISIONS.md).
+ * (PULL_SENT) BEFORE the raw transaction is sent: the campaign and bounty
+ * spenders. Each of those pulls is one large transfer whose loss would
+ * double-charge a wallet on retry, and neither path is live until its
+ * funding flag is set. The seat tick pull (live, small, one ref per tick,
+ * never retried) keeps writeContract until this path has been seen on chain
+ * (DECISIONS.md).
  */
-export const SIGN_AHEAD_SLOTS = ['campaignPull'];
+export const SIGN_AHEAD_SLOTS = ['campaignPull', 'bountyPull'];
 /**
  * Outbound slots whose transfer is signed locally and recorded SENT (with its
  * hash and nonce) BEFORE the raw transaction is sent (money-3, 2026-10-24).
@@ -122,7 +130,7 @@ export const SIGN_AHEAD_OUT = ['platform', 'rewardPool'];
  */
 export const NONCE_FLOOR_TTL_MS = 120_000;
 /** The env var each slot's key comes from, for logs that must name it. Names only. */
-const SLOT_ENV = { pull: 'SELLER_PRIVATE_KEY', platform: 'PLATFORM_SETTLEMENT_KEY', rewardPool: 'REWARD_POOL_PRIVATE_KEY', campaignPull: 'CAMPAIGN_SPENDER_KEY' };
+const SLOT_ENV = { pull: 'SELLER_PRIVATE_KEY', platform: 'PLATFORM_SETTLEMENT_KEY', rewardPool: 'REWARD_POOL_PRIVATE_KEY', campaignPull: 'CAMPAIGN_SPENDER_KEY', bountyPull: 'BOUNTY_SPENDER_KEY' };
 
 const big = (v) => BigInt(v ?? 0);
 /** Tag an error thrown before any transaction was signed for sending: it provably moved nothing. */
@@ -134,8 +142,8 @@ const errText = (e) => e?.shortMessage || e?.message || String(e);
  * public client for receipts and nonces. Every on-chain write the server
  * makes is one of the methods below.
  */
-export function viemChainAdapter({ pull = null, platform = null, rewardPool = null, campaignPull = null, publicClient = null, receiptTimeoutMs = 60_000, signAheadSlots = SIGN_AHEAD_SLOTS, signAheadOut = SIGN_AHEAD_OUT } = {}) {
-  const wallets = { pull, platform, rewardPool, campaignPull };
+export function viemChainAdapter({ pull = null, platform = null, rewardPool = null, campaignPull = null, bountyPull = null, publicClient = null, receiptTimeoutMs = 60_000, signAheadSlots = SIGN_AHEAD_SLOTS, signAheadOut = SIGN_AHEAD_OUT } = {}) {
+  const wallets = { pull, platform, rewardPool, campaignPull, bountyPull };
   const ahead = new Set([...signAheadSlots, ...signAheadOut]);
 
   /**
@@ -282,6 +290,7 @@ export function createSettlement({ dataDir = DEFAULT_DATA_DIR, chain = null, pla
     if (r.type === 'SENT') { rec.status = 'SENT'; rec.txHash = r.txHash; rec.sentAt = r.at; rec.nonce = r.nonce ?? null; rec.nonceKey = r.nonceKey ?? null; rec.signedAhead = !!r.signedAhead; }
     if (r.type === 'DONE') { rec.status = 'DONE'; rec.txHash = r.txHash; rec.doneAt = r.at; }
     if (r.type === 'FAILED') { rec.status = 'FAILED'; rec.error = r.error; }
+    if (r.type === 'VOID') { rec.status = 'VOIDED'; rec.voidedAt = r.at; rec.voidedBy = r.by || null; rec.voidWhy = r.why || null; }
     if (r.type === 'PULL_SENT') { rec.status = 'PULL_SENT'; rec.txHash = r.txHash; rec.kind = 'pull'; rec.amountAtomic = r.amountAtomic; rec.sentAt = r.at; rec.signer = r.signer; rec.nonce = r.nonce ?? null; rec.nonceKey = r.nonceKey ?? null; }
     // The hash WE signed stays the record's hash: a PULL row's txHash is the
     // signed hash (cold review B5); what the node answered is nodeHash only.
@@ -320,6 +329,7 @@ export function createSettlement({ dataDir = DEFAULT_DATA_DIR, chain = null, pla
         [SLOT_ENV.pull]: chain.address('pull'),
         [SLOT_ENV.platform]: chain.address('platform'),
         [SLOT_ENV.campaignPull]: chain.address('campaignPull'),
+        [SLOT_ENV.bountyPull]: chain.address('bountyPull'),
         ...otherSigners,
       };
       const clash = Object.entries(others).filter(([, a]) => same(a, pool)).map(([n]) => n);
@@ -373,6 +383,25 @@ export function createSettlement({ dataDir = DEFAULT_DATA_DIR, chain = null, pla
     }
     const row = ledger.append({ type: 'INTENT', ref, kind, signer, token: { address: token.address, decimals: token.decimals, symbol: token.symbol || null }, to, amountAtomic: atomic.toString(), meta, at: Date.now() });
     return { row, deduped: false, retained: false, status: 'PENDING' };
+  }
+
+  /**
+   * A person withdraws a PENDING intent: a VOID row, terminal, never sent.
+   * Only PENDING can be voided — a SENT or DONE intent describes money that
+   * left (or may have), and a VOIDED, FAILED or RETAINED one has nothing to
+   * withdraw. `by` and `why` are required: a void with no reason is a hole in
+   * the record exactly where the record matters most.
+   */
+  function voidIntent(ref, { by, why } = {}) {
+    if (!ref) throw new Error('void requires a ref');
+    if (!by || !String(by).trim()) throw new Error('void requires `by` — who withdrew the intent is part of the record');
+    if (!why || !String(why).trim()) throw new Error('void requires `why`');
+    const rec = status(ref);
+    if (!rec) throw Object.assign(new Error(`no intent ${ref}`), { code: 'not_found' });
+    if (rec.status !== 'PENDING') throw Object.assign(new Error(`intent ${ref} is ${rec.status}, not PENDING — only a PENDING intent can be voided`), { code: 'not_pending', status: rec.status });
+    const row = ledger.append({ type: 'VOID', ref, by: String(by).slice(0, 120), why: String(why).slice(0, 500), at: Date.now() });
+    log.warn?.(`[settlement] ${ref}: VOIDED by ${by} — ${why} (${rec.amountAtomic} atomic to ${rec.to} will not be sent)`);
+    return { row, status: 'VOIDED' };
   }
 
   /** StubSettlement-compatible names, so seat-escrow needs no branching. */
@@ -619,7 +648,7 @@ export function createSettlement({ dataDir = DEFAULT_DATA_DIR, chain = null, pla
 
   function summary() {
     const counts = Object.fromEntries(Object.entries(sync().counts).filter(([, n]) => n > 0));
-    return { counts, signers: { pull: hasSigner('pull'), campaignPull: hasSigner('campaignPull'), platform: hasSigner('platform'), rewardPool: hasSigner('rewardPool') }, platformAddress, halted: halted()?.message || null };
+    return { counts, signers: { pull: hasSigner('pull'), campaignPull: hasSigner('campaignPull'), bountyPull: hasSigner('bountyPull'), platform: hasSigner('platform'), rewardPool: hasSigner('rewardPool') }, platformAddress, halted: halted()?.message || null };
   }
 
   // Validate at construction (boot) so a damaged ledger latches, and is
@@ -628,7 +657,10 @@ export function createSettlement({ dataDir = DEFAULT_DATA_DIR, chain = null, pla
 
   return {
     enqueue, release, refund, pull, settleChannel, flush,
+    void: voidIntent,
     status, hasSigner, summary,
+    /** The address a slot signs as (the spender a wallet approves), or null. */
+    signerAddress: (slot) => chain?.address?.(slot) || null,
     pending: () => records(sync().open.PENDING).map(copy),
     all: () => [...sync().byRef.values()].map(copy),
     intentsFor: (prefix) => [...sync().byRef.values()].filter((r) => r.ref.startsWith(prefix)).map(copy),

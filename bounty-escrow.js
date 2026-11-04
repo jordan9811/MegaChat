@@ -1,9 +1,12 @@
 /**
  * CREATOR BOUNTY — escrow state machine.
  *
- * ⚠ NO REAL FUNDS MOVE HERE. This is a state machine over an append-only
- * ledger. The only settlement path is the stub in bounty-settlement.js, which
- * records intent and returns success. Every call site is marked TODO(run-b).
+ * ⚠ NO FUNDS MOVE IN THIS FILE. This is a state machine over an append-only
+ * ledger. Every `settlement?.release` / `settlement?.refund` below reaches
+ * the facade in bounty-settlement.js: the record-only stub in ledger-only
+ * mode, or bounty-money.js in real-money mode (BOUNTY_FUNDING=1), which
+ * records intents on the app's one money door (settlement.js). This module
+ * never names a wallet, a key or a chain.
  *
  * Design contract:
  *  - Transitions are validated against ALLOWED_TRANSITIONS. An illegal
@@ -193,21 +196,98 @@ export function pledge({ targets, contributor, amount, expiresInMs, actor = 'fan
   }
 
   const anchor = clean[0].key;
-  const c = store.addContribution({ handleKey: anchor, contributor, amount });
+  // REAL MONEY (BOUNTY_FUNDING=1): the pledge is UNFUNDED until the fan's
+  // wallet funds it through bounty-money.js, and the CONTRIBUTION ledger row
+  // — money in — is written by markPledgeFunded when the pull's receipt is
+  // seen. Until then it counts in no pool and can take no clip. Ledger-only
+  // mode writes the row now, exactly as before. A seeded (`seed:`) pledge is
+  // ledger-only in either mode: the demo board never has money behind it.
+  const requiresFunding = bountyConfig.fundingEnabled && !String(contributor).startsWith('seed:');
+  const c = store.addContribution({ handleKey: anchor, contributor, amount, status: requiresFunding ? 'UNFUNDED' : 'HELD' });
   const p = store.addPledge({
     contributor, amount, targets: clean.map((t) => t.key),
     contributionId: c.id, expiresAt: Date.now() + ttl,
+    status: requiresFunding ? 'UNFUNDED' : 'OPEN',
   });
   store.updateContribution(c.id, { pledgeId: p.id });
-  store.appendLedger({
-    handleKey: anchor, type: 'CONTRIBUTION', amount, bucket: 'contributor',
+  if (!requiresFunding) {
+    store.appendLedger({
+      handleKey: anchor, type: 'CONTRIBUTION', amount, bucket: 'contributor',
+      actor,
+      reason: clean.length === 1
+        ? 'pledge for unclaimed handle'
+        : `pledge contested across ${clean.length} handles — first claim takes it`,
+      meta: { contributionId: c.id, pledgeId: p.id, targets: clean.map((t) => t.key) },
+    });
+  }
+  return { pledge: p, contribution: c, requiresFunding };
+}
+
+/**
+ * Real money landed for an UNFUNDED pledge: the pull's receipt showed the
+ * amount arrive in the platform wallet (bounty-money.js settleFunding). The
+ * contribution becomes HELD and the CONTRIBUTION row — money in — is written
+ * now, naming the funding. Idempotent: an OPEN pledge is returned as is.
+ */
+export function markPledgeFunded(pledgeId, { funding, actor = 'fan' } = {}) {
+  assertEnabled();
+  const p = store.getPledge(pledgeId);
+  if (!p) throw new Error(`No pledge ${pledgeId}`);
+  if (p.status !== 'UNFUNDED') return { pledge: p, contribution: store.getContribution(p.contributionId), deduped: true };
+  if (!funding || funding.state !== 'confirmed' || !funding.ref) throw new Error('markPledgeFunded needs a confirmed funding record');
+  const c = store.getContribution(p.contributionId);
+  if (!c) throw new Error(`Pledge ${pledgeId} has no contribution`);
+  const { row, deduped } = store.appendLedger({
+    handleKey: c.handleKey, type: 'CONTRIBUTION', amount: c.amount, bucket: 'contributor',
     actor,
-    reason: clean.length === 1
-      ? 'pledge for unclaimed handle'
-      : `pledge contested across ${clean.length} handles — first claim takes it`,
-    meta: { contributionId: c.id, pledgeId: p.id, targets: clean.map((t) => t.key) },
+    reason: p.targets.length === 1
+      ? 'pledge for unclaimed handle — funded'
+      : `pledge contested across ${p.targets.length} handles — first claim takes it — funded`,
+    idempotencyKey: `fund:${p.id}`,
+    meta: { contributionId: c.id, pledgeId: p.id, targets: [...p.targets], funding: { ref: funding.ref, txHash: funding.txHash || null, wallet: funding.wallet || null, atomic: funding.atomic || null } },
   });
-  return { pledge: p, contribution: c };
+  store.updateContribution(c.id, { status: 'HELD' });
+  const pledge = store.updatePledge(p.id, { status: 'OPEN', funding, fundedAt: Date.now() });
+  return { pledge, contribution: store.getContribution(c.id), row, deduped };
+}
+
+/**
+ * An UNFUNDED pledge the fan never funded. Nothing came in, so nothing is
+ * refunded: the records close and the recording, if one was uploaded, goes.
+ * Never while a pull is in flight (bounty-money.js keeps `funding` on the
+ * pledge from the moment it is attempted): money that may yet land is not
+ * abandoned by a timer.
+ */
+export function abandonPledge(pledgeId, { actor = 'system', why = 'never funded' } = {}) {
+  assertEnabled();
+  const p = store.getPledge(pledgeId);
+  if (!p) throw new Error(`No pledge ${pledgeId}`);
+  if (p.status !== 'UNFUNDED') return { pledge: p, deduped: true };
+  if (p.funding && p.funding.state !== 'failed') throw new Error(`pledge ${pledgeId} has a funding attempt in flight (${p.funding.state}) — not abandoned`);
+  const c = store.getContribution(p.contributionId);
+  if (c && c.status === 'UNFUNDED') {
+    store.updateContribution(c.id, { status: 'ABANDONED' });
+    try { clips.purgeForContribution(c.id, 'pledge_abandoned'); } catch { /* sweeper catches */ }
+  }
+  store.appendLedger({
+    handleKey: c?.handleKey || p.targets[0], type: 'PLEDGE_ABANDONED', amount: '0', bucket: 'contributor',
+    actor, reason: why, idempotencyKey: `abandon:${p.id}`,
+    meta: { pledgeId: p.id, contributionId: c?.id || null },
+  });
+  return { pledge: store.updatePledge(p.id, { status: 'ABANDONED', abandonedAt: Date.now() }), deduped: false };
+}
+
+/** Abandon every UNFUNDED pledge older than `olderThanMs` with no pull in flight. */
+export function sweepUnfundedPledges({ now = Date.now(), olderThanMs = bountyConfig.fundingAbandonMs, actor = 'system' } = {}) {
+  assertEnabled();
+  const out = [];
+  for (const p of store.listPledges({ status: 'UNFUNDED' })) {
+    if (now - p.createdAt < olderThanMs) continue;
+    if (p.funding && p.funding.state !== 'failed') continue;
+    abandonPledge(p.id, { actor, why: `not funded within ${Math.round(olderThanMs / 60_000)} min` });
+    out.push({ pledgeId: p.id, amount: p.amount, contributor: p.contributor });
+  }
+  return out;
 }
 
 /**
@@ -433,8 +513,11 @@ export function refundRejectedClip({
 
   store.updateContribution(c.id, { status: 'REFUNDED' });
   try { clips.purgeForContribution(c.id, 'refund:POLICY_VIOLATION'); } catch { /* sweeper catches */ }
-  // TODO(run-b): real settlement. Stub records intent only.
-  settlement?.refund({ to: c.contributor, amount: String(back), ref: c.id });
+  // The settlement behind this call is the facade in bounty-settlement.js:
+  // the record-only stub in ledger-only mode, the door adapter
+  // (bounty-money.js) in real-money mode, which resolves the fan's funding
+  // wallet from the contribution and records a settlement intent.
+  settlement?.refund({ to: c.contributor, amount: String(back), ref: c.id, contributionId: c.id, pledgeId: c.pledgeId || null, handleKey: c.handleKey, reason: 'POLICY_VIOLATION', ledgerRowId: row.id });
 
   // The withheld share stays claimable by the TARGET streamer: a fresh HELD
   // row plus a FORFEIT ledger entry saying exactly where it came from.
@@ -510,7 +593,9 @@ export const REFUND_REASONS = {
  * must not pay the contributor twice. The second call returns the original
  * row and reports `deduped`.
  *
- * ⚠ NO REAL FUNDS MOVE. `settlement.refund` is a stub that records intent.
+ * `settlement.refund` is the facade (bounty-settlement.js): the stub records
+ * intent; in real-money mode bounty-money.js records a door intent to the
+ * fan's funding wallet.
  *
  * @param {object}   a
  * @param {string}   a.handleKey
@@ -607,8 +692,8 @@ export function refund({
         // that matters, and an orphaned clip is caught by the sweeper.
         console.warn(`[bounty] clip purge failed for contribution ${c.id}: ${e.message}`);
       }
-      // TODO(run-b): real settlement. Stub records intent only.
-      settlement?.refund({ to: c.contributor, amount, ref: c.id });
+      // Stub (ledger-only) or door adapter (real money): bounty-settlement.js.
+      settlement?.refund({ to: c.contributor, amount, ref: c.id, contributionId: c.id, pledgeId: c.pledgeId || null, handleKey, reason, ledgerRowId: row.id });
     }
     refunds.push(row);
   }
@@ -840,14 +925,14 @@ export function release({
     meta: { verifiedClips, verifiedClipSeconds, confidence, disputeWindowEndsAt: finalAt, final: false },
   });
 
-  // TODO(run-b): real on-chain settlement goes here. The stub only records
-  // intent — nothing moves, on mainnet or anywhere else.
-  settlement?.release({
-    to: rec?.claimedBy || null, amount, bucket: 'contributor', ref: contribRow.id,
-  });
-  settlement?.release({
-    to: rec?.claimedBy || null, amount: matchAmount, bucket: 'platform_match', ref: matchRow.id,
-  });
+  // Ledger-only mode: the stub records the intent and nothing moves. Real
+  // money (BOUNTY_FUNDING=1): bounty-money.js resolves the verified owner's
+  // payout wallet (claimedByAccount, set by the claim route) and records a
+  // settlement intent per row; a claimant with no wallet yet is OWED and paid
+  // the moment they set one (bounty-money.js payOwed).
+  const payee = { to: rec?.claimedBy || null, payeeAccount: rec?.claimedByAccount || null, handleKey, claimId, airSessionId };
+  settlement?.release({ ...payee, amount, bucket: 'contributor', ref: contribRow.id, ledgerRowId: contribRow.id });
+  settlement?.release({ ...payee, amount: matchAmount, bucket: 'platform_match', ref: matchRow.id, ledgerRowId: matchRow.id });
 
   // State follows the money: fully drained → RELEASED, otherwise partial.
   const after = store.getPool(handleKey);

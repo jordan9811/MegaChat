@@ -73,18 +73,28 @@ export async function connectedWallet(): Promise<string> {
   return MW.address || MW.connect()
 }
 
+/** The words for what is being funded: a campaign's budget, or a bounty pledge. */
+const SUBJECT_COPY = {
+  campaign: { thing: 'budget', spender: 'campaign spender', holds: 'which holds every campaign budget and pays every reward', funds: 'funds this campaign' },
+  pledge: { thing: 'pledge', spender: 'bounty spender', holds: 'which holds every bounty pool and pays every release and refund', funds: 'funds this pledge' },
+} as const
+
 export function ApproveStep({
   ask,
   explorerUrl,
   onApproved,
   onCancel,
+  subject = 'campaign',
 }: {
   ask: ApprovalAsk
   explorerUrl: string
   /** Called once the approval is mined AND the wallet signed the Fund message, so the fund call can cite both. */
   onApproved: (proof: FundProof) => Promise<void> | void
   onCancel: () => void
+  /** What the wallet is funding; the copy follows. */
+  subject?: keyof typeof SUBJECT_COPY
 }) {
+  const words = SUBJECT_COPY[subject]
   const [phase, setPhase] = useState<'idle' | 'wallet' | 'mining' | 'signing' | 'done' | 'error'>('idle')
   const [txHash, setTxHash] = useState<string | null>(null)
   // The approve that already mined: a retry after a refused signature asks
@@ -135,12 +145,12 @@ export function ApproveStep({
   return (
     <section className="mcp-approve" aria-live="polite">
       <span className="mcp-coordinate">One more step</span>
-      <h3>Approve the budget</h3>
+      <h3>Approve the {words.thing}</h3>
       {/* Plain words first (this is where a streamer who has never used a
           wallet drops off); the addresses wait behind Details. */}
       <p>
-        {ask.walletRequired ? 'Connect the wallet the budget comes from. ' : ''}
-        You’re allowing Holler to collect your <strong className="mcp-money">{amount}</strong> budget. Two quick wallet prompts: one approval, one signature, no gas on the second.
+        {ask.walletRequired ? `Connect the wallet the ${words.thing} comes from. ` : ''}
+        You’re allowing Holler to collect your <strong className="mcp-money">{amount}</strong> {words.thing}. Two quick wallet prompts: one approval, one signature, no gas on the second.
       </p>
       <details className="mcp-approve-details">
         <summary>Details</summary>
@@ -148,17 +158,17 @@ export function ApproveStep({
           {/* What the platform wallet does with OTHER budgets is the server's
               claim to make (`holds`); without that word this only names the
               wallet the budget goes into. */}
-          The approval lets Holler’s campaign spender move exactly this amount, into the Holler platform wallet{ask.holds === true ? ', which holds every campaign budget and pays every reward' : ''}.
+          The approval lets Holler’s {words.spender} move exactly this amount, into the Holler platform wallet{ask.holds === true ? `, ${words.holds}` : ''}.
           {ask.allowance && ask.allowance !== '0' ? ` Approved so far: ${formatAtomic(ask.allowance, decimals)} ${symbol}.` : ''}
         </p>
         <dl>
           <div><dt>Amount</dt><dd className="mcp-money">{formatAtomic(ask.amountAtomic, decimals)} {symbol}</dd></div>
           <div><dt>Token</dt><dd><code title={tokenAddress}>{shortHex(tokenAddress)}</code></dd></div>
-          <div><dt>Approved to (campaign spender)</dt><dd><a className="mcp-link" href={explorerAddressUrl(explorerUrl, ask.spender)} target="_blank" rel="noopener"><code title={ask.spender}>{shortHex(ask.spender)}</code></a></dd></div>
+          <div><dt>Approved to ({words.spender})</dt><dd><a className="mcp-link" href={explorerAddressUrl(explorerUrl, ask.spender)} target="_blank" rel="noopener"><code title={ask.spender}>{shortHex(ask.spender)}</code></a></dd></div>
           {ask.holder ? <div><dt>Held by (Holler platform wallet)</dt><dd><a className="mcp-link" href={explorerAddressUrl(explorerUrl, ask.holder)} target="_blank" rel="noopener"><code title={ask.holder}>{shortHex(ask.holder)}</code></a></dd></div> : null}
         </dl>
       </details>
-      {minedTx || phase === 'signing' ? <p className="mcp-hint">Sign to confirm this approval funds this campaign (no gas).</p> : null}
+      {minedTx || phase === 'signing' ? <p className="mcp-hint">Sign to confirm this approval {words.funds} (no gas).</p> : null}
       <div className="mcp-actions">
         <button type="button" className="mcp-btn" disabled={busy || phase === 'done'} onClick={() => void approve()}>
           {phase === 'wallet' ? 'Confirm in wallet…' : phase === 'mining' ? 'Confirming…' : phase === 'signing' ? 'Sign in wallet…' : phase === 'done' ? 'Approved' : minedTx ? 'Sign to fund' : 'Approve in wallet'}

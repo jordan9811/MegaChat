@@ -87,10 +87,18 @@ console.log('\n── Gate H: every transfer is accounted for ──────
   const files = readdirSync('.').filter((f) => /^bounty-.*\.(js|mjs)$/.test(f));
   const banned = /\b(sendTransaction|writeContract|transferFrom|\.transfer\(|signTransaction|privateKeyToAccount|walletClient)\b/;
   const offenders = files.filter((f) => banned.test(strip(readFileSync(f, 'utf8'))));
-  ok('LEGACY. no transfer-shaped call in any bounty module — the bounty feature is inert',
+  ok('LEGACY. no transfer-shaped call in any bounty module — bounty money only ever reaches the chain through the door',
     offenders.length === 0, offenders.join(',') || `${files.length} modules`);
-  const stub = readFileSync('bounty-settlement.js', 'utf8');
-  ok('LEGACY. bounty settlement is still the stub, and says so', /NO FUNDS MOVE/i.test(stub) && /TODO\(run-b\)/.test(stub));
+  // Since 2026-11-04 bounty-settlement.js is a facade over the door (the
+  // stub in ledger-only mode, bounty-money.js when BOUNTY_FUNDING=1): it
+  // holds no key, imports no signer, and bounty-money.js reaches the chain
+  // only through settlement.js's pull / release / refund.
+  const facade = strip(readFileSync('bounty-settlement.js', 'utf8'));
+  const money = strip(readFileSync('bounty-money.js', 'utf8'));
+  ok('LEGACY. bounty-settlement.js holds no signer: it delegates (stub, or the door adapter)',
+    !/from 'viem/.test(facade) && /setBountySettlement/.test(facade) && /StubSettlement/.test(facade));
+  ok('LEGACY. bounty-money.js imports no signing primitive: its only chain writes are door.pull / door.release / door.refund',
+    !/from 'viem\/accounts'|createWalletClient|privateKeyToAccount/.test(money) && /door\.pull\(|settlement\.pull\(/.test(money) && /\.release\(/.test(money) && /\.refund\(/.test(money));
 }
 
 // ── TIER 1: one door ───────────────────────────────────────────────────────
@@ -480,6 +488,77 @@ const sumOf = (recs) => recs.reduce((a, r) => a + BigInt(r.amountAtomic), 0n);
   ok('K3. ...and each signer still takes at most `max` a flush', f3.failed.length === 50, `${f3.failed.length} reward sends tried`);
 } catch (e) { ok(`K2/K3. the section ran to the end (it crashed: ${e.message})`, false); } }
 
+// ── VD: a person voids a PENDING intent; nothing else can be voided (row 63) ──
+{ try {
+  const dir = dirFor('vd');
+  const noKey = fakeChain({ signers: ['pull'] });
+  const door = createSettlement({ dataDir: dir, chain: noKey, platformAddress: PLATFORM, log: quiet });
+  door.refund({ to: VIEWER, amountAtomic: '7000000', token: TOKEN, ref: 'seat:VD1:buried:1' });
+  door.refund({ to: VIEWER, amountAtomic: '7000000', token: TOKEN, ref: 'seat:VD2:buried:1' });
+  let threw = null;
+  try { door.void('seat:VD1:buried:1', { by: 'owner' }); } catch (e) { threw = e; }
+  ok('VD. a void with no `why` is refused — who and why are part of the record', !!threw);
+  threw = null;
+  try { door.void('seat:VD9:none', { by: 'owner', why: 'x' }); } catch (e) { threw = e; }
+  ok('VD. voiding an unknown ref is refused', threw?.code === 'not_found');
+  const v = door.void('seat:VD1:buried:1', { by: 'owner', why: 'pre-round double count (U2)' });
+  ok('VD. a PENDING intent voided by a person is VOIDED: terminal', v.status === 'VOIDED' && door.status('seat:VD1:buried:1').status === 'VOIDED' && door.pending().length === 1);
+  const later = createSettlement({ dataDir: dir, chain: fakeChain(), platformAddress: PLATFORM, log: quiet });
+  const f = await later.flush();
+  ok('VD. the key lands and the first flush pays the OTHER intent and never the voided one (the void survives a restart)',
+    f.sent.length === 1 && f.sent[0] === 'seat:VD2:buried:1' && later.status('seat:VD1:buried:1').status === 'VOIDED' && later.status('seat:VD2:buried:1').status === 'DONE');
+  threw = null;
+  try { later.void('seat:VD2:buried:1', { by: 'owner', why: 'too late' }); } catch (e) { threw = e; }
+  ok('VD. a DONE intent cannot be voided — money that left is not withdrawn by a row', threw?.code === 'not_pending' && threw.status === 'DONE');
+  threw = null;
+  try { later.void('seat:VD1:buried:1', { by: 'owner', why: 'again' }); } catch (e) { threw = e; }
+  ok('VD. ...nor a VOIDED one twice', threw?.code === 'not_pending');
+  // DISCRIMINATES: the same two intents on a door nobody voided are both paid.
+  const dir2 = dirFor('vd2');
+  const d2 = createSettlement({ dataDir: dir2, chain: fakeChain({ signers: ['pull'] }), platformAddress: PLATFORM, log: quiet });
+  d2.refund({ to: VIEWER, amountAtomic: '7000000', token: TOKEN, ref: 'seat:VD1:buried:1' });
+  d2.refund({ to: VIEWER, amountAtomic: '7000000', token: TOKEN, ref: 'seat:VD2:buried:1' });
+  const f2 = await createSettlement({ dataDir: dir2, chain: fakeChain(), platformAddress: PLATFORM, log: quiet }).flush();
+  ok('VD. DISCRIMINATES: without the void both intents are paid on the first flush', f2.sent.length === 2);
+} catch (e) { ok(`VD. the section ran to the end (it crashed: ${e.message})`, false); } }
+
+// ── BP: the bounty spender is a pull slot that signs ahead, like the campaign spender ──
+{ try {
+  const { createWalletClient, custom, keccak256 } = await import('viem');
+  const { privateKeyToAccount, generatePrivateKey } = await import('viem/accounts');
+  const { tempo } = await import('viem/chains');
+  const { viemChainAdapter, PULL_SIGNERS, SIGN_AHEAD_SLOTS } = await import('./settlement.js');
+  let raw = null, rowAtSend = null, door = null;
+  const node = custom({ async request({ method, params }) {
+    switch (method) {
+      case 'eth_chainId': return `0x${tempo.id.toString(16)}`;
+      case 'eth_getTransactionCount': return '0x3';
+      case 'eth_estimateGas': return '0x30000';
+      case 'eth_maxPriorityFeePerGas': return '0x0';
+      case 'eth_gasPrice': return '0x3b9aca00';
+      case 'eth_getBlockByNumber': return { number: '0x10', baseFeePerGas: '0x3b9aca00', timestamp: `0x${Math.floor(Date.now() / 1000).toString(16)}`, hash: `0x${'22'.repeat(32)}`, transactions: [] };
+      case 'eth_sendRawTransaction': raw = params[0]; rowAtSend = door.status('bounty:fund:p1:1')?.status || null; throw new Error('HTTP request failed: timeout');
+      default: throw new Error(`stand-in does not answer ${method}`);
+    }
+  } });
+  const wc = createWalletClient({ account: privateKeyToAccount(generatePrivateKey()), chain: tempo, transport: node });
+  const adapter = viemChainAdapter({ bountyPull: wc });
+  door = createSettlement({ dataDir: dirFor('bp'), chain: adapter, platformAddress: PLATFORM, log: quiet });
+  ok('BP. bountyPull is a pull signer and a sign-ahead slot', PULL_SIGNERS.has('bountyPull') && SIGN_AHEAD_SLOTS.includes('bountyPull'));
+  ok('BP. the adapter knows the slot and its address', adapter.has('bountyPull') && /^0x[0-9a-fA-F]{40}$/.test(adapter.address('bountyPull')) && door.signerAddress('bountyPull') === adapter.address('bountyPull'));
+  let err = null;
+  try { await door.pull({ from: VIEWER, to: PLATFORM, token: TOKEN, amountAtomic: '5000000', ref: 'bounty:fund:p1:1', signer: 'bountyPull' }); } catch (e) { err = e; }
+  const rec = door.status('bounty:fund:p1:1');
+  ok('BP. a bounty pull writes PULL_SENT (hash = keccak256 of the raw tx) BEFORE the raw send; a send that times out leaves it on record, not pre-send',
+    rowAtSend === 'PULL_SENT' && !!raw && rec?.status === 'PULL_SENT' && rec.txHash === keccak256(raw) && !!err && !err.preSend, `${rowAtSend}; ${rec?.txHash?.slice(0, 12)}`);
+  const seatAhead = await viemChainAdapter({ pull: wc }).prepareTransferFrom({ signer: 'pull', token: TOKEN, from: VIEWER, to: PLATFORM, amountAtomic: 1n });
+  ok('BP. ...and the live seat-tick pull still does not sign ahead', seatAhead === null);
+  const sendsBefore = raw;
+  const dry = await door.pull({ from: VIEWER, to: PLATFORM, token: TOKEN, amountAtomic: '1', ref: 'bounty:fund:p2:1', signer: 'campaignPull' });
+  ok('BP. the campaign spender is NOT configured on this door: a pull naming it runs DRY — recorded, nothing signed, nothing sent (one key per path; the engines refuse before asking)',
+    dry.dry === true && raw === sendsBefore && door.status('bounty:fund:p2:1')?.status === 'PULLED_DRY' && !door.hasSigner('campaignPull') && door.hasSigner('bountyPull'));
+} catch (e) { ok(`BP. the section ran to the end (it crashed: ${e.message})`, false); } }
+
 // ── L: a damaged money ledger LATCHES; it never serves an empty view (verify-1, D4) ──
 { try {
   const { createLedger, ledgerHealth, corruptMoneyLedger, checksum, checksumV2 } = await import('./bounty-ledger.js');
@@ -850,6 +929,7 @@ const PINNED = {
   '_gate-escrow-contract.mjs': 3,   // writeContract ×2 (approve, send), deployContract ×1 (the reentrancy sink) — Moderato only
   '_gate-escrow-seat.mjs': 1,       // the viewer's approve — MAINNET dust, the Session 2 proof
   '_gate-campaigns.mjs': 1,         // a node STAND-IN answering the raw send (custom transport, no network, no funds): proves settlement.js records PULL_SENT before the send, 2026-10-23 round 3
+  '_gate-bounty-money.mjs': 2,      // the RPC stand-in's raw-send handler and the count of sends it saw (127.0.0.1, a key generated for the run, no funds): proves the real server pulls a pledge once, 2026-11-04
   '_gate-escrow-chain.mjs': 1,      // the escrow contract STAND-IN's raw-send handler (127.0.0.1, generated keys, no funds): proves escrow-chain.js signs ahead and reads a lost deposit back, 2026-10-24
   // _gate-gas-floor (2), _gate-pin (4), _gate-stability (4), _verify-join (5)
   // and scripts/probe-tempo-write (1) left the pin when they were deleted,

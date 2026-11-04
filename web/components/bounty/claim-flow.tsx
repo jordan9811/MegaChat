@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CircleCheck, CircleAlert, Copy, Radio, Clock } from 'lucide-react'
 import {
-  startClaim, getClaim, startAirSession,
+  startClaim, getClaim, startAirSession, setPayoutWallet,
   type BountyPool, type BountyClientConfig,
 } from '@/lib/bounty-api'
 import { ObsOneClick } from '@/components/obs/obs-oneclick'
@@ -47,6 +47,12 @@ export function ClaimFlow({
   const [status, setStatus] = useState<Awaited<ReturnType<typeof getClaim>> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  // Real money: the payout wallet releases go to (the account's, shared with
+  // campaign rewards). Asked for here, once the handle is claimed.
+  const realMoney = config.money?.mode === 'real'
+  const [payoutInput, setPayoutInput] = useState('')
+  const [payoutBusy, setPayoutBusy] = useState(false)
+  const [payoutError, setPayoutError] = useState<string | null>(null)
   useEffect(() => { setClaimant((current) => current || wallet.address || identity?.handle || '') }, [wallet.address, identity?.handle])
 
   const refresh = useCallback(async (id: string) => {
@@ -87,6 +93,18 @@ export function ClaimFlow({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Claim failed')
       setStage('error')
+    }
+  }
+
+  async function savePayout(address: string) {
+    setPayoutBusy(true); setPayoutError(null)
+    try {
+      await setPayoutWallet(address)
+      if (claimId) await refresh(claimId)
+    } catch (e) {
+      setPayoutError(e instanceof Error ? e.message : 'Could not save the wallet')
+    } finally {
+      setPayoutBusy(false)
     }
   }
 
@@ -143,7 +161,7 @@ export function ClaimFlow({
                 the stub runs only under a test flag. */}
             <strong className="text-f-bounty-ink">Claim with the account that owns this handle.</strong>{' '}
             The claim is checked against the platform account you signed in with, so a
-            different account is turned away. Nothing here moves real funds.
+            different account is turned away.{realMoney ? ' Releases are paid to the payout wallet you set after claiming.' : ' Nothing here moves real funds.'}
           </p>
           {!canClaim && <p className="mt-3 text-sm text-muted-foreground">This is an unfunded example. Create a real bounty before claiming; the setup preview is available here.</p>}
           {error || authError ? <p role="alert" className="mt-2 text-sm text-hl-danger">{error || authError}</p> : null}
@@ -165,6 +183,31 @@ export function ClaimFlow({
               <CircleCheck className="size-4" /> Handle claimed
             </p>
           </div>
+
+          {realMoney && status?.payout?.mine && !status.payout.wallet ? (
+            <div className={CAUTION_BOX}>
+              <p className={CAUTION_HEAD}><CircleAlert className="size-4" /> Where should the bounty pay you?</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Releases go to your account&apos;s payout wallet on Tempo. Nothing is paid until one is set; what you earn meanwhile waits for it.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {wallet.address ? (
+                  <button type="button" disabled={payoutBusy} onClick={() => void savePayout(wallet.address!)}
+                    className="rounded-full bg-f-bounty-solid px-4 py-2 text-xs font-bold text-f-bounty-on disabled:opacity-50">
+                    Use my Holler wallet ({wallet.address.slice(0, 6)}…{wallet.address.slice(-4)})
+                  </button>
+                ) : null}
+                <input value={payoutInput} onChange={(e) => setPayoutInput(e.target.value.trim())} placeholder="or paste 0x… address" aria-label="Payout wallet address"
+                  className="min-w-0 flex-1 rounded-full border border-border bg-input/30 px-3.5 py-2 font-mono text-xs text-foreground" />
+                <button type="button" disabled={payoutBusy || !/^0x[0-9a-fA-F]{40}$/.test(payoutInput)} onClick={() => void savePayout(payoutInput)}
+                  className="rounded-full border border-border px-4 py-2 text-xs font-bold text-foreground disabled:opacity-50">Save</button>
+              </div>
+              {payoutError ? <p role="alert" className="mt-2 text-xs text-hl-danger">{payoutError}</p> : null}
+            </div>
+          ) : null}
+          {realMoney && status?.payout?.wallet ? (
+            <p className="text-xs text-muted-foreground">Payouts go to <code className="font-mono">{status.payout.wallet.slice(0, 6)}…{status.payout.wallet.slice(-4)}</code>{status.payout.releases.some((r) => r.state === 'paid') ? ' · paid releases have left the Holler wallet' : ''}.</p>
+          ) : null}
 
           <div>
             <p className="text-sm font-semibold text-foreground">1. Add the overlay to OBS</p>

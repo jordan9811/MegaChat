@@ -902,7 +902,7 @@ Running list of stubs, deferrals, and known gaps. Append, don't rewrite.
 | B2 | Real live-status API | — (not yet an interface) | No confirmed API contract in this repo. Deliberately NOT sketched, to avoid building on an invented shape. |
 | B3 | Real frame source | `FrameSource` → `TwitchFrameSource` / `KickFrameSource` (bounty-verifier.js) | Needs the real VOD/clip endpoints, and a decision: VOD segments (delayed, reliable) vs live HLS (immediate, lossy). |
 | B4 | Real code checker | `CodeChecker` → `OcrCodeChecker` | Open question: OCR the whole frame (robust, slow) or crop to the badge's expected position (fast, but breaks when a streamer repositions the source — which they're allowed to do). **Must return `pixelHeight`** — legibility enforcement depends on it (patch). |
-| B5 | Real settlement | `SettlementInterface` → `RealSettlement` (bounty-settlement.js) | Needs a funded operator wallet, escrow contract address, and an on-chain submit keyed off the ledger row id so a retry can't double-pay. **Currently there is NO transfer code anywhere — verified by gate H.** |
+| B5 | Real settlement | **BUILT 2026-11-04 (section BM below):** `bounty-money.js` behind the facade in `bounty-settlement.js`, through the app's one door (`settlement.js`): a pledge is pulled by a dedicated spender, releases and refunds are door intents keyed by the ledger row. Off until `BOUNTY_FUNDING=1`. | — |
 
 ### Resolved by the patch (2026-07-25)
 - **G1 — watermark proved airtime, not playback. FIXED.** Codes are now issued only during clip playback and bound to the clip id, so one artifact proves both. Payout unit changed to verified clip playbacks.
@@ -4877,4 +4877,53 @@ product.
   Z8 provider tidy-up (drop the megachat callbacks and Privy domains). Pairs
   with Z10 (hide the test room). Claude reminds the owner of Z10/Z11 at each
   status check until done.
+
+## BM — Bounty real money (2026-11-04, owner's explicit go: "go on 4")
+
+**Verdict:** bounties can take, hold and pay real money through the same door
+every other payment uses, and nothing changes on production until the owner
+sets two variables. `_gate-bounty-money.mjs` drives the real server, the real
+`viemChainAdapter` and an RPC stand-in through the whole path (pledge →
+approve + EIP-712 → one signed-ahead pull → OPEN → upload → expiry → a PENDING
+door refund → listed and voided by an admin), plus the engine against the
+real door with a mock chain for every refusal and every receipt outcome.
+
+- **BM1 — What shipped.** `bounty-money.js` (the engine; it names no signer:
+  Gate H LEGACY proves it), `bounty-settlement.js` is a facade (stub in
+  ledger-only mode, the engine when `BOUNTY_FUNDING=1`), `money-routes.js`
+  (`/api/money/intents` list and void, `/api/money/summary`, admin only),
+  `settlement.js` gained the `bountyPull` slot (signs ahead like
+  `campaignPull`) and `void()` (a PENDING intent withdrawn by a person; VOID
+  row, terminal). Pledge statuses `UNFUNDED | OPEN | CLAIMED | EXPIRED |
+  ABANDONED`; contribution statuses `UNFUNDED | HELD | REFUNDED | ABANDONED`;
+  an unfunded contribution counts in no pool and takes no clip.
+- **BM2 — Ledger-only mode is untouched.** With `BOUNTY_FUNDING` unset every
+  route, sweep and gate behaves exactly as before (gate C of
+  `_gate-bounty-money.mjs` shows the flag discriminates). Production runs this
+  mode today.
+- **BM3 — Owner steps before the first real pledge** (launch-readiness,
+  "Switching on real-money bounties"): clear the seeded demo pools, audit and
+  void the pre-round buried-seat refunds (`/api/money/intents`, row 63), mint
+  `BOUNTY_SPENDER_KEY` (its own key, a little USDC for fees), set
+  `PLATFORM_SETTLEMENT_KEY` (the platform wallet's key), set
+  `BOUNTY_FUNDING=1`, then one $1 pledge end to end, reconciled on chain.
+- **BM4 — The platform match is real platform money now.**
+  `BOUNTY_PLATFORM_MATCH` (default 0.25) is paid from the platform wallet on
+  every release as its own intent (`bounty-match`). Set it to 0 before the
+  flag if the platform should not top up pools.
+- **BM5 — Payouts wait for a payout wallet.** A release to a claimant with no
+  payout wallet is OWED (the RELEASE row stands, no door intent) and recorded
+  the moment they set one (`/api/account/payout-wallet`, shared with campaign
+  rewards; the claim page asks for it). The ambient sweep retries every
+  `BOUNTY_PLEDGE_SWEEP_MS`.
+- **BM6 — Not covered, on purpose:** clawback after a release (the gap
+  recorded under "What the hold-release path does NOT cover" stands);
+  `refundRejectedClip`'s partial refund reaches the door through the same
+  `refund` path but has no HTTP case in the new gate (store-level only);
+  the yellow liveness tier (item O) is separate work.
+- **BM7 — The handbook's four protected pages** (`docs/concepts/bounties.md`,
+  `docs/concepts/money-and-metering.md`, `docs/features/bounty-program.md`,
+  `docs/verification/README.md`) still describe settlement as a stub. They
+  carry the owner's uncommitted edits and were not touched; they need a
+  real-money pass once those edits land.
 

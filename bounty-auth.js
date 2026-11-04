@@ -72,6 +72,10 @@ export const ROUTE_POLICY = {
 
   // ── Fan: contributing ───────────────────────────────────────────────────
   'POST /api/bounty/pledge': { tier: TIER.FAN },
+  // Real money (2026-11-04): funding a pledge, and reading one's own. Both
+  // check inside the handler that the pledge belongs to the signed-in account.
+  'POST /api/bounty/pledge/:pledgeId/fund': { tier: TIER.FAN },
+  'GET /api/bounty/pledge/:pledgeId': { tier: TIER.FAN },
   'POST /api/bounty/contribute': { tier: TIER.FAN },
   // Bearer-by-id: the contributionId was minted by the pledge that created it
   // and is known only to that fan.
@@ -122,6 +126,9 @@ export const ROUTE_POLICY = {
   'POST /api/bounty/admin/seed': { tier: TIER.ADMIN },
   'POST /api/bounty/admin/seed-pledge': { tier: TIER.ADMIN },
   'POST /api/bounty/admin/seed-clear': { tier: TIER.ADMIN },
+  // Real money: the funding sweep on demand, and one stuck pledge by hand.
+  'POST /api/bounty/admin/sync-funding': { tier: TIER.ADMIN },
+  'POST /api/bounty/admin/pledge/:pledgeId/resolve-funding': { tier: TIER.ADMIN },
   'GET /api/bounty/admin/sessions': { tier: TIER.ADMIN },
   'POST /api/bounty/admin/override': { tier: TIER.ADMIN },
   'GET /api/bounty/admin/reviews': { tier: TIER.ADMIN },
