@@ -4826,3 +4826,19 @@ product.
 - **Z6 — Backer's bounty page** (item L), if it is in the launch cut.
 - **Z7 — Launch film, last:** redo the launch video on the finished product
   (`design-assets/launch-video/`).
+- **Z8 — Provider tidy-up after the hollertv.com move (owner, not urgent).**
+  The domain moved 2026-11-04; megachat.fun still serves the app. Once
+  hollertv.com sign-in is confirmed on each provider:
+  - Put the final Holler logo on every provider's sign-in screen and rename
+    what is left: the Twitch and X apps (HollerTV), Kick, Privy (UI
+    components / branding).
+  - Delete the old megachat.fun callback URLs (Twitch, X, Kick) and the
+    megachat.fun domains in Privy, but only after megachat.fun redirects to
+    hollertv.com.
+  - Delete the superseded secrets: the two old Privy app secrets (…m4AL,
+    …M757) and any pre-rotation secret the other consoles keep.
+  - Privy is still in DEVELOPMENT MODE, capped at 150 users: upgrade to
+    production before public launch.
+  - Circle is unused on `v0-ui-migration` (its only code fed the passkey
+    bundle deleted 2026-10-24): `CIRCLE_CLIENT_KEY` can be removed from
+    Railway and the Circle console needs nothing.
