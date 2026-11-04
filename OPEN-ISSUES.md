@@ -3536,6 +3536,12 @@ only in Railway and were not checkable while its API was failing. Names only:
   audited. Also deleted as unread: `ARC_CHAIN_ID`, `ARC_RPC_URL`, the three
   `CIRCLE_*`, `EXPLORER_URL`, `FACILITATOR_URL`, `GATEWAY_WALLET_ADDRESS`,
   `USDC_ADDRESS`. Set: `NEXT_PUBLIC_SITE_URL`, `BASE_URL` (hollertv.com).
+  **Rotation gotcha (2026-11-04):** the main "Sign in with X / Twitch" is
+  PRIVY's popup (`web/components/providers/privy-bridge.tsx`), and Privy keeps
+  its own copy of our X and Twitch app credentials (dashboard → User management
+  → Authentication → Socials). Regenerating a secret at X or Twitch breaks
+  Privy sign-in ("Authentication failed") until the new secret is pasted there
+  too; the server's own `/auth/<provider>` routes only use Railway's copy.
 
 ## L — Backer's bounty page: revisit, re-up, top up (owner, open 2026-10-23)
 
