@@ -969,3 +969,17 @@ body:has(.mc-landing) {
     transition: none !important;
   }
 }
+
+/* Condensed (owner, 2026-11-06): the rows spanned the whole panel, so a name
+   and its amount sat a screen-width apart and did not read as one entry. The
+   list is now a compact column with the amount close beside the name. */
+.mcl-mini-board > header,
+.mcl-mini-board > .mcl-pool-row,
+.mcl-mini-board > .mcl-pool-empty {
+  width: 100%;
+  max-width: 440px;
+}
+.mcl-pool-row {
+  min-height: 58px;
+  gap: 12px;
+}

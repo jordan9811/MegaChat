@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Booth } from '@/components/booth/booth'
+import { contactUrl } from '@/components/site-footer'
 import { loadBountyPools, loadInitialRooms, loadRecentAirings } from '@/lib/rooms-server'
 import { BOARD_RECENT_CAP } from '@/lib/room-browse'
 
@@ -19,6 +20,7 @@ export default async function Page() {
       initialRooms={rooms}
       initialPools={pools}
       initialAirings={airings}
+      contactHref={contactUrl()}
     />
   )
 }

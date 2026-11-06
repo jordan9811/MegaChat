@@ -16,6 +16,7 @@ import { LivenessBadge } from '@/components/liveness-badge'
 import { HollerMark } from '@/components/holler-mark'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { RecentRail } from './recent-rail'
+import { SiteFooter } from '@/components/site-footer'
 
 const ROOM_POLL_MS = 5000
 const POOL_POLL_MS = 30000
@@ -27,13 +28,13 @@ const SPARSE_MAX = 4
 // Filters over the rooms, not over the page: bounties keep their own rail on
 // the right, so a chip that swapped the grid to bounties would just show the
 // same board twice. These five are the real ways a room differs.
-type ChipKey = 'all' | 'live' | 'seats' | 'letters' | 'free'
+type ChipKey = 'all' | 'seats' | 'letters' | 'free'
 
-// `dot`: the light a chip carries — the record magenta for what is on air, and
-// the feature colour for the two chips that pick a feature (booth.css).
-const CHIPS: { key: ChipKey; label: string; dot?: 'live' | 'callin' | 'holler' }[] = [
+// The chips pick a KIND of room; `dot` is the feature colour for the two that
+// pick a feature (booth.css). On air is not a kind: it is the separate toggle
+// after them, which narrows whichever chip is picked.
+const CHIPS: { key: ChipKey; label: string; dot?: 'callin' | 'holler' }[] = [
   { key: 'all', label: 'All' },
-  { key: 'live', label: 'Live now', dot: 'live' },
   { key: 'seats', label: 'Call in', dot: 'callin' },
   { key: 'letters', label: 'Hollers', dot: 'holler' },
   { key: 'free', label: 'Free rooms' },
@@ -41,7 +42,6 @@ const CHIPS: { key: ChipKey; label: string; dot?: 'live' | 'callin' | 'holler' }
 
 const EMPTY_COPY: Record<ChipKey, string> = {
   all: 'No rooms on the board yet.',
-  live: 'Nothing is on air this minute.',
   seats: 'No room is selling live camera seats right now.',
   letters: 'No room is taking recorded Hollers right now.',
   free: 'No room is running free right now.',
@@ -52,7 +52,6 @@ function onAir(room: PublicRoomCard): boolean {
 }
 
 function matches(room: PublicRoomCard, chip: ChipKey): boolean {
-  if (chip === 'live') return onAir(room)
   if (chip === 'seats') return room.joinStream?.enabled === true
   if (chip === 'letters') return room.letters?.enabled === true
   if (chip === 'free') return roomPresentation(room).rate === 'Free'
@@ -350,15 +349,19 @@ export function Booth({
   initialRooms,
   initialPools,
   initialAirings = [],
+  contactHref,
 }: {
   initialRooms: PublicRoomCard[]
   initialPools: BountyPool[]
   initialAirings?: RecentAiring[]
+  /** Read on the server (CONTACT_URL), for the footer's Contact link. */
+  contactHref?: string
 }) {
   const [rooms, setRooms] = useState<PublicRoomCard[]>(initialRooms)
   const [pools, setPools] = useState<BountyPool[]>(initialPools)
   const [airings, setAirings] = useState<RecentAiring[]>(initialAirings)
   const [chip, setChip] = useState<ChipKey>('all')
+  const [onAirOnly, setOnAirOnly] = useState(false)
   const [showAll, setShowAll] = useState(false)
 
   // Entering the app marks the visitor as returning. Nothing reads the flag
@@ -430,7 +433,7 @@ export function Booth({
   }, [])
 
   const onAirCount = useMemo(() => rooms.filter(onAir).length, [rooms])
-  const visible = useMemo(() => rooms.filter((r) => matches(r, chip)), [rooms, chip])
+  const visible = useMemo(() => rooms.filter((r) => matches(r, chip) && (!onAirOnly || onAir(r))), [rooms, chip, onAirOnly])
   const topPools = useMemo(() => [...pools].sort((a, b) => b.remaining - a.remaining), [pools])
 
   // WHAT FILLS THE BOARD, IN ORDER. This is the hierarchy the board has had
@@ -474,9 +477,9 @@ export function Booth({
   }, [visible, featuredList])
   const shown = showAll ? rest : rest.slice(0, GRID_CAP)
   // Recent broadcasts are not rooms, so the chips that pick KINDS of room
-  // (Call in, Hollers, free) do not show them; "All" and "Live now" do —
+  // (Call in, Hollers, free) do not show them; "All" does, On air or not —
   // "nothing is on air, here is what just was" is the answer to both.
-  const recentAirings = chip === 'all' || chip === 'live' ? airings.slice(0, BOARD_RECENT_CAP) : []
+  const recentAirings = chip === 'all' ? airings.slice(0, BOARD_RECENT_CAP) : []
   const quiet = onAirCount === 0
   const tiles = recentAirings.length + shown.length + 1 // + Open a room
   const sparse = tiles <= SPARSE_MAX && rest.length <= GRID_CAP
@@ -560,6 +563,20 @@ export function Booth({
               {c.label}
             </button>
           ))}
+          <span className="mcr-chips-rule" aria-hidden="true" />
+          <button
+            type="button"
+            className="mcr-chip mcr-chip-onair"
+            aria-pressed={onAirOnly}
+            onClick={() => {
+              setOnAirOnly((value) => !value)
+              setShowAll(false)
+            }}
+          >
+            <i className="mcr-chip-onair-dot" aria-hidden="true" />
+            On air
+            <span className="mcr-chip-onair-n">{onAirCount}</span>
+          </button>
           <span className="mcr-sort">sort · hottest</span>
         </div>
 
@@ -586,7 +603,7 @@ export function Booth({
               </>
             ) : (
               <div className="mcr-empty">
-                <h2>{EMPTY_COPY[chip]}</h2>
+                <h2>{onAirOnly ? 'Nothing is on air this minute.' : EMPTY_COPY[chip]}</h2>
                 <p>
                   The demo room is always open — take a seat, record a Holler, and watch it play
                   back on the broadcast for a fraction of a cent.
@@ -613,6 +630,7 @@ export function Booth({
           <BountyBoard pools={topPools.slice(0, 5)} />
         </div>
       </main>
+      {contactHref ? <SiteFooter contactHref={contactHref} /> : null}
     </div>
   )
 }

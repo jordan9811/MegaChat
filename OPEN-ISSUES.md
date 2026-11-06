@@ -5017,3 +5017,15 @@ https://claude.ai/artifact/VQB9FA9r9qGqAYsAwBtFqS
 - **TD5 — Open from the notes:** the owner asked for more ideas on the preview
   cards beyond cutting the captions; the price entry may want a per-second
   granular editor beyond the 10s / 1s switch.
+- **TD6 — Follow-ups the same day (owner, 2026-11-06):** the tab icon is now
+  the V2 wordmark's test-card o (`web/public/icon.svg`, `apple-icon.png`,
+  cache key `?v=4`); the look switch reads **V1 / V2** (V1 = classic, V2 =
+  retro, the current one lit); the landing Top bounties rows are a compact
+  440px column so a name sits next to its amount; on the rooms board "Live now"
+  is no longer a fifth chip in Hollers' magenta but a separate **On air**
+  toggle in tally red, with the live count, that narrows whichever chip is
+  picked; the rooms page has the shared site footer. Card mocks round 2 (D
+  rundown, E one stage) in `design-assets/landing-cards/round2-standalone.html`.
+- **TD7 — Open:** `site-footer.tsx contactUrl()` still falls back to
+  `https://x.com/megachat` when CONTACT_URL is unset.
+

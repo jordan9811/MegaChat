@@ -1457,3 +1457,49 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
     transition: none !important;
   }
 }
+
+/* On air is a state, not a kind of room (owner, 2026-11-06): a toggle after a
+   rule, in broadcast tally red so it never reads as the Holler magenta, with
+   the live count. It narrows whichever chip is picked. */
+.mcr-chips-rule {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--mcb-line2);
+}
+.mcr-chip-onair {
+  --tally: #ff4d3d;
+}
+.light .mcr-chip-onair {
+  --tally: #d92d1c;
+}
+.mcr-chip-onair-dot {
+  display: block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tally);
+}
+.mcr-chip-onair-n {
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--mcb-muted);
+}
+.mcr-chip.mcr-chip-onair[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--tally) 16%, transparent);
+  border-color: var(--tally);
+  color: var(--mcb-fg);
+}
+.mcr-chip.mcr-chip-onair[aria-pressed='true'] .mcr-chip-onair-dot {
+  box-shadow: none;
+}
+.mcr-chip.mcr-chip-onair[aria-pressed='true'] .mcr-chip-onair-n {
+  color: var(--mcb-fg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .mcr-chip.mcr-chip-onair[aria-pressed='true']:hover {
+    background: color-mix(in srgb, var(--tally) 24%, transparent);
+  }
+}

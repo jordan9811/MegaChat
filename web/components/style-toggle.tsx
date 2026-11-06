@@ -1,6 +1,6 @@
 'use client'
 
-// Retro/Classic switch, beside the sun/moon in every page header. Retro is the
+// V1 / V2 look switch (V1 = classic, V2 = retro), beside the sun/moon in every page header. Retro is the
 // default look; Classic is the neon look the site shipped with before it. The
 // choice lives on <html data-style>, set before paint by STYLE_BOOT_SCRIPT, so
 // this only reads it after mount and flips it. Styles: .hl-st in globals.css.
@@ -34,11 +34,12 @@ export function StyleToggle({ className }: { className?: string }) {
     <button
       type="button"
       className={['hl-st', className].filter(Boolean).join(' ')}
-      aria-label={next === 'classic' ? 'Switch to the classic look' : 'Switch to the retro look'}
-      title={next === 'classic' ? 'Switch to the classic look' : 'Switch to the retro look'}
+      aria-label={next === 'classic' ? 'Switch to look V1' : 'Switch to look V2'}
+      title={next === 'classic' ? 'Switch to look V1' : 'Switch to look V2'}
       onClick={flip}
     >
-      {next === 'classic' ? 'Classic' : 'Retro'}
+      <span className="hl-st-v" data-on={style === 'classic'}>V1</span>
+      <span className="hl-st-v" data-on={style === 'retro'}>V2</span>
     </button>
   )
 }
