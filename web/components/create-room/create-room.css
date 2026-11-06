@@ -86,3 +86,46 @@
 /* The canvas is drawn at a fixed quarter scale (480px). On a phone that is wider than the card, so it is zoomed down whole —
    tiles keep their true proportions instead of being clipped off the right edge. */
 @media(max-width:560px){.mcc-layout-canvas{zoom:.64}}@media(max-width:374px){.mcc-layout-canvas{zoom:.52}}
+
+/* Text diet 2026-11-06. Tile marks drawn from Holler's own vocabulary; no
+   stock icon box. The mark takes the feature colour while the tile is ON. */
+.mcc-feature-icon,.mcc-feature[data-enabled=true] .mcc-feature-icon{border:0;background:transparent;box-shadow:none}
+.mcc-mark{display:grid;place-items:center;color:var(--hl-dim);line-height:1}
+.mcc-feature[data-enabled=true] .mcc-mark{color:var(--k-ui)}
+.mcc-mark--holler{width:20px;height:20px;border:2px solid currentColor;border-radius:50%}
+.mcc-mark--holler i{width:9px;height:9px;border-radius:50%;background:currentColor}
+.mcc-feature[data-enabled=true] .mcc-mark--holler i{box-shadow:0 0 10px color-mix(in srgb,var(--k) calc(var(--hl-glow-k) * 70%),transparent)}
+.mcc-mark--callin{width:24px;height:19px;border:1.5px dashed currentColor;border-radius:4px;font:700 13px/1 var(--font-code),ui-monospace,monospace}
+.mcc-mark--rewards{font:700 21px/1 var(--font-code),ui-monospace,monospace}
+/* Holler price: the field and its 10s / 1s unit switch on one row. */
+.mcc-rate-row{display:flex;align-items:center;gap:8px}.mcc-rate-row .mcc-money-input{flex:1;min-width:0}.mcc-rate-row .mcc-segment button{min-width:38px;padding:0 8px}
+.mc-create .mcc-rate-chip{color:var(--hl-muted);font-variant-numeric:tabular-nums}
+/* Switch row: Open and close with my Twitch stream, detail in the (i). */
+.mcc-switch-row{display:flex;align-items:center;gap:8px;padding:13px 0}
+.mcc-switch-btn{display:inline-flex;align-items:center;gap:11px;border:0;background:transparent;padding:0;color:var(--hl-fg);text-align:left}
+.mcc-switch-btn strong{font-size:13px}
+.mcc-toggle[data-on=true]{background:var(--hl-strap)}
+.mcc-toggle[data-on=true] i{background:var(--hl-bg);transform:translateX(12px)}
+.mcc-switch-row+.mcc-footer-choice{border-top:1px solid var(--hl-line)}
+.mcc-footer-locked{align-items:center;color:var(--hl-muted)}
+.mcc-footer-locked strong{color:var(--hl-strap-hi);font-weight:700}
+/* Password label carries its own state: Required, or Optional. */
+.mcc-password-label{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:7px}
+.mcc-password-label>span:first-child{color:var(--hl-fg);font-size:12px;font-weight:700}
+.mcc-password-label em{font-style:normal;color:var(--hl-dim);font-size:12px}
+.mcc-password-label em[data-required=true]{color:var(--hl-strap-hi);font-weight:700}
+.mcc-password>span.mcc-password-label{width:auto;display:flex;border:0;background:transparent;padding:0}
+/* No Twitch channel: one button that opens the field. */
+.mcc-add-twitch{margin-top:11px;height:34px;padding:0 12px;border:1px dashed var(--hl-line-2);border-radius:7px;background:transparent;color:var(--hl-strap-hi);font-size:12px;font-weight:700}
+.mcc-add-twitch:hover{border-style:solid}
+/* Toast: a live save moved the tiles on stream (layout-editor.tsx). */
+.mcc-toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:60;padding:10px 14px;border:1px solid var(--hl-line-2);border-radius:9px;background:var(--hl-panel);color:var(--hl-fg);font-size:13px;font-weight:700;box-shadow:var(--hl-shadow);transform:translateX(-50%);animation:mcc-toast-in .22s cubic-bezier(.23,1,.32,1)}
+@keyframes mcc-toast-in{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+@media (prefers-reduced-motion:reduce){.mcc-toast{animation:none}}
+/* Overlay link status in the OBS card header (obs-setup.tsx). */
+.mcc-obs>header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mcc-overlay-chip{display:inline-flex;align-items:center;gap:6px;margin-left:auto;padding:4px 9px;border-radius:999px;font:700 11px/1 var(--font-code),ui-monospace,monospace;letter-spacing:.04em}
+.mcc-overlay-chip[data-state=keyed]{background:var(--f-rewards-bg);color:var(--f-rewards-ink)}
+.mcc-overlay-chip[data-state=unkeyed]{background:color-mix(in srgb,var(--hl-danger) 14%,transparent);color:var(--hl-danger)}
+.mcc-overlay-chip button{border:0;border-left:1px solid currentColor;background:transparent;padding:0 0 0 7px;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:2px}
+.mc-create .mcc-footer-choice{border-radius:0}

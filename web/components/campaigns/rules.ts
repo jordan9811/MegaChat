@@ -10,7 +10,10 @@ import { formatDollars } from '@/lib/display-format'
 export type RuleMeta = {
   key: RuleKey
   title: string
-  copy: string
+  /** A line under the title, only where the title alone cannot say it. */
+  copy?: string
+  /** Detail behind an (i): a cost or a constraint. */
+  tip?: string
   /** Shown as a small tag beside the title. */
   note?: string
   /** Needs a frozen reference set. */
@@ -20,21 +23,21 @@ export type RuleMeta = {
 }
 
 export const RULE_MENU: RuleMeta[] = [
-  { key: 'minFollowers', title: 'Minimum followers', copy: 'Their X follower count is at least this.', on: 1000 },
-  { key: 'verified', title: 'Verified on X', copy: 'Any checkmark counts.', on: true },
+  { key: 'minFollowers', title: 'Minimum followers', on: 1000 },
+  { key: 'verified', title: 'Verified on X', on: true },
   { key: 'verifiedTypes', title: 'Verification type', copy: 'Only these kinds of checkmark count.', on: ['blue'] },
   { key: 'identityVerified', title: 'ID-verified on X', copy: 'They have completed X’s identity check.', on: true },
-  { key: 'minAccountAgeDays', title: 'Account age', copy: 'Their X account is at least this old.', on: 365 },
-  { key: 'minTweetCount', title: 'Minimum posts', copy: 'They have posted at least this many times.', on: 100 },
+  { key: 'minAccountAgeDays', title: 'Account age', on: 365 },
+  { key: 'minTweetCount', title: 'Minimum posts', on: 100 },
   { key: 'minListedCount', title: 'On enough Lists', copy: 'Other people have put them on at least this many X Lists.', on: 5 },
-  { key: 'hasProfileImage', title: 'Has a profile photo', copy: 'Their X profile has a photo.', on: true },
-  { key: 'hasDescription', title: 'Has a bio', copy: 'Their profile description is not empty.', on: true },
+  { key: 'hasProfileImage', title: 'Has a profile photo', on: true },
+  { key: 'hasDescription', title: 'Has a bio', on: true },
   { key: 'referenceSetId', title: 'On a list of mine', copy: 'They are in a frozen set — the accounts you follow, an X List, or ids you paste.', usesSet: true, on: '' },
   // A rule that is present is enforced; only `enabled: false` drops it
   // (campaign-eligibility.js normaliseRules), and the server stores
   // `enabled: true` on every one it keeps. The caps here are the defaults
   // the form's cap fields start from.
-  { key: 'followedByFromSet', title: 'Followed by people on a list', copy: 'At least this many members of a frozen set follow them. Checking costs X-API calls per claim; the cap bounds that and it comes out of your budget.', usesSet: true, on: { referenceSetId: '', min: 1, perClaimCostCapUsd: 0.5, enabled: true } },
+  { key: 'followedByFromSet', title: 'Followed by people on a list', copy: 'At least this many members of a frozen set follow them.', tip: 'Checking costs X-API calls per claim. The cap bounds that, and it comes out of your budget.', usesSet: true, on: { referenceSetId: '', min: 1, perClaimCostCapUsd: 0.5, enabled: true } },
   { key: 'minVerifiedFollowers', title: 'Minimum verified followers', copy: 'Verified accounts following them.', note: 'if X exposes it', on: 10 },
 ]
 

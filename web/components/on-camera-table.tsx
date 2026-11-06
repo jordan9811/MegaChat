@@ -14,7 +14,8 @@ function elapsedSince(liveAt: number | null, now: number) {
 }
 
 export function OnCameraTable() {
-  const { mode, room, seats, kick, pin } = useRoom()
+  const { mode, room, seats, kick, pin, joinUrl } = useRoom()
+  const [copiedLink, setCopiedLink] = useState(false)
   const [now, setNow] = useState(() => Date.now())
 
   // Tick the "On for" column while anyone is live. Keyed on whether anyone
@@ -43,7 +44,6 @@ export function OnCameraTable() {
       <CardHeader
         icon={<Video className="size-5" />}
         title="On camera"
-        description="Viewers currently paying to be on stream."
         accent="callin"
         action={
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-input/30 px-3 py-1 text-xs font-medium text-foreground">
@@ -59,8 +59,20 @@ export function OnCameraTable() {
         }
       />
       {seats.length === 0 ? (
-        <p className="px-5 py-8 text-center text-sm text-muted-foreground sm:px-6">
-          No one on camera yet. Share your viewer link to fill the seats.
+        <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-5 py-6 text-center text-xs italic text-muted-foreground/70 sm:px-6">
+          <span>No one on camera yet. Share your viewer link to fill the seats.</span>
+          {joinUrl ? (
+            <button
+              type="button"
+              className="not-italic font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              onClick={() => {
+                const link = typeof window !== 'undefined' && room ? (room.handle ? `${window.location.origin}/${room.handle}` : `${window.location.origin}/join?room=${room.id}`) : joinUrl
+                void navigator.clipboard?.writeText(link).then(() => { setCopiedLink(true); setTimeout(() => setCopiedLink(false), 1800) }).catch(() => {})
+              }}
+            >
+              {copiedLink ? 'Copied' : 'Copy viewer link'}
+            </button>
+          ) : null}
         </p>
       ) : (
         // relative: the sr-only "Actions" header is absolutely positioned; without a

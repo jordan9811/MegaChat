@@ -223,8 +223,7 @@ export function JoinClient() {
               <span className="join-preview-mark" aria-hidden="true"><HollerMark variant="icon" px={52} glow /></span>
               <div>
                 <span className="join-coordinate">Stream preview</span>
-                <h1>Preview unavailable</h1>
-                <p>This room is not publishing a preview here. Recording and call-in controls still work normally.</p>
+                <h1>No preview</h1>
               </div>
             </div>
           </section>

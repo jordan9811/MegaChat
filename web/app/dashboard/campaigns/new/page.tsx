@@ -13,7 +13,15 @@ export default function NewCampaignPage() {
       <PageTitle
         coordinate="Reward campaign · new"
         title="If they qualify, they get paid"
-        lead="Pick the reward, the budget and the rules. Save keeps it private; Fund pulls the budget from your wallet, and Open puts the public page up."
+        lead={
+          <span className="mcp-steps" aria-label="Save, then fund, then open">
+            <span data-step="current"><b>Save</b> private</span>
+            <i aria-hidden="true">→</i>
+            <span><b>Fund</b> from wallet</span>
+            <i aria-hidden="true">→</i>
+            <span><b>Open</b> public</span>
+          </span>
+        }
         actions={<a href="/dashboard/campaigns" className="mcp-link">All campaigns</a>}
       />
       <CampaignForm />

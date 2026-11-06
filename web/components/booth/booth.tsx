@@ -283,7 +283,6 @@ function OpenRoomCard() {
         +
       </span>
       <strong>Open a room</strong>
-      <small>Your stream, your seats, your rate.</small>
     </Link>
   )
 }
@@ -320,11 +319,6 @@ function BountyBoard({ pools }: { pools: BountyPool[] }) {
         <h2>Bounty board</h2>
         <Link href="/bounty">See the board &#8594;</Link>
       </header>
-      {/* What a bounty is comes first, so the amounts below read as money
-          waiting for someone rather than numbers without a subject. */}
-      {pools.length > 0 ? (
-        <p className="mcr-board-lead">Back a streamer before they have a room. They claim it by going live.</p>
-      ) : null}
       {pools.length === 0 ? (
         <div className="mcr-board-foot">
           No pools open yet. <Link href="/bounty">Start one for any streamer &#8594;</Link>
@@ -356,20 +350,11 @@ export function Booth({
   initialRooms,
   initialPools,
   initialAirings = [],
-  showIntro = false,
 }: {
   initialRooms: PublicRoomCard[]
   initialPools: BountyPool[]
   initialAirings?: RecentAiring[]
-  /** First visit (no mc-intro cookie): one line on what this board is. Read
-   *  on the server so a returning visitor never sees it flash and vanish. */
-  showIntro?: boolean
 }) {
-  const [intro, setIntro] = useState(showIntro)
-  const dismissIntro = () => {
-    document.cookie = 'mc-intro=seen; path=/; max-age=31536000; samesite=lax'
-    setIntro(false)
-  }
   const [rooms, setRooms] = useState<PublicRoomCard[]>(initialRooms)
   const [pools, setPools] = useState<BountyPool[]>(initialPools)
   const [airings, setAirings] = useState<RecentAiring[]>(initialAirings)
@@ -556,26 +541,6 @@ export function Booth({
         <h1 className="sr-only">
           Holler rooms — {onAirCount} on air, {rooms.length} on the board
         </h1>
-
-        {/* Someone who arrived without the landing page gets the whole idea in
-            one line, in the board's own words (the empty state's), with the
-            one room they can try right now. Never on an empty board, which
-            already says the same thing. */}
-        {intro && featuredList.length ? (
-          <div className="mcr-intro">
-            <p>
-              The demo room is always open — take a seat, record a Holler, and watch it play back
-              on the broadcast for a fraction of a cent.
-            </p>
-            <a href="/demo">Try the demo</a>
-            <button type="button" onClick={dismissIntro} aria-label="Dismiss">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                <line x1="6" y1="6" x2="18" y2="18" />
-                <line x1="18" y1="6" x2="6" y2="18" />
-              </svg>
-            </button>
-          </div>
-        ) : null}
 
         {/* Filters moved out of the nav: the nav is where you leave this page,
             the chips are how you read it. */}

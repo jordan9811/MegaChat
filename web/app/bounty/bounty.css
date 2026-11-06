@@ -496,3 +496,10 @@ body:has(.mc-bounty) {
   .mcb-create-bounty { grid-template-columns: 1fr; padding: 28px 20px; }
   .mcb-create-bounty form { grid-template-columns: 1fr; }
 }
+
+/* Text diet 2026-11-06: the legend keeps swatch and word, the sentence moves
+   into the (i); refunds read as a badge; the create band says its step. */
+.mcb-anatomy p { flex-direction: row; align-items: center; gap: 8px; }
+.mcb-anatomy > div { min-height: 72px; }
+.mcb-refundable { display: inline-flex; align-items: center; padding: 4px 8px; border: 1px solid var(--f-rewards-line); border-radius: 999px; background: var(--f-rewards-bg); color: var(--f-rewards-ink); font: 700 11px/1 var(--font-code), ui-monospace, monospace; letter-spacing: .04em; }
+.mcb-step-chip { display: inline-flex; margin-left: 8px; padding: 3px 7px; border: 1px solid var(--mcc-rule); border-radius: 999px; color: var(--mcc-faint); font-size: 10px; letter-spacing: .06em; }

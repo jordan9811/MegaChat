@@ -3392,7 +3392,7 @@ function roomLiveness(roomId) {
   const verifying = isVerifyingRoom(roomId);
   const tier = classifyLiveness({ channelLive, onAir: !!open, overlayConnected: ov.keyedConnected, overlayRecent: ov.keyed, verifying });
   return {
-    tier, onAir: !!open, channelLive, overlayConnected: ov.keyedConnected, overlayRecent: ov.keyed, verifying,
+    tier, onAir: !!open, channelLive, overlayConnected: ov.keyedConnected, overlayRecent: ov.keyed, verifying, overlayLink: ov.state,
     overlayConnectedMs: open?.overlay?.connectedMs ?? null, sampledMs: open?.overlay?.sampledMs ?? null, airingId: open?.id || null,
   };
 }

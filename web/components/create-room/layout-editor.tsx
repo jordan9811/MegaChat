@@ -13,6 +13,7 @@
 // i * (tileH + gap) along the chosen direction from the chosen corner, so what
 // is drawn here is what lands on the canvas rather than an impression of it.
 
+import { useEffect, useRef, useState } from 'react'
 import { useRoom } from '@/components/room-provider'
 import type { RoomLayout } from '@/lib/api'
 import { docsUrl } from '@/lib/docs-url.mjs'
@@ -48,11 +49,26 @@ export function LayoutEditor() {
   const layoutRefused = saveState === 'error' && /layout refused/i.test(saveError || '')
   const seats = Math.max(1, Number(draft.maxSeats) || 3)
 
-  const set = (patch: Partial<RoomLayout>) => updateDraft({ layout: { ...layout, ...patch } })
+  // Layout edits autosave like every other field. While the room is live, the
+  // moment one of those saves lands the streamer gets a toast saying the tiles
+  // moved on stream; nothing waits on it and nothing is lost if they miss it.
+  const editedRef = useRef(false)
+  const [movedToast, setMovedToast] = useState(false)
+  useEffect(() => {
+    if (saveState !== 'saved' || !editedRef.current) return
+    editedRef.current = false
+    if (!room?.active) return
+    setMovedToast(true)
+    const t = setTimeout(() => setMovedToast(false), 2600)
+    return () => clearTimeout(t)
+  }, [saveState, room?.active])
+  const edit = (next: RoomLayout) => { editedRef.current = true; updateDraft({ layout: next }) }
+
+  const set = (patch: Partial<RoomLayout>) => edit({ ...layout, ...patch })
   const setTile = (patch: Partial<RoomLayout['tile']>) =>
-    updateDraft({ layout: { ...layout, tile: { ...layout.tile, ...patch } } })
+    edit({ ...layout, tile: { ...layout.tile, ...patch } })
   const setClip = (patch: Partial<RoomLayout['clip']>) =>
-    updateDraft({ layout: { ...layout, clip: { ...layout.clip, ...patch } } })
+    edit({ ...layout, clip: { ...layout.clip, ...patch } })
 
   const vertical = layout.direction === 'down' || layout.direction === 'up'
 
@@ -99,16 +115,12 @@ export function LayoutEditor() {
             key={i}
             className={i >= seats ? 'mcc-layout-tile is-guest' : 'mcc-layout-tile'}
             style={place(i)}
+            title={i >= seats ? 'Guest slot: a whitelisted guest raises the cap and lands here, so nobody already on screen moves.' : undefined}
           >
             {i >= seats ? 'guest' : `seat ${i + 1}`}
           </div>
         ))}
       </div>
-      <small className="mcc-preview-note">
-        1920&times;1080 canvas at quarter scale. The dashed tile is a whitelisted guest —
-        they raise the cap at runtime and land at the next slot, so nobody already on
-        screen moves.
-      </small>
 
       <div className="mcc-layout-controls">
         <label>
@@ -180,10 +192,10 @@ export function LayoutEditor() {
         <p role="alert" className="mcc-error">{saveError}</p>
       ) : null}
 
+      {movedToast ? <span className="mcc-toast" role="status">Tiles moved on stream</span> : null}
+
       <small className="mcc-preview-note">
-        {room?.active
-          ? 'Saving while you are live moves the tiles on the next overlay tick — seat 1 stays seat 1, only its position changes.'
-          : 'Tile sizes have a floor: the bounty badge rides in the tile, and below it a clip that genuinely aired can stop being verifiable.'}
+        {room?.active ? null : 'Tile sizes have a floor: the bounty badge rides in the tile, and below it a clip that genuinely aired can stop being verifiable.'}
         {/* The page that explains the floor and the ceiling, only when the
             handbook is configured (docs-url.mjs returns null otherwise). */}
         {docsUrl('create-room-and-layout') ? (

@@ -79,5 +79,7 @@ export function publicLiveness(l) {
     tier: l.tier, label: TIER_LABEL[l.tier] || l.tier,
     onAir: !!l.onAir, channelLive: !!l.channelLive, overlayConnected: !!l.overlayConnected, overlayRecent: !!l.overlayRecent, verifying: !!l.verifying,
     overlayConnectedMs: l.overlayConnectedMs ?? null, sampledMs: l.sampledMs ?? null,
+    // 'keyed' | 'unkeyed' (OBS still holds the pre-key link) | 'none' (not seen in 10 min)
+    overlayLink: l.overlayLink || null,
   };
 }

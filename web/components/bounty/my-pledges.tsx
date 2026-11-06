@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { getMyContributions, type MyContribution } from '@/lib/bounty-api'
+import { useAccount } from '@/lib/use-account'
 
 // Holler colour roles: money waiting on someone is bounty yellow, a review in
 // progress is strap azure, approved / played / paid is the positive
@@ -45,6 +46,7 @@ export function MyPledges({ initialMe: _ignored }: { initialMe?: string }) {
   const [rows, setRows] = useState<MyContribution[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [needsAuth, setNeedsAuth] = useState(false)
+  const { signedIn, openSignIn } = useAccount()
 
   const load = useCallback(async () => {
     try {
@@ -59,6 +61,8 @@ export function MyPledges({ initialMe: _ignored }: { initialMe?: string }) {
   }, [])
 
   useEffect(() => { void load() }, [load])
+  // Signing in from the button below reloads the list in place.
+  useEffect(() => { if (signedIn && needsAuth) void load() }, [signedIn, needsAuth, load])
 
   return (
     <div className="flex flex-col gap-5">
@@ -70,9 +74,9 @@ export function MyPledges({ initialMe: _ignored }: { initialMe?: string }) {
       </div>
 
       {needsAuth ? (
-        <p className="text-sm text-muted-foreground">
-          Sign in (top right) to see your Hollers — they&apos;re attached to your account, not to a name you type.
-        </p>
+        <div>
+          <button type="button" className="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-bold text-primary-foreground transition-transform active:scale-[.97]" onClick={openSignIn}>Sign in to see your Hollers</button>
+        </div>
       ) : null}
       {error ? <p className="text-sm text-hl-danger">{error}</p> : null}
 

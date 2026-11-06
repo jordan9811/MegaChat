@@ -191,7 +191,7 @@ export function LettersQueueCard() {
         description={
           producer
             ? 'You choose what airs and when. Approving holds a clip; nothing reaches the stream until you air it.'
-            : 'Queued clips play automatically when a tile frees up.'
+            : undefined
         }
         accent="holler"
       />

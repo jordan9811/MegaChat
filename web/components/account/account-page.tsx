@@ -269,10 +269,6 @@ export function AccountPage() {
           <div>
             <span className="mcc-coordinate">Identity / private</span>
             <h1 className="text-[26px] font-bold leading-[1.15]">Sign in to see your account</h1>
-            <p className="hint">
-              Your handle, the sign-ins linked to it, your balance and your saved room defaults
-              all live here. You do not need a room to have an account.
-            </p>
             <button
               type="button"
               onClick={openSignIn}
@@ -295,9 +291,7 @@ export function AccountPage() {
             <div>
               <span className="mcc-coordinate">Identity / permanent</span>
               <h1>{identity ? `@${identity.handle}` : 'Wallet only'}</h1>
-              <p>{identity
-                ? 'Your handle is your room link everywhere Holler appears.'
-                : 'Add a sign-in to claim a permanent handle and room link.'}</p>
+              {identity ? null : <p>Add a sign-in to claim a permanent handle and room link.</p>}
             </div>
             {identity ? (
               <div className="mcc-room-link">
@@ -353,7 +347,7 @@ export function AccountPage() {
                   <section className="mcc-room-zone">
                     <span className="mcc-coordinate">Your room address</span>
                     <strong>{identity ? `/${identity.handle}` : 'Unclaimed'}</strong>
-                    <p>{identity ? 'Permanent, shareable, and ready whenever you go live.' : 'Link a sign-in to claim it.'}</p>
+                    {identity ? null : <p>Link a sign-in to claim it.</p>}
                     <a href={identity ? '/dashboard' : '#connections'} onClick={identity ? undefined : () => setSection('connections')}>
                       {identity ? 'Open dashboard' : 'View connections'}
                     </a>

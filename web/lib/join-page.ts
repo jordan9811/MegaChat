@@ -821,15 +821,14 @@ function renderWallet() {
     connectBtn.style.display = 'none';
     if (dep) dep.style.gridColumn = '1 / -1';
     info.innerHTML =
-      `<span class="adv-only">🟢 Connected · Wallet: ${addrChip(account)}<br>Network: Tempo</span>` +
+      `<span class="adv-only">🟢 Connected · ${addrChip(account)} <span class="net-chip">${tokenSymbol()} · Tempo</span></span>` +
       `<span class="simple-only">🟢 Signed in — your balance is ready.<br>` +
       `<details class="addr-details"><summary>account details</summary>` +
       `Account address (tap to copy): ${addrChip(account)}</details></span>`;
     if (fundNote) {
       fundNote.style.display = 'block';
+      fundNote.classList.add('simple-only');
       fundNote.innerHTML =
-        `<span class="adv-only">Fund this wallet by sending <strong>${tokenSymbol()}</strong> on ` +
-        '<strong>Tempo</strong> to the address above (tap it to copy).</span>' +
         '<span class="simple-only">Add funds any time — 1 credit costs $' +
         String(perCreditUsd()) + '. Your account details are just above.</span>';
     }

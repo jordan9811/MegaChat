@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { InfoTip } from '@/components/info-tip'
 import { listMyRooms } from '@/lib/api'
 import {
   createCampaign,
@@ -452,7 +453,6 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
                 onClick={() => patch({ actionKind: k, require: 'aired' })}>
                 <FeatureTag kind={k} />
                 <strong>{k === 'holler' ? 'Holler on my room' : 'Call in on my room'}</strong>
-                <small>{k === 'holler' ? 'They send a recorded clip that plays on your stream.' : 'They take a live camera seat beside you.'}</small>
               </button>
             ))}
           </div>
@@ -498,10 +498,13 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
               const on = hasRule(meta.key)
               return (
                 <div key={meta.key} className="mcp-rule" data-on={on}>
-                  <button type="button" className="mcp-rule-head" aria-pressed={on} onClick={() => toggleRule(meta.key)}>
-                    <span className="mcp-toggle" aria-hidden="true"><i /></span>
-                    <span><strong>{meta.title}{meta.note ? <em>{meta.note}</em> : null}</strong><small>{meta.copy}</small></span>
-                  </button>
+                  <div className="mcp-rule-headrow">
+                    <button type="button" className="mcp-rule-head" aria-pressed={on} onClick={() => toggleRule(meta.key)}>
+                      <span className="mcp-toggle" aria-hidden="true"><i /></span>
+                      <span><strong>{meta.title}{meta.note ? <em>{meta.note}</em> : null}</strong>{meta.copy ? <small>{meta.copy}</small> : null}</span>
+                    </button>
+                    {meta.tip ? <InfoTip label={`About ${meta.title}`} text={meta.tip} /> : null}
+                  </div>
                   {on ? <div className="mcp-rule-body">{renderRuleInputs(meta.key)}</div> : null}
                 </div>
               )

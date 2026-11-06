@@ -1,6 +1,6 @@
 'use client'
 
-// The step after creating a room: get MegaChat onto the stream. Two things a
+// The step after creating a room: get Holler onto the stream. Two things a
 // streamer needs — the link their viewers use, and the overlay inside OBS.
 // The OBS WebSocket path is recommended because it adds the browser source
 // at full-canvas size itself, so nobody types pixel dimensions; the manual
@@ -8,7 +8,7 @@
 // who would rather do it by hand or can't enable the WebSocket server.
 
 import { useEffect, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import { CopyRow } from '@/components/copy-row'
 import { ObsOneClick } from '@/components/obs/obs-oneclick'
 import { useRoom } from '@/components/room-provider'
@@ -30,6 +30,24 @@ export function ObsSetup() {
     return () => { cancelled = true }
   }, [room?.id])
 
+  // Whether OBS holds the current (keyed) overlay link, from the server's own
+  // read of the overlay sockets (liveness route, overlayLink). Replaces the
+  // dated "set up OBS before 23 Oct?" sentence with a status.
+  const [overlayLink, setOverlayLink] = useState<'keyed' | 'unkeyed' | 'none' | null>(null)
+  const [recopied, setRecopied] = useState(false)
+  useEffect(() => {
+    const key = room?.id
+    if (!key) return
+    let cancelled = false
+    const load = () => fetch(`/api/rooms/${encodeURIComponent(key)}/liveness`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => { if (!cancelled && body) setOverlayLink(body.overlayLink || null) })
+      .catch(() => {})
+    void load()
+    const t = setInterval(load, 30_000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [room?.id])
+
   if (!room || !joinUrl || !overlayUrl) return null
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
@@ -40,10 +58,11 @@ export function ObsSetup() {
     <section className="mcc-obs" aria-label="Get Holler on your stream">
       <header>
         <strong>Add it to your stream</strong>
-        <small>Your viewers use the link. Your broadcast needs the overlay in OBS.</small>
+        {overlayLink === 'keyed' ? <span className="mcc-overlay-chip" data-state="keyed"><Check size={12} aria-hidden="true" /> Overlay current</span> : null}
+        {overlayLink === 'unkeyed' ? <span className="mcc-overlay-chip" data-state="unkeyed">Old link<button type="button" onClick={() => { void navigator.clipboard?.writeText(obsLink).then(() => { setRecopied(true); setTimeout(() => setRecopied(false), 1800) }).catch(() => {}) }}>{recopied ? 'Copied' : 'Re-copy'}</button></span> : null}
       </header>
       <div className="mcc-obs-body">
-        <CopyRow label="Viewer" value={viewerLink} />
+        <CopyRow label="Viewer link" value={viewerLink} />
 
         {/* Two ways in, both folded shut. Expanded, either one is a wall of
             instructions, and showing both at once is how a first-time
@@ -74,8 +93,7 @@ export function ObsSetup() {
             <ChevronDown size={15} aria-hidden="true" />
           </summary>
           <div className="mcc-obs-panel">
-            <CopyRow label="OBS" value={obsLink} />
-            <p className="mcc-obs-note">Set up OBS before 23 Oct 2026? Paste this link into your MegaChat Overlay source again: campaign Hollers only count through it.</p>
+            <CopyRow label="OBS overlay" value={obsLink} />
             {room.transport !== 'livekit' ? (
               <CopyRow label="Host cam" value={`https://vdo.ninja/?push=mc-host-${room.id}&webcam&quality=1080&stereo&autostart`} />
             ) : null}

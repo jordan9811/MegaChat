@@ -15,6 +15,8 @@
 // are shown as two numbers with two labels, never added together.
 
 import { useEffect, useState } from 'react'
+import { LockKeyhole } from 'lucide-react'
+import { InfoTip } from '@/components/info-tip'
 import { AccountChip } from '@/components/account-chip'
 import { getBountyConfig, getProgram, type BountyClientConfig, type ProgramPool } from '@/lib/bounty-api'
 import { exampleTotals } from '@/lib/bounty-examples'
@@ -25,7 +27,6 @@ import { ThemeToggle } from '@/components/theme-toggle'
 
 // From docs/design/copy-bank.md — the bounty page is the one surface where
 // "demand more" is literally what the product does.
-const START_LINE = 'Choose a streamer and platform. Add the amount and terms on the next screen.'
 
 // Values are the STORE's keys, not display labels. 'pump.fun' here would
 // build a pool key distinct from the existing 'pumpfun' one — two escrow
@@ -263,7 +264,9 @@ function Row({
                   </span>
                 ) : null
               ) : (
-                <span className="text-[12px] text-[var(--mcc-faint)]">all of it locked to this name</span>
+                <span className="inline-flex items-center text-[var(--mcc-faint)]" title="All of it is locked to this name: theirs alone once they claim." aria-label="All of it locked to this name">
+                  <LockKeyhole className="size-3.5" aria-hidden="true" />
+                </span>
               )}
             </>
           )}
@@ -451,16 +454,15 @@ export function BountyProgram() {
             </div>
 
             <section className="mcb-anatomy">
-              <div><span aria-hidden="true" className="track-locked" /><p><strong>Locked</strong><small>Reserved for one streamer. Released after their verified broadcast.</small></p></div>
-              <div><span aria-hidden="true" className="hatch" /><p><strong>Contested</strong><small>Shared across named streamers. The first verified broadcast takes it.</small></p></div>
-              <div><p><strong>Refund rules</strong><small>Declined clips refund in full. Unclaimed bounties return at expiry.</small></p></div>
+              <div><span aria-hidden="true" className="track-locked" /><p><strong>Locked</strong> <InfoTip label="About locked money" text="Reserved for one streamer. Released after their verified broadcast." /></p></div>
+              <div><span aria-hidden="true" className="hatch" /><p><strong>Contested</strong> <InfoTip label="About contested money" text="Shared across named streamers. The first verified broadcast takes it." /></p></div>
+              <div><p><span className="mcb-refundable">Refundable</span> <InfoTip label="About refunds" text="Declined clips refund in full. Unclaimed bounties return at expiry." /></p></div>
             </section>
 
             <section className="mcb-create-bounty">
               <div>
-                <span className="mcb-coordinate">Create a bounty</span>
+                <span className="mcb-coordinate">Create a bounty <span className="mcb-step-chip">Step 1 of 2</span></span>
                 <h2>Add a streamer.</h2>
-                <p>{START_LINE}</p>
               </div>
               <form
                 onSubmit={(e) => {

@@ -4973,3 +4973,47 @@ escrow with a discriminating airing, the routes over HTTP).
   (the setting is account-level, by the owner's call); the badge on the
   campaign offer page; a Kick/other-platform follow for airings.
 
+## TD — Text diet, built (2026-11-06, the owner's 34 picks)
+
+**Verdict:** every pick on the text-diet page is in the web app, one pass,
+gates green (board-fold's known F4 red improved from 6 to 3 failures because
+the demo banner is gone). The page with the picks:
+https://claude.ai/artifact/VQB9FA9r9qGqAYsAwBtFqS
+
+- **TD1 — Shared ⓘ** (`web/components/info-tip.tsx`): hover or focus shows
+  it, a tap toggles it; always a sibling of the control, never inside a button.
+- **TD2 — Dashboard:** tile marks drawn from Holler's own vocabulary (record
+  dot, dashed seat +, Space Mono $) instead of Lucide icons; Holler price
+  entered per 10 seconds with a 10s / 1s switch and the other unit computed
+  under it ("enter 0 for free" gone, free lives on the switch); Advanced and
+  Moderation subtitles cut; the autosave sentence cut (the status line shows
+  only Saving / error); both create-mode preview captions cut; the layout
+  paragraph cut (the guest tile carries a title tooltip); the live-save warning
+  is now a toast when a layout autosave lands while live; viewer and OBS rows
+  labelled Viewer link / OBS overlay; On camera caption cut and its empty state
+  quieter with a Copy viewer link; the queue line cut (it was wrong under
+  moderation); + Add Twitch channel when no channel is set; the dated OBS
+  re-link sentence replaced by an overlay status chip (Overlay current / Old
+  link · Re-copy) read from `overlayKeyState` via the liveness route's new
+  `overlayLink` field; Follow my stream is a switch "Open and close with my
+  Twitch stream" with the detail in an ⓘ; defaults follow the sign-in state
+  (Sign in to store defaults / Save as room default / Update room default
+  settings); the password follows it too (Required signed out, Optional ·
+  recommended for mod access signed in, each with an ⓘ); the Create caption cut.
+- **TD3 — Elsewhere:** join page "No preview" alone; the fund box replaced by a
+  USDC · Tempo chip on the wallet line (advanced view; the simple view keeps its
+  credit line); rooms board demo banner and both taglines cut; bounty rows get
+  a lock with a tooltip, the legend keeps swatch + word with the sentence in an
+  ⓘ and a Refundable badge, the create band says Step 1 of 2, My bounties has a
+  Sign in button; account intro and handle lines cut; campaigns signed-out to
+  one line, the new-campaign lead is a Save → Fund → Open tracker, the action
+  sentences cut, the six rule lines that repeated their titles cut and the X-API
+  cost moved to an ⓘ.
+- **TD4 — Not built as worded:** the signed-in password ⓘ was to say "add
+  moderators to your account to skip the password". No account-level moderator
+  list exists, so the ⓘ says what is true today (moderators use the password;
+  your signed-in account never needs it). Building account moderators is a
+  separate feature.
+- **TD5 — Open from the notes:** the owner asked for more ideas on the preview
+  cards beyond cutting the captions; the price entry may want a per-second
+  granular editor beyond the 10s / 1s switch.

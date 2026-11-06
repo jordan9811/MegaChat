@@ -2386,3 +2386,18 @@ sections, `_gate-bounty-auth.mjs` 52/0 with the four new routes in the table.
   alone proves nothing is on screen. Undo: n/a (gate A1).
 
 Gates: `_gate-liveness.mjs` 47/0; the bounty gates re-run green.
+
+## 2026-11-06 — Text diet: the owner's picks, as built
+
+- **The signed-in room password is optional and always shown.** It replaces
+  the "Allow moderators to manage this room" checkbox that revealed a separate
+  moderator field. Same server field. Undo: restore the checkbox in
+  `create-room.tsx`.
+- **Holler price is entered per 10 seconds by default**, with a 10s / 1s
+  switch; the stored value is still the per-clip price derived from the
+  per-second rate. Undo: default `hollerUnit` to 1.
+- **The overlay status chip reads `overlayLink` from the public liveness
+  route.** It says only keyed / unkeyed / none, which the tier already implies.
+  Undo: drop the field in `liveness.js publicLiveness`.
+- **The live-layout warning became a toast on the autosave that lands while
+  live.** Layout edits always autosaved; nothing is lost if the toast is missed.

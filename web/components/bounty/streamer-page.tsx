@@ -12,7 +12,7 @@
 // approval queue (also reachable from the booth).
 
 import { useCallback, useEffect, useState } from 'react'
-import { Radio, Users, CircleCheck, Swords, Mic } from 'lucide-react'
+import { Radio, Users, CircleCheck, Swords, Mic, LockKeyhole } from 'lucide-react'
 import {
   getBountyConfig, getPoolView, getProgram,
   type BountyClientConfig, type PoolView, type ProgramPool, type PoolLiveness,
@@ -150,11 +150,11 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
             <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
               <span aria-hidden="true" className="h-2 w-3.5 shrink-0" style={LOCKED_SWATCH} />
               Guaranteed to {handle}
+              <span title="Theirs alone the moment they claim" aria-label="Locked to this name" className="inline-flex"><LockKeyhole className="size-3" aria-hidden="true" /></span>
             </p>
             <p className="mt-1 font-heading text-2xl font-bold text-f-bounty-ink tabular">
               {view.guaranteed.toLocaleString()} <span className="text-sm">{currency}</span>
             </p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">theirs alone the moment they claim</p>
             {view.tiers ? (
               <p className="mt-1.5 text-[11px] text-muted-foreground" title="Backers choose the tier their pledge releases at: Green only pays for badge-verified airtime; Yellow or better also releases a slice after a broadcast that kept the keyed overlay up. Set yours under Account → Bounty protection.">
                 <span className="lv lv--green" aria-hidden="true"><span className="lv-dot" />Green only</span> {formatDollars(view.tiers.greenOnly)}

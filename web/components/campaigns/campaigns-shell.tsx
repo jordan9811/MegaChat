@@ -54,10 +54,7 @@ export function CampaignsShell({ tag = 'Campaigns', children }: { tag?: string; 
           <section className="mcp-card mcp-signed-out">
             <span className="mcp-coordinate">Campaigns / private</span>
             <h1>Sign in to run a campaign</h1>
-            <p>
-              A campaign pays people who meet your rules to send a Holler or call in on your stream.
-              It is tied to your account, so sign in first.
-            </p>
+            <p>Pay people who meet your rules to Holler or call in on your stream.</p>
             <button
               type="button"
               className="mcp-btn"

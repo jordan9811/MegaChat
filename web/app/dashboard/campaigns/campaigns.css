@@ -385,3 +385,14 @@ body:has(.mc-camp) { background: var(--hl-bg); }
   .mcp-status-state > .ft { display: none; }
   .mcp-approve dl { grid-template-columns: 1fr; }
 }
+
+/* Text diet 2026-11-06. A rule row holds its switch button and, beside it,
+   the (i) for a rule that costs something. */
+.mcp-rule-headrow { display: flex; align-items: center; gap: 6px; padding-right: 12px; }
+.mcp-rule-headrow .mcp-rule-head { flex: 1; min-width: 0; }
+/* Save -> Fund -> Open, one word of state each. */
+.mcp-steps { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; color: var(--hl-muted, var(--muted-foreground)); }
+.mcp-steps > span { display: inline-flex; align-items: baseline; gap: 5px; padding: 4px 9px; border: 1px solid var(--hl-line-2, var(--border)); border-radius: 999px; }
+.mcp-steps > span[data-step=current] { border-color: var(--hl-strap-hi, currentColor); color: var(--hl-fg, var(--foreground)); }
+.mcp-steps b { font-weight: 700; color: var(--hl-fg, var(--foreground)); }
+.mcp-steps i { font-style: normal; opacity: .6; }
