@@ -129,3 +129,8 @@
 .mcc-overlay-chip[data-state=unkeyed]{background:color-mix(in srgb,var(--hl-danger) 14%,transparent);color:var(--hl-danger)}
 .mcc-overlay-chip button{border:0;border-left:1px solid currentColor;background:transparent;padding:0 0 0 7px;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:2px}
 .mc-create .mcc-footer-choice{border-radius:0}
+/* Follow my stream: the countdown after a stream ends, and the Twitch title
+   offered beside a name the streamer typed (2026-11-07). */
+.mcc-status[data-ending=true] .mcc-status-live i{background:var(--f-bounty,#e8b33a);box-shadow:none}.mcc-status[data-ending=true] .mcc-status-live i:after{animation:none;opacity:0}
+.mcc-name-twitch{display:flex!important;flex-wrap:wrap;align-items:baseline;gap:4px 6px;max-width:100%}.mcc-name-twitch b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:28ch;color:var(--hl-muted);font-weight:600}.mcc-name-twitch button{border:0;background:transparent;padding:0;color:var(--hl-strap-hi);font:inherit;font-weight:700;cursor:pointer}
+@media(hover:hover) and (pointer:fine){.mcc-name-twitch button:hover{text-decoration:underline;text-underline-offset:2px}}

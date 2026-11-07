@@ -8,10 +8,12 @@ The contracts a contributor or integrator meets, embedded **from source** by `np
 
 <!-- source:web/lib/api.ts#Room -->
 ```typescript
-// web/lib/api.ts — Room (lines 99–130), embedded by docs:sync
+// web/lib/api.ts — Room (lines 99–132), embedded by docs:sync
 export type Room = {
   id: string
   name: string
+  /** 'owner' typed it; 'twitch' follows the stream title; null on older rooms (follows the title). */
+  nameSource?: 'owner' | 'twitch' | null
   active: boolean
   unlisted: boolean
   tickSeconds: number
@@ -66,7 +68,7 @@ What `/api/seats` and the dashboard's session view carry per seat. `paymentMode`
 
 <!-- source:web/lib/api.ts#Seat -->
 ```typescript
-// web/lib/api.ts — Seat (lines 132–149), embedded by docs:sync
+// web/lib/api.ts — Seat (lines 134–151), embedded by docs:sync
 export type Seat = {
   id: string
   username: string
@@ -92,7 +94,7 @@ export type Seat = {
 
 <!-- source:web/lib/api.ts#RoomSession -->
 ```typescript
-// web/lib/api.ts — RoomSession (lines 151–160), embedded by docs:sync
+// web/lib/api.ts — RoomSession (lines 153–164), embedded by docs:sync
 export type RoomSession = {
   room: Room
   seats: Seat[]
@@ -100,6 +102,8 @@ export type RoomSession = {
    *  Twitch answers for an offline channel with a gray placeholder frame at
    *  HTTP 200, so an <img> can never tell — render the preview only on this. */
   twitchLive: boolean
+  /** Follow my stream as the server sees it (server.js followStatus). */
+  follow?: FollowStatus | null
   joinUrl: string
   overlayUrl: string
 }
@@ -149,7 +153,7 @@ export type RecentAiring = {
 
 <!-- source:web/lib/api.ts#GuestEntry -->
 ```typescript
-// web/lib/api.ts — GuestEntry (lines 526–531), embedded by docs:sync
+// web/lib/api.ts — GuestEntry (lines 553–558), embedded by docs:sync
 export type GuestEntry = {
   handle: string
   addedAt: string
@@ -161,7 +165,7 @@ export type GuestEntry = {
 
 <!-- source:web/lib/api.ts#GuestList -->
 ```typescript
-// web/lib/api.ts — GuestList (lines 534–539), embedded by docs:sync
+// web/lib/api.ts — GuestList (lines 561–566), embedded by docs:sync
 export type GuestList = {
   enabled: boolean
   explicit: boolean | null

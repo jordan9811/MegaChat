@@ -5029,3 +5029,48 @@ https://claude.ai/artifact/VQB9FA9r9qGqAYsAwBtFqS
 - **TD7 — Open:** `site-footer.tsx contactUrl()` still falls back to
   `https://x.com/megachat` when CONTACT_URL is unset.
 
+## TW — Twitch follow: the loop stopped fighting the owner (2026-11-07)
+
+The owner reported the Twitch link "not working well": the room name, syncing
+with Twitch being live, and closing when they closed the app or ended the
+stream in OBS. The production log of 2026-11-07 showed all three.
+
+- **TW1 — Fixed: a manual Start was undone within a minute.** Started four
+  times between 02:17 and 02:22 UTC, paused by the loop each time: the
+  channel had been dark since boot (22:10), so the five-minute window was
+  spent before Start was pressed. Start (and creating a room) now holds a room
+  open before its stream is up, and the manage page keeps it open
+  (`noteManualStart`, `ownerHolds`, `server.js`).
+- **TW2 — Fixed: a typed room name was replaced by the stream title** every
+  minute while live. The room record now carries `nameSource`; the title fills
+  only a room nobody named. Beside a typed name the manage page shows the
+  Twitch title in small text with "Use this name", and only then.
+- **TW3 — Fixed: an ended stream left the room "Live" for five minutes.** OBS
+  stopped streaming at 02:26:16 UTC and shut down at 02:27:15; the board
+  dropped the room at 02:27:17, the room paused at 02:32:26. Now the close
+  reads three witnesses, Twitch, the keyed OBS overlay and the manage page
+  (heartbeat, goodbye on pagehide, its own refresh): ended with the owner
+  online and OBS gone pauses at once, OBS still open pauses after 90 s, and
+  only silence from the owner keeps the five-minute blip window. The manage
+  page counts down ("Stream ended · pausing in m:ss").
+- **TW4 — New: closing the manage page is a liveness safeguard** (owner,
+  2026-11-07). A room opened before its stream closes when its manage page
+  closes; a room that follows no stream closes when its manage page has closed
+  and no keyed overlay is connected. Only rooms whose manage page was seen this
+  boot; never the test room or the demo room.
+- **TW5 — Known limits.** Presence is in memory, so a deploy forgets it and
+  the first beat after boot restores it; until then the old blip window
+  applies. A manage tab left open from before this deploy runs the old bundle
+  and sends no heartbeat, so a room it Starts is held for the 150 s stale
+  window, then closes if not live; reloading the tab fixes it. A mobile browser
+  that suspends a background tab counts as gone after 150 s.
+- **TW6 — Revert:** `MANAGER_CLOSE=0` turns the manage-page witness and its
+  rules off (the follow loop then behaves as before); the name rule has no
+  flag and is undone by ignoring `nameSource` in `followTick`.
+
+Gates: `_gate-follow-stream.mjs` 46/0 (15 of its checks fail on 784fb90, the
+commit before); `_gate-dashboard-update`, `_gate-rooms-store`,
+`_gate-dashboard-phase1`, `_gate-phase4-handles`, `_gate-liveness`,
+`_gate-web-fixes`, `_gate-ui-local-polish`, `_gate-record-flow`,
+`_gate-typecheck` green.
+

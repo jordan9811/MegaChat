@@ -15,6 +15,8 @@ import {
   setRoomOwner,
   roomsOwnedBy,
   isRoomOwnedBy,
+  getRoomRecord,
+  clampRoomName,
 } from './rooms-store.js';
 import { validatePaymentToken, fromAtomic, toAtomic } from './token-utils.js';
 import { rewardBounds } from './rewards.js';
@@ -217,6 +219,8 @@ export function attachDashboardRoutes(app, deps) {
     try {
       room = await createRoomWithPassword(name, mergedConfig, hasPassword ? password : null);
       if (identity) setRoomOwner(room.id, roomOwnerKey(identity));
+      // A new room is open before its stream is: held like a manual Start.
+      deps.noteManualStart?.(room.id);
       if (handle != null && handle !== '') {
         setRoomHandle(room.id, handle);
         room = resolveRoomConfig(room.id);
@@ -346,9 +350,22 @@ export function attachDashboardRoutes(app, deps) {
       // preview viewers get without a second hit on Twitch. Lazy by design:
       // false on a cold cache, true on the next poll.
       twitchLive: room.twitchChannel ? twitchLiveCached(room.twitchChannel) : false,
+      // Follow my stream as the server sees it: live / waiting / ended, the
+      // last Twitch title, and when the room closes on its own (server.js
+      // followStatus). Null on a server that does not follow.
+      follow: deps.followStatus ? (deps.noteManagerContact?.(room.id), deps.followStatus(room.id)) : null,
       joinUrl: `${deps.baseUrl}/?room=${room.id}`,
       overlayUrl: managerOverlayUrl(deps.baseUrl, room.id, { keyed: callerOwnsRoom(req, room.id) }),
     });
+  });
+
+  // The manage page's heartbeat: 'here' while it is open, 'gone' on pagehide.
+  // One of the three witnesses the close rules read (server.js closePlan).
+  app.post('/api/dashboard/rooms/:roomId/presence', requireRoomAccess, (req, res) => {
+    const body = req.body || {};
+    const state = body.state === 'gone' ? 'gone' : 'here';
+    deps.noteManager?.(req.roomId, body.tab, state);
+    res.status(204).end();
   });
 
   app.put('/api/dashboard/rooms/:roomId', requireRoomAccess, async (req, res) => {
@@ -372,6 +389,22 @@ export function attachDashboardRoutes(app, deps) {
         if (!avail.ok) return res.status(avail.status).json({ error: avail.error });
       }
     }
+    // Who names the room. A name that differs from the stored one is the
+    // owner's from now on, and the follow loop stops replacing it with the
+    // stream title. "Use the Twitch title" hands the name back to the stream.
+    // The client sends `name` only when the field was edited, so an autosave
+    // carrying a stale name cannot claim it (owner, 2026-11-07).
+    delete body.nameSource;
+    if (body.useTwitchTitle === true) {
+      const title = deps.followTitleFor?.(req.roomId);
+      body.nameSource = 'twitch';
+      if (title) body.name = title;
+      else delete body.name;
+    } else if (typeof body.name === 'string' && body.name.trim()) {
+      const rec = getRoomRecord(req.roomId);
+      if (rec && clampRoomName(body.name.trim()) !== rec.name) body.nameSource = 'owner';
+    }
+    delete body.useTwitchTitle;
     // Every check before any write, and one write: the password and the handle
     // used to be saved first, so a refused layout answered 400 with both
     // already applied (stores-7).
@@ -403,6 +436,9 @@ export function attachDashboardRoutes(app, deps) {
   app.post('/api/dashboard/rooms/:roomId/start', requireRoomAccess, (req, res) => {
     const room = setRoomActive(req.roomId, true);
     if (!room) return res.status(404).json({ error: 'Room not found' });
+    // Started by hand: before the stream is up that holds the room open,
+    // instead of an offline answer from hours ago pausing it a minute later.
+    deps.noteManualStart?.(room.id);
     console.log(`[dashboard] room ${room.id} started (accepting joins)`);
     res.json({ room });
   });

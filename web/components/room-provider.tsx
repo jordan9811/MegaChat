@@ -35,6 +35,8 @@ import {
   approveLetter as apiApproveLetter,
   rejectLetter as apiRejectLetter,
   forcePlayLetter as apiForcePlayLetter,
+  postManagerPresence,
+  type FollowStatus,
   type LetterAdminItem,
   type MyRoomCard,
   type Room,
@@ -180,6 +182,12 @@ type RoomContextValue = {
    *  that is live and flips true on the next poll: false means "no picture to
    *  show yet", never "you are offline". */
   twitchLive: boolean
+  /** Follow my stream as the server sees it: live / waiting / ended, the last
+   *  Twitch title, and when the room closes on its own. */
+  follow: FollowStatus | null
+  /** Hand the room name back to the stream: take the Twitch title now and
+   *  follow it from here on. */
+  adoptTwitchTitle: () => Promise<void>
   draft: ConfigDraft
   usdcAddress: string
   livekitConfigured: boolean
@@ -348,7 +356,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   // Server-verified: is the room's saved Twitch channel actually broadcasting.
   // Session state, not config — it changes without the owner touching the form.
   const [twitchLive, setTwitchLive] = useState(false)
+  const [follow, setFollow] = useState<FollowStatus | null>(null)
   const [draft, setDraft] = useState<ConfigDraft>(DEFAULT_DRAFT)
+  // The name field was edited since the last save. Only then does an autosave
+  // carry the name: a draft holding a name the stream title has since
+  // replaced must not send it back and claim it as typed.
+  const nameEditedRef = useRef(false)
+  const draftNameRef = useRef('')
+  draftNameRef.current = draft.name
   const [usdcAddress, setUsdcAddress] = useState(USDC_FALLBACK)
   const [livekitConfigured, setLivekitConfigured] = useState(false)
   const [identityHandle, setIdentityHandle] = useState<string | null>(null)
@@ -566,6 +581,8 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     setJoinUrl(null)
     setOverlayUrl(null)
     setTwitchLive(false)
+    setFollow(null)
+    nameEditedRef.current = false
     // Start the create form from defaults, not from the room just closed.
     draftTouchedRef.current = false
     if (!identityHandleRef.current) guestHandleRef.current = ''
@@ -586,6 +603,13 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       setJoinUrl(data.joinUrl)
       setOverlayUrl(data.overlayUrl)
       setTwitchLive(data.twitchLive === true)
+      setFollow(data.follow ?? null)
+      // The stream title renamed the room on the server: show it, unless the
+      // streamer is typing a name of their own right now.
+      if (!nameEditedRef.current && data.room.name && data.room.name !== draftNameRef.current) {
+        skipNextAutosaveRef.current = true
+        setDraft((d) => ({ ...d, name: data.room.name }))
+      }
     } catch (err) {
       // A 401 for a room the streamer has already left must not close the
       // one they are in now.
@@ -599,6 +623,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       passwordRef.current = password
       roomIdRef.current = r.id
       skipNextAutosaveRef.current = true
+      nameEditedRef.current = false
       setSaveState('saved')
       setSaveError(null)
       setRoom(r)
@@ -663,6 +688,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
 
   const updateDraft = useCallback((patch: Partial<ConfigDraft>) => {
     draftTouchedRef.current = true
+    if ('name' in patch) nameEditedRef.current = true
     setDraft((d) => ({ ...d, ...patch }))
   }, [])
 
@@ -703,12 +729,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       const roomId = roomIdRef.current
       if (!roomId) return
       try {
+        const sentName = nameEditedRef.current
         const data = await updateRoom(roomId, passwordRef.current, {
-          name: draft.name.trim() || undefined,
+          name: sentName ? draft.name.trim() || undefined : undefined,
           handle: draft.handle.trim() || null,
           config: draftToConfig(draft, usdcAddress),
         })
         if (roomIdRef.current === roomId && saveVersion.current === version) {
+          if (sentName) nameEditedRef.current = false
           setRoom(data.room)
           setSaveState('saved')
         }
@@ -722,6 +750,46 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     }
   }, [draft, mode, usdcAddress, switchRoom])
+
+  const adoptTwitchTitle = useCallback(async () => {
+    const roomId = roomIdRef.current
+    if (!roomId) return
+    try {
+      const data = await updateRoom(roomId, passwordRef.current, { useTwitchTitle: true })
+      if (roomIdRef.current !== roomId) return
+      nameEditedRef.current = false
+      skipNextAutosaveRef.current = true
+      setRoom(data.room)
+      setDraft((d) => ({ ...d, name: data.room.name }))
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) switchRoom()
+    }
+  }, [switchRoom])
+
+  // The manage page is a liveness witness (server.js closePlan): beat while
+  // open, say goodbye on pagehide and when the streamer leaves this room. A
+  // room opened before its stream stays open only while this page is open.
+  useEffect(() => {
+    if (mode !== 'managing' || !room?.id) return
+    const roomId = room.id
+    const tab = Math.random().toString(36).slice(2, 12)
+    const beat = () => void postManagerPresence(roomId, passwordRef.current, tab, 'here')
+    const bye = () => void postManagerPresence(roomId, passwordRef.current, tab, 'gone')
+    const onVisible = () => { if (document.visibilityState === 'visible') beat() }
+    const onShow = (event: PageTransitionEvent) => { if (event.persisted) beat() }
+    beat()
+    const timer = setInterval(beat, 20_000)
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('pagehide', bye)
+    window.addEventListener('pageshow', onShow)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('pagehide', bye)
+      window.removeEventListener('pageshow', onShow)
+      bye()
+    }
+  }, [mode, room?.id])
 
   const toggleActive = useCallback(async () => {
     const roomId = roomIdRef.current
@@ -894,6 +962,8 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       joinUrl,
       overlayUrl,
       twitchLive,
+      follow,
+      adoptTwitchTitle,
       draft,
       usdcAddress,
       livekitConfigured,
@@ -917,7 +987,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       lettersAdmin,
       hostToken,
     }),
-    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, twitchLive, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, endRoom, kick, pin, switchRoom, lettersAdmin, hostToken],
+    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, twitchLive, follow, adoptTwitchTitle, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, endRoom, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

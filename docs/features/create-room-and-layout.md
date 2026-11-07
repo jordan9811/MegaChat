@@ -20,7 +20,7 @@ One page, `/dashboard` (rendered by `web/components/create-room/create-room.tsx`
 
 ## How to use it
 
-Landing → *Create a room* → `/dashboard`. Fill the name and price, save. Then, in the right column: add the overlay to OBS ([OBS setup](obs-setup.md)), and if you want it, turn on *Follow my stream* so the room pauses and resumes with your broadcast ([Follow my stream](follow-my-stream.md)). Come back to this page while live to see the preview and manage seats.
+Landing → *Create a room* → `/dashboard`. Fill the name and price, save. Then, in the right column: add the overlay to OBS ([OBS setup](obs-setup.md)), and leave *Open and close with my Twitch stream* on so the room opens and pauses with your broadcast ([Follow my stream](follow-my-stream.md)). A room you open before going live stays open while this page is open. Come back to this page while live to see the preview and manage seats.
 
 ## The ten-tile ceiling
 

@@ -99,6 +99,8 @@ export type RoomLayout = {
 export type Room = {
   id: string
   name: string
+  /** 'owner' typed it; 'twitch' follows the stream title; null on older rooms (follows the title). */
+  nameSource?: 'owner' | 'twitch' | null
   active: boolean
   unlisted: boolean
   tickSeconds: number
@@ -155,8 +157,20 @@ export type RoomSession = {
    *  Twitch answers for an offline channel with a gray placeholder frame at
    *  HTTP 200, so an <img> can never tell — render the preview only on this. */
   twitchLive: boolean
+  /** Follow my stream as the server sees it (server.js followStatus). */
+  follow?: FollowStatus | null
   joinUrl: string
   overlayUrl: string
+}
+
+export type FollowStatus = {
+  following: boolean
+  /** live: Twitch says live. waiting: open, stream not up yet. ended: the stream ended. null: no fresh answer. */
+  state: 'live' | 'waiting' | 'ended' | null
+  /** The last stream title Twitch gave this boot. */
+  title: string | null
+  /** When the room closes on its own, or null when nothing will close it. */
+  closesAt: string | null
 }
 
 /** Config the dashboard PUTs/POSTs — matches gatherConfig() in the old UI. */
@@ -363,12 +377,25 @@ export function getRoomSession(roomId: string, password?: string) {
 export function updateRoom(
   roomId: string,
   password: string,
-  patch: { name?: string; config?: RoomConfigPatch; handle?: string | null },
+  patch: { name?: string; config?: RoomConfigPatch; handle?: string | null; useTwitchTitle?: boolean },
 ) {
   return request<{ room: Room }>(
     `/api/dashboard/rooms/${encodeURIComponent(roomId)}`,
     { method: 'PUT', password, body: patch },
   )
+}
+
+/** The manage page's heartbeat ('here') and goodbye ('gone'). keepalive lets
+ *  the goodbye leave during pagehide, with the room password header intact. */
+export function postManagerPresence(roomId: string, password: string, tab: string, state: 'here' | 'gone') {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (password) headers['X-Room-Password'] = password
+  return fetch(`${backendHttpUrl()}/api/dashboard/rooms/${encodeURIComponent(roomId)}/presence`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ tab, state }),
+    keepalive: true,
+  }).catch(() => undefined)
 }
 
 export function setRoomActive(roomId: string, password: string, active: boolean) {

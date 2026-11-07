@@ -2401,3 +2401,32 @@ Gates: `_gate-liveness.mjs` 47/0; the bounty gates re-run green.
   Undo: drop the field in `liveness.js publicLiveness`.
 - **The live-layout warning became a toast on the autosave that lands while
   live.** Layout edits always autosaved; nothing is lost if the toast is missed.
+
+## 2026-11-07 — Follow my stream reads three witnesses
+
+- **The manage page is a liveness witness.** It beats every 20 s, says
+  goodbye on pagehide (a keepalive fetch, so the room password header goes
+  with it), and its 5-second refresh counts as word from the owner. Why: the
+  owner asked for closing the manage page to be a safeguard, and it is the
+  only signal that tells "the streamer ended" from "the streamer's connection
+  dropped". Undo: `MANAGER_CLOSE=0`.
+- **Pausing, not ending.** Every close here sets `active: false`; seats on
+  camera stay, and going live reopens a following room. Undo: n/a.
+- **A Start holds a not-yet-live room for at most the stale window (150 s),
+  and only until the manage page speaks.** It covers the moment before the
+  first beat. Undo: drop `heldAt` from `noteManualStart`.
+- **A room the owner holds open shows on the board before its stream is up.**
+  They said it is open. Undo: make `hiddenByBroadcast` ignore `ownerHolds`.
+- **Rooms that follow no stream close on the manage page too**, when no keyed
+  overlay is connected for the 45 s grace. Why: "a decent way to have the
+  liveness safeguard for users too" (owner). The test room, the demo room and
+  rooms nobody managed this boot are exempt. Undo: return null for those rooms
+  in `closePlan`.
+- **The name belongs to whoever set it last.** A typed name (at creation, or a
+  changed name in a save) is the owner's; "Use this name" hands it back to the
+  stream. The client sends the name only when the field was edited, so a stale
+  autosave cannot claim it. Undo: ignore `nameSource` in `followTick`.
+
+Gates: `_gate-follow-stream.mjs` 46/0, 15 of its checks failing on the
+previous commit.
+

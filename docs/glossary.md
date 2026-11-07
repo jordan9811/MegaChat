@@ -29,7 +29,7 @@ Every term this project invented or reuses oddly, one line each, with the file w
 | **Handle** | The name a room lives at (`/<handle>`), or the name a person reserved by signing in. Two registries. | `rooms-store.js`, `accounts.js` |
 | **Owner key** | The account id (`acct_…`) — the stable id of a signed-in person across every platform they link, stamped on rooms and whitelist lists. It was `provider:platformId` before the account layer. | `roomOwnerKey`, `auth.js` |
 | **Guest whitelist** | A streamer's standing free list, keyed on the owner, pinned to identities. | `guest-whitelist.js` |
-| **Follow my stream** | The room hides from discovery on the first dark reading and pauses after five minutes; resumes on live. | `followTick`, `server.js` |
+| **Follow my stream** | The room opens when the Twitch channel goes live and hides from discovery on the first dark reading. It pauses at once when the stream ended with OBS closed, after 90 s with OBS open, and after five minutes when nothing is heard from the owner; a room opened by hand stays open while its manage page is open. | `followTick`, `closePlan`, `server.js` |
 | **Airing** | One record per broadcast a room went through, with moments (seat, seat_leave, megachat). | `airings-store.js` |
 | **Moment** | The second something worth opening at happened, stored as absolute time plus offset. | `addMoment`, `airings-store.js` |
 | **Poster** | The picture a finished broadcast shows on Recently aired: one JPEG per AIRING, from while a guest was on or a MegaChat played (our capture, a recording frame, a kept live preview, or the recording thumbnail, best first), or a typographic card when there is none. | `airing-posters.js` |

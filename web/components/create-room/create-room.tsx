@@ -98,7 +98,22 @@ function SwitchRow({ checked, onClick, title, tip }: { checked: boolean; onClick
   return <div className="mcc-switch-row"><button type="button" role="switch" aria-checked={checked} className="mcc-switch-btn" onClick={onClick}><span className="mcc-toggle" data-on={checked} aria-hidden="true"><i /></span><strong>{title}</strong></button><InfoTip text={tip} label={`About ${title}`} /></div>
 }
 
-const FOLLOW_TIP = 'Go live on Twitch and this room opens and joins the board. End the stream and it leaves the board; it only pauses once you have been off a while, so a dropped stream never ends a conversation.'
+const FOLLOW_TIP = 'Go live on Twitch and this room opens and joins the board. Before you go live, it stays open while this page is open. End the stream and it pauses within a minute or two. If your connection drops instead, it waits five minutes for you to come back.'
+
+/** m:ss until `at`, ticking each second; null when there is nothing to count. */
+function useCountdown(at: string | null | undefined) {
+  const target = at ? Date.parse(at) : NaN
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!Number.isFinite(target)) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [target])
+  if (!Number.isFinite(target)) return null
+  const s = Math.max(0, Math.ceil((target - now) / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
 
 function FooterChoice({ checked, onClick, title, copy }: { checked: boolean; onClick: () => void; title: string; copy?: string }) {
   return <button type="button" className="mcc-footer-choice" aria-pressed={checked} onClick={onClick}><span className="mcc-checkbox" data-checked={checked}>{checked ? '✓' : ''}</span><span><strong>{title}</strong>{copy ? <small>{copy}</small> : null}</span></button>
@@ -109,7 +124,7 @@ function FooterChoice({ checked, onClick, title, copy }: { checked: boolean; onC
 // (links, seats, booth, queue) where the previews were. Owning a room means
 // you land here IN it — never on a fresh form with a bumped handle.
 export function CreateRoom() {
-  const { mode, room, saveState, saveError, toggleActive, endRoom, draft, updateDraft, create, hasIdentity, identityHandle, saveDefaultsFromDraft, accountDefaults, myRooms, openOwnedRoom, twitchLive, seats } = useRoom()
+  const { mode, room, saveState, saveError, toggleActive, endRoom, draft, updateDraft, create, hasIdentity, identityHandle, saveDefaultsFromDraft, accountDefaults, myRooms, openOwnedRoom, twitchLive, seats, follow, adoptTwitchTitle } = useRoom()
   const { openSignIn } = useAccount()
   // One control, three states: signed out it offers the sign-in; signed in it
   // saves, or updates what is already saved.
@@ -122,6 +137,14 @@ export function CreateRoom() {
   // hangs up the booth — on a guest, at the exact moment they arrive.
   const liveFirst = seats.length > 0 ? { order: -1 } : undefined
   const managing = mode === 'managing' && !!room
+  // The stream ended and the room pauses on its own: say when, instead of
+  // "Live" for minutes after the board has already dropped it.
+  const pausingIn = useCountdown(managing && room.active && follow?.state === 'ended' ? follow.closesAt : null)
+  // A name the streamer typed keeps the stream title from replacing it. Only
+  // then, offer the title beside it: nothing shows when the name follows the
+  // stream or there is no title to offer (owner, 2026-11-07).
+  const twitchTitle = managing && follow?.following && room.nameSource === 'owner' && follow.title
+    && follow.title.trim() !== room.name.trim() && follow.title.trim() !== draft.name.trim() ? follow.title.trim() : null
   const [defaultsState, setDefaultsState] = useState<'idle' | 'busy' | 'saved'>('idle')
   const saveDefaultsNow = useCallback(async () => {
     setDefaultsState('busy')
@@ -208,10 +231,10 @@ export function CreateRoom() {
     <header className="mcc-header"><div className="mcc-header-inner"><span className="mcc-brand-lockup"><a href="/?stay=1" className="mcc-brand"><BrandText /></a><i /><span>{managing ? 'Your room' : 'New room'}</span></span><nav aria-label="Product navigation"><a href="/app">Rooms</a><a href="/bounty">Bounties</a><a href="/dashboard/campaigns">Campaigns</a><a href="/how-it-works">How it works</a></nav><div className="mcc-header-end"><ThemeToggle /><span className="mcc-account"><AccountChip /></span></div></div></header>
     <main className="mcc-shell">
       {!hasIdentity ? <RoomRecovery /> : null}
-      <section className="mcc-identity" aria-label="Room identity"><div><span className="mcc-eyebrow">Room name</span><span className="mcc-field-row"><InlineText value={draft.name} onChange={(name) => { setTouchedName(true); updateDraft({ name }) }} placeholder="Name your room" label="Room name" />{managing ? <SaveMark touched={touchedName} state={saveState} /> : null}</span></div><div><span className="mcc-eyebrow">Your room link</span><span className="mcc-field-row"><span className="mcc-room-url">hollertv.com/<InlineText className="mcc-handle" value={draft.handle} onChange={(handle) => { setTouchedHandle(true); updateDraft({ handle }) }} sanitize={(value) => value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20)} placeholder={identityHandle || 'yourname'} label="Your link" /></span>{managing ? <SaveMark touched={touchedHandle} state={saveState} /> : null}</span></div></section>
+      <section className="mcc-identity" aria-label="Room identity"><div><span className="mcc-eyebrow">Room name</span><span className="mcc-field-row"><InlineText value={draft.name} onChange={(name) => { setTouchedName(true); updateDraft({ name }) }} placeholder="Name your room" label="Room name" />{managing ? <SaveMark touched={touchedName} state={saveState} /> : null}</span>{twitchTitle ? <small className="mcc-name-twitch">On Twitch: <b>{twitchTitle}</b> <button type="button" onClick={() => { setTouchedName(true); void adoptTwitchTitle() }}>Use this name</button></small> : null}</div><div><span className="mcc-eyebrow">Your room link</span><span className="mcc-field-row"><span className="mcc-room-url">hollertv.com/<InlineText className="mcc-handle" value={draft.handle} onChange={(handle) => { setTouchedHandle(true); updateDraft({ handle }) }} sanitize={(value) => value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20)} placeholder={identityHandle || 'yourname'} label="Your link" /></span>{managing ? <SaveMark touched={touchedHandle} state={saveState} /> : null}</span></div></section>
 
-      {managing && room ? <section className="mcc-status" aria-label="Room status" data-active={!!room.active}>
-        <div className="mcc-status-live"><i aria-hidden="true" /><span><strong>{room.active ? 'Live · taking joins' : 'Paused · no new joins'}</strong>{endError || saveState !== 'saved' ? <small>{endError ? endError : saveState === 'saving' ? 'Saving changes…' : (saveError || 'Changes not saved')}</small> : null}</span></div>
+      {managing && room ? <section className="mcc-status" aria-label="Room status" data-active={!!room.active} data-ending={pausingIn != null}>
+        <div className="mcc-status-live"><i aria-hidden="true" /><span><strong>{room.active ? (pausingIn != null ? `Stream ended · pausing in ${pausingIn}` : 'Live · taking joins') : 'Paused · no new joins'}</strong>{endError || saveState !== 'saved' ? <small>{endError ? endError : saveState === 'saving' ? 'Saving changes…' : (saveError || 'Changes not saved')}</small> : null}</span></div>
         <div className="mcc-status-actions">
           {myRooms.length > 1 ? <select aria-label="Switch room" value={room.id} onChange={(event) => void openOwnedRoom(event.target.value)}>{myRooms.map((owned) => <option key={owned.id} value={owned.id}>{owned.name || owned.handle || owned.id}</option>)}</select> : null}
           <button type="button" className="mcc-status-toggle" onClick={() => void toggleActive()}>{room.active ? <><Pause size={14} /> Pause room</> : <><Play size={14} /> Resume room</>}</button>

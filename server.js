@@ -3325,7 +3325,93 @@ async function refreshTwitchLive(login) {
 // these, exactly like TWITCH_API_BASE.
 const FOLLOW_POLL_MS = Number(process.env.FOLLOW_POLL_MS) || 60_000;
 const FOLLOW_OFF_CONFIRM_MS = Number(process.env.FOLLOW_OFF_CONFIRM_MS) || 5 * 60_000;
-const followState = new Map(); // roomId -> { live: boolean, offSince: number|null }
+const followState = new Map(); // roomId -> { live, offSince, endedLive, heldAt, at, viewers?, big? }
+// The last stream title seen for a following room, kept after the stream
+// ends: the manage page offers it as the name when the owner typed their own.
+const followTitle = new Map(); // roomId -> title
+
+// ── the owner's manage page is a liveness signal too (owner, 2026-11-07) ──
+// The manage page beats while it is open and says goodbye on pagehide. With
+// Twitch and the keyed OBS overlay that makes three witnesses, and the close
+// rules below (closePlan) read all three:
+//   * a room opened by hand before the stream starts stays open while its
+//     manage page is open: Twitch alone used to pause it within a minute;
+//   * a stream that ends while the owner is demonstrably online closes the
+//     room at once when OBS's overlay is gone too, and after
+//     FOLLOW_OFF_OWNER_MS when it is not. Only with no word from the owner
+//     does the old blip window (FOLLOW_OFF_CONFIRM_MS) decide;
+//   * a room that follows no stream closes when its manage page has closed
+//     and no keyed overlay is connected: nobody is behind it.
+// Only a room whose manage page has been SEEN this boot is closed on this
+// signal: the test room, the demo room and a room nobody manages are not.
+// MANAGER_CLOSE=0 turns all of it off and leaves the follow loop as it was.
+const MANAGER_CLOSE_ON = process.env.MANAGER_CLOSE !== '0';
+// Background tabs are throttled to about one timer a minute, so a page is
+// "gone quiet" only well past that.
+const MANAGER_BEAT_STALE_MS = envNum('MANAGER_BEAT_STALE_MS', 150_000, { min: 1000 });
+// A reload says goodbye and comes straight back; this covers it.
+const MANAGER_LEAVE_GRACE_MS = envNum('MANAGER_LEAVE_GRACE_MS', 45_000, { min: 0 });
+const FOLLOW_OFF_OWNER_MS = envNum('FOLLOW_OFF_OWNER_MS', 90_000, { min: 0 });
+const MANAGER_TICK_MS = envNum('MANAGER_TICK_MS', 10_000, { min: 250 });
+const managerPresence = new Map(); // roomId -> { tabs: Map<tabId, seenAt>, lastSeenAt, leftAt }
+const overlaySeenAt = new Map();   // roomId -> last time a keyed overlay was seen connected
+// The manage page's 5-second refresh: proof the owner is online, though not
+// presence (a page without the beat, an old bundle, must not count as open).
+const managerContactAt = new Map(); // roomId -> last dashboard read
+const noteManagerContact = (roomId) => managerContactAt.set(roomId, Date.now());
+
+/** A beat ('here') or a goodbye ('gone') from one manage-page tab. */
+function noteManager(roomId, tab, state) {
+  const t = String(tab || '').replace(/[^\w-]/g, '').slice(0, 40) || 'tab';
+  let p = managerPresence.get(roomId);
+  if (!p) { p = { tabs: new Map(), lastSeenAt: 0, leftAt: null }; managerPresence.set(roomId, p); }
+  const now = Date.now();
+  if (state === 'gone') { p.tabs.delete(t); p.leftAt = now; return; }
+  if (!p.tabs.has(t) && p.tabs.size >= 20) return;
+  p.tabs.set(t, now);
+  p.lastSeenAt = now;
+}
+
+/** What the manage page says about a room right now. `gone` is 'left' after a
+ *  goodbye and the reload grace, 'stale' after no beat for the stale window. */
+function managerView(roomId, now = Date.now()) {
+  const p = managerPresence.get(roomId);
+  if (!p) return { observed: false, present: false, gone: null, lastSeenAt: 0, leftAt: null };
+  let present = false;
+  for (const [tab, at] of p.tabs) {
+    if (now - at < MANAGER_BEAT_STALE_MS) present = true;
+    else p.tabs.delete(tab);
+  }
+  let gone = null;
+  if (!present) {
+    if (p.leftAt != null && p.leftAt >= p.lastSeenAt) { if (now - p.leftAt >= MANAGER_LEAVE_GRACE_MS) gone = 'left'; }
+    else if (now - p.lastSeenAt >= MANAGER_BEAT_STALE_MS) gone = 'stale';
+  }
+  return { observed: true, present, gone, lastSeenAt: p.lastSeenAt, leftAt: p.leftAt };
+}
+
+/** The owner pressed Start (or created the room). Before the stream is up
+ *  that is a promise to go live, so the room is held open instead of being
+ *  paused by an offline answer that may be hours old. */
+function noteManualStart(roomId) {
+  const st = followState.get(roomId);
+  if (st?.live) return;
+  const now = Date.now();
+  followState.set(roomId, { live: false, offSince: now, endedLive: false, heldAt: now, at: st?.at || 0 });
+}
+
+/** Is the owner holding a not-yet-live room open? The Start press holds it
+ *  only until the manage page speaks: once a beat or a goodbye has come in
+ *  since, the page decides. (A hold that outlived a goodbye kept a closed
+ *  page's room open for the rest of the stale window.) */
+function ownerHolds(roomId, st, now = Date.now()) {
+  if (!MANAGER_CLOSE_ON || !st || st.live || st.endedLive) return false;
+  const mgr = managerView(roomId, now);
+  if (mgr.present) return true;
+  if (!st.heldAt || now - st.heldAt >= MANAGER_BEAT_STALE_MS) return false;
+  const spokeSinceHold = mgr.observed && Math.max(mgr.lastSeenAt || 0, mgr.leftAt || 0) >= st.heldAt;
+  return !spokeSinceHold;
+}
 // AIRING_POSTERS=0 turns off every part of the recent-rail pictures at once:
 // keeping previews, picking at close, and the sweep (airing-posters.js).
 const AIRING_POSTERS_ON = process.env.AIRING_POSTERS !== '0';
@@ -3372,7 +3458,90 @@ function followsBroadcast(cfg) {
 function hiddenByBroadcast(room) {
   if (!followsBroadcast(room.config)) return false;
   const st = followState.get(room.id);
-  return !!st && st.live === false;
+  if (!st || st.live !== false) return false;
+  // Opened by hand and the owner is still on the manage page: they said this
+  // room is open, so it shows, stream or not (owner, 2026-11-07).
+  return !ownerHolds(room.id, st);
+}
+
+/**
+ * When an ACTIVE room should close, or null to leave it open. The three
+ * witnesses are Twitch (followState), the keyed OBS overlay and the manage
+ * page; see the block above managerPresence for the rules in words.
+ * A following room is judged only on a FRESH Twitch answer: "could not ask"
+ * still changes nothing.
+ */
+function closePlan(r, now = Date.now()) {
+  const id = r.id;
+  if (id === DEFAULT_ROOM_ID || r.config?.isDemo) return null;
+  const overlayUp = hasAuthedOverlay(id);
+  if (overlayUp) overlaySeenAt.set(id, now);
+  const following = followsBroadcast(r.config);
+  if (following) {
+    const st = freshFollow(id);
+    if (!st || st.live) return null;
+    const confirm = { at: (st.offSince ?? now) + FOLLOW_OFF_CONFIRM_MS, reason: 'dark past the confirm window' };
+    if (!MANAGER_CLOSE_ON) return confirm;
+    const mgr = managerView(id, now);
+    if (st.endedLive) {
+      if (mgr.gone === 'left') return { at: now, reason: 'stream ended and the manage page closed' };
+      // Word from the manage page after the stream went dark (a beat, or its
+      // refresh): the owner's connection is fine, so this is an ending, not a
+      // dropped stream.
+      const contact = Math.max(mgr.lastSeenAt || 0, managerContactAt.get(id) || 0);
+      const ownerOnline = contact > (st.offSince || 0);
+      if (ownerOnline && !overlayUp) return { at: now, reason: 'stream ended and the OBS overlay closed' };
+      if (ownerOnline) return { at: (st.offSince || now) + FOLLOW_OFF_OWNER_MS, reason: 'stream ended' };
+      return confirm;
+    }
+    // Not live yet. Held open while the owner is here; closed when they leave.
+    if (mgr.observed || st.heldAt) {
+      if (ownerHolds(id, st, now)) return null;
+      if (mgr.gone || !mgr.observed) return { at: now, reason: 'manage page closed before the stream started' };
+      return null; // between a goodbye and the reload grace
+    }
+    return confirm;
+  }
+  // Follows no stream: only the manage page and the overlay can speak.
+  if (!MANAGER_CLOSE_ON) return null;
+  const mgr = managerView(id, now);
+  if (!mgr.gone) return null;
+  if (overlayUp || now - (overlaySeenAt.get(id) || 0) < MANAGER_LEAVE_GRACE_MS) return null;
+  return { at: now, reason: mgr.gone === 'left' ? 'manage page closed and no OBS overlay' : 'manage page went quiet and no OBS overlay' };
+}
+
+/** Close every active room whose plan has come due. */
+function applyClosePlans(now = Date.now()) {
+  for (const r of listRooms()) {
+    if (!r.active) continue;
+    try {
+      const plan = closePlan(r, now);
+      if (!plan || plan.at > now) continue;
+      updateRoom(r.id, { active: false });
+      const st = followState.get(r.id);
+      if (st) st.heldAt = null;
+      console.log(`[follow] ${r.id}${r.config?.twitchChannel ? ` (${r.config.twitchChannel})` : ''} closed: ${plan.reason}`);
+    } catch (e) {
+      console.warn(`[follow] ${r.id}: close check failed: ${e.message}`);
+    }
+  }
+}
+
+/** What the manage page shows about following: the state of the stream, the
+ *  last title Twitch gave, and when the room will close on its own. */
+function followStatus(roomId) {
+  const cfg = resolveRoomConfig(roomId);
+  if (!cfg) return null;
+  const now = Date.now();
+  const following = followsBroadcast(cfg);
+  const st = following ? freshFollow(roomId) : null;
+  const plan = cfg.active ? closePlan({ id: roomId, active: true, config: cfg }, now) : null;
+  return {
+    following,
+    state: !st ? null : st.live ? 'live' : st.endedLive ? 'ended' : 'waiting',
+    title: following ? followTitle.get(roomId) || null : null,
+    closesAt: plan ? new Date(Math.max(plan.at, now)).toISOString() : null,
+  };
 }
 
 // ─── Liveness tiers (liveness.js, OPEN-ISSUES O → built 2026-11-04) ─────────
@@ -3446,9 +3615,12 @@ async function followTick() {
       // real, changed title moves it; an empty title (Twitch sometimes sends
       // one for a second after going live) leaves the name alone.
       const title = streams.get(login)?.title;
+      if (title) followTitle.set(r.id, title);
       // Compared through the store's own cut (by character): an emoji at the
       // 64th character neither splits nor reads as "changed" every tick (stores-10).
-      const rename = !!title && clampRoomName(title) !== r.name;
+      // A name the owner typed is theirs: the title only fills a room nobody
+      // named, and the manage page offers it beside a typed one (owner, 2026-11-07).
+      const rename = !!title && r.config?.nameSource !== 'owner' && clampRoomName(title) !== r.name;
       const risingEdge = !prev || !prev.live;
       // Rising edge, or the first thing we ever saw. Both mean the same thing
       // to the owner: their broadcast is up and their room is not.
@@ -3477,7 +3649,11 @@ async function followTick() {
     }
 
     const offSince = prev && prev.offSince ? prev.offSince : now;
+    // endedLive: dark AFTER being seen live, so the ending rules apply. A room
+    // opened by hand before its stream is "waiting" instead (noteManualStart).
+    let endedLive = !!prev?.endedLive;
     if (prev && prev.live) {
+      endedLive = true;
       // Closed at the moment it went dark, not when the room eventually
       // pauses — the confirm window is a hedge about pausing, and stamping it
       // into history would put five minutes of nothing on the end of a replay.
@@ -3485,31 +3661,29 @@ async function followTick() {
       // The poster is picked now, from the previews kept while it was live.
       if (closed && AIRING_POSTERS_ON) finalizeAiringPoster(closed);
       if (closed) afterAiringClosed(closed);
-    } else if (!prev) {
+    } else if (!prev || !prev.at) {
       // First look since a restart, and the broadcast is dark — but an airing
       // is still open: the stream ended while the server was down. Close it at
       // the last moment we KNOW it was up; left open, it would swallow the
       // next broadcast into the same card.
       const stale = openAiringFor(r.id);
       if (stale) {
+        endedLive = true;
         const closed = closeAiring(r.id, lastEvidenceAt(stale));
         console.log(`[follow] ${r.id} (${login}) ended while the server was down → airing closed`);
         if (closed && AIRING_POSTERS_ON) finalizeAiringPoster(closed);
         if (closed) afterAiringClosed(closed);
       }
     }
-    followState.set(r.id, { live: false, offSince, at: now });
-    // Hidden from discovery already, by hiddenByBroadcast. The room itself only
-    // pauses once the dark has held for the full window.
-    if (r.active && now - offSince >= FOLLOW_OFF_CONFIRM_MS) {
-      updateRoom(r.id, { active: false });
-      console.log(`[follow] ${r.id} (${login}) dark for ${Math.round((now - offSince) / 1000)}s → room paused`);
-    }
+    followState.set(r.id, { live: false, offSince, endedLive, heldAt: endedLive ? null : (prev?.heldAt || null), at: now });
+    // Hidden from discovery already, by hiddenByBroadcast. Whether the room
+    // itself closes, and when, is closePlan's call (applyClosePlans below).
   } catch (e) {
     // A write that fails for one room (StoreRefused, ENOSPC) must not skip
     // every room after it this poll (server-2).
     console.warn(`[follow] ${r.id}: ${e.message} — the other rooms still poll`);
   } }
+  applyClosePlans(now);
 }
 
 function twitchLiveCached(channel) {
@@ -3924,6 +4098,12 @@ attachDashboardRoutes(app, {
   // The manage page needs the same server-verified answer the browse cards get.
   twitchLiveCached,
   listAirings,
+  // Follow my stream, as the manage page sees it and feeds it.
+  followStatus,
+  followTitleFor: (roomId) => followTitle.get(roomId) || null,
+  noteManualStart,
+  noteManager,
+  noteManagerContact,
 });
 
 // Guest whitelist management — account-scoped, so it is attached next to the
@@ -3980,8 +4160,17 @@ if (followEnabled) {
   tick(); // first answer at boot, not a minute into it
   console.log(`[follow] watching broadcasts every ${FOLLOW_POLL_MS / 1000}s`);
 } else {
-  console.log('[follow] off — room state stays manual'
+  console.log('[follow] off: room state stays manual'
     + (process.env.FOLLOW_STREAM === '0' ? ' (FOLLOW_STREAM=0)' : ' (no TWITCH_CLIENT_ID/SECRET)'));
+}
+
+// The manage-page witness is read every MANAGER_TICK_MS, between Twitch polls:
+// a goodbye should close a room in seconds, not at the next minute.
+if (MANAGER_CLOSE_ON) {
+  const managerTimer = setInterval(() => {
+    try { applyClosePlans(); } catch (e) { console.warn(`[follow] close tick failed: ${e.message}`); }
+  }, MANAGER_TICK_MS);
+  managerTimer.unref?.();
 }
 
 // Pictures for finished broadcasts: finish any pick a restart interrupted,

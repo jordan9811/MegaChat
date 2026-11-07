@@ -652,6 +652,11 @@ export function resolveRoomConfig(roomId) {
   return {
     id: rec.id,
     name: rec.name || rec.id,
+    // Who set the name: 'owner' (typed it) or 'twitch' (it follows the stream
+    // title). A room that follows its broadcast takes the title only when the
+    // owner has not named it (server.js followTick). null on older rooms,
+    // which follow the title until the owner types a name.
+    nameSource: rec.nameSource === 'owner' || rec.nameSource === 'twitch' ? rec.nameSource : null,
     active: rec.active !== false,
     // Rooms are public/listed by default; unlisted rooms still work by
     // direct link but are hidden from the browse directory.
@@ -748,6 +753,9 @@ export function createRoom(name, config = {}, passwordHash = null) {
   const rec = {
     id,
     name: clampRoomName(name || 'My Stream'),
+    // A name typed at creation is the owner's; the fallback is nobody's, so a
+    // room created without one takes its stream title once it goes live.
+    ...(String(name || '').trim() ? { nameSource: 'owner' } : {}),
     active: true,
     createdAt: new Date().toISOString(),
     passwordHash,
@@ -835,6 +843,7 @@ export function roomsOwnedBy(ownerKey) {
 function patchedFields(rec, patch) {
   const next = {};
   if (patch.name != null) next.name = clampRoomName(patch.name);
+  if (patch.nameSource === 'owner' || patch.nameSource === 'twitch') next.nameSource = patch.nameSource;
   if (patch.active != null) next.active = !!patch.active;
   if (patch.config) {
     const merged = { ...(rec.config || {}), ...patch.config };
