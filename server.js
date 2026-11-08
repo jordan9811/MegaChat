@@ -18,6 +18,7 @@ import {
   migrateLegacyRoomPasswords,
   listRooms,
   letterPriceFor,
+  letterRateFor,
   getRoomByHandle,
   getRoomRecord,
   setRoomHandle,
@@ -940,7 +941,13 @@ app.get('/api/config', (req, res) => {
           // wallet prompt, not after the server rejects it.
           minSeconds: cfg.letters.minSeconds,
           maxSeconds: cfg.letters.maxSeconds,
+          // The longest clip's price (the most a Holler costs) and the
+          // per-second rate every take is billed at.
           price: letterPriceFor(cfg),
+          ratePerSecond: String(Math.round(letterRateFor(cfg) * 1e6) / 1e6),
+          // The exact charge for each length the server accepts, so the send
+          // screen shows the figure the voucher is for (no client rounding).
+          prices: Object.fromEntries(Array.from({ length: cfg.letters.maxSeconds }, (_, i) => [i + 1, letterPriceFor(cfg, i + 1)])),
           moderation: cfg.letters.moderation,
           minWatchSeconds: cfg.letters.gates.minWatchSeconds,
           // How long an aired MegaChat stays in this broadcast's replay — what

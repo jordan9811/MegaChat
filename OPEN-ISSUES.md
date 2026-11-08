@@ -5074,3 +5074,20 @@ commit before); `_gate-dashboard-update`, `_gate-rooms-store`,
 `_gate-web-fixes`, `_gate-ui-local-polish`, `_gate-record-flow`,
 `_gate-typecheck` green.
 
+
+## 2026-11-08 — Found while billing Hollers by the second
+
+- **HB1 — A queued Holler can air to an unstreamed scene.** The scheduler airs
+  a queued clip whenever an overlay is connected (`letters.js`, tick), not
+  when the channel is live. OBS open with the overlay source but not
+  streaming plays a paid Holler to nobody, and it is then deleted. The room
+  page's new off-air line ("your Holler queues and plays when they go live")
+  is right whenever the overlay is only up while streaming. Fix: also require
+  the room's liveness tier to be on air before `playLetter`.
+- **HB2 — `_verify-min-duration.mjs` (7/10) and `_gate-megachat-producer.mjs` fail with "Payments unavailable"**,
+  before any pricing code runs: `startGateServer` blanks the payment keys, so
+  `mppMeter` is null and submit answers 503 on its first line. Pre-existing;
+  the verifier needs `keepEnv` for a local meter or a stub meter.
+- **HB3 — The two dust gates were updated, not run.** `_gate-p1-features.mjs`
+  and `_gate-phase3-letters.mjs` now assert a 3 s take on a $0.01 / 5 s room
+  is billed 0.006 (it was 0.01). Owner-run (mainnet dust).

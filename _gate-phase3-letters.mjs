@@ -2,7 +2,7 @@
  * GATE — MEGA Phase 3: letter mode. REAL MAINNET DUST for the payment leg.
  *
  *  A. auto-play room: record a real webm in a browser (canvas+oscillator via
- *     MediaRecorder), pay the flat price through a one-voucher MPP session
+ *     MediaRecorder), pay the take by the second through a one-voucher MPP session
  *     (TEST_VIEWER_KEY, same rails as ticks), upload, watch the scheduler
  *     broadcast letter_play with a working media URL, see the overlay render
  *     the letter tile with stingers, letter_end afterwards, media gone.
@@ -178,7 +178,9 @@ async function payAndUpload(room, username) {
   ok('paid submit + upload accepted (auto room)', sub.uploadStatus === 'queued', `status=${sub.uploadStatus}`);
   const after = await balanceOf();
   const paid = Number(formatUnits(before - after, 6));
-  ok('flat price actually paid on-chain', paid >= 0.01 && paid < 0.03, `viewer -${paid.toFixed(6)}`);
+  // $0.01 for the longest clip (5 s) is $0.002 a second: a 3 s take is 0.006.
+  ok('take billed by the second (0.006, not the 0.01 maximum)', sub.price === '0.006', `price=${sub.price}`);
+  ok('that price actually paid on-chain', paid >= 0.006 && paid < 0.03, `viewer -${paid.toFixed(6)}`);
 
   // scheduler tick ≤2s + play
   let played = null;

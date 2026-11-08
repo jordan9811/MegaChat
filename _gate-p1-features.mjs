@@ -1,7 +1,7 @@
 /**
  * GATE — POLISH P1: per-feature pricing + gates. Real mainnet dust.
  *  A. MegaChats-only room: joins 403, join page hides the live path, the
- *     headline price is the flat MegaChat price, a MegaChat charges it.
+ *     Holler button shows the per-second rate, a 3 s Holler charges 3 s of it.
  *  B. Join-Stream-only room: MegaChat submit 403, join + ticks charge the
  *     room's own per-second price (distinct from A's flat price).
  *  C. Per-feature gates: Join Stream overridden to minWatch=8s while
@@ -136,17 +136,19 @@ try {
   const uiA = await pageA.evaluate(() => ({
     joinHidden: getComputedStyle(document.getElementById('joinBtn')).display === 'none',
     mcVisible: getComputedStyle(document.getElementById('letterBtn')).display !== 'none',
-    price: document.getElementById('priceAmount')?.textContent,
-    label: document.getElementById('priceLabel')?.textContent,
+    holler: document.getElementById('letterBtn')?.textContent,
   }));
-  ok('A: join page hides live path, headlines the MegaChat price',
-    uiA.joinHidden && uiA.mcVisible && /0\.01/.test(uiA.price || '') && /per MegaChat/.test(uiA.label || ''),
+  // $0.01 for the longest clip (5 s) is $0.002 a second, on the button.
+  ok('A: join page hides live path, prices the Holler per second',
+    uiA.joinHidden && uiA.mcVisible && /\$0\.002\/s/.test(uiA.holler || ''),
     JSON.stringify(uiA));
   const balBefore = await balance();
   const mcA = await sendMegaChat(roomA);
   ok('A: MegaChat accepted', mcA.status === 200 && mcA.upload === 200, JSON.stringify({ s: mcA.status, up: mcA.upload }));
   const paidA = Number(formatUnits(balBefore - await balance(), 6));
-  ok('A: charged the flat price (~0.01 + fees)', paidA >= 0.01 && paidA < 0.03, `-${paidA.toFixed(6)}`);
+  // By the second: 3 s at $0.002 is 0.006 (the old flat charge was 0.01).
+  ok('A: billed the take by the second (0.006, not the 0.01 maximum)', mcA.price === '0.006', `price=${mcA.price}`);
+  ok('A: charged about that on-chain (0.006 + fees)', paidA >= 0.006 && paidA < 0.03, `-${paidA.toFixed(6)}`);
 
   // ── B. Join Stream only ──────────────────────────────────────────────────
   const mcB = await sendMegaChat(roomB);

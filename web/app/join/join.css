@@ -691,6 +691,18 @@ a.addr {
   grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
   gap: 0.5rem;
 }
+/* Re-record asks first, in the controls' own place. */
+.letter-redo-confirm > span {
+  grid-column: 1 / -1;
+  font-weight: 600;
+}
+/* Off air: what a Holler sent now does, right above its button. */
+.join-offair-note {
+  margin: 0 0 8px;
+  color: var(--mcj-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
 
 /* LiveKit connection-quality dot (joiner's own link health, subtle): the
    seat's azure while healthy, caution yellow when poor, pink when lost. */

@@ -92,7 +92,7 @@ async function loadConfig() {
   const roomName = document.getElementById('joinRoomName');
   if (roomName) roomName.textContent = CONFIG.roomName || 'Room';
   const roomState = document.getElementById('joinRoomState');
-  if (roomState) roomState.textContent = CONFIG.isDemo ? 'Demo room' : CONFIG.roomActive === false ? 'Room closed' : 'Room entrance';
+  if (roomState) roomState.textContent = CONFIG.isDemo ? 'Demo room' : CONFIG.roomActive === false ? 'Paused' : 'Room entrance';
   // The URL may have carried a HANDLE — adopt the server-resolved room id for
   // every follow-up call (join, balance, letters, WS), and fix the socket's
   // subscription if it already opened with the handle string.
@@ -317,26 +317,29 @@ function perCreditUsd() {
   return formatDollars(tickPrice).replace(/^\$/, '');
 }
 
+// Prices live on the buttons (owner's pick, 2026-11-08): no shared rate box.
+// Both actions bill by the second; each button names its own rate.
 function updatePriceDisplay() {
   if (!CONFIG) return;
   updateReplayKeepNote();
-  const amt = document.getElementById('priceAmount');
-  const lbl = document.getElementById('priceLabel');
-  const tickPrice = CONFIG.passkeyTickPrice || CONFIG.tickPrice;
-  const tickSec = CONFIG.passkeyTickSeconds || 1;
-  const mc = CONFIG.letters && CONFIG.letters.enabled ? CONFIG.letters : null;
-  if (mc) {
-    const total = Number(mc.price ?? Number(tickPrice) * mc.maxSeconds / tickSec);
-    if (amt) amt.textContent = `${formatDollars(total / mc.maxSeconds)} /second`;
-    // The backend charges a flat clip price, including shorter takes.
-    if (lbl) lbl.textContent = `Clip total: ${formatDollars(total)} · Max: ${mc.maxSeconds} seconds`;
-  } else if (joinStreamEnabled()) {
-    if (amt) amt.textContent = `${formatDollars(Number(tickPrice) / tickSec)} /second`;
-    if (lbl) lbl.textContent = roomIsFree() ? 'Call in · Free' : `Call in · Spend limit: ${formatDollars(CONFIG.maxSession)}`;
-  } else {
-    if (amt) amt.textContent = '—';
-    if (lbl) lbl.textContent = 'Nothing is enabled in this room right now.';
-  }
+  initLetterUi();
+  if (joinBtnState === 'idle') setJoinState('idle');
+  const mc = CONFIG.letters && CONFIG.letters.enabled;
+  if (!mc && !joinStreamEnabled()) showMessage('Nothing is enabled in this room right now.', 'error');
+}
+
+function roomPaused() {
+  return !!CONFIG && CONFIG.roomActive === false;
+}
+
+// "Call in — $0.002/s · max $1": the seat's rate and the spend cap a call
+// can reach, before anyone presses it.
+function idleCallInLabel() {
+  if (roomPaused()) return '🎬 Call in — paused';
+  if (!CONFIG || roomIsFree()) return '🎬 Call in — FREE';
+  const rate = Number(CONFIG.passkeyTickPrice || CONFIG.tickPrice) / (Number(CONFIG.passkeyTickSeconds) || 1);
+  const cap = Number(CONFIG.maxSession);
+  return `🎬 Call in — ${formatDollars(rate)}/s${cap > 0 ? ` · max ${formatDollars(cap)}` : ''}`;
 }
 
 // Hide the live-path controls entirely in MegaChats-only rooms.
@@ -447,7 +450,7 @@ async function mountCampaignBanner(slug) {
   let priceLine = '';
   if (kind === 'holler') {
     const cfg = lettersCfg();
-    if (cfg && parseFloat(cfg.price) > 0) priceLine = `This room charges <strong>${formatDollars(cfg.price)}</strong> per Holler; the campaign pays you <strong>${reward}</strong> once it counts.`;
+    if (cfg && parseFloat(cfg.price) > 0) priceLine = `Hollers here cost <strong>${formatDollars(letterRate(cfg))} a second</strong>; the campaign pays you <strong>${reward}</strong> once it counts.`;
     else priceLine = `Sending a Holler here is free; the campaign pays you <strong>${reward}</strong> once it counts.`;
   } else if (!roomIsFree()) {
     const tickPrice = (CONFIG && (CONFIG.passkeyTickPrice || CONFIG.tickPrice)) || '0';
@@ -502,7 +505,7 @@ function setJoinState(state, labelOverride) {
   joinBtnState = JOIN_BTN_STATES[state] ? state : 'idle';
   const btn = document.getElementById('joinBtn');
   if (!btn) return;
-  btn.textContent = labelOverride || preset.label;
+  btn.textContent = labelOverride || (joinBtnState === 'idle' ? idleCallInLabel() : preset.label);
   btn.disabled = preset.disabled
     || (joinBtnState === 'idle' && CONFIG && CONFIG.roomActive === false);
 }
@@ -2337,6 +2340,23 @@ function lettersCfg() {
   return CONFIG && CONFIG.letters && CONFIG.letters.enabled ? CONFIG.letters : null;
 }
 
+// Hollers bill by the second (letters.js): the rate times the whole seconds
+// recorded, capped at the longest clip. The server sends the price for every
+// length it accepts, so the figure shown is the figure charged.
+function letterRate(cfg) {
+  const r = Number(cfg.ratePerSecond);
+  return Number.isFinite(r) ? r : Number(cfg.price) / Math.max(1, Number(cfg.maxSeconds) || 10);
+}
+function letterPriceForTake(cfg, seconds) {
+  const s = Math.min(Number(cfg.maxSeconds) || 10, Math.max(1, Math.ceil(Number(seconds) || 0)));
+  if (cfg.prices && cfg.prices[s] != null) return String(cfg.prices[s]);
+  const p = letterRate(cfg) * s;
+  return p > 0 ? String(Math.max(0.000001, Math.round(p * 1e6) / 1e6)) : '0';
+}
+function letterIsFreeRoom(cfg) {
+  return !(parseFloat(cfg.price) > 0);
+}
+
 function initLetterUi() {
   const btn = document.getElementById('letterBtn');
   const action = document.getElementById('megachatAction');
@@ -2348,12 +2368,18 @@ function initLetterUi() {
     return;
   }
   if (action) action.style.display = '';
-  btn.style.display = '';
+  // While the recorder is open the stage's own Send is the only send: a second
+  // "Send a Holler" here started over and threw the take away.
+  const stage = document.getElementById('letterStage');
+  btn.style.display = stage && stage.style.display !== 'none' ? 'none' : '';
   // Short label — "· up to 10s" pushed the button onto two wrapped lines on
   // mobile, and the recorder stage states the cap the moment it opens.
-  btn.textContent = parseFloat(cfg.price) > 0
-      ? `📼 Send a Holler — ${formatDollars(cfg.price)}`
-      : '📼 Send a Holler — FREE';
+  (btn as HTMLButtonElement).disabled = roomPaused();
+  btn.textContent = roomPaused()
+    ? '📼 Send a Holler — paused'
+    : letterIsFreeRoom(cfg)
+      ? '📼 Send a Holler — FREE'
+      : `📼 Send a Holler — ${formatDollars(letterRate(cfg))}/s`;
 }
 
 function setLetterStatus(text, tone) {
@@ -2387,6 +2413,8 @@ async function openLetterStage() {
     return;
   }
   stage.style.display = '';
+  const entry = document.getElementById('letterBtn');
+  if (entry) entry.style.display = 'none';
   video.srcObject = letterStream;
   video.muted = true;
   video.controls = false;
@@ -2394,7 +2422,9 @@ async function openLetterStage() {
   letterState = 'idle';
   letterBlob = null;
   letterButtons({ record: true, redo: false, send: false });
-  setLetterStatus(`${cfg.minSeconds ?? 3}–${cfg.maxSeconds}s · ${formatDollars(cfg.price)} per clip, including shorter takes.`);
+  setLetterStatus(letterIsFreeRoom(cfg)
+    ? `${cfg.minSeconds ?? 3}–${cfg.maxSeconds}s · free.`
+    : `${cfg.minSeconds ?? 3}–${cfg.maxSeconds}s · ${formatDollars(letterRate(cfg))} a second, so you pay for what you record.`);
 }
 
 function closeLetterStage() {
@@ -2414,6 +2444,9 @@ function closeLetterStage() {
   letterAttempt = null;
   if (stage) stage.style.display = 'none';
   letterState = 'idle';
+  const entry = document.getElementById('letterBtn');
+  if (entry && lettersCfg()) entry.style.display = '';
+  showRedoConfirm(false);
 }
 
 function toggleLetterRecording() {
@@ -2480,7 +2513,10 @@ function toggleLetterRecording() {
     }
     letterAttempt = newLetterAttempt();
     letterButtons({ record: false, redo: true, send: true });
-    setLetterStatus(`${letterDurationS}s recorded. Send for ${formatDollars(cfg.price)}.`);
+    const takePrice = letterPriceForTake(cfg, letterDurationS);
+    setLetterStatus(letterIsFreeRoom(cfg) ? `${letterDurationS}s recorded. Send it free.` : `${letterDurationS}s recorded. Send for ${formatDollars(takePrice)}.`);
+    const sendBtn = document.getElementById('letterSendBtn');
+    if (sendBtn) sendBtn.textContent = letterIsFreeRoom(cfg) ? 'Send' : `Send · ${formatDollars(takePrice)}`;
   };
   letterRecorder.start();
   letterState = 'recording';
@@ -2496,7 +2532,22 @@ function toggleLetterRecording() {
   }, 1000);
 }
 
+// Re-record discards a finished take, so it asks first, in place: the stage's
+// buttons give way to "Discard this take?" Discard / Keep it.
+function showRedoConfirm(on) {
+  const box = document.getElementById('letterRedoConfirm');
+  if (box) box.style.display = on ? '' : 'none';
+  const ctl = document.getElementById('letterControls');
+  if (ctl) ctl.style.display = on ? 'none' : '';
+}
+
+function askRedoLetter() {
+  if (letterState === 'preview' && letterBlob) { showRedoConfirm(true); return; }
+  void redoLetter();
+}
+
 async function redoLetter() {
+  showRedoConfirm(false);
   const video = document.getElementById('letterVideo');
   letterBlob = null;
   letterAttempt = null;
@@ -2518,7 +2569,8 @@ async function sendLetter() {
     showMessage('Pick a username first — it labels your Holler on stream.', 'error');
     return;
   }
-  const letterIsFree = !(parseFloat(cfg.price) > 0);
+  const letterIsFree = letterIsFreeRoom(cfg);
+  const takePrice = letterPriceForTake(cfg, letterDurationS);
   if (!account && !letterIsFree) {
     const MW = getMegaWallet();
     if (MW && MW.configured) await connectPrivyWallet();
@@ -2534,8 +2586,8 @@ async function sendLetter() {
     // pays (letters.js: a take it already has costs nothing).
     for (let round = 0; round < 2 && !upData; round++) {
       if (!attempt.uploadUrl) {
-        setLetterStatus(letterIsFree ? 'Sending…' : `Paying ${formatDollars(cfg.price)}…`);
-        const sent = await submitLetter(cfg, username, letterIsFree, attempt.id);
+        setLetterStatus(letterIsFree ? 'Sending…' : `Paying ${formatDollars(takePrice)}…`);
+        const sent = await submitLetter(cfg, username, letterIsFree, attempt.id, takePrice);
         if (sent.alreadySent) {
           closeLetterStage();
           showMessage('📮 That take was already sent — no second charge.', 'success');
@@ -2584,20 +2636,20 @@ async function sendLetter() {
     } else {
       setLetterStatus(why + ' — your take is still here, try Send again.');
     }
-    await showTxError('Holler failed', err, { need: cfg && cfg.price });
+    await showTxError('Holler failed', err, { need: takePrice });
   }
 }
 
-// The paid half of a send: one voucher at the flat price, named by the take.
+// The paid half of a send: one voucher for the take's seconds, named by the take.
 // Free letters skip the payment session entirely — plain fetch, no wallet.
 // The stub must still quack like a session: close() gets called after
 // submit, and a missing method threw right there, killing the upload
 // ("Sending…" then silence).
-async function submitLetter(cfg, username, letterIsFree, attemptId) {
-  // Paid ones ride a one-voucher session at the flat price (same rails as ticks).
+async function submitLetter(cfg, username, letterIsFree, attemptId, takePrice) {
+  // Paid ones ride a one-voucher session at the take's price (same rails as ticks).
   const session = letterIsFree
     ? { fetch: (u, i) => fetch(u, i), close: async () => {} }
-    : await buildMppManager(cfg.price);
+    : await buildMppManager(takePrice);
   const resp = await session.fetch(
     `/api/letter/submit?room=${encodeURIComponent(streamRoomId)}`,
     {
@@ -3127,7 +3179,9 @@ export function initJoinPage({ wsUrl }) {
   // Letter mode controls (button hidden unless the room enables letters).
   on('letterBtn', () => void openLetterStage());
   on('letterRecordBtn', toggleLetterRecording);
-  on('letterRedoBtn', () => void redoLetter());
+  on('letterRedoBtn', askRedoLetter);
+  on('letterRedoYes', () => void redoLetter());
+  on('letterRedoNo', () => showRedoConfirm(false));
   on('letterSendBtn', () => void sendLetter());
   on('letterCancelBtn', closeLetterStage);
   // Click-to-copy the connected address (delegated: the chip is re-injected

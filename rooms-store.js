@@ -381,15 +381,32 @@ export function joinStreamGatesFor(cfg) {
   return cfg.joinStream.gatesSameAsMegaChat ? cfg.letters.gates : cfg.joinStream.gates;
 }
 
-/** Effective flat price for a letter in this room (token units, string). */
-export function letterPriceFor(cfg) {
-  if (cfg.letters?.price) return cfg.letters.price;
-  const perSecond = parseFloat(cfg.passkeyTickPrice || '0.001') /
-    Math.max(1, Number(cfg.passkeyTickSeconds || 1));
-  const p = perSecond * (cfg.letters?.maxSeconds ?? 10);
-  // FREE rooms (per-second rate 0, no explicit letter price): MegaChats are
-  // free too — the old dust floor here would force a pointless payment.
-  if (p <= 0) return '0';
+/**
+ * A Holler's per-second rate (token units, number). Hollers bill by the
+ * second, like Call in: the stored letters.price is what the LONGEST clip
+ * costs (the dashboard saves rate × longest clip), so the rate is that over
+ * maxSeconds. With no stored price the room's live per-second rate applies.
+ */
+export function letterRateFor(cfg) {
+  const max = Math.max(1, Number(cfg.letters?.maxSeconds ?? 10));
+  if (cfg.letters?.price != null && cfg.letters.price !== '') return (parseFloat(cfg.letters.price) || 0) / max;
+  return (parseFloat(cfg.passkeyTickPrice || '0.001') || 0) / Math.max(1, Number(cfg.passkeyTickSeconds || 1));
+}
+
+/**
+ * What a Holler of `seconds` costs in this room (token units, string): the
+ * rate times the whole seconds recorded, capped at the longest clip. With no
+ * `seconds` it is the longest clip's price, the most a Holler can cost.
+ * Hollers used to charge that maximum for every take, however short (owner,
+ * 2026-11-08: "hollers and call ins are built by the second").
+ */
+export function letterPriceFor(cfg, seconds) {
+  const max = Math.max(1, Number(cfg.letters?.maxSeconds ?? 10));
+  const s = seconds == null ? max : Math.min(max, Math.max(1, Math.ceil(Number(seconds) || 0)));
+  const p = letterRateFor(cfg) * s;
+  // FREE rooms (rate 0): Hollers are free too — a dust floor here would force
+  // a pointless payment.
+  if (!(p > 0)) return '0';
   return String(Math.max(0.000001, Math.round(p * 1e6) / 1e6));
 }
 

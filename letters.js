@@ -1,10 +1,10 @@
 /**
- * Letter mode — recorded camera clips, paid flat, played ONCE on the overlay.
+ * Letter mode — recorded camera clips, paid by the second, played ONCE on the overlay.
  *
  * Protocol (payment split from upload so the mpp voucher rides a small JSON
  * request, never the video bytes):
- *   1. POST /api/letter/submit   — MPP-PAID (one voucher at the room's flat
- *      letter price through the same TIP-1034 session machinery as ticks).
+ *   1. POST /api/letter/submit   — MPP-PAID (one voucher for the take: the
+ *      room's per-second rate × the seconds recorded, through the same TIP-1034 session machinery as ticks).
  *      Returns { letterId, uploadUrl }.
  *   2. PUT  /api/letter/upload/:id — raw webm/mp4 body (≤ LETTER_MAX_BYTES,
  *      within UPLOAD_GRACE_MS of payment) → queued (or pending approval).
@@ -270,7 +270,7 @@ export function attachLetters(app, deps) {
     });
   }
 
-  /** Refund the flat price to the payer from the PLATFORM wallet. */
+  /** Refund what the take cost to the payer from the PLATFORM wallet. */
   async function refundLetter(letter, reason) {
     // A refunded MegaChat is not kept for any replay (aired-clips.js).
     removeAiredClip(letter.id);
@@ -415,7 +415,10 @@ export function attachLetters(app, deps) {
       if (attempt) noteAttempt(attempt, null);
       try {
 
-      const price = letterPriceFor(cfg);
+      // By the second: the take's own length (whole seconds, capped at the
+      // longest clip). Airing stops at the same length (playLetter's timer),
+      // so a take reported short airs short.
+      const price = letterPriceFor(cfg, Math.ceil(dur));
       // Free rooms: price 0 → skip the payment handshake entirely. There is
       // nothing to charge and nothing to refund on reject/expiry.
       let result = null;

@@ -1,12 +1,12 @@
 # MegaChats
 
-A **MegaChat** is a short clip a viewer records from their own camera and pays a flat price to have played on the stream once. The code calls them *letters*: the module is `letters.js`, the config block is `letters`, and the wire messages are `letter_play` / `letter_end`. Same thing.
+A **MegaChat** is a short clip a viewer records from their own camera and pays for by the second to have played on the stream once. The code calls them *letters*: the module is `letters.js`, the config block is `letters`, and the wire messages are `letter_play` / `letter_end`. Same thing.
 
 ## The mechanic
 
 From the protocol comment at the top of `letters.js`:
 
-1. The viewer pays — one flat charge at the room's letter price, on the same payment machinery a live seat uses (`POST /api/letter/submit`).
+1. The viewer pays — one charge for the take: the room's per-second Holler rate times the whole seconds recorded, capped at the longest clip, on the same payment machinery a live seat uses (`POST /api/letter/submit`).
 2. The viewer uploads the recording within a grace window (`PUT /api/letter/upload/:id`, ≤ 25 MB, 90 s after payment — `LETTER_MAX_BYTES`, `UPLOAD_GRACE_MS`). The send screen names each take with an `attemptId`, so a retry after a failed upload is answered from the letter already paid for instead of charging again — within ten minutes, from memory, so a restart inside that window can let one repeat through (`letters.js`, `/api/letter/submit`).
 3. The clip reaches its resting state — straight into the play queue, or held for a person, depending on the room's moderation setting (below).
 4. When the room has a free tile, the scheduler broadcasts `letter_play`; the overlay draws the clip in a tile with the same entrance and exit treatment a live seat gets; `letter_end` follows and the media is dropped shortly after.
@@ -18,7 +18,7 @@ Clips are **one-shot by design**: each plays once and its media is released abou
 Both come from `resolveLetters()` in `rooms-store.js`:
 
 - **Length** is 3–30 seconds by default (`minSeconds` … `maxSeconds`, default max 10 s, hard cap 30 s). The floor is not an aesthetic choice: it is derived from the bounty verifier's sampling floor (`bountyConfig.minClipSeconds`), because a clip shorter than that cannot carry a verification code long enough to be read back off a re-encoded broadcast. The comment above `minSeconds` explains why the two numbers are one number.
-- **Price** is either a flat figure the streamer set, or — when unset — the live per-second rate multiplied by the maximum clip length (`letterPriceFor()`, `rooms-store.js`).
+- **Price** is per second, like Call in. The stored `letters.price` is what the longest clip costs (the dashboard saves rate × longest clip), so the rate is that divided by the maximum length; when unset, the room's live per-second rate applies (`letterRateFor()`, `letterPriceFor(cfg, seconds)`, `rooms-store.js`). A take is billed its whole seconds, never below the minimum length, and airs for the same length, so a take reported short airs short. Until 2026-11-08 every take paid the longest clip's price, however short.
 
 ## Moderation
 

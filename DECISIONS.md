@@ -2430,3 +2430,25 @@ Gates: `_gate-liveness.mjs` 47/0; the bounty gates re-run green.
 Gates: `_gate-follow-stream.mjs` 46/0, 15 of its checks failing on the
 previous commit.
 
+
+## 2026-11-08 — Hollers bill by the second
+
+- **A Holler costs the room's per-second rate times the whole seconds
+  recorded**, capped at the longest clip, never below the minimum length.
+  Why: the owner, on the UX bounty: "hollers and call ins are built by the
+  second … the standard thing is billed by second in both." Every take used
+  to pay the longest clip's price however short. The stored `letters.price`
+  keeps meaning "what the longest clip costs" (the dashboard already saved
+  rate × longest clip), so no room's data changes. A take airs for the length
+  it was billed (playLetter's timer), so reporting a take short buys nothing.
+  Undo: `letterPriceFor(cfg, Math.ceil(dur))` → `letterPriceFor(cfg)` in
+  `letters.js` (the default argument is the longest clip).
+- **The dashboard pick "show the flat charge" (ss-holler-flat-price) is
+  overridden** by the owner's note on rb-holler-per-second; per-second billing
+  makes the existing "Price per 10 seconds" field true as it stands.
+- **Parked, owner's idea:** an advanced room setting for a flat Holler price
+  with a max length, or a minimum plus tip on top. Not built.
+- **The room page drops the shared "Room rate" box**; each button carries its
+  own price ("Send a Holler — $0.005/s", "Call in — $0.002/s · max $1") and the
+  stage's Send names the take's price (owner's pick, vr-rate-box). Undo: the
+  JSX section in `join-client.tsx` and `updatePriceDisplay` in `join-page.ts`.

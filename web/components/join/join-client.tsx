@@ -80,13 +80,32 @@ function RoomLiveness() {
     let stop = false
     const load = () => fetch(`/api/rooms/${encodeURIComponent(key)}/liveness`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (!stop && d?.tier) setLiveness(d as Liveness) })
+      .then((d) => {
+        if (stop || !d?.tier) return
+        setLiveness(d as Liveness)
+        window.dispatchEvent(new CustomEvent('room:liveness', { detail: d }))
+      })
       .catch(() => {})
     void load()
     const t = setInterval(load, LIVENESS_POLL_MS)
     return () => { stop = true; clearInterval(t) }
   }, [])
-  return <LivenessBadge liveness={liveness} />
+  // Every tier shows, Offline included: an off-air room must not look open.
+  return <LivenessBadge liveness={liveness} showOff />
+}
+
+// While the room is off air, one line right above the Holler button says what
+// happens to a Holler sent now. Hidden in every other state (and while the
+// room is paused, where the button itself says so).
+function OffAirNote() {
+  const [offAir, setOffAir] = useState(false)
+  useEffect(() => {
+    const on = (e: Event) => setOffAir((e as CustomEvent).detail?.tier === 'off')
+    window.addEventListener('room:liveness', on)
+    return () => window.removeEventListener('room:liveness', on)
+  }, [])
+  if (!offAir) return null
+  return <p className="join-offair-note">Off air: your Holler queues and plays when they go live.</p>
 }
 
 // Presentation only. The script writes the status message and the replay's
@@ -231,14 +250,6 @@ export function JoinClient() {
 
         <aside className="join-action-console">
           <div className="join-console-body">
-            <section className="join-price-zone">
-              <span className="join-coordinate">Room rate</span>
-              <div>
-                <span id="priceAmount">—</span>
-                <span id="priceLabel">loading room…</span>
-              </div>
-            </section>
-
             <div id="meter" className="join-meter">
               <div><span>Remaining</span><strong id="meterRemaining">—</strong></div>
               <div><span>Spent</span><strong id="meterSpent">$0</strong></div>
@@ -266,16 +277,22 @@ export function JoinClient() {
 
             <section id="megachatAction" className="join-mode-zone is-record" style={{ display: 'none' }}>
               <header><h2>Record a Holler</h2><p>Review before sending. Your clip plays once on the broadcast<span id="letterKeepNote" />.</p></header>
+              <OffAirNote />
               <button id="letterBtn" type="button" className={primaryBtn} style={{ display: 'none' }}>
                 Send a Holler
               </button>
               <div id="letterStage" className="letter-stage" style={{ display: 'none' }}>
                 <div className="cam-frame letter-frame dark"><video id="letterVideo" playsInline muted /></div>
-                <div className="letter-controls">
+                <div id="letterControls" className="letter-controls">
                   <button id="letterRecordBtn" type="button" className={ghostBtn}>Record</button>
                   <button id="letterRedoBtn" type="button" className={ghostBtn} style={{ display: 'none' }}>Re-record</button>
                   <button id="letterSendBtn" type="button" className={primaryBtn} style={{ display: 'none' }}>Send</button>
                   <button id="letterCancelBtn" type="button" className={ghostBtn}>Cancel</button>
+                </div>
+                <div id="letterRedoConfirm" className="letter-controls letter-redo-confirm" role="group" aria-label="Discard this take?" style={{ display: 'none' }}>
+                  <span>Discard this take?</span>
+                  <button id="letterRedoYes" type="button" className={ghostBtn}>Discard</button>
+                  <button id="letterRedoNo" type="button" className={primaryBtn}>Keep it</button>
                 </div>
                 <p id="letterStatus" aria-live="polite" />
               </div>
