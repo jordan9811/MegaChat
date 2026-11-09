@@ -1,14 +1,14 @@
 import Link from 'next/link'
-import { ArrowRight, MessageSquareText, Trophy, Video } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import type { PublicRoomCard } from '@/lib/api'
 import type { BountyPool } from '@/lib/bounty-api'
 import { formatDollars } from '@/lib/display-format'
 import { BrandText } from '@/components/brand-text'
-import { FeatureTag } from '@/components/feature-tag'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { docsUrl } from '@/lib/docs-url.mjs'
 import { PoolThumb } from './pool-thumb'
 import { LandingHero } from './landing-hero'
+import { WaysIn } from './ways-in'
 import './landing.css'
 
 function poolHref(pool: BountyPool): string {
@@ -17,37 +17,6 @@ function poolHref(pool: BountyPool): string {
     : '/bounty'
 }
 
-// Each way in wears its own feature colour and tag: a recorded clip is a
-// holler, a camera seat is a call-in, a pool is a bounty.
-const ENTRY_PATHS = [
-  {
-    n: '01',
-    kind: 'holler',
-    icon: MessageSquareText,
-    title: 'Record a Holler',
-    body: 'Say it on camera. Set the clip loose on their broadcast.',
-    cta: 'Find a streamer',
-    href: '/app',
-  },
-  {
-    n: '02',
-    kind: 'callin',
-    icon: Video,
-    title: 'Take a live seat',
-    body: 'Join face-to-face and pay only for the seconds you use.',
-    cta: 'Browse rooms',
-    href: '/app',
-  },
-  {
-    n: '03',
-    kind: 'bounty',
-    icon: Trophy,
-    title: 'Start a bounty',
-    body: 'Back a streamer before they have a room. They claim it by going live.',
-    cta: 'Browse bounties',
-    href: '/bounty',
-  },
-] as const
 
 export function Landing({
   rooms: _rooms,
@@ -59,7 +28,6 @@ export function Landing({
   contactHref: string
 }) {
   const boardPools = [...pools].sort((a, b) => b.remaining - a.remaining).slice(0, 3)
-  const topPool = boardPools.find((p) => p.remaining > 0)
   return (
     <div className="mc-landing min-h-screen">
       <header className="mcl-nav">
@@ -76,44 +44,7 @@ export function Landing({
       <LandingHero />
 
       <main>
-        <section className="mcl-entry">
-          <div className="mcl-entry-grid">
-            {ENTRY_PATHS.map(({ n, kind, icon: Icon, title, body, cta, href }) => (
-              <Link key={n} href={href} className="mcl-entry-card" data-tone={kind}>
-                <span className="mcl-card-top">
-                  <span className="mcl-card-id">
-                    <Icon size={22} strokeWidth={1.8} aria-hidden="true" />
-                    <FeatureTag kind={kind} />
-                  </span>
-                  <span className="mcl-card-n">{n}</span>
-                </span>
-                {kind === 'holler' ? (
-                  <span className="mcl-vig mcl-vig-rec" aria-hidden="true">
-                    <i />
-                    REC 0:07 / 0:10
-                  </span>
-                ) : kind === 'callin' ? (
-                  <span className="mcl-vig mcl-vig-seats" aria-hidden="true">
-                    <span><i /></span>
-                    <span><i /></span>
-                    <span className="is-open">+</span>
-                  </span>
-                ) : topPool ? (
-                  <span className="mcl-vig mcl-vig-pool" aria-hidden="true">
-                    <b>{formatDollars(topPool.remaining)}</b>
-                    {topPool.displayOnly ? <small>example</small> : null}
-                  </span>
-                ) : (
-                  // no pool yet: an empty slot keeps the three titles level
-                  <span className="mcl-vig" aria-hidden="true" />
-                )}
-                <h3>{title}</h3>
-                <p>{body}</p>
-                <strong>{cta}<ArrowRight size={14} aria-hidden="true" /></strong>
-              </Link>
-            ))}
-          </div>
-        </section>
+        <WaysIn />
 
         {/* .dark: the bounty band stays at night in light mode too (Stone) */}
         <section className="mcl-bounty dark">

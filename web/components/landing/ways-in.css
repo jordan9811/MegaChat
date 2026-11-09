@@ -1,0 +1,299 @@
+/* THREE WAYS IN — one stage, three situations (ways-in.tsx). The stage is a
+   picture, dark in both themes; the mode list follows the site theme. */
+.mcl-ways { padding: 64px 64px 72px; }
+.mcl-ways-head { margin-bottom: 22px; }
+.mcl-ways-eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--hl-muted);
+  font: 700 11px/1 var(--font-code), ui-monospace, monospace;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.mcl-ways-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(32px, 4.4vw, 52px);
+  font-weight: 800;
+  letter-spacing: -.03em;
+  line-height: 1;
+  text-wrap: balance;
+}
+.mcl-ways-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+  gap: 28px;
+  align-items: stretch;
+}
+
+/* ── stage ── */
+.mcl-ways-stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #0e0d0c;
+  box-shadow: 0 0 0 1px var(--hl-line-2);
+}
+.mcl-ways-shot {
+  position: absolute;
+  inset: 0;
+  background: center / cover no-repeat;
+  opacity: 0;
+  transition: opacity .32s cubic-bezier(.23, 1, .32, 1);
+}
+.mcl-ways-shot[data-shot='holler'] { background-image: url('/landing/ways-holler.webp'); }
+.mcl-ways-shot[data-shot='callin'] { background-image: url('/landing/ways-callin.webp'); }
+.mcl-ways-shot[data-shot='bounty'] { background-image: url('/landing/ways-bounty.webp'); }
+.mcl-ways-stage[data-way='holler'] [data-shot='holler'],
+.mcl-ways-stage[data-way='callin'] [data-shot='callin'],
+.mcl-ways-stage[data-way='bounty'] [data-shot='bounty'] { opacity: 1; }
+.mcl-ways-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 60%, rgba(0, 0, 0, .45));
+  pointer-events: none;
+}
+.mcl-ways-live {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  z-index: 2;
+  padding: 5px 8px;
+  background: rgba(14, 13, 12, .82);
+  color: #f4efe6;
+  font: 700 11px/1 var(--font-code), ui-monospace, monospace;
+  letter-spacing: .08em;
+}
+.mcl-ways-live i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #ff3b30;
+}
+.mcl-ways-stage[data-way='bounty'] .mcl-ways-live i { background: #8a8378; }
+
+.mcl-ways-ov {
+  position: absolute;
+  z-index: 2;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .26s cubic-bezier(.23, 1, .32, 1), transform .26s cubic-bezier(.23, 1, .32, 1);
+  pointer-events: none;
+}
+.mcl-ways-stage[data-way='holler'] .mcl-ways-ov-holler,
+.mcl-ways-stage[data-way='callin'] .mcl-ways-ov-callin,
+.mcl-ways-stage[data-way='bounty'] .mcl-ways-ov-bounty { opacity: 1; transform: none; }
+
+/* A Holler airs as a 16:9 tile, clear of the game's minimap and HUD. */
+.mcl-ways-ov-holler {
+  right: 3%;
+  top: 33%;
+  width: 24%;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 2px solid var(--f-holler);
+  background: url('/landing/ways-you.webp') center / cover no-repeat, #222;
+}
+.mcl-ways-ov-holler .t {
+  align-self: flex-start;
+  margin: 6px;
+  padding: 3px 6px;
+  background: rgba(14, 13, 12, .82);
+  color: #f4efe6;
+  font: 700 10px/1 var(--font-code), ui-monospace, monospace;
+}
+.mcl-ways-ov-holler .t::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--f-holler);
+}
+.mcl-ways-ov-holler .tag {
+  padding: 5px 7px;
+  background: var(--f-holler-solid);
+  color: var(--f-holler-on);
+  font: 700 10px/1 var(--font-code), ui-monospace, monospace;
+  letter-spacing: .08em;
+}
+
+/* Call in: your seat and an open one, stacked in the shelf corner. */
+.mcl-ways-ov-callin {
+  right: 3%;
+  top: 5%;
+  width: 21%;
+  display: grid;
+  gap: 8px;
+}
+.mcl-ways-ov-callin .seat {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border: 2px solid var(--f-callin);
+  background: url('/landing/ways-you.webp') center / cover no-repeat, #222;
+}
+.mcl-ways-ov-callin .seat b {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  padding: 4px 6px;
+  background: var(--f-callin-solid);
+  color: var(--f-callin-on);
+  font: 700 10px/1 var(--font-code), ui-monospace, monospace;
+  letter-spacing: .06em;
+}
+.mcl-ways-ov-callin .seat.open {
+  display: grid;
+  place-items: center;
+  border-style: dashed;
+  background: rgba(14, 13, 12, .55);
+  color: var(--f-callin);
+  font: 700 22px/1 var(--font-code), ui-monospace, monospace;
+}
+.mcl-ways-ov-callin .meter {
+  justify-self: start;
+  padding: 4px 6px;
+  background: rgba(14, 13, 12, .86);
+  color: #f4efe6;
+  font: 700 10px/1 var(--font-code), ui-monospace, monospace;
+}
+
+/* Bounty: a lower third, the fan's pledge on the show he's watching. */
+.mcl-ways-ov-bounty {
+  left: 4%;
+  right: 4%;
+  bottom: 7%;
+  display: flex;
+  align-items: stretch;
+}
+.mcl-ways-ov-bounty .amt {
+  display: grid;
+  place-items: center;
+  padding: 0 16px;
+  background: var(--f-bounty-solid);
+  color: var(--f-bounty-on);
+  font: 700 clamp(16px, 2.4vw, 26px)/1 var(--font-code), ui-monospace, monospace;
+}
+.mcl-ways-ov-bounty .who {
+  flex: 1;
+  padding: 10px 14px;
+  border-top: 2px solid var(--f-bounty);
+  background: rgba(14, 13, 12, .88);
+  color: #f4efe6;
+}
+.mcl-ways-ov-bounty .who strong {
+  display: block;
+  font: 800 clamp(14px, 1.8vw, 19px)/1.15 var(--font-display);
+}
+.mcl-ways-ov-bounty .who small {
+  display: block;
+  margin-top: 3px;
+  color: #b6ad9f;
+  font-size: clamp(11px, 1.2vw, 13px);
+}
+
+/* ── modes ── */
+.mcl-ways-modes { display: flex; flex-direction: column; gap: 10px; }
+.mcl-ways-mode {
+  --k: var(--hl-fg);
+  --k-ink: var(--hl-fg);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  align-items: center;
+  width: 100%;
+  padding: 16px 18px;
+  border: 1px solid var(--hl-line-2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--hl-fg);
+  text-align: left;
+  cursor: pointer;
+  transition: background .2s cubic-bezier(.23, 1, .32, 1), border-color .2s cubic-bezier(.23, 1, .32, 1), transform .16s cubic-bezier(.23, 1, .32, 1);
+}
+.mcl-ways-mode[data-k='holler'] { --k: var(--f-holler); --k-ink: var(--f-holler-ink); }
+.mcl-ways-mode[data-k='callin'] { --k: var(--f-callin); --k-ink: var(--f-callin-ink); }
+.mcl-ways-mode[data-k='bounty'] { --k: var(--f-bounty); --k-ink: var(--f-bounty-ink); }
+.mcl-ways-mode .bar {
+  grid-row: span 2;
+  width: 4px;
+  height: 100%;
+  min-height: 44px;
+  border-radius: 2px;
+  background: var(--hl-line-2);
+  transition: background .2s cubic-bezier(.23, 1, .32, 1);
+}
+.mcl-ways-mode strong {
+  font: 800 clamp(26px, 3vw, 34px)/1 var(--font-display);
+  letter-spacing: -.025em;
+}
+.mcl-ways-mode small { color: var(--hl-muted); font-size: 14px; }
+.mcl-ways-mode[aria-pressed='true'] {
+  border-color: var(--k);
+  background: color-mix(in srgb, var(--k) 10%, transparent);
+}
+.mcl-ways-mode[aria-pressed='true'] .bar { background: var(--k); }
+.mcl-ways-mode:active { transform: scale(.985); }
+.mcl-ways-mode:focus-visible,
+.mcl-ways-cta:focus-visible { outline: 2px solid var(--hl-fg); outline-offset: 3px; }
+@media (hover: hover) and (pointer: fine) {
+  .mcl-ways-mode:hover { border-color: color-mix(in srgb, var(--k) 60%, var(--hl-line-2)); }
+}
+
+.mcl-ways-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 6px;
+}
+.mcl-ways-readout {
+  color: var(--hl-fg);
+  font: 700 14px/1.5 var(--font-code), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.mcl-ways-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: transform .16s cubic-bezier(.23, 1, .32, 1);
+}
+.mcl-ways-cta[data-k='holler'] { background: var(--f-holler-solid); color: var(--f-holler-on); }
+.mcl-ways-cta[data-k='callin'] { background: var(--f-callin-solid); color: var(--f-callin-on); }
+.mcl-ways-cta[data-k='bounty'] { background: var(--f-bounty-solid); color: var(--f-bounty-on); }
+.mcl-ways-cta:active { transform: scale(.97); }
+
+@media (max-width: 900px) {
+  .mcl-ways { padding: 36px 20px 40px; }
+  .mcl-ways-wrap { grid-template-columns: 1fr; gap: 16px; }
+  .mcl-ways-mode { padding: 12px 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mcl-ways-shot, .mcl-ways-ov, .mcl-ways-mode, .mcl-ways-cta { transition: none; }
+}
+
+/* Overlay labels never wrap; on phones the tiles grow so they stay legible. */
+.mcl-ways-ov .tag, .mcl-ways-ov .t, .mcl-ways-ov-callin .seat b, .mcl-ways-ov-callin .meter { white-space: nowrap; }
+@media (max-width: 600px) {
+  .mcl-ways-ov-holler { width: 36%; top: 30%; }
+  .mcl-ways-ov-callin { width: 32%; gap: 5px; }
+  .mcl-ways-ov-callin .seat b, .mcl-ways-ov-holler .tag, .mcl-ways-ov-callin .meter { padding: 3px 4px; font-size: 8px; letter-spacing: .02em; }
+  .mcl-ways-ov-callin .seat.open { font-size: 16px; }
+  .mcl-ways-ov-bounty .amt { padding: 0 10px; }
+  .mcl-ways-ov-bounty .who { padding: 6px 10px; }
+}
