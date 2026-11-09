@@ -90,6 +90,10 @@ function Checks({ checks, reconnectHref }: { checks: CampaignCheck[]; reconnectH
 export function CampaignOffer({ slug, initial }: { slug: string; initial: PublicCampaign | null }) {
   const [c, setC] = useState<PublicCampaign | null>(initial)
   const [missing, setMissing] = useState(!initial)
+  // The server renders without the visitor's cookie, so an unopened
+  // campaign reaches its creator only through this browser's own read (the
+  // owner preview): "not here" waits until that read has answered.
+  const [loading, setLoading] = useState(!initial)
   const [me, setMe] = useState<MyClaim | null>(null)
   const [checks, setChecks] = useState<CampaignCheck[] | null>(null)
   const [eligible, setEligible] = useState<boolean | null>(null)
@@ -129,7 +133,7 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
 
   useEffect(() => {
     if (!initial) {
-      fetch(base).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.campaign) { setC(d.campaign); setMissing(false) } }).catch(() => {})
+      fetch(base, { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.campaign) { setC(d.campaign); setMissing(false) } }).catch(() => {}).finally(() => setLoading(false))
     }
     getChainInfo().then((i) => setExplorerUrl(i.explorerUrl)).catch(() => {})
     void loadMe().then((d) => {
@@ -169,6 +173,8 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
     catch (e) { setErr(e instanceof Error ? e.message : 'Wallet connect was cancelled') }
   }
 
+  if (loading && !c) return <p className="text-center text-[14px] text-hl-dim">Loading…</p>
+
   if (missing || !c) {
     return (
       <div className="rounded-2xl border border-hl-line bg-hl-panel p-8 text-center">
@@ -188,6 +194,9 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
   // The server's public view already maps a passed deadline to 'closed', so
   // "live" is the one open/closed switch; the deadline only decides which
   // closed sentence to show.
+  // The creator's preview of an unopened campaign: the real page, nothing
+  // to claim yet.
+  const preview = c.preview === true
   const live = c.status === 'live'
   const pastDeadline = !!c.deadline && Number.isFinite(Date.parse(c.deadline)) && Date.parse(c.deadline) <= Date.now()
   const full = c.spotsLeft <= 0 || Number(c.budget.left) < Number(c.reward.amount)
@@ -197,9 +206,13 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
   // Someone already holding a place (recorded, owed, paid…) keeps their status
   // even when the campaign is full; only new entrants are turned away.
   const holdsPlace = !!claim && !['ineligible', 'eligible', 'rejected', 'expired'].includes(claim.status)
-  const open = closedWhy == null
+  const open = closedWhy == null && !preview
   const canCheck = open && (!claim || claim.status === 'ineligible' || claim.status === 'eligible')
   const canAct = open && eligible === true && claim?.status === 'eligible'
+  // "Your status" shows only once there is a status: a claim, a check
+  // result, or an error. Before that the hero button is the one way in
+  // (ca-offer-dup-cta).
+  const showStatus = !preview && (!!claim || !!checks || !!err)
   // Unread X data is not a verdict: the page says so and leads with Reconnect X.
   const unread = allUnread(checks || [])
   const stale = (checks || []).some((k) => !k.pass && /Reconnect X/.test(k.detail))
@@ -211,7 +224,9 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
 
   // One primary action in the hero, in azure: act once eligible, reconnect
   // X when the check could not read it, else check.
-  const heroCta = canAct
+  const heroCta = preview
+    ? <button type="button" disabled className={primaryCta}>Check if I qualify</button>
+    : canAct
     ? <a href={c.joinUrl} className={primaryCta}>{actCta}</a>
     : canCheck && unread && reconnectHref
       ? <a href={reconnectHref} className={primaryCta}>Reconnect X</a>
@@ -221,6 +236,11 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
 
   return (
     <article className="space-y-6">
+      {preview ? (
+        <p role="status" className="rounded-xl border border-f-bounty-line bg-f-bounty-bg px-4 py-3 text-[14px] font-semibold text-hl-fg">
+          Preview · only you can see this · goes public when you fund and open it
+        </p>
+      ) : null}
       <header className="rounded-2xl border border-hl-line bg-hl-panel p-6 sm:p-8">
         <div className="flex flex-wrap items-center gap-2">
           <HollerMark px={18} />
@@ -237,6 +257,7 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
           {heroCta}
           {closedWhy && !holdsPlace ? <p className="text-[15px] font-semibold text-hl-fg">{closedWhy}{full && live ? ' Nobody else can claim.' : ''}</p> : null}
           {!me?.xLinked && me?.xSignIn && canCheck ? <span className="text-[13px] text-hl-dim">Signs you in with X through Holler; reads your public profile, never posts.</span> : null}
+          {!me?.xLinked && me?.xSignIn === false && canCheck ? <span className="text-[13px] text-hl-dim">X sign-in is not set up on this server yet, so nobody can be checked here.</span> : null}
         </div>
         {/* A closed campaign advertises no space: only the date it ran to. */}
         <dl className={`mt-6 grid grid-cols-2 gap-4 border-t border-hl-line pt-5 ${live ? 'sm:grid-cols-3' : ''}`}>
@@ -261,6 +282,7 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
       {c.referenceSet ? <Fingerprint set={c.referenceSet} label="The frozen list" /> : null}
       {c.followedBySet && c.followedBySet.id !== c.referenceSet?.id ? <Fingerprint set={c.followedBySet} label="The list that vouches" /> : null}
 
+      {showStatus ? (
       <section className="rounded-2xl border border-hl-line bg-hl-panel p-6" aria-live="polite">
         <h2 className="text-[18px] font-bold">Your status</h2>
         {closedWhy && !holdsPlace ? (
@@ -271,25 +293,7 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
         {me?.xLinked ? <p className="mt-1 text-[13px] text-hl-dim">Checking as @{me.xUsername} on X.</p> : null}
 
         {checks ? <Checks checks={checks} reconnectHref={stale || unread ? reconnectHref : null} /> : null}
-
-        {canCheck || canAct ? (
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            {canCheck ? (
-              <button type="button" onClick={onCheck} disabled={busy || (!me?.xLinked && me?.xSignIn === false)} className={canAct || (unread && reconnectHref) ? secondaryCta : primaryCta}>
-                {busy ? 'Checking…' : checks ? 'Check again' : 'Check if I qualify'}
-              </button>
-            ) : null}
-            {canAct ? <a href={c.joinUrl} className={primaryCta}>{actCta}</a> : null}
-          </div>
-        ) : null}
-        {!me?.xLinked && me?.xSignIn === false ? (
-          <p className="mt-3 text-[13px] text-hl-dim">X sign-in is not set up on this server yet, so nobody can be checked here.</p>
-        ) : null}
-        {/* The "reads your profile, never posts" line is said once, beside
-            the hero button; this second button gets the short form only. */}
-        {!me?.xLinked && me?.xSignIn && canCheck ? (
-          <p className="mt-3 text-[13px] text-hl-dim">Signs you in with X through Holler.</p>
-        ) : null}
+        {/* No second Check or act button here: the hero's is the one way in. */}
 
         {claim?.needsWallet ? (
           <div className="mt-6 rounded-xl border border-hl-line-2 p-4">
@@ -321,6 +325,7 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
         ) : null}
         {err ? <p role="alert" className="mt-3 text-[13px] text-hl-danger">{err}</p> : null}
       </section>
+      ) : null}
 
       {c.creator ? <p className="text-center text-[12px] text-hl-dim">Campaign by @{c.creator.handle}</p> : null}
     </article>

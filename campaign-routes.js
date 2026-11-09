@@ -100,9 +100,14 @@ export const CAMPAIGN_ROUTES = [
   ['GET', '/api/campaign-config', TIER.FAN, (e, req, w) => ({
     isAdmin: w.isAdmin, fundingEnabled: fundingEnabled(), xBearer: appBearerConfigured(), xTokenStore: tokenStoreConfigured(),
     adminKey: adminKeyConfigured(), ruleMenu: RULE_MENU,
+    // Whether owed rewards are SENT here or queued (ca-payout-hedge): the
+    // form showed a hedge on every server because this was never sent.
+    payoutsEnabled: typeof e.payoutsEnabled === 'function' ? e.payoutsEnabled() : null,
   })],
   ['POST', '/api/campaigns', TIER.FAN, async (e, req, w) => e.manageView(await e.createCampaign(req.body || {}, w))],
   ['PATCH', '/api/campaigns/:id', TIER.FAN, async (e, req, w) => e.manageView(await e.updateCampaign(req.params.id, req.body || {}, w))],
+  /** Delete a never-funded draft; anything with funding on record is refused (it closes instead). */
+  ['DELETE', '/api/campaigns/:id', TIER.FAN, (e, req, w) => e.deleteDraft(req.params.id, w)],
   /**
    * Fund: {ok, campaign} once the budget is pulled, or {needsApproval} when
    * the wallet has not approved enough to the spender (or no wallet was
@@ -170,6 +175,18 @@ export const CAMPAIGN_ROUTES = [
   }],
   /** The signed-in account's payout wallet, for pages that need to ask for one. */
   ['GET', '/api/account/payout-wallet', TIER.FAN, (e, req, w) => ({ payoutWallet: (w.accountId && getAccount(w.accountId)?.payoutWallet) || null })],
+  /**
+   * What this account has earned watching (rw-no-trail): per room, earned to
+   * date, spendable seat credit, whether the cap is reached, and each Cash
+   * transfer with its door status and transaction. Read from the rewards
+   * service server.js hands in (rewardsFor); nothing here moves money.
+   */
+  ['GET', '/api/account/rewards', TIER.FAN, (e, req, w) => {
+    const rewardsFor = req.campaignHooks?.rewardsFor;
+    if (!w.accountId) return { rooms: [], available: false };
+    const out = typeof rewardsFor === 'function' ? rewardsFor(w.accountId) : null;
+    return out ? { ...out, available: true } : { rooms: [], available: false };
+  }],
 
   // ── admin: moderation and abuse controls only ───────────────────────────
   ['GET', '/api/campaigns/admin/all', TIER.ADMIN, (e) => ({ campaigns: e.listManaged({ isAdmin: true, all: true }) })],
@@ -192,7 +209,9 @@ export const CAMPAIGN_ROUTES = [
       if (!w.accountId && !w.isAdmin) throw httpErr(401, 'auth_required', 'Sign in to continue');
       return { campaign: e.manageView(e.getManaged(req.params.key, w)) };
     }
-    const v = e.publicView(req.params.key);
+    // The creator's own unopened campaign answers as a preview (ownerPreview,
+    // `preview: true`); to everyone else it is still not here.
+    const v = e.publicView(req.params.key) || ((w.accountId || w.isAdmin) && e.ownerPreview ? e.ownerPreview(req.params.key, w) : null);
     if (!v) throw httpErr(404, 'not_found', 'No such campaign.');
     return { campaign: v };
   }],
@@ -228,8 +247,8 @@ function guard(tier, hooks = {}) {
   };
 }
 
-export function attachCampaignRoutes(app, engine, { onPayoutWallet = null } = {}) {
-  const hooks = { onPayoutWallet };
+export function attachCampaignRoutes(app, engine, { onPayoutWallet = null, rewardsFor = null } = {}) {
+  const hooks = { onPayoutWallet, rewardsFor };
   // Registered in table order: literal paths (mine, admin/…) come before the
   // ones with a parameter in the same position, and 'mine', 'admin' and
   // 'manage' are reserved slugs besides.

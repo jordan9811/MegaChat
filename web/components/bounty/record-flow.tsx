@@ -22,7 +22,7 @@
 // pipeline server-side.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Circle, Square, RotateCcw, Send, ShieldAlert, Clock } from 'lucide-react'
+import { Circle, Square, RotateCcw, Send, ShieldAlert, Clock, Share2, Check } from 'lucide-react'
 import {
   createPledge, fundPledge, postFrames, uploadClip,
   type BountyClientConfig, type ProgramPool, type RejectionPolicy, type PledgeApprovalAsk, type PledgeFundProof,
@@ -35,7 +35,7 @@ import { getChainInfo } from '@/lib/campaigns-api'
 import { getAccountPrefs } from '@/lib/api'
 import { FeatureTag } from '@/components/feature-tag'
 import { newAttemptId } from '@/lib/attempt-id'
-import { fetchIdentity } from '@/lib/identity'
+import { useAccount } from '@/lib/use-account'
 import { recorderMime } from '@/lib/recorder-mime'
 
 type Stage = 'idle' | 'recording' | 'preview' | 'terms' | 'funding' | 'sending' | 'done' | 'error'
@@ -47,8 +47,11 @@ type Stage = 'idle' | 'recording' | 'preview' | 'terms' | 'funding' | 'sending' 
 const CHOICE_ON = 'border-hl-strap-hi bg-hl-strap/15 text-foreground'
 const CHOICE_OFF = 'border-border text-muted-foreground'
 const BOUNTY_SOLID = 'bg-f-bounty-solid text-f-bounty-on'
+// Every control on the pledge step is at least 44px tall (UX sweep tb-touch-targets).
+const CHIP = 'inline-flex min-h-11 items-center rounded-full border px-4 text-xs font-bold'
 
 const MB = (n: number) => `${(n / (1024 * 1024)).toFixed(1)} MB`
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 const EXPIRY_CHOICES = [
   { label: '3 days', ms: 3 * 86_400_000 },
@@ -56,6 +59,42 @@ const EXPIRY_CHOICES = [
   { label: '2 weeks', ms: 14 * 86_400_000 },
   { label: '30 days', ms: 30 * 86_400_000 },
 ]
+const AMOUNT_PRESETS = ['5', '10', '25']
+
+/**
+ * THE MONEY FIELD (UX sweep bo-amount-parse). Digits and one '.' only, as
+ * typed: '$', ',' and spaces are stripped, so "$1,000" becomes 1000, never 1.
+ * At most 6 decimal places (USDC's).
+ */
+export function cleanAmount(raw: string): string {
+  const s = raw.replace(/[^\d.]/g, '')
+  const dot = s.indexOf('.')
+  if (dot === -1) return s.slice(0, 12)
+  return `${s.slice(0, dot).slice(0, 12)}.${s.slice(dot + 1).replace(/\./g, '').slice(0, 6)}`
+}
+
+/**
+ * The ONE number the button prints, the server books and My bounties shows:
+ * no leading zeros, no trailing '.' or zeros after the point. Null when it is
+ * not a positive amount. The server refuses anything else (bounty-escrow.js
+ * isCanonicalAmount), before it writes a pledge.
+ */
+export function canonicalAmount(s: string): string | null {
+  if (!/^\d*\.?\d*$/.test(s)) return null
+  const [w, f = ''] = s.split('.')
+  const whole = w.replace(/^0+(?=\d)/, '') || '0'
+  const frac = f.replace(/0+$/, '')
+  const out = frac ? `${whole}.${frac}` : whole
+  return /^(0|[1-9]\d{0,11})(\.\d{1,6})?$/.test(out) && Number(out) > 0 ? out : null
+}
+
+function cameraMessage(e: unknown): string {
+  const name = e instanceof Error ? e.name : ''
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Camera blocked. Allow the camera for this site, then press Record.'
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'No camera found. Plug one in, then press Record.'
+  if (name === 'NotReadableError') return 'Another app is using the camera. Close it, then press Record.'
+  return e instanceof Error ? e.message : 'Camera unavailable'
+}
 
 export function RecordFlow({
   target,
@@ -69,7 +108,9 @@ export function RecordFlow({
   otherPools: ProgramPool[]
   onDone: (contributor: string) => void
 }) {
+  const rootRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const amountRef = useRef<HTMLInputElement>(null)
   const recRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -90,7 +131,9 @@ export function RecordFlow({
   const [explorerUrl, setExplorerUrl] = useState('https://explore.tempo.xyz')
   const realMoney = config.money?.mode === 'real'
   // The liveness tier this pledge releases at: the account's preference
-  // (Account → Bounty protection), green (badge-verified only) by default.
+  // (Account → Bounty protection) prefills it, green (badge-verified only) by
+  // default, and the fan can change it for THIS pledge right here (UX sweep
+  // bo-tier-link: the old link to settings threw the take away).
   const [minTier, setMinTier] = useState<'green' | 'yellow'>('green')
   useEffect(() => { getAccountPrefs().then((p) => setMinTier(p.prefs.bountyMinTier)).catch(() => {}) }, [])
   useEffect(() => { if (realMoney) getChainInfo().then((c) => setExplorerUrl(c.explorerUrl)).catch(() => {}) }, [realMoney])
@@ -105,26 +148,36 @@ export function RecordFlow({
   const [contributor, setContributor] = useState('')
   const [extraTargets, setExtraTargets] = useState<string[]>([]) // "platform:handle"
   const [policy, setPolicy] = useState<RejectionPolicy | null>(null)
+  // Camera and recording problems print under the camera; anything the pay
+  // step says prints directly above Pay (UX sweep bo-amount-input), where the
+  // fan who pressed it is looking.
   const [error, setError] = useState<string | null>(null)
-  // null = still checking / unknown · false = anonymous · true = signed in
-  const [signedIn, setSignedIn] = useState<boolean | null>(null)
+  const [payError, setPayError] = useState<string | null>(null)
+  const [amountInvalid, setAmountInvalid] = useState(false)
+  // The live camera before Record (UX sweep bo-recorder-fold): framing first,
+  // then a 3-2-1, then the take.
+  const [cam, setCam] = useState<'starting' | 'live' | 'off'>('starting')
+  const [countdown, setCountdown] = useState<number | null>(null)
+  const [copied, setCopied] = useState(false)
 
   // The pledge route is FAN-tier, so an anonymous fan's submit would die with
-  // a 401 AFTER they recorded and filled the form. Ask who they are when the
-  // terms open and say so on the pay button instead of failing late. Unknown
-  // (fetch failed) deliberately does NOT disable — the server still decides.
-  useEffect(() => {
-    if (stage !== 'terms') return
-    let gone = false
-    fetchIdentity()
-      .then((identity) => { if (!gone) setSignedIn(!!identity) })
-      .catch(() => { if (!gone) setSignedIn(null) })
-    return () => { gone = true }
-  }, [stage])
+  // a 401 AFTER they recorded and filled the form. useAccount hears the
+  // sign-in (megachat:identity) without a reload, so the one button turns from
+  // "Sign in to pay" into "Pay" the moment it lands, with the take and terms
+  // untouched (UX sweep bo-pay-signin). Until the account has loaded the
+  // button is Pay: the server still decides.
+  const { loaded: accountLoaded, signedIn, openSignIn, authError } = useAccount()
+  const needsSignIn = accountLoaded && !signedIn
+
+  const canon = canonicalAmount(amount)
+  const currency = config.currency
+  const yellowPct = Math.round((config.tiers?.yellowReleaseFraction ?? 0.1) * 100)
+  const yellowMin = Math.round((config.tiers?.yellowMinMs ?? 600_000) / 60_000)
 
   const stopTracks = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
+    setCam('off')
   }, [])
   const setPreviewUrl = useCallback((b: Blob | null) => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
@@ -141,20 +194,60 @@ export function RecordFlow({
     }
   }, [stopTracks, setPreviewUrl])
 
+  /** Open the camera into the frame, live and unrecorded. */
+  const startPreview = useCallback(async (cancelled: () => boolean = () => false): Promise<MediaStream | null> => {
+    if (streamRef.current) return streamRef.current
+    setError(null)
+    if (!navigator.mediaDevices?.getUserMedia) { setCam('off'); setError('This browser cannot open a camera here.'); return null }
+    setCam('starting')
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      if (cancelled() || !mountedRef.current) { stream.getTracks().forEach((t) => t.stop()); return null }
+      // A second open that raced this one: keep one camera, not two.
+      const prev = streamRef.current as MediaStream | null
+      if (prev) { stream.getTracks().forEach((t) => t.stop()); return prev }
+      streamRef.current = stream
+      const v = videoRef.current
+      if (v) {
+        v.removeAttribute('src')
+        v.srcObject = stream
+        v.muted = true
+        v.controls = false
+        void v.play().catch(() => {})
+      }
+      setCam('live')
+      return stream
+    } catch (e) {
+      if (!cancelled()) { setCam('off'); setError(cameraMessage(e)) }
+      return null
+    }
+  }, [])
+
+  // The recorder opens in view, with the camera already on.
+  useEffect(() => {
+    rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    let gone = false
+    void startPreview(() => gone)
+    return () => { gone = true }
+  }, [startPreview])
+
   async function startRecording() {
     setError(null)
     // Asked first: MediaRecorder throws on a format the browser cannot
     // record (Safari has no WebM), and that used to leave the camera on.
     const mime = recorderMime()
     if (!mime) { setError('This browser cannot record video here.'); return }
-    stopTracks() // a second Record must not orphan the first capture
+    const stream = await startPreview()
+    if (!stream) return
+    // 3-2-1 on the live frame, so the take starts when the fan is ready.
+    for (const n of [3, 2, 1]) {
+      setCountdown(n)
+      await sleep(1000)
+      if (!mountedRef.current || streamRef.current !== stream) { setCountdown(null); return }
+    }
+    setCountdown(null)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      streamRef.current = stream
       const v = videoRef.current!
-      v.srcObject = stream
-      v.muted = true
-      void v.play()
 
       chunksRef.current = []
       framesRef.current = []
@@ -182,17 +275,24 @@ export function RecordFlow({
         attemptIdRef.current = newAttemptId()
         pledgeRef.current = null
         setPledged(false)
-        // Too short to verify on stream → never offer to pay for it.
-        if (dur < config.minClipSeconds) {
-          setError(`That take was ${dur}s — it needs at least ${config.minClipSeconds}s to be verifiable on stream. Nothing was charged. Go again.`)
+        // Too short to verify on stream → never offer to pay for it. Back
+        // to the live camera for another go.
+        const refuse = (msg: string) => {
+          setBlob(null)
+          setPreviewUrl(null)
+          vv.removeAttribute('src')
+          vv.controls = false
           setStage('idle')
+          void startPreview().then(() => setError(msg))
+        }
+        if (dur < config.minClipSeconds) {
+          refuse(`That take was ${dur}s — it needs at least ${config.minClipSeconds}s to be verifiable on stream. Nothing was charged. Go again.`)
           return
         }
         // Too big for the clip route: refused here, before any pledge, not
         // after the money is escrowed and the upload is turned away.
         if (config.clipMaxBytes && b.size > config.clipMaxBytes) {
-          setError(`That take is ${MB(b.size)}, over the ${MB(config.clipMaxBytes)} limit. Nothing was charged. Record a shorter one.`)
-          setStage('idle')
+          refuse(`That take is ${MB(b.size)}, over the ${MB(config.clipMaxBytes)} limit. Nothing was charged. Record a shorter one.`)
           return
         }
         setStage('preview')
@@ -223,7 +323,7 @@ export function RecordFlow({
         if (recRef.current?.state !== 'recording') clearInterval(tick)
       }, 500)
     } catch (e) {
-      // Whatever failed (the permission, the recorder), the camera goes off.
+      // Whatever failed (the recorder), the camera goes off.
       stopTracks()
       if (frameTimerRef.current) clearInterval(frameTimerRef.current)
       if (videoRef.current) videoRef.current.srcObject = null
@@ -239,25 +339,33 @@ export function RecordFlow({
     setBlob(null)
     setStage('idle')
     setError(null)
+    setPayError(null)
     // Reached only before a pledge (the error stage offers a retry, not a
     // re-record), so nothing is left behind; cleared all the same.
     attemptIdRef.current = null
     pledgeRef.current = null
     setPledged(false)
     const v = videoRef.current
-    if (v) { v.src = ''; v.controls = false }
+    if (v) { v.removeAttribute('src'); v.controls = false }
     setPreviewUrl(null)
+    void startPreview()
+  }
+
+  function amountProblem() {
+    setPayError('Type a number, like 5')
+    setAmountInvalid(true)
+    amountRef.current?.focus()
   }
 
   async function paySubmit() {
     if (!blob) return
-    if (!(parseFloat(amount) > 0)) { setError('Enter a positive amount'); return }
+    if (!pledgeRef.current && !canon) { amountProblem(); return }
     if (config.clipMaxBytes && blob.size > config.clipMaxBytes) {
-      setError(`That take is ${MB(blob.size)}, over the ${MB(config.clipMaxBytes)} limit. Record a shorter one.`)
+      setPayError(`That take is ${MB(blob.size)}, over the ${MB(config.clipMaxBytes)} limit. Record a shorter one.`)
       return
     }
     setStage('sending')
-    setError(null)
+    setPayError(null)
     try {
       let pledge = pledgeRef.current
       if (!pledge) {
@@ -270,8 +378,10 @@ export function RecordFlow({
         ]
         attemptIdRef.current = attemptIdRef.current || newAttemptId()
         // THE pay moment — escrow is written here, after preview and terms.
+        // The canonical number, the same one the button printed.
+        setAmount(canon!)
         const out = await createPledge({
-          targets, contributor: contributor.trim(), amount, expiresInMs: expiryMs,
+          targets, contributor: contributor.trim(), amount: canon!, expiresInMs: expiryMs,
           attemptId: attemptIdRef.current, minTier,
         })
         pledge = { uploadUrl: out.uploadUrl, id: out.pledge.id, funded: !out.requiresFunding }
@@ -300,8 +410,11 @@ export function RecordFlow({
       await uploadClip(pledge.uploadUrl, blob, durationS)
       setStage('done')
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Submit failed')
+      const msg = e instanceof Error ? e.message : 'Submit failed'
+      setPayError(msg)
       setStage('error')
+      // The server's amount refusal is a field error too.
+      if (!pledgeRef.current && /amount/i.test(msg)) { setAmountInvalid(true); amountRef.current?.focus() }
     }
   }
 
@@ -319,12 +432,43 @@ export function RecordFlow({
     await paySubmit()
   }
 
+  // After paying: send the streamer the page (UX sweep bo-tell-streamer). A
+  // phone gets its share sheet; a desktop copies the link.
+  const poolPath = `/bounty/s/${encodeURIComponent(target.platform)}/${encodeURIComponent(target.handle)}`
+  async function sendLink() {
+    const url = `${window.location.origin}${poolPath}`
+    const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
+    if (coarse && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: `A Holler bounty for ${target.handle}`, text: `${target.handle}, there's a Holler waiting for you. Claim it here:`, url })
+        return
+      } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') return
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => { if (mountedRef.current) setCopied(false) }, 2000)
+    } catch { /* the address is printed under the button */ }
+  }
+
   const unclaimedOthers = otherPools
     .filter((p) => !p.claimed && !(p.platform === target.platform && p.handle === target.handle))
     .slice(0, 8)
 
+  const payStage = stage === 'terms' || stage === 'funding' || stage === 'sending' || stage === 'error'
+  const liveFrame = stage === 'idle' || stage === 'recording'
+  const payLabel = stage === 'sending' ? 'Sending…'
+    : stage === 'funding' ? 'Approve in wallet above'
+      : pledged ? (pledgeRef.current?.funded === false ? 'Fund & send' : 'Retry upload')
+        : needsSignIn ? (canon ? `Sign in to pay ${canon} ${currency}` : 'Sign in to pay')
+          : !canon ? 'Pay & send'
+            : realMoney ? `Pledge ${canon} ${currency} — approve in wallet` : `Pay ${canon} ${currency} & send`
+  const shownPayError = payError || (needsSignIn ? authError : null)
+
   return (
-    <div className="rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm">
+    <div ref={rootRef} className="scroll-mt-20 rounded-2xl border border-border/70 bg-card/60 p-5 backdrop-blur-sm">
       <h3 className="font-heading text-lg font-bold text-foreground">
         Record a Holler for {target.handle}
       </h3>
@@ -334,60 +478,90 @@ export function RecordFlow({
         plays on their broadcast if they claim · refunds automatically if nobody claims before your expiry.
       </p>
 
-      <div className="dark relative mt-3 overflow-hidden rounded-xl border border-border bg-hl-bg">
+      {/* Capped at 60vh so the controls stay on screen; 16:9 kept by width. */}
+      <div className="dark relative mx-auto mt-3 overflow-hidden rounded-xl border border-border bg-hl-bg" style={{ maxWidth: 'calc(60vh * 16 / 9)' }}>
         {/* eslint-disable-next-line jsx-a11y/media-has-caption -- live cam preview */}
-        <video ref={videoRef} playsInline className="aspect-video w-full" />
+        <video ref={videoRef} playsInline
+          className={`aspect-video w-full object-cover ${liveFrame ? '-scale-x-100' : ''}`} />
+        {liveFrame && cam !== 'live' ? (
+          <span className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-muted-foreground">
+            {cam === 'starting' ? 'Opening your camera…' : 'Camera is off'}
+          </span>
+        ) : null}
         {stage === 'recording' ? (
           <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-hl-bg/75 px-2.5 py-1 text-xs font-bold text-f-holler-ink">
             <span className="size-2 animate-pulse rounded-full bg-hl-record" /> REC {elapsed}s
           </span>
         ) : null}
+        {countdown !== null ? (
+          <span aria-live="assertive" className="absolute inset-0 grid place-items-center bg-hl-bg/35 font-heading text-7xl font-bold text-white tabular">
+            {countdown}
+          </span>
+        ) : null}
+        {/* Record and Stop sit on the frame's bottom edge, in view with it. */}
+        {stage === 'idle' ? (
+          <button type="button" onClick={startRecording} disabled={countdown !== null}
+            className="absolute bottom-3 left-1/2 inline-flex min-h-11 -translate-x-1/2 items-center gap-2 rounded-full bg-f-holler-solid px-5 text-sm font-bold text-f-holler-on shadow-lg transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] active:scale-[.97] disabled:opacity-70">
+            <Circle className="size-4 fill-current" /> {countdown !== null ? 'Get ready…' : 'Record'}
+          </button>
+        ) : null}
+        {stage === 'recording' ? (
+          <button type="button" onClick={stopRecording}
+            className="absolute bottom-3 left-1/2 inline-flex min-h-11 -translate-x-1/2 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-black shadow-lg">
+            <Square className="size-4" /> Stop
+          </button>
+        ) : null}
       </div>
 
-      {error ? <p className="mt-2 text-sm text-hl-danger">{error}</p> : null}
-
-      {stage === 'idle' ? (
-        <button type="button" onClick={startRecording}
-          className="mt-3 inline-flex items-center gap-2 rounded-full bg-f-holler-solid px-5 py-2.5 text-sm font-bold text-f-holler-on transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.02] active:scale-[.97]">
-          <Circle className="size-4 fill-current" /> Record
-        </button>
-      ) : null}
-      {stage === 'recording' ? (
-        <button type="button" onClick={stopRecording}
-          className="mt-3 inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-sm font-bold text-background">
-          <Square className="size-4" /> Stop
-        </button>
-      ) : null}
+      {error && !payStage ? <p role="alert" className="mt-2 text-sm text-hl-danger">{error}</p> : null}
 
       {stage === 'preview' ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button type="button" onClick={redo}
-            className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-bold text-foreground">
+            className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-4 text-sm font-bold text-foreground">
             <RotateCcw className="size-4" /> Re-record
           </button>
-          <button type="button" onClick={() => setStage('terms')}
-            className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] active:scale-[.97] ${BOUNTY_SOLID}`}>
+          <button type="button" onClick={() => { setError(null); setStage('terms') }}
+            className={`inline-flex min-h-11 items-center gap-2 rounded-full px-5 text-sm font-bold transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] active:scale-[.97] ${BOUNTY_SOLID}`}>
             Looks good — set the bounty
           </button>
           <FeatureTag kind="holler">{durationS}s take</FeatureTag>
         </div>
       ) : null}
 
-      {stage === 'terms' || stage === 'funding' || stage === 'sending' || stage === 'error' ? (
+      {payStage ? (
         <div className="mt-4 space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-sm font-medium text-foreground">Bounty amount ({config.currency})</span>
-              {/* The terms lock once the pledge exists: a retry uploads under
+            <div>
+              <label htmlFor="bounty-amount" className="text-sm font-medium text-foreground">Bounty amount</label>
+              {/* A money field: fixed $ and unit, digits and one '.' only.
+                  The terms lock once the pledge exists: a retry uploads under
                   the pledge already made, so the form must show its terms. */}
-              <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" disabled={pledged}
-                className="mt-1 w-full rounded-xl border border-border bg-input/30 px-3.5 py-2.5 text-sm text-foreground" />
-            </label>
+              <div className={`mt-1 flex h-11 items-center rounded-xl border bg-input/30 ${amountInvalid ? 'border-hl-danger ring-2 ring-hl-danger/40' : 'border-border'}`}>
+                <span aria-hidden="true" className="pl-3.5 text-sm font-bold text-muted-foreground">$</span>
+                <input id="bounty-amount" ref={amountRef} value={amount} disabled={pledged}
+                  onChange={(e) => { setAmount(cleanAmount(e.target.value)); setAmountInvalid(false); if (payError) setPayError(null) }}
+                  onBlur={() => { if (canon && canon !== amount) setAmount(canon) }}
+                  inputMode="decimal" autoComplete="off" aria-invalid={amountInvalid || undefined}
+                  aria-describedby={amountInvalid ? 'bounty-pay-error' : undefined}
+                  className="h-full min-w-0 flex-1 bg-transparent px-1.5 text-sm text-foreground outline-none tabular" />
+                <span aria-hidden="true" className="pr-3.5 text-xs font-bold text-muted-foreground">{currency}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {AMOUNT_PRESETS.map((v) => (
+                  <button key={v} type="button" disabled={pledged} aria-pressed={canon === v}
+                    onClick={() => { setAmount(v); setAmountInvalid(false); setPayError(null) }}
+                    className={`${CHIP} min-w-14 justify-center tabular ${canon === v ? CHOICE_ON : CHOICE_OFF}`}>
+                    ${v}
+                  </button>
+                ))}
+              </div>
+            </div>
             <label className="block">
               <span className="text-sm font-medium text-foreground">Display name <span className="font-normal text-muted-foreground">(optional)</span></span>
-              <input value={contributor} onChange={(e) => setContributor(e.target.value)} disabled={pledged}
+              <input value={contributor} onChange={(e) => setContributor(e.target.value)} disabled={pledged} maxLength={64}
                 placeholder="Shown beside your bounty"
-                className="mt-1 w-full rounded-xl border border-border bg-input/30 px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground" />
+                className="mt-1 h-11 w-full rounded-xl border border-border bg-input/30 px-3.5 text-sm text-foreground placeholder:text-muted-foreground" />
               {/* The money keys to the signed-in ACCOUNT, not to this string —
                   saying otherwise here would misstate where a refund goes, on
                   the exact screen where someone decides to pay. */}
@@ -403,13 +577,13 @@ export function RecordFlow({
               {EXPIRY_CHOICES.map((c) => (
                 <button key={c.ms} type="button" onClick={() => setExpiryMs(c.ms)} disabled={pledged}
                   aria-pressed={expiryMs === c.ms}
-                  className={`rounded-full border px-3.5 py-1.5 text-xs font-bold ${expiryMs === c.ms ? CHOICE_ON : CHOICE_OFF}`}>
+                  className={`${CHIP} ${expiryMs === c.ms ? CHOICE_ON : CHOICE_OFF}`}>
                   {c.label}
                 </button>
               ))}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              If {target.handle} hasn&apos;t claimed by then, your full amount refunds automatically. Nothing is ever locked forever.
+              {`If ${target.handle} hasn't claimed by then, your full amount refunds automatically. Nothing is ever locked forever.`}
             </p>
           </div>
 
@@ -428,7 +602,7 @@ export function RecordFlow({
                         ? cur.filter((x) => x !== k)
                         : cur.length >= 2 ? cur : [...cur, k])}
                       aria-pressed={on}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-bold ${on ? CHOICE_ON : CHOICE_OFF}`}>
+                      className={`${CHIP} ${on ? CHOICE_ON : CHOICE_OFF}`}>
                       {p.handle}
                     </button>
                   )
@@ -442,14 +616,24 @@ export function RecordFlow({
             </div>
           ) : null}
 
-          {/* Which check releases this money, BEFORE the pay button. */}
-          <p className="text-xs text-muted-foreground" title={minTier === 'yellow'
-            ? 'Releases for badge-verified airtime, and a slice after any broadcast that kept the keyed overlay up at least 10 minutes. Protects against a forgotten overlay, not against fraud.'
-            : 'Releases only for airtime the badge verified on the real frames. The strongest protection.'}>
-            Releases at{' '}
-            <span className={`lv lv--${minTier}`} aria-hidden="true"><span className="lv-dot" />{minTier === 'yellow' ? 'Yellow or better' : 'Green only'}</span>
-            {' '}· <a href="/account#bounties" className="underline decoration-hl-strap-hi decoration-2 underline-offset-2">change in account settings</a>
-          </p>
+          {/* Which check releases this money, chosen for THIS pledge, BEFORE
+              the pay button. Prefilled from the account. */}
+          <fieldset disabled={pledged}>
+            <legend className="text-sm font-medium text-foreground">When it pays out</legend>
+            <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
+              {([
+                ['green', 'Pay only for verified airtime'],
+                ['yellow', `Also release a ${yellowPct}% slice if the overlay stayed up ${yellowMin} min`],
+              ] as const).map(([tier, label]) => (
+                <label key={tier}
+                  className={`flex min-h-11 cursor-pointer items-center gap-2.5 rounded-xl border px-3.5 py-2 text-xs font-bold has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-hl-strap-hi ${minTier === tier ? CHOICE_ON : CHOICE_OFF}`}>
+                  <input type="radio" name="bounty-min-tier" value={tier} checked={minTier === tier}
+                    onChange={() => setMinTier(tier)} className="size-4 shrink-0 accent-[var(--hl-strap-hi)]" />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
 
           {/* The rejection policy, BEFORE the pay button. */}
           <div className="rounded-xl border border-f-bounty-line bg-f-bounty-bg p-3">
@@ -472,20 +656,22 @@ export function RecordFlow({
                 onCancel={() => { setStage('terms') }} />
             ) : <p role="alert" className="text-sm text-hl-danger">This server can&apos;t take pledges right now (no bounty spender is configured). Nothing was charged.</p>
           ) : null}
-          <button type="button" disabled={stage === 'sending' || stage === 'funding' || signedIn === false} onClick={paySubmit}
-            className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.02] active:scale-[.97] disabled:opacity-60 ${BOUNTY_SOLID}`}>
-            <Send className="size-4" />
-            {stage === 'sending' ? 'Sending…' : stage === 'funding' ? 'Approve in wallet above' : pledged ? (pledgeRef.current?.funded === false ? 'Fund & send' : 'Retry upload') : realMoney ? `Pledge ${amount} ${config.currency} — approve in wallet` : `Pay ${amount} ${config.currency} & send`}
-          </button>
+
+          <div>
+            {/* Everything the pay step says lands here, right above Pay. */}
+            <p id="bounty-pay-error" role="alert" className={shownPayError ? 'mb-2 text-sm font-medium text-hl-danger' : 'sr-only'}>
+              {shownPayError || ''}
+            </p>
+            <button type="button" disabled={stage === 'sending' || stage === 'funding'}
+              onClick={needsSignIn && !pledged ? openSignIn : paySubmit}
+              className={`inline-flex min-h-11 items-center gap-2 rounded-full px-5 text-sm font-bold transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] active:scale-[.97] disabled:opacity-60 ${BOUNTY_SOLID}`}>
+              <Send className="size-4" />
+              {payLabel}
+            </button>
+          </div>
           {pledged && stage === 'error' ? (
             <p className="text-xs text-muted-foreground">
               {pledgeRef.current?.funded === false ? 'Your pledge is recorded but not funded yet; nothing has been charged.' : 'Your pledge is in. Retrying sends this take again, with no second payment.'}
-            </p>
-          ) : null}
-          {signedIn === false ? (
-            <p className="text-xs text-f-bounty-ink">
-              Sign in first (top right) — the bounty and any refund attach to your account.
-              Your recording stays right here while you do.
             </p>
           ) : null}
         </div>
@@ -496,11 +682,20 @@ export function RecordFlow({
           <p className="font-heading text-sm font-bold text-f-rewards-ink">Sent 🎉</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             Your Holler is in {target.handle}&apos;s bounty{extraTargets.length ? ` (and ${extraTargets.length} more)` : ''}.
-            {policy ? ' The review policy you saw applies from here.' : ''} Track every step on your status page.
+            {policy ? ' The review policy you saw applies from here.' : ''} It only pays if {target.handle} hears about it and claims it.
+          </p>
+          {/* The next thing that matters: the streamer has to hear about it. */}
+          <button type="button" onClick={() => void sendLink()}
+            className={`mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg px-5 text-sm font-bold transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] active:scale-[.97] ${BOUNTY_SOLID}`}>
+            {copied ? <Check className="size-4" aria-hidden="true" /> : <Share2 className="size-4" aria-hidden="true" />}
+            {copied ? 'Copied' : `Send ${target.handle} the link`}
+          </button>
+          <p className="mt-1.5 break-all text-[11px] text-muted-foreground" aria-live="polite">
+            {typeof window !== 'undefined' ? window.location.host : ''}{poolPath}
           </p>
           <button type="button" onClick={() => onDone(contributor.trim())}
-            className="mt-2 text-sm font-bold text-foreground underline decoration-hl-strap-hi decoration-2 underline-offset-4">
-            View my contributions →
+            className="mt-2 inline-flex min-h-11 items-center text-sm font-bold text-foreground underline decoration-hl-strap-hi decoration-2 underline-offset-4">
+            See it in My bounties →
           </button>
         </div>
       ) : null}

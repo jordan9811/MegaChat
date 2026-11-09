@@ -11,7 +11,7 @@
 // Primary CTA for fans: record a Holler. For the claimed streamer: the
 // approval queue (also reachable from the booth).
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Radio, Users, CircleCheck, Swords, Mic, LockKeyhole } from 'lucide-react'
 import {
   getBountyConfig, getPoolView, getProgram,
@@ -20,21 +20,37 @@ import {
 import { bountyKey } from '@/lib/bounty-examples'
 import { FeatureTag } from '@/components/feature-tag'
 import { LivenessBadge } from '@/components/liveness-badge'
-import { formatDollars } from '@/lib/display-format'
 import { RecordFlow } from './record-flow'
 import { ApprovalQueue } from './approval-queue'
 import { ClaimFlow } from './claim-flow'
 
-// The locked/contested key, same as the leaderboard's stacked bar: solid is
-// money locked to this name, the hatch is money rivals can also take. The
-// hairline in the bounty ink keeps the swatch visible on a light ground.
+// The locked/contested key, the board's own (bounty.css --mcb-locked, owner
+// 2026-10-23): solid green is money locked to this name, the yellow hatch is
+// money rivals can also take (UX sweep bo-vocab). The hairline in the ink
+// keeps each swatch visible on a light ground.
 const LOCKED_SWATCH = {
-  background: 'var(--f-bounty)',
-  boxShadow: 'inset 0 0 0 1px var(--f-bounty-ink)',
+  background: 'var(--f-rewards)',
+  boxShadow: 'inset 0 0 0 1px var(--f-rewards-ink)',
 }
 const CONTESTED_SWATCH = {
   backgroundImage: 'repeating-linear-gradient(135deg, var(--f-bounty) 0 3px, transparent 3px 6px)',
   boxShadow: 'inset 0 0 0 1px var(--f-bounty-ink)',
+}
+
+/** No money on this name at all: nothing held, nothing contested, no open pledge. */
+function isUnbacked(v: PoolView): boolean {
+  return v.contributionCount === 0 && v.contestedTotal === 0 && v.openPledges === 0
+}
+
+/** One card's money by the tier it releases at, in the card's own unit. */
+function TierLine({ tiers, currency }: { tiers: { greenOnly: number; yellowOk: number }; currency: string }) {
+  return (
+    <p className="mt-1.5 text-[11px] text-muted-foreground" title="Backers choose when their pledge pays: Green only pays for badge-verified airtime; Yellow ok also releases a slice after a broadcast that kept the keyed overlay up.">
+      <span className="lv lv--green" aria-hidden="true"><span className="lv-dot" />Green only</span> {tiers.greenOnly.toLocaleString()}
+      {' · '}
+      <span className="lv lv--yellow" aria-hidden="true"><span className="lv-dot" />Yellow ok</span> {tiers.yellowOk.toLocaleString()} {currency}
+    </p>
+  )
 }
 
 export function StreamerBountyPage({ platform, handle }: { platform: string; handle: string }) {
@@ -48,6 +64,15 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
   const [recording, setRecording] = useState(false)
   const [claiming, setClaiming] = useState(false)
   const [avatarBroken, setAvatarBroken] = useState(false)
+  // The money row's load (UX sweep js-pool-fail-silent): a failed FIRST load
+  // says so, with Retry, instead of reading as an empty pool. A poll that
+  // fails after a good load keeps the last figures (transient).
+  const [loadFailed, setLoadFailed] = useState(false)
+  // ?claim=1 (the board's "Claim this bounty") opens the claim form once the
+  // pool has loaded (UX sweep bo-panel-ctas).
+  const [wantClaim, setWantClaim] = useState(false)
+  const claimRef = useRef<HTMLDivElement>(null)
+  const loadedOnce = useRef(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -56,8 +81,25 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
       setClaimedBy(v.reserved?.claimedBy ?? null)
       setLiveness(v.liveness ?? null)
       setClipCount(v.clips)
-    } catch { /* transient */ }
+      setLoadFailed(false)
+      loadedOnce.current = true
+    } catch {
+      if (!loadedOnce.current) setLoadFailed(true)
+    }
   }, [platform, handle])
+
+  useEffect(() => {
+    try { if (new URLSearchParams(window.location.search).get('claim') === '1') setWantClaim(true) } catch { /* no query */ }
+  }, [])
+
+  // ?claim=1 lands on the open claim form, scrolled into view, once the pool
+  // has loaded and there is something to claim.
+  useEffect(() => {
+    if (!wantClaim || !view || claimedBy || isUnbacked(view)) return
+    setWantClaim(false)
+    setClaiming(true)
+    setTimeout(() => claimRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
+  }, [wantClaim, view, claimedBy])
 
   useEffect(() => {
     void getBountyConfig().then(async (cfg) => {
@@ -91,6 +133,10 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
   }
 
   const currency = config.currency
+  // Nobody has backed this name yet (UX sweep bo-claim-unbacked): the page
+  // asks for the first Holler, and there is nothing to claim.
+  const unbacked = !!view && !claimedBy && isUnbacked(view)
+  const cardTiers = view?.cardTiers
   // The photo the board already shows for this name, from the same
   // getProgram() call. Initials only when there is none or it fails to load.
   const poolKey = bountyKey(platform, handle)
@@ -137,31 +183,47 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
           <p className="mt-0.5 text-[15px] text-hl-muted">
             {claimedBy
               ? twitchLive === false ? 'Claimed, currently offline.' : 'Claimed — clips can air on their next broadcast.'
-              : 'Everything on this page is waiting for them the day they claim this handle.'}
+              : unbacked
+                ? `No one has backed ${handle} yet.`
+                : 'Everything on this page is waiting for them the day they claim this handle.'}
           </p>
         </div>
       </div>
 
-      {view ? (
+      {/* The money row is reserved from the first frame, so Record never
+          moves; a failed first load says so and offers Retry. */}
+      {loadFailed && !view ? (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-2xl border border-hl-danger/40 bg-hl-danger/5 px-4 py-3">
+          <p className="text-sm font-medium text-foreground">Couldn&apos;t load this pool.</p>
+          <button type="button" onClick={() => { setLoadFailed(false); void refresh() }}
+            className="inline-flex h-11 items-center rounded-lg border border-border px-4 text-sm font-bold text-foreground">
+            Retry
+          </button>
+        </div>
+      ) : !view ? (
+        <div className="grid gap-3 sm:grid-cols-3" aria-busy="true" aria-label="Loading this pool">
+          {[0, 1, 2].map((i) => (
+            <div key={i} aria-hidden="true" className="animate-pulse rounded-2xl border border-border/70 bg-card/50 p-4">
+              <div className="h-[15px] w-24 rounded bg-muted" />
+              <div className="mt-1 h-8 w-20 rounded bg-muted" />
+              <div className="mt-1.5 h-5 w-32 rounded bg-muted" />
+            </div>
+          ))}
+        </div>
+      ) : unbacked ? null : (
         <div className="grid gap-3 sm:grid-cols-3">
-          {/* GUARANTEED leads. Always. Solid bounty swatch = locked to this
-              name; the hatched one beside Contested = may go to a rival. */}
+          {/* LOCKED leads. Always. Solid green swatch = locked to this name;
+              the yellow hatch beside Contested = may go to a rival. */}
           <div className="rounded-2xl border border-f-bounty-line bg-f-bounty-bg p-4">
             <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
               <span aria-hidden="true" className="h-2 w-3.5 shrink-0" style={LOCKED_SWATCH} />
-              Guaranteed to {handle}
+              Locked to {handle}
               <span title="Theirs alone the moment they claim" aria-label="Locked to this name" className="inline-flex"><LockKeyhole className="size-3" aria-hidden="true" /></span>
             </p>
             <p className="mt-1 font-heading text-2xl font-bold text-f-bounty-ink tabular">
               {view.guaranteed.toLocaleString()} <span className="text-sm">{currency}</span>
             </p>
-            {view.tiers ? (
-              <p className="mt-1.5 text-[11px] text-muted-foreground" title="Backers choose the tier their pledge releases at: Green only pays for badge-verified airtime; Yellow or better also releases a slice after a broadcast that kept the keyed overlay up. Set yours under Account → Bounty protection.">
-                <span className="lv lv--green" aria-hidden="true"><span className="lv-dot" />Green only</span> {formatDollars(view.tiers.greenOnly)}
-                {' · '}
-                <span className="lv lv--yellow" aria-hidden="true"><span className="lv-dot" />Yellow ok</span> {formatDollars(view.tiers.yellowOk)}
-              </p>
-            ) : null}
+            {cardTiers ? <TierLine tiers={cardTiers.locked} currency={currency} /> : null}
           </div>
           <div className="rounded-2xl border border-border/70 bg-card/50 p-4">
             <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -176,6 +238,7 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
                 ? `offered to ${handle} AND ${Math.max(...view.contested.map((c) => c.rivals))} other${Math.max(...view.contested.map((c) => c.rivals)) === 1 ? '' : 's'} — first to claim takes it`
                 : 'nothing contested right now'}
             </p>
+            {cardTiers && view.contestedTotal > 0 ? <TierLine tiers={cardTiers.contested} currency={currency} /> : null}
           </div>
           <div className="rounded-2xl border border-border/70 bg-card/50 p-4">
             <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -186,19 +249,22 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
             <FeatureTag kind="holler" className="mt-1.5">{clipCount} clip{clipCount === 1 ? '' : 's'} ready to air</FeatureTag>
           </div>
         </div>
-      ) : null}
+      )}
 
       {!recording ? (
         <div className="flex flex-wrap items-center gap-3">
-          {/* Recording a clip is the holler magenta; claiming the money is bounty. */}
-          <button type="button" onClick={() => setRecording(true)}
-            className="inline-flex items-center gap-2 rounded-full bg-f-holler-solid px-6 py-3 text-sm font-bold text-f-holler-on transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:scale-[1.02] active:scale-[.97]">
+          {/* Recording a clip is the holler magenta; claiming the money is
+              bounty. The shared 8px corner at 44px (UX sweep js-pill-buttons).
+              Held until the pool has loaded once: a fan does not start a paid
+              flow against a pool the page could not read. */}
+          <button type="button" onClick={() => setRecording(true)} disabled={!view}
+            className="inline-flex h-11 items-center gap-2 rounded-lg bg-f-holler-solid px-6 text-sm font-bold text-f-holler-on transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] active:scale-[.97] disabled:opacity-50">
             <Mic className="size-4" aria-hidden="true" />
-            Record a Holler for {handle}
+            {unbacked ? 'Record the first Holler' : `Record a Holler for ${handle}`}
           </button>
-          {!claimedBy ? (
+          {!claimedBy && view && !unbacked ? (
             <button type="button" onClick={() => setClaiming(true)}
-              className="rounded-full border border-f-bounty-line px-5 py-3 text-sm font-bold text-f-bounty-ink transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-f-bounty-bg active:scale-[.97]">
+              className="inline-flex h-11 items-center rounded-lg border border-f-bounty-line px-5 text-sm font-bold text-f-bounty-ink transition-colors duration-150 hover:bg-f-bounty-bg active:scale-[.97]">
               I am {handle} — claim this
             </button>
           ) : null}
@@ -215,7 +281,9 @@ export function StreamerBountyPage({ platform, handle }: { platform: string; han
       ) : null}
 
       {claiming && view ? (
-        <ClaimFlow pool={view} config={config} onClose={() => { setClaiming(false); void refresh() }} />
+        <div ref={claimRef} className="scroll-mt-20">
+          <ClaimFlow pool={view} config={config} onClose={() => { setClaiming(false); void refresh() }} />
+        </div>
       ) : null}
 
       {/* The claimed streamer's working surface, right where their fans look. */}

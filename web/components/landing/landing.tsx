@@ -155,7 +155,6 @@ export function Landing({
           <Link href="/how-it-works">How it works</Link>
           <Link href="/roadmap">Roadmap</Link>
           {docsUrl() ? <a href={docsUrl() as string}>Docs</a> : null}
-          <Link href="/legacy">Legacy site</Link>
           <a href={contactHref} target="_blank" rel="noreferrer">Contact</a>
         </nav>
       </footer>

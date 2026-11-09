@@ -122,7 +122,7 @@ const FAQ = [
   },
   {
     q: 'Is this real money?',
-    a: 'Paid rooms use real funds, including the low-cost demo room. Check the price before confirming. The bounty preview is separate: its example amounts are not funded and its ledger does not send real payments.',
+    a: 'Yes. Paid rooms and bounty pledges use real USDC. A bounty pledge waits for the streamer you back and comes back to you if they don’t claim it before it expires. Amounts tagged Example on the bounty board hold no money.',
   },
   {
     q: 'Can the streamer remove me?',
@@ -167,7 +167,7 @@ function FlowColumn({
 }) {
   return (
     <section className={`mch-flow is-${kind}`}>
-      <header><p>{body}</p></header>
+      <header><h2>{kind === 'viewer' ? 'For viewers' : 'For streamers'}</h2><p>{body}</p></header>
       <ol>
       {steps.map((s, i) => (
         <li key={s.title}>
@@ -233,12 +233,6 @@ export default function HowItWorksPage() {
         </section>
 
         <section className="mch-tree-section">
-          <div className="mch-arewe">
-            <span className="mch-arewe-lead">Are you a</span>
-            <span className="mch-tag is-chatter">Chatter</span>
-            <span className="mch-arewe-or">or</span>
-            <span className="mch-tag is-streamer">Streamer</span>
-          </div>
           <div className="mch-flow-grid">
             <FlowColumn kind="viewer" body="Enter a room, choose a format, and approve the maximum cost before anything starts." steps={VIEWER_STEPS} />
             <FlowColumn kind="streamer" body="Create a room, set the terms, add the overlay, and run the broadcast." steps={STREAMER_STEPS} />

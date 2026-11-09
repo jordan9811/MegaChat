@@ -5103,3 +5103,20 @@ commit before); `_gate-dashboard-update`, `_gate-rooms-store`,
   does nothing audible until `launch-film.mp4` is re-exported with audio.
 - **HB6 — The phone header's account chip overhangs by under 1 px** on
   /dashboard at 390, a 1 px sideways pan (ca-mobile-header-overflow).
+
+## 2026-11-09 — Round 3 of the UX picks: follow-ups
+
+- **R3-1 — Seat/Holler tile counting (owner: revisit).** A seat waiting to go
+  live holds its tile up to 5 minutes, and Hollers queue behind it. A Holler
+  that starts between a viewer's wallet approve and the join request still
+  refuses the join (nothing charged, the approve wasted).
+- **R3-2 — Token / stablecoin / seconds-credit rewards** (owner's spec on
+  rw-token-never-paid): not built; needs a design the owner approves (new money
+  path through `settlement.js`).
+- **R3-3 — Owner's circle-back list:** landing three cards, Docs/GitBook,
+  example bounty rows (fund before launch), room-type chips, MEGACHAT badge
+  mark, overlay health pin, drag-to-place overlay tiles.
+- **R3-4 — Seat credit is in memory**; the /account Rewards section says so on
+  rooms that pay credit.
+- **R3-5 — The join page header still wraps** at tablet widths like the others
+  did, and keeps the old liveness wording.

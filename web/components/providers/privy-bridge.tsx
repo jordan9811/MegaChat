@@ -243,7 +243,9 @@ export default function PrivyBridge({ appId, privyTheme }: { appId: string; priv
       // THE front door — every provider lives in this one modal. Privy speaks
       // Twitch natively, which is what killed the old double sign-in (our own
       // Twitch OAuth for a handle + Privy for a wallet = two logins for one
-      // human). Order is the on-screen order: the streamer platforms first.
+      // human). This list says which methods are ON; it does not set their
+      // order (Privy's types: it "does not dictate order of the login methods
+      // in the UI"), and Twitch rendered 4th of 4 under email.
       loginMethods: ['twitch', 'twitter', 'google', 'email', 'passkey'] as (
         | 'twitch'
         | 'twitter'
@@ -251,6 +253,15 @@ export default function PrivyBridge({ appId, privyTheme }: { appId: string; priv
         | 'email'
         | 'passkey'
       )[],
+      // THE ORDER: Twitch first, matching the header button's "Twitch, X,
+      // Google, email or passkey". Privy 3.34 marks this field @deprecated
+      // and logs (debug only) that one of the two should be set; it still
+      // renders `primary` in array order. Keep `loginMethods` too: Privy reads
+      // the enabled set, and 'passkey' ("I have a passkey") only from there,
+      // and 'passkey' is not an accepted entry in this list.
+      loginMethodsAndOrder: {
+        primary: ['twitch', 'twitter', 'google', 'email'] as ['twitch', 'twitter', 'google', 'email'],
+      },
       // DO NOT set externalWallets.disableAllExternalWallets here. It looks
       // like the fix for Phantom's "Which extension?" popup and is not: Privy
       // then never initializes its connectors, useWallets().ready stays false

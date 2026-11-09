@@ -542,6 +542,47 @@ ok('C3. ...and dave can take it', eng.store.getClaim(resD.claimId).status === 'r
   const rf = await attempt(() => eng.reserve({ slug: B.slug, accountId: erin.id, kind: 'holler', roomId: 'room-holler' }));
   ok('C3. MAXCLAIMS: the second place on a one-place campaign is refused though budget remains', code(rf) === 'full');
 }
+{
+  // ca-budget-places (2026-11-09): places follow the money. $10 a claim on a
+  // $100 budget pays 10 people; max claims 20 used to be promised publicly as
+  // "20 of 20 left" and the 11th claimant turned away as "budget spent".
+  allowance = 100_000_000n;
+  const P20 = await eng.createCampaign(holler({ title: 'Places follow the money', reward: { type: 'usdc', amount: '10' }, budget: { amount: '100' }, maxClaims: 20 }), as(creator));
+  ok('C3.P a cap above what the budget pays stores the places the budget pays (10), and keeps the cap as set (20)', P20.maxClaims === 10 && P20.claimCap === 20 && eng.manageView(P20).maxClaims === 10, `${P20.maxClaims} / cap ${P20.claimCap}`);
+  await fundAs(eng, P20, W(0x9a)); eng.open(P20.id, as(creator));
+  const pv = eng.publicView(P20.slug);
+  ok('C3.P THE PUBLIC PAGE NEVER PROMISES MORE THAN THE BUDGET PAYS: 10 of 10 places, not 20', pv.maxClaims === 10 && pv.spotsLeft === 10, `${pv.spotsLeft} of ${pv.maxClaims}`);
+  const blank = await eng.createCampaign(holler({ title: 'No cap', reward: { type: 'usdc', amount: '10' }, budget: { amount: '100' }, maxClaims: null }), as(creator));
+  const capped = await eng.createCampaign(holler({ title: 'Lower cap', reward: { type: 'usdc', amount: '10' }, budget: { amount: '100' }, maxClaims: 4 }), as(creator));
+  ok('C3.P max claims is optional: blank = the budget decides (10, no cap); a lower cap wins (4)', blank.maxClaims === 10 && blank.claimCap === null && capped.maxClaims === 4 && capped.claimCap === 4, `${blank.maxClaims}/${blank.claimCap} · ${capped.maxClaims}/${capped.claimCap}`);
+  const raised = await eng.updateCampaign(blank.id, { reward: { type: 'usdc', amount: '10' }, budget: { amount: '250' } }, as(creator));
+  ok('C3.P ...and a draft with no cap follows its budget when the budget changes (250 ÷ 10 = 25)', raised.maxClaims === 25 && raised.claimCap === null, `${raised.maxClaims}`);
+  // An old campaign stored before this, maxClaims 20 on a $100/$10 budget:
+  // every reader goes through placesOf, so it promises 10 too.
+  const legacy = { ...eng.store.getCampaign(P20.id) }; delete legacy.claimCap; legacy.maxClaims = 20;
+  eng.store.putCampaign(legacy);
+  const lv = eng.publicView(P20.slug);
+  ok('C3.P a campaign stored before the change (maxClaims 20, no claimCap) still shows 10 of 10, and manageView says 10', lv.maxClaims === 10 && lv.spotsLeft === 10 && eng.manageView(eng.store.getCampaign(P20.id)).maxClaims === 10, `${lv.spotsLeft} of ${lv.maxClaims}`);
+}
+{
+  // ca-draft-close-only: a never-funded draft is deleted, not closed into a
+  // public "this campaign has closed" page; its link stays a 404.
+  const D1 = await eng.createCampaign(holler({ title: 'Throwaway draft' }), as(creator));
+  ok('C3.D a never-funded draft is deletable (manageView.deletable), a funded one is not', eng.manageView(D1).deletable === true && eng.manageView(eng.store.getCampaign(A.id)).deletable === false);
+  const notMine = await attempt(() => eng.deleteDraft(D1.id, as(alice)));
+  const funded = await attempt(() => eng.deleteDraft(A.id, as(creator)));
+  ok('C3.D someone else cannot delete it; a funded campaign cannot be deleted (it closes)', code(notMine) === 'forbidden' && code(funded) === 'not_draft');
+  ok('C3.D OWNER PREVIEW: the creator sees the unopened offer (preview, the whole budget, every place); anyone else gets nothing',
+    eng.ownerPreview(D1.slug, as(creator))?.preview === true && eng.ownerPreview(D1.slug, as(creator)).spotsLeft === 2 && eng.ownerPreview(D1.slug, as(alice)) === null && eng.ownerPreview(D1.slug, {}) === null && eng.publicView(D1.slug) === null);
+  eng.deleteDraft(D1.id, as(creator));
+  const again = await eng.createCampaign(holler({ title: 'Throwaway draft' }), as(creator));
+  ok('C3.D deleted: gone from the list, its link a 404 (no public view, no preview), and the slug never reused',
+    !eng.listManaged(as(creator)).some((c) => c.id === D1.id) && eng.publicView(D1.slug) === null && eng.ownerPreview(D1.slug, as(creator)) === null && again.slug !== D1.slug, `${D1.slug} → new ${again.slug}`);
+  const tried = { ...eng.store.getCampaign(again.id), fundingFailures: [{ ref: `campaign:fund:${again.id}:1`, why: 'reverted' }] };
+  eng.store.putCampaign(tried);
+  const kept = await attempt(() => eng.deleteDraft(again.id, as(creator)));
+  ok('C3.D a draft with a funding attempt on record is kept (funding_on_record): it closes instead', code(kept) === 'funding_on_record' && !!eng.store.getCampaign(again.id));
+}
 
 // ── C4 close and refund ──
 eng.close(A.id, as(creator));

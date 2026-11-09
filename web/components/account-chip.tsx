@@ -70,6 +70,11 @@ export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string
     )
   }
 
+  // Below 480px the chip is a 40x40 initial (same menu): the full handle ran
+  // past a 390px phone's edge and made the whole page pan sideways. The
+  // handle then heads the opened menu instead.
+  const initial = chipLabel.replace(/^@/, '').charAt(0).toUpperCase() || '?'
+
   return (
     <div ref={rootRef} className="relative">
       <button
@@ -77,12 +82,19 @@ export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="flex h-9 items-center gap-2 border border-hl-line-2 px-3 text-[13px] font-[600] text-hl-fg hover:border-hl-strap-hi"
+        aria-label={`Account menu, ${chipLabel}`}
+        className="flex h-9 items-center gap-2 border border-hl-line-2 px-3 text-[13px] font-[600] text-hl-fg hover:border-hl-strap-hi max-[479px]:size-10 max-[479px]:justify-center max-[479px]:px-0"
       >
-        <span className="size-1.5 shrink-0 rounded-full" style={{ background: accent }} />
-        <span className="max-w-[10rem] truncate">{chipLabel}</span>
-        <span aria-hidden="true" className="text-[10px] opacity-70">
+        <span className="size-1.5 shrink-0 rounded-full max-[479px]:hidden" style={{ background: accent }} />
+        <span className="max-w-[10rem] truncate max-[479px]:hidden">{chipLabel}</span>
+        <span aria-hidden="true" className="text-[10px] opacity-70 max-[479px]:hidden">
           {open ? '▲' : '▼'}
+        </span>
+        <span
+          aria-hidden="true"
+          className="hidden font-[family-name:var(--font-display)] text-[15px] font-[800] max-[479px]:inline"
+        >
+          {initial}
         </span>
       </button>
 
@@ -91,6 +103,8 @@ export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string
           role="menu"
           className="absolute right-0 top-[calc(100%+6px)] z-40 w-[248px] border border-hl-line-2 bg-hl-panel p-1.5 shadow-[var(--hl-shadow)]"
         >
+          {/* The handle the collapsed phone chip no longer shows. */}
+          <p className="truncate px-2.5 pb-1 pt-2 text-[13px] font-[700] text-hl-fg min-[480px]:hidden">{chipLabel}</p>
           {identity ? (
             <a
               href={`/${identity.handle}`}
@@ -142,6 +156,9 @@ export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string
           {/* A fresh create form, its link left empty (room-provider ?new=1). */}
           <a href="/dashboard?new=1" role="menuitem" className="block px-2.5 py-2 text-[13px] text-hl-fg hover:bg-hl-panel-2">
             New room
+          </a>
+          <a href="/bounty/mine" role="menuitem" className="block px-2.5 py-2 text-[13px] text-hl-fg hover:bg-hl-panel-2">
+            My bounties
           </a>
           <a href="/dashboard/campaigns" role="menuitem" className="block px-2.5 py-2 text-[13px] text-hl-fg hover:bg-hl-panel-2">
             Campaigns

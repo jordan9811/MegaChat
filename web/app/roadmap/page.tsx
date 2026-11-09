@@ -38,15 +38,8 @@ export default function RoadmapPage() {
           >
             Roadmap
           </h1>
-          <p
-            className="reveal mt-5 max-w-2xl text-pretty text-lg leading-relaxed text-hl-muted"
-            style={{ ['--reveal-delay' as string]: '0.2s' }}
-          >
-            The spine stays the same — pay-to-join metered camera seats. What
-            follows is priority order, top to bottom: green ships next, amber
-            after that, purple is the big swing.
-          </p>
-
+          {/* No intro line: the NEAR TERM / MID TERM / AMBITIOUS chips under
+              the switch already name the tiers, in their real colours. */}
           <RoadmapTimeline journeyTweetUrl={journeyTweetUrl} />
 
           {/* CTA */}

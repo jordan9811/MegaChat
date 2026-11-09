@@ -130,6 +130,16 @@ try {
   ok('A. duplicate targets are deduped, not double-listed',
     dup.status === 200 && dup.body.pledge.targets.length === 2, JSON.stringify(dup.body.pledge?.targets));
 
+  // UX sweep bo-amount-parse, on the ledger path: "1,000" used to book 1 on
+  // the pool while My bounties printed "1,000".
+  const bad = await post('/api/bounty/pledge', {
+    targets: [{ platform: 'twitch', handle: 'amtledger' }], contributor: '0xfanA', amount: '1,000', expiresInMs: 3600_000,
+  }, 'fanA');
+  const badPool = await get('/api/bounty/pool-view?platform=twitch&handle=amtledger');
+  ok('A. "1,000" is refused (400 bad_amount) and nothing is booked: no pool is even reserved',
+    bad.status === 400 && bad.body.reason === 'bad_amount' && badPool.body.reserved == null && badPool.body.view.totalContributed === 0,
+    `${bad.status} ${bad.body.error}`);
+
   const prog0 = await get('/api/bounty/program');
   ok('A. platform totals: REAL value counts each escrow once',
     Math.abs(prog0.body.totals.realValue - 110) < 1e-6, `real=${prog0.body.totals.realValue}`);
@@ -160,6 +170,19 @@ try {
   ok('B. guaranteed and contested never blend',
     vTwo2.body.view.guaranteed === 25 && vTwo2.body.view.contestedTotal === 110,
     `g=${vTwo2.body.view.guaranteed} c=${vTwo2.body.view.contestedTotal}`);
+
+  // UX sweep bo-tier-line: each card's tier line splits THAT card's money.
+  // The old line split whatever this handle's escrow held, so the anchor read
+  // 0 locked over "Green only 110" while racetwo read 25 over 25.
+  const vAnchor2 = await get('/api/bounty/pool-view?platform=twitch&handle=raceanchor');
+  const sumT = (t) => (t?.greenOnly ?? NaN) + (t?.yellowOk ?? NaN);
+  ok('B. DISCRIMINATES: the old escrow-wide tier line on the anchor does not add up to its locked card; the per-card one does',
+    sumT(vAnchor2.body.view.tiers) === 110 && vAnchor2.body.view.guaranteed === 0 && sumT(vAnchor2.body.view.cardTiers?.locked) === 0,
+    JSON.stringify({ old: vAnchor2.body.view.tiers, card: vAnchor2.body.view.cardTiers }));
+  ok('B. each card splits its own money: locked adds to guaranteed, contested to contestedTotal, on every name the shared pledge names',
+    sumT(vTwo2.body.view.cardTiers?.locked) === 25 && sumT(vTwo2.body.view.cardTiers?.contested) === 110
+    && sumT(vAnchor2.body.view.cardTiers?.contested) === 110,
+    JSON.stringify({ two: vTwo2.body.view.cardTiers, anchor: vAnchor2.body.view.cardTiers }));
 
   // Upload the recording for the big pledge so the race can prove the clip
   // follows the money.
@@ -296,6 +319,12 @@ try {
   ok('F. the queue lists the pending clip with a playable media URL',
     q.body.queue.some((c) => c.clipId === f1.clipId && /media/.test(c.mediaUrl)),
     `${q.body.count} queued`);
+  // UX sweep bo-queue-id: the streamer sees the fan's display name, never
+  // the internal account id the queue used to print.
+  const qf = q.body.queue.find((c) => c.clipId === f1.clipId);
+  ok('F. the queued clip says who it is from by the name the fan typed, and carries no account id',
+    qf?.from === '0xfanF' && !('contributor' in (qf || {})) && !JSON.stringify(qf || {}).includes('acct_'),
+    JSON.stringify({ from: qf?.from, keys: Object.keys(qf || {}) }));
   const ap = await post(`/api/bounty/clip/${f1.clipId}/approve`, { by: 'judgeStreamer' }, 'judge');
   ok('F. approve marks the clip APPROVED', ap.body.clip?.approval?.state === 'APPROVED');
   const q2 = await get('/api/bounty/queue?platform=twitch&handle=judge', 'judge');

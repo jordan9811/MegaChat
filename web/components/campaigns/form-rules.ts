@@ -79,12 +79,48 @@ export function parseCostCaps(perClaimText: string, totalText: string): CostCaps
   return { perClaim, total, problems }
 }
 
-/** Max claims and the Call in's minimum time, against the server's bounds.
- *  The two upper bounds used to be clamped on the server without a word
- *  (5,000 seconds saved as 3,600). */
-export function countProblems(maxClaims: number, minSeconds: number, callin: boolean): string[] {
+/** A typed amount in the token's smallest units, exactly; null when it is
+ *  not a plain number or carries more decimals than the token. */
+export function toUnits(typed: string, decimals: number): bigint | null {
+  const s = typed.trim()
+  if (!DECIMAL.test(s)) return null
+  const [whole, frac = ''] = s.split('.')
+  const f = frac.replace(/0+$/, '')
+  if (f.length > decimals) return null
+  let scale = BigInt(1)
+  for (let i = 0; i < decimals; i++) scale *= BigInt(10)
+  return BigInt(whole || '0') * scale + BigInt((f + '0'.repeat(decimals)).slice(0, decimals) || '0')
+}
+
+/**
+ * How many people the budget pays at this reward: floor(budget ÷ reward),
+ * in exact units (0.3 ÷ 0.1 is 3 here, not 2.999…), bounded like the
+ * server's placesFor. Places follow the money: this is what the public page
+ * offers unless a lower cap is set. Null when either amount is not usable.
+ */
+export function placesPaid(rewardTyped: string, budgetTyped: string, decimals: number | null): number | null {
+  if (decimals == null) return null
+  const r = toUnits(rewardTyped, decimals)
+  const b = toUnits(budgetTyped, decimals)
+  if (r == null || b == null || r <= BigInt(0)) return null
+  const n = b / r
+  return n > BigInt(LIMITS.maxClaimsMax) ? LIMITS.maxClaimsMax : Number(n)
+}
+
+/** The optional cap as typed: null when blank (the budget decides), NaN when it is not a whole number. */
+export function parseCap(typed: string): number | null {
+  const s = typed.trim()
+  if (!s) return null
+  return /^\d+$/.test(s) ? Number(s) : NaN
+}
+
+/** Max claims (an optional cap; null = blank) and the Call in's minimum
+ *  time, against the server's bounds. The two upper bounds used to be
+ *  clamped on the server without a word (5,000 seconds saved as 3,600). */
+export function countProblems(maxClaims: number | null, minSeconds: number, callin: boolean): string[] {
   const out: string[] = []
-  if (!(maxClaims >= 1)) out.push('Max claims must be at least 1.')
+  if (maxClaims == null) { /* blank: the budget decides */ }
+  else if (!(maxClaims >= 1)) out.push('Max claims must be a whole number, at least 1, or blank to let the budget decide.')
   else if (maxClaims > LIMITS.maxClaimsMax) out.push(`Max claims can be at most ${LIMITS.maxClaimsMax.toLocaleString('en-US')}.`)
   if (callin) {
     if (!(minSeconds >= LIMITS.minSecondsMin)) out.push('Minimum time on camera is at least 10 seconds.')

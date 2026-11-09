@@ -48,6 +48,10 @@ export function useAccount(menuOpen = false) {
   const [loaded, setLoaded] = useState(false)
   const [wallet, setWallet] = useState<WalletState>(EMPTY_WALLET)
   const [balance, setBalance] = useState<string | null>(null)
+  // What the balance slot can honestly say: no wallet ('none'), a read in
+  // flight ('loading'), a read that failed ('error'), or the figure
+  // ('ready'). A failed read used to be swallowed, leaving "…" forever.
+  const [balanceStatus, setBalanceStatus] = useState<'none' | 'loading' | 'ready' | 'error'>('none')
   const [connectingBalance, setConnectingBalance] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
   const signInTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -78,19 +82,24 @@ export function useAccount(menuOpen = false) {
   }, [])
 
   const refreshBalance = useCallback((address: string) => {
+    setBalanceStatus((s) => (s === 'ready' ? s : 'loading'))
     fetchBalance(address)
       .then((d) => {
-        if (d?.available != null) {
-          const n = parseFloat(d.available)
-          setBalance(Number.isFinite(n) ? n.toFixed(2) : null)
-        }
+        const n = d?.available != null ? parseFloat(d.available) : NaN
+        if (Number.isFinite(n)) { setBalance(n.toFixed(2)); setBalanceStatus('ready') }
+        else setBalanceStatus('error')
       })
-      .catch(() => {})
+      .catch(() => setBalanceStatus('error'))
   }, [])
 
   useEffect(() => {
     if (wallet.address) refreshBalance(wallet.address)
-    else setBalance(null)
+    else { setBalance(null); setBalanceStatus('none') }
+  }, [wallet.address, refreshBalance])
+
+  /** Read the balance again (the "Couldn't load · Retry" slot). */
+  const retryBalance = useCallback(() => {
+    if (wallet.address) refreshBalance(wallet.address)
   }, [wallet.address, refreshBalance])
 
   useEffect(() => {
@@ -157,6 +166,8 @@ export function useAccount(menuOpen = false) {
     identity,
     wallet,
     balance,
+    balanceStatus,
+    retryBalance,
     signedIn,
     chipLabel,
     openSignIn,

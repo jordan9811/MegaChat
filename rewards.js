@@ -149,7 +149,6 @@ export function attachRewards(wss, opts = {}) {
     const meta = rewardMeta(cfg);
     const mode = meta.type === 'points' ? 'points' : meta.type === 'token' || rw.payout === 'credit' ? 'credit' : 'cash';
     const base = { mode, meta, rw };
-    if (cfg.active === false) return { ...base, enabled: false, reason: 'room_not_live' };
     let interval, earn, cap;
     try {
       interval = Number(rw.earnInterval) > 0 ? Number(rw.earnInterval) : 60;
@@ -163,6 +162,8 @@ export function attachRewards(wss, opts = {}) {
     } catch { return { ...base, enabled: false, reason: 'bad_config' }; }
     if (earn <= 0n || cap <= 0n) return { ...base, enabled: false, reason: 'bad_config' };
     const limits = { interval, earn, cap };
+    // After the bounds, so a paused room's page still shows the real terms.
+    if (cfg.active === false) return { ...base, ...limits, enabled: false, reason: 'room_not_live' };
     if (mode === 'points') {
       if (!state.wallet) return { ...base, ...limits, enabled: false, reason: 'wallet_required' };
       return { ...base, ...limits, enabled: true, payee: state.wallet, holder: `w:${state.wallet.toLowerCase()}` };
@@ -190,6 +191,23 @@ export function attachRewards(wss, opts = {}) {
     return byWallet > byAccount ? byWallet : byAccount;
   }
 
+  // What this viewer already earned here, for a socket that is not earning
+  // (paused, taken over by another tab, a payout wallet missing): the page
+  // keeps showing it instead of dropping the balance from view. Only where the
+  // server knows whose it is: the signed-in account, or for points the wallet
+  // the page named.
+  function keptFor(state, p) {
+    if (!state.roomId || !p.meta) return {};
+    let atomic = null;
+    if (p.mode === 'points') {
+      if (state.wallet) atomic = pointsEarned.get(walletKey(state.roomId, state.wallet)) || 0n;
+    } else if (state.identity?.accountId) {
+      loadEarned();
+      atomic = earned.get(acctKey(state.roomId, state.identity.accountId)) || 0n;
+    }
+    return atomic == null ? {} : { earned: formatRewardAmount(atomic, p.meta.decimals) };
+  }
+
   function configMessage(state, p) {
     return {
       type: 'rewards_config',
@@ -204,7 +222,7 @@ export function attachRewards(wss, opts = {}) {
       symbol: p.meta?.symbol || 'USDC',
       // dryRun: true when nothing on chain moves for this reward.
       dryRun: p.mode !== 'cash',
-      ...(p.enabled ? { payee: p.payee, earned: formatRewardAmount(earnedSoFar(state.roomId, p), p.meta.decimals) } : {}),
+      ...(p.enabled ? { payee: p.payee, earned: formatRewardAmount(earnedSoFar(state.roomId, p), p.meta.decimals) } : keptFor(state, p)),
     };
   }
 
@@ -252,8 +270,22 @@ export function attachRewards(wss, opts = {}) {
   // off. In-memory: resets on server restart (documented).
   const watchSeconds = new Map();
 
+  // Pause and resume reach the open pages (rw-pause-silent). The policy has
+  // always stopped paying while a room is paused, but said nothing, so a page
+  // kept promising earning that was not happening. A registered socket whose
+  // room flips between live and paused registers again, which re-reads the
+  // policy and pushes the new state (with the balance kept). A socket another
+  // tab took over stays as it is: resuming must not take the earning back.
+  function syncLive(ws, state) {
+    const live = getRoomConfig(state.roomId)?.active !== false;
+    if (state.live === live) return;
+    state.live = live;
+    if (!state.superseded) register(ws, state);
+  }
+
   const ticker = setInterval(() => {
     for (const [ws, state] of sessions.entries()) {
+      if (state.roomId) syncLive(ws, state);
       if (!state.visible || !state.roomId) continue;
       const watcher = state.wallet || state.payee;
       if (watcher) {
@@ -275,35 +307,43 @@ export function attachRewards(wss, opts = {}) {
     state.holderKey = null;
   }
 
+  // (Re)read this socket's policy for its room and tell the page: on the
+  // page's register, and on the room's pause or resume (syncLive).
+  function register(ws, state) {
+    release(ws, state);
+    state.accruedMs = 0;
+    state.superseded = false;
+    state.live = state.roomId ? getRoomConfig(state.roomId)?.active !== false : true;
+    const p = policyFor(state);
+    state.interval = p.enabled ? p.interval : 0;
+    state.payee = p.enabled ? p.payee : null;
+    if (p.enabled) {
+      // One earning socket per account (points: per wallet) per room.
+      state.holderKey = `${state.roomId}|${p.holder}`;
+      const prev = holders.get(state.holderKey);
+      if (prev && prev !== ws) {
+        const ps = sessions.get(prev);
+        if (ps) { ps.interval = 0; ps.holderKey = null; ps.superseded = true; }
+        send(prev, { ...configMessage(ps || state, { ...p, enabled: false, reason: 'superseded' }) });
+      }
+      holders.set(state.holderKey, ws);
+    }
+    send(ws, configMessage(state, p));
+    if (p.enabled && p.mode !== 'cash') {
+      send(ws, { type: 'rewards_earned', roomId: state.roomId, payout: p.mode, earned: formatRewardAmount(earnedSoFar(state.roomId, p), p.meta.decimals), joinBalance: formatRewardAmount(getCredit(state.roomId, p.payee).atomic, p.meta.decimals), symbol: p.meta.symbol, dryRun: true });
+    }
+  }
+
   /** One parsed message from a socket. Exported for a server that parses once. */
   function handleMessage(ws, msg) {
     const state = sessions.get(ws);
     if (!state || !msg) return;
     switch (msg.type) {
       case 'rewards_register': {
-        release(ws, state);
         state.roomId = typeof msg.roomId === 'string' ? msg.roomId : null;
         // A wallet the client names is used only for points and watch time.
         state.wallet = isEvmAddress(msg.wallet) ? msg.wallet : null;
-        state.accruedMs = 0;
-        const p = policyFor(state);
-        state.interval = p.enabled ? p.interval : 0;
-        state.payee = p.enabled ? p.payee : null;
-        if (p.enabled) {
-          // One earning socket per account (points: per wallet) per room.
-          state.holderKey = `${state.roomId}|${p.holder}`;
-          const prev = holders.get(state.holderKey);
-          if (prev && prev !== ws) {
-            const ps = sessions.get(prev);
-            if (ps) { ps.interval = 0; ps.holderKey = null; }
-            send(prev, { ...configMessage(ps || state, { ...p, enabled: false, reason: 'superseded' }) });
-          }
-          holders.set(state.holderKey, ws);
-        }
-        send(ws, configMessage(state, p));
-        if (p.enabled && p.mode !== 'cash') {
-          send(ws, { type: 'rewards_earned', roomId: state.roomId, payout: p.mode, earned: formatRewardAmount(earnedSoFar(state.roomId, p), p.meta.decimals), joinBalance: formatRewardAmount(getCredit(state.roomId, p.payee).atomic, p.meta.decimals), symbol: p.meta.symbol, dryRun: true });
-        }
+        register(ws, state);
         break;
       }
       case 'rewards_visibility':
@@ -339,7 +379,68 @@ export function attachRewards(wss, opts = {}) {
 
   console.log(`[rewards] per-room rewards attached — cash ${poolReady() ? (bounds.cashAllowAll ? 'on for every owned room' : bounds.cashAllow.size ? `on for ${bounds.cashAllow.size} allowlisted creator(s)` : 'off (REWARDS_CASH_ALLOWLIST unset)') : 'off (no reward-pool signer)'}`);
 
+  /**
+   * What one signed-in account has earned, room by room (rw-no-trail, the
+   * account page's Rewards section). Read-only: the EARN rows the cap counts
+   * (data/rewards-ledger.jsonl, which survives a restart), the seat credit
+   * still spendable (reward-credits.js, in memory: a restart empties it while
+   * the rows remain, which is why both are shown), the room's cap as it
+   * stands now, and every Cash transfer with its door status and hash.
+   * Points are not here: they belong to a wallet, not an account.
+   */
+  function summaryFor(accountId) {
+    if (!accountId) return { rooms: [] };
+    loadEarned();
+    const byRoom = new Map();
+    for (const r of ledger.all()) {
+      if (r.type !== 'EARN' || r.accountId !== accountId) continue;
+      let room = byRoom.get(r.roomId);
+      if (!room) byRoom.set(r.roomId, (room = { roomId: r.roomId, decimals: Number(r.decimals ?? 6), symbol: r.symbol || 'USDC', earned: 0n, cash: 0n, credit: 0n, payees: new Set(), transfers: [], lastAt: 0 }));
+      const amt = BigInt(r.amountAtomic || 0);
+      room.earned += amt;
+      if (r.mode === 'cash') room.cash += amt; else room.credit += amt;
+      if (r.payee) room.payees.add(String(r.payee).toLowerCase());
+      room.lastAt = Math.max(room.lastAt, Number(r.at) || 0);
+      if (r.mode === 'cash') {
+        const ref = intentRefOf(r);
+        const door = settlement?.status ? settlement.status(ref) : null;
+        room.transfers.push({ ref, at: r.at || null, amount: formatRewardAmount(amt, room.decimals), to: r.payee || null, status: door?.status || null, txHash: door?.txHash || null });
+      }
+    }
+    const rooms = [...byRoom.values()].sort((a, b) => b.lastAt - a.lastAt).map((room) => {
+      const cfg = getRoomConfig(room.roomId);
+      let spendable = 0n;
+      for (const w of room.payees) spendable += getCredit(room.roomId, w).atomic;
+      // The cap as the room is set now, bounded as policyFor bounds it.
+      let cap = null;
+      try {
+        const rw = cfg?.rewards;
+        if (rw?.enabled && rw.earnCap != null) {
+          const c = parseRewardAmount(rw.earnCap, room.decimals);
+          const bound = toAtomic(bounds.maxCap, room.decimals);
+          cap = c < bound ? c : bound;
+        }
+      } catch { cap = null; }
+      const counted = earned.get(acctKey(room.roomId, accountId)) || room.earned;
+      return {
+        roomId: room.roomId,
+        name: cfg?.name || null,
+        handle: cfg?.handle || null,
+        symbol: room.symbol,
+        earned: formatRewardAmount(room.earned, room.decimals),
+        cash: formatRewardAmount(room.cash, room.decimals),
+        credit: formatRewardAmount(room.credit, room.decimals),
+        spendableCredit: formatRewardAmount(spendable, room.decimals),
+        cap: cap != null && cap > 0n ? formatRewardAmount(cap, room.decimals) : null,
+        capReached: cap != null && cap > 0n ? counted >= cap : false,
+        transfers: room.transfers.reverse(),
+      };
+    });
+    return { rooms };
+  }
+
   return {
+    summaryFor,
     /** Seconds this wallet has watched this room (visible tab + registered). */
     getWatchSeconds(roomId, wallet) {
       if (!roomId || !wallet) return 0;

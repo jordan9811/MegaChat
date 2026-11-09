@@ -1,14 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { fetchPublicConfig, listPublicRooms, listRecentAirings, type PublicRoomCard, type RecentAiring } from '@/lib/api'
 import { listBountyPools, type BountyPool } from '@/lib/bounty-api'
 import { AccountChip } from '@/components/account-chip'
 import { PlatformPip } from '@/components/platform-pip'
 import { TwitchPreview } from '@/components/twitch-preview'
 import { formatDollars } from '@/lib/display-format'
-import { BOARD_RECENT_CAP, featureKinds, roomPresentation, type RewardTerms } from '@/lib/room-browse'
+import { BOARD_RECENT_CAP, featureKinds, roomPresentation, type RewardTerms, type RoomFeature } from '@/lib/room-browse'
 import './booth.css'
 import { BrandText } from '@/components/brand-text'
 import { FeatureTag } from '@/components/feature-tag'
@@ -27,12 +27,14 @@ const SPARSE_MAX = 4
 
 // Filters over the rooms, not over the page: bounties keep their own rail on
 // the right, so a chip that swapped the grid to bounties would just show the
-// same board twice. These five are the real ways a room differs.
+// same board twice. These four are the real ways a room differs.
 type ChipKey = 'all' | 'seats' | 'letters' | 'free'
 
 // The chips pick a KIND of room; `dot` is the feature colour for the two that
-// pick a feature (booth.css). On air is not a kind: it is the separate toggle
-// after them, which narrows whichever chip is picked.
+// pick a feature (booth.css). There is no On air filter: the header already
+// counts the rooms on air and live rooms lead the board, so a toggle repeated
+// that number and, left on, turned "show every room" into a dead end (owner,
+// 2026-11-09).
 const CHIPS: { key: ChipKey; label: string; dot?: 'callin' | 'holler' }[] = [
   { key: 'all', label: 'All' },
   { key: 'seats', label: 'Call in', dot: 'callin' },
@@ -76,33 +78,76 @@ function initial(name: string): string {
   return (name.trim().charAt(0) || '?').toUpperCase()
 }
 
+/** What a room sells, as the key at the top of the board names it: the three
+ *  feature colours (globals.css --f-*), in the order the product sells them. */
+const FEATURE_KEY: { kind: RoomFeature; label: string }[] = [
+  { kind: 'holler', label: 'Holler' },
+  { kind: 'callin', label: 'Call in' },
+  { kind: 'rewards', label: 'Rewards' },
+]
+
+/** A room's features as small colour squares on its picture, read with the
+ *  key over the board, so the tile's text line is free for the name and the
+ *  host (owner, 2026-11-09). Nothing when the room sells none of the three. */
+function FeatureSquares({ room }: { room: PublicRoomCard }) {
+  const kinds = featureKinds(room)
+  if (!kinds.length) return null
+  const names = kinds.map((k) => FEATURE_KEY.find((f) => f.kind === k)?.label ?? k)
+  return (
+    <span className="mcr-sq" role="img" aria-label={names.join(', ')}>
+      {kinds.map((k) => (
+        <i key={k} className={`is-${k}`} />
+      ))}
+    </span>
+  )
+}
+
+/** Whose stream it is: the room's link handle, and the Twitch pip when the
+ *  room follows a channel; then its seats and who is on camera. A room with
+ *  none of that gets no line. */
+function HostLine({ room, seats }: { room: PublicRoomCard; seats?: { taken: number; total: number } }) {
+  const handle = room.handle ? `@${room.handle}` : room.twitchChannel || ''
+  if (!handle && !seats && room.live <= 0) return null
+  return (
+    <span className="mcr-host">
+      {room.twitchChannel ? (
+        <b className="mcr-host-pip" title={`Follows twitch.tv/${room.twitchChannel}`}>
+          <PlatformPip platform="twitch" />
+        </b>
+      ) : null}
+      {handle ? <span className="mcr-host-h">{handle}</span> : null}
+      {seats ? <SeatDots {...seats} /> : null}
+      {room.live > 0 ? <span className="mcr-oncam">{room.live} on camera</span> : null}
+    </span>
+  )
+}
+
 /** The card's media: a real Twitch preview when the channel is up AND Twitch
  *  actually has a frame for it, the house stage glow otherwise. "Otherwise"
  *  covers more than offline — a channel can be live while the CDN is still
  *  serving a black still for the size this card wants, and that falls through
  *  to the glow too. TwitchPreview owns both judgements. Scanlines sit over
- *  either outcome so one grammar reads. `linked` only on the featured card —
- *  a grid card is one big anchor already, and an anchor inside an anchor is
- *  not markup a browser keeps. */
+ *  either outcome so one grammar reads. `linked` only on the featured card:
+ *  its link is a layer over the picture, not a wrapper, so the liveness
+ *  badge on top can be a button of its own (an anchor cannot hold one). A
+ *  grid card lays its own link over the whole card the same way. */
 function Stage({
   room,
   hero = false,
   linked = false,
+  squares = false,
 }: {
   room: PublicRoomCard
   hero?: boolean
   linked?: boolean
+  squares?: boolean
 }) {
   const { state, rate, full, rates } = roomPresentation(room)
   const seats = rates.find((r) => r.seats)?.seats
-  const Tag = linked ? 'a' : 'span'
   // `dark`: the stage is a video frame, so its chrome reads the dark tokens
   // in either theme (globals.css redeclares them on any .dark scope).
   return (
-    <Tag
-      {...(linked ? { href: roomHref(room), 'aria-label': room.name } : {})}
-      className="mcr-stage dark"
-    >
+    <span className="mcr-stage dark">
       {/* The designed fallback, the same H◉ the create page shows in its
           stream preview: under everything, so a real frame covers it and the
           stage's glow plus this mark is what an empty stage shows. */}
@@ -121,6 +166,7 @@ function Stage({
         size={hero ? 'hero' : 'card'}
       />
       <span className="mcr-scan" aria-hidden="true" />
+      {linked ? <a href={roomHref(room)} aria-label={room.name} className="mcr-stage-link" /> : null}
       {/* The featured stage shows the room's seats the way they sit on the
           broadcast — taken ones as guests, open ones as an empty frame — so
           what a "seat" is reads before any copy does. Decorative: the seat
@@ -139,11 +185,13 @@ function Stage({
           <i aria-hidden="true" />
           {state}
         </span>
-        {/* Which check stands behind money here right now; nothing when offline. */}
-        <LivenessBadge liveness={room.liveness} />
+        {/* Which check stands behind a Holler here right now, in a viewer's
+            words; the detail opens on tap. Nothing when offline. */}
+        <LivenessBadge liveness={room.liveness} audience="fan" />
         <span className="mcr-tag">{rate}</span>
       </span>
-    </Tag>
+      {squares ? <FeatureSquares room={room} /> : null}
+    </span>
   )
 }
 
@@ -161,44 +209,6 @@ function SeatDots({ taken, total }: { taken: number; total: number }) {
       {Array.from({ length: total }, (_, i) => (
         <i key={i} className={i < taken ? 'is-on' : ''} />
       ))}
-    </span>
-  )
-}
-
-/** What a room offers, as feature tags in the order the product sells them,
- *  with its seats on the SAME line: the dots sit right after the Call in tag
- *  they belong to (roomPresentation only gives seats to a Call in room), then
- *  how many are on camera. A second line for the dots cost every tile 15px,
- *  and the first room is held to the fold (_gate-board-fold F4). A room with
- *  none of the three keeps the plain line roomPresentation gives it ("View
- *  room details"). */
-function RoomFeatures({
-  room,
-  fallback,
-  seats,
-}: {
-  room: PublicRoomCard
-  fallback: string
-  seats?: { taken: number; total: number }
-}) {
-  const kinds = featureKinds(room)
-  if (!kinds.length) {
-    return (
-      <span className="mcr-sub">
-        {fallback}
-        {room.live > 0 ? ` · ${room.live} on camera` : ''}
-      </span>
-    )
-  }
-  return (
-    <span className="mcr-feats">
-      {kinds.map((k) => (
-        <Fragment key={k}>
-          <FeatureTag kind={k} />
-          {k === 'callin' && seats ? <SeatDots {...seats} /> : null}
-        </Fragment>
-      ))}
-      {room.live > 0 ? <span className="mcr-oncam">{room.live} on camera</span> : null}
     </span>
   )
 }
@@ -255,23 +265,29 @@ function FeaturedRoom({ room, size = 'normal', terms }: { room: PublicRoomCard; 
   )
 }
 
+/** A tile: the picture (state, liveness, rate and the feature squares on it),
+ *  then the room's name and whose it is. No monogram and no button-look label
+ *  beside the name: the whole card is the link, and the name gets the row.
+ *  The link is a layer over the card rather than its wrapper, so the
+ *  liveness badge on the picture can open its detail on a tap. */
 function RoomCard({ room }: { room: PublicRoomCard }) {
-  const { action, capabilities, rates } = roomPresentation(room)
+  const { rates } = roomPresentation(room)
   const seats = rates.find((r) => r.seats)?.seats
   return (
-    <a href={roomHref(room)} className={`mcr-card ${onAir(room) ? 'is-live' : ''}`}>
-      <Stage room={room} />
+    <div className={`mcr-card ${onAir(room) ? 'is-live' : ''}`}>
+      <a
+        href={roomHref(room)}
+        className="mcr-card-link"
+        aria-label={room.handle ? `${room.name}, @${room.handle}` : room.name}
+      />
+      <Stage room={room} squares />
       <span className="mcr-card-body">
-        <span className="mcr-mono" aria-hidden="true">
-          {initial(room.name)}
-        </span>
         <span className="mcr-t">
           <span className="mcr-name">{room.name}</span>
-          <RoomFeatures room={room} fallback={capabilities} seats={seats} />
+          <HostLine room={room} seats={seats} />
         </span>
-        <span className="mcr-ghost is-sm">{action}</span>
       </span>
-    </a>
+    </div>
   )
 }
 
@@ -361,7 +377,6 @@ export function Booth({
   const [pools, setPools] = useState<BountyPool[]>(initialPools)
   const [airings, setAirings] = useState<RecentAiring[]>(initialAirings)
   const [chip, setChip] = useState<ChipKey>('all')
-  const [onAirOnly, setOnAirOnly] = useState(false)
   const [showAll, setShowAll] = useState(false)
 
   // Entering the app marks the visitor as returning. Nothing reads the flag
@@ -433,7 +448,7 @@ export function Booth({
   }, [])
 
   const onAirCount = useMemo(() => rooms.filter(onAir).length, [rooms])
-  const visible = useMemo(() => rooms.filter((r) => matches(r, chip) && (!onAirOnly || onAir(r))), [rooms, chip, onAirOnly])
+  const visible = useMemo(() => rooms.filter((r) => matches(r, chip)), [rooms, chip])
   const topPools = useMemo(() => [...pools].sort((a, b) => b.remaining - a.remaining), [pools])
 
   // WHAT FILLS THE BOARD, IN ORDER. This is the hierarchy the board has had
@@ -498,12 +513,16 @@ export function Booth({
   }, [visible, featuredList])
   const shown = showAll ? rest : rest.slice(0, GRID_CAP)
   // Recent broadcasts are not rooms, so the chips that pick KINDS of room
-  // (Call in, Hollers, free) do not show them; "All" does, On air or not —
-  // "nothing is on air, here is what just was" is the answer to both.
+  // (Call in, Hollers, free) do not show them; "All" does — "nothing is on
+  // air, here is what just was".
   const recentAirings = chip === 'all' ? airings.slice(0, BOARD_RECENT_CAP) : []
   const quiet = onAirCount === 0
   const tiles = recentAirings.length + shown.length + 1 // + Create room
   const sparse = tiles <= SPARSE_MAX && rest.length <= GRID_CAP
+  // Past GRID_CAP, Create room leaves the grid for the end of the "Show all"
+  // row: as a tile it dropped alone onto a half-height third row whenever
+  // the 8 tiles filled two rows of four.
+  const capped = rest.length > GRID_CAP
   const recentSection = recentAirings.length ? (
     <RecentRail key="recent" airings={recentAirings} span={recentAirings.length} />
   ) : null
@@ -514,12 +533,18 @@ export function Booth({
         {shown.map((room) => (
           <RoomCard key={room.id} room={room} />
         ))}
-        <OpenRoomCard />
-        {rest.length > GRID_CAP ? (
-          <button type="button" className="mcr-more" onClick={() => setShowAll(!showAll)}>
-            {showAll ? 'Show fewer rooms' : `Show all ${rest.length + 1} rooms`}
-          </button>
-        ) : null}
+        {capped ? (
+          <div className="mcr-more-row">
+            <button type="button" className="mcr-more" onClick={() => setShowAll(!showAll)}>
+              {showAll ? 'Show fewer rooms' : `Show all ${rest.length + 1} rooms`}
+            </button>
+            <Link href="/dashboard" className="mcr-more-create">
+              <span aria-hidden="true">+</span> Create room
+            </Link>
+          </div>
+        ) : (
+          <OpenRoomCard />
+        )}
       </div>
     </section>
   )
@@ -584,20 +609,15 @@ export function Booth({
               {c.label}
             </button>
           ))}
-          <span className="mcr-chips-rule" aria-hidden="true" />
-          <button
-            type="button"
-            className="mcr-chip mcr-chip-onair"
-            aria-pressed={onAirOnly}
-            onClick={() => {
-              setOnAirOnly((value) => !value)
-              setShowAll(false)
-            }}
-          >
-            <i className="mcr-chip-onair-dot" aria-hidden="true" />
-            On air
-            <span className="mcr-chip-onair-n">{onAirCount}</span>
-          </button>
+          {/* The key to the squares on every tile's picture. */}
+          <span className="mcr-key">
+            {FEATURE_KEY.map((f) => (
+              <span key={f.kind}>
+                <i className={`is-${f.kind}`} aria-hidden="true" />
+                {f.label}
+              </span>
+            ))}
+          </span>
           <span className="mcr-sort">sort · hottest</span>
         </div>
 
@@ -624,7 +644,7 @@ export function Booth({
               </>
             ) : (
               <div className="mcr-empty">
-                <h2>{onAirOnly ? 'Nothing is on air this minute.' : EMPTY_COPY[chip]}</h2>
+                <h2>{EMPTY_COPY[chip]}</h2>
                 <p>
                   The demo room is always open — take a seat, record a Holler, and watch it play
                   back on the broadcast for a fraction of a cent.
@@ -633,13 +653,22 @@ export function Booth({
                   <a href="/demo" className="mcr-btn">
                     Try the demo
                   </a>
+                  {/* A filter emptied the board: undo it. Only an empty board
+                      itself asks someone to open a room. */}
                   {chip === 'all' ? (
                     <Link href="/dashboard" className="mcr-ghost">
                       Create room
                     </Link>
                   ) : (
-                    <button type="button" className="mcr-ghost" onClick={() => setChip('all')}>
-                      Show every room
+                    <button
+                      type="button"
+                      className="mcr-ghost"
+                      onClick={() => {
+                        setChip('all')
+                        setShowAll(false)
+                      }}
+                    >
+                      Show all rooms
                     </button>
                   )}
                 </span>

@@ -41,6 +41,22 @@ export const RULE_MENU: RuleMeta[] = [
   { key: 'minVerifiedFollowers', title: 'Minimum verified followers', copy: 'Verified accounts following them.', note: 'if X exposes it', on: 10 },
 ]
 
+/**
+ * The rule builder's three groups, in the order the form shows them
+ * (ca-rules-flat): the creator's own community first, then reach, then the
+ * account itself. "Verification type" is not a row of its own: it is the
+ * Verified rule's sub-choice (Any | Blue | Gold | Grey), so the sentence never
+ * reads "a verified account and a blue checkmark".
+ */
+export const RULE_GROUPS: { title: string; keys: RuleKey[] }[] = [
+  { title: 'Your community', keys: ['referenceSetId', 'followedByFromSet'] },
+  { title: 'Reach', keys: ['minFollowers', 'minVerifiedFollowers', 'minTweetCount', 'minListedCount'] },
+  { title: 'Account', keys: ['minAccountAgeDays', 'hasProfileImage', 'hasDescription', 'verified', 'identityVerified'] },
+]
+
+/** The Verified rule's sub-choice, short: the segmented control's words. */
+export const VERIFIED_TYPE_SHORT: Record<VerifiedType, string> = { blue: 'Blue', business: 'Gold', government: 'Grey' }
+
 /** The server's check keys in plain words, for the claims table. The
  *  always-on checks (campaign-eligibility.js) have no menu row. */
 export const CHECK_LABEL: Record<string, string> = Object.assign(
@@ -200,7 +216,9 @@ export function ruleParts(rules: Rules, sets: ReferenceSet[]): { with: string[];
     if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) continue
     switch (m.key) {
       case 'minFollowers': w.push(`${fmtInt(v as number)}+ followers`); break
-      case 'verified': w.push('a verified account'); break
+      // With a checkmark type chosen, the type says it: "a blue checkmark",
+      // not "a verified account and a blue checkmark".
+      case 'verified': if (!rules.verifiedTypes?.length) w.push('a verified account'); break
       case 'verifiedTypes': w.push(`a ${(v as VerifiedType[]).join(' or ')} checkmark`); break
       case 'identityVerified': w.push('an ID-verified account'); break
       case 'minAccountAgeDays': w.push(`an account ${ageWords(v as number)}`); break

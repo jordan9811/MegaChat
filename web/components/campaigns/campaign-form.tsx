@@ -5,11 +5,16 @@
 // Action → Who qualifies → the X notice → Save as draft / Save and fund.
 // Opening happens on the detail page once the budget is in (the engine's
 // ladder: draft → funded → live).
+//
+// Signed out, the whole form still renders (no login wall, the same as
+// /dashboard): the two save buttons become one "Sign in to save", and the
+// draft is kept in this tab's sessionStorage until it is saved, so it
+// survives a sign-in that leaves the page.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { InfoTip } from '@/components/info-tip'
-import { listMyRooms } from '@/lib/api'
+import { listMyRooms, type MyRoomCard } from '@/lib/api'
 import {
   createCampaign,
   fundCampaign,
@@ -36,12 +41,15 @@ import { useAccount } from '@/lib/use-account'
 import { FeatureTag } from '@/components/feature-tag'
 import { ApproveStep, connectedWallet, type ApprovalAsk, type FundProof } from './approve-step'
 import { ReferenceSetPicker } from './reference-set-builder'
-import { amountProblem, amountToSend, countProblems, parseCostCaps } from './form-rules'
+import { amountProblem, amountToSend, countProblems, parseCap, parseCostCaps, placesPaid } from './form-rules'
 import {
   ACTION_LABEL,
   COMPLIANCE_NOTICE,
+  RULE_GROUPS,
   RULE_MENU,
   VERIFIED_TYPE_LABEL,
+  VERIFIED_TYPE_SHORT,
+  type RuleMeta,
   requireLabel,
   rewardLabel,
   ruleCount,
@@ -53,6 +61,41 @@ import {
 const MAX_DEADLINE_DAYS = 90
 const DAY_MS = 86_400_000
 
+/** A new campaign's draft while it is not saved yet (signed out, or on its
+ *  way through sign-in). This tab only; cleared once the draft is saved. */
+const PENDING_KEY = 'holler:campaign-draft'
+
+/** The example copy follows the action, so a Holler campaign is never
+ *  modelled as a Call in (ca-placeholder-callin). */
+const PLACEHOLDER: Record<ActionKind, { title: string; blurb: string }> = {
+  holler: { title: 'Holler your worst take at me', blurb: 'Record 10 seconds. If it plays on stream, you get paid.' },
+  callin: { title: 'Call in and tell me your worst take', blurb: 'Five minutes on camera, I pay you for showing up.' },
+}
+
+/** One thing standing between the creator and Save: the sentence, a short
+ *  name for the bar, and the field it is about (an element id). */
+type Problem = { text: string; label: string; field: string; missing?: boolean }
+
+const FIELD = {
+  title: 'mcp-f-title',
+  reward: 'mcp-f-reward',
+  token: 'mcp-f-token',
+  budget: 'mcp-f-budget',
+  cap: 'mcp-f-cap',
+  deadline: 'mcp-f-deadline',
+  room: 'mcp-f-room',
+  seconds: 'mcp-f-seconds',
+  xcap: 'mcp-f-xcap',
+}
+
+/** Scrolls a field into the middle of the screen and puts the cursor in it. */
+function goToField(id: string) {
+  const el = document.getElementById(id)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.focus({ preventScroll: true })
+}
+
 type Draft = {
   title: string
   blurb: string
@@ -60,6 +103,7 @@ type Draft = {
   tokenMode: 'usdc' | 'token'
   tokenAddress: string
   budgetAmount: string
+  /** The optional cap, as typed: blank = the budget decides how many places. */
   maxClaims: string
   /** datetime-local string. */
   deadline: string
@@ -94,7 +138,7 @@ function blankDraft(): Draft {
     tokenMode: 'usdc',
     tokenAddress: '',
     budgetAmount: '100',
-    maxClaims: '20',
+    maxClaims: '',
     deadline: toLocalInput(d),
     actionKind: 'holler',
     roomHandle: '',
@@ -115,7 +159,9 @@ function fromCampaign(c: Campaign): Draft {
     tokenMode: c.reward.type === 'token' ? 'token' : 'usdc',
     tokenAddress: c.reward.address || c.token?.address || '',
     budgetAmount: c.budget.amount,
-    maxClaims: String(c.maxClaims),
+    // The cap as the creator set it; a server that predates claimCap sends
+    // only the places, which read back as a cap.
+    maxClaims: c.claimCap === undefined ? String(c.maxClaims) : c.claimCap == null ? '' : String(c.claimCap),
     deadline: c.deadline ? toLocalInput(new Date(c.deadline)) : blankDraft().deadline,
     actionKind: c.action.kind,
     roomHandle: c.action.roomHandle,
@@ -132,29 +178,68 @@ const num = (s: string) => { const n = Number(s); return Number.isFinite(n) ? n 
 
 export function CampaignForm({ campaign }: { campaign?: Campaign }) {
   const router = useRouter()
-  const { identity } = useAccount()
+  const { identity, loaded, signedIn, openSignIn, authError, wallet } = useAccount()
   const editing = !!campaign
+  // Signed out: the form is open to read and fill; saving asks for sign-in.
+  const guest = loaded && !signedIn
+  // Re-read what belongs to the account once someone signs in.
+  const who = identity?.handle || (signedIn ? 'wallet' : '')
   const [draft, setDraft] = useState<Draft>(() => (campaign ? fromCampaign(campaign) : blankDraft()))
   const patch = useCallback((p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p })), [])
 
+  // A new campaign's draft survives sign-in (which may leave the page):
+  // restored once on mount, kept while it is unsaved, cleared on save.
+  const restored = useRef(false)
+  useEffect(() => {
+    if (campaign || restored.current) return
+    restored.current = true
+    try {
+      const raw = window.sessionStorage.getItem(PENDING_KEY)
+      if (raw) setDraft((d) => ({ ...d, ...(JSON.parse(raw) as Partial<Draft>) }))
+    } catch { /* storage blocked: the form starts blank */ }
+  }, [campaign])
+  const [keepPending, setKeepPending] = useState(false)
+  useEffect(() => {
+    if (campaign || !(guest || keepPending)) return
+    try { window.sessionStorage.setItem(PENDING_KEY, JSON.stringify(draft)) } catch { /* storage blocked */ }
+  }, [campaign, guest, keepPending, draft])
+  const clearPending = useCallback(() => {
+    try { window.sessionStorage.removeItem(PENDING_KEY) } catch { /* storage blocked */ }
+  }, [])
+  const signInToSave = useCallback(() => {
+    setKeepPending(true)
+    try { window.sessionStorage.setItem(PENDING_KEY, JSON.stringify(draft)) } catch { /* storage blocked */ }
+    openSignIn()
+  }, [draft, openSignIn])
+
   // Rooms the action can point at. A room without a claimed link has no
   // handle to name, so it is listed but cannot be chosen.
-  const [rooms, setRooms] = useState<{ id: string; name: string; handle: string | null }[] | null>(null)
+  const [rooms, setRooms] = useState<MyRoomCard[] | null>(null)
   useEffect(() => {
+    if (!loaded) return
+    if (!who) { setRooms([]); return }
     listMyRooms().then((d) => setRooms(d.rooms)).catch(() => setRooms([]))
-  }, [])
+  }, [loaded, who])
+  // The default room is the streamer's own (ca-room-default): the room whose
+  // handle is the account's handle, else the room live now, else an active
+  // one, else the newest. It used to be whichever room the API listed first,
+  // the newest, so it moved every time a room was created.
   useEffect(() => {
-    if (draft.roomHandle || !rooms) return
-    const first = rooms.find((r) => r.handle)?.handle || identity?.handle || ''
-    if (first) patch({ roomHandle: first })
-  }, [rooms, identity, draft.roomHandle, patch])
+    if (draft.roomHandle || !rooms || !loaded) return
+    const mine = identity?.handle || null
+    const named = rooms.filter((r) => r.handle)
+    const pick = named.find((r) => r.handle === mine) || named.find((r) => r.live > 0) || named.find((r) => r.active) || named[0]
+    const h = pick?.handle || mine || ''
+    if (h) patch({ roomHandle: h })
+  }, [rooms, identity, loaded, draft.roomHandle, patch])
 
   // Frozen lists, for the two rules that point at one.
   const [sets, setSets] = useState<ReferenceSet[]>([])
   const [setsError, setSetsError] = useState<string | null>(null)
   useEffect(() => {
-    listMyReferenceSets().then((d) => setSets(d.sets)).catch((e) => setSetsError(e instanceof Error ? e.message : 'unavailable'))
-  }, [])
+    if (!who) return
+    listMyReferenceSets().then((d) => { setSets(d.sets); setSetsError(null) }).catch((e) => setSetsError(e instanceof Error ? e.message : 'unavailable'))
+  }, [who])
 
   // What this server has switched on. Unknown until read. Funding off keeps
   // Save and loses Fund (never a Fund that errors). No X app token: the
@@ -163,8 +248,9 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
   // while it is on. Payouts off: the reward copy says "queued", not "paid".
   const [config, setConfig] = useState<CampaignConfig | null>(null)
   useEffect(() => {
+    if (!who) return
     getCampaignConfig().then(setConfig).catch(() => setConfig(null))
-  }, [])
+  }, [who])
   const fundingEnabled = config ? config.fundingEnabled : null
 
   // Custom token: resolve symbol and decimals once the address is a real one.
@@ -193,53 +279,57 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
 
   const symbol = draft.tokenMode === 'usdc' ? 'USDC' : token?.symbol || 'TOKEN'
   const reward = num(draft.rewardAmount)
-  const maxClaims = Math.floor(num(draft.maxClaims))
+  // The optional cap: null when blank, NaN when it is not a whole number.
+  const maxClaims = parseCap(draft.maxClaims)
   const budget = num(draft.budgetAmount)
   const minSeconds = Math.floor(num(draft.minSeconds))
-  const suggestedBudget = Number.isFinite(reward) && Number.isFinite(maxClaims) && reward > 0 && maxClaims > 0
-    ? Number((reward * maxClaims).toFixed(6)) : null
-  const claimsAffordable = Number.isFinite(budget) && reward > 0 ? Math.floor(budget / reward) : null
   const fb = draft.rules.followedByFromSet
   // The server's own words when a loaded campaign carries them (xCheck,
   // warnings); the config's, or this client's, otherwise.
   const follower = followerCheckState({ rules: draft.rules, xAppToken: campaign?.xAppToken, xCheck: campaign?.xCheck, warnings: campaign?.warnings }, config)
   const followerChecksOff = follower.blocked
   const followerWarning = follower.warning || ''
-  // What each person gets, honestly: paid on its own only where this server
-  // can send payouts; queued where it says it cannot; hedged while unknown.
-  const paidCopy = config?.payoutsEnabled === true
-    ? 'Paid out automatically once the action counts.'
-    : config?.payoutsEnabled === false
-      ? 'Queued once the action counts: this server’s payouts are off, so rewards wait until they are switched on.'
-      : 'Paid out automatically once the action counts — or queued, if this server’s payouts are off.'
+  // Whether owed rewards are sent here or queued (ca-payout-hedge): one
+  // state chip beside the reward, nothing while the server has not said.
+  const payouts = config?.payoutsEnabled ?? null
 
   // The token's own decimals bound what can be typed (USDC has 6). Unknown
   // until a custom token resolves; the token problem covers that case.
   const decimals = draft.tokenMode === 'usdc' ? 6 : token?.decimals ?? null
   const caps = useMemo(() => parseCostCaps(draft.capText, draft.capTotalText), [draft.capText, draft.capTotalText])
+  // PLACES FOLLOW THE MONEY (ca-budget-places): the budget pays
+  // floor(budget ÷ reward) people, counted as the server counts them, and
+  // max claims is only an optional lower cap. The public page offers the
+  // smaller of the two.
+  const paysPeople = placesPaid(draft.rewardAmount, draft.budgetAmount, decimals)
+  const capSet = maxClaims != null && Number.isFinite(maxClaims) && maxClaims >= 1 ? maxClaims : null
 
   const problems = useMemo(() => {
-    const out: string[] = []
-    if (!draft.title.trim()) out.push('Give the campaign a title.')
+    const out: Problem[] = []
+    const add = (text: string, label: string, field: string, missing = false) => { out.push({ text, label, field, missing }) }
+    if (!draft.title.trim()) add('Give the campaign a title.', 'Title', FIELD.title, true)
     const rewardBad = decimals != null ? amountProblem(draft.rewardAmount, decimals, symbol, 'reward') : null
-    if (rewardBad) out.push(rewardBad)
-    else if (!(reward > 0)) out.push('The reward must be more than zero.')
-    if (draft.tokenMode === 'token' && !token) out.push(tokenState === 'error' ? 'The custom token could not be read.' : 'Enter a Tempo token address and wait for it to resolve.')
-    if (draft.tokenMode === 'token' && token && token.campaignAllowed === false) out.push('This server does not take that token for campaigns yet: custom tokens need an on-chain test first.')
+    if (rewardBad) add(rewardBad, 'Reward', FIELD.reward)
+    else if (!(reward > 0)) add('The reward must be more than zero.', 'Reward', FIELD.reward, !draft.rewardAmount.trim())
+    if (draft.tokenMode === 'token' && !token) add(tokenState === 'error' ? 'The custom token could not be read.' : 'Enter a Tempo token address and wait for it to resolve.', 'Token address', FIELD.token, tokenState !== 'error')
+    if (draft.tokenMode === 'token' && token && token.campaignAllowed === false) add('This server does not take that token for campaigns yet: custom tokens need an on-chain test first.', 'Token', FIELD.token)
     const budgetBad = decimals != null ? amountProblem(draft.budgetAmount, decimals, symbol, 'budget') : null
-    if (budgetBad) out.push(budgetBad)
-    else if (!(budget > 0)) out.push('Set a budget.')
-    else if (reward > 0 && budget < reward) out.push('The budget is smaller than one reward.')
-    out.push(...countProblems(maxClaims, minSeconds, draft.actionKind === 'callin'))
+    if (budgetBad) add(budgetBad, 'Budget', FIELD.budget)
+    else if (!(budget > 0)) add('Set a budget.', 'Budget', FIELD.budget, true)
+    else if (reward > 0 && budget < reward) add('The budget is smaller than one reward.', 'Budget below one reward', FIELD.budget)
+    for (const p of countProblems(maxClaims, minSeconds, draft.actionKind === 'callin')) {
+      if (/^Max claims/.test(p)) add(p, 'Max claims', FIELD.cap)
+      else add(p, 'Time on camera', FIELD.seconds)
+    }
     const dl = new Date(draft.deadline)
-    if (!draft.deadline || Number.isNaN(dl.getTime())) out.push('Pick a deadline.')
-    else if (dl.getTime() < Date.now()) out.push('The deadline is in the past.')
-    else if (dl.getTime() > Date.now() + MAX_DEADLINE_DAYS * DAY_MS) out.push(`The deadline can be at most ${MAX_DEADLINE_DAYS} days out.`)
-    if (!draft.roomHandle.trim()) out.push('Choose the room the action happens in.')
-    if ('referenceSetId' in draft.rules && !draft.rules.referenceSetId) out.push('"On a list of mine" has no list chosen yet.')
-    if (fb && !fb.referenceSetId) out.push('"Followed by people on a list" has no list chosen yet.')
-    if (fb) out.push(...caps.problems)
-    if (draft.rules.verifiedTypes && draft.rules.verifiedTypes.length === 0) out.push('Pick at least one checkmark type, or switch that rule off.')
+    if (!draft.deadline || Number.isNaN(dl.getTime())) add('Pick a deadline.', 'Deadline', FIELD.deadline, true)
+    else if (dl.getTime() < Date.now()) add('The deadline is in the past.', 'Deadline in the past', FIELD.deadline)
+    else if (dl.getTime() > Date.now() + MAX_DEADLINE_DAYS * DAY_MS) add(`The deadline can be at most ${MAX_DEADLINE_DAYS} days out.`, 'Deadline too far out', FIELD.deadline)
+    if (!draft.roomHandle.trim()) add('Choose the room the action happens in.', 'Room', FIELD.room, true)
+    if ('referenceSetId' in draft.rules && !draft.rules.referenceSetId) add('"On a list of mine" has no list chosen yet.', 'List for “On a list of mine”', 'mcp-rule-referenceSetId', true)
+    if (fb && !fb.referenceSetId) add('"Followed by people on a list" has no list chosen yet.', 'List for “Followed by”', 'mcp-rule-followedByFromSet', true)
+    if (fb) for (const p of caps.problems) add(p, 'X-API cost cap', FIELD.xcap)
+    if (draft.rules.verifiedTypes && draft.rules.verifiedTypes.length === 0) add('Pick at least one checkmark type, or switch that rule off.', 'Checkmark type', 'mcp-rule-verified')
     return out
   }, [draft, reward, budget, maxClaims, minSeconds, token, tokenState, fb, decimals, symbol, caps])
 
@@ -252,7 +342,8 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
       ? { type: 'usdc', amount: amountToSend(draft.rewardAmount) }
       : { type: 'token', address: token!.address, amount: amountToSend(draft.rewardAmount) },
     budget: { amount: amountToSend(draft.budgetAmount) },
-    maxClaims,
+    // Blank sends null: the budget decides how many places (the server's placesFor).
+    maxClaims: capSet,
     deadline: new Date(draft.deadline).toISOString(),
     action: {
       kind: draft.actionKind,
@@ -275,7 +366,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
           },
         }
       : draft.rules,
-  }), [draft, maxClaims, minSeconds, token, caps])
+  }), [draft, capSet, minSeconds, token, caps])
 
   // ── Save / fund ──────────────────────────────────────────────────────────
   const [busy, setBusy] = useState<'save' | 'fund' | null>(null)
@@ -295,6 +386,8 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
     const input = toInput()
     const saved = await (savedId ? updateCampaign(savedId, input) : createCampaign(input))
     setSavedId(saved.id)
+    clearPending()
+    setKeepPending(false)
     if (input.rules.followedByFromSet) {
       const echo = saved.rules?.followedByFromSet
       if (!echo || echo.enabled !== true) {
@@ -304,7 +397,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
       }
     }
     return saved
-  }, [savedId, toInput])
+  }, [savedId, toInput, clearPending])
 
   const saveDraft = useCallback(async () => {
     setBusy('save')
@@ -347,12 +440,16 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
   }, [persist, tryFund])
 
   // ── Rules (an object keyed by rule name; a missing key is "off") ─────────
-  const hasRule = (k: RuleKey) => draft.rules[k] !== undefined
+  // "Verified on X" carries the checkmark type as its sub-choice, so the rule
+  // is on when either key is (an older campaign may hold only the type).
+  const hasRule = (k: RuleKey) => draft.rules[k] !== undefined || (k === 'verified' && !!draft.rules.verifiedTypes)
   const setRules = (next: Rules) => patch({ rules: next })
   const toggleRule = (k: RuleKey) => {
     const next: Rules = { ...draft.rules }
-    if (hasRule(k)) delete next[k]
-    else {
+    if (hasRule(k)) {
+      delete next[k]
+      if (k === 'verified') delete next.verifiedTypes
+    } else {
       const meta = RULE_MENU.find((m) => m.key === k)!
       ;(next as Record<string, unknown>)[k] = typeof meta.on === 'object' && meta.on !== null ? JSON.parse(JSON.stringify(meta.on)) : meta.on
     }
@@ -374,6 +471,9 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
   const roomOptions = rooms || []
   const roomKnown = roomOptions.some((r) => r.handle === draft.roomHandle) || draft.roomHandle === identity?.handle
   const requireOptions = REQUIRE_OPTIONS[draft.actionKind]
+  const example = PLACEHOLDER[draft.actionKind]
+  const allMissing = problems.every((p) => p.missing)
+  const firstReason = problems.find((p) => !p.missing)
 
   return (
     <div className="mcp-layout">
@@ -382,19 +482,34 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
         <section className="mcp-card">
           <header><span className="mcp-coordinate">01 · What</span><h2>The offer in one line</h2><p>The title and blurb are what people see on the public page and on the X card. The link name is minted when you save.</p></header>
           <div className="mcp-fields">
-            <label className="mcp-field"><span>Title</span><input value={draft.title} maxLength={90} placeholder="Call in and tell me your worst take" onChange={(e) => patch({ title: e.target.value })} /></label>
-            <label className="mcp-field"><span>One-line blurb</span><input value={draft.blurb} maxLength={160} placeholder="Five minutes on camera, I pay you for showing up." onChange={(e) => patch({ blurb: e.target.value })} /><small>{draft.blurb.length}/160</small></label>
+            <label className="mcp-field"><span>Title</span><input id={FIELD.title} value={draft.title} maxLength={90} placeholder={example.title} onChange={(e) => patch({ title: e.target.value })} /></label>
+            <label className="mcp-field"><span>One-line blurb</span><input value={draft.blurb} maxLength={160} placeholder={example.blurb} onChange={(e) => patch({ blurb: e.target.value })} /><small>{draft.blurb.length}/160</small></label>
           </div>
+          {/* The room is chosen for the streamer (their own); said up here,
+              where the offer is named, with the way to change it. */}
+          {draft.roomHandle ? (
+            <p className="mcp-for">For <strong>@{draft.roomHandle.replace(/^@/, '')}</strong> · <button type="button" className="mcp-inline-link" onClick={() => goToField(FIELD.room)}>Change</button></p>
+          ) : null}
         </section>
 
         {/* Reward */}
         <section className="mcp-card" data-kind="money">
-          <header><span className="mcp-coordinate">02 · Reward</span><h2>What each person gets</h2><p>{paidCopy} USDC, or a token this server has approved for campaigns.</p></header>
+          <header><span className="mcp-coordinate">02 · Reward</span><h2>What each person gets</h2></header>
           <div className="mcp-fields two">
-            <label className="mcp-field">
-              <span>Reward per claim</span>
-              <span className="mcp-money-input"><span>{symbol === 'USDC' ? '$' : ''}</span><input inputMode="decimal" aria-label="Reward amount" value={draft.rewardAmount} onChange={(e) => patch({ rewardAmount: e.target.value })} /><b>{symbol}</b></span>
-            </label>
+            <div className="mcp-field">
+              <span className="mcp-label-row">
+                <label htmlFor={FIELD.reward}>Reward per claim</label>
+                {payouts === true ? (
+                  <span className="mcp-state-chip" data-tone="ok">Pays out automatically</span>
+                ) : payouts === false ? (
+                  <span className="mcp-state-chip-wrap">
+                    <span className="mcp-state-chip" data-tone="warn">Payouts queued</span>
+                    <InfoTip label="About queued payouts" text="When the action counts, the reward is recorded as owed. It goes out once Holler switches payouts on; nothing is lost while it waits." />
+                  </span>
+                ) : null}
+              </span>
+              <span className="mcp-money-input"><span>{symbol === 'USDC' ? '$' : ''}</span><input id={FIELD.reward} inputMode="decimal" aria-label="Reward amount" value={draft.rewardAmount} onChange={(e) => patch({ rewardAmount: e.target.value })} /><b>{symbol}</b></span>
+            </div>
             <label className="mcp-field">
               <span>Token</span>
               <select value={draft.tokenMode} onChange={(e) => patch({ tokenMode: e.target.value as Draft['tokenMode'] })}>
@@ -405,7 +520,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
             {draft.tokenMode === 'token' ? (
               <label className="mcp-field wide">
                 <span>Token address on Tempo</span>
-                <input value={draft.tokenAddress} placeholder="0x…" spellCheck={false} onChange={(e) => patch({ tokenAddress: e.target.value.trim() })} />
+                <input id={FIELD.token} value={draft.tokenAddress} placeholder="0x…" spellCheck={false} onChange={(e) => patch({ tokenAddress: e.target.value.trim() })} />
                 {token ? (
                   token.campaignAllowed === false ? (
                     <small className="mcp-error"><strong>{token.symbol}</strong> is a real token, but this server does not take it for campaigns yet. Custom tokens need an on-chain test first: the network fee for every payout is paid in the token itself, so an untested token could be collected and never paid out. Use USDC for now.</small>
@@ -430,17 +545,28 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
           <div className="mcp-fields three">
             <label className="mcp-field">
               <span>Budget</span>
-              <span className="mcp-money-input"><span>{symbol === 'USDC' ? '$' : ''}</span><input inputMode="decimal" aria-label="Budget amount" value={draft.budgetAmount} onChange={(e) => patch({ budgetAmount: e.target.value })} /><b>{symbol}</b></span>
-              <small>
-                {suggestedBudget != null && suggestedBudget !== budget ? (
-                  <>{rewardText} × {maxClaims} = <button type="button" className="mcp-inline-link" onClick={() => patch({ budgetAmount: String(suggestedBudget) })}>use {rewardLabel(String(suggestedBudget), symbol)}</button></>
-                ) : claimsAffordable != null ? (
-                  <>Covers {claimsAffordable} {claimsAffordable === 1 ? 'claim' : 'claims'} at {rewardText}{fb ? ' before X-API checks' : ''}</>
-                ) : 'Reward × max claims is the usual number'}
+              <span className="mcp-money-input"><span>{symbol === 'USDC' ? '$' : ''}</span><input id={FIELD.budget} inputMode="decimal" aria-label="Budget amount" value={draft.budgetAmount} onChange={(e) => patch({ budgetAmount: e.target.value })} /><b>{symbol}</b></span>
+              {/* The places, computed from the money: what the public page offers. */}
+              <small className="mcp-pays" aria-live="polite">
+                {paysPeople != null && paysPeople > 0 ? (
+                  <>Pays <strong>{paysPeople.toLocaleString('en-US')} {paysPeople === 1 ? 'person' : 'people'}</strong> at {rewardText}{fb ? ', before X-API checks' : ''}</>
+                ) : 'Budget ÷ reward is how many people it pays'}
               </small>
             </label>
-            <label className="mcp-field"><span>Max claims</span><input inputMode="numeric" value={draft.maxClaims} onChange={(e) => patch({ maxClaims: e.target.value })} /><small>Closes on its own after this many are paid</small></label>
-            <label className="mcp-field"><span>Deadline</span><input type="datetime-local" required min={deadlineMin} max={deadlineMax} value={draft.deadline} onChange={(e) => patch({ deadline: e.target.value })} /><small>Required. Claims stop here, whatever is left; up to {MAX_DEADLINE_DAYS} days out.</small></label>
+            <label className="mcp-field">
+              <span>Max claims <em className="mcp-optional">optional</em></span>
+              <input id={FIELD.cap} inputMode="numeric" value={draft.maxClaims} placeholder={paysPeople != null && paysPeople > 0 ? String(paysPeople) : ''} onChange={(e) => patch({ maxClaims: e.target.value })} />
+              <small>
+                {capSet == null || paysPeople == null
+                  ? 'Blank: the budget decides. Set a lower number to cap it.'
+                  : capSet < paysPeople
+                    ? `Caps it at ${capSet.toLocaleString('en-US')}. The budget it cannot pay out comes back when it closes.`
+                    : capSet > paysPeople
+                      ? `The budget pays ${paysPeople.toLocaleString('en-US')}, so ${paysPeople.toLocaleString('en-US')} places show.`
+                      : 'Closes on its own after this many are paid'}
+              </small>
+            </label>
+            <label className="mcp-field"><span>Deadline</span><input id={FIELD.deadline} type="datetime-local" required min={deadlineMin} max={deadlineMax} value={draft.deadline} onChange={(e) => patch({ deadline: e.target.value })} /><small>Required. Claims stop here, whatever is left; up to {MAX_DEADLINE_DAYS} days out.</small></label>
           </div>
         </section>
 
@@ -460,7 +586,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
             <label className="mcp-field">
               <span>Room</span>
               {roomOptions.length > 0 || !rooms ? (
-                <select value={roomKnown ? draft.roomHandle : ''} onChange={(e) => patch({ roomHandle: e.target.value })}>
+                <select id={FIELD.room} value={roomKnown ? draft.roomHandle : ''} onChange={(e) => patch({ roomHandle: e.target.value })}>
                   {!roomKnown ? <option value="">{rooms ? 'Choose a room…' : 'Loading your rooms…'}</option> : null}
                   {identity?.handle && !roomOptions.some((r) => r.handle === identity.handle) ? <option value={identity.handle}>@{identity.handle} · your room link</option> : null}
                   {roomOptions.map((r) => (
@@ -468,9 +594,9 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
                   ))}
                 </select>
               ) : (
-                <input value={draft.roomHandle} placeholder={identity?.handle || 'your-handle'} onChange={(e) => patch({ roomHandle: e.target.value })} />
+                <input id={FIELD.room} value={draft.roomHandle} placeholder={identity?.handle || 'your-handle'} onChange={(e) => patch({ roomHandle: e.target.value })} />
               )}
-              <small>{rooms && roomOptions.length === 0 ? <>No rooms yet — <a className="mcp-link" href="/dashboard">open one</a>, or use your room link.</> : 'A room you own. The public page sends people here.'}</small>
+              <small>{guest ? 'Your own room, once you sign in.' : rooms && roomOptions.length === 0 ? <>No rooms yet — <a className="mcp-link" href="/dashboard">open one</a>, or use your room link.</> : 'A room you own. The public page sends people here.'}</small>
             </label>
             <label className="mcp-field">
               <span>When it counts</span>
@@ -482,34 +608,25 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
             {draft.actionKind === 'callin' ? (
               <label className="mcp-field">
                 <span>Minimum time on camera</span>
-                <span className="mcp-unit-input"><input inputMode="numeric" aria-label="Minimum seconds on camera" value={draft.minSeconds} onChange={(e) => patch({ minSeconds: e.target.value })} /><b>seconds</b></span>
+                <span className="mcp-unit-input"><input id={FIELD.seconds} inputMode="numeric" aria-label="Minimum seconds on camera" value={draft.minSeconds} onChange={(e) => patch({ minSeconds: e.target.value })} /><b>seconds</b></span>
                 <small>A seat shorter than this does not count</small>
               </label>
             ) : null}
           </div>
         </section>
 
-        {/* Who qualifies */}
+        {/* Who qualifies: three groups, the creator's own community first. */}
         <section className="mcp-card">
           <header><span className="mcp-coordinate">05 · Who qualifies</span><h2>Rules, from the menu</h2><p>Every rule reads the claimant&rsquo;s X profile. None asks them to do anything there.</p></header>
           <p className="mcp-sentence" aria-live="polite"><span className="mcp-coordinate">Reads as</span>{sentence}</p>
-          <div className="mcp-rules">
-            {RULE_MENU.map((meta) => {
-              const on = hasRule(meta.key)
-              return (
-                <div key={meta.key} className="mcp-rule" data-on={on}>
-                  <div className="mcp-rule-headrow">
-                    <button type="button" className="mcp-rule-head" aria-pressed={on} onClick={() => toggleRule(meta.key)}>
-                      <span className="mcp-toggle" aria-hidden="true"><i /></span>
-                      <span><strong>{meta.title}{meta.note ? <em>{meta.note}</em> : null}</strong>{meta.copy ? <small>{meta.copy}</small> : null}</span>
-                    </button>
-                    {meta.tip ? <InfoTip label={`About ${meta.title}`} text={meta.tip} /> : null}
-                  </div>
-                  {on ? <div className="mcp-rule-body">{renderRuleInputs(meta.key)}</div> : null}
-                </div>
-              )
-            })}
-          </div>
+          {RULE_GROUPS.map((g) => (
+            <div key={g.title} className="mcp-rule-group">
+              <h3 className="mcp-rule-group-title">{g.title}</h3>
+              <div className="mcp-rules">
+                {g.keys.map((k) => RULE_MENU.find((m) => m.key === k)).filter((m): m is RuleMeta => !!m).map((meta) => renderRuleRow(meta))}
+              </div>
+            </div>
+          ))}
         </section>
 
         {/* Notice */}
@@ -519,10 +636,25 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
           <small>Shown on the public page and included in the share post.</small>
         </section>
 
-        {/* Submit */}
-        <footer className="mcp-submit">
+        {/* Submit: pinned to the bottom of the screen while the form scrolls
+            (ca-save-far), with what is missing as links to the fields. On
+            one column it comes after the preview (ca-mobile-preview-below-save). */}
+        <footer className="mcp-submit" data-sticky={approval ? undefined : 'true'}>
           {problems.length > 0 ? (
-            <ul className="mcp-problems">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+            <div className="mcp-missing" role="status">
+              <p>
+                <span>{problems.length} {problems.length === 1 ? 'thing' : 'things'} {allMissing ? 'missing' : 'to fix'}:</span>{' '}
+                {problems.map((p, i) => (
+                  <Fragment key={p.text}>
+                    {i > 0 ? ' · ' : ''}
+                    <button type="button" className="mcp-inline-link" title={p.text} onClick={() => goToField(p.field)}>{p.label}</button>
+                  </Fragment>
+                ))}
+              </p>
+              {firstReason ? <small>{firstReason.text}</small> : null}
+            </div>
+          ) : guest ? (
+            <p className="mcp-hint">Sign in to save it. Your draft stays here while you do.</p>
           ) : fundingEnabled === false ? (
             <p className="mcp-hint">Save keeps it private. {FUNDING_OFF_COPY} You can draft and check rules; funding and opening wait until they are.</p>
           ) : followerChecksOff ? (
@@ -541,6 +673,11 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
               onApproved={(proof) => tryFund(approval.id, proof)}
               onCancel={() => router.push(`/dashboard/campaigns/${encodeURIComponent(approval.id)}`)}
             />
+          ) : guest ? (
+            <div className="mcp-actions">
+              <button type="button" className="mcp-btn" disabled={wallet.modalOpen} title={wallet.configured ? 'Twitch, X, Google, email or passkey' : undefined} onClick={signInToSave}>{wallet.modalOpen ? 'Opening…' : 'Sign in to save'}</button>
+              <a className="mcp-link" href="/dashboard/campaigns">Cancel</a>
+            </div>
           ) : (
             <div className="mcp-actions">
               <button type="button" className="mcp-btn-ghost" disabled={busy !== null || problems.length > 0} onClick={() => void saveDraft()}>{busy === 'save' ? 'Saving…' : editing || savedId ? 'Save changes' : 'Save as draft'}</button>
@@ -550,6 +687,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
               <a className="mcp-link" href={savedId ? `/dashboard/campaigns/${encodeURIComponent(savedId)}` : '/dashboard/campaigns'}>Cancel</a>
             </div>
           )}
+          {guest && authError ? <p role="alert" className="mcp-error">{authError}</p> : null}
           {error ? <p role="alert" className="mcp-error">{error}</p> : null}
         </footer>
       </div>
@@ -574,6 +712,32 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
     </div>
   )
 
+  /** One rule row. Where a rule has an (i), it sits right after the title,
+   *  not at the far end of the row. */
+  function renderRuleRow(meta: RuleMeta) {
+    const on = hasRule(meta.key)
+    const head = (
+      <button type="button" className="mcp-rule-head" aria-pressed={on} onClick={() => toggleRule(meta.key)}>
+        <span className="mcp-toggle" aria-hidden="true"><i /></span>
+        <span><strong>{meta.title}{meta.note ? <em>{meta.note}</em> : null}</strong>{meta.copy && !meta.tip ? <small>{meta.copy}</small> : null}</span>
+      </button>
+    )
+    return (
+      <div key={meta.key} className="mcp-rule" data-on={on}>
+        {meta.tip ? (
+          <div className="mcp-rule-headrow" data-tip="true">
+            {head}
+            <InfoTip label={`About ${meta.title}`} text={meta.tip} />
+            {meta.copy ? <small className="mcp-rule-copy">{meta.copy}</small> : null}
+          </div>
+        ) : (
+          <div className="mcp-rule-headrow">{head}</div>
+        )}
+        {on ? <div className="mcp-rule-body" id={`mcp-rule-${meta.key}`} tabIndex={-1}>{renderRuleInputs(meta.key)}</div> : null}
+      </div>
+    )
+  }
+
   function renderRuleInputs(key: RuleKey) {
     switch (key) {
       case 'minFollowers':
@@ -589,15 +753,16 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
           </label>
         )
       }
-      case 'verifiedTypes': {
+      case 'verified': {
+        // The checkmark type is this rule's sub-choice: Any, or one kind.
         const chosen = draft.rules.verifiedTypes || []
+        const { verifiedTypes: _drop, ...rest } = draft.rules
+        void _drop
         return (
-          <div className="mcp-checks" role="group" aria-label="Checkmark types">
-            {(Object.keys(VERIFIED_TYPE_LABEL) as VerifiedType[]).map((t) => (
-              <label key={t}>
-                <input type="checkbox" checked={chosen.includes(t)} onChange={(e) => setRules({ ...draft.rules, verifiedTypes: e.target.checked ? [...chosen, t] : chosen.filter((x) => x !== t) })} />
-                <span>{VERIFIED_TYPE_LABEL[t]}</span>
-              </label>
+          <div className="mcp-seg" role="radiogroup" aria-label="Which checkmark counts">
+            <button type="button" role="radio" aria-checked={chosen.length === 0} onClick={() => setRules({ ...rest, verified: true })}>Any</button>
+            {(Object.keys(VERIFIED_TYPE_SHORT) as VerifiedType[]).map((t) => (
+              <button key={t} type="button" role="radio" aria-checked={chosen.includes(t)} title={VERIFIED_TYPE_LABEL[t]} onClick={() => setRules({ ...rest, verified: true, verifiedTypes: [t] })}>{VERIFIED_TYPE_SHORT[t]}</button>
             ))}
           </div>
         )
@@ -613,7 +778,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
             <ReferenceSetPicker sets={sets} loadError={setsError} campaignId={campaign?.id} campaignStatus={campaign?.status} value={f.referenceSetId} onChange={(id) => set({ referenceSetId: id })} onCreated={(s) => setSets((xs) => [s, ...xs])} />
             <div className="mcp-fields two">
               <label className="mcp-field"><span>Followed by at least</span><span className="mcp-unit-input"><input inputMode="numeric" value={f.min} onChange={(e) => set({ min: Math.max(1, Math.floor(Number(e.target.value) || 1)) })} /><b>members</b></span></label>
-              <label className="mcp-field"><span>X-API cost cap per claim</span><span className="mcp-money-input"><span>$</span><input inputMode="decimal" aria-label="X-API cost cap per claim" value={draft.capText} onChange={(e) => patch({ capText: e.target.value })} /><b>USD</b></span><small className="mcp-money-note">Comes out of the campaign budget, per claim checked.</small></label>
+              <label className="mcp-field"><span>X-API cost cap per claim</span><span className="mcp-money-input"><span>$</span><input id={FIELD.xcap} inputMode="decimal" aria-label="X-API cost cap per claim" value={draft.capText} onChange={(e) => patch({ capText: e.target.value })} /><b>USD</b></span><small className="mcp-money-note">Comes out of the campaign budget, per claim checked.</small></label>
               <label className="mcp-field"><span>X-API cost cap in total</span><span className="mcp-money-input"><span>$</span><input inputMode="decimal" aria-label="X-API cost cap in total" placeholder="20% of budget" value={draft.capTotalText} onChange={(e) => patch({ capTotalText: e.target.value })} /><b>USD</b></span><small className="mcp-money-note">Every applicant is checked, qualifying or not. Past this, checks stop and applicants are told why. Blank: 20% of the budget.</small></label>
             </div>
           </>

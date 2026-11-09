@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function CampaignsPage() {
   return (
-    <CampaignsShell>
+    <CampaignsShell open>
       <CampaignList />
     </CampaignsShell>
   )

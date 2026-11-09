@@ -42,7 +42,10 @@ export function CampaignsHeader({ tag, current = true }: { tag: string; current?
   )
 }
 
-export function CampaignsShell({ tag = 'Campaigns', children }: { tag?: string; children: ReactNode }) {
+/** `open`: the page renders to a signed-out visitor too (the list and the
+ *  new-campaign form: no login wall, the same as /dashboard). A campaign's
+ *  own pages stay behind sign-in: they are one creator's. */
+export function CampaignsShell({ tag = 'Campaigns', open = false, children }: { tag?: string; open?: boolean; children: ReactNode }) {
   const { loaded, signedIn, wallet, openSignIn, authError } = useAccount()
   return (
     <div className="mc-camp">
@@ -50,7 +53,7 @@ export function CampaignsShell({ tag = 'Campaigns', children }: { tag?: string; 
       <main className="mcp-shell">
         {!loaded ? (
           <p className="mcp-hint">Loading…</p>
-        ) : !signedIn ? (
+        ) : !signedIn && !open ? (
           <section className="mcp-card mcp-signed-out">
             <span className="mcp-coordinate">Campaigns / private</span>
             <h1>Sign in to run a campaign</h1>

@@ -101,7 +101,10 @@ export type CampaignInput = {
   blurb: string
   reward: RewardInput
   budget: { amount: string }
-  maxClaims: number
+  /** An optional cap below what the budget pays; null = the budget decides
+   *  (floor(budget ÷ reward) places). The server never offers more places
+   *  than the budget pays, whatever is sent here. */
+  maxClaims: number | null
   /** ISO 8601. */
   deadline: string
   action: { kind: ActionKind; roomHandle: string; require: ActionRequire; minSeconds?: number }
@@ -147,7 +150,13 @@ export type Campaign = {
    *  refund is recorded (a closed campaign still waiting on claims). */
   refundDoor?: string | null
   token: { address: string | null; symbol: string; decimals: number }
+  /** The places offered: floor(budget ÷ reward), or the creator's cap when
+   *  that is lower. Never more than the budget pays. */
   maxClaims: number
+  /** The creator's cap as set; null when the budget decides. */
+  claimCap?: number | null
+  /** A draft nothing was ever attempted against: it can be deleted outright. */
+  deletable?: boolean
   deadline: string | null
   action: { kind: ActionKind; roomHandle: string; require: ActionRequire; minSeconds?: number }
   rules: Rules
@@ -370,6 +379,12 @@ export function openCampaign(id: string) {
 /** Stops new claims. Owed payouts still settle; the unspent budget refunds. */
 export function closeCampaign(id: string) {
   return req<{ ok: true; campaign?: Campaign }>(`/api/campaigns/${encodeURIComponent(id)}/close`, { method: 'POST' })
+}
+
+/** Deletes a never-funded draft (the server refuses anything with funding
+ *  on record). Its link stays a 404. */
+export function deleteCampaign(id: string) {
+  return req<{ ok: true; id: string; slug: string }>(`/api/campaigns/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 export function listClaims(id: string) {

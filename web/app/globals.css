@@ -1153,6 +1153,34 @@ html:not([data-style='classic']) .mcl-film-progress i {
 .light .dark .lv--yellow { --lv-bg: var(--f-bounty-bg); --lv-ink: var(--f-bounty-ink); }
 .light .dark .lv--green .lv-dot, .light .dark .lv--yellow .lv-dot { background: var(--lv-hue); }
 
+/* The board's fan badge (audience="fan"): the pill is a button and the
+   detail's first sentence opens under it on tap, focus or hover. The wrapper
+   is NOT positioned, so the detail anchors to the nearest positioned box
+   around it (the stage's tag row on the board) and spans it rather than
+   running off a narrow tile's edge. Closed, it takes no layout at all. */
+.lv-tip { display: inline-flex; flex: none; }
+button.lv { margin: 0; cursor: pointer; }
+button.lv:focus-visible { outline: 2px solid var(--hl-strap-hi); outline-offset: 2px; }
+.lv-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: none;
+  padding: 7px 9px;
+  border: 1px solid var(--hl-line-2);
+  background: color-mix(in srgb, var(--hl-bg) 94%, transparent);
+  color: var(--hl-fg);
+  font: 500 11.5px/1.45 var(--font-ui), system-ui, sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.lv-tip[data-open='true'] .lv-pop { display: block; }
+
 /* ── Info tip (components/info-tip.tsx) ─────────────────────────────────── */
 .itip { position: relative; display: inline-flex; vertical-align: middle; }
 .itip-btn { width: 16px; height: 16px; display: inline-grid; place-items: center; padding: 0; border: 1px solid color-mix(in srgb, var(--muted-foreground) 55%, transparent); border-radius: 50%; background: transparent; color: var(--muted-foreground); font: 700 10px/1 var(--font-mono), ui-monospace, monospace; cursor: help; }

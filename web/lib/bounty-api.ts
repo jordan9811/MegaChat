@@ -75,6 +75,8 @@ export type BountyClientConfig = {
   overlayMinCanvasPx?: number
   /** Real money (BOUNTY_FUNDING=1): a pledge needs the fan's wallet before it counts. */
   fundingEnabled?: boolean
+  /** Liveness tiers: how long the overlay must stay up and the slice a yellow release pays. */
+  tiers?: { yellowMinMs: number; yellowReleaseFraction: number; defaultMinTier: 'green' | 'yellow' }
   /** What the server's money looks like: ledger-only, or real with the
    *  spender a fan's wallet approves and the platform wallet that holds pools. */
   money?: {
@@ -267,6 +269,11 @@ export type PoolView = BountyPool & {
   openPledges: number
   /** Money each liveness tier can release (server liveness.js): badge-only backers, and backers who allowed the overlay check. */
   tiers?: { greenOnly: number; yellowOk: number; yellowReleased: number }
+  /** Each card split by its own money (pool-view only): locked here, and every open shared pledge naming this handle. */
+  cardTiers?: {
+    locked: { greenOnly: number; yellowOk: number }
+    contested: { greenOnly: number; yellowOk: number }
+  }
 }
 
 /** The claimant's room right now (server liveness.js); null before a claim. */
@@ -387,6 +394,8 @@ export type MyContribution = {
   pledgeId: string
   contributionId: string | null
   amount: string
+  /** The name this pledge goes by: the display name typed, else the fan's @handle. */
+  from?: string | null
   targets: string[]
   pledgeStatus: string
   winner: string | null
@@ -419,7 +428,8 @@ export type QueueClip = {
   durationS: number
   bytes: number
   storedAt: number
-  contributor: string | null
+  /** Who it is from: the fan's display name, else their @handle. Never an account id. */
+  from: string | null
   moderation: { grade: string; confidence: number; topCategory: string | null } | null
   mediaUrl: string
 }

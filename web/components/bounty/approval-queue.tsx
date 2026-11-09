@@ -70,7 +70,9 @@ export function ApprovalQueue({ platform, handle, by }: { platform: string; hand
                 ) : (
                   <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-bold">unmoderated</span>
                 )}
-                {c.contributor ? <span className="truncate">from {c.contributor}</span> : null}
+                {/* The fan's display name, else their @handle: never the
+                    internal account id (UX sweep bo-queue-id). */}
+                {c.from ? <span className="truncate">from {c.from}</span> : null}
               </div>
               {/* eslint-disable-next-line jsx-a11y/media-has-caption -- fan-recorded clip */}
               {/* A video frame stays dark in both themes: `dark` re-scopes the

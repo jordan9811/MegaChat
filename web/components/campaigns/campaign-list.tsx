@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import { listMyCampaigns, type Campaign, CampaignsApiError } from '@/lib/campaigns-api'
+import { useAccount } from '@/lib/use-account'
 import { FeatureTag } from '@/components/feature-tag'
 import { PageTitle, Pip } from './campaigns-shell'
 import { budgetFigures, budgetRowText, fmtDate, offerSentence, placesTaken, rewardLabel } from './rules'
@@ -15,19 +16,24 @@ const STATUS_LABEL: Record<Campaign['status'], string> = { draft: 'Draft', fundi
 export function CampaignList() {
   const [rows, setRows] = useState<Campaign[] | null>(null)
   const [error, setError] = useState<{ status: number; message: string } | null>(null)
+  const { loaded, signedIn } = useAccount()
 
+  // Signed out there is nothing of yours to list: the empty state, with
+  // "New campaign", which opens the form (no login wall).
   useEffect(() => {
+    if (!loaded) return
+    if (!signedIn) { setRows([]); setError(null); return }
     listMyCampaigns()
       .then((d) => setRows(d.campaigns))
       .catch((e) => setError({ status: e instanceof CampaignsApiError ? e.status : 0, message: e instanceof Error ? e.message : 'Could not load' }))
-  }, [])
+  }, [loaded, signedIn])
 
   return (
     <>
       <PageTitle
         coordinate="Reward campaigns"
         title="Pay people to show up"
-        lead="Set the rules, fund a budget, share one link. Whoever qualifies and does the action on your stream gets paid on their own."
+        lead="Set the rules, fund a budget, share one link. Whoever qualifies and does the action on your stream gets paid."
         actions={<a href="/dashboard/campaigns/new" className="mcp-btn">New campaign</a>}
       />
 

@@ -5,11 +5,11 @@
 // match what that script expects, and the classes it toggles (.show, .success,
 // .error, .live, .addr, .adv-only/.simple-only) are styled in join.css.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { FeatureTag } from '@/components/feature-tag'
 import { LivenessBadge, type Liveness } from '@/components/liveness-badge'
 import { HollerMark } from '@/components/holler-mark'
-import { StingerPreview } from '@/components/join/stinger-preview'
+import { StingerPicker } from '@/components/join/stinger-preview'
 import { initJoinPage } from '@/lib/join-page'
 import { backendWsUrl } from '@/lib/backend'
 import type { RoomFeature } from '@/lib/room-browse'
@@ -27,9 +27,10 @@ const miniBtn =
   'mcj-mini flex w-full items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-semibold disabled:opacity-50'
 
 type RoomFlags = {
-  letters?: { enabled?: boolean }
+  letters?: { enabled?: boolean; price?: string | number }
   joinStream?: { enabled?: boolean }
   rewardsEnabled?: boolean
+  passkeyTickPrice?: string | number
 }
 
 // The same three flags the console below reads, in the order the product
@@ -43,17 +44,32 @@ function roomFeatures(cfg: RoomFlags): RoomFeature[] {
   return kinds
 }
 
+// A free room charges for nothing it offers: Call in at no tick price (as
+// join-page.ts roomIsFree reads it) and Hollers at no price. Said once, in the
+// strip (owner's pick vr-free-zero), instead of "$0" around every control.
+function isFreeRoom(cfg: RoomFlags): boolean {
+  const callin = cfg.joinStream?.enabled !== false
+  const holler = cfg.letters?.enabled === true
+  if (!callin && !holler) return false
+  const callinFree = !callin || !(parseFloat(String(cfg.passkeyTickPrice ?? '1')) > 0)
+  const hollerFree = !holler || !(parseFloat(String(cfg.letters?.price ?? '0')) > 0)
+  return callinFree && hollerFree
+}
+
 // What this room offers, in the room bar. The script owns the room config and
 // announces it with `stream:room`, the config itself as the event's detail, so
 // this reads it instead of fetching the same thing a second (and, with the
 // wallet provider's, a third) time (audit web-37).
 function RoomFeatureTags() {
   const [kinds, setKinds] = useState<RoomFeature[]>([])
+  const [free, setFree] = useState(false)
 
   useEffect(() => {
     const load = (e: Event) => {
       const cfg = (e as CustomEvent<RoomFlags | null>).detail
-      if (cfg) setKinds(roomFeatures(cfg))
+      if (!cfg) return
+      setKinds(roomFeatures(cfg))
+      setFree(isFreeRoom(cfg))
     }
     window.addEventListener('stream:room', load)
     return () => window.removeEventListener('stream:room', load)
@@ -64,7 +80,42 @@ function RoomFeatureTags() {
     <span className="join-room-features">
       <span className="sr-only">This room offers: </span>
       {kinds.map((k) => <FeatureTag key={k} kind={k} />)}
+      {free ? <span className="join-free-tag">Free room</span> : null}
     </span>
+  )
+}
+
+// A link that names no room (owner's pick vr-unknown-room): the console gives
+// way to this card. The script hides the console and sends `room:notfound`.
+function RoomNotFound() {
+  const [shown, setShown] = useState(false)
+  const [code, setCode] = useState('')
+  const [bad, setBad] = useState(false)
+  useEffect(() => {
+    const on = () => setShown(true)
+    window.addEventListener('room:notfound', on)
+    return () => window.removeEventListener('room:notfound', on)
+  }, [])
+  if (!shown) return null
+  const go = (e: FormEvent) => {
+    e.preventDefault()
+    const c = code.trim().replace(/^@/, '')
+    if (!/^[a-z0-9_-]{1,32}$/i.test(c)) { setBad(true); return }
+    window.location.href = `/join?room=${encodeURIComponent(c.toLowerCase())}`
+  }
+  return (
+    <section className="join-notfound" aria-labelledby="joinNotFoundTitle">
+      <h2 id="joinNotFoundTitle">No room at this link</h2>
+      <a href="/app" className="mcj-action join-notfound-browse flex w-full items-center justify-center gap-2 px-6 py-3.5 text-[14px] font-bold">Browse live rooms</a>
+      <form className="join-notfound-form" onSubmit={go} noValidate>
+        <label htmlFor="joinRoomCode" className="lbl">Have a room code?</label>
+        <div>
+          <input id="joinRoomCode" type="text" autoComplete="off" spellCheck={false} value={code} onChange={(e) => { setCode(e.target.value); setBad(false) }} aria-invalid={bad || undefined} aria-describedby={bad ? 'joinRoomCodeError' : undefined} />
+          <button type="submit" className={miniBtn}>Open</button>
+        </div>
+        {bad ? <p id="joinRoomCodeError" className="join-notfound-error" role="alert">A room code is letters, numbers, - and _.</p> : null}
+      </form>
+    </section>
   )
 }
 
@@ -171,7 +222,6 @@ export function JoinClient() {
         <strong id="joinRoomName">Loading room...</strong>
         <RoomFeatureTags />
         <RoomLiveness />
-        <span>Your camera stays private until you confirm.</span>
       </div>
 
       <div className="join-layout">
@@ -219,22 +269,6 @@ export function JoinClient() {
               </div>
               <div className="stream-preview-caption">
                 <span id="streamPreviewLabel" className="stream-preview-label">Stream preview · slight delay</span>
-                <span id="streamPreviewDrops" className="stream-preview-drops" style={{ display: 'none' }}>
-                  Watching earns rewards in this room
-                </span>
-              </div>
-              {/* Opened in place by the hint's "Add payout wallet" (join-page.ts
-                  initRewardsClient): the account's payout wallet, saved through
-                  POST /api/account/payout-wallet. */}
-              <div id="payoutSheet" className="payout-sheet" hidden>
-                <p className="payout-sheet-title">Where should this room pay you?</p>
-                <button id="payoutUseHoller" type="button" className={miniBtn} hidden>Use my Holler wallet</button>
-                <form id="payoutForm" className="payout-form" noValidate>
-                  <input id="payoutAddress" type="text" autoComplete="off" spellCheck={false} placeholder="Paste an address (0x…)" aria-label="Payout wallet address" />
-                  <button id="payoutSave" type="submit" className={miniBtn}>Save</button>
-                </form>
-                <p id="payoutResult" className="payout-result" aria-live="polite" />
-                <button id="payoutClose" type="button" className="payout-close">Cancel</button>
               </div>
               {/* An offline room plays the replay of its last broadcast here, and
                   these jump to its moments (join-page.ts mountReplay). */}
@@ -257,20 +291,45 @@ export function JoinClient() {
 
         <aside className="join-action-console">
           <div className="join-console-body">
+            {/* Watch-to-earn on its own line at the top (owner's picks
+                rw-earned-in-seat-meter, rw-hint-hidden, rw-pause-silent): the
+                terms, this viewer's state and balance, and the one step that
+                starts earning. Hidden in rooms that do not reward watching;
+                join-page.ts renderRewardsLine fills it. */}
+            <section id="rewardsLine" className="join-rewards-line" aria-label="Watch to earn" hidden>
+              <p className="join-rewards-text">
+                <span className="join-rewards-tag">Watch to earn</span>
+                <span id="rewardsState" aria-live="polite" />
+                <button id="rewardsSignIn" type="button" className="payout-open" hidden>Sign in to start</button>
+                <button id="rewardsPayoutBtn" type="button" className="payout-open" aria-controls="payoutSheet" hidden>Add payout wallet</button>
+              </p>
+              {/* Opened in place by "Add payout wallet": the account's payout
+                  wallet, saved through POST /api/account/payout-wallet. */}
+              <div id="payoutSheet" className="payout-sheet" hidden>
+                <p className="payout-sheet-title">Where should this room pay you?</p>
+                <button id="payoutUseHoller" type="button" className={miniBtn} hidden>Use my Holler wallet</button>
+                <form id="payoutForm" className="payout-form" noValidate>
+                  <input id="payoutAddress" type="text" autoComplete="off" spellCheck={false} placeholder="Paste an address (0x…)" aria-label="Payout wallet address" />
+                  <button id="payoutSave" type="submit" className={miniBtn}>Save</button>
+                </form>
+                <p id="payoutResult" className="payout-result" aria-live="polite" />
+                <button id="payoutClose" type="button" className="payout-close">Cancel</button>
+              </div>
+              <div id="rewardsMessage" className="join-message" aria-live="polite" />
+            </section>
+
+            {/* The seat's meter: on screen only while a seat is held. */}
             <div id="meter" className="join-meter">
               <div><span>Remaining</span><strong id="meterRemaining">—</strong></div>
               <div><span>Spent</span><strong id="meterSpent">$0</strong></div>
               <div><span>Time left</span><strong id="meterTime">—</strong></div>
-              <div id="earnedRow" style={{ display: 'none' }}>
-                <span>Earned</span><strong id="rewardsEarned">0</strong>
-              </div>
             </div>
 
             <section className="join-identity-zone">
               <label htmlFor="username" className="lbl">Display name</label>
               {/* No sign-in button here: the header chip signs in, and Send,
                   Call in and Add funds ask for it the moment they need it. */}
-              <input type="text" id="username" autoComplete="off" maxLength={20} enterKeyHint="done" />
+              <input type="text" id="username" autoComplete="off" maxLength={25} enterKeyHint="done" />
               <div id="walletInfo" />
               <div id="passkeyFundNote" style={{ display: 'none' }} />
               <div className="join-wallet-row">
@@ -289,6 +348,8 @@ export function JoinClient() {
               </button>
               <div id="letterStage" className="letter-stage" style={{ display: 'none' }}>
                 <div className="cam-frame letter-frame dark"><video id="letterVideo" playsInline muted /></div>
+                {/* The review step: shown with Send (join-page.ts letterButtons). */}
+                <StingerPicker id="letter" />
                 <div id="letterControls" className="letter-controls">
                   <button id="letterRecordBtn" type="button" className={ghostBtn}>Record</button>
                   <button id="letterRedoBtn" type="button" className={ghostBtn} style={{ display: 'none' }}>Re-record</button>
@@ -321,43 +382,21 @@ export function JoinClient() {
                   </div>
                   <iframe id="camDetector" title="Publish detector" className="cam-detector" allow="autoplay" />
                 </div>
-                <button id="joinBtn" type="button" className={dopamineBtn}>🎬 Call in</button>
+                <button id="joinBtn" type="button" className={dopamineBtn}>Call in</button>
               </div>
+              {/* After Call in, before Go Live (join-page.ts setJoinState). */}
+              <StingerPicker id="seat" />
               <button id="camRetryBtn" type="button" className={ghostBtn}>Retry camera</button>
               <div id="camHint" />
               {/* A seat's results, under Call in. */}
               <div id="seatMessage" className="join-message" data-feature="callin" aria-live="polite" />
-              <p className="join-trust-line">Leave anytime. Every unused cent returns automatically.</p>
+              {/* Hidden where the seat costs nothing (join-page.ts). */}
+              <p id="seatTrustLine" className="join-trust-line">Leave anytime. Every unused cent returns automatically.</p>
             </section>
-
-            <details className="join-advanced">
-              <summary>Advanced — on-stream entrance &amp; exit</summary>
-              <div className="join-stinger-grid">
-                <label className="lbl">Fly-in stinger
-                  <select id="flyInSelect" defaultValue="" className="stinger-select">
-                    <option value="">Default — pulse blip</option>
-                    <option value="storm">Storm — lightning reveal</option>
-                    <option value="proroll">Pro Roll — clean wipe</option>
-                    <option value="callme">Call Me — beeper pop</option>
-                    <option value="breaking">Breaking News — banner slam</option>
-                    <option value="wildin">Wild Card — glitch materialize</option>
-                  </select>
-                </label>
-                <label className="lbl">Fly-out stinger
-                  <select id="flyOutSelect" defaultValue="" className="stinger-select">
-                    <option value="">Default — CRT off</option>
-                    <option value="crt">CRT Off — deluxe scanline</option>
-                    <option value="crumble">Crumble — collapse down</option>
-                    <option value="zapped">Zapped — electro glitch</option>
-                    <option value="wildout">Wild Card — signal lost</option>
-                  </select>
-                </label>
-                <StingerPreview />
-              </div>
-            </details>
 
             <div id="message" className="join-message" aria-live="polite" />
           </div>
+          <RoomNotFound />
         </aside>
       </div>
     </div>

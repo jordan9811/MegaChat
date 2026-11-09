@@ -17,6 +17,16 @@ const WAITING = 'border-f-bounty-line bg-f-bounty-bg text-f-bounty-ink'
 const REVIEWING = 'border-hl-strap-hi/50 bg-hl-strap/10 text-foreground'
 const GOOD = 'border-f-rewards-line bg-f-rewards-bg text-f-rewards-ink'
 
+// The unit is printed on every amount: this page is the fan's only receipt.
+const UNIT = 'USDC'
+
+/** "Nov 14", with the year only when it is not this year. */
+function shortDate(ms: number): string {
+  const d = new Date(ms)
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return d.toLocaleDateString('en-US', sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 const STATE_LABEL: Record<string, { label: string; cls: string }> = {
   // Real money: before the wallet funds the pledge, nothing is charged.
   unfunded: { label: 'Not funded', cls: WAITING },
@@ -75,7 +85,7 @@ export function MyPledges({ initialMe: _ignored }: { initialMe?: string }) {
 
       {needsAuth ? (
         <div>
-          <button type="button" className="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-bold text-primary-foreground transition-transform active:scale-[.97]" onClick={openSignIn}>Sign in to see your Hollers</button>
+          <button type="button" className="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-bold text-primary-foreground transition-transform active:scale-[.97]" onClick={openSignIn}>Sign in to see My bounties</button>
         </div>
       ) : null}
       {error ? <p className="text-sm text-hl-danger">{error}</p> : null}
@@ -91,23 +101,24 @@ export function MyPledges({ initialMe: _ignored }: { initialMe?: string }) {
           {rows.map((r) => {
             const s = STATE_LABEL[r.state] || { label: r.state, cls: 'border-border text-muted-foreground' }
             return (
-              <li key={r.pledgeId} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold ${s.cls}`}>{s.label}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-bold text-foreground">
-                    <span className="text-f-bounty-ink">{r.amount}</span> → {r.targets.map((t) => t.split(':')[1]).join(' / ')}
-                    {r.targets.length > 1 && r.winner ? ` (won by ${r.winner.split(':')[1]})` : ''}
-                  </span>
-                  <span className="block text-xs text-muted-foreground">
-                    {r.next}
-                    {r.refund === 'paid' ? ' Refund sent.' : r.refund === 'pending' ? ' Refund on its way.' : r.refund === 'failed' ? ' The refund transfer failed; a person is on it.' : ''}
-                  </span>
+              // At 480px and under each row stacks (UX sweep bo-mine-row):
+              // amount and streamer, then status and expiry, then what
+              // happens next. The streamer's name is never cut.
+              <li key={r.pledgeId}
+                className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 px-4 py-3 [grid-template-areas:'title_title'_'pill_meta'_'next_next'] min-[481px]:grid-cols-[auto_minmax(0,1fr)_auto] min-[481px]:gap-y-0.5 min-[481px]:[grid-template-areas:'pill_title_meta'_'pill_next_meta']">
+                <span className={`justify-self-start rounded-full border px-2.5 py-1 text-[10px] font-bold [grid-area:pill] ${s.cls}`}>{s.label}</span>
+                <span className="break-words text-sm font-bold text-foreground [grid-area:title]">
+                  <span className="text-f-bounty-ink tabular">{r.amount} {UNIT}</span> → {r.targets.map((t) => t.split(':')[1]).join(' / ')}
+                  {r.targets.length > 1 && r.winner ? ` (won by ${r.winner.split(':')[1]})` : ''}
                 </span>
-                {r.pledgeStatus === 'OPEN' ? (
-                  <span className="shrink-0 text-[10px] text-muted-foreground">
-                    expires {new Date(r.expiresAt).toLocaleDateString()}
-                  </span>
-                ) : null}
+                <span className="text-xs text-muted-foreground [grid-area:next]">
+                  {r.next}
+                  {r.refund === 'paid' ? ' Refund sent.' : r.refund === 'pending' ? ' Refund on its way.' : r.refund === 'failed' ? ' The refund transfer failed; a person is on it.' : ''}
+                </span>
+                <span className="text-[11px] text-muted-foreground [grid-area:meta] min-[481px]:text-right">
+                  {r.pledgeStatus === 'OPEN' ? `expires ${shortDate(r.expiresAt)}` : null}
+                  {r.from ? <span className="block">from {r.from}</span> : null}
+                </span>
               </li>
             )
           })}

@@ -27,7 +27,10 @@ const browser = await puppeteer.launch({
   headless: 'new',
 });
 const page = await browser.newPage();
-await page.setViewport({ width: 800, height: 700 });
+// The overlay lays out in canvas units since 2026-11-09 (ov-source-size): a
+// 320×180 tile is 320×180 on the 1920-wide canvas it is designed for, and
+// scales with any other source width (_gate-overlay-r3.mjs measures that).
+await page.setViewport({ width: 1920, height: 1080 });
 page.on('pageerror', (e) => bad('page exception: ' + e.message));
 await page.goto(`http://localhost:${PORT}/overlay?room=default`, { waitUntil: 'networkidle2', timeout: 30000 });
 await sleep(800);

@@ -142,6 +142,27 @@ console.log('\n── Gate: bounty real money ───────────�
 console.log(`   scratch ${SCRATCH}`);
 
 try {
+  // ── A0: the amount is one plain decimal (UX sweep bo-amount-parse) ────────
+  // The old check was parseFloat(amount) > 0, which read "1,000" as 1 and
+  // stored the string: the ledger booked 1, My bounties printed "1,000", and
+  // on real money the wallet step refused the string only AFTER the pledge
+  // was written. Old and new are run side by side on the same inputs.
+  {
+    const oldAccepts = (a) => parseFloat(a) > 0;
+    ok('A0. DISCRIMINATES: the old check accepted "1,000" (reading it as 1); the new one refuses it',
+      oldAccepts('1,000') === true && parseFloat('1,000') === 1 && escrow.isCanonicalAmount('1,000') === false);
+    const junk = ['1,000', '$5', '5 USDC', '1e3', ' 5', '05', '5.', '.5', '0', '-5', '1.1234567', '', null, 1e21];
+    ok('A0. every non-plain amount is refused: "$5", "5 USDC", "1e3", padding, leading zeros, a trailing ".", zero, 7 places',
+      junk.every((a) => !escrow.isCanonicalAmount(a)), JSON.stringify(junk.filter((a) => escrow.isCanonicalAmount(a))));
+    ok('A0. ...and plain decimals still pass, under both checks', ['5', '12.5', '0.5', '100', '0.000001'].every((a) => oldAccepts(a) && escrow.isCanonicalAmount(a)));
+    const pledgesBefore = store.listPledges().length;
+    const ledgerBefore = store.listLedger().length;
+    let threw = null;
+    try { pledgeFor('bm-a0', '1,000') } catch (e) { threw = e.message }
+    ok('A0. escrow.pledge("1,000") throws before ANY write: no pledge, no contribution, no ledger row, no reserved handle',
+      threw === escrow.AMOUNT_ERROR && store.listPledges().length === pledgesBefore && store.listLedger().length === ledgerBefore && !store.getReservedHandleByKey(store.handleKey('twitch', 'bm-a0')), threw);
+  }
+
   // ── A1: real mode — a pledge is UNFUNDED and counts nowhere ───────────────
   {
     const door = doorAt('a1');
@@ -488,6 +509,20 @@ try {
       .then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
     const cfg = await call('GET', '/api/bounty/config', undefined, null);
     ok('B. /api/bounty/config says real money, funding open, and names the spender a wallet approves', cfg.body.money?.mode === 'real' && cfg.body.money.fundingOpen === true && String(cfg.body.money.spender).toLowerCase() === spender.toLowerCase() && cfg.body.fundingEnabled === true, JSON.stringify(cfg.body.money));
+    // UX sweep bo-amount-parse, on the live real-money path: "1,000" used to
+    // write an UNFUNDED pledge and THEN fail at the wallet step (token-utils
+    // toAtomic), leaving a pledge that could never fund on the fan's list.
+    const mineBefore = await call('GET', '/api/bounty/my');
+    const badAmounts = {};
+    for (const a of ['1,000', '$5', '5 USDC', '1e3']) {
+      const r = await call('POST', '/api/bounty/pledge', { targets: [{ platform: 'twitch', handle: 'bmbadamt' }], contributor: 'Gate', amount: a, expiresInMs: 400 });
+      badAmounts[a] = `${r.status} ${r.body.reason || ''}`.trim();
+    }
+    const mineAfter = await call('GET', '/api/bounty/my');
+    const badPool = await call('GET', '/api/bounty/pool-view?platform=twitch&handle=bmbadamt', undefined, null);
+    ok('B. "1,000", "$5", "5 USDC", "1e3" → 400 bad_amount BEFORE any write: My bounties unchanged, no pool reserved, nothing sent',
+      Object.values(badAmounts).every((v) => v === '400 bad_amount') && (mineAfter.body.contributions || []).length === (mineBefore.body.contributions || []).length && badPool.body.reserved == null && st.sends === 0,
+      JSON.stringify(badAmounts));
     const pl = await call('POST', '/api/bounty/pledge', { targets: [{ platform: 'twitch', handle: 'bmtarget' }], contributor: 'Gate', amount: '5', expiresInMs: 400 });
     ok('B. POST /pledge → UNFUNDED, requiresFunding, and the approval ask (spender, holder, EIP-712 terms)',
       pl.status === 200 && pl.body.requiresFunding === true && pl.body.pledge?.status === 'UNFUNDED' && pl.body.funding?.needsApproval?.sign?.primaryType === 'Pledge' && pl.body.funding.needsApproval.holder === PLATFORM, `${pl.status} ${JSON.stringify(pl.body.funding?.needsApproval?.sign?.message)}`);

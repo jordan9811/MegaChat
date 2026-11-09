@@ -1040,6 +1040,29 @@ function generateVDORoom(username) {
   };
 }
 
+/** A socket whose subscribe named no room (ov-link-mistakes). Never a room id: '#' fails normalizeRoomId. */
+const NO_ROOM = '#no-room';
+
+/**
+ * What the room's overlay says about itself (overlay_env over the socket):
+ * its canvas size and whether its bounty badge is too small to read. The
+ * keyed overlay's report wins over an unkeyed one; null with no overlay.
+ */
+function overlayEnvFor(streamRoomId) {
+  let best = null;
+  let overlays = 0;
+  for (const client of wss.clients) {
+    if (client.readyState !== 1 || client.__role !== 'overlay') continue;
+    if ((client.__streamRoomId || DEFAULT_ROOM_ID) !== streamRoomId) continue;
+    overlays++;
+    const env = client.__overlayEnv;
+    if (!env) continue;
+    const rank = client.__overlayAuthed === true ? 1 : 0;
+    if (!best || rank > best.rank || (rank === best.rank && env.at > best.env.at)) best = { rank, env };
+  }
+  return { overlays, env: best ? { width: best.env.width, height: best.env.height, badgeTooSmall: best.env.badgeTooSmall } : null };
+}
+
 /** Is at least one overlay (OBS browser source) rendering this room? */
 function hasOverlay(streamRoomId) {
   const target = streamRoomId || DEFAULT_ROOM_ID;
@@ -1237,6 +1260,43 @@ function payingSeatCount(roomId) {
   return n;
 }
 
+/**
+ * ONE TILE COUNT (ov-seat-dropped, 2026-11-09). A Holler on screen takes a
+ * tile exactly as a seat does, so it counts against Call in admission. This
+ * counted paying seats only: with the last tile showing a Holler the server
+ * still admitted a Call in, the overlay had no tile to draw it in, and the
+ * guest was billed by the second for a broadcast that never showed them. The
+ * other half lives in letters.js: a seat still waiting to go live holds its
+ * tile against the Holler queue. letters.js wires the real count at attach;
+ * until then (or with letters off) no Holler can be playing.
+ */
+let hollerTilesFor = () => 0;
+function paidTilesHeld(roomId) {
+  return payingSeatCount(roomId) + hollerTilesFor(roomId);
+}
+
+/**
+ * The same count, asked at the DOOR of every paid join route: before credit
+ * is consumed, before the wallet is asked for an allowance, before a balance
+ * is read. addParticipant asks again (the race between the two is a Holler
+ * starting mid-join, and there it still refuses before any tick is charged).
+ * Returns null when there is a tile, else the 409 to send.
+ */
+function callInTileRefusal(roomId, cfg) {
+  if (paidTilesHeld(roomId) < cfg.maxSeats) return null;
+  const holler = hollerTilesFor(roomId) > 0;
+  return {
+    error: 'No seats available',
+    reason: 'no_seats_available',
+    // The join page shows `hint` ahead of `error`.
+    hint: holler
+      ? 'A Holler is playing in the last tile. Try again when it ends. Nothing was charged.'
+      : 'Every tile is taken right now. Nothing was charged.',
+    hollerOnScreen: holler,
+    roomId,
+  };
+}
+
 function sendInitialState(ws) {
   const roomId = ws.__streamRoomId || DEFAULT_ROOM_ID;
   ws.send(JSON.stringify({
@@ -1285,14 +1345,16 @@ function addParticipant(username, meta = {}) {
   // A seat that ARRIVES pinned (whitelisted guest) is exempt from the cap for
   // the same reason: it never takes a chair a paying viewer could have sat in,
   // so admitting it cannot bump or delay anyone who paid.
-  if (!meta.pinned && payingSeatCount(streamRoomId) >= roomCfg.maxSeats) {
+  // One tile count: a Holler on screen holds a tile too (see paidTilesHeld).
+  if (!meta.pinned && paidTilesHeld(streamRoomId) >= roomCfg.maxSeats) {
     return { success: false, reason: 'no_seats_available' };
   }
   // A guest rides on top of the cap, but not past the ceiling: admitting an
   // 11th publisher the grid cannot place would put them on the bill and not on
   // the screen, which is the exact failure the raise exists to prevent.
   if (meta.pinned) {
-    const roomTotal = [...activeSeats.values()].filter((s) => s.streamRoomId === streamRoomId).length;
+    const roomTotal = [...activeSeats.values()].filter((s) => s.streamRoomId === streamRoomId).length
+      + hollerTilesFor(streamRoomId);
     if (roomTotal >= MAX_EFFECTIVE_SEATS) {
       return { success: false, reason: 'room_at_ceiling' };
     }
@@ -1761,7 +1823,32 @@ wss.on('connection', (ws, req) => {
         // subscribe, so a key never carries over to another room.
         ws.__overlayAuthed = msg.role === 'overlay' && overlayKeyMatches(roomId, msg.k);
         sendInitialState(ws);
+      } else {
+        // ov-link-mistakes: a link that names no room (a typo, an ended room)
+        // subscribes to NOTHING. Every socket starts on the default room, so
+        // leaving it there made an ended room's OBS source quietly render the
+        // public test room's Hollers. NO_ROOM matches no broadcast target.
+        ws.__streamRoomId = NO_ROOM;
+        ws.__role = undefined;
+        ws.__overlayAuthed = false;
+        ws.__overlayEnv = null;
       }
+      return;
+    }
+
+    // The overlay's own size and badge report (ov-source-size,
+    // ov-too-small-on-air): what the dashboard's OBS card and overlay health
+    // card show the streamer. Self-reported diagnostics only; nothing gates on
+    // it. Only from a socket that subscribed as a room's overlay.
+    if (msg.type === 'overlay_env') {
+      if (ws.__role !== 'overlay') return;
+      const px = (v) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(16384, Math.round(Number(v)))) : 0);
+      ws.__overlayEnv = {
+        width: px(msg.width),
+        height: px(msg.height),
+        badgeTooSmall: msg.badgeTooSmall === true ? true : msg.badgeTooSmall === false ? false : null,
+        at: Date.now(),
+      };
       return;
     }
 
@@ -1797,6 +1884,13 @@ wss.on('connection', (ws, req) => {
         }
       }
     } else if (msg.type === 'camera_ready' && typeof msg.seatId === 'string') {
+      // The entrance/exit can now be picked in the camera stage, after the seat
+      // was granted: Go Live carries the final choice (null = default).
+      const pending = activeSeats.get(msg.seatId);
+      if (pending && !pending.live) {
+        if ('flyIn' in msg) pending.flyIn = sanitizeStinger(msg.flyIn, FLY_IN_STINGERS);
+        if ('flyOut' in msg) pending.flyOut = sanitizeStinger(msg.flyOut, FLY_OUT_STINGERS);
+      }
       activateSeatLive(msg.seatId, ws);
     }
   });
@@ -2382,6 +2476,9 @@ try {
     // overlay connected, at the start of the play and at its end.
     hasAuthedOverlay,
     activeSeats,
+    // One tile count: the overlay draws up to THIS many tiles (configured
+    // seats plus whitelisted guests), so a Holler airs only into one of them.
+    tileCap: (roomId, cfg) => effectiveMaxSeats(roomId, cfg?.maxSeats ?? 3),
     sellerAddress: SELLER_WALLET_ADDRESS,
     settlement,
     getWatchSeconds: (roomId, wallet) =>
@@ -2410,6 +2507,8 @@ try {
       return !hiddenWindows(roomId).some((w) => w.startedAt <= to && (w.endedAt == null || w.endedAt >= from));
     },
   });
+  // One tile count: Call in admission sees the Holler on screen (paidTilesHeld).
+  if (typeof lettersApi.hollerTiles === 'function') hollerTilesFor = lettersApi.hollerTiles;
   // PASS C PART 3a — a BANKED clip replays through the letters queue, as a
   // synthetic already-paid letter whose id is the clip id, so the watermark
   // window opens through the one door it can open through. Only when the
@@ -2449,6 +2548,55 @@ app.get('/', (req, res, next) => {
 app.get('/overlay', (req, res) => {
   res.set('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
+});
+
+/**
+ * The room's overlay, as it describes itself (overlay_env): how many are
+ * connected, the source size, and whether the bounty badge is too small. The
+ * dashboard's OBS card says "OBS source is 800×600" from this, and the health
+ * card raises "Your overlay is too small to be read". Public on purpose, like
+ * liveness: a canvas size and one flag, nothing a stranger can use.
+ */
+app.get('/api/rooms/:roomId/overlay-env', (req, res) => {
+  const roomId = normalizeRoomId(req.params.roomId);
+  if (!roomId || !resolveRoomConfig(roomId)) return res.status(404).json({ error: 'No such room' });
+  res.set('Cache-Control', 'no-store');
+  res.json({ roomId, ...overlayEnvFor(roomId) });
+});
+
+/**
+ * "Send a test Holler" (ov-no-test-tile). The overlay draws a 5-second sample
+ * Holler and two sample seat tiles labelled "Test", in the slots real ones
+ * take, plus the bounty badge where that source carries one. Nothing here
+ * touches a seat, a letter, a meter, an airing or a campaign: it is one
+ * broadcast message, so it is unpaid and never counted by construction.
+ *
+ * Who may: the room's owner or password (the dashboard's usual pair), or a
+ * caller holding the room's overlay key, which only the manager's overlay
+ * link carries. Refused while a real guest or Holler is on screen, so a test
+ * can never sit on top of somebody who paid.
+ */
+const OVERLAY_TEST_MS = 5000;
+const overlayTestAt = new Map();
+app.post('/api/rooms/:roomId/overlay-test', async (req, res) => {
+  const roomId = normalizeRoomId(req.params.roomId);
+  if (!roomId || !resolveRoomConfig(roomId)) return res.status(404).json({ error: 'No such room' });
+  const access = await verifyRoomAccess(req, roomId);
+  if (!access.ok && !overlayKeyMatches(roomId, req.body?.k)) return res.status(401).json({ error: 'Unauthorized' });
+  if (!hasOverlay(roomId)) {
+    return res.status(409).json({ error: 'OBS isn’t showing the overlay yet', reason: 'no_overlay' });
+  }
+  const onScreen = [...activeSeats.values()].some((s) => s.streamRoomId === roomId) || hollerTilesFor(roomId) > 0;
+  if (onScreen) {
+    return res.status(409).json({ error: 'A guest or a Holler is on screen. Test when the tiles are clear.', reason: 'tiles_busy' });
+  }
+  const last = overlayTestAt.get(roomId) || 0;
+  if (Date.now() - last < OVERLAY_TEST_MS + 1500) {
+    return res.status(429).json({ error: 'A test is already playing', reason: 'test_running' });
+  }
+  overlayTestAt.set(roomId, Date.now());
+  broadcastToRoom(roomId, { type: 'overlay_test', ms: OVERLAY_TEST_MS });
+  res.json({ ok: true, ms: OVERLAY_TEST_MS, overlays: overlayEnvFor(roomId).overlays });
 });
 
 function schedulePendingCameraTimeout(seatId) {
@@ -2573,6 +2721,12 @@ app.post('/api/join/passkey', async (req, res) => {
     {
       const gate = checkFeatureGates(cfg, joinStreamGatesFor(cfg), address);
       if (gate.blocked) return res.status(gate.status).json(gate.body);
+    }
+    // One tile count, at the door: refused here, before the terms ask the
+    // wallet for an allowance and before any earned credit is consumed.
+    {
+      const full = callInTileRefusal(roomId, cfg);
+      if (full) return res.status(409).json(full);
     }
 
     const rw = cfg.rewards;
@@ -2981,6 +3135,11 @@ app.post('/api/join/mpp', async (req, res) => {
     if (!cfg.active) {
       return res.status(403).json({ error: 'Room is not accepting joins', reason: 'room_stopped', roomId });
     }
+    // One tile count, at the door: before the balance read and the session.
+    {
+      const full = callInTileRefusal(roomId, cfg);
+      if (full) return res.status(409).json(full);
+    }
 
     // FREE rooms (tick price 0): no wallet, no balance, no channel — the seat
     // is simply granted. Liveness comes from the control WS / LiveKit
@@ -3272,7 +3431,8 @@ app.get('/api/seats', (req, res) => {
     // `available` answers "can I get a seat", which is a question only a PAYER
     // asks — guests never occupy one. Counting them against the configured cap
     // is what made a room with a guest report negative availability.
-    available: Math.max(0, configured - payingSeatCount(roomId)),
+    // A Holler on screen holds a tile too (one tile count, paidTilesHeld).
+    available: Math.max(0, configured - paidTilesHeld(roomId)),
     // `maxSeats` answers "how many tiles are on screen", which rises with them.
     maxSeats: effectiveMaxSeats(roomId, configured),
     configuredMaxSeats: configured
@@ -4142,6 +4302,8 @@ attachVisibilityRoutes(app);
 attachCampaignRoutes(app, campaignEngine, {
   // A payout wallet just set also pays this account's OWED bounty releases.
   onPayoutWallet: (accountId) => { if (process.env.BOUNTY_FUNDING === '1') bountyMoney.payAccount(accountId); },
+  // The account page's Rewards section (GET /api/account/rewards): read-only.
+  rewardsFor: (accountId) => rewardsSvc?.summaryFor?.(accountId) || null,
 });
 
 await migrateLegacyRoomPasswords();
@@ -4343,7 +4505,15 @@ app.get('/:handle', (req, res, next) => {
 });
 app.get('/:handle/overlay', (req, res, next) => {
   const room = handleRoom(req);
-  if (!room) return next();
+  if (!room) {
+    // ov-link-mistakes: never the site's 404 on a broadcast. An OBS source
+    // whose handle no longer names a room (End room freed it, or a typo) gets
+    // the transparent overlay with no room, which subscribes to nothing and
+    // draws nothing. Only handle-shaped names; anything else falls through.
+    if (!/^[a-z0-9_]{1,32}$/i.test(req.params.handle)) return next();
+    res.set('Cache-Control', 'no-cache');
+    return res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
+  }
   // The overlay key (N14) rides through the pretty link: /<handle>/overlay?k=…
   const k = typeof req.query.k === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(req.query.k) ? req.query.k : '';
   res.redirect(302, `/overlay?room=${room.id}${k ? `&k=${k}` : ''}`);

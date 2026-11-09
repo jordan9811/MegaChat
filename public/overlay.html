@@ -12,6 +12,17 @@
       --neon-lime: oklch(0.88 0.22 128);
       --neon-cyan: oklch(0.8 0.14 200);
       --noir-ink: rgba(10, 7, 18, 0.78);
+      /* The hold card's colour (ov-no-fallback). The rule below always named
+         it, and it was never defined, so the "designed" hold painted nothing
+         and a late seat aired as an empty frame. Call in ultramarine. */
+      --neon-violet: #2f2ad8;
+      /* Holler pink, for a clip tile still loading its first frame. */
+      --holler-pink: #ff2d78;
+      /* CANVAS UNITS (ov-source-size). The layout is designed on a 1920-wide
+         canvas; JS sets this to innerWidth / 1920 so every tile, gap, margin
+         and name chip lands where the dashboard preview drew it at any 16:9
+         source size. The bounty badge deliberately does NOT use it. */
+      --u: 1;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -77,18 +88,19 @@
       z-index: 5;
     }
 
-    /* Pinned co-host badge — top-left, quiet lime chip. */
+    /* Pinned co-host badge — top-left, quiet lime chip. The same size as the
+       name chip (ov-name-chip): at 10px it was about 2 pt on a phone. */
     .pin-badge {
       position: absolute;
-      top: 8px;
-      left: 8px;
+      top: calc(8px * var(--u));
+      left: calc(8px * var(--u));
       background: var(--noir-ink);
       color: var(--neon-lime);
       border: 1px solid color-mix(in oklab, var(--neon-lime) 55%, transparent);
       border-radius: 4px;
-      padding: 3px 8px;
-      font: 700 10px/1 'Space Grotesk', Arial, sans-serif;
-      letter-spacing: 0.1em;
+      padding: calc(5px * var(--u)) calc(10px * var(--u));
+      font: 700 calc(24px * var(--u))/1 'Space Grotesk', Arial, sans-serif;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
       z-index: 10;
       pointer-events: none;
@@ -96,29 +108,30 @@
     }
     .tile.pinned .pin-badge { display: block; }
 
-    /* Name chip: noir glass slab with a magenta accent bar and a whisper of
-       chromatic aberration on the text — MegaChat glitch energy, kept quiet. */
+    /* Name chip: noir glass slab with a magenta accent bar. SIZED FOR THE
+       STREAM, not the monitor (ov-name-chip): 24px on a 1080p canvas (16px at
+       720p), so about 5 pt on an upright phone where 12px was 2.5 pt. The
+       viewer's own casing, and no colour-fringe shadow: at stream sizes the
+       fringes ran the letters together. An over-long name still ends in an
+       ellipsis inside the tile. */
     .username-label {
       position: absolute;
-      bottom: 8px;
-      left: 8px;
+      bottom: calc(8px * var(--u));
+      left: calc(8px * var(--u));
       background: var(--noir-ink);
       color: #f4f2fa;
-      padding: 4px 10px 4px 12px;
+      padding: calc(5px * var(--u)) calc(12px * var(--u)) calc(5px * var(--u)) calc(12px * var(--u));
       border-radius: 4px;
       border-left: 3px solid var(--neon-magenta);
       clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
       font-family: 'Space Grotesk', Arial, sans-serif;
       font-weight: 700;
-      font-size: 12px;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      text-shadow:
-        1px 0 color-mix(in oklab, var(--neon-cyan) 55%, transparent),
-        -1px 0 color-mix(in oklab, var(--neon-magenta) 45%, transparent);
+      font-size: calc(24px * var(--u));
+      line-height: 1.15;
+      letter-spacing: 0.01em;
       z-index: 10;
       pointer-events: none;
-      max-width: calc(100% - 16px);
+      max-width: calc(100% - 16px * var(--u));
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -174,17 +187,29 @@
        only transition on this path. A fade here would stack two transitions
        and read as a stutter at the wipe edge. */
     .tile > video.lk-revealed { opacity: 1; }
-    /* Hold state: a faint branded breath on the frame so a late track reads as
-       intentional rather than broken. Only ever visible if the stinger
-       finished before the track landed. */
-    .tile.lk-holding::after {
-      content: '';
+    /* Hold state (ov-no-fallback): a DESIGNED card, never an empty frame. A
+       seat whose video has not landed shows solid Call in ultramarine with
+       "Connecting" and a slow pulse; the name chip sits on top of it as on
+       any tile. It used to be a gradient on a token nobody defined, so what
+       aired was a hairline border around the game. A Holler still loading
+       its first frame gets the same card in Holler pink instead of #000. */
+    .tile.lk-holding::after,
+    .tile.clip-holding::after {
+      content: 'Connecting';
       position: absolute; inset: 0;
-      background: radial-gradient(120% 120% at 50% 40%,
-        color-mix(in oklab, var(--neon-violet) 22%, transparent), transparent 70%);
-      animation: lk-hold-breath 1.6s ease-in-out infinite alternate;
+      display: flex; align-items: center; justify-content: center;
+      padding-bottom: calc(28px * var(--u));
+      background: var(--neon-violet);
+      color: #ffffff;
+      font: 700 calc(22px * var(--u))/1 'Space Grotesk', Arial, sans-serif;
+      letter-spacing: 0.02em;
+      animation: hold-pulse 1.8s ease-in-out infinite alternate;
       pointer-events: none; z-index: 1;
     }
+    .tile.clip-holding::after { content: 'Loading'; background: var(--holler-pink); }
+    /* The pulse moves brightness, not opacity: the card stays solid, so the
+       game never shows through a tile that is meant to be there. */
+    @keyframes hold-pulse { from { filter: brightness(.86); } to { filter: brightness(1.12); } }
     @keyframes lk-hold-breath { from { opacity: .35; } to { opacity: .7; } }
     /* NON-ENTRY only (reconnect / track restart / camera toggle). Never
        attached to a first entry — that path belongs to the stinger. */
@@ -242,11 +267,16 @@
       color: var(--neon-lime);
     }
     #bounty-matrix { display: block; image-rendering: pixelated; }
-    /* the text span is only the too-small warning now — the code itself is
-       the dot-matrix canvas above */
+    /* The text span carries the code only in the legacy (no matrix lib)
+       fallback below. It used to carry "BADGE TOO SMALL — NOT EARNING" too,
+       on the broadcast, where the audience read it and the streamer could
+       not (ov-too-small-on-air): that warning now lives on the dashboard. */
     #bounty-badge .bb-code { display: none; }
-    #bounty-badge.too-small .bb-code { display: inline; }
-    #bounty-badge.too-small #bounty-matrix { display: none; }
+    /* MEASURE ONLY (ov-too-small-locks). While the server holds the
+       too-small flag there is no code to draw, but the overlay still has to
+       measure the box a code WILL take, or a fixed source could never clear
+       the flag. Laid out exactly as a code would be, painted nothing. */
+    #bounty-badge.measure-only { visibility: hidden; }
     /* MATRIX LIB MISSING. The fallback wrote the code into .bb-code, which is
        display:none outside .too-small — so a failed code-matrix.cjs rendered a
        badge with NO readable code and an unsized 300x150 canvas (162px tall,
@@ -263,15 +293,21 @@
       color: #ffffff;
       text-shadow: none;              /* nothing that could smear under encode */
     }
-    /* Streamer-facing warning. Shown only in the OBS preview sense — it is
-       intentionally legible, because a silent failure here costs them money. */
-    #bounty-badge.too-small {
-      border-left-color: var(--neon-magenta);
+
+    /* ── "Send a test Holler" (ov-no-test-tile) ─────────────────────────────
+       Sample tiles drawn in the real slots for a few seconds. Designed cards,
+       never media that could fail: a seat is a Call in card, the Holler a
+       short animated clip drawn on a canvas. */
+    .tile .test-card {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      padding-bottom: calc(28px * var(--u));
+      color: #ffffff;
+      font: 700 calc(22px * var(--u))/1 'Space Grotesk', Arial, sans-serif;
+      letter-spacing: 0.02em;
     }
-    #bounty-badge.too-small .bb-code {
-      font-size: 13px;
-      color: var(--neon-magenta);
-    }
+    .tile .test-card.seat { background: radial-gradient(120% 120% at 30% 20%, #4a45f0, var(--neon-violet) 60%); }
+    .tile canvas.test-clip { display: block; width: 100%; height: 100%; }
 
     /* IN 1 — STORM: cloud bank rolls over, double lightning strike reveals. */
     .tile.in-storm { animation: stormReveal 1400ms ease-out both; }
@@ -369,7 +405,7 @@
       top: 38%; height: 24%;
       display: flex; align-items: center; justify-content: center;
       background: linear-gradient(90deg, var(--neon-magenta), oklch(0.55 0.24 25));
-      color: #fff; font: 700 13px/1 'Space Grotesk', sans-serif;
+      color: #fff; font: 700 calc(13px * var(--u))/1 'Space Grotesk', sans-serif;
       letter-spacing: .18em; text-transform: uppercase;
       transform: translateX(-120%) skewX(-12deg);
       box-shadow: 0 0 18px rgba(0,0,0,.5);
@@ -501,9 +537,28 @@
       tile: { w: 320, h: 180, gap: 12 },
       clip: { follow: true, w: 320, h: 180, origin: 'top-left', margin: 20 },
     };
-    const TILE_W = () => layout.tile.w;
-    const TILE_H = () => layout.tile.h;
-    const GAP = () => layout.tile.gap;
+    /**
+     * CANVAS UNITS (ov-source-size). The layout is stored in pixels of a
+     * 1920×1080 canvas and the dashboard previews it that way, but these
+     * pixels were applied to whatever size the browser source was: on a 720p
+     * source each tile was 25% of the frame instead of 16.7%, and at OBS's
+     * 800×600 default the "top right" stack landed across the left-centre of
+     * the game. Tiles, gap, margin and name chip now scale by innerWidth ÷
+     * 1920, so any 16:9 source matches the preview. A source that is not
+     * 16:9 is reported (overlay_env) and the OBS card names it. The bounty
+     * badge keeps its pixel size: its legibility floor is measured in pixels.
+     */
+    const DESIGN_W = 1920;
+    let S = 1;
+    function updateScale() {
+      const w = window.innerWidth || DESIGN_W;
+      S = w / DESIGN_W;
+      document.documentElement.style.setProperty('--u', String(S));
+    }
+    updateScale();
+    const TILE_W = () => layout.tile.w * S;
+    const TILE_H = () => layout.tile.h * S;
+    const GAP = () => layout.tile.gap * S;
     /* The badge's inset from whichever corner it takes. Matches the 16px the
        CSS rule used when the corner was hard-coded, and is the same number
        rooms-store.js reserves for it when refusing a colliding layout — keep
@@ -530,11 +585,16 @@
     const CRT_MS = 460;    // CHANGE 5 leave animation duration
     const JOIN_MS = 700;   // CHANGE 4 join animation duration
 
-    let streamRoomId = 'default';
+    // NEVER FALL BACK (ov-link-mistakes). A link with no room used to join
+    // room "default", the public test room, so any Holler sent there played on
+    // this streamer's broadcast. No room now means no room: no socket, no
+    // LiveKit, nothing drawn. An unknown room subscribes to nothing either
+    // (the server answers with silence and leaves the socket on no room).
+    let streamRoomId = null;
     try {
       const q = new URLSearchParams(location.search).get('room');
       if (q && /^[a-z0-9-]{1,32}$/i.test(q)) streamRoomId = q.toLowerCase();
-    } catch { /* default */ }
+    } catch { /* no room */ }
     // The room's overlay key (`&k=`, OPEN-ISSUES N14), from the URL the
     // dashboard hands out. Sent back in subscribe_room; without it the overlay
     // renders exactly as before, it just cannot make a campaign Holler count.
@@ -545,10 +605,36 @@
     } catch { /* unkeyed */ }
 
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${wsProto}//${location.host}`);
+    const ws = streamRoomId ? new WebSocket(`${wsProto}//${location.host}`) : null;
+    if (!streamRoomId) console.warn('[overlay] this link names no room — drawing nothing. Re-copy the overlay link from your dashboard.');
+    // Tiles are drawn only once the server has confirmed THIS room
+    // (initial_state). A socket whose room is unknown hears nothing at all.
+    let subscribed = false;
     const stage = document.getElementById('stage');
     stage.style.width = TILE_W() + 'px';
+    applyStageAnchor(); // margin in canvas units before the first layout lands
     const videoBoxes = new Map(); // seatId -> tile element (insertion order)
+
+    /**
+     * The overlay's own report to the dashboard (overlay_env): its canvas
+     * size, which the OBS card checks for 16:9 (ov-source-size), and whether
+     * its bounty badge is too small to read, which the health card shows the
+     * STREAMER instead of airing it (ov-too-small-on-air). Sent on change.
+     */
+    let envBadgeTooSmall = null;
+    let lastEnvSent = '';
+    function sendEnv() {
+      if (!ws || ws.readyState !== 1 || !subscribed) return;
+      const env = { type: 'overlay_env', width: window.innerWidth || 0, height: window.innerHeight || 0, badgeTooSmall: envBadgeTooSmall };
+      const key = JSON.stringify(env);
+      if (key === lastEnvSent) return;
+      lastEnvSent = key;
+      try { ws.send(key); } catch { lastEnvSent = ''; }
+    }
+    function setBadgeTooSmall(v) {
+      envBadgeTooSmall = v;
+      sendEnv();
+    }
 
     // Build a direct vdo.ninja VIEW url for OBS overlay tiles.
     //
@@ -606,8 +692,10 @@
         // retry fast (vdo.ninja ignores params it doesn't know).
         'buffer=300',
         'retrytimeout=2000',
-        `viewwidth=${TILE_W}`,
-        `viewheight=${TILE_H}`,
+        // Called, not interpolated: `${TILE_W}` put the arrow function's
+        // source text into the URL.
+        `viewwidth=${Math.round(TILE_W())}`,
+        `viewheight=${Math.round(TILE_H())}`,
         `css=${encodeURIComponent(css)}`,
       ].join('&');
       // Plain direct view — intentionally NO &scene (mixer layout breaks overlay).
@@ -752,6 +840,7 @@
     }
 
     async function initLivekitOverlay() {
+      if (!streamRoomId) { transportResolved(); return; } // no room: nothing to connect to
       try {
         const cfg = await (await fetch(`/api/config?room=${encodeURIComponent(streamRoomId)}`)).json();
         sfxEnabled = cfg.stingerSounds !== false; // room master toggle
@@ -1157,28 +1246,87 @@
        * is decided. This check exists so an honest streamer catches a
        * misconfiguration in OBS instead of discovering it in an unpaid bounty.
        */
+      /**
+       * THE TEXT FALLBACK HAS ITS OWN FLOOR (ov-too-small-on-air). The 3%
+       * ratio floor is set for the dot-matrix badge (a 64px box). When
+       * code-matrix.cjs fails to load, the code is drawn as text in a box
+       * about 28px tall, which measured 2.6% at a CORRECT 1920×1080 source:
+       * the overlay told the server it was too small and codes stopped, on a
+       * source nobody needed to fix. The text's ratio floor is scaled by
+       * 28/64, so both forms trip at the same canvas height (about 2133px,
+       * i.e. a 4K source) and never at 1080p. The pixel floor is unchanged.
+       */
+      const MATRIX_BOX_PX = 64;
+      const LEGACY_BOX_PX = 28;
       function checkSize() {
         const r = badge.getBoundingClientRect();
         const h = r.height;
         const canvasH = window.innerHeight || 1;
         const minPx = (window.__bountyCfg && window.__bountyCfg.badgeMinHeightPx) || 18;
-        const minRatio = (window.__bountyCfg && window.__bountyCfg.badgeMinHeightRatio) || 0.03;
+        const baseRatio = (window.__bountyCfg && window.__bountyCfg.badgeMinHeightRatio) || 0.03;
+        const legacy = badge.classList.contains('legacy-code');
+        const minRatio = legacy ? baseRatio * (LEGACY_BOX_PX / MATRIX_BOX_PX) : baseRatio;
         const tooSmall = h < minPx || (h / canvasH) < minRatio;
-        return { tooSmall, height: +h.toFixed(1), canvasH, ratio: +(h / canvasH).toFixed(4) };
+        return { tooSmall, height: +h.toFixed(1), canvasH, ratio: +(h / canvasH).toFixed(4), form: legacy ? 'text' : 'matrix' };
       }
 
-      async function report(tooSmall, detail) {
-        if (reportedTooSmall === tooSmall) return; // only on change
+      async function report(tooSmall, detail, { force = false } = {}) {
+        if (!force && reportedTooSmall === tooSmall) return; // only on change
         reportedTooSmall = tooSmall;
         try {
-          if (!resolvedSessionId) return;
+          if (!resolvedSessionId) { reportedTooSmall = null; return; } // unreported — next measure retries
           await fetch(keyed(`/api/bounty/air-session/${encodeURIComponent(resolvedSessionId)}/badge`), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tooSmall, detail }),
           });
-        } catch { /* next poll retries */ }
+        } catch { reportedTooSmall = null; /* next poll retries */ }
       }
+
+      /**
+       * Draw a code into the badge: the dot matrix, or the text fallback when
+       * the matrix library did not load. Used for a real code, for the box a
+       * code would take while the server holds the flag (measure-only), and
+       * for the test Holler's sample.
+       */
+      function drawCode(code) {
+        const mtx = document.getElementById('bounty-matrix');
+        // DOT=4 -> 28px glyphs at 1080p, ~12.4px after a 480p downscale —
+        // right at the verifier's pixel floor, which is deliberate: the
+        // corpus measures exactly where legibility dies.
+        if (mtx && window.MCCodeMatrix) {
+          badge.classList.remove('legacy-code');
+          codeEl.textContent = '';
+          window.MCCodeMatrix.drawMatrix(mtx.getContext('2d'), code, 4);
+        } else {
+          // Matrix lib failed to load. The text needs its own class to be
+          // visible at all — .bb-code is display:none by default — and the
+          // class also hides the unsized canvas so the badge keeps a bounded
+          // box. Without it this branch rendered nothing readable.
+          badge.classList.add('legacy-code');
+          codeEl.textContent = code;
+        }
+      }
+
+      // The test Holler's sample badge (ov-no-test-tile): shown where the
+      // badge airs, for the test's length, unless a real code is up.
+      // A real code arriving cancels the sample (sampleToken moves on), so
+      // the sample's own timer can never hide a real code.
+      let sampleToken = 0;
+      let sampleOn = false;
+      window.__bountySample = (ms) => {
+        if (badge.classList.contains('show') && !badge.classList.contains('measure-only')) return;
+        const token = ++sampleToken;
+        sampleOn = true;
+        drawCode('00-TEST');
+        badge.classList.remove('measure-only');
+        badge.classList.add('show');
+        setTimeout(() => {
+          if (token !== sampleToken) return;
+          sampleOn = false;
+          badge.classList.remove('show');
+        }, ms);
+      };
 
       /**
        * T2 — the overlay describing its own render ENVIRONMENT, as distinct
@@ -1236,7 +1384,7 @@
         void reportEnv();
         try {
           const res = await fetch(codeUrl());
-          if (!res.ok) { badge.classList.remove('show'); return; }
+          if (!res.ok) { if (!sampleOn) badge.classList.remove('show', 'measure-only'); return; }
           const data = await res.json();
           consecutiveFailures = 0;
           if (data.rotateMs) rotateMs = data.rotateMs;
@@ -1250,38 +1398,48 @@
             // the normal case — NO CLIP IS PLAYING. Codes only exist during
             // clip playback, so a parked overlay legitimately shows nothing
             // and earns nothing.
-            codeEl.textContent = data.badgeTooSmall ? 'BADGE TOO SMALL — NOT EARNING' : '';
-            badge.classList.toggle('too-small', !!data.badgeTooSmall);
-            badge.classList.toggle('show', !!data.badgeTooSmall);
+            if (sampleOn) return; // the test Holler's sample owns the badge for now
+            if (!data.badgeTooSmall) {
+              badge.classList.remove('show', 'measure-only');
+              setBadgeTooSmall(false); // the server holds no flag
+              return;
+            }
+            /**
+             * FLAGGED: MEASURE THE CODE'S BOX, NOT THE WARNING
+             * (ov-too-small-locks). The server issues no code while its flag
+             * is set and clears it only on tooSmall: false. This used to
+             * measure only after drawing a code (halted) or on a resize,
+             * which then measured the 25px WARNING TEXT, so fixing the
+             * source never cleared the flag: no code for the rest of the
+             * stream. Now every poll lays out the box a code would take
+             * (same form, same length, painted nothing), measures it, and
+             * says tooSmall: false the moment it passes. Codes resume on
+             * the next poll. Nothing is drawn on air while flagged.
+             */
+            drawCode('00-0000');
+            badge.classList.add('show', 'measure-only');
+            setBadgeTooSmall(true);
+            requestAnimationFrame(() => {
+              const size = checkSize();
+              if (!size.tooSmall) void report(false, { ...size, measured: 'code-box' }, { force: true });
+              else void report(true, { ...size, measured: 'code-box' });
+            });
             return;
           }
 
-          badge.classList.remove('too-small');
+          sampleToken++; // a real code cancels any test sample
+          sampleOn = false;
+          badge.classList.remove('measure-only');
           badge.classList.add('show');
-          codeEl.textContent = '';
-          // DOT=4 -> 28px glyphs at 1080p, ~12.4px after a 480p downscale —
-          // right at the verifier's pixel floor, which is deliberate: the
-          // corpus measures exactly where legibility dies.
-          const mtx = document.getElementById('bounty-matrix');
-          if (mtx && window.MCCodeMatrix) {
-            badge.classList.remove('legacy-code');
-            window.MCCodeMatrix.drawMatrix(mtx.getContext('2d'), data.code, 4);
-          } else {
-            // Matrix lib failed to load. The text needs its own class to be
-            // visible at all — .bb-code is display:none by default — and the
-            // class also hides the unsized canvas so the badge keeps a bounded
-            // box. Without it this branch rendered nothing readable.
-            badge.classList.add('legacy-code');
-            codeEl.textContent = data.code;
-          }
+          drawCode(data.code);
 
-          // Measure AFTER paint so the rect reflects the rendered code.
+          // Measure AFTER paint so the rect reflects the rendered code. The
+          // code stays on screen either way: the verifier decides what it is
+          // worth, and the warning is the dashboard's to show, not the
+          // audience's (ov-too-small-on-air).
           requestAnimationFrame(() => {
             const size = checkSize();
-            if (size.tooSmall) {
-              codeEl.textContent = 'BADGE TOO SMALL — NOT EARNING';
-              badge.classList.add('too-small');
-            }
+            setBadgeTooSmall(size.tooSmall);
             void report(size.tooSmall, size);
           });
         } catch {
@@ -1352,15 +1510,22 @@
           armPolling();
           window.addEventListener('resize', () => {
             requestAnimationFrame(() => {
-              const s = checkSize();
-              void report(s.tooSmall, s);
+              // Only a badge that is laid out can be measured: a hidden one
+              // (no clip playing) measures 0px and would report "too small"
+              // for a source that is fine. The test sample is not a real code.
+              if (badge.classList.contains('show') && !sampleOn) {
+                const s = checkSize();
+                const flagged = badge.classList.contains('measure-only');
+                setBadgeTooSmall(s.tooSmall);
+                void report(s.tooSmall, s, { force: flagged && !s.tooSmall });
+              }
               void reportEnv(); // the canvas itself changed — that is the point
             });
           });
         });
     })();
 
-    ws.onopen = () => {
+    if (ws) ws.onopen = () => {
       console.log('Overlay connected to server');
       if (ws.readyState === 1) {
         // role:'overlay' — MegaChats only play while an overlay is rendering
@@ -1369,15 +1534,20 @@
       }
     };
 
-    ws.onmessage = (event) => {
+    if (ws) ws.onmessage = (event) => {
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
+      // Nothing is drawn until the server confirms THIS room (ov-link-mistakes).
+      if (!subscribed && msg.type !== 'initial_state') return;
       switch (msg.type) {
         // Lazy connect: the server decides when we hold a LiveKit connection.
         case 'lk_activity':
           applyDesired(msg.state === 'wake' ? 'wake' : 'sleep', msg.reason || 'ws');
           break;
         case 'initial_state':
+          if (msg.room && msg.room !== streamRoomId) return;
+          subscribed = true;
+          sendEnv();
           // Adopt the cap BEFORE drawing — otherwise the first paint uses the
           // pre-message default and drops tiles it is about to be told it can
           // render.
@@ -1385,6 +1555,9 @@
           applyLayout(msg.layout);
           // Server only sends seats that are already live (camera approved).
           msg.seats.forEach(seat => addVideoBox(seat));
+          break;
+        case 'overlay_test':
+          runOverlayTest(msg.ms);
           break;
         case 'seat_added':
           // Same order, same reason: this message is how a guest raises it.
@@ -1429,6 +1602,7 @@
     function addVideoBox(seat) {
       if (!transportKnown) { pendingSeats.push(seat); return; }
       if (videoBoxes.has(seat.id)) return;
+      clearTestTiles(); // a real guest always beats a test tile to the slot
       if (liveCount() >= maxSeats) return; // cap is the server's, not a literal
 
       const fin = FLY_INS[seat.flyIn] || null;
@@ -1520,6 +1694,7 @@
     function addLetterBox(letter) {
       const key = 'letter:' + letter.id;
       if (videoBoxes.has(key)) return;
+      clearTestTiles(); // a real Holler always beats a test tile to the slot
       if (liveCount() >= maxSeats) return; // server schedules around this; belt+braces
 
       const fin = FLY_INS[letter.flyIn] || null;
@@ -1536,9 +1711,20 @@
       video.autoplay = true;
       video.playsInline = true;
       video.style.cssText = 'width:100%;height:100%;object-fit:cover;background:#000;';
-      // When the clip finishes early (or stalls), fly out without waiting for
-      // the server's letter_end.
+      // Until the first frame plays, the tile is the designed Holler card
+      // rather than a black box (ov-no-fallback).
+      box.classList.add('clip-holding');
+      video.addEventListener('playing', () => box.classList.remove('clip-holding'));
+      // When the clip finishes early, fails, or stalls, fly out without
+      // waiting for the server's letter_end. Only 'ended' was wired, so a clip
+      // whose media 404ed or would not decode sat on the broadcast as a black
+      // box until letter_end: 12.6 s for a 10 s clip.
       video.addEventListener('ended', () => removeVideoBox(key));
+      video.addEventListener('error', () => {
+        console.warn(`[overlay] Holler ${letter.id} could not play (${video.error ? video.error.code : '?'}) — flying it out`);
+        removeVideoBox(key);
+      });
+      watchClipStall(video, box, key);
 
       const flash = document.createElement('div');
       flash.className = 'crt-flash';
@@ -1564,6 +1750,138 @@
       const inCls = fin ? fin.cls : 'joining';
       setTimeout(() => box.classList.remove(inCls), fin ? fin.ms : JOIN_MS);
     }
+
+    /**
+     * A clip that stops moving for CLIP_STALL_MS flies out (ov-no-fallback):
+     * the code comment always promised "or stalls" and nothing listened for
+     * it. Counted from insertion, so a clip that never starts is caught too.
+     */
+    const CLIP_STALL_MS = 3000;
+    function watchClipStall(video, box, key) {
+      let lastT = -1;
+      let movedAt = Date.now();
+      const timer = setInterval(() => {
+        if (!box.isConnected || box.classList.contains('leaving') || video.ended) { clearInterval(timer); return; }
+        if (video.currentTime !== lastT) { lastT = video.currentTime; movedAt = Date.now(); return; }
+        if (!video.paused || video.readyState < 3) {
+          if (Date.now() - movedAt >= CLIP_STALL_MS) {
+            clearInterval(timer);
+            console.warn(`[overlay] ${key} stalled ${CLIP_STALL_MS} ms — flying it out`);
+            removeVideoBox(key);
+          }
+        } else {
+          movedAt = Date.now();
+        }
+      }, 250);
+    }
+
+    // ─── "Send a test Holler" (ov-no-test-tile) ─────────────────────────────
+    // The dashboard's OBS card asks the server, the server broadcasts
+    // overlay_test, and this draws a sample Holler plus up to two sample
+    // seats labelled "Test" in the real slots (never more tiles than the room
+    // can draw), and the bounty badge where this source carries one. Nothing
+    // here is a seat or a letter: no meter, no queue, no count.
+    const TEST_PREFIX = 'test:';
+    function clearTestTiles() {
+      let any = false;
+      for (const [key, box] of [...videoBoxes.entries()]) {
+        if (!key.startsWith(TEST_PREFIX)) continue;
+        box.remove();
+        videoBoxes.delete(key);
+        any = true;
+      }
+      if (any) relayout();
+    }
+    function drawTestClip(canvas, ms) {
+      const ctx = canvas.getContext('2d');
+      const t0 = performance.now();
+      const frame = (now) => {
+        if (!canvas.isConnected) return;
+        const t = (now - t0) / 1000;
+        const w = canvas.width, h = canvas.height;
+        const g = ctx.createLinearGradient(0, 0, w, h);
+        g.addColorStop(0, '#ff2d78');
+        g.addColorStop(1, '#2f2ad8');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+        // A moving level meter: unmistakably a clip, never a frozen frame.
+        const bars = 14, bw = w / (bars * 1.6);
+        ctx.fillStyle = 'rgba(255,255,255,.92)';
+        for (let i = 0; i < bars; i++) {
+          const v = 0.25 + 0.6 * Math.abs(Math.sin(t * 3.1 + i * 0.7) * Math.cos(t * 1.7 + i * 0.3));
+          const bh = v * h * 0.5;
+          ctx.fillRect(w * 0.12 + i * bw * 1.6, (h - bh) / 2 - h * 0.06, bw, bh);
+        }
+        // Progress along the bottom edge, for the clip's length.
+        ctx.fillStyle = 'rgba(255,255,255,.55)';
+        ctx.fillRect(0, h - 4, w * Math.min(1, (now - t0) / ms), 4);
+        requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    }
+    function addTestTile(key, kind, labelText, ms) {
+      const box = document.createElement('div');
+      box.className = 'tile joining';
+      box.dataset.seatId = key;
+      box.dataset.flyOut = '';
+      box.style.width = TILE_W() + 'px';
+      box.style.height = TILE_H() + 'px';
+      placeBox(box, liveCount());
+      let content;
+      if (kind === 'holler') {
+        content = document.createElement('canvas');
+        content.className = 'test-clip';
+        content.width = Math.max(64, Math.round(TILE_W()));
+        content.height = Math.max(36, Math.round(TILE_H()));
+        drawTestClip(content, ms);
+      } else {
+        content = document.createElement('div');
+        content.className = 'test-card seat';
+        content.textContent = 'Call in';
+      }
+      const label = document.createElement('div');
+      label.className = 'username-label';
+      label.textContent = labelText;
+      const flash = document.createElement('div');
+      flash.className = 'crt-flash';
+      box.appendChild(content);
+      box.appendChild(flash);
+      box.appendChild(label);
+      stage.appendChild(box);
+      videoBoxes.set(key, box);
+      setTimeout(() => box.classList.remove('joining'), JOIN_MS);
+    }
+    function runOverlayTest(ms) {
+      const dur = Math.max(1000, Math.min(15000, Number(ms) || 5000));
+      if (liveCount() > 0) return; // never over a real tile (the server checks too)
+      const plan = [
+        { kind: 'holler', label: '📼 Test Holler' },
+        { kind: 'seat', label: 'Test' },
+        { kind: 'seat', label: 'Test' },
+      ].slice(0, Math.max(1, maxSeats));
+      const keys = plan.map((p, i) => {
+        const key = TEST_PREFIX + Date.now() + ':' + i;
+        addTestTile(key, p.kind, p.label, dur);
+        return key;
+      });
+      relayout();
+      playStinger('in', 'default');
+      if (typeof window.__bountySample === 'function') window.__bountySample(dur);
+      setTimeout(() => keys.forEach((k) => removeVideoBox(k)), dur);
+    }
+
+    // A resized source re-lays the tiles in canvas units (ov-source-size) and
+    // tells the dashboard its new size.
+    window.addEventListener('resize', () => {
+      updateScale();
+      applyStageAnchor();
+      for (const box of videoBoxes.values()) {
+        box.style.width = TILE_W() + 'px';
+        box.style.height = TILE_H() + 'px';
+      }
+      relayout();
+      sendEnv();
+    });
 
     function removeVideoBox(seatId) {
       lkTileEls.delete('seat:' + seatId);
@@ -1630,7 +1948,7 @@
      * undefined on the flat object resolveRoomConfig returns).
      */
     function applyStageAnchor() {
-      const m = layout.margin + 'px';
+      const m = (layout.margin * S) + 'px'; // canvas units, like the tiles
       const vert = isVertical();
       // 'auto', not '' — clearing an inline value falls back to the #stage rule,
       // which still pins top:20px/right:20px, so a bottom-anchored row kept its
@@ -1732,6 +2050,10 @@
       // measuring the geometry AT THE CEILING has to raise it the same way a
       // whitelisted guest does, without standing up ten real seats.
       setMaxSeats: (n) => { maxSeats = n; },
+      // The OBS card's "Send a test Holler", without the socket round trip.
+      runTest: (ms) => runOverlayTest(ms),
+      addLetter: (letter) => addLetterBox(letter),
+      scale: () => S,
       // Hard reset, bypassing the leave animation: an animating tile keeps its
       // .tile class for 300ms and would be measured as a live one.
       clear: () => { for (const b of videoBoxes.values()) b.remove(); videoBoxes.clear(); relayout(); },
@@ -1862,11 +2184,13 @@
       } catch { /* audio is purely best-effort */ }
     }
 
-    ws.onerror = (err) => console.error('WebSocket error:', err);
-    ws.onclose = () => {
-      console.log('Disconnected from server, reconnecting...');
-      setTimeout(() => location.reload(), 3000);
-    };
+    if (ws) {
+      ws.onerror = (err) => console.error('WebSocket error:', err);
+      ws.onclose = () => {
+        console.log('Disconnected from server, reconnecting...');
+        setTimeout(() => location.reload(), 3000);
+      };
+    }
   </script>
 </body>
 </html>

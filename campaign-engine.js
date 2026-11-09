@@ -150,8 +150,34 @@ export const DEFAULT_X_CHECK_SHARE = 0.2;
 export const campaignFeeTokens = () => new Set(String(process.env.CAMPAIGN_FEE_TOKENS || '').split(/[\s,;]+/).filter(Boolean).map((a) => a.toLowerCase()));
 export const customTokenAllowed = (address) => campaignFeeTokens().has(String(address || '').toLowerCase());
 
+/**
+ * PLACES FOLLOW THE MONEY (ca-budget-places, 2026-11-09). A campaign offers
+ * floor(budget ÷ reward) places, or the creator's optional cap when that is
+ * lower: never more than the budget pays. A campaign used to store the
+ * creator's maxClaims as typed, so $100 at $10 with max claims 20 promised
+ * "20 of 20 left" on the public page and turned the 11th claimant away as
+ * "budget spent". `maxClaims` on a stored campaign is now always the places
+ * offered (≤ budget ÷ reward); `claimCap` is the cap as the creator set it
+ * (null = the budget decides). A campaign stored before this reads its old
+ * maxClaims as the cap (capOf), and every reader goes through placesOf, so an
+ * old campaign promises no more than its budget either.
+ */
+export const MAX_PLACES = 100_000;
+/** The creator's cap: claimCap when set (null = none), else a pre-2026-11-09 campaign's maxClaims. */
+export const capOf = (c) => (!c ? null : c.claimCap !== undefined ? c.claimCap : (Number(c.maxClaims) > 0 ? Number(c.maxClaims) : null));
+/** Places offered for a reward and budget (atomic) and an optional cap: min(cap, floor(budget ÷ reward)), at least 1 when the budget covers a reward. */
+export function placesFor(rewardAtomic, budgetAtomic, cap = null) {
+  const r = BigInt(rewardAtomic || 0);
+  const b = BigInt(budgetAtomic || 0);
+  if (r <= 0n) return 0;
+  const affordable = b / r > BigInt(MAX_PLACES) ? MAX_PLACES : Number(b / r);
+  return cap != null && cap < affordable ? cap : affordable;
+}
+/** What a stored campaign offers, whatever it stored. */
+export const placesOf = (c) => placesFor(c?.reward?.atomic, c?.budget?.atomic, capOf(c));
+
 /** Statuses that hold a slot (count toward maxClaims and the budget). */
-export const ACTIVE = new Set(['recorded', 'approved', 'aired', 'joined', 'owed', 'releasing', 'paid', 'failed']);
+export const ACTIVE =new Set(['recorded', 'approved', 'aired', 'joined', 'owed', 'releasing', 'paid', 'failed']);
 /** Reached the action but not yet owed. */
 const IN_FLIGHT = new Set(['recorded', 'approved', 'aired', 'joined']);
 const RANK = {
@@ -423,8 +449,18 @@ export function createCampaignEngine({
       if (!s) throw fail('invalid', `Reference set ${sid} does not exist.`);
       if (!isAdmin && s.createdBy !== accountId) throw fail('invalid', 'You can only use reference sets you built.', 403);
     }
-    const maxClaims = Math.max(1, Math.min(100_000, Math.floor(Number(input.maxClaims ?? existing?.maxClaims) || 0)));
-    if (!maxClaims) throw fail('invalid', 'maxClaims must be at least 1.');
+    // maxClaims, as the creator sends it, is an OPTIONAL cap below what the
+    // budget pays (ca-budget-places). Blank (null, '', 0) = the budget
+    // decides; absent on an edit = keep the stored cap. The number of places
+    // offered is computed once the money is known (placesFor), never stored
+    // above floor(budget ÷ reward).
+    const capIn = 'maxClaims' in input ? input.maxClaims : capOf(existing);
+    let claimCap = null;
+    if (capIn != null && capIn !== '' && Number(capIn) !== 0) {
+      const n = Math.floor(Number(capIn));
+      if (!Number.isFinite(n) || n < 1) throw fail('invalid', 'Max claims must be at least 1, or blank to let the budget decide.');
+      claimCap = Math.min(MAX_PLACES, n);
+    }
     // A deadline is required, in the future, and at most MAX_DEADLINE_DAYS out:
     // a campaign with no end holds a creator's budget (and the refund) forever.
     let deadline = input.deadline ?? existing?.deadline ?? null;
@@ -434,7 +470,7 @@ export function createCampaignEngine({
     if (dt <= now()) throw fail('invalid', 'The deadline is in the past.');
     if (dt > now() + MAX_DEADLINE_DAYS * DAY) throw fail('invalid', `The deadline can be at most ${MAX_DEADLINE_DAYS} days away.`);
     deadline = new Date(dt).toISOString();
-    return { title, blurb, action: { kind, roomHandle, require, ...(minSeconds ? { minSeconds } : {}) }, rules, maxClaims, deadline };
+    return { title, blurb, action: { kind, roomHandle, require, ...(minSeconds ? { minSeconds } : {}) }, rules, claimCap, deadline };
   }
 
   /** {address, symbol, decimals} for a Tempo ERC-20, read on chain once and cached. */
@@ -508,6 +544,7 @@ export function createCampaignEngine({
     const at = new Date(now()).toISOString();
     const c = {
       id: `cmp_${randomUUID().replace(/-/g, '').slice(0, 14)}`, slug, ...d,
+      maxClaims: placesFor(a.reward.atomic, a.budget.atomic, d.claimCap),
       reward: { type, ...a.reward }, budget: a.budget, token,
       status: 'draft', hidden: false, creatorAccountId: accountId,
       funding: null, fundingAttempts: 0, xCostAtomic: '0', refund: null,
@@ -570,6 +607,9 @@ export function createCampaignEngine({
       // draft edited to match an approve someone else sent).
       if (!sameAddr(token?.address, c.token?.address) || String(a.budget.atomic) !== String(c.budget?.atomic)) next.termsAt = next.updatedAt;
     }
+    // Places follow the money as it now stands (the cap may have changed, or
+    // the reward and budget on a draft).
+    next.maxClaims = placesFor(next.reward.atomic, next.budget.atomic, d.claimCap);
     return store.putCampaign(next);
   }
 
@@ -1027,6 +1067,41 @@ export function createCampaignEngine({
     return store.getCampaign(id);
   }
 
+  /**
+   * A draft no money was ever asked for: no funding on record, no attempt
+   * (fundingAttempts, fundingFailures), no pull at the door under its ref, no
+   * X spend or hold, and no claim. Only such a draft can be deleted.
+   */
+  function neverFunded(c) {
+    if (!c || c.status !== 'draft') return false;
+    if (c.funding || Number(c.fundingAttempts) > 0 || (c.fundingFailures || []).length > 0) return false;
+    if (big(c.xCostAtomic) > 0n || big(c.xCheckAtomic) > 0n || Object.keys(c.xHolds || {}).length > 0) return false;
+    // A door that cannot list intents cannot vouch that nothing was pulled.
+    if (typeof settlement?.intentsFor !== 'function' || settlement.intentsFor(`campaign:fund:${c.id}:`).length > 0) return false;
+    if (store.listClaims(c.id).length > 0) return false;
+    return true;
+  }
+
+  /**
+   * Delete a never-funded draft (ca-draft-close-only). Closing one used to be
+   * its only exit, and that published it: a closed campaign is public, so a
+   * throwaway draft became a page saying the creator ran a paid campaign. The
+   * record goes; the slug stays reserved, so its link is a 404 for good and
+   * never comes back pointing at another campaign. A draft with any funding
+   * on record is refused: it closes, as before.
+   */
+  function deleteDraft(id, { accountId = null, isAdmin = false } = {}) {
+    const c = store.getCampaign(id);
+    if (!c) throw fail('not_found', 'No such campaign.', 404);
+    if (!isAdmin && c.creatorAccountId !== accountId) throw fail('forbidden', 'This is not your campaign.', 403);
+    if (fundingBusy(id, c)) throw fail('funding_in_progress', FUNDING_BUSY_MSG, 409);
+    if (c.status !== 'draft') throw fail('not_draft', 'Only a draft can be deleted. Close this campaign instead.', 409);
+    if (!neverFunded(c)) throw fail('funding_on_record', 'This draft has a funding attempt on record, so it is kept. Close it instead.', 409);
+    store.deleteCampaign(id);
+    store.appendLedger({ kind: 'deleted', campaignId: id, slug: c.slug, by: accountId || 'admin' });
+    return { ok: true, id, slug: c.slug };
+  }
+
   /** The state change of a close, and nothing else: honour what was submitted, expire what was not, write `closed`. */
   function closeNow(id, reason) {
     const c = store.getCampaign(id);
@@ -1311,8 +1386,11 @@ export function createCampaignEngine({
     const t = totals(c.id);
     const held = staleReservation ? big(claim.reservedAtomic) : 0n;
     const countNow = t.activeCount - (staleReservation ? 1 : 0);
-    if (countNow + 1 > c.maxClaims) throw fail('full', 'Every place in this campaign is taken.', 409);
+    // The budget first, then the places (which never exceed what the budget
+    // pays: placesOf), so a campaign whose places are the budget's answers
+    // as it always did when the money runs out.
     if (t.remaining + held < big(c.reward.atomic)) throw fail('budget_spent', 'This campaign\'s budget is spent.', 409);
+    if (countNow + 1 > placesOf(c)) throw fail('full', 'Every place in this campaign is taken.', 409);
     claim.reservedAtomic = c.reward.atomic;
     claim.reservedAt = new Date(now()).toISOString();
     if (claim.status !== 'recorded') history(claim, 'recorded', `${kind} started`);
@@ -1819,14 +1897,40 @@ export function createCampaignEngine({
     return s ? { id: s.id, name: s.name, source: s.source, count: s.count, snapshotAt: s.snapshotAt, root: s.root, version: s.version || 1 } : null;
   }
 
+  const UNOPENED = ['draft', 'funding_pending', 'funded'];
+
   function publicView(slug) {
     const c = store.campaignBySlug(slug);
-    if (!c || c.hidden || ['draft', 'funding_pending', 'funded'].includes(c.status)) return null;
+    if (!c || c.hidden || UNOPENED.includes(c.status)) return null;
+    return offerView(c);
+  }
+
+  /**
+   * The creator's preview of an unopened campaign (ca-draft-link-404): the
+   * same offer the public page will show, as if it opened now with the whole
+   * budget — `preview: true`, and the page disables the claim. Only to the
+   * creator (or an admin); null to anyone else, so the link stays a 404 for
+   * them until the campaign opens.
+   */
+  function ownerPreview(slug, { accountId = null, isAdmin = false } = {}) {
+    const c = store.campaignBySlug(slug);
+    if (!c || !UNOPENED.includes(c.status)) return null;
+    if (!isAdmin && (!accountId || c.creatorAccountId !== accountId)) return null;
+    return { ...offerView(c, { preview: true }), status: 'live', preview: true };
+  }
+
+  function offerView(c, { preview = false } = {}) {
     const t = totals(c.id);
     const sets = {};
     for (const sid of [c.rules.referenceSetId, c.rules.followedByFromSet?.referenceSetId].filter(Boolean)) { const s = store.getSetMeta(sid); if (s) sets[sid] = s; }
     const creator = getAccount(c.creatorAccountId);
-    const remaining = t.remaining > 0n ? t.remaining : 0n;
+    const remaining = preview ? big(c.budget.atomic) : t.remaining > 0n ? t.remaining : 0n;
+    const places = placesOf(c);
+    const reward = big(c.reward.atomic);
+    // Places left: the places not yet held, and never more than what is left
+    // of the budget pays (X lookups spend it too).
+    const affordableLeft = reward > 0n ? Number(remaining / reward > BigInt(MAX_PLACES) ? BigInt(MAX_PLACES) : remaining / reward) : 0;
+    const spotsLeft = preview ? places : Math.max(0, Math.min(places - t.activeCount, affordableLeft));
     return {
       slug: c.slug, title: c.title, blurb: c.blurb, status: isOpen(c) ? 'live' : 'closed',
       creator: creator ? { handle: creator.handle } : null,
@@ -1834,7 +1938,7 @@ export function createCampaignEngine({
       joinUrl: `/join?room=${encodeURIComponent(c.action.roomHandle)}&campaign=${encodeURIComponent(c.slug)}`,
       reward: { type: c.reward.type, amount: c.reward.amount, symbol: moneyToken(c).symbol, tokenAddress: moneyToken(c).address },
       budget: { amount: c.budget.amount, left: fromAtomic(remaining, moneyToken(c).decimals), symbol: moneyToken(c).symbol },
-      maxClaims: c.maxClaims, spotsLeft: Math.max(0, c.maxClaims - t.activeCount),
+      maxClaims: places, spotsLeft,
       deadline: c.deadline,
       rules: describeRules(c.rules, { refSets: sets }),
       referenceSet: setFingerprint(c.rules.referenceSetId),
@@ -1900,16 +2004,23 @@ export function createCampaignEngine({
     for (const k of t.claims) counts[k.status] = (counts[k.status] || 0) + 1;
     const dec = moneyToken(c).decimals;
     const refundRow = c.refund ? (settlement.status(c.refund.ref)?.rows?.[0] || null) : null;
-    // A warning, not a refusal: budget above reward × maxClaims can never all
-    // be paid out; the extra comes back in the refund.
-    const warnings = big(c.budget.atomic) > big(c.reward.atomic) * BigInt(c.maxClaims)
-      ? [`The budget is more than reward × max claims (${fromAtomic(big(c.reward.atomic) * BigInt(c.maxClaims), dec)} ${moneyToken(c).symbol}). The extra can never be paid out; it comes back when the campaign closes.`]
+    // A warning, not a refusal: a cap below what the budget pays leaves budget
+    // that can never be paid out; the extra comes back in the refund.
+    const places = placesOf(c);
+    const warnings = big(c.budget.atomic) > big(c.reward.atomic) * BigInt(places)
+      && big(c.budget.atomic) - big(c.reward.atomic) * BigInt(places) >= big(c.reward.atomic)
+      ? [`The budget is more than reward × max claims (${fromAtomic(big(c.reward.atomic) * BigInt(places), dec)} ${moneyToken(c).symbol}). The extra can never be paid out; it comes back when the campaign closes.`]
       : [];
     const xAppToken = !!xApi.appBearerConfigured?.();
     if (c.rules?.followedByFromSet?.enabled && !xAppToken) warnings.push('This server has no X app token, so "followed by accounts on your list" can only be checked through list members who signed in with X; when none has, every applicant fails that rule.');
     const overlayLink = overlayStateFor(c);
     return {
       ...c,
+      // The places offered (≤ budget ÷ reward) and the creator's cap as set.
+      maxClaims: places,
+      claimCap: capOf(c),
+      // A draft nothing was ever attempted against can be deleted outright.
+      deletable: neverFunded(c),
       warnings,
       // N14: the Holler room's overlay, last 10 minutes. `overlay`:
       // 'keyed' (counts), 'unkeyed' (OBS has the old link: Hollers will not
@@ -1976,10 +2087,12 @@ export function createCampaignEngine({
   let timer = null;
   return {
     store, totals, tokenInfo,
-    createCampaign, updateCampaign, fundTerms, fund, open, close, setHidden,
+    createCampaign, updateCampaign, deleteDraft, fundTerms, fund, open, close, setHidden,
     check, reserve, releaseSlot, bind, advance, tryPay, payAccount, onLetterEvent, onSeatEvent, sync, maybeRefund,
     estimateSet, estimateForCampaign, buildSet, refreshSet, listSets, getSetView, reconcileFunding, resolveStuckFunding,
-    publicView, myClaim, claimView, listManaged, getManaged, manageView, claimsFor,
+    publicView, ownerPreview, myClaim, claimView, listManaged, getManaged, manageView, claimsFor,
+    /** Whether this server can SEND payouts (a platform payout signer at the door). */
+    payoutsEnabled: () => !!settlement?.hasSigner?.('platform'),
     start(ms = 15_000) { if (!timer) { timer = setInterval(() => { try { sync(); } catch (e) { log.warn?.(`[campaigns] sync failed: ${e.message}`); } }, ms); timer.unref?.(); } return this; },
     stop() { clearInterval(timer); timer = null; for (const t of seatTimers.values()) clearTimeout(t); seatTimers.clear(); },
   };

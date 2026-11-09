@@ -112,6 +112,7 @@
     * [2026-09-05 — Guest whitelist](internal/work-history/2026-09-05-guest-whitelist.md)
     * [2026-09-11 → 09-14 — The preview, the booth camera, follow my stream, airings](internal/work-history/2026-09-11-14-follow-and-airings.md)
     * [2026-09-15 → 09-16 — Pass A, Pass B, and the gate history reconciled](internal/work-history/2026-09-15-16-pass-a-and-pass-b.md)
+    * [2026-11-07 → 11-09 — The UX bug bounty and the owner's picks](internal/work-history/2026-11-07-09-ux-bounty.md)
   * [The seat escrow contract](internal/escrow-contract.md)
   * [The account model](internal/account-model.md)
   * [Targeted reward campaigns](internal/campaigns.md)

@@ -10,10 +10,32 @@
 // broadcast. This card is how the streamer sees that BEFORE it happens.
 
 import { useEffect, useState } from 'react'
-import { Radio, CircleAlert, Moon, EyeOff } from 'lucide-react'
+import { Radio, CircleAlert, Moon, EyeOff, Copy, Check } from 'lucide-react'
 import { useRoom } from '@/components/room-provider'
 import { useOverlayVisibility } from '@/components/obs/use-overlay-visibility'
 import { useObsPassword } from '@/components/obs/obs-password'
+import { obsOverlayLink, useOverlayEnv } from '@/components/obs/use-overlay-env'
+
+/**
+ * The one fix the "Overlay not open" card can point to (ov-link-mistakes): a
+ * link that names no room now draws nothing at all instead of the test room
+ * or the site's 404, so a streamer whose OBS source is open but whose card
+ * still says "not open" is holding a wrong or old link.
+ */
+function RecopyOverlayLink({ link }: { link: string | null }) {
+  const [copied, setCopied] = useState(false)
+  if (!link) return null
+  return (
+    <button
+      type="button"
+      onClick={() => { void navigator.clipboard?.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800) }).catch(() => {}) }}
+      className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-input/30 px-3 text-xs font-bold text-foreground"
+    >
+      {copied ? <Check className="size-3.5" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}
+      {copied ? 'Copied — paste it into your OBS browser source' : 'Re-copy overlay link'}
+    </button>
+  )
+}
 
 /** Plain-English cause, in the streamer's terms, not OBS's. */
 const HIDDEN_COPY: Record<string, string> = {
@@ -51,7 +73,11 @@ type Health = {
 const POLL_MS = 5000
 
 export function OverlayHealthCard() {
-  const { room, mode } = useRoom()
+  const { room, mode, overlayUrl } = useRoom()
+  // The overlay's own badge report, for EVERY room (ov-too-small-on-air): the
+  // OBS-WebSocket scene check below only runs where this browser holds the
+  // OBS password, which a manual-setup streamer never gave it.
+  const overlayEnv = useOverlayEnv(room?.id, mode === 'managing')
   const [health, setHealth] = useState<Health | null>(null)
   // The obs-websocket password the one-click flow stored, current as soon as
   // OBS accepts it (obs-password.ts). It never leaves this browser.
@@ -100,7 +126,11 @@ export function OverlayHealthCard() {
   // endpoint has answered — the two failures are unrelated and a streamer
   // whose overlay is buried needs telling either way.
   const hidden = visibility?.signal === 'overlay_hidden'
-  const scaled = visibility?.signal === 'overlay_scaled_below_floor'
+  // Too small: OBS's scene says the source is scaled down, OR the overlay
+  // itself measured its bounty badge under the floor (the warning that used
+  // to air as "BADGE TOO SMALL — NOT EARNING" in front of the audience).
+  const badgeSmall = overlayEnv?.env?.badgeTooSmall === true
+  const scaled = visibility?.signal === 'overlay_scaled_below_floor' || (!hidden && badgeSmall)
   const banner = (hidden || scaled) ? (
     <div
       role="alert"
@@ -117,11 +147,18 @@ export function OverlayHealthCard() {
               OBS says {HIDDEN_COPY[visibility?.reason ?? ''] ?? 'the overlay is not visible'}.
               Guests and Hollers are not reaching your broadcast.
             </>
-          ) : (
+          ) : visibility?.signal === 'overlay_scaled_below_floor' ? (
             <>
               The overlay source is scaled down, which shrinks the verification
               badge with it. A Holler that plays now may not be provable.
               Set the source back to 100%.
+            </>
+          ) : (
+            <>
+              The overlay measured its verification badge too small
+              {overlayEnv?.env?.height ? ` on a ${overlayEnv.env.width}×${overlayEnv.env.height} source` : ''}, so
+              bounty clips are not earning. Set the browser source to your canvas size
+              (1920×1080 is right) at 100%.
             </>
           )}
         </p>
@@ -206,6 +243,7 @@ export function OverlayHealthCard() {
             </>
           )}
         </p>
+        {!health.present ? <RecopyOverlayLink link={obsOverlayLink(room, overlayUrl)} /> : null}
       </div>
       <span
         className="mt-1 size-2 shrink-0 rounded-full"

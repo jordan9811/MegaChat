@@ -63,7 +63,7 @@ export function attachWhitelistRoutes(app, { log = console } = {}) {
     const target = getIdentityByHandle(clean);
     if (!target) {
       return res.status(404).json({
-        error: `No MegaChat account uses @${clean}. Check the spelling — they need to have signed in and claimed their handle at least once.`,
+        error: `No Holler account is @${clean}. Check the spelling — they need to have signed in to Holler once.`,
         reason: 'unknown_handle',
       });
     }

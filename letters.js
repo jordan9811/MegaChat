@@ -98,6 +98,12 @@ export function attachLetters(app, deps) {
      */
     canKeepAiredClip = () => false,
     activeSeats,
+    /**
+     * How many tiles the overlay draws for this room. The server passes its
+     * effective cap (configured seats plus whitelisted guests); standalone
+     * wiring falls back to the configured seats.
+     */
+    tileCap = (roomId, cfg) => cfg?.maxSeats ?? 3,
     sellerAddress,
     /**
      * THE SETTLEMENT DOOR. A MegaChat refund used to be a transfer this file
@@ -181,13 +187,23 @@ export function attachLetters(app, deps) {
     return rooms.get(roomId);
   };
 
-  const liveSeatCount = (roomId) => {
+  /**
+   * ONE TILE COUNT (ov-seat-dropped, 2026-11-09). Seats that hold a tile:
+   * live ones AND ones still waiting to go live. This counted live seats
+   * only, so a Holler aired into the tile a paid guest was about to take;
+   * when their camera went live the overlay had no slot left and dropped
+   * them, while their meter ran. A waiting seat now holds its tile, and the
+   * server counts a playing Holler against Call in admission (paidTilesHeld).
+   */
+  const seatTileCount = (roomId) => {
     let n = 0;
     for (const seat of activeSeats.values()) {
-      if (seat.streamRoomId === roomId && seat.live) n++;
+      if (seat.streamRoomId === roomId) n++;
     }
     return n;
   };
+  /** Is a tile actually free for a Holler right now? */
+  const hollerTileFree = (roomId, cfg) => seatTileCount(roomId) < tileCap(roomId, cfg);
 
   function dropMedia(letter) {
     if (letter.media) {
@@ -437,7 +453,9 @@ export function attachLetters(app, deps) {
       const letter = {
         id: randomUUID(),
         roomId: cfg.id,
-        username: String(username).slice(0, 20),
+        // 25, Twitch's own login limit (ov-name-chip): a 21–25 character
+        // login aired cut at 20 with no ellipsis.
+        username: String(username).slice(0, 25),
         payer: hasAddress ? address : null,
         price,
         durationS: Math.ceil(dur),
@@ -604,7 +622,7 @@ export function attachLetters(app, deps) {
     const state = roomState(roomId);
     if (state.playing) return res.status(409).json({ error: 'Another MegaChat is already playing' });
     const cfg = resolveRoomConfig(roomId);
-    if (liveSeatCount(roomId) >= cfg.maxSeats) {
+    if (!hollerTileFree(roomId, cfg)) {
       return res.status(409).json({ error: 'All camera tiles are busy — try when a slot frees up' });
     }
     state.queue = state.queue.filter((l) => l.id !== letter.id);
@@ -682,7 +700,8 @@ export function attachLetters(app, deps) {
       if (state.playing || state.queue.length === 0) continue;
       const cfg = resolveRoomConfig(roomId);
       if (!cfg) continue;
-      if (liveSeatCount(roomId) >= cfg.maxSeats) continue; // queued while seats busy
+      // Queued while every tile is held, live or still waiting to go live.
+      if (!hollerTileFree(roomId, cfg)) continue;
       // A MegaChat is one-shot: play it only while an overlay is actually
       // rendering the room. Otherwise it "plays" to nobody, the sender is
       // told it aired, and the media is deleted — a paid clip burnt.
@@ -799,7 +818,7 @@ export function attachLetters(app, deps) {
       return { ok: false, reason: 'storage failed' };
     }
     const letter = {
-      id: clipId, roomId, username: username ? String(username).slice(0, 20) : null,
+      id: clipId, roomId, username: username ? String(username).slice(0, 25) : null,
       payer: null, price: '0', durationS: Math.ceil(Number(durationS) || 0), mime: cleanVideoMime(mime),
       flyIn: null, flyOut: null, status: 'queued', media: true, bytes: media.length,
       paidAt: Date.now(), uploadedAt: Date.now(),
@@ -873,5 +892,7 @@ export function attachLetters(app, deps) {
   restoreFromDisk();
 
   log.log(`[letters] letter mode attached (durable; hold TTL ${Math.round(HOLD_TTL_MS / 60_000)} min)`);
-  return { _byId: byId, enqueueStoredClip, _store: store }; // _byId exposed for tests
+  /** Tiles a Holler holds in this room right now: one while it plays (one tile count). */
+  const hollerTiles = (roomId) => (rooms.get(roomId)?.playing ? 1 : 0);
+  return { _byId: byId, enqueueStoredClip, hollerTiles, _store: store }; // _byId exposed for tests
 }

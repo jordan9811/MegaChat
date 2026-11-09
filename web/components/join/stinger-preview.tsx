@@ -1,10 +1,12 @@
 'use client'
 
-// Mock camera-square preview for the stinger picker. Plays the SAME CSS
-// animations the OBS overlay uses (ported in join.css) on a fake tile so
-// viewers can see an entrance/exit before buying a seat. Purely cosmetic:
-// reads the two <select>s the legacy join script owns, never touches the
-// real camera iframes or any join/payment logic.
+// The entrance and exit picker, and its mock camera-square preview. The
+// preview plays the SAME CSS animations the OBS overlay uses (ported in
+// join.css) on a fake tile. The picker sits where the choice applies (owner's
+// pick): the Call in camera stage before Go Live, and the Holler review step
+// before Send. join-page.ts shows and hides it, keeps the two in step, and
+// reads the values (stingerSelections); the preview never touches the real
+// camera or any join/payment logic.
 
 import { useEffect, useRef } from 'react'
 
@@ -30,14 +32,51 @@ const ALL_ANIM_CLASSES = [
   ...Object.values(FLY_OUTS).map((v) => v.cls),
 ]
 
-export function StingerPreview() {
+// Plain names for what each one looks like. The values are the overlay's ids.
+const ENTRANCES: readonly [string, string][] = [
+  ['', 'Pop'],
+  ['storm', 'Lightning'],
+  ['proroll', 'Wipe'],
+  ['callme', 'Pager'],
+  ['breaking', 'Breaking news'],
+  ['wildin', 'Glitch'],
+]
+const EXITS: readonly [string, string][] = [
+  ['', 'Switch off'],
+  ['crt', 'Old TV'],
+  ['crumble', 'Crumble'],
+  ['zapped', 'Zap'],
+  ['wildout', 'Signal lost'],
+]
+
+export function StingerPicker({ id }: { id: 'seat' | 'letter' }) {
+  return (
+    <div id={`${id}Stingers`} className="join-stingers" hidden>
+      <div className="join-stinger-grid">
+        <label className="lbl">Entrance
+          <select id={`${id}FlyIn`} defaultValue="" className="stinger-select">
+            {ENTRANCES.map(([v, name]) => <option key={v} value={v}>{name}</option>)}
+          </select>
+        </label>
+        <label className="lbl">Exit
+          <select id={`${id}FlyOut`} defaultValue="" className="stinger-select">
+            {EXITS.map(([v, name]) => <option key={v} value={v}>{name}</option>)}
+          </select>
+        </label>
+      </div>
+      <StingerPreview flyInId={`${id}FlyIn`} flyOutId={`${id}FlyOut`} replayId={`${id}StingerReplay`} />
+    </div>
+  )
+}
+
+function StingerPreview({ flyInId, flyOutId, replayId }: { flyInId: string; flyOutId: string; replayId: string }) {
   const tileRef = useRef<HTMLDivElement>(null)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   useEffect(() => {
     const tile = tileRef.current
-    const flyIn = document.getElementById('flyInSelect') as HTMLSelectElement | null
-    const flyOut = document.getElementById('flyOutSelect') as HTMLSelectElement | null
+    const flyIn = document.getElementById(flyInId) as HTMLSelectElement | null
+    const flyOut = document.getElementById(flyOutId) as HTMLSelectElement | null
     if (!tile || !flyIn || !flyOut) return
 
     const timers = timersRef.current
@@ -90,7 +129,7 @@ export function StingerPreview() {
       later(() => playOut(), fin.ms + 900)
     }
 
-    const btn = document.getElementById('stingerReplayBtn')
+    const btn = document.getElementById(replayId)
     flyIn.addEventListener('change', playIn)
     flyOut.addEventListener('change', playOut)
     btn?.addEventListener('click', replay)
@@ -101,10 +140,10 @@ export function StingerPreview() {
       flyOut.removeEventListener('change', playOut)
       btn?.removeEventListener('click', replay)
     }
-  }, [])
+  }, [flyInId, flyOutId, replayId])
 
   return (
-    <div className="stinger-preview sm:col-span-2">
+    <div className="stinger-preview">
       {/* A preview monitor of the broadcast, so it stays dark in both themes
           like the stage it stands in for. */}
       <div className="sp-stage dark" aria-hidden="true">
@@ -121,7 +160,7 @@ export function StingerPreview() {
           Preview — how you&apos;ll hit the stream
         </span>
         <button
-          id="stingerReplayBtn"
+          id={replayId}
           type="button"
           className="sp-replay border border-[var(--mcj-rule-2)] px-3 py-1 text-[12px] font-semibold text-[var(--mcj-dim)] hover:border-[var(--mcj-fg)] hover:text-[var(--mcj-fg)]"
         >

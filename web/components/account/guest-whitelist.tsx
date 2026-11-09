@@ -36,6 +36,9 @@ export function GuestWhitelist({ myHandle }: { myHandle: string | null }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  // A guest added while the list is switched off: they still pay, and the
+  // note says so beside the action, with the one control that changes it.
+  const [addedWhileOff, setAddedWhileOff] = useState<string | null>(null)
 
   useEffect(() => {
     getGuestWhitelist().then(setList).catch(() => setList(null))
@@ -45,6 +48,7 @@ export function GuestWhitelist({ myHandle }: { myHandle: string | null }) {
     setBusy(true)
     setError(null)
     setNote(null)
+    setAddedWhileOff(null)
     try {
       setList(await work())
       if (done) setNote(done)
@@ -62,13 +66,18 @@ export function GuestWhitelist({ myHandle }: { myHandle: string | null }) {
     setBusy(true)
     setError(null)
     setNote(null)
+    setAddedWhileOff(null)
     try {
       const next = await addGuest(wanted)
       setList(next)
       setHandle('')
       // Adding yourself comes back 200 with a note rather than an error — it is
       // a harmless thing to try, and a red banner would imply it broke.
-      setNote(next.skipped === 'self' ? next.message ?? null : `@${wanted} can now join free.`)
+      // "Can now join free" only while the list is on: switched off, the
+      // guest is added and still pays (ca-guest-free-vs-charged).
+      if (next.skipped === 'self') setNote(next.message ?? null)
+      else if (next.enabled) setNote(`@${wanted} can now join free.`)
+      else setAddedWhileOff(wanted)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not add that handle.')
     } finally {
@@ -155,6 +164,12 @@ export function GuestWhitelist({ myHandle }: { myHandle: string | null }) {
 
       {error ? <p className="mcc-guests-error" role="alert">{error}</p> : null}
       {note ? <p className="hint">{note}</p> : null}
+      {addedWhileOff ? (
+        <p className="hint" role="status">
+          @{addedWhileOff} added. Your guest list is off, so they still pay.{' '}
+          <button type="button" className="mcc-inline-link" disabled={busy} onClick={() => void run(() => setGuestWhitelistEnabled(true), 'Guest list on.')}>Turn on</button>
+        </p>
+      ) : null}
 
       {list == null ? (
         <p className="hint">Loading your guest list…</p>

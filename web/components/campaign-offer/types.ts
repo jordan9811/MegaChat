@@ -23,6 +23,7 @@ export type PublicCampaign = {
   joinUrl: string
   reward: { type: 'usdc' | 'token'; amount: string; symbol: string; tokenAddress: string | null }
   budget: { amount: string; left: string; symbol: string }
+  /** Places offered: never more than the budget pays (placesOf). */
   maxClaims: number
   spotsLeft: number
   deadline: string | null
@@ -30,6 +31,9 @@ export type PublicCampaign = {
   referenceSet: SetFingerprint | null
   followedBySet: SetFingerprint | null
   funded: boolean
+  /** The creator's own preview of an unopened campaign (campaign-engine.js
+   *  ownerPreview): only they get it; nothing can be claimed. */
+  preview?: boolean
 }
 
 export type CampaignCheck = { rule: string; pass: boolean; detail: string }

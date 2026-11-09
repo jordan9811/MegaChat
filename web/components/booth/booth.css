@@ -1,8 +1,8 @@
 /* Rooms board — a directory, on the Holler skin (design-assets/holler-brand/SPEC.md).
    One featured room, a uniform grid under it, and the bounty board as a calm
    side rail. Colour carries meaning and nothing else: azure is the brand,
-   the thing to click and a camera seat (Call in), pink is on air and a
-   recorded Holler, yellow is money. Every panel is the same surface; a 2px
+   the thing to click and a camera seat (Call in), pink is a recorded Holler,
+   broadcast tally red is on air (never the Holler pink), yellow is money. Every panel is the same surface; a 2px
    line across the top says what kind of thing the card is.
    Both themes read the --hl-* / --f-* tokens from app/globals.css. The media
    boxes (.mcr-stage, .mcr-recent-stage) carry `dark` in the markup: they are
@@ -24,6 +24,13 @@
 }
 
 .mc-booth {
+  /* ON AIR is broadcast tally red, so it never reads as the Holler magenta
+     (owner, 2026-11-06): the header count, the tile pill and the live top
+     borders. --tally-on is the pill's text (white 4.9:1 on the light red,
+     near-black on the dark one). Inherited into the dark-scoped stages, so
+     the pill follows the page's theme. */
+  --tally: #ff4d3d;
+  --tally-on: #1a0705;
   /* Text on the azure strap — dark in both themes (SPEC §3: white on
      #0a9bff is 2.9:1), the same as the mark's letters. */
   --mcb-on-strap: var(--hl-on-strap);
@@ -43,6 +50,8 @@
 
 .light .mc-booth {
   --mcb-wash: 7%;
+  --tally: #d92d1c;
+  --tally-on: #fff;
 }
 
 html:has(.mc-booth),
@@ -107,7 +116,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   }
 }
 
-/* The live count: the pink light when anything is on air, quiet otherwise. */
+/* The live count: the tally light when anything is on air, quiet otherwise. */
 .mcr-onair {
   display: flex;
   align-items: center;
@@ -127,12 +136,12 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcr-onair.is-live {
-  color: var(--f-holler-ink);
+  color: var(--tally);
 }
 
 .mcr-onair.is-live i {
-  background: var(--hl-record);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--hl-record) calc(70% * var(--hl-glow-k)), transparent);
+  background: var(--tally);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--tally) calc(70% * var(--hl-glow-k)), transparent);
   animation: mcr-pulse 1.6s ease-in-out infinite;
 }
 
@@ -283,6 +292,9 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   display: block;
   aspect-ratio: 16 / 9;
   overflow: hidden;
+  /* Its own ink, from the dark scope: the fallback mark's "h" inherits it,
+     and the light page's ink was 1.04:1 on this ground. */
+  color: var(--hl-fg);
   background:
     radial-gradient(ellipse 70% 70% at 50% 110%, color-mix(in srgb, var(--hl-strap) 46%, transparent), transparent 65%),
     var(--hl-bg);
@@ -311,9 +323,31 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 .mcr-tags {
   position: absolute;
   inset: 12px 12px auto 12px;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
   gap: 8px;
+  /* Over the room's link layer: a press on the tags row opens the room,
+     except on the liveness badge, which opens its own detail. */
+  pointer-events: none;
+}
+
+.mcr-tags .lv-tip {
+  pointer-events: auto;
+}
+
+/* The room's link, laid over the picture (featured) or over the whole card
+   (tiles), under the tags (booth.tsx Stage / RoomCard). */
+.mcr-stage-link,
+.mcr-card-link {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.mcr-stage-link:focus-visible,
+.mc-booth .mcr-card-link:focus-visible {
+  outline-offset: -2px;
 }
 
 .mcr-card .mcr-tags {
@@ -360,12 +394,12 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   vertical-align: middle;
 }
 
-/* ON AIR: the pink light, as a solid pill so the word reads over any frame. */
+/* ON AIR: the tally light, as a solid pill so the word reads over any frame. */
 .mcr-tag.is-live {
-  background: var(--f-holler-solid);
-  border-color: var(--f-holler-solid);
-  color: var(--f-holler-on);
-  box-shadow: 0 0 16px -4px var(--hl-record);
+  background: var(--tally);
+  border-color: var(--tally);
+  color: var(--tally-on);
+  box-shadow: 0 0 16px -4px var(--tally);
 }
 
 .mcr-tag.is-live i {
@@ -396,7 +430,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcr-feat.is-live {
-  border-top-color: var(--hl-record);
+  border-top-color: var(--tally);
 }
 
 /* The screen fills its cell. When the copy beside it runs taller than the
@@ -413,14 +447,9 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   height: 100%;
 }
 
-/* The featured stage is a link, and its top edge is the card's 2px stripe:
-   at the house 2px offset the ring lay on that stripe and the two read as one
-   thick band (ring and stripe are both azure). 4px sits the ring the house 2px
-   off the card's own edge, with page between them. Not inset: the preview
-   <img> and the scanlines are positioned and paint over an inner outline. */
-.mcr-feat > .mcr-stage:focus-visible {
-  outline-offset: 4px;
-}
+/* The featured stage's link is a layer over the picture (.mcr-stage-link),
+   above the preview <img> and the scanlines, so its ring sits inside the
+   frame (-2px) and never lies on the card's 2px top stripe. */
 
 @media (max-width: 900px) {
   .mcr-feat {
@@ -546,11 +575,6 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   border-color: var(--hl-strap-hi);
 }
 
-.mcr-ghost.is-sm {
-  padding: 8px 10px;
-  font-size: 12px;
-}
-
 /* ── the grid ───────────────────────────────────────────────────────── */
 
 /* TILES ARE A FIXED SIZE, NOT A FRACTION OF THE SCREEN. The grid used to be
@@ -576,6 +600,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 
 .mcr-card {
   container-type: inline-size;
+  position: relative;
   display: block;
   background: var(--mcb-panel);
   border: 1px solid var(--mcb-line);
@@ -585,7 +610,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 .mcr-card.is-live {
-  border-top-color: var(--hl-record);
+  border-top-color: var(--tally);
 }
 
 .mcr-card.is-bounty {
@@ -603,16 +628,6 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   padding: 10px 12px;
 }
 
-/* A tile-sized card has room for the name and what the room does, not for a
-   monogram and a button as well — the whole card is already the link. They
-   come back wherever a card is wide (a phone's single column). */
-@container (max-width: 320px) {
-  .mcr-card-body .mcr-mono,
-  .mcr-card-body .mcr-ghost {
-    display: none;
-  }
-}
-
 .mcr-card-body .mcr-t {
   flex: 1;
   min-width: 0;
@@ -627,56 +642,100 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   white-space: nowrap;
 }
 
-.mcr-sub {
-  display: block;
-  margin-top: 2px;
-  color: var(--mcb-dim);
-  font-size: 12px;
+/* Whose stream it is, under the name (booth.tsx HostLine): the Twitch pip
+   when the room follows a channel, the @handle, then its seats and who is on
+   camera. One line; the handle gives way first. */
+.mcr-host {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 3px;
+  color: var(--mcb-muted);
+  font-size: 12.5px;
+}
+
+.mcr-host-h {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The room's features as tags, the seat dots right after the Call in tag and
-   then how many are on camera — one line (booth.tsx RoomFeatures). Three tags
-   wrap onto a second line in a tile. */
-.mcr-feats {
+.mcr-host-pip {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+}
+
+.mcr-host-pip svg {
+  width: 12px;
+  height: 12px;
+  fill: var(--mcb-muted);
+}
+
+.mcr-host .mcr-dots {
+  margin-left: 4px;
+}
+
+/* What the room sells, as three small squares on its picture, bottom left
+   (booth.tsx FeatureSquares), read with the key over the board. Each square
+   is ringed in the stage's ground so it holds over a white frame too. */
+.mcr-sq {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.mcr-sq i,
+.mcr-key i {
+  display: block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+}
+
+.mcr-sq i {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--hl-bg) 85%, transparent);
+}
+
+:is(.mcr-sq, .mcr-key) i.is-holler { background: var(--f-holler-solid); }
+:is(.mcr-sq, .mcr-key) i.is-callin { background: var(--f-callin-solid); }
+:is(.mcr-sq, .mcr-key) i.is-rewards { background: var(--f-rewards-solid); }
+
+/* The key, at the right of the filter row. */
+.mcr-key {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  margin-top: 6px;
+  gap: 6px 14px;
+  margin-left: auto;
+  color: var(--mcb-muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
-/* The dots read as the Call in tag's own seats: close to it, clear of the next. */
-.mcr-feats .mcr-dots {
-  margin: 0 4px 0 2px;
+.mcr-key > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.mcr-key + .mcr-sort {
+  margin-left: 6px;
 }
 
 .mcr-oncam {
   color: var(--mcb-dim);
   font-size: 12px;
   white-space: nowrap;
-}
-
-/* The room's initial on the brand strap — the same azure as the mark. */
-.mcr-mono {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  font-family: var(--font-display), var(--font-ui), sans-serif;
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--mcb-on-strap);
-  background: var(--hl-strap);
-}
-
-.mcr-mono.is-queue {
-  color: var(--f-bounty-ink);
-  background: var(--f-bounty-bg);
-  border: 1px solid var(--f-bounty-line);
 }
 
 /* Open-a-room sits in the grid as a card-shaped invitation, not a button
@@ -717,8 +776,32 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   line-height: 1.5;
 }
 
-.mcr-more {
+/* A busy board's last row: Show all, then Create room at its right end. */
+.mcr-more-row {
   grid-column: 1 / -1;
+  display: flex;
+  gap: 12px;
+}
+
+.mcr-more-create {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  border: 1px dashed var(--mcb-line2);
+  color: var(--hl-strap-hi);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.mcr-more-create:hover {
+  border-color: var(--hl-strap-hi);
+}
+
+.mcr-more {
+  flex: 1;
   min-height: 46px;
   border: 1px solid var(--mcb-line2);
   background: transparent;
@@ -905,11 +988,16 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 }
 
 /* The one bar carries a wordmark, a live count and the whole site nav, which
-   needs ~795px on one row once How it works shows at md. Below that it
-   wraps onto a second row rather than squeezing — at 641-790 the squeeze
-   broke "Try demo" and "Sign in" onto two lines and butted the nav against
-   the live count — or pushing the page sideways. Same items, same order. */
-@media (max-width: 800px) {
+   needs ~840px on one row once How it works shows at md (measured: at
+   801-834 on an iPad the count ran into "Bounties" with no gap and three
+   labels broke onto two lines). Below 861 it wraps onto a second row rather
+   than squeezing or pushing the page sideways. Same items, same order. No
+   label in the bar may ever break onto two lines. */
+.mc-booth > header :is(a, button) {
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
   .mc-booth > header {
     height: auto;
     min-height: 60px;
@@ -1227,10 +1315,12 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   border-bottom: 1px solid var(--mcb-line);
 }
 
+/* A fixed label column, each price right after it: both prices line up and
+   sit next to what they price (they sat 346px away at 1440). */
 .mcr-rates > div {
-  display: flex;
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   font-size: 13px;
 }
@@ -1256,7 +1346,6 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 .mcr-rates > [data-kind='rewards'] dd {
   color: var(--f-rewards-ink);
   white-space: normal;
-  text-align: right;
 }
 
 .mcr-rates dt {
@@ -1468,51 +1557,5 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   .mc-booth *::after {
     animation: none !important;
     transition: none !important;
-  }
-}
-
-/* On air is a state, not a kind of room (owner, 2026-11-06): a toggle after a
-   rule, in broadcast tally red so it never reads as the Holler magenta, with
-   the live count. It narrows whichever chip is picked. */
-.mcr-chips-rule {
-  width: 1px;
-  height: 22px;
-  margin: 0 4px;
-  background: var(--mcb-line2);
-}
-.mcr-chip-onair {
-  --tally: #ff4d3d;
-}
-.light .mcr-chip-onair {
-  --tally: #d92d1c;
-}
-.mcr-chip-onair-dot {
-  display: block;
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--tally);
-}
-.mcr-chip-onair-n {
-  font-family: var(--font-code), ui-monospace, monospace;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--mcb-muted);
-}
-.mcr-chip.mcr-chip-onair[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--tally) 16%, transparent);
-  border-color: var(--tally);
-  color: var(--mcb-fg);
-}
-.mcr-chip.mcr-chip-onair[aria-pressed='true'] .mcr-chip-onair-dot {
-  box-shadow: none;
-}
-.mcr-chip.mcr-chip-onair[aria-pressed='true'] .mcr-chip-onair-n {
-  color: var(--mcb-fg);
-}
-@media (hover: hover) and (pointer: fine) {
-  .mcr-chip.mcr-chip-onair[aria-pressed='true']:hover {
-    background: color-mix(in srgb, var(--tally) 24%, transparent);
   }
 }

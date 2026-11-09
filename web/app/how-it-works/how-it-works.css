@@ -236,59 +236,6 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, color-mix(in srgb, var(--hl-panel-2) 60%, transparent), color-mix(in srgb, var(--hl-panel) 90%, transparent));
 }
 
-/* The split, in the landing's language: two tags side by side over the
-   two columns. It replaces a centred box and a drawn connector that together
-   read like an org chart. */
-.mch-arewe {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  margin-bottom: 30px;
-}
-
-.mch-arewe-lead,
-.mch-arewe-or {
-  color: var(--mcc-faint);
-  font-family: var(--font-code), ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.mch-arewe-or { text-transform: none; letter-spacing: 0; font-size: 13px; }
-
-.mch-tag {
-  padding: 9px 18px;
-  border: 1.5px solid;
-  font-family: var(--font-display), var(--font-ui), sans-serif;
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-/* Glow in dark only: the shadow colour fades to nothing as --hl-glow-k → 0,
-   and light gets a plain tint instead. */
-.mch-tag.is-chatter {
-  border-color: color-mix(in srgb, var(--mch-chatter) 65%, transparent);
-  background: color-mix(in srgb, var(--mch-chatter) 8%, transparent);
-  color: var(--mch-chatter-ink);
-  box-shadow:
-    0 0 20px -6px color-mix(in srgb, var(--mch-chatter) calc(100% * var(--hl-glow-k)), transparent),
-    inset 0 0 14px -9px color-mix(in srgb, var(--mch-chatter) calc(100% * var(--hl-glow-k)), transparent);
-}
-
-.mch-tag.is-streamer {
-  border-color: color-mix(in srgb, var(--mch-streamer) 65%, transparent);
-  background: color-mix(in srgb, var(--mch-streamer) 8%, transparent);
-  color: var(--mch-streamer-ink);
-  box-shadow:
-    0 0 20px -6px color-mix(in srgb, var(--mch-streamer) calc(100% * var(--hl-glow-k)), transparent),
-    inset 0 0 14px -9px color-mix(in srgb, var(--mch-streamer) calc(100% * var(--hl-glow-k)), transparent);
-}
-
 .mch-tree-result h2 {
   margin: 9px 0 7px;
   font-size: clamp(26px, 3vw, 40px);
@@ -336,6 +283,18 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
 
 .mch-flow.is-streamer > header {
   background: linear-gradient(135deg, color-mix(in srgb, var(--mch-streamer) 13%, transparent), transparent 70%);
+}
+
+/* Each column names its audience: the plain words the rest of the page uses
+   (viewers, streamers). It replaced an "Are you a Chatter or Streamer" row of
+   chips that looked tappable and did nothing. */
+.mch-flow > header h2 {
+  margin: 0 0 6px;
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--hl-fg);
 }
 
 .mch-flow > header p {

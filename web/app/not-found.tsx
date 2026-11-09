@@ -1,6 +1,14 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { SiteHeader } from '@/components/site-header'
 import { GlitchBackground } from '@/components/glitch-background'
+import { SiteFooter, contactUrl } from '@/components/site-footer'
+
+// Its own tab title: without one a bad URL carried the landing's, so tabs and
+// history named the wrong page.
+export const metadata: Metadata = {
+  title: 'Page not found — Holler',
+}
 
 export default function NotFound() {
   return (
@@ -33,15 +41,14 @@ export default function NotFound() {
             className="reveal mt-3 max-w-sm text-pretty text-sm leading-relaxed text-hl-muted"
             style={{ ['--reveal-delay' as string]: '0.1s' }}
           >
-            The room you&apos;re looking for isn&apos;t live — it may have ended
-            or the link is off by a character.
+            This page isn&apos;t here. The link may be old or mistyped.
           </p>
           <div
             className="reveal mt-8 flex flex-wrap items-center justify-center gap-3"
             style={{ ['--reveal-delay' as string]: '0.2s' }}
           >
             <Link
-              href="/"
+              href="/app"
               className="rounded-[2px] bg-hl-strap px-5 py-2.5 text-sm font-bold text-hl-on-strap transition-transform duration-150 ease-[cubic-bezier(.23,1,.32,1)] hover:bg-hl-strap-hover active:scale-[0.97]"
             >
               Browse live rooms
@@ -55,6 +62,7 @@ export default function NotFound() {
           </div>
         </div>
       </div>
+      <SiteFooter contactHref={contactUrl()} />
     </div>
   )
 }

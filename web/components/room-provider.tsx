@@ -56,6 +56,44 @@ export const REWARD_DEFAULTS = {
   points: { earnAmount: '1', earnCap: '50' },
 } as const
 
+/** A payout wallet the server takes (dashboard-routes.js validateConfigTokens).
+ *  Blank is valid: it clears the wallet and the platform wallet receives. */
+export const walletOk = (raw: string) => raw.trim() === '' || /^0x[0-9a-fA-F]{40}$/.test(raw.trim())
+
+const PLAIN_DECIMAL = /^(\d+\.?\d*|\.\d+)$/
+
+/**
+ * Why each Rewards field cannot be saved as typed, or null per field. The
+ * server bounds only Cash and tokens and stores anything else verbatim, so a
+ * "0", "abc" or "1e9" used to save and silently switch earning off
+ * (rw-silent-invalid). While any field is wrong the autosave leaves the
+ * rewards out, so the last good terms stay live.
+ */
+export function rewardsProblems(draft: ConfigDraft, policy: RewardsPolicy | null) {
+  const type = draft.rewardsType
+  const limits = type === 'usdc' ? policy?.limits ?? null : null
+  const amountRaw = draft.rewardsEarnAmount.trim()
+  const capRaw = draft.rewardsEarnCap.trim()
+  const amount = Number(amountRaw)
+  const cap = Number(capRaw)
+  const whole = type === 'points'
+  let amountErr: string | null = null
+  let capErr: string | null = null
+  let intervalErr: string | null = null
+  if (!PLAIN_DECIMAL.test(amountRaw) || !(amount > 0)) amountErr = 'Enter a plain number above 0'
+  else if (whole && !Number.isInteger(amount)) amountErr = 'Credits are whole numbers'
+  else if (limits && amount > Number(limits.maxEarn)) amountErr = `Cash rewards are capped at $${limits.maxEarn} each`
+  if (!PLAIN_DECIMAL.test(capRaw) || !(cap > 0)) capErr = 'Enter a plain number above 0'
+  else if (whole && !Number.isInteger(cap)) capErr = 'Credits are whole numbers'
+  else if (limits && cap > Number(limits.maxCap)) capErr = `Cash rewards are capped at $${limits.maxCap} per viewer`
+  else if (!amountErr && cap < amount) capErr = 'Must be at least the amount per reward'
+  const floor = type === 'points' ? 0 : policy?.limits.minIntervalS ?? 0
+  const interval = Number(draft.rewardsEarnInterval)
+  if (!(interval > 0)) intervalErr = 'Pick how often viewers earn'
+  else if (interval < floor) intervalErr = `Rewards pay at most every ${floor} s on this server`
+  return { amount: amountErr, cap: capErr, interval: intervalErr, any: !!(amountErr || capErr || intervalErr) }
+}
+
 /** The Rewards card's server rules (dashboard-routes.js rewardsPolicy): the
  *  cash bounds, and whether this room can pay cash at all (rewards.js
  *  policyFor's reasons: password_room, cash_rewards_off, cash_not_allowed). */
@@ -207,6 +245,12 @@ type RoomContextValue = {
   hasIdentity: boolean
   /** Rooms owned by the signed-in identity, for the "your rooms" list. */
   myRooms: MyRoomCard[]
+  /** Whether the owner's room list has answered: 'loading' until the first
+   *  answer (and until the room it opens is open), 'error' when it failed.
+   *  The create form shows only once it is 'ready' (js-dash-fail-new-room). */
+  roomsState: 'loading' | 'ready' | 'error'
+  /** Ask for the room list again after a failure. */
+  retryRooms: () => void
   /** Owner's linked Twitch login, or null. Drives the auto-adopt UI. */
   linkedTwitch: string | null
   refreshMyRooms: () => Promise<void>
@@ -256,7 +300,7 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
     draft.tokenPreset === 'custom' && draft.customTokenAddress.trim()
       ? draft.customTokenAddress.trim()
       : usdcAddress
-  return {
+  const out: RoomConfigPatch = {
     unlisted: draft.unlisted,
     payoutAddress: draft.payoutAddress.trim() || null,
     twitchChannel: draft.twitchChannel.trim().replace(/^@/, '') || null,
@@ -307,6 +351,12 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
       rewardTokenSymbol: draft.rewardsType === 'token' ? (draft.rewardsTokenSymbol.trim().toUpperCase() || 'TOKEN') : null,
     },
   }
+  // A half-typed wallet is left out rather than sent: the server refuses the
+  // whole save over it, which held back every other change made meanwhile
+  // (ss-save-errors-offscreen). The server merges config shallowly
+  // (rooms-store.js patchedFields), so the stored wallet stays as it was.
+  if (!walletOk(draft.payoutAddress)) delete (out as Partial<RoomConfigPatch>).payoutAddress
+  return out
 }
 
 function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
@@ -383,6 +433,8 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const [identityHandle, setIdentityHandle] = useState<string | null>(null)
   const [hasIdentity, setHasIdentity] = useState(false)
   const [myRooms, setMyRooms] = useState<MyRoomCard[]>([])
+  const [roomsState, setRoomsState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const loadMineRef = useRef<() => Promise<void>>(async () => {})
   const [linkedTwitch, setLinkedTwitch] = useState<string | null>(null)
   const [accountDefaults, setAccountDefaults] = useState<Record<string, unknown> | null>(null)
   // read inside listeners without re-subscribing them on every change
@@ -398,6 +450,11 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const newRoomRef = useRef(false)
   const [newRoom, setNewRoom] = useState(false)
   const [rewardsPolicy, setRewardsPolicy] = useState<RewardsPolicy | null>(null)
+  // Read by the autosave without making it re-run when they change.
+  const rewardsPolicyRef = useRef<RewardsPolicy | null>(null)
+  rewardsPolicyRef.current = rewardsPolicy
+  const roomRef = useRef<Room | null>(null)
+  roomRef.current = room
   const guestHandleRef = useRef('')
 
   const passwordRef = useRef('')
@@ -511,8 +568,12 @@ export function RoomProvider({ children }: { children: ReactNode }) {
           if (!autoOpenedRef.current && d.rooms.length > 0 && !roomIdRef.current && !newRoomRef.current) {
             autoOpenedRef.current = true
             const selected = d.rooms.find((r) => r.id === params.get('room')) || d.rooms[0]
-            void openOwnedRoom(selected.id).catch(() => {})
-            return
+            // The skeleton holds until the room is open: the create form must
+            // not flash in between. A room that will not open is the same
+            // "couldn't load" the list failing is.
+            return openOwnedRoom(selected.id)
+              .then(() => setRoomsState('ready'))
+              .catch(() => { autoOpenedRef.current = false; setRoomsState('error') })
           }
           // No room to open: the create draft was seeded before this list
           // arrived, so re-seed the handle now that we know which names are
@@ -521,8 +582,13 @@ export function RoomProvider({ children }: { children: ReactNode }) {
             const h = seedHandle()
             setDraft((prev) => (prev.handle === h ? prev : { ...prev, handle: h }))
           }
+          setRoomsState('ready')
         })
-        .catch(() => {})
+        // A failed list used to fall through to the create form, seeded with
+        // the handle the streamer's existing room already owns. Now it says
+        // so, with a Retry, and the form waits for a list that answered.
+        .catch(() => { if (!roomIdRef.current) setRoomsState((s) => (s === 'ready' ? s : 'error')) })
+    loadMineRef.current = loadMine
     void loadMine()
 
     // Saved room defaults: creating a room starts from these instead of
@@ -677,6 +743,11 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     [usdcAddress, refresh],
   )
 
+  const retryRooms = useCallback(() => {
+    setRoomsState('loading')
+    void loadMineRef.current()
+  }, [])
+
   const refreshMyRooms = useCallback(async () => {
     try {
       const d = await listMyRooms()
@@ -768,10 +839,19 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       if (!roomId) return
       try {
         const sentName = nameEditedRef.current
+        const config = draftToConfig(draft, usdcAddress)
+        // Rewards typed wrong are held back, not saved: the field says why,
+        // and the last good terms stay live. Switching Rewards OFF still
+        // saves, carrying the stored terms rather than the half-typed ones.
+        if (rewardsProblems(draft, rewardsPolicyRef.current).any) {
+          const stored = roomRef.current?.rewards
+          if (!draft.rewardsEnabled && stored?.enabled) config.rewards = { ...stored, enabled: false } as RoomConfigPatch['rewards']
+          else delete (config as Partial<RoomConfigPatch>).rewards
+        }
         const data = await updateRoom(roomId, passwordRef.current, {
           name: sentName ? draft.name.trim() || undefined : undefined,
           handle: draft.handle.trim() || null,
-          config: draftToConfig(draft, usdcAddress),
+          config,
         })
         if (roomIdRef.current === roomId && saveVersion.current === version) {
           if (sentName) nameEditedRef.current = false
@@ -1023,6 +1103,8 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       identityHandle,
       hasIdentity,
       myRooms,
+      roomsState,
+      retryRooms,
       linkedTwitch,
       refreshMyRooms,
       accountDefaults,
@@ -1043,7 +1125,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       lettersAdmin,
       hostToken,
     }),
-    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, twitchLive, follow, adoptTwitchTitle, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, startNewRoom, newRoom, rewardsPolicy, updateDraft, create, unlock, toggleActive, endRoom, kick, pin, switchRoom, lettersAdmin, hostToken],
+    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, twitchLive, follow, adoptTwitchTitle, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, roomsState, retryRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, startNewRoom, newRoom, rewardsPolicy, updateDraft, create, unlock, toggleActive, endRoom, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

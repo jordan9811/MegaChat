@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AccountChip } from '@/components/account-chip'
 import { GuestWhitelist } from '@/components/account/guest-whitelist'
+import { AccountRewards } from '@/components/account/account-rewards'
 import {
   disconnectAccountLink,
   getAccountDefaults,
@@ -26,7 +27,6 @@ import {
   setAccountPrimary,
   type AccountOverview,
   type AccountPrefs,
-  type AccountTier,
   type LinkedAccount,
 } from '@/lib/api'
 import { formatDollars, shortAddr } from '@/lib/display-format'
@@ -63,20 +63,15 @@ const LINK_ERROR_COPY: Record<string, string> = {
 }
 const LINK_ERROR_FALLBACK = 'That login could not be linked. Try connecting it again.'
 
-// The classifier in plain language. Shown to the account holder and nobody
-// else — no feature reads it yet, so this is the only place it surfaces.
-const TIER_COPY: Record<AccountTier, { title: string; blurb: string }> = {
-  recognized: { title: 'Recognised', blurb: 'We can tell who you are on sight. Nothing here will ever ask you to prove it.' },
-  plausible: { title: 'Looks like a person', blurb: 'Your linked accounts read as a real person. Nothing here will ask you to prove it.' },
-  ambiguous: { title: 'Not enough to tell', blurb: 'Not much to go on yet. Connecting another account is the quickest way to fill this in.' },
-  suspect: { title: 'Reads as automated', blurb: 'The numbers on your linked accounts look automated. Connecting another account is the way to change that.' },
-  unknown: { title: 'Nothing fetched yet', blurb: 'No profile details have been read from your linked accounts.' },
+/** The aggregator's sign-in type as the account's own provider key. */
+const providerKey = (type: string) => (type === 'twitter' ? 'x' : type)
+
+/** "a, b and c". */
+function joinAnd(parts: string[]) {
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0] || ''
 }
 
-function whenLinked(iso: string) {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-}
+const REFRESH_TIP = 'Refreshing sends you through that platform’s sign-in once more. It is how your profile details update, and an app you have already authorised will not ask you anything.'
 
 // Human summary of a saved defaults blob — only fields worth glancing at.
 // A feature row carries its kind, so an On value shows as that feature's tag.
@@ -111,6 +106,8 @@ export function AccountPage() {
     identity,
     wallet,
     balance,
+    balanceStatus,
+    retryBalance,
     signedIn,
     openSignIn,
     authError,
@@ -126,8 +123,9 @@ export function AccountPage() {
   const [note, setNote] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [origin, setOrigin] = useState('')
-  const [section, setSection] = useState<'overview' | 'defaults' | 'bounties' | 'guests' | 'connections'>(
-    typeof window !== 'undefined' && window.location.hash === '#bounties' ? 'bounties' : 'overview',
+  const [section, setSection] = useState<'overview' | 'rewards' | 'defaults' | 'bounties' | 'guests' | 'connections'>(
+    typeof window !== 'undefined' && window.location.hash === '#bounties' ? 'bounties'
+      : typeof window !== 'undefined' && window.location.hash === '#rewards' ? 'rewards' : 'overview',
   )
   // Bounty protection: the liveness tier this account's pledges release at.
   const [prefs, setPrefs] = useState<AccountPrefs | null>(null)
@@ -311,6 +309,7 @@ export function AccountPage() {
               <div>
                 <span>Account</span>
                 <button type="button" aria-current={section === 'overview' ? 'page' : undefined} onClick={() => setSection('overview')}>Overview</button>
+                <button type="button" aria-current={section === 'rewards' ? 'page' : undefined} onClick={() => setSection('rewards')}>Rewards</button>
                 <button type="button" aria-current={section === 'defaults' ? 'page' : undefined} onClick={() => setSection('defaults')}>Room defaults</button>
                 <button type="button" aria-current={section === 'bounties' ? 'page' : undefined} onClick={() => setSection('bounties')}>Bounty protection</button>
                 <button type="button" aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}>Guest list</button>
@@ -327,45 +326,46 @@ export function AccountPage() {
             <section className="mcc-account-work">
               {section === 'overview' ? (
                 <div className="mcc-overview-grid">
+                  {/* The state lives in the value slot (ca-acct-balance):
+                      "Not connected" with the way to connect, "..." only
+                      while a read is in flight, "Couldn't load" with Retry
+                      when it fails. It used to be a "…" that never resolved. */}
                   <section className="mcc-balance-zone">
                     <span className="mcc-coordinate">Available balance</span>
-                    <strong>
-                      {balance == null ? '…' : <><b>$</b>{balance}</>}
-                    </strong>
-                    <p>{wallet.address ? shortAddr(wallet.address) : 'No balance connected'}</p>
                     {!wallet.address ? (
-                      <button
-                        type="button"
-                        onClick={() => void connectBalance()}
-                        disabled={!wallet.configured || connectingBalance}
-                      >
-                        {connectingBalance ? 'Connecting…' : 'Connect balance'}
-                      </button>
-                    ) : <a href="/app">Use balance in a room</a>}
-                  </section>
-
-                  <section className="mcc-room-zone">
-                    <span className="mcc-coordinate">Your room address</span>
-                    <strong>{identity ? `/${identity.handle}` : 'Unclaimed'}</strong>
-                    {identity ? null : <p>Link a sign-in to claim it.</p>}
-                    <a href={identity ? '/dashboard' : '#connections'} onClick={identity ? undefined : () => setSection('connections')}>
-                      {identity ? 'Open dashboard' : 'View connections'}
-                    </a>
-                  </section>
-
-                  <section className="mcc-overview-status">
-                    <header><span>Account status</span><small>Live data</small></header>
-                    <button type="button" onClick={() => setSection('connections')}>
-                      <span><b>Linked sign-ins</b><small>{accounts == null ? 'Loading…' : `${accounts.length} connected`}</small></span>
-                      <strong>View</strong>
-                    </button>
-                    <button type="button" onClick={() => setSection('defaults')}>
-                      <span><b>Room defaults</b><small>{!defaultsLoaded ? 'Loading…' : defaults ? `${rows.length} saved values` : 'Stock settings'}</small></span>
-                      <strong>View</strong>
-                    </button>
+                      <>
+                        <strong className="mcc-balance-state">Not connected</strong>
+                        <button
+                          type="button"
+                          onClick={() => void connectBalance()}
+                          disabled={!wallet.configured || connectingBalance}
+                        >
+                          {connectingBalance ? 'Connecting…' : 'Connect balance'}
+                        </button>
+                      </>
+                    ) : balanceStatus === 'error' ? (
+                      <>
+                        <strong className="mcc-balance-state">Couldn’t load</strong>
+                        <p>{shortAddr(wallet.address)}</p>
+                        <button type="button" onClick={retryBalance}>Retry</button>
+                      </>
+                    ) : balanceStatus === 'ready' && balance != null ? (
+                      <>
+                        <strong><b>$</b>{balance}</strong>
+                        <p>{shortAddr(wallet.address)}</p>
+                        <a href="/app">Use balance in a room</a>
+                      </>
+                    ) : (
+                      <>
+                        <strong aria-label="Loading your balance">...</strong>
+                        <p>{shortAddr(wallet.address)}</p>
+                      </>
+                    )}
                   </section>
                 </div>
               ) : null}
+
+              {section === 'rewards' ? <AccountRewards /> : null}
 
               {section === 'bounties' ? (
                 <section className="mcc-settings-zone" id="bounties">
@@ -401,7 +401,6 @@ export function AccountPage() {
                 <section className="mcc-settings-zone">
                   <header>
                     <div><span className="mcc-coordinate">Room defaults</span><h2>Start every room ready.</h2><p>These values load into Create Room and can still be changed per stream.</p></div>
-                    <a href="/dashboard" className="btn-ghost">Open full setup</a>
                   </header>
                   {!identity ? (
                     <p className="hint">Add a sign-in before saving account-level room defaults.</p>
@@ -422,7 +421,7 @@ export function AccountPage() {
                     <p className="hint">No defaults saved yet. New rooms use the stock settings.</p>
                   )}
                   <div className="mcc-settings-actions">
-                    <a href="/dashboard" className="btn">Edit defaults</a>
+                    <a href="/dashboard" className="btn">Set defaults in room setup →</a>
                     {defaults ? (
                       <button type="button" id="clear-defaults" disabled={busy} onClick={() => void clearDefaults()} className="btn-ghost">
                         {busy ? 'Clearing…' : 'Clear defaults'}
@@ -441,83 +440,73 @@ export function AccountPage() {
 
               {section === 'connections' ? (
                 <section className="mcc-connections-zone" id="connections">
-                  <header><span className="mcc-coordinate">Linked sign-ins</span><h2>One identity, multiple ways back in.</h2><p>Every provider below resolves to this same Holler account.</p></header>
+                  <header><span className="mcc-coordinate">Linked sign-ins</span><h2>One identity, multiple ways back in.</h2><p>Every sign-in below opens this same Holler account{overview ? `, @${overview.account.handle}` : ''}. Adding one, or changing which one names you, never moves your link or your room.</p></header>
                   {linkNotice ? <p id="link-notice" role={linkNotice.ok ? 'status' : 'alert'} className="hint">{linkNotice.text}</p> : null}
                   {/* Make primary and Disconnect report here, where they were
                       clicked; the note used to show only under Room defaults. */}
                   {note ? <p className="hint">{note}</p> : null}
                   {!identity ? (
                     <div className="mcc-empty-connection"><p>Wallet-only session. Add Google, email, passkey, Twitch, X, or another supported sign-in.</p><button type="button" className="btn" onClick={openSignIn}>Add a sign-in</button></div>
-                  ) : accounts == null ? (
+                  ) : accounts == null && !overview ? (
                     <p className="hint">Loading…</p>
-                  ) : accounts.length === 0 ? (
-                    <div className="mcc-empty-connection"><p>No linked providers returned for this identity.</p><button type="button" className="btn-ghost" onClick={openSignIn}>Open sign in</button></div>
-                  ) : (
-                    <ul id="linked-accounts" className="mcc-connections-list">
-                      {accounts.map((a, i) => (
-                        <li key={`${a.type}-${i}`}>
-                          <span className="mcc-provider">{providerLabel(a.type).charAt(0)}</span>
-                          <span><strong>{providerLabel(a.type)}</strong><small>{a.name || 'Connected account'}</small></span>
-                          <b>Connected</b>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  {/* The account's own links: the ones we hold a platform id
-                      for, so they carry attributes and can be made primary.
-                      A sign-in an aggregator reports but we have no id for is
-                      shown above and upgrades by connecting it here. */}
-                  {overview && overview.account.links.length > 0 ? (
-                    <div className="mcc-links-zone">
-                      <header><span className="mcc-coordinate">Platforms</span><h3>Connected platforms</h3><p>One account, one handle — @{overview.account.handle}. Adding a platform or changing which one names you never moves your link or your room.</p></header>
-                      <ul id="account-links" className="mcc-connections-list">
-                        {overview.account.links.map((l) => (
-                          <li key={l.provider}>
-                            <span className="mcc-provider">{l.label.charAt(0)}</span>
-                            <span>
-                              <strong>{l.label}{overview.account.primary === l.provider ? ' · primary' : ''}</strong>
-                              <small>
-                                {l.username ? `@${l.username}` : 'Connected'} · linked {whenLinked(l.linkedAt)}
-                                {l.attributeCount > 0 ? ` · ${l.attributeCount} profile details` : ' · no profile details'}
-                              </small>
-                            </span>
-                            <span className="mcc-link-actions">
-                              {overview.account.primary === l.provider ? null : (
-                                <button type="button" className="btn-ghost" disabled={linkBusy === l.provider} onClick={() => void makePrimary(l.provider)}>Make primary</button>
-                              )}
-                              <a className="btn-ghost" href={l.refreshUrl}>Refresh</a>
-                              {overview.account.links.length > 1 ? (
-                                <button type="button" className="btn-ghost" disabled={linkBusy === l.provider} onClick={() => void disconnect(l.provider)}>Disconnect</button>
-                              ) : null}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                      {overview.connectable.length > 0 ? (
-                        <div className="mcc-connect-row">
-                          {overview.connectable.map((c) => (
-                            c.configured
-                              ? <a key={c.provider} className="btn-ghost" href={c.connectUrl}>Connect {c.label}</a>
-                              : <button key={c.provider} type="button" className="btn-ghost" disabled title="Coming soon">Connect {c.label}</button>
+                  ) : (() => {
+                    // ONE list (ca-connections-twice): each provider once,
+                    // its state and actions on its row. The account's own
+                    // links (a platform id: primary, refresh, disconnect)
+                    // first; a sign-in only the aggregator reports after,
+                    // with Connect where it can be upgraded.
+                    const links = overview?.account.links || []
+                    const primary = overview?.account.primary
+                    const connectable = overview?.connectable || []
+                    const linked = new Set(links.map((l) => l.provider))
+                    const others = (accounts || []).filter((a, i, all) => !linked.has(providerKey(a.type)) && all.findIndex((b) => providerKey(b.type) === providerKey(a.type)) === i)
+                    const shown = new Set([...linked, ...others.map((a) => providerKey(a.type))])
+                    const toConnect = connectable.filter((c) => c.configured && !shown.has(c.provider))
+                    const soon = connectable.filter((c) => !c.configured && !shown.has(c.provider)).map((c) => c.label)
+                    if (links.length === 0 && others.length === 0) {
+                      return <div className="mcc-empty-connection"><p>No linked providers returned for this identity.</p><button type="button" className="btn-ghost" onClick={openSignIn}>Open sign in</button></div>
+                    }
+                    return (
+                      <>
+                        <ul id="linked-accounts" className="mcc-connections-list">
+                          {links.map((l) => (
+                            <li key={l.provider}>
+                              <span className="mcc-provider">{l.label.charAt(0)}</span>
+                              <span>
+                                <strong>{l.label}{primary === l.provider ? ' · primary' : ''}</strong>
+                                <small>{l.username ? `@${l.username}` : 'Connected'}</small>
+                              </span>
+                              <span className="mcc-link-actions">
+                                {primary === l.provider ? null : (
+                                  <button type="button" className="btn-ghost" disabled={linkBusy === l.provider} onClick={() => void makePrimary(l.provider)}>Make primary</button>
+                                )}
+                                <a className="btn-ghost" href={l.refreshUrl} title={REFRESH_TIP}>Refresh</a>
+                                {links.length > 1 ? (
+                                  <button type="button" className="btn-ghost" disabled={linkBusy === l.provider} onClick={() => void disconnect(l.provider)}>Disconnect</button>
+                                ) : null}
+                              </span>
+                            </li>
                           ))}
-                        </div>
-                      ) : null}
-                      <p className="hint">Refreshing sends you through that platform&rsquo;s sign-in once more — it is how the numbers update, and an app you have already authorised will not ask you anything.</p>
-                    </div>
-                  ) : null}
-
-                  {/* The classifier, to the account holder only. Nothing reads
-                      it yet; it is shown so a person can see what we think. */}
-                  {overview ? (
-                    <div className="mcc-standing-zone">
-                      <header><span className="mcc-coordinate">How you read</span><h3>{TIER_COPY[overview.classification.tier].title}</h3><p>{TIER_COPY[overview.classification.tier].blurb}</p></header>
-                      <ul className="mcc-standing-reasons">
-                        {overview.classification.reasons.map((r, i) => <li key={i}>{r}</li>)}
-                      </ul>
-                      <p className="hint">Only you can see this. Nothing on Holler uses it yet.</p>
-                    </div>
-                  ) : null}
+                          {others.map((a) => {
+                            const up = connectable.find((c) => c.provider === providerKey(a.type) && c.configured)
+                            return (
+                              <li key={`agg-${a.type}`}>
+                                <span className="mcc-provider">{providerLabel(a.type).charAt(0)}</span>
+                                <span><strong>{providerLabel(a.type)}</strong><small>{a.name || 'Connected account'}</small></span>
+                                {up ? <span className="mcc-link-actions"><a className="btn-ghost" href={up.connectUrl}>Connect</a></span> : <b>Connected</b>}
+                              </li>
+                            )
+                          })}
+                        </ul>
+                        {toConnect.length > 0 ? (
+                          <div className="mcc-connect-row">
+                            {toConnect.map((c) => <a key={c.provider} className="btn-ghost" href={c.connectUrl}>Connect {c.label}</a>)}
+                          </div>
+                        ) : null}
+                        {soon.length > 0 ? <p className="hint">{joinAnd(soon)}: coming soon</p> : null}
+                      </>
+                    )
+                  })()}
                   <div className="mcc-wallet-line">
                     <span><strong>Payment balance</strong><small>{wallet.address ? shortAddr(wallet.address) : 'Not connected'}</small></span>
                     {!wallet.address ? <button type="button" className="btn-ghost" onClick={() => void connectBalance()} disabled={!wallet.configured || connectingBalance}>Connect</button> : <b>Connected</b>}

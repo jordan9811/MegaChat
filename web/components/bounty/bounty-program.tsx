@@ -10,11 +10,11 @@
 // "their" pool shrink learns about restaking from the worst possible teacher,
 // so the board teaches it on the way in.
 //
-// Same rule at the top of the page: escrow (each pledge counted once) and the
-// across-pools figure (a contested pledge counted per name it was offered to)
-// are shown as two numbers with two labels, never added together.
+// The top of the page shows ONE total, money pledged with each pledge
+// counted once (UX sweep bo-hero): the across-pools figure, which counts a
+// contested pledge per name, read as a second kind of money.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type KeyboardEvent } from 'react'
 import { LockKeyhole } from 'lucide-react'
 import { InfoTip } from '@/components/info-tip'
 import { AccountChip } from '@/components/account-chip'
@@ -50,6 +50,42 @@ function platformLabel(p: string | null): string {
   return k.charAt(0).toUpperCase() + k.slice(1)
 }
 
+
+/**
+ * A pasted channel link → the platform and handle in it (UX sweep bo-create).
+ * The box used to want the bare handle and left Continue dead, with no reason,
+ * for "twitch.tv/ninja" or "https://kick.com/xqc". Null for anything that is
+ * not one of these links; the caller then treats the text as a handle.
+ */
+const LINK_PATTERNS: [RegExp, string][] = [
+  [/^(?:https?:\/\/)?(?:www\.|m\.)?twitch\.tv\/([^/?#\s]+)/i, 'twitch'],
+  [/^(?:https?:\/\/)?(?:www\.)?kick\.com\/([^/?#\s]+)/i, 'kick'],
+  [/^(?:https?:\/\/)?(?:www\.|mobile\.)?(?:x|twitter)\.com\/([^/?#\s]+)/i, 'x'],
+  [/^(?:https?:\/\/)?(?:www\.|m\.)?youtube\.com\/@([^/?#\s]+)/i, 'youtube'],
+  [/^(?:https?:\/\/)?(?:www\.)?rumble\.com\/c\/([^/?#\s]+)/i, 'rumble'],
+  [/^(?:https?:\/\/)?(?:www\.)?pump\.fun\/(?:coin\/)?([1-9A-HJ-NP-Za-km-z]{32,64})/i, 'pumpfun'],
+]
+export function parseStreamerLink(raw: string): { platform: string; handle: string } | null {
+  const s = raw.trim()
+  for (const [re, platform] of LINK_PATTERNS) {
+    const m = re.exec(s)
+    if (m) return { platform, handle: decodeURIComponent(m[1]).replace(/^@/, '') }
+  }
+  return null
+}
+
+/** True below the width where the selected-pool panel stacks under the board. */
+function useStackedPanel(): boolean {
+  const [stacked, setStacked] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1120px)')
+    const sync = () => setStacked(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
+  return stacked
+}
 
 function poolHref(p: { platform: string | null; handle: string | null }): string {
   return p.platform && p.handle
@@ -162,12 +198,15 @@ function Row({
   currency,
   selected,
   onSelect,
+  asLink,
 }: {
   pool: ProgramPool
   rank: number
   currency: string
   selected: boolean
   onSelect: () => void
+  /** Where the panel stacks (≤1,120px) the name opens the pool page instead. */
+  asLink: boolean
 }) {
   const handle = pool.handle || pool.handleKey
   const contested = pool.contested || []
@@ -182,17 +221,8 @@ function Row({
   // Distinct claims: `seeded` means WE opened it, `promotional` means nobody
   // has money on it right now. A fan-opened pool whose pledges all expired is
   // the second, not the first — calling it Seeded misattributes who put it there.
-  const seeded = !claimed && !!pool.seeded
-  const quiet = !claimed && !seeded && !!pool.promotional
-
-  const pip = claimed ? 'Claimed' : pool.displayOnly ? 'Example' : seeded ? 'Seeded' : quiet ? 'Open' : 'Unclaimed'
-  // Claimed is money that became a payout (rewards); seeded is money we put
-  // on offer (bounty); the rest is a plain state.
-  const pipColor = claimed
-    ? 'var(--f-rewards-ink)'
-    : seeded
-      ? 'var(--f-bounty-ink)'
-      : 'var(--mcc-off)'
+  // The Status column said UNCLAIMED ten times out of ten (UX sweep
+  // bo-rows): a pill beside the name now, only when it is true.
 
   const barLabel =
     total <= 0
@@ -210,26 +240,47 @@ function Row({
         {String(rank).padStart(2, '0')}
       </span>
 
-      <button type="button" className="lb-who flex min-w-0 items-center gap-3.5 text-left" onClick={onSelect} aria-pressed={selected}>
-        <Avatar handle={handle} platform={pool.platform} avatarUrl={pool.avatarUrl} />
-        <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate text-[17px] font-[700] tracking-[-0.01em]">{handle}</span>
-          <span className="truncate text-[12.5px] text-[var(--mcc-faint)]">
-            {pool.displayOnly ? 'Display example' : pool.contributionCount > 0
-              ? `${pool.contributionCount} backer${pool.contributionCount === 1 ? '' : 's'}`
-              : 'No backers yet'}{' '}
-            {pool.clipsWaiting > 0
-              ? `· ${pool.clipsWaiting} clip${pool.clipsWaiting === 1 ? '' : 's'} waiting `
-              : ''}
-            · {platformLabel(pool.platform)}
-          </span>
-        </span>
-      </button>
+      {(() => {
+        const who = (
+          <>
+            <Avatar handle={handle} platform={pool.platform} avatarUrl={pool.avatarUrl} />
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-[17px] font-[700] tracking-[-0.01em]">{handle}</span>
+                {claimed ? <span className="mcb-claimed-pill">Claimed</span> : null}
+              </span>
+              <span className="truncate text-[12.5px] text-[var(--mcc-faint)]">
+                {pool.displayOnly ? 'Display example' : pool.contributionCount > 0
+                  ? `${pool.contributionCount} backer${pool.contributionCount === 1 ? '' : 's'}`
+                  : 'No backers yet'}{' '}
+                {pool.clipsWaiting > 0
+                  ? `· ${pool.clipsWaiting} clip${pool.clipsWaiting === 1 ? '' : 's'} waiting `
+                  : ''}
+                · {platformLabel(pool.platform)}
+              </span>
+            </span>
+          </>
+        )
+        // Where the panel stacks, a tap on the name opens the pool itself
+        // (UX sweep bo-mobile-select): the panel it used to fill sat 2,000px
+        // below the tap.
+        return asLink ? (
+          <a href={poolHref(pool)} className="lb-who flex min-w-0 items-center gap-3.5 text-left">{who}</a>
+        ) : (
+          <button type="button" className="lb-who flex min-w-0 items-center gap-3.5 text-left" onClick={onSelect} aria-pressed={selected}>{who}</button>
+        )
+      })()}
 
       <div className="lb-bar flex flex-col gap-2">
         <div className="track" role="img" aria-label={barLabel}>
           {guaranteed > 0 && total > 0 ? (
-            <span className="track-locked" style={{ width: `${lockedPct}%` }} />
+            <span className="track-locked" style={{ width: `${lockedPct}%` }}>
+              {/* The lock sits on the locked money itself, on every bar that
+                  has some (UX sweep bo-lock-marks). */}
+              <span className="track-lock" title="Locked: theirs alone once they claim.">
+                <LockKeyhole size={12} aria-hidden="true" />
+              </span>
+            </span>
           ) : null}
           {contestedTotal > 0 && total > 0 ? (
             <span className="hatch" style={{ width: `${100 - lockedPct}%` }} />
@@ -257,25 +308,15 @@ function Row({
                     ? `${formatDollars(pool.releasedContributor)} paid out so far`
                     : 'nothing paid out yet'}
                 </span>
-              ) : contestedTotal > 0 ? (
-                rivals > 0 ? (
-                  <span className="text-[12px] text-[var(--mcc-faint)]">
-                    against {rivals} other{rivals === 1 ? '' : 's'}
-                  </span>
-                ) : null
-              ) : (
-                <span className="inline-flex items-center text-[var(--mcc-faint)]" title="All of it is locked to this name: theirs alone once they claim." aria-label="All of it locked to this name">
-                  <LockKeyhole className="size-3.5" aria-hidden="true" />
+              ) : contestedTotal > 0 && rivals > 0 ? (
+                <span className="text-[12px] text-[var(--mcc-faint)]">
+                  against {rivals} other{rivals === 1 ? '' : 's'}
                 </span>
-              )}
+              ) : null}
             </>
           )}
         </div>
       </div>
-
-      <span className="lb-status pip" style={{ color: pipColor }}>
-        {pip}
-      </span>
 
       {claimed ? (
         // /<handle> is an Express route, so this is a plain anchor by
@@ -308,19 +349,33 @@ export function BountyProgram() {
   const [platform, setPlatform] = useState('twitch')
   const [handle, setHandle] = useState('')
   const [selected, setSelected] = useState(0)
+  const stacked = useStackedPanel()
+  // Search-as-you-type over the pools that already exist (owner note on
+  // bo-create: "should be able to search, paste link, etc").
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [activeMatch, setActiveMatch] = useState(-1)
+
+  const loadProgram = async () => {
+    setLoadError('')
+    try {
+      const p = await getProgram()
+      // Ranked by the figure each row leads with (UX sweep bo-rows): locked
+      // money, then contested, then backers. The server's order counted a
+      // shared pledge only on the name it was anchored to.
+      setPools([...p.pools].sort((a, b) =>
+        (b.guaranteed || 0) - (a.guaranteed || 0)
+        || (b.contestedTotal || 0) - (a.contestedTotal || 0)
+        || (b.contributionCount || 0) - (a.contributionCount || 0)))
+      setTotals(p.totals)
+    } catch {
+      setLoadError('Couldn’t load the bounties.')
+    }
+  }
 
   useEffect(() => {
     void getBountyConfig().then(async (cfg) => {
       setConfig(cfg)
-      if (cfg?.enabled) {
-        try {
-          const p = await getProgram()
-          setPools(p.pools)
-          setTotals(p.totals)
-        } catch {
-          setLoadError('Bounties could not load. Refresh to retry.')
-        }
-      }
+      if (cfg?.enabled) await loadProgram()
     })
   }, [])
 
@@ -333,6 +388,34 @@ export function BountyProgram() {
   const startHref = wantedOk
     ? `/bounty/s/${encodeURIComponent(platform)}/${encodeURIComponent(wanted)}`
     : null
+  const query = rawHandle.toLowerCase()
+  const matches = query
+    ? pools.filter((p) => !p.displayOnly && (p.handle || p.handleKey).toLowerCase().includes(query)).slice(0, 6)
+    : []
+  const showMatches = searchOpen && matches.length > 0
+
+  function onHandleInput(value: string) {
+    // A pasted channel link fills the platform and the handle from it.
+    const link = parseStreamerLink(value)
+    if (link) {
+      setPlatform(link.platform)
+      setHandle(link.handle)
+    } else {
+      setHandle(value)
+    }
+    setSearchOpen(true)
+    setActiveMatch(-1)
+  }
+  function onHandleKey(e: KeyboardEvent<HTMLInputElement>) {
+    if (!showMatches) return
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveMatch((i) => (i + 1) % matches.length) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveMatch((i) => (i <= 0 ? matches.length - 1 : i - 1)) }
+    else if (e.key === 'Escape') { setSearchOpen(false); setActiveMatch(-1) }
+    else if (e.key === 'Enter' && activeMatch >= 0 && matches[activeMatch]) {
+      e.preventDefault()
+      window.location.href = poolHref(matches[activeMatch])
+    }
+  }
   const active = pools[selected] || pools[0] || null
   const activeGuaranteed = active?.guaranteed || 0
   const activeContested = active?.contestedTotal || 0
@@ -377,50 +460,132 @@ export function BountyProgram() {
           </section>
         ) : (
           <>
+            {/* The ask, the action and one total, above the fold (UX sweep
+                bo-hero). The Add a streamer form moved up from the foot of
+                the page; "Visible across pools" is gone: two figures $200
+                apart read as two kinds of money. */}
             <section className="mcb-hero">
               <div>
                 <span className="mcb-coordinate">Creator bounties / open</span>
                 <h1>Your favorite streamer<br />doesn&rsquo;t even know you.</h1>
                 <p>Be more than a username.</p>
+                <p className="mcb-hero-ask">Record a Holler, put money on it, and tell your favorite streamer to come claim it.</p>
+                {totals && !loadError ? (
+                  <p className="mcb-hero-total">
+                    <strong>{formatDollars(examples.count ? examples.unique : totals.realValue)}</strong> pledged{examples.count ? ' (examples)' : ''}
+                  </p>
+                ) : null}
               </div>
-              {totals ? (
-                <div className="mcb-totals">
-                  <span><small>{examples.count ? 'Example total' : 'Ledger balance'}</small><strong>{formatDollars(examples.count ? examples.unique : totals.realValue)}</strong><em>counted once</em></span>
-                  <i aria-hidden="true" />
-                  <span><small>Visible across pools</small><strong>{formatDollars(examples.count ? examples.visible : totals.displayedTotal)}</strong><em>{examples.count ? 'examples only' : 'contested value repeats'}</em></span>
-                </div>
-              ) : null}
+
+              <div className="mcb-create-bounty">
+                <span className="mcb-coordinate">Create a bounty <span className="mcb-step-chip">Step 1 of 2</span></span>
+                <h2>Add a streamer.</h2>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    if (startHref) window.location.href = startHref
+                  }}
+                >
+                  <select
+                    aria-label="Platform"
+                    className="field"
+                    value={platform}
+                    onChange={(e) => setPlatform(e.target.value)}
+                  >
+                    {PLATFORMS.map((p) => (
+                      <option key={p} value={p}>
+                        {platformLabel(p)}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mcb-search">
+                    <input
+                      aria-label="Streamer handle or channel link"
+                      className="field"
+                      placeholder="handle, link or search"
+                      value={handle}
+                      onChange={(e) => onHandleInput(e.target.value)}
+                      onKeyDown={onHandleKey}
+                      onFocus={() => setSearchOpen(true)}
+                      onBlur={() => setTimeout(() => setSearchOpen(false), 120)}
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-expanded={showMatches}
+                      aria-controls="mcb-search-list"
+                      aria-activedescendant={showMatches && activeMatch >= 0 ? `mcb-search-${activeMatch}` : undefined}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    {showMatches ? (
+                      <ul id="mcb-search-list" role="listbox" aria-label="Streamers with a bounty" className="mcb-search-list">
+                        {matches.map((m, i) => (
+                          <li key={m.handleKey} id={`mcb-search-${i}`} role="option" aria-selected={i === activeMatch}>
+                            <a href={poolHref(m)} className={i === activeMatch ? 'is-active' : undefined}
+                              onMouseDown={(e) => e.preventDefault()}>
+                              <span className="mcb-search-name">{m.handle || m.handleKey}</span>
+                              <span className="mcb-search-meta">{platformLabel(m.platform)} · {formatDollars(m.guaranteed || 0)} locked</span>
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                  <button type="submit" className="btn" disabled={!startHref}>
+                    Continue
+                  </button>
+                </form>
+              </div>
             </section>
 
-            {examples.count > 0 && <p className="mcb-example-notice">Example amounts, not funded: $100 per name plus one shared $100. Funded pools replace their examples. Current ledger balance: {formatDollars(totals?.realValue || 0)}.</p>}
-            {loadError && <p role="alert" className="mcb-example-notice">{loadError}</p>}
+            {examples.count > 0 && !loadError && <p className="mcb-example-notice">Example amounts, not funded: $100 per name plus one shared $100. Funded pools replace their examples. Current ledger balance: {formatDollars(totals?.realValue || 0)}.</p>}
 
             <div className="mcb-board-layout">
               <section className="mcb-leaderboard">
                 <header>
                   <div><span className="mcb-coordinate">Top targets</span><h2>Top bounties</h2></div>
-                  <span className="mcb-open-count"><i /> {openCount} open pool{openCount === 1 ? '' : 's'}</span>
+                  {loadError ? null : <span className="mcb-open-count"><i /> {openCount} open pool{openCount === 1 ? '' : 's'}</span>}
                 </header>
-                <div className="lb-head">
-                  <span className="colhead">#</span>
-                  <span className="colhead">Streamer</span>
-                  <span className="colhead">Pool</span>
-                  <span className="colhead">Status</span>
-                  <span />
-                </div>
+                {/* A failed load is not an empty board (UX sweep
+                    js-pool-fail-silent): no count, no "no bounties", one line
+                    and Retry in the table's place. */}
+                {loadError ? (
+                  <div role="alert" className="mcb-load-error">
+                    <p>{loadError}</p>
+                    <button type="button" className="btn" onClick={() => void loadProgram()}>Retry</button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="lb-head">
+                      <span className="colhead">#</span>
+                      <span className="colhead">Streamer</span>
+                      {/* The key lives on the column it explains (UX sweep
+                          bo-lock-marks), not in a legend a screen below. */}
+                      <span className="lb-head-pool">
+                        <span className="colhead">Pool · by locked</span>
+                        <span className="mcb-key">
+                          <span><i aria-hidden="true" className="track-locked" />Locked <InfoTip label="About locked money" text="Reserved for one streamer. Released after their verified broadcast." /></span>
+                          <span><i aria-hidden="true" className="hatch" />Contested <InfoTip label="About contested money" text="Shared across named streamers. The first verified broadcast takes it." /></span>
+                          <span><span className="mcb-refundable">Refundable</span> <InfoTip label="About refunds" text="Declined clips refund in full. Unclaimed bounties return at expiry." /></span>
+                        </span>
+                      </span>
+                      <span />
+                    </div>
 
-                {pools.length === 0 ? (
-                  <p className="mcb-empty">No active bounties. Create one for any streamer.</p>
-                ) : pools.map((p, i) => (
-                  <Row
-                    key={p.handleKey}
-                    pool={p}
-                    rank={i + 1}
-                    currency={currency}
-                    selected={active?.handleKey === p.handleKey}
-                    onSelect={() => setSelected(i)}
-                  />
-                ))}
+                    {pools.length === 0 ? (
+                      <p className="mcb-empty">No active bounties. Create one for any streamer.</p>
+                    ) : pools.map((p, i) => (
+                      <Row
+                        key={p.handleKey}
+                        pool={p}
+                        rank={i + 1}
+                        currency={currency}
+                        selected={!stacked && active?.handleKey === p.handleKey}
+                        onSelect={() => setSelected(i)}
+                        asLink={stacked}
+                      />
+                    ))}
+                  </>
+                )}
               </section>
 
               <aside className="mcb-pool-detail">
@@ -441,7 +606,7 @@ export function BountyProgram() {
                     ) : null}
                     <div className="mcb-detail-total"><strong>{formatDollars(activeTotal)}</strong><span>{active.displayOnly ? 'Example, not funded' : 'potential bounty'}</span></div>
                     <div className="mcb-detail-split">
-                      <span><i className="is-locked" /><b>{formatDollars(activeGuaranteed)} {currency} locked</b><small>Reserved for this streamer.</small></span>
+                      <span><i className="is-locked" /><b>{formatDollars(activeGuaranteed)} {currency} locked</b></span>
                       <span><i className="is-contested" /><b>{formatDollars(activeContested)} {currency} contested</b><small>{activeRivals > 0 ? `${activeRivals + 1} streamers can claim this portion.` : 'No competing names.'}</small></span>
                     </div>
                     <a href={poolHref(active)} className="mcb-detail-action">Open bounty</a>
@@ -453,49 +618,6 @@ export function BountyProgram() {
               </aside>
             </div>
 
-            <section className="mcb-anatomy">
-              <div><span aria-hidden="true" className="track-locked" /><p><strong>Locked</strong> <InfoTip label="About locked money" text="Reserved for one streamer. Released after their verified broadcast." /></p></div>
-              <div><span aria-hidden="true" className="hatch" /><p><strong>Contested</strong> <InfoTip label="About contested money" text="Shared across named streamers. The first verified broadcast takes it." /></p></div>
-              <div><p><span className="mcb-refundable">Refundable</span> <InfoTip label="About refunds" text="Declined clips refund in full. Unclaimed bounties return at expiry." /></p></div>
-            </section>
-
-            <section className="mcb-create-bounty">
-              <div>
-                <span className="mcb-coordinate">Create a bounty <span className="mcb-step-chip">Step 1 of 2</span></span>
-                <h2>Add a streamer.</h2>
-              </div>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  if (startHref) window.location.href = startHref
-                }}
-              >
-                <select
-                  aria-label="Platform"
-                  className="field"
-                  value={platform}
-                  onChange={(e) => setPlatform(e.target.value)}
-                >
-                  {PLATFORMS.map((p) => (
-                    <option key={p} value={p}>
-                      {platformLabel(p)}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  aria-label="Streamer handle"
-                  className="field"
-                  placeholder="their handle"
-                  value={handle}
-                  onChange={(e) => setHandle(e.target.value)}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <button type="submit" className="btn" disabled={!startHref}>
-                  Continue
-                </button>
-              </form>
-            </section>
           </>
         )}
       </main>

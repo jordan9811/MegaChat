@@ -25,8 +25,12 @@ import {
 } from '@/lib/obs-oneclick.mjs'
 import { useObsSceneWatch } from './use-obs-scene-watch'
 import { announceObsPassword, readObsPassword, writeObsPassword } from './obs-password'
+import { InfoTip } from '@/components/info-tip'
 
 const LS_MONITOR = 'mc_obs_monitor' // '1' hear (default) | '0' mute locally
+
+/** Where OBS keeps the password, behind the stepper's "Where is it?" tip. */
+const OBS_PASSWORD_STEPS = 'In OBS: Tools → WebSocket Server Settings. Tick Enable WebSocket server, then Show Connect Info, and copy the Server Password.'
 
 type Phase = 'idle' | 'testing' | 'connected' | 'adding' | 'verified' | 'failed'
 
@@ -179,6 +183,101 @@ export function ObsOneClick({
   const dims = canvas ? `${canvas.w} × ${canvas.h}` : 'your OBS canvas size (usually 1920 × 1080)'
 
   const failedChecks = useMemo(() => checks.filter((c) => !c.ok), [checks])
+
+  // ── ROOM MODE: a stepper in place (ss-connect-obs-wall) ─────────────────
+  // The dashboard's "Connect OBS" opened into 158 words of implementation
+  // notes around the one button that mattered. Three steps instead: paste
+  // the password (where it lives is behind an ⓘ), see it collapse to
+  // "OBS connected", press one button. The privacy and local-network notes
+  // are ⓘ tips. The bounty claim page keeps its own layout below: there the
+  // canvas-exact sizing is a payment requirement and its copy says why.
+  const [editingPassword, setEditingPassword] = useState(false)
+  const obsConnected = (obsVersion !== null || phase === 'verified') && !editingPassword
+  if (!isBounty) {
+    return (
+      <ol className="space-y-2.5">
+        <li className="rounded-xl border border-border/70 bg-background/40 p-3">
+          {obsConnected ? (
+            <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-[var(--neon-lime)]">
+              <CircleCheck className="size-4" /> OBS connected{canvas ? <span className="font-normal text-muted-foreground">· canvas {dims}</span> : null}
+              <button type="button" onClick={() => setEditingPassword(true)} className="ml-auto text-xs font-semibold text-muted-foreground underline-offset-2 hover:underline">Change</button>
+            </p>
+          ) : (
+            <>
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                <span className="text-muted-foreground">1</span> Paste your OBS WebSocket password
+                <span className="ml-auto inline-flex items-center gap-1 text-xs font-normal text-muted-foreground">Where is it?<InfoTip label="Where is the OBS WebSocket password?" text={OBS_PASSWORD_STEPS} /></span>
+              </p>
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => savePassword(e.target.value)}
+                  placeholder="OBS WebSocket password"
+                  aria-label="OBS WebSocket password"
+                  className="min-w-0 flex-1 rounded-lg border border-border bg-input/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-[var(--neon-cyan)]/70 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setEditingPassword(false); void testConnection() }}
+                  disabled={phase === 'testing' || phase === 'adding' || !password}
+                  className="shrink-0 rounded-lg border border-[var(--neon-cyan)]/50 px-3 py-2 text-sm font-bold text-[var(--neon-cyan)] disabled:opacity-60"
+                >
+                  {phase === 'testing' ? 'Connecting…' : 'Connect'}
+                </button>
+                <InfoTip label="Is the password safe?" text="It stays in this browser and is never sent to Holler. It only unlocks OBS on your own machine." />
+              </div>
+              {phase === 'failed' && error && obsVersion === null && checks.length === 0 ? (
+                <p className="mt-1.5 flex items-start gap-1.5 text-xs font-semibold text-[var(--neon-amber)]"><CircleAlert className="mt-px size-3.5 shrink-0" /> {error}</p>
+              ) : null}
+            </>
+          )}
+        </li>
+        <li className="rounded-xl border border-[var(--neon-lime)]/40 bg-[var(--neon-lime)]/5 p-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void addToObs()}
+              disabled={phase === 'adding' || phase === 'testing' || !password}
+              className="min-w-0 flex-1 rounded-full bg-hl-strap px-5 py-2.5 text-sm font-bold text-hl-on-strap transition-transform hover:scale-[1.01] active:scale-[.97] disabled:opacity-60"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <MonitorUp className="size-4" />
+                {phase === 'adding' ? 'Adding…' : phase === 'verified' ? 'Added · add again' : 'Add overlay to OBS'}
+              </span>
+            </button>
+            <InfoTip label="About adding the overlay" text="Adds the overlay as a browser source sized to your canvas, so tiles land where the preview shows. Pressing it again repairs a moved or resized source. Your browser may ask to connect to devices on your local network: that is OBS on this computer." />
+          </div>
+          <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={hearSounds}
+              onChange={(e) => void toggleHear(e.target.checked)}
+              className="size-3.5 accent-[var(--neon-lime)]"
+            />
+            <Volume2 className="size-3.5" />
+            Hear overlay sounds in your headphones
+            <InfoTip label="About overlay sounds" text="Join and stinger sounds. Turn this off if your monitoring echoes." />
+          </label>
+          {phase === 'verified' ? (
+            <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-[var(--neon-lime)]">
+              <CircleCheck className="size-3.5" /> Overlay added and checked{canvas ? ` · ${dims}` : ''}
+            </p>
+          ) : null}
+          {phase === 'failed' && error && (obsVersion !== null || checks.length > 0) ? (
+            <div className="mt-2 text-xs text-[var(--neon-amber)]">
+              <p className="flex items-start gap-1.5 font-semibold"><CircleAlert className="mt-px size-3.5 shrink-0" /> {error}</p>
+              {failedChecks.length ? (
+                <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                  {failedChecks.map((c) => <li key={c.name}>{c.name}: got {c.got}, wanted {c.want}</li>)}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+        </li>
+      </ol>
+    )
+  }
 
   return (
     <div className="space-y-4">

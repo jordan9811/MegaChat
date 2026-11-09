@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function NewCampaignPage() {
   return (
-    <CampaignsShell tag="New campaign">
+    <CampaignsShell tag="New campaign" open>
       <PageTitle
         coordinate="Reward campaign · new"
         title="If they qualify, they get paid"

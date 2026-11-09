@@ -76,7 +76,7 @@ export function createCampaignStore({ dataDir = process.env.DATA_DIR || path.joi
     files,
     // ── campaigns ──
     getCampaign: (id) => clone(C().campaigns[id] || null),
-    campaignBySlug: (slug) => { const s = C(); const id = s.slugs[String(slug || '').toLowerCase()]; return id ? clone(s.campaigns[id]) : null; },
+    campaignBySlug: (slug) => { const s = C(); const id = s.slugs[String(slug || '').toLowerCase()]; return id ? clone(s.campaigns[id] || null) : null; },
     slugTaken: (slug) => !!C().slugs[String(slug || '').toLowerCase()],
     listCampaigns: () => Object.values(C().campaigns).map(clone),
     /** Every campaign id, cloning nothing: the sweep reads each campaign fresh as it reaches it. */
@@ -90,6 +90,20 @@ export function createCampaignStore({ dataDir = process.env.DATA_DIR || path.joi
       s.slugs[c.slug] = c.id;
       write('campaigns');
       return clone(c);
+    },
+    /**
+     * Remove a campaign record (the engine only calls this for a never-funded
+     * draft: campaign-engine.js deleteDraft). Its slug stays in `slugs`,
+     * pointing at the gone id, so the link stays a 404 and is never minted
+     * again for another campaign.
+     */
+    deleteCampaign(id) {
+      docs.campaigns.assertWritable();
+      const s = C();
+      if (!s.campaigns[id]) return false;
+      delete s.campaigns[id];
+      write('campaigns');
+      return true;
     },
     // ── reference sets (insert-only) ──
     getSet: (id) => clone(S().sets[id] || null),

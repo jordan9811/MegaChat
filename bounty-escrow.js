@@ -164,6 +164,23 @@ export function contribute({ platform, handle, contributor, amount, letterRef, a
  * because "how many pools can one dollar appear in" is a money-display
  * invariant, not a UI preference.
  */
+/**
+ * A PLEDGE AMOUNT IS ONE PLAIN DECIMAL (UX sweep bo-amount-parse). This was
+ * `parseFloat(amount) > 0`, which read "1,000" as 1, "5 USDC" as 5 and "1e3"
+ * as 1000 and then STORED the typed string: the pool booked one number, My
+ * bounties printed another, and on real money the wallet step (token-utils
+ * toAtomic) refused the string only after the pledge was written, leaving a
+ * pledge that could never fund. Digits, at most one '.', at most 6 places
+ * (USDC's), no leading zeros, more than zero — refused here, before any write.
+ */
+const CANONICAL_AMOUNT_RE = /^(0|[1-9]\d{0,11})(\.\d{1,6})?$/;
+export const AMOUNT_ERROR = 'Amount must be a plain number like 5 or 12.5 (digits and one ".", up to 6 decimal places).';
+export function isCanonicalAmount(amount) {
+  if (typeof amount !== 'string' && typeof amount !== 'number') return false;
+  const s = String(amount);
+  return CANONICAL_AMOUNT_RE.test(s) && Number(s) > 0;
+}
+
 export function pledge({ targets, contributor, amount, expiresInMs, actor = 'fan', displayName = null, minTier = 'green' }) {
   assertEnabled();
   if (!store.PLEDGE_TIERS.includes(minTier)) throw new Error(`minTier must be one of ${store.PLEDGE_TIERS.join(', ')}`);
@@ -186,7 +203,7 @@ export function pledge({ targets, contributor, amount, expiresInMs, actor = 'fan
   if (clean.length > bountyConfig.pledgeMaxTargets) {
     throw new Error(`A pledge may target at most ${bountyConfig.pledgeMaxTargets} streamers`);
   }
-  if (!(parseFloat(amount) > 0)) throw new Error('Pledge amount must be positive');
+  if (!isCanonicalAmount(amount)) throw new Error(AMOUNT_ERROR);
 
   const ttl = Math.min(
     bountyConfig.pledgeMaxExpiryMs,

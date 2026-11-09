@@ -2470,3 +2470,23 @@ previous commit.
   `#message`. Six gates were updated to read the new boxes.
 - **The Twitch player shows only while the channel is live**; otherwise
   Holler's own off-air card.
+
+## 2026-11-09 — UX bounty, round 3 (the owner's 100 picks)
+
+- **A Holler on screen holds a tile.** Call in is refused before any charge
+  when Hollers plus waiting seats fill the room; a seat waiting to go live holds
+  its tile (up to 5 min) so a Holler won't air into it. Owner: revisit. Undo:
+  the tile count in `server.js` admission and the scheduler check in `letters.js`.
+- **Overlay links never fall back.** No room or an unknown room draws nothing;
+  the test room is never the default. Undo: `overlay.html` room resolution.
+- **Campaign places = floor(budget ÷ reward)**, max claims an optional lower
+  cap; saved campaigns follow the same rule. Undo: `campaign-engine.js` places.
+- **Never-funded campaign drafts can be deleted**; the slug stays reserved.
+- **The board's On air toggle is removed**; the board lists every room with live
+  ones first, so a visitor can no longer hide idle rooms.
+- **Board liveness wording:** "Unverified" (owner's note) instead of the picked
+  "Hollers paused"; one string in `FAN_LABEL`.
+- **Any layout save writes `clip.follow: true`** so an old hidden own-corner
+  setting can't keep refusing saves (Holler clips use the seat slots).
+- **"Send a test Holler" is one broadcast message**: no seat, no Holler record,
+  no charge; refused while anything real is on screen.

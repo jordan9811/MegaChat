@@ -94,13 +94,15 @@ await new Promise((r) => setTimeout(r, 2500));
 const probeA = await page.evaluate(() => {
   const wrap = document.getElementById('streamPreview');
   const iframe = document.querySelector('#streamPreviewMount iframe');
-  const drops = document.getElementById('streamPreviewDrops');
+  // The watch-to-earn line moved off the stage to the top of the console
+  // (owner's pick rw-hint-hidden), so it shows with or without a preview.
+  const drops = document.getElementById('rewardsLine');
   const vis = (el) => !!el && getComputedStyle(el).display !== 'none';
   return {
     wrapVisible: vis(wrap),
     src: iframe ? iframe.src : null,
     label: wrap ? wrap.textContent.includes('~15s behind live') : false,
-    dropsVisible: vis(drops),
+    dropsVisible: vis(drops) && !drops.hidden && /every 2 s/.test(drops.textContent || ''),
     joinControls: ['username', 'joinBtn', 'connectBtn', 'depositBtn']
       .every((id) => !!document.getElementById(id)),
   };
@@ -111,7 +113,7 @@ ok('official Twitch player, right channel + parent',
   && probeA.src.includes('channel=megachattv') && probeA.src.includes('parent=localhost'),
   probeA.src);
 ok('delay label present', probeA.label);
-ok('drops hint visible (rewards on)', probeA.dropsVisible);
+ok('rewards line visible in the console with the terms (rewards on)', probeA.dropsVisible);
 ok('join controls intact on room A', probeA.joinControls);
 
 await page.goto(`${BASE}/join?room=${roomB.id}`, { waitUntil: 'networkidle2', timeout: 60000 });

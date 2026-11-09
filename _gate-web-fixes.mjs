@@ -596,14 +596,21 @@ async function hollerSection({ ok, browser, APP, makeRoom }) {
 async function recordSection({ ok, browser, APP, api, auth, FAN, STAR }) {
   await api('/api/bounty/admin/seed', { method: 'POST', as: FAN, body: { platform: 'twitch', handle: STAR } });
   const cookie = auth.cookieFor(FAN);
+  // A seeded name nobody has backed asks for "Record the first Holler"
+  // (UX sweep bo-claim-unbacked); a backed one, "Record a Holler for <name>".
   const openRecorder = async (page) => {
     await page.goto(`${APP}/bounty/s/twitch/${STAR}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await until(() => bodyHas(page, `Record a Holler for ${STAR}`), 30000);
-    await clickText(page, 'button', `Record a Holler for ${STAR}`);
+    await until(() => page.evaluate((s) => document.body.innerText.includes(`Record a Holler for ${s}`) || document.body.innerText.includes('Record the first Holler'), STAR), 30000);
+    (await clickText(page, 'button', 'Record the first Holler')) || (await clickText(page, 'button', `Record a Holler for ${STAR}`));
     await until(() => bodyHas(page, 'minimum'), 10000);
   };
+  const hasButton = (page, re) => page.evaluate((src) => [...document.querySelectorAll('button')].some((b) => new RegExp(src).test((b.textContent || '').trim()) && !b.disabled), re);
+  // The recorder counts 3-2-1 before the take starts (UX sweep
+  // bo-recorder-fold), so the take is timed from Stop appearing.
   const recordTake = async (page, ms = 4600) => {
+    await until(() => hasButton(page, '^Record$'), 15000);
     await clickText(page, 'button', 'Record');
+    await until(() => hasButton(page, 'Stop'), 15000);
     await sleep(ms);
     await clickText(page, 'button', 'Stop');
   };
@@ -646,7 +653,7 @@ async function recordSection({ ok, browser, APP, api, auth, FAN, STAR }) {
       await clickText(page, 'button', '& send');
       const retry = await until(() => page.evaluate(() => [...document.querySelectorAll('button')].some((b) => /Retry upload/.test(b.textContent || ''))), 20000);
       ok('R2a. web-5: a failed upload offers a retry of the upload, terms locked', !!retry
-        && await page.evaluate(() => [...document.querySelectorAll('label')].find((l) => /Bounty amount/.test(l.textContent || ''))?.querySelector('input')?.disabled === true));
+        && await page.evaluate(() => document.getElementById('bounty-amount')?.disabled === true));
       await clickText(page, 'button', 'Retry upload');
       const done = await until(() => bodyHas(page, 'Sent'), 25000);
       ok('R2b. web-5: the retry uploads the same take under ONE pledge (HEAD: a second pledge)',
@@ -674,8 +681,9 @@ async function recordSection({ ok, browser, APP, api, auth, FAN, STAR }) {
     });
     try {
       await openRecorder(page);
+      await until(() => hasButton(page, '^Record$'), 15000);
       await clickText(page, 'button', 'Record');
-      await sleep(2500);
+      await sleep(4500); // the 3-2-1, then the recorder that throws
       const states = await page.evaluate(() => window.__tracks.map((t) => t.readyState));
       ok('R3. web-19: when MediaRecorder throws, every captured track is ended (HEAD: live)', states.length > 0 && states.every((s) => s === 'ended'), JSON.stringify(states));
     } finally { await closePage(page); }
@@ -760,17 +768,18 @@ async function dashboardSection({ ok, browser, APP, auth, makeRoom, OWNER }) {
     });
     try {
       await page.goto(`${APP}/dashboard?room=${a.id}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      // "Connect OBS" is folded shut; open it the way a click on its summary does.
+      // The OBS connect is the "Add it for me" button on the overlay row
+      // (ss-obs-link-buried / ss-connect-obs-wall, 2026-11-09); press it.
       const opened = await until(() => page.evaluate(() => {
-        const s = [...document.querySelectorAll('summary')].find((x) => /Connect OBS/.test(x.textContent || ''));
-        if (!s) return false;
-        s.parentElement.open = true;
-        return !!document.querySelector('input[placeholder="OBS WebSocket password"]');
+        if (document.querySelector('input[placeholder="OBS WebSocket password"]')) return true;
+        const b = [...document.querySelectorAll('button')].find((x) => /Add it for me/.test(x.textContent || ''));
+        if (b) b.click();
+        return false;
       }), 30000, 500);
       ok('D0. the dashboard shows the room-mode OBS connect', !!opened);
       if (!opened) return;
       await page.type('input[placeholder="OBS WebSocket password"]', OBS_PASSWORD);
-      await clickText(page, 'button', 'Test connection');
+      await page.evaluate(() => [...document.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === 'Connect')?.click());
       const forA = await until(() => posts.find((p) => p.room === a.id && p.signal === 'overlay_hidden'), 15000);
       ok('D1. web-6: connecting OBS on the dashboard starts the visibility watch with no reload (overlay_hidden posted; HEAD: nothing until a reload)', !!forA, JSON.stringify(posts));
       // web-21: switch to the second room in place.
@@ -811,7 +820,8 @@ async function rewardsSection({ ok, browser, APP, auth, makeRoom, FAN, OWNER }) 
     const s = document.querySelector('section.mcc-feature[data-kind="rewards"]');
     if (!s) return false;
     if (s.dataset.enabled === 'true') return true;
-    s.querySelector('.mcc-feature-head').click();
+    // Only the switch toggles a feature; the header just folds it (UX bounty ss-tile-row-toggle).
+    s.querySelector('.mcc-feature-switch').click();
     return false;
   }), 20000, 700);
   const value = (page, label) => page.$eval(`input[aria-label="${label}"]`, (e) => e.value).catch(() => null);
@@ -839,6 +849,10 @@ async function rewardsSection({ ok, browser, APP, auth, makeRoom, FAN, OWNER }) 
       await sleep(1500);
       await toggleRewards(page);
       const said = await until(() => page.evaluate(() => {
+        // The over-limit value is now caught at the field, in words, before any
+        // save (UX bounty rw-silent-invalid); the server's own refusal still counts.
+        const field = document.querySelector('.mcc-field-error')?.textContent || '';
+        if (field) return field;
         const t = document.querySelector('.mcc-status-live small')?.textContent || '';
         return /can be at most/.test(t) ? t : null;
       }), 15000);

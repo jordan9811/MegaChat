@@ -3,11 +3,15 @@
 // /dashboard/campaigns/[id] — the status header (draft → funded → live →
 // closed, with the budget funded / released / refunded), the two steps that
 // move it along (Fund, then Open), the public link and the share post, the
-// claims table, and the one destructive action, Close.
+// claims table, and the one destructive action: Close, or, on a draft that
+// was never funded, Delete (closing a draft used to publish it as a
+// campaign that ran).
 
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   closeCampaign,
+  deleteCampaign,
   fundCampaign,
   getCampaign,
   getCampaignConfig,
@@ -92,13 +96,14 @@ function CopyButton({ value, what }: { value: string; what: string }) {
 }
 
 export function CampaignDetail({ id }: { id: string }) {
+  const router = useRouter()
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [claims, setClaims] = useState<Claim[] | null>(null)
   const [claimsError, setClaimsError] = useState<string | null>(null)
   const [sets, setSets] = useState<ReferenceSet[]>([])
   const [error, setError] = useState<{ status: number; message: string } | null>(null)
   const [chain, setChain] = useState({ explorerUrl: 'https://explore.tempo.xyz' })
-  const [busy, setBusy] = useState<'fund' | 'open' | 'close' | null>(null)
+  const [busy, setBusy] = useState<'fund' | 'open' | 'close' | 'delete' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [approval, setApproval] = useState<ApprovalAsk | null>(null)
   const [confirmClose, setConfirmClose] = useState(false)
@@ -181,6 +186,18 @@ export function CampaignDetail({ id }: { id: string }) {
       setBusy(null)
     }
   }, [id, load])
+
+  const remove = useCallback(async () => {
+    setBusy('delete')
+    setActionError(null)
+    try {
+      await deleteCampaign(id)
+      router.push('/dashboard/campaigns')
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Could not delete')
+      setBusy(null)
+    }
+  }, [id, router])
 
   if (error) {
     return (
@@ -317,11 +334,13 @@ export function CampaignDetail({ id }: { id: string }) {
 
       <div className="mcp-detail-grid">
         <section className="mcp-card">
-          <header><span className="mcp-coordinate">Public link</span><h2>Where people claim</h2><p>{c.status === 'live' ? 'Open now.' : c.status === 'closed' ? 'Shows the campaign as closed.' : 'Opens once the campaign is funded and open.'}</p></header>
+          <header><span className="mcp-coordinate">Public link</span><h2>Where people claim</h2><p>{c.status === 'live' ? 'Open now.' : c.status === 'closed' ? 'Shows the campaign as closed.' : 'Goes public once the campaign is funded and open. Until then only you can see it, as a preview.'}</p></header>
           <div className="mcp-linkrow">
             <span>{publicUrl}</span>
             <CopyButton value={publicUrl} what="the public link" />
-            <a href={`/c/${c.slug}`} target="_blank" rel="noopener">Open</a>
+            {/* Unopened: the creator sees the real offer page as a preview
+                (ca-draft-link-404), in this tab. */}
+            <a href={`/c/${c.slug}`}>{c.status === 'live' || c.status === 'closed' ? 'Open' : 'Preview'}</a>
           </div>
           <header><span className="mcp-coordinate">Share on X</span></header>
           <p className="mcp-share">{share}</p>
@@ -331,7 +350,7 @@ export function CampaignDetail({ id }: { id: string }) {
               <span className="mcp-copybtn"><CopyButton value={share} what="the share post" /></span>
             </div>
           ) : (
-            <p className="mcp-hint">{c.status === 'closed' ? 'The campaign is closed, so the post is kept for the record only.' : 'The share button appears once the campaign is open to claims — the link 404s until then.'}</p>
+            <p className="mcp-hint">{c.status === 'closed' ? 'The campaign is closed, so the post is kept for the record only.' : 'The share button appears once the campaign is open to claims.'}</p>
           )}
           <p className="mcp-hint mcp-notice-inline">{COMPLIANCE_NOTICE}</p>
         </section>
@@ -402,7 +421,19 @@ export function CampaignDetail({ id }: { id: string }) {
         ) : null}
       </section>
 
-      {c.status !== 'closed' ? (
+      {c.status === 'draft' && c.deletable ? (
+        <footer className="mcp-danger-row">
+          {confirmClose ? (
+            <span className="mcp-end-confirm">
+              <small>Delete this draft? Nothing was funded.</small>
+              <button type="button" className="mcp-btn-danger" disabled={busy !== null} onClick={() => void remove()}>{busy === 'delete' ? 'Deleting…' : 'Yes, delete it'}</button>
+              <button type="button" className="mcp-btn-ghost" disabled={busy !== null} onClick={() => setConfirmClose(false)}>Keep it</button>
+            </span>
+          ) : (
+            <button type="button" className="mcp-btn-ghost" onClick={() => setConfirmClose(true)}>Delete draft</button>
+          )}
+        </footer>
+      ) : c.status !== 'closed' ? (
         <footer className="mcp-danger-row">
           {confirmClose ? (
             <span className="mcp-end-confirm">

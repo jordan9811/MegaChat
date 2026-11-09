@@ -88,7 +88,13 @@ async function loadConfig() {
   // Shared with the wallet provider, which asks for the default room's config
   // at the same moment (lib/api.ts): one request, not two.
   const res = await fetchPublicConfig(streamRoomId);
-  if (!res.ok) throw new Error(String(res.body.error || 'Failed to load room config'));
+  if (!res.ok) {
+    // The status rides the error: a 404 is a link to no room (init's
+    // not-found card), anything else a load that may work on a retry.
+    const err = new Error(String(res.body.error || 'Failed to load room config'));
+    err.status = res.status;
+    throw err;
+  }
   CONFIG = res.body;
   const roomName = document.getElementById('joinRoomName');
   if (roomName) roomName.textContent = CONFIG.roomName || 'Room';
@@ -107,10 +113,6 @@ async function loadConfig() {
   // The config rides the event, so the room bar's feature tags (join-client)
   // read it instead of asking the server for the same thing again.
   window.dispatchEvent(new CustomEvent('stream:room', { detail: CONFIG }));
-  const earnedRow = document.getElementById('earnedRow');
-  if (earnedRow) {
-    earnedRow.style.display = (CONFIG.rewards && CONFIG.rewards.enabled) ? '' : 'none';
-  }
   if (CONFIG.roomName) {
     document.title = CONFIG.roomName + ' — Join';
     // Next's static metadata re-applies its own <title> when hydration
@@ -174,7 +176,7 @@ function applyFreeRoomUi() {
   if (!roomIsFree()) return;
   // meter included: a FREE room showing "Remaining 0.07 USDC.e" is a wallet
   // surface contradicting the room's one promise
-  for (const id of ['connectBtn', 'depositBtn', 'walletInfo', 'passkeyFundNote', 'earnedRow']) {
+  for (const id of ['connectBtn', 'depositBtn', 'walletInfo', 'passkeyFundNote']) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   }
@@ -245,6 +247,8 @@ function shortTxReason(raw) {
 }
 
 async function humanTxErrorHtml(err, ctx) {
+  // Already written for a person, with its next step (joinRefusal).
+  if (err && typeof err.html === 'string') return err.html;
   const raw = String((err && err.message) || err || 'Unknown error');
   const rawFull = String((err && (err.stack || err.message)) || err || 'Unknown error');
   // Short app-level errors (server rejections, our own throws) pass through
@@ -276,7 +280,7 @@ async function humanTxErrorHtml(err, ctx) {
         : 'Not enough balance for this.';
     // The funding steps then replace this line, in the same box.
     const where = ctx && MESSAGE_BOX[ctx.where] ? ctx.where : 'wallet';
-    return `${line} <button type="button" class="tx-addfunds" onclick="fundWallet('${where}')">➕ Add funds</button>`;
+    return `${line} <button type="button" class="tx-addfunds" onclick="fundWallet('${where}')">Add funds</button>`;
   }
   if (/user rejected|user denied|rejected the request/i.test(rawFull)) {
     return 'You cancelled the request in your wallet.';
@@ -287,6 +291,38 @@ async function humanTxErrorHtml(err, ctx) {
 async function showTxError(prefix, err, ctx) {
   const html = await humanTxErrorHtml(err, ctx);
   showMessage('❌ ' + (prefix ? prefix + ': ' : '') + html, 'error', ctx && ctx.where);
+}
+
+// An amount of what a refusal counts: earned points by name, dollars as
+// dollars, any other token by its symbol.
+function amountWithUnit(amount, symbol) {
+  const sym = String(symbol || '');
+  const n = trimAmt(amount);
+  if (/^PTS$/i.test(sym)) return `${n} point${Number(n) === 1 ? '' : 's'}`;
+  if (!sym || /^USDC(?:\.e)?$/i.test(sym)) return formatDollars(n);
+  return `${n} ${sym}`;
+}
+
+// A refused seat says what happened and what to do next, never the bare
+// reason code (owner's pick rw-raw-reason): the server's sentence (hint, then
+// error), then the next step for the reasons a viewer can act on. The html
+// rides the error to humanTxErrorHtml, which shows it as written.
+function joinRefusal(data, fallback, detail = '') {
+  const d = data || {};
+  const said = String(d.hint || d.error || fallback) + detail;
+  const stop = /[.!?]$/.test(said) ? '' : '.';
+  let next = '';
+  if (d.reason === 'no_seats_available') {
+    next = 'All seats are taken. Try again when one frees up.';
+  } else if (d.reason === 'insufficient_rewards' && d.available != null && d.needAtLeast != null) {
+    next = `You have ${amountWithUnit(d.available, d.tokenSymbol)}; a seat needs ${amountWithUnit(d.needAtLeast, d.tokenSymbol)}.`;
+  }
+  const err = new Error(said);
+  err.html = escapeHtml(said) + (next ? stop + ' ' + escapeHtml(next) : '');
+  if (d.reason === 'sign_in_required') {
+    err.html += ` <button type="button" class="tx-addfunds" onclick="connectPrivyWallet('seat')">Sign in</button>`;
+  }
+  return err;
 }
 let lastMeter = null;
 function applyModeText() {
@@ -337,12 +373,14 @@ function roomPaused() {
 
 // "Call in — $0.002/s · max $1": the seat's rate and the spend cap a call
 // can reach, before anyone presses it.
+// Plain text in every state (owner's pick vr-emoji-buttons): the button's one
+// mark is Call in's dashed seat +, drawn by join.css, never an emoji.
 function idleCallInLabel() {
-  if (roomPaused()) return '🎬 Call in — paused';
-  if (!CONFIG || roomIsFree()) return '🎬 Call in — FREE';
+  if (roomPaused()) return 'Call in — paused';
+  if (!CONFIG || roomIsFree()) return 'Call in — FREE';
   const rate = Number(CONFIG.passkeyTickPrice || CONFIG.tickPrice) / (Number(CONFIG.passkeyTickSeconds) || 1);
   const cap = Number(CONFIG.maxSession);
-  return `🎬 Call in — ${formatDollars(rate)}/s${cap > 0 ? ` · max ${formatDollars(cap)}` : ''}`;
+  return `Call in — ${formatDollars(rate)}/s${cap > 0 ? ` · max ${formatDollars(cap)}` : ''}`;
 }
 
 // Hide the live-path controls entirely in MegaChats-only rooms.
@@ -353,6 +391,10 @@ function applyFeatureVisibility() {
   const action = document.getElementById('liveSeatAction');
   if (joinBtn) joinBtn.style.display = on ? '' : 'none';
   if (action) action.style.display = on ? '' : 'none';
+  // "Every unused cent returns" says nothing where the seat costs nothing
+  // (owner's pick vr-free-zero): a free room, or a guest on the free list.
+  const trust = document.getElementById('seatTrustLine');
+  if (trust) trust.hidden = roomIsFree() || viewerRidesFree();
 }
 
 function formatTimeLeft(seconds) {
@@ -362,20 +404,29 @@ function formatTimeLeft(seconds) {
   return `${m}:${r.toString().padStart(2, '0')}`;
 }
 
-// The held seat's own meter (null for a free seat), for the receipt on leave;
-// and the last seat's Spent, which stays on the meter until the next one.
+// The held seat's own meter (null for a free seat), for the receipt on leave.
 let seatMeter = null;
-let lastSessionSpent = '0';
 
+// The meter belongs to a held seat and to nothing else (owner's pick
+// rw-earned-in-seat-meter): it opens on a seat's grant, and closes when the
+// seat ends. The wallet's balance before a seat lives in the wallet line
+// (renderWallet), and what watching earned in the rewards line.
 function showMeter(remaining, spent, secondsLeft) {
   if (roomIsFree()) return; // free rooms have no balance to meter — ever
+  if (!mySeatId) return;
   lastMeter = { remaining, spent, secondsLeft };
-  if (mySeatId) seatMeter = { remaining, spent };
+  seatMeter = { remaining, spent };
   const box = document.getElementById('meter');
   box.classList.add('show');
   document.getElementById('meterRemaining').textContent = formatDollars(remaining);
   document.getElementById('meterSpent').textContent = formatDollars(spent);
   document.getElementById('meterTime').textContent = formatTimeLeft(secondsLeft);
+}
+
+function hideMeter() {
+  lastMeter = null;
+  const box = document.getElementById('meter');
+  if (box) box.classList.remove('show');
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────
@@ -398,11 +449,26 @@ function ensureEthereum() {
   return eth;
 }
 
-// Opt-in overlay stinger picks from the Advanced expander. Empty selection
-// sends nothing → server stores null → overlay plays its defaults.
-function stingerSelections() {
+// The entrance and exit, from the picker where the choice applies (owner's
+// pick vr-stinger-after-button): 'seat' in the Call in camera stage, 'letter'
+// in the Holler review step. One choice, shown in both places (syncStingers).
+// Empty selection sends nothing → server stores null → overlay plays its
+// defaults.
+function stingerSelections(kind = 'seat') {
   const val = (id) => document.getElementById(id)?.value || undefined;
-  return { flyIn: val('flyInSelect'), flyOut: val('flyOutSelect') };
+  return { flyIn: val(`${kind}FlyIn`), flyOut: val(`${kind}FlyOut`) };
+}
+
+function syncStingers(e) {
+  const m = /^(seat|letter)(FlyIn|FlyOut)$/.exec((e.target && e.target.id) || '');
+  if (!m) return;
+  const other = document.getElementById(`${m[1] === 'seat' ? 'letter' : 'seat'}${m[2]}`);
+  if (other) other.value = e.target.value;
+}
+
+function showStingers(kind, on) {
+  const el = document.getElementById(`${kind}Stingers`);
+  if (el) el.hidden = !on;
 }
 
 // Targeted reward campaign (/c/<slug> → Record your Holler / Call in): the
@@ -501,12 +567,12 @@ let joinBtnState = 'idle';
 // camera wait can be cancelled, and while live the same button IS the
 // leave action — there is no sibling Leave button anymore.
 const JOIN_BTN_STATES = {
-  idle: { label: '🎬 Call in', disabled: false },
-  busy: { label: '⏳ Processing…', disabled: true },
-  'awaiting-camera': { label: '⏳ Waiting for camera — tap to cancel', disabled: false },
-  'go-live': { label: '🎥 Go Live', disabled: false },
-  'going-live': { label: '⏳ Going live — tap to cancel', disabled: false },
-  live: { label: "🔴 You're LIVE — tap to leave", disabled: false },
+  idle: { label: 'Call in', disabled: false },
+  busy: { label: 'Processing…', disabled: true },
+  'awaiting-camera': { label: 'Waiting for camera — tap to cancel', disabled: false },
+  'go-live': { label: 'Go Live', disabled: false },
+  'going-live': { label: 'Going live — tap to cancel', disabled: false },
+  live: { label: "You're LIVE — tap to leave", disabled: false },
 };
 
 function setJoinState(state, labelOverride) {
@@ -517,6 +583,9 @@ function setJoinState(state, labelOverride) {
   btn.textContent = labelOverride || (joinBtnState === 'idle' ? idleCallInLabel() : preset.label);
   btn.disabled = preset.disabled
     || (joinBtnState === 'idle' && CONFIG && CONFIG.roomActive === false);
+  // The entrance and exit apply until Go Live is pressed: the picker shows
+  // from the seat's grant to that press, and not before or after.
+  showStingers('seat', joinBtnState === 'awaiting-camera' || joinBtnState === 'go-live');
   // The camera attached: Go Live is the next press, so it must be on screen.
   if (joinBtnState === 'go-live') revealSeatCam();
 }
@@ -659,6 +728,7 @@ async function connectPrivyWallet(where) {
     walletMode = 'privy';
     updatePriceDisplay();
     account = null; // clear any stale MetaMask address
+    walletBalance = null;
 
     const addr = await MW.connect();
     account = addr;
@@ -686,6 +756,7 @@ async function connectWallet(where) {
       showMessage('🔒 Wallet is locked or no account is shared. Unlock MetaMask and try again.', 'error', where);
       return null;
     }
+    if (accounts[0] !== account) walletBalance = null;
     account = accounts[0];
     walletMode = 'metamask';
     watchWalletAccount(eth);
@@ -820,14 +891,18 @@ function renderWallet() {
 
   if (roomIsFree()) { applyFreeRoomUi(); return; }
 
+  // The wallet's balance before a seat, here in the wallet line: the seat
+  // meter no longer opens to show it (owner's pick rw-earned-in-seat-meter).
+  const bal = walletBalance != null ? ` · balance ${formatDollars(walletBalance)}` : '';
+
   if (account && walletMode === 'privy') {
     // Connected — the paths not taken LEAVE the screen (no dulled clutter):
     // MetaMask row gone, Fund takes the row.
     connectBtn.style.display = 'none';
     if (dep) dep.style.gridColumn = '1 / -1';
     info.innerHTML =
-      `<span class="adv-only">🟢 Connected · ${addrChip(account)} <span class="net-chip">${tokenSymbol()} · Tempo</span></span>` +
-      `<span class="simple-only">🟢 Signed in — your balance is ready.<br>` +
+      `<span class="adv-only">Connected · ${addrChip(account)} <span class="net-chip">${tokenSymbol()} · Tempo</span>${bal}</span>` +
+      `<span class="simple-only">Signed in${bal || ' — your balance is ready'}.<br>` +
       `<details class="addr-details"><summary>account details</summary>` +
       `Account address (tap to copy): ${addrChip(account)}</details></span>`;
     if (fundNote) {
@@ -851,11 +926,11 @@ function renderWallet() {
 
   if (account && walletMode === 'metamask') {
     // The MetaMask chip stays as the one connected-state indicator.
-    connectBtn.textContent = '🟢 🦊 Connected';
+    connectBtn.textContent = 'MetaMask connected';
     connectBtn.disabled = true;
     info.innerHTML =
-      `<span class="adv-only">🟢 Connected · Wallet: ${addrChip(account)}<br>Network: Tempo (MetaMask)</span>` +
-      `<span class="simple-only">🟢 Signed in — your balance is ready.<br>` +
+      `<span class="adv-only">Connected · Wallet: ${addrChip(account)}${bal}<br>Network: Tempo (MetaMask)</span>` +
+      `<span class="simple-only">Signed in${bal || ' — your balance is ready'}.<br>` +
       `<details class="addr-details"><summary>account details</summary>` +
       `Account address (tap to copy): ${addrChip(account)}</details></span>`;
     if (dep) dep.disabled = false;
@@ -866,7 +941,7 @@ function renderWallet() {
   const MW = getMegaWallet();
   const privyReady = !!(MW && MW.configured);
   connectBtn.disabled = false;
-  connectBtn.textContent = '🦊 Connect MetaMask';
+  connectBtn.textContent = 'Connect MetaMask';
   info.textContent = '';
   // Fund shows the connected address; useless before any wallet exists.
   if (dep) dep.disabled = !hasWallet && !privyReady;
@@ -875,17 +950,17 @@ function renderWallet() {
   if (join && joinBtnState === 'idle') setJoinState('idle');
 }
 
-// Read the wallet's on-chain balance on Tempo and preview it as "Remaining".
+// Read the wallet's on-chain balance on Tempo, for the wallet line.
+let walletBalance = null;
 async function refreshBalance() {
   if (!account || mySeatId) return;
+  const asked = account;
   try {
     const res = await fetch(`/api/balance/${account}?room=${encodeURIComponent(streamRoomId)}`);
     const data = await res.json();
-    if (!res.ok) return;
-    const tickPrice = parseFloat(CONFIG.passkeyTickPrice || CONFIG.tickPrice || '0.001') || 0.001;
-    const ticks = Math.floor(parseFloat(data.spendable || '0') / tickPrice);
-    // Spent is the last seat's, kept until the next one starts.
-    showMeter(data.available, lastSessionSpent, ticks * (CONFIG.passkeyTickSeconds || 1));
+    if (!res.ok || asked !== account) return;
+    walletBalance = data.available != null ? data.available : null;
+    renderWallet();
   } catch (e) {
     console.warn('balance refresh failed', e);
   }
@@ -1121,7 +1196,7 @@ function stopMppTicks(closeChannel) {
 }
 
 async function joinSeatMpp(username) {
-  setJoinState('busy', '⏳ Requesting session terms…');
+  setJoinState('busy', 'Requesting session terms…');
   const r = await fetch('/api/join/mpp', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1129,10 +1204,10 @@ async function joinSeatMpp(username) {
   });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
-    const detail = data.available != null
+    const detail = data.available != null && data.reason !== 'insufficient_rewards'
       ? ` (available ${formatDollars(data.available)})`
       : '';
-    throw new Error((data.hint || data.error || 'Cannot join') + detail);
+    throw joinRefusal(data, 'Cannot join', detail);
   }
   onJoinSuccess(data);
 }
@@ -1143,7 +1218,7 @@ async function joinSeatMpp(username) {
 async function joinSeatMetered(username, { retry = false } = {}) {
   const SEL_APPROVE = '0x095ea7b3'; // approve(address,uint256)
 
-  setJoinState('busy', '⏳ Requesting session terms…');
+  setJoinState('busy', 'Requesting session terms…');
   const first = await fetch('/api/join/passkey', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1152,13 +1227,13 @@ async function joinSeatMetered(username, { retry = false } = {}) {
 
   const terms = await first.json().catch(() => ({}));
   if (!first.ok) {
-    const detail = terms.available != null
+    const detail = terms.available != null && terms.reason !== 'insufficient_rewards'
       ? ` (available ${formatDollars(terms.available)})`
       : '';
-    throw new Error((terms.hint || terms.error || 'Cannot join') + detail);
+    throw joinRefusal(terms, 'Cannot join', detail);
   }
   if (terms.useRewardCredit) {
-    setJoinState('busy', '⏳ Joining with earned balance…');
+    setJoinState('busy', 'Joining with earned balance…');
     const paid = await fetch('/api/join/passkey', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1170,11 +1245,11 @@ async function joinSeatMetered(username, { retry = false } = {}) {
         ...campaignField(),
       }),
     });
-    const data = await paid.json();
+    const data = await paid.json().catch(() => ({}));
     if (paid.ok && data.success) {
       onJoinSuccess(data);
     } else {
-      throw new Error(data.reason || data.error || 'Reward join was not accepted');
+      throw joinRefusal(data, 'Reward join was not accepted');
     }
     return;
   }
@@ -1183,8 +1258,8 @@ async function joinSeatMetered(username, { retry = false } = {}) {
   }
 
   setJoinState('busy', walletMode === 'privy'
-    ? '⏳ Authorizing session…'
-    : '⏳ Approve in MetaMask…');
+    ? 'Authorizing session…'
+    : 'Approve in MetaMask…');
   const eth = await getActiveProvider();
   const approveData = SEL_APPROVE +
     encodeAddress(terms.payTo) + encodeUint(BigInt(terms.sessionAmountAtomic));
@@ -1203,7 +1278,7 @@ async function joinSeatMetered(username, { retry = false } = {}) {
     tokenAddress: terms.paymentTokenAddress,
   };
 
-  setJoinState('busy', '⏳ Confirming seat…');
+  setJoinState('busy', 'Confirming seat…');
   prewarmProgress('tx-pending');
   const paid = await fetch('/api/join/passkey', {
     method: 'POST',
@@ -1213,17 +1288,17 @@ async function joinSeatMetered(username, { retry = false } = {}) {
     },
     body: JSON.stringify({ username, address: account, room: streamRoomId, ...stingerSelections(), ...campaignField() })
   });
-  const data = await paid.json();
+  const data = await paid.json().catch(() => ({}));
   if (paid.ok && data.success) {
     onJoinSuccess(data);
   } else if (!retry && data.retry === 'direct') {
     // SESSION 2 — the seat escrow could not take the deposit (chain refused or
     // unreachable). Nothing moved. Fetch terms again: they now name the seller
     // key as spender, and the viewer pays the streamer directly per tick.
-    setJoinState('busy', '⏳ Escrow unavailable — paying the streamer directly…');
+    setJoinState('busy', 'Escrow unavailable — paying the streamer directly…');
     await joinSeatMetered(username, { retry: true });
   } else {
-    throw new Error(data.reason || data.error || 'Join was not accepted');
+    throw joinRefusal(data, 'Join was not accepted');
   }
 }
 
@@ -1257,7 +1332,7 @@ async function joinSeat() {
       // "Connecting your balance", not "signing in" — a Twitch/X-signed-in
       // viewer IS signed in; this step is about money, and saying "sign in"
       // twice made the two look broken.
-      setJoinState('busy', '🔐 Connecting your balance…');
+      setJoinState('busy', 'Connecting your balance…');
       prewarmProgress('wallet-connect'); // slow wallet UI must not read as abandonment
       const addr = await connectPrivyWallet('seat');
       if (!addr) {
@@ -1320,9 +1395,9 @@ let liveAskTimer = null;
 const LIVE_ASK_RETRY_MS = 5000;
 
 // A seat message on the control socket. Returns whether it went out.
-function sendSeat(type) {
+function sendSeat(type, extra = {}) {
   if (!mySeatId || !ws || ws.readyState !== 1) return false;
-  ws.send(JSON.stringify({ type, seatId: mySeatId, seatToken: mySeatToken }));
+  ws.send(JSON.stringify({ ...extra, type, seatId: mySeatId, seatToken: mySeatToken }));
   return true;
 }
 
@@ -1485,7 +1560,11 @@ function fireCameraReady(source) {
 function askToGoLive() {
   clearTimeout(liveAskTimer);
   if (!mySeatId || !cameraLiveFired || serverLive) return;
-  if (sendSeat('camera_ready')) {
+  // The entrance and exit picked in the camera stage ride GO LIVE: the
+  // overlay first draws the seat on the server's answer to this message.
+  // null, not absent, for the default, so a switch back to it counts too.
+  const picks = stingerSelections('seat');
+  if (sendSeat('camera_ready', { flyIn: picks.flyIn || null, flyOut: picks.flyOut || null })) {
     setCamStatus('', 'Going live…');
   } else {
     // The control socket is down. ws.onopen asks again the moment it is back.
@@ -1557,8 +1636,7 @@ async function leaveStream(quiet) {
   // and the seat meter's own Spent and Remaining (the server's figures; the
   // unspent part of the session cap is what comes back).
   const receipt = seatReceipt();
-  lastSessionSpent = seatMeter ? seatMeter.spent : '0';
-  setJoinState('busy', '⏳ Leaving…');
+  setJoinState('busy', 'Leaving…');
   // Stop reacting to this seat locally right away so the meter stops instantly.
   mySeatId = null;
   mySeatToken = null;
@@ -1574,10 +1652,11 @@ async function leaveStream(quiet) {
     console.warn('leave request failed (server still drops seat on disconnect)', e);
   }
   setJoinState('idle');
+  // The seat is over, so is its meter; the receipt says what it cost.
+  hideMeter();
   setSessionUi(false);
   if (!quiet) showMessage(receipt, 'success', 'seat');
-  // Back to pre-join: show the wallet's available balance as "Remaining";
-  // Spent keeps this seat's figure until the next one.
+  // Back to pre-join: the wallet line shows the balance again.
   refreshBalance();
 }
 
@@ -1645,7 +1724,7 @@ function retryCamera() {
 // Each result shows under the control that caused it (owner's pick): a
 // Holler's under the Holler block, a seat's under Call in, a wallet step's
 // under the wallet row. Anything about the room as a whole keeps #message.
-const MESSAGE_BOX = { holler: 'letterMessage', seat: 'seatMessage', wallet: 'walletMessage' };
+const MESSAGE_BOX = { holler: 'letterMessage', seat: 'seatMessage', wallet: 'walletMessage', rewards: 'rewardsMessage' };
 
 function messageBox(where) {
   return (MESSAGE_BOX[where] && document.getElementById(MESSAGE_BOX[where])) || document.getElementById('message');
@@ -1683,6 +1762,7 @@ function watchWalletAccount(eth) {
     eth.on('accountsChanged', (accs) => {
       if (walletMode === 'privy') return;
       account = (accs && accs[0]) || null;
+      walletBalance = null;
       if (account) walletMode = 'metamask';
       renderWallet();
       if (account) {
@@ -1955,10 +2035,6 @@ function mountLivePreview(wrap, mount) {
     iframe.title = 'Live stream preview';
     mount.appendChild(iframe);
   }
-  // Watch-to-earn hint straight from room config (the rewards WS refines it
-  // later, but this keeps the hint independent of wallet registration).
-  const drops = document.getElementById('streamPreviewDrops');
-  if (drops && CONFIG && CONFIG.rewardsEnabled) drops.style.display = '';
   wrap.style.display = '';
   syncPreviewIdle();
 }
@@ -2474,12 +2550,14 @@ function initLetterUi() {
   btn.style.display = stage && stage.style.display !== 'none' ? 'none' : '';
   // Short label — "· up to 10s" pushed the button onto two wrapped lines on
   // mobile, and the recorder stage states the cap the moment it opens.
+  // Plain text (owner's pick vr-emoji-buttons): the button's one mark is the
+  // Holler record dot, drawn by join.css.
   (btn as HTMLButtonElement).disabled = roomPaused();
   btn.textContent = roomPaused()
-    ? '📼 Send a Holler — paused'
+    ? 'Send a Holler — paused'
     : letterIsFreeRoom(cfg)
-      ? '📼 Send a Holler — FREE'
-      : `📼 Send a Holler — ${formatDollars(letterRate(cfg))}/s`;
+      ? 'Send a Holler — FREE'
+      : `Send a Holler — ${formatDollars(letterRate(cfg))}/s`;
 }
 
 function setLetterStatus(text, tone) {
@@ -2499,6 +2577,8 @@ function letterButtons({ record, redo, send }) {
   show('letterRecordBtn', record);
   show('letterRedoBtn', redo);
   show('letterSendBtn', send);
+  // The review step: the entrance and exit go with Send.
+  showStingers('letter', send);
 }
 
 async function openLetterStage() {
@@ -2524,7 +2604,7 @@ async function openLetterStage() {
   letterBlob = null;
   letterButtons({ record: true, redo: false, send: false });
   setLetterStatus(letterIsFreeRoom(cfg)
-    ? `${cfg.minSeconds ?? 3}–${cfg.maxSeconds}s · free.`
+    ? `${cfg.minSeconds ?? 3}–${cfg.maxSeconds}s · free`
     : `${cfg.minSeconds ?? 3}–${cfg.maxSeconds}s · ${formatDollars(letterRate(cfg))} a second, so you pay for what you record.`);
 }
 
@@ -2627,7 +2707,7 @@ function toggleLetterRecording() {
     setLetterPreview(video, letterBlob);
     video.muted = false;
     video.controls = true;
-    recordBtn.textContent = '⏺ Record';
+    recordBtn.textContent = 'Record';
     // Too short to be verifiable on stream → never offer to charge for it.
     // The server rejects this too; refusing here means the person finds out
     // before a wallet prompt rather than after one.
@@ -2644,7 +2724,7 @@ function toggleLetterRecording() {
     letterAttempt = newLetterAttempt();
     letterButtons({ record: false, redo: true, send: true });
     const takePrice = letterPriceForTake(cfg, letterDurationS);
-    setLetterStatus(letterIsFreeRoom(cfg) ? `${letterDurationS}s recorded. Send it free.` : `${letterDurationS}s recorded. Send for ${formatDollars(takePrice)}.`);
+    setLetterStatus(letterIsFreeRoom(cfg) ? `${letterDurationS}s recorded. Send it.` : `${letterDurationS}s recorded. Send for ${formatDollars(takePrice)}.`);
     const sendBtn = document.getElementById('letterSendBtn');
     if (sendBtn) sendBtn.textContent = letterIsFreeRoom(cfg) ? 'Send' : `Send · ${formatDollars(takePrice)}`;
   };
@@ -2652,10 +2732,10 @@ function toggleLetterRecording() {
   letterState = 'recording';
   letterButtons({ record: true, redo: false, send: false });
   let left = cfg.maxSeconds;
-  recordBtn.textContent = `⏹ Stop (${left}s)`;
+  recordBtn.textContent = `Stop (${left}s)`;
   letterCountdown = setInterval(() => {
     left -= 1;
-    recordBtn.textContent = `⏹ Stop (${left}s)`;
+    recordBtn.textContent = `Stop (${left}s)`;
     if (left <= 0 && letterRecorder && letterRecorder.state === 'recording') {
       try { letterRecorder.stop(); } catch { /* noop */ }
     }
@@ -2744,7 +2824,9 @@ async function sendLetter() {
       (upData.status === 'reviewing'
         ? '🔎 Holler sent — quick automated review (a few seconds), then it queues.'
         : upData.status === 'pending_approval'
-          ? '📮 Holler sent — the streamer approves Hollers before they play. You were charged; rejects auto-refund.'
+          ? (letterIsFree
+            ? '📮 Holler sent — the streamer approves Hollers before they play.'
+            : '📮 Holler sent — the streamer approves Hollers before they play. You were charged; rejects auto-refund.')
           : '📮 Holler sent! It will pop up on stream shortly — watch the preview above (it runs on a slight delay).') + held,
     );
   } catch (err) {
@@ -2790,7 +2872,7 @@ async function submitLetter(cfg, username, letterIsFree, attemptId, takePrice) {
         mime: letterBlob.type || 'video/webm',
         replayKeepDays: shownKeepDays,
         attemptId,
-        ...stingerSelections(), ...campaignField(),
+        ...stingerSelections('letter'), ...campaignField(),
       }),
     },
   );
@@ -2838,7 +2920,7 @@ async function initAuthUi() {
   const prefill = (name) => {
     const input = document.getElementById('username');
     // Never clobber something the viewer typed themselves.
-    if (input && input.dataset.userEdited !== 'true' && name) input.value = name.slice(0, 20);
+    if (input && input.dataset.userEdited !== 'true' && name) input.value = name.slice(0, 25);
   };
   try {
     // Shared with the header and every other reader on the page (lib/identity.ts).
@@ -2865,16 +2947,35 @@ async function init() {
     if (camp) void mountCampaignBanner(camp);
   } catch (err) {
     console.error('Failed to load config', err);
-    const lbl = document.getElementById('priceLabel');
-    if (lbl) {
-      lbl.textContent = (err && err.message) || 'Failed to load room';
+    if (err && err.status === 404) {
+      showRoomNotFound();
+      return;
     }
+    // Anything else may work on a retry (the network, a restart).
     showMessage(
-      'Could not load this room. Refresh to retry, or find another room on the Rooms page.',
+      'Could not load this room. Refresh to retry, or find another room on the <a class="addr" href="/app">Rooms page</a>.',
       'error',
     );
   }
   initWallet();
+}
+
+// A link to no room (owner's pick vr-unknown-room): the strip and the tab say
+// so, and the console gives way to the not-found card (join-client
+// RoomNotFound): browse live rooms, or type a room code. No name, sign-in,
+// wallet or entrance controls are left for a room that does not exist.
+function showRoomNotFound() {
+  const name = document.getElementById('joinRoomName');
+  if (name) name.textContent = 'Room not found';
+  const state = document.getElementById('joinRoomState');
+  if (state) state.style.display = 'none';
+  const body = document.querySelector('.join-console-body');
+  if (body) body.style.display = 'none';
+  const title = 'Room not found — Holler';
+  document.title = title;
+  // Next's static metadata re-applies its <title> after hydration (loadConfig).
+  setTimeout(() => { document.title = title; }, 1500);
+  window.dispatchEvent(new CustomEvent('room:notfound'));
 }
 
 // ─── Pass C: watch-to-earn (ported verbatim from public/rewards.js) ──────
@@ -2923,7 +3024,10 @@ function initRewardsClient(wsUrl) {
       switch (msg.type) {
         case 'rewards_config':
           cfg = msg;
-          updateLabel();
+          // The server sends the balance with the state, earning or not
+          // (rewards.js keptFor), so a paused or superseded page keeps it.
+          if (msg.earned != null) lastEarned = msg.earned;
+          renderRewardsLine();
           break;
         case 'rewards_earned':
           renderEarned(msg);
@@ -2968,16 +3072,6 @@ function initRewardsClient(wsUrl) {
     wallet = addr;
     registerWallet();
   }
-
-  // What the viewer can do about a room that rewards watching but not them,
-  // yet (rewards_config.reason). Every other reason is not theirs to fix, so
-  // the hint just stays away.
-  const REWARDS_ACTION = {
-    sign_in_required: 'Watching earns rewards in this room. Sign in to earn.',
-    // Followed by the "Add payout wallet" button (payoutHint).
-    payout_wallet_required: 'Watching earns rewards in this room.',
-    wallet_required: 'Watching earns rewards in this room. Connect a wallet to earn.',
-  };
 
   // ── The payout wallet, added in place (owner's pick) ──
   // Cash and credit rewards pay the signed-in account's payout wallet. The
@@ -3056,17 +3150,19 @@ function initRewardsClient(wsUrl) {
     }
   }
 
-  // The hint is the way in: "Watching earns rewards in this room." and the
-  // button, only while the payout wallet is what stands between the viewer
-  // and earning.
-  function payoutHint(drops) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'payout-open';
-    btn.textContent = 'Add payout wallet';
-    btn.setAttribute('aria-controls', 'payoutSheet');
-    btn.addEventListener('click', openPayoutSheet);
-    drops.appendChild(btn);
+  // "Sign in to start": the same sign-in the paid actions run. Signing in
+  // mints the identity, and the socket reconnects on megachat:identity, so
+  // the line turns to "Earning" on the server's next answer.
+  async function signInToEarn() {
+    const btn = document.getElementById('rewardsSignIn');
+    if (btn) btn.disabled = true;
+    try {
+      const addr = await connectPrivyWallet('rewards');
+      // The line says it now; the "Signed in" note would only repeat it.
+      if (addr) clearMessage('rewards');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   {
@@ -3074,6 +3170,8 @@ function initRewardsClient(wsUrl) {
       const el = document.getElementById(id);
       if (el) el.addEventListener(type, fn, { signal: abort.signal });
     };
+    on('rewardsSignIn', 'click', () => void signInToEarn());
+    on('rewardsPayoutBtn', 'click', openPayoutSheet);
     on('payoutUseHoller', 'click', () => void savePayout(hollerWalletAddress()));
     on('payoutForm', 'submit', (e) => {
       e.preventDefault();
@@ -3083,56 +3181,87 @@ function initRewardsClient(wsUrl) {
     on('payoutClose', 'click', closePayoutSheet);
   }
 
-  // The reward the streamer set, by the name the dashboard sells it under.
-  function rewardName() {
-    if (!cfg) return 'Earned';
-    if (cfg.payout === 'cash') return 'Cash';
-    if (cfg.rewardType === 'token') return cfg.symbol || 'Token';
-    return 'Holler credit';
+  // ── The rewards line (owner's picks rw-earned-in-seat-meter, rw-hint-hidden,
+  // rw-pause-silent) ──
+  // One green line at the top of the console, in every rewards room: the
+  // terms ("1 point every 30 s, up to 50"), this viewer's state, the balance
+  // whenever it is known, and the one step that starts earning. The server
+  // pushes the state on pause, resume and takeover (rewards.js), so the line
+  // never promises earning that is not happening.
+  let lastEarned = null; // this room's balance for this viewer, as last told
+  let lastCapped = false;
+
+  // An amount of the reward: dollars for USDC (cash, or USDC seat balance),
+  // "N points" for points, else the room token's symbol.
+  function rewardUnit(amount, withUnit = true) {
+    const sym = (cfg && cfg.symbol) || 'USDC';
+    if (/^USDC(?:\.e)?$/i.test(sym)) return formatDollars(amount);
+    const n = String(amount);
+    if (!withUnit) return n;
+    if (/^PTS$/i.test(sym)) return `${n} point${Number(n) === 1 ? '' : 's'}`;
+    return `${n} ${sym}`;
   }
 
-  function rewardAmount(amount, sym) {
-    return /^USDC(?:\.e)?$/i.test(sym || '') ? formatDollars(amount) : String(amount);
+  function rewardTerms() {
+    const every = Number(cfg.earnInterval) || 60;
+    const cap = Number(cfg.earnCap) > 0 ? `, up to ${rewardUnit(cfg.earnCap, false)}` : '';
+    return `${rewardUnit(cfg.earnAmount)} every ${every} s${cap}`;
   }
 
-  function updateLabel() {
-    // Watch-to-earn hint on the spectate surface (drops accrue while the
-    // tab is visible).
-    const drops = document.getElementById('streamPreviewDrops');
-    const action = cfg && !cfg.enabled ? REWARDS_ACTION[cfg.reason] : null;
-    if (drops) {
-      drops.style.display = cfg && (cfg.enabled || action) ? '' : 'none';
-      drops.textContent = action || 'Watching earns rewards in this room';
-      if (cfg && !cfg.enabled && cfg.reason === 'payout_wallet_required') payoutHint(drops);
+  function balanceOfCap() {
+    const cap = Number(cfg.earnCap) > 0 ? cfg.earnCap : null;
+    const earned = lastEarned != null ? lastEarned : '0';
+    return cap != null ? `${rewardUnit(earned, false)} of ${rewardUnit(cap, false)}` : rewardUnit(earned);
+  }
+
+  // "your 7 points are kept" — only when there is something to keep.
+  function keptNote() {
+    if (lastEarned == null || !(Number(lastEarned) > 0)) return '';
+    const amt = rewardUnit(lastEarned);
+    const one = amt.startsWith('$') || Number(lastEarned) === 1; // "$0.05 is", "1 point is"
+    return ` · your ${amt} ${one ? 'is' : 'are'} kept`;
+  }
+
+  function renderRewardsLine() {
+    const line = document.getElementById('rewardsLine');
+    const state = document.getElementById('rewardsState');
+    if (!line || !state || !cfg) return;
+    const signIn = document.getElementById('rewardsSignIn');
+    const payout = document.getElementById('rewardsPayoutBtn');
+    const reason = cfg.enabled ? null : cfg.reason;
+    const maxed = cfg.enabled && (lastCapped || (Number(cfg.earnCap) > 0 && lastEarned != null && Number(lastEarned) >= Number(cfg.earnCap)));
+    let text = null;
+    if (cfg.enabled) {
+      text = maxed
+        ? `Maxed · ${balanceOfCap()} in this room`
+        : `Earning · ${balanceOfCap()} · ${rewardUnit(cfg.earnAmount)} every ${Number(cfg.earnInterval) || 60} s`;
+    } else if (reason === 'sign_in_required' || reason === 'wallet_required' || reason === 'payout_wallet_required') {
+      // Not earning yet, and the viewer can change that: the terms, and the step.
+      text = rewardTerms() + keptNote();
+    } else if (reason === 'room_not_live') {
+      text = 'Paused by the streamer' + keptNote();
+    } else if (reason === 'superseded') {
+      text = 'Earning in another tab' + keptNote();
+    } else if (reason !== 'rewards_off' && keptNote()) {
+      // Not this viewer's to fix (the room's payout set-up): the balance stays.
+      text = 'Not earning right now' + keptNote();
     }
-    const el = document.getElementById('earnedRow');
-    if (!el || !cfg) return;
-    if (!cfg.enabled) {
-      el.style.display = 'none';
-      return;
+    line.hidden = text == null;
+    line.dataset.state = cfg.enabled ? (maxed ? 'maxed' : 'earning') : String(reason || '');
+    state.textContent = text || '';
+    if (signIn) signIn.hidden = !(reason === 'sign_in_required' || reason === 'wallet_required');
+    if (payout) payout.hidden = reason !== 'payout_wallet_required';
+    if (reason !== 'payout_wallet_required') {
+      const sheet = document.getElementById('payoutSheet');
+      // A saved wallet is the sheet's own news ("Saved…", Done): keep it open.
+      if (sheet && !cfg.enabled) sheet.hidden = true;
     }
-    el.style.display = '';
-    // Named after the reward, sentence case: "Holler credit", "Cash", or the
-    // room's token. The state rides the figure (renderEarned).
-    const label = el.querySelector('span');
-    if (label) label.textContent = rewardName();
   }
 
   function renderEarned(msg) {
-    if (cfg && cfg.enabled === false) return;
-    const meter = document.getElementById('meter');
-    if (meter) meter.classList.add('show');
-    const el = document.getElementById('rewardsEarned');
-    if (el) {
-      const sym = msg.symbol || (cfg && cfg.symbol) || 'USDC';
-      // "5 of 5 · maxed in this room": what this room has paid the viewer
-      // against the streamer's cap, and whether earning has stopped here.
-      const earned = msg.earned != null ? msg.earned : '0';
-      const cap = cfg && Number(cfg.earnCap) > 0 ? cfg.earnCap : null;
-      const maxed = !!msg.capped || (cap != null && Number(earned) >= Number(cap));
-      el.textContent = (cap != null ? `${rewardAmount(earned, sym)} of ${rewardAmount(cap, sym)}` : rewardAmount(earned, sym))
-        + (maxed ? ' · maxed in this room' : '');
-    }
+    if (msg.earned != null) lastEarned = msg.earned;
+    lastCapped = !!msg.capped;
+    renderRewardsLine();
   }
 
   document.addEventListener('visibilitychange', sendVisibility, { signal: abort.signal });
@@ -3156,6 +3285,9 @@ function initRewardsClient(wsUrl) {
   // page needs a new socket for its watch time to count.
   window.addEventListener('megachat:identity', () => {
     if (!started || abort.signal.aborted) return;
+    // A different viewer now: the balance shown is theirs, from the server.
+    lastEarned = null;
+    lastCapped = false;
     const old = rws;
     rws = null;
     clearTimeout(reconnectTimer);
@@ -3265,7 +3397,9 @@ export function initJoinPage({ wsUrl }) {
         } else if (msg.status === 'pending_approval') {
           showHollerResult(
             msg.flagged
-              ? '🕵️ The automated review flagged your Holler — the streamer will approve or reject it (rejects refund).'
+              ? (lettersCfg() && letterIsFreeRoom(lettersCfg())
+                ? '🕵️ The automated review flagged your Holler — the streamer will approve or reject it.'
+                : '🕵️ The automated review flagged your Holler — the streamer will approve or reject it (rejects refund).')
               : '📮 Your Holler awaits the streamer\'s approval.',
           );
         }
@@ -3282,8 +3416,7 @@ export function initJoinPage({ wsUrl }) {
       } else if (msg.type === 'meter_update' && msg.seatId === mySeatId) {
         showMeter(msg.remaining, msg.spent, msg.secondsLeft);
       } else if (msg.type === 'seat_removed' && msg.seatId === mySeatId) {
-        document.getElementById('meterTime').textContent = '0:00';
-        lastSessionSpent = seatMeter ? seatMeter.spent : '0';
+        hideMeter();
         // Every way a seat can end gets its own message — a viewer should
         // never have to guess whether they left, got kicked, or broke.
         if (msg.reason === 'out_of_funds') {
@@ -3333,6 +3466,7 @@ export function initJoinPage({ wsUrl }) {
         // The setup controls come back, as after a leave: "Add funds to
         // rejoin" was said with the Add funds button still hidden.
         setSessionUi(false);
+        refreshBalance();
       } else if (msg.type === 'seat_refused' && msg.seatId === mySeatId) {
         // The server would not take this tab's word that it holds the seat
         // (its token did not match: a stale tab, or a bug). Logged without
@@ -3345,6 +3479,7 @@ export function initJoinPage({ wsUrl }) {
         mySeatId = null;
         mySeatToken = null;
         setJoinState('idle');
+        hideMeter();
         setSessionUi(false);
         showMessage('⚠️ This tab could not confirm it holds that seat, so it is not on air. Join again to take a fresh seat.', 'error', 'seat');
       }
@@ -3376,6 +3511,8 @@ export function initJoinPage({ wsUrl }) {
   // Waiting for camera → Go Live → You're LIVE.
   on('joinBtn', onJoinButtonClick);
   on('camRetryBtn', retryCamera);
+  // The entrance and exit are one choice, shown in two places.
+  document.addEventListener('change', syncStingers, { signal: abort.signal });
   // Re-render presentation on Simple/Advanced toggle (values unchanged).
   window.addEventListener('mc-ui-mode-changed', () => {
     updatePriceDisplay();

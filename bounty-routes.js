@@ -283,6 +283,17 @@ function accountKey(req) {
   return roomOwnerKey(readIdentityFromRequest(req));
 }
 
+/** A fan as a person reads them: the display name they typed on the pledge, else their @handle, else null. */
+function fanLabel(contributionId, account) {
+  const named = contributionId ? store.getContribution(contributionId)?.displayName : null;
+  if (named) return String(named);
+  if (!account || String(account).startsWith('seed:')) return named || null;
+  try {
+    const handle = getAccountForPayout(String(account))?.handle;
+    return handle ? `@${handle}` : null;
+  } catch { return null; }
+}
+
 /**
  * May this request see a PRIVATE clip (not yet approved, not yet aired)? Only
  * the operator, the streamer it was recorded for, and the account that pledged
@@ -738,6 +749,8 @@ export function attachBountyRoutes(app, { log = console, identityVerifier, money
       const { platform, handle, amount, letterRef } = req.body || {};
       const contributor = accountKey(req);
       if (!contributor) return res.status(401).json({ error: 'Sign in to continue', reason: 'auth_required' });
+      // Same door rule as /pledge: one plain decimal or nothing is written.
+      if (!escrow.isCanonicalAmount(amount)) return res.status(400).json({ error: escrow.AMOUNT_ERROR, reason: 'bad_amount' });
       const c = escrow.contribute({ platform, handle, contributor, amount, letterRef });
       res.json({
         ok: true,
@@ -903,6 +916,10 @@ export function attachBountyRoutes(app, { log = console, identityVerifier, money
   guarded.post('/api/bounty/pledge', (req, res) => {
     try {
       const { targets, contributor, amount, expiresInMs, attemptId } = req.body || {};
+      // ONE PLAIN DECIMAL, refused before anything is written or asked of a
+      // wallet (escrow.isCanonicalAmount; UX sweep bo-amount-parse). "1,000"
+      // used to book 1 here and fail later at the wallet step.
+      if (!escrow.isCanonicalAmount(amount)) return res.status(400).json({ error: escrow.AMOUNT_ERROR, reason: 'bad_amount' });
       // THE CONTRIBUTOR IS THE ACCOUNT, NOT A STRING THEY CHOSE.
       //
       // `contributor` used to be whatever the client sent, and strikes attach
@@ -933,11 +950,16 @@ export function attachBountyRoutes(app, { log = console, identityVerifier, money
       // preference, which the body may override for this pledge.
       const prefs = getAccountPrefs(account);
       const minTier = ['green', 'yellow'].includes(req.body?.minTier) ? req.body.minTier : prefs.bountyMinTier;
+      const displayName = typeof contributor === 'string' ? contributor.replace(/\s+/g, ' ').trim().slice(0, 64) || null : null;
       const out = escrow.pledge({
         targets, contributor: account, amount, expiresInMs,
-        displayName: typeof contributor === 'string' ? contributor.slice(0, 64) : null,
+        displayName,
         minTier,
       });
+      // The fan's chosen name rides on the contribution, so the streamer's
+      // queue and My bounties can say who it is from (UX sweep bo-queue-id).
+      // escrow.pledge took it and dropped it; the account id was shown instead.
+      if (displayName) store.updateContribution(out.contribution.id, { displayName });
       const body = {
         ok: true,
         pledge: out.pledge,
@@ -1082,13 +1104,41 @@ export function attachBountyRoutes(app, { log = console, identityVerifier, money
     res.json({ ok: true, frames: frames.length });
   });
 
+  /**
+   * Each pool card split by ITS OWN money (UX sweep bo-tier-line). The old
+   * line under the locked card split whatever this handle's escrow held, and a
+   * shared pledge is held only on the streamer named first: threadguy's card
+   * read 200 over "Green only $300", chessbrah's identical one 200 over $200.
+   * Locked: the HELD contributions here, less the open shared pledges anchored
+   * here — the same set escrow.poolView counts as `guaranteed`, so the split
+   * adds up to the headline. Contested: every open shared pledge that NAMES
+   * this handle, wherever its escrow sits — the set behind `contestedTotal`.
+   * Display only: no release, refund or payout reads this.
+   */
+  function cardTiers(key) {
+    const now = Date.now();
+    const shared = store.listPledges({ status: 'OPEN', handleKey: key })
+      .filter((p) => p.expiresAt > now && p.targets.length > 1);
+    const anchoredHere = new Set(shared.filter((p) => p.targets[0] === key).map((p) => p.contributionId));
+    const locked = { green: 0, yellow: 0 };
+    for (const c of store.listContributions(key)) {
+      if (c.status !== 'HELD' || anchoredHere.has(c.id)) continue;
+      locked[store.tierOf(c)] += store.toMicros(c.amount);
+    }
+    const contested = { green: 0, yellow: 0 };
+    for (const p of shared) contested[p.minTier === 'yellow' ? 'yellow' : 'green'] += store.toMicros(p.amount);
+    const out = (t) => ({ greenOnly: store.fromMicros(t.green), yellowOk: store.fromMicros(t.yellow) });
+    return { locked: out(locked), contested: out(contested) };
+  }
+
   /** Guaranteed-first pool display. Never a blended headline. */
   guarded.get('/api/bounty/pool-view', (req, res) => {
     const key = store.handleKey(req.query.platform, req.query.handle);
     if (!key) return res.status(400).json({ error: 'platform and handle required' });
     const reserved = store.getReservedHandleByKey(key);
+    const view = escrow.poolView(key);
     res.json({
-      view: escrow.poolView(key),
+      view: { ...view, cardTiers: cardTiers(key) },
       reserved,
       clips: clips.listClips(key).length,
       // The claimant's room right now (liveness.js), null before a claim.
@@ -1225,6 +1275,8 @@ export function attachBountyRoutes(app, { log = console, identityVerifier, money
       }
       return {
         pledgeId: p.id, contributionId: c?.id || null, amount: p.amount,
+        // The name this pledge goes by in the streamer's queue.
+        from: fanLabel(c?.id || null, p.contributor),
         targets: p.targets, pledgeStatus: p.status, winner: p.winner,
         expiresAt: p.expiresAt, state, next,
         funding: fundingState,
@@ -1262,7 +1314,11 @@ export function attachBountyRoutes(app, { log = console, identityVerifier, money
       .filter((c) => !c.approval)
       .map((c) => ({
         clipId: c.clipId, durationS: c.durationS, bytes: c.bytes,
-        storedAt: c.storedAt, contributor: c.contributor,
+        storedAt: c.storedAt,
+        // Who it is from, as a person reads it: the name the fan typed, else
+        // their @handle. Never the account id (UX sweep bo-queue-id): that is
+        // an internal key, and it told the streamer nothing.
+        from: fanLabel(c.contributionId, c.contributor),
         moderation: c.moderation,
         mediaUrl: `/api/bounty/clip/${c.clipId}/media`,
       }))

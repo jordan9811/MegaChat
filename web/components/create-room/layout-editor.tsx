@@ -12,30 +12,52 @@
 // IT DRAWS FROM THE SAME RULE THE OVERLAY USES. Both place slot i at
 // i * (tileH + gap) along the chosen direction from the chosen corner, so what
 // is drawn here is what lands on the canvas rather than an impression of it.
+// The bounty badge is drawn the same way: public/overlay.html applyBadgeAnchor
+// puts it in the corner diagonally opposite where the stack lands, 16 px in.
+// This file only reads that rule; it never moves the badge.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useRoom } from '@/components/room-provider'
 import type { RoomLayout } from '@/lib/api'
 import { docsUrl } from '@/lib/docs-url.mjs'
 
-const ORIGINS: { value: RoomLayout['origin']; label: string }[] = [
-  { value: 'top-left', label: 'Top left' },
-  { value: 'top-right', label: 'Top right' },
-  { value: 'bottom-left', label: 'Bottom left' },
-  { value: 'bottom-right', label: 'Bottom right' },
-]
+type Origin = RoomLayout['origin']
+type Direction = RoomLayout['direction']
 
-const DIRECTIONS: { value: RoomLayout['direction']; label: string }[] = [
-  { value: 'down', label: 'Downward' },
-  { value: 'up', label: 'Upward' },
-  { value: 'right', label: 'Rightward' },
-  { value: 'left', label: 'Leftward' },
+// One picker for where the stack starts and which way it fills. Each corner
+// offers only its two inward directions, so all 8 choices are real layouts:
+// the old Corner + Stack pair had 16, half of which ignored the corner
+// (ss-corner-half-ignored). The stored origin/direction are unchanged.
+const CORNERS: { origin: Origin; label: string; fills: Direction[] }[] = [
+  { origin: 'top-left', label: 'Top left', fills: ['down', 'right'] },
+  { origin: 'top-right', label: 'Top right', fills: ['down', 'left'] },
+  { origin: 'bottom-left', label: 'Bottom left', fills: ['up', 'right'] },
+  { origin: 'bottom-right', label: 'Bottom right', fills: ['up', 'left'] },
 ]
+const ARROW: Record<Direction, string> = { down: '↓', up: '↑', right: '→', left: '←' }
+const FILL_WORD: Record<Direction, string> = { down: 'downward', up: 'upward', right: 'rightward', left: 'leftward' }
 
-// The preview canvas is a 1080p OBS canvas at 1/4 scale.
+// The preview stands for a 1080p OBS canvas. It is drawn fluid, in percent of
+// that canvas, so it fits its card at any width (tb-dash-pan).
 const CANVAS_W = 1920
 const CANVAS_H = 1080
-const SCALE = 0.25
+// The badge as it airs (overlay.html #bounty-badge: ~292×64, 16 px in from
+// its corner). rooms-store.js reserves a larger 360×80 box when it refuses a
+// layout; the preview shows the badge itself.
+const BADGE_W = 292
+const BADGE_H = 64
+const BADGE_INSET = 16
+
+const px = (v: number, of: number) => `${(v / of) * 100}%`
+
+/** Where the stack actually lands: the edge the direction grows from, the
+ *  side the origin names on the other axis (rooms-store.js layoutGeometry). */
+function landing(layout: RoomLayout) {
+  const vertical = layout.direction === 'down' || layout.direction === 'up'
+  const v = vertical ? (layout.direction === 'down' ? 'top' : 'bottom') : (layout.origin.startsWith('top') ? 'top' : 'bottom')
+  const h = vertical ? (layout.origin.endsWith('left') ? 'left' : 'right') : (layout.direction === 'right' ? 'left' : 'right')
+  return { vertical, v, h, corner: `${v}-${h}` as Origin }
+}
 
 export function LayoutEditor() {
   const { draft, updateDraft, room, saveState, saveError } = useRoom()
@@ -62,37 +84,39 @@ export function LayoutEditor() {
     const t = setTimeout(() => setMovedToast(false), 2600)
     return () => clearTimeout(t)
   }, [saveState, room?.active])
-  const edit = (next: RoomLayout) => { editedRef.current = true; updateDraft({ layout: next }) }
+  // Holler clips play one at a time in the seat slots, in the same fill
+  // direction (owner, 2026-11-09). The old "its own size and corner" fields
+  // did nothing on stream and are gone; an edit here also clears a stored
+  // own-corner clip, so a setting nobody can see can no longer refuse a save.
+  const edit = (next: RoomLayout) => { editedRef.current = true; updateDraft({ layout: { ...next, clip: { ...next.clip, follow: true } } }) }
 
   const set = (patch: Partial<RoomLayout>) => edit({ ...layout, ...patch })
   const setTile = (patch: Partial<RoomLayout['tile']>) =>
     edit({ ...layout, tile: { ...layout.tile, ...patch } })
-  const setClip = (patch: Partial<RoomLayout['clip']>) =>
-    edit({ ...layout, clip: { ...layout.clip, ...patch } })
 
-  const vertical = layout.direction === 'down' || layout.direction === 'up'
+  const land = landing(layout)
 
   // One extra ghost tile stands in for a whitelisted guest, who raises the cap
   // at runtime. It is drawn at the NEXT slot in the same fill order, which is
   // the behaviour being promised: nobody already placed moves.
   const tiles = Array.from({ length: seats + 1 }, (_, i) => i)
 
-  const place = (i: number) => {
-    const along = i * ((vertical ? layout.tile.h : layout.tile.w) + layout.tile.gap)
-    const style: React.CSSProperties = { position: 'absolute', width: layout.tile.w * SCALE, height: layout.tile.h * SCALE }
-    const m = layout.margin * SCALE
-    if (layout.origin.startsWith('top')) style.top = m; else style.bottom = m
-    if (layout.origin.endsWith('left')) style.left = m; else style.right = m
-    if (vertical) {
-      const edge = layout.direction === 'down' ? 'top' : 'bottom'
-      style[edge] = m + along * SCALE
-      if (edge === 'top') delete style.bottom; else delete style.top
-    } else {
-      const edge = layout.direction === 'right' ? 'left' : 'right'
-      style[edge] = m + along * SCALE
-      if (edge === 'left') delete style.right; else delete style.left
+  const place = (i: number): CSSProperties => {
+    const along = i * ((land.vertical ? layout.tile.h : layout.tile.w) + layout.tile.gap)
+    const m = layout.margin
+    return {
+      width: px(layout.tile.w, CANVAS_W),
+      height: px(layout.tile.h, CANVAS_H),
+      [land.h]: px(m + (land.vertical ? 0 : along), CANVAS_W),
+      [land.v]: px(m + (land.vertical ? along : 0), CANVAS_H),
     }
-    return style
+  }
+
+  const badge: CSSProperties = {
+    width: px(BADGE_W, CANVAS_W),
+    height: px(BADGE_H, CANVAS_H),
+    [land.h === 'left' ? 'right' : 'left']: px(BADGE_INSET, CANVAS_W),
+    [land.v === 'top' ? 'bottom' : 'top']: px(BADGE_INSET, CANVAS_H),
   }
 
   return (
@@ -102,14 +126,9 @@ export function LayoutEditor() {
           <span className="mcc-eyebrow">Overlay layout</span>
           <strong>Where the tiles sit on your canvas</strong>
         </div>
-        <b>v{layout.version}</b>
       </div>
 
-      <div
-        className="mcc-layout-canvas"
-        style={{ position: 'relative', width: CANVAS_W * SCALE, height: CANVAS_H * SCALE }}
-        aria-label="Canvas preview with mock seats"
-      >
+      <div className="mcc-layout-canvas" aria-label="Canvas preview with mock seats">
         {tiles.map((i) => (
           <div
             key={i}
@@ -120,21 +139,33 @@ export function LayoutEditor() {
             {i >= seats ? 'guest' : `seat ${i + 1}`}
           </div>
         ))}
+        <div className="mcc-layout-badge" style={badge} title="The bounty code shows here during bounty clips, in the corner opposite your tiles.">
+          Bounty code
+        </div>
+      </div>
+
+      <div className="mcc-corner-picker" role="group" aria-label="Where the tiles start and which way they fill">
+        {CORNERS.map((c) => (
+          <div key={c.origin} className="mcc-corner" data-corner={c.origin}>
+            <span>{c.label}</span>
+            <span className="mcc-corner-fills">
+              {c.fills.map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  aria-label={`${c.label}, fill ${FILL_WORD[d]}`}
+                  aria-pressed={land.corner === c.origin && layout.direction === d}
+                  onClick={() => set({ origin: c.origin, direction: d })}
+                >
+                  {ARROW[d]}
+                </button>
+              ))}
+            </span>
+          </div>
+        ))}
       </div>
 
       <div className="mcc-layout-controls">
-        <label>
-          <span>Corner</span>
-          <select value={layout.origin} onChange={(e) => set({ origin: e.target.value as RoomLayout['origin'] })}>
-            {ORIGINS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Stack</span>
-          <select value={layout.direction} onChange={(e) => set({ direction: e.target.value as RoomLayout['direction'] })}>
-            {DIRECTIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
-          </select>
-        </label>
         <label>
           <span>Margin</span>
           <input type="number" min={0} max={400} value={layout.margin}
@@ -157,51 +188,17 @@ export function LayoutEditor() {
         </label>
       </div>
 
-      <div className="mcc-layout-controls">
-        <label className="mcc-layout-wide">
-          <span>Holler clips</span>
-          <select value={layout.clip.follow ? 'follow' : 'own'}
-            onChange={(e) => setClip({ follow: e.target.value === 'follow' })}>
-            <option value="follow">In the same stack as the seats</option>
-            <option value="own">Its own size and corner</option>
-          </select>
-        </label>
-        {!layout.clip.follow ? (
-          <>
-            <label>
-              <span>Clip corner</span>
-              <select value={layout.clip.origin} onChange={(e) => setClip({ origin: e.target.value as RoomLayout['origin'] })}>
-                {ORIGINS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>Clip width</span>
-              <input type="number" min={160} max={1920} value={layout.clip.w}
-                onChange={(e) => setClip({ w: Number(e.target.value) })} />
-            </label>
-            <label>
-              <span>Clip height</span>
-              <input type="number" min={90} max={1080} value={layout.clip.h}
-                onChange={(e) => setClip({ h: Number(e.target.value) })} />
-            </label>
-          </>
-        ) : null}
-      </div>
-
       {layoutRefused ? (
         <p role="alert" className="mcc-error">{saveError}</p>
       ) : null}
 
       {movedToast ? <span className="mcc-toast" role="status">Tiles moved on stream</span> : null}
 
-      <small className="mcc-preview-note">
-        {room?.active ? null : 'Tile sizes have a floor: the bounty badge rides in the tile, and below it a clip that genuinely aired can stop being verifiable.'}
-        {/* The page that explains the floor and the ceiling, only when the
-            handbook is configured (docs-url.mjs returns null otherwise). */}
-        {docsUrl('create-room-and-layout') ? (
-          <> <a href={docsUrl('create-room-and-layout') as string} target="_blank" rel="noreferrer">How the layout works</a></>
-        ) : null}
-      </small>
+      {/* The page that explains the floor and the ceiling, only when the
+          handbook is configured (docs-url.mjs returns null otherwise). */}
+      {docsUrl('create-room-and-layout') ? (
+        <small className="mcc-preview-note"><a href={docsUrl('create-room-and-layout') as string} target="_blank" rel="noreferrer">How the layout works</a></small>
+      ) : null}
     </section>
   )
 }

@@ -278,6 +278,16 @@ body:has(.mc-landing) {
   line-height: 0.94;
 }
 
+/* V1 (Classic) sets the headline in Archivo, which is wider than V2's Outfit:
+   at the shared size "BE THE STREAM." missed the 434px box at 1440 by 7px and
+   broke onto a third line. 47.5px at 1440, 42.2px at 1280 fit both boxes.
+   Phones keep their own 38px (the 560px block below); V2 is untouched. */
+@media (min-width: 561px) {
+  html[data-style='classic'] .mcl-h1 {
+    font-size: clamp(36px, 3.3vw, 48px);
+  }
+}
+
 /* The neon line is the record light. In dark it is --hl-record itself with
    its glow (≥5.4:1 even where the azure wash is strongest); in light there is
    no glow, so it takes the light holler hue (#e01fbd, 3.2:1 or more; display

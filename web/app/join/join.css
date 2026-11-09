@@ -77,21 +77,46 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   font-size: 11px;
 }
 
-.join-room-strip strong {
-  color: var(--mcj-fg);
-  font-size: 13px;
+/* One row from tablet width up (owner's pick tb-room-strip-wrap): no label
+   breaks inside itself, and a long room name ends in an ellipsis instead of
+   wrapping. The phone layout below stacks the parts instead. */
+.join-room-strip > * {
+  flex: none;
+  white-space: nowrap;
 }
 
-.join-room-strip > span:last-child {
-  margin-left: auto;
+.join-room-strip strong {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--mcj-fg);
+  font-size: 13px;
 }
 
 /* What the room offers — FeatureTags (components/feature-tag.tsx). */
 .join-room-features {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
+}
+
+/* "Free room" (owner's pick vr-free-zero): said once, beside the feature
+   tags, in their shape but no feature's colour — it is not a feature. */
+.join-free-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--mcj-rule-2);
+  border-radius: 999px;
+  color: var(--mcj-fg);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 /* The room's state ("Room entrance", "Demo room", "Room closed") reads like a
@@ -269,7 +294,63 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
 .join-meter > div:first-child { border-top: 0; }
 .join-meter strong { color: var(--mcj-fg); font-variant-numeric: tabular-nums; }
 #meterRemaining, #meterSpent { color: var(--f-bounty-ink); }
-#rewardsEarned { color: var(--f-rewards-ink); }
+
+/* Watch-to-earn: its own line at the top of the console, rewards green
+   (owner's picks rw-earned-in-seat-meter, rw-hint-hidden, rw-pause-silent).
+   Not earning (paused, another tab, maxed, signed out) keeps the line and
+   greys its edge: the balance is still the viewer's. */
+.join-rewards-line {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--f-rewards-line);
+  border-left: 3px solid var(--f-rewards);
+  background: linear-gradient(90deg, var(--f-rewards-bg) 0, transparent 75%), var(--mcj-sunk);
+}
+.join-rewards-line:not([data-state='earning']) {
+  border-color: var(--mcj-rule);
+  border-left-color: var(--mcj-rule-2);
+  background: var(--mcj-sunk);
+}
+.join-rewards-line[data-state='sign_in_required'],
+.join-rewards-line[data-state='wallet_required'],
+.join-rewards-line[data-state='payout_wallet_required'] {
+  border-left-color: var(--f-rewards);
+}
+.join-rewards-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0;
+  color: var(--mcj-fg);
+  font-size: 13px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+.join-rewards-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--f-rewards-ink);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.join-rewards-tag::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--f-rewards);
+}
+.join-rewards-line:not([data-state='earning']) .join-rewards-tag::before { background: var(--mcj-dim); }
+.join-rewards-text .payout-open { font-size: 12px; }
+.join-rewards-line .join-message { margin: 0; }
 
 .join-identity-zone {
   display: grid;
@@ -388,27 +469,105 @@ body .mc-join .join-mode-zone h2 { margin: 7px 0 6px; font-family: var(--font-di
   line-height: 1.45;
 }
 
-.join-advanced {
-  border: 1px solid var(--mcj-rule);
-  background: var(--mcj-sunk);
-}
-
-.join-advanced summary {
-  cursor: pointer;
-  padding: 12px 14px;
-  color: var(--mcj-dim);
-  font-size: 11px;
-  font-weight: 650;
+/* The entrance and exit, where they apply (owner's pick
+   vr-stinger-after-button): under Go Live while a seat waits for it, and in
+   the Holler review step beside Send. */
+.join-stingers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .join-stinger-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  padding: 0 14px 14px;
 }
 
 .join-stinger-grid label { display: flex; flex-direction: column; gap: 6px; }
+.join-stingers .sp-tile { width: 180px; }
+
+/* The action buttons wear the marks the dashboard tiles use (create-room
+   FeatureMark, TD2; owner's pick vr-emoji-buttons), in the button's own ink
+   and in every state: Holler's record dot, Call in's dashed seat +. Drawn
+   here so the script's label writes never touch them. */
+.mc-join #letterBtn::before,
+.mc-join #joinBtn::before {
+  flex: none;
+  box-sizing: border-box;
+}
+.mc-join #letterBtn::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  background: radial-gradient(circle, currentColor 0 3.5px, transparent 4px);
+}
+.mc-join #joinBtn::before {
+  content: '+';
+  content: '+' / '';
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 16px;
+  border: 1.5px dashed currentColor;
+  border-radius: 3px;
+  font: 700 12px/1 var(--font-code), ui-monospace, monospace;
+}
+
+/* A link to no room (owner's pick vr-unknown-room): this card stands in for
+   the console. */
+.join-notfound {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+}
+body .mc-join .join-notfound h2 {
+  margin: 0;
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+/* Navigation, not a feature: the brand strap, not Holler pink or Call in azure. */
+.join-notfound-browse {
+  border-color: var(--hl-strap);
+  background: var(--hl-strap);
+  color: var(--primary-foreground);
+  text-decoration: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .join-notfound-browse:hover { background: var(--hl-strap-hover); }
+}
+.join-notfound-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.join-notfound-form > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+.join-notfound-form input {
+  min-width: 0;
+  height: 38px;
+  border: 1px solid var(--hl-field);
+  background: var(--hl-bg);
+  color: var(--mcj-fg);
+  padding: 0 0.7rem;
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 13px;
+}
+.join-notfound-form .mcj-mini { width: auto; padding-inline: 16px; }
+.join-notfound-error {
+  margin: 0;
+  color: var(--hl-danger);
+  font-size: 12.5px;
+}
 
 /* The header reads the shared header tokens (bar height, mark size, nav type,
    control height), so it matches every other product page. The fallbacks are
@@ -638,24 +797,8 @@ a.addr {
   font-weight: 600;
   color: var(--mcj-faint);
 }
-/* Watch-to-earn: rewards green. */
-.stream-preview-drops {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--f-rewards-ink);
-}
-.stream-preview-drops::before {
-  content: '';
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--f-rewards);
-}
-/* The hint's way in to earning: rewards green, the size of the hint. */
+/* The rewards line's way in to earning (Sign in to start, Add payout
+   wallet): rewards green, the size of the line. */
 .payout-open {
   border: 1px solid var(--f-rewards-ink);
   background: transparent;
@@ -668,7 +811,7 @@ a.addr {
 @media (hover: hover) and (pointer: fine) {
   .payout-open:hover { background: color-mix(in srgb, var(--f-rewards) 14%, transparent); }
 }
-/* The sheet it opens, in place under the caption. */
+/* The sheet it opens, in place under the rewards line. */
 .payout-sheet {
   display: flex;
   flex-direction: column;
@@ -1485,7 +1628,6 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
     padding-top: 21px;
     border-top: 1px solid var(--mcj-rule);
   }
-  .join-console-body > .join-advanced,
   .join-console-body > #message { order: 2; }
 }
 
@@ -1497,8 +1639,10 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
   .mcj-product-actions > a { display: none; }
   .join-shell { padding: 12px 12px 28px; }
   .join-room-strip { align-items: flex-start; flex-direction: column; gap: 4px; padding: 10px 12px; }
-  .join-room-strip > span:last-child { margin-left: 0; }
-  .join-room-features { margin: 4px 0 2px; }
+  /* Stacked, the name has the width to wrap rather than cut. */
+  .join-room-strip strong { max-width: 100%; white-space: normal; }
+  .join-room-features { flex-wrap: wrap; margin: 4px 0 2px; }
+  .join-notfound { padding: 20px 16px; }
   .join-media-stage { height: 350px; min-height: 350px; }
   .join-preview-idle { padding: 24px; }
   /* Nothing to show: a 56px strip with the H◉ mark and its one line, so

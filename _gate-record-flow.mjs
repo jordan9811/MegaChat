@@ -126,6 +126,24 @@ try {
     }, txt);
     if (!hit) throw new Error(`no button containing "${txt}"`);
   };
+  // The recorder opens the camera first and counts 3-2-1 after Record (UX
+  // sweep bo-recorder-fold): a take is timed from Stop appearing.
+  const waitButton = async (re, ms = 15000) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      const found = await page.evaluate((src) => [...document.querySelectorAll('button')].some((b) => new RegExp(src).test((b.textContent || '').trim()) && !b.disabled), re);
+      if (found) return true;
+      await sleep(250);
+    }
+    return false;
+  };
+  const record = async (ms) => {
+    await waitButton('^Record$');
+    await clickText('Record');
+    await waitButton('Stop');
+    await sleep(ms);
+    await clickText('Stop');
+  };
   const waitText = async (txt, ms = 15000) => {
     const t0 = Date.now();
     while (Date.now() - t0 < ms) {
@@ -137,19 +155,20 @@ try {
   };
 
   await page.goto(`${APP}/bounty/s/twitch/${STAR}`, { waitUntil: 'networkidle2', timeout: 60000 });
-  ok('the streamer page renders the record entry point',
-    await waitText(`Record a Holler for ${STAR}`), 'entry button present');
+  // Nobody has backed STAR yet: the page asks for the first Holler and
+  // offers no claim (UX sweep bo-claim-unbacked).
+  ok('the streamer page renders the record entry point (first backer: "Record the first Holler", no claim button)',
+    (await waitText('Record the first Holler')) && (await waitText(`No one has backed ${STAR} yet.`))
+    && !(await page.evaluate(() => document.body.innerText.includes('claim this'))), 'entry button present');
 
-  await clickText(`Record a Holler for ${STAR}`);
+  await clickText('Record the first Holler');
   // The minimum duration must be DISCLOSED before recording starts.
   ok('the minimum duration is stated BEFORE recording starts',
     await waitText('3s minimum'), 'not discovered after a failed take');
 
   // ── A. too-short take: refused before any money object exists ───────────
   const ledgerBefore = ledgerLines();
-  await clickText('Record');
-  await sleep(1400); // ~1s of media — under the 3s floor
-  await clickText('Stop');
+  await record(1400); // ~1s of media — under the 3s floor
   ok('A. a too-short take is refused with the "nothing charged" message',
     await waitText('Nothing was charged'), 'fan is told, not billed');
   ok('A. ...and NO pledge/ledger row exists (pay-at-submit, proven by absence)',
@@ -157,18 +176,14 @@ try {
   ok('A. ...and the clip store is untouched', clipFiles().length === 0);
 
   // ── B. real take: record → preview → RE-RECORD → terms → pay → submit ──
-  await clickText('Record');
-  await sleep(4600);
-  await clickText('Stop');
+  await record(4600);
   ok('B. stopping lands on preview with a re-record choice',
     await waitText('Re-record'), 'preview stage reached');
 
   // Exercise the re-record path — the take being discarded must cost nothing.
   await clickText('Re-record');
   await sleep(300);
-  await clickText('Record');
-  await sleep(4600);
-  await clickText('Stop');
+  await record(4600);
   ok('B. re-record produces a second preview', await waitText('Re-record'));
   ok('B. ...and still nothing exists server-side before submit',
     ledgerLines() === ledgerBefore && clipFiles().length === 0,
@@ -183,9 +198,7 @@ try {
 
   // Amount 7.5 — typed through React's controlled input.
   await page.evaluate(() => {
-    const label = [...document.querySelectorAll('label')]
-      .find((l) => (l.textContent || '').includes('Bounty amount'));
-    const input = label.querySelector('input');
+    const input = document.getElementById('bounty-amount');
     const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
     set.call(input, '7.5');
     input.dispatchEvent(new Event('input', { bubbles: true }));
