@@ -2,13 +2,13 @@
 
 import Link from 'next/link'
 import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react'
-import { listPublicRooms, listRecentAirings, type PublicRoomCard, type RecentAiring } from '@/lib/api'
+import { fetchPublicConfig, listPublicRooms, listRecentAirings, type PublicRoomCard, type RecentAiring } from '@/lib/api'
 import { listBountyPools, type BountyPool } from '@/lib/bounty-api'
 import { AccountChip } from '@/components/account-chip'
 import { PlatformPip } from '@/components/platform-pip'
 import { TwitchPreview } from '@/components/twitch-preview'
 import { formatDollars } from '@/lib/display-format'
-import { BOARD_RECENT_CAP, featureKinds, roomPresentation } from '@/lib/room-browse'
+import { BOARD_RECENT_CAP, featureKinds, roomPresentation, type RewardTerms } from '@/lib/room-browse'
 import './booth.css'
 import { BrandText } from '@/components/brand-text'
 import { FeatureTag } from '@/components/feature-tag'
@@ -22,7 +22,7 @@ const ROOM_POLL_MS = 5000
 const POOL_POLL_MS = 30000
 const AIRING_POLL_MS = 60000
 const GRID_CAP = 8
-// Up to this many tiles (recent + rooms + Open a room) share one big row.
+// Up to this many tiles (recent + rooms + Create room) share one big row.
 const SPARSE_MAX = 4
 
 // Filters over the rooms, not over the page: bounties keep their own rail on
@@ -203,8 +203,8 @@ function RoomFeatures({
   )
 }
 
-function FeaturedRoom({ room, size = 'normal' }: { room: PublicRoomCard; size?: FeatureSize }) {
-  const { action, capabilities, full, rates } = roomPresentation(room)
+function FeaturedRoom({ room, size = 'normal', terms }: { room: PublicRoomCard; size?: FeatureSize; terms?: RewardTerms }) {
+  const { action, capabilities, full, rates } = roomPresentation({ ...room, rewards: terms })
   const kinds = featureKinds(room)
   const counts = [
     room.viewers ? `${room.viewers.toLocaleString('en-US')} watching` : '',
@@ -226,10 +226,10 @@ function FeaturedRoom({ room, size = 'normal' }: { room: PublicRoomCard; size?: 
         </span>
         {rates.length ? (
           <dl className="mcr-rates">
-            {/* roomPresentation gives the Hollers line no seats and the Call
-                in line always its seats, so seats say which feature it is. */}
+            {/* One line per feature, each in its colour: Hollers, Call in
+                (with its seats), then Watching in the reward's green. */}
             {rates.map((r) => (
-              <div key={r.label} data-kind={r.seats ? 'callin' : 'holler'}>
+              <div key={r.label} data-kind={r.kind}>
                 <dt>
                   <span className="mcr-rate-k">
                     <i aria-hidden="true" />
@@ -281,7 +281,7 @@ function OpenRoomCard() {
       <span className="mcr-plus" aria-hidden="true">
         +
       </span>
-      <strong>Open a room</strong>
+      <strong>Create room</strong>
     </Link>
   )
 }
@@ -450,7 +450,7 @@ export function Booth({
   //      cell (server.js "what the board shows when nothing is live").
   //   3. The rooms, live ones first, then the server's order (most on camera,
   //      most waiting, newest), capped with a "show all".
-  //   4. Open a room, always the last tile.
+  //   4. Create room, always the last tile.
   //   5. Something live? Recently aired follows the rooms instead.
   //   TILE SIZE FOLLOWS HOW FULL THE BOARD IS. With a handful of tiles
   //   (SPARSE_MAX) they share ONE row and split it — big, up to 520px each —
@@ -468,6 +468,27 @@ export function Booth({
     const one = liveRanked[0] ?? visible.find((r) => r.isDemo || r.handle === 'demo') ?? visible[0]
     return one ? [one] : []
   }, [liveRanked, visible])
+  // What watching earns lives in each room's config, which the board's room
+  // loaders (lib/api listPublicRooms, lib/rooms-server) do not carry. Read it
+  // for the featured cards only, the ones that print rates, from the page's
+  // shared /api/config cache.
+  const [rewardTermsById, setRewardTermsById] = useState<Record<string, RewardTerms>>({})
+  const wantTerms = featuredList.filter((r) => r.rewardsEnabled && !(r.id in rewardTermsById)).map((r) => r.id).join(',')
+  useEffect(() => {
+    if (!wantTerms) return
+    let alive = true
+    for (const id of wantTerms.split(',')) {
+      fetchPublicConfig(id)
+        .then(({ ok, body }) => {
+          const terms = body.rewards as RewardTerms | undefined
+          if (alive && ok && terms) setRewardTermsById((current) => ({ ...current, [id]: terms }))
+        })
+        .catch(() => {})
+    }
+    return () => {
+      alive = false
+    }
+  }, [wantTerms])
   const featuredSize: FeatureSize =
     featuredList.length === 2 ? 'half' : featuredList[0]?.bigStream ? 'big' : 'normal'
   const rest = useMemo(() => {
@@ -481,7 +502,7 @@ export function Booth({
   // "nothing is on air, here is what just was" is the answer to both.
   const recentAirings = chip === 'all' ? airings.slice(0, BOARD_RECENT_CAP) : []
   const quiet = onAirCount === 0
-  const tiles = recentAirings.length + shown.length + 1 // + Open a room
+  const tiles = recentAirings.length + shown.length + 1 // + Create room
   const sparse = tiles <= SPARSE_MAX && rest.length <= GRID_CAP
   const recentSection = recentAirings.length ? (
     <RecentRail key="recent" airings={recentAirings} span={recentAirings.length} />
@@ -587,11 +608,11 @@ export function Booth({
                 {featuredSize === 'half' ? (
                   <div className="mcr-feat-pair">
                     {featuredList.map((room) => (
-                      <FeaturedRoom key={room.id} room={room} size="half" />
+                      <FeaturedRoom key={room.id} room={room} size="half" terms={rewardTermsById[room.id]} />
                     ))}
                   </div>
                 ) : (
-                  <FeaturedRoom room={featuredList[0]} size={featuredSize} />
+                  <FeaturedRoom room={featuredList[0]} size={featuredSize} terms={rewardTermsById[featuredList[0].id]} />
                 )}
                 {sparse ? (
                   <div className="mcr-strip" data-n={tiles} style={{ ['--n' as string]: tiles } as CSSProperties}>
@@ -614,7 +635,7 @@ export function Booth({
                   </a>
                   {chip === 'all' ? (
                     <Link href="/dashboard" className="mcr-ghost">
-                      Open a room
+                      Create room
                     </Link>
                   ) : (
                     <button type="button" className="mcr-ghost" onClick={() => setChip('all')}>

@@ -43,7 +43,7 @@ import {
   type Seat,
   type RoomConfigPatch,
 } from '@/lib/api'
-import { backendWsUrl } from '@/lib/backend'
+import { backendHttpUrl, backendWsUrl } from '@/lib/backend'
 import { guestName } from '@/lib/display-format'
 import { fetchIdentity } from '@/lib/identity'
 import type { RoomLayout } from '@/lib/api'
@@ -55,6 +55,14 @@ export const REWARD_DEFAULTS = {
   cash: { earnAmount: '0.01', earnCap: '0.1' },
   points: { earnAmount: '1', earnCap: '50' },
 } as const
+
+/** The Rewards card's server rules (dashboard-routes.js rewardsPolicy): the
+ *  cash bounds, and whether this room can pay cash at all (rewards.js
+ *  policyFor's reasons: password_room, cash_rewards_off, cash_not_allowed). */
+export type RewardsPolicy = {
+  limits: { maxEarn: string; maxCap: string; minIntervalS: number }
+  cash: { ok: boolean; reason: string | null }
+}
 
 // Tempo mainnet USDC.e — fallback only; the real value is re-read from
 // /api/config on mount.
@@ -209,6 +217,12 @@ type RoomContextValue = {
   clearDefaults: () => Promise<void>
   /** Open a room you OWN with no password (identity cookie authorizes it). */
   openOwnedRoom: (roomId: string) => Promise<void>
+  /** A fresh create form for another room, its link left empty to fill in. */
+  startNewRoom: () => void
+  /** The create form was opened as New room: the link is the streamer's to choose. */
+  newRoom: boolean
+  /** Null until the server answers (or on a server without the route). */
+  rewardsPolicy: RewardsPolicy | null
   updateDraft: (patch: Partial<ConfigDraft>) => void
   create: (password?: string) => Promise<void>
   unlock: (roomId: string, password: string) => Promise<void>
@@ -378,6 +392,12 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const draftTouchedRef = useRef(false)
   // Auto-open your room once per page load (see loadMine).
   const autoOpenedRef = useRef(false)
+  // New room (account menu, Switch room): no seeded handle, no auto-open. A
+  // bumped yourname_2 is why the old ?new=1 was removed; the link is left
+  // empty for the streamer to choose instead.
+  const newRoomRef = useRef(false)
+  const [newRoom, setNewRoom] = useState(false)
+  const [rewardsPolicy, setRewardsPolicy] = useState<RewardsPolicy | null>(null)
   const guestHandleRef = useRef('')
 
   const passwordRef = useRef('')
@@ -397,6 +417,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   // room already uses walked you into a 409 you did not ask for, so take
   // the next free variant instead — the same shape the server suggests.
   const seedHandle = useCallback(() => {
+    if (newRoomRef.current) return ''
     if (!guestHandleRef.current) guestHandleRef.current = guestName().toLowerCase()
     const h = toHandle(identityHandleRef.current) || guestHandleRef.current
     const taken = new Set(myRoomsRef.current.map((r) => r.handle).filter(Boolean))
@@ -434,6 +455,10 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   }, [seedHandle])
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('new') === '1') {
+      newRoomRef.current = true
+      setNewRoom(true)
+    }
     setDraft((d) => d.handle ? d : { ...d, handle: seedHandle() })
     getPublicConfig()
       .then((cfg) => {
@@ -481,8 +506,9 @@ export function RoomProvider({ children }: { children: ReactNode }) {
           setMyRooms(d.rooms)
           myRoomsRef.current = d.rooms
           const params = new URLSearchParams(window.location.search)
-          // No ?new=1 exception any more: an owner always lands in their room.
-          if (!autoOpenedRef.current && d.rooms.length > 0 && !roomIdRef.current) {
+          // An owner lands in their room, unless they asked for New room
+          // (?new=1), which opens the create form with the link left empty.
+          if (!autoOpenedRef.current && d.rooms.length > 0 && !roomIdRef.current && !newRoomRef.current) {
             autoOpenedRef.current = true
             const selected = d.rooms.find((r) => r.id === params.get('room')) || d.rooms[0]
             void openOwnedRoom(selected.id).catch(() => {})
@@ -589,6 +615,16 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     setDraft(freshDraft())
   }, [freshDraft])
 
+  // New room: the create form from defaults, link left empty. Kept in the URL
+  // so a reload stays on the fresh form instead of reopening the last room.
+  const startNewRoom = useCallback(() => {
+    newRoomRef.current = true
+    setNewRoom(true)
+    autoOpenedRef.current = true
+    switchRoom()
+    window.history.replaceState(null, '', '/dashboard?new=1')
+  }, [switchRoom])
+
   const refresh = useCallback(async () => {
     const roomId = roomIdRef.current
     if (!roomId) return
@@ -622,6 +658,8 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     (r: Room, password: string, join: string, overlay: string) => {
       passwordRef.current = password
       roomIdRef.current = r.id
+      newRoomRef.current = false
+      setNewRoom(false)
       skipNextAutosaveRef.current = true
       nameEditedRef.current = false
       setSaveState('saved')
@@ -826,6 +864,21 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshMyRooms, switchRoom])
 
+  // The Rewards card's limits and cash verdict, for the room being managed or
+  // (creating) for whoever is signed in. Asked again when either changes.
+  useEffect(() => {
+    let alive = true
+    const roomId = mode === 'managing' ? room?.id ?? null : null
+    const path = roomId ? `/api/dashboard/rooms/${encodeURIComponent(roomId)}/rewards-policy` : '/api/dashboard/rewards-policy'
+    const headers: Record<string, string> = {}
+    if (roomId && passwordRef.current) headers['X-Room-Password'] = passwordRef.current
+    fetch(`${backendHttpUrl()}${path}`, { headers })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: RewardsPolicy | null) => { if (alive) setRewardsPolicy(data?.limits && data?.cash ? data : null) })
+      .catch(() => { if (alive) setRewardsPolicy(null) })
+    return () => { alive = false }
+  }, [mode, room?.id, hasIdentity])
+
   const kick = useCallback(
     async (seatId: string) => {
       const roomId = roomIdRef.current
@@ -976,6 +1029,9 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       saveDefaultsFromDraft,
       clearDefaults,
       openOwnedRoom,
+      startNewRoom,
+      newRoom,
+      rewardsPolicy,
       updateDraft,
       create,
       unlock,
@@ -987,7 +1043,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       lettersAdmin,
       hostToken,
     }),
-    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, twitchLive, follow, adoptTwitchTitle, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, updateDraft, create, unlock, toggleActive, endRoom, kick, pin, switchRoom, lettersAdmin, hostToken],
+    [saveState, saveError, mode, room, seats, joinUrl, overlayUrl, twitchLive, follow, adoptTwitchTitle, draft, usdcAddress, livekitConfigured, identityHandle, hasIdentity, myRooms, linkedTwitch, refreshMyRooms, accountDefaults, saveDefaultsFromDraft, clearDefaults, openOwnedRoom, startNewRoom, newRoom, rewardsPolicy, updateDraft, create, unlock, toggleActive, endRoom, kick, pin, switchRoom, lettersAdmin, hostToken],
   )
 
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>

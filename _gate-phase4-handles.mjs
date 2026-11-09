@@ -152,9 +152,8 @@ if (fresh.ok) {
   await sleep(1500);
   const probe = await page.evaluate(() => ({
     url: location.pathname + location.search,
-    banner: getComputedStyle(document.getElementById('demoBanner')).display !== 'none',
     letterBtn: getComputedStyle(document.getElementById('letterBtn')).display !== 'none',
-    joinIntact: ['username', 'joinBtn', 'priceAmount'].every((id) => !!document.getElementById(id)),
+    joinIntact: ['username', 'joinBtn', 'letterBtn'].every((id) => !!document.getElementById(id)),
   }));
   ok('browser survives the legacy /r/demo redirect and lands on the pretty URL',
     probe.url === '/demo', probe.url);

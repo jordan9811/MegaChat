@@ -1246,6 +1246,19 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   --mcr-k-ink: var(--f-callin-ink);
 }
 
+/* What watching earns: the full terms in the reward's green, not the money
+   yellow, and allowed to wrap ("$0.01 a minute, up to $0.10"). */
+.mcr-rates > [data-kind='rewards'] {
+  --mcr-k: var(--f-rewards);
+  --mcr-k-ink: var(--f-rewards-ink);
+}
+
+.mcr-rates > [data-kind='rewards'] dd {
+  color: var(--f-rewards-ink);
+  white-space: normal;
+  text-align: right;
+}
+
 .mcr-rates dt {
   display: flex;
   align-items: center;

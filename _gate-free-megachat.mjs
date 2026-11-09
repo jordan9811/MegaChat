@@ -129,14 +129,16 @@ try {
     await sleep(2500);
     clientSt = await page.evaluate(() => ({
       letterStatus: document.getElementById('letterStatus')?.textContent || '',
-      message: (document.getElementById('message')?.innerText || '').slice(0, 160),
+      message: ([...document.querySelectorAll('#letterStatus,#letterMessage,#message,#seatMessage,#walletMessage')].find((e) => (e.innerText || '').trim())?.innerText || '').slice(0, 160),
       stageOpen: document.getElementById('letterStage')?.style.display !== 'none',
     }));
-    if (/sent|review/i.test(clientSt.message) || /failed|❌/i.test(clientSt.message + clientSt.letterStatus)) break;
+    if (/sent|review|queued/i.test(clientSt.message + clientSt.letterStatus) || /failed|❌/i.test(clientSt.message + clientSt.letterStatus)) break;
   }
+  // The recorder stays open in a Sent state and reports there (UX bounty
+  // vr-message-far): success is the status line, with no failure anywhere.
   ok('free send: client shows SENT (no silent death, no failure)',
-    /sent|review/i.test(clientSt.message) && !/failed|❌/.test(clientSt.message + clientSt.letterStatus)
-    && !clientSt.stageOpen, JSON.stringify(clientSt));
+    /sent|review|queued/i.test(clientSt.message + ' ' + clientSt.letterStatus) && !/failed|❌/.test(clientSt.message + clientSt.letterStatus),
+    JSON.stringify(clientSt));
 
   // server side: the letter exists and reaches a settled state
   const listLetters = async () => {
@@ -166,8 +168,8 @@ try {
   ok('no overlay: clip HELD in queue (not consumed invisibly)',
     ls.length === 1 && ls[0].status === 'queued', `status=${ls[0]?.status ?? 'GONE'}`);
   ok('no overlay: sender was warned it is queued, not lied to about airing',
-    await page.evaluate(() => /overlay isn't online yet/i.test(document.getElementById('message')?.innerText || '')),
-    await page.evaluate(() => (document.getElementById('message')?.innerText || '').slice(0, 120)));
+    await page.evaluate(() => /overlay isn't online yet/i.test([...document.querySelectorAll('#letterStatus,#letterMessage,#message,#seatMessage,#walletMessage')].find((e) => (e.innerText || '').trim())?.innerText || '')),
+    await page.evaluate(() => ([...document.querySelectorAll('#letterStatus,#letterMessage,#message,#seatMessage,#walletMessage')].find((e) => (e.innerText || '').trim())?.innerText || '').slice(0, 120)));
 
   // ── overlay connects → the clip plays FOR REAL, sender notified ───────────
   // (A Referer-based rescue for stale role-less pages was tested here and
@@ -191,7 +193,7 @@ try {
   }
   ok('overlay online: letter tile renders with its video',
     !!tile && tile.hasVideo && /diag-sender/.test(tile.label), JSON.stringify(tile));
-  const senderNotified = await page.evaluate(() => /RIGHT NOW/i.test(document.getElementById('message')?.innerText || ''));
+  const senderNotified = await page.evaluate(() => /RIGHT NOW/i.test([...document.querySelectorAll('#letterStatus,#letterMessage,#message,#seatMessage,#walletMessage')].find((e) => (e.innerText || '').trim())?.innerText || ''));
   ok('sender sees "on stream RIGHT NOW" only when it actually IS', senderNotified);
 
   // ── one-shot completes: tile leaves, letter leaves the dashboard ──────────

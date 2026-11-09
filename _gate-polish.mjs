@@ -104,7 +104,7 @@ try {
   await sleep(1200);
 
   const msgState = () => join.evaluate(() => {
-    const m = document.getElementById('message');
+    const m = [...document.querySelectorAll('#message,#seatMessage,#walletMessage,#letterMessage')].find((e) => (e.innerText || '').trim());
     const details = m?.querySelector('details.tx-details');
     return {
       text: (m?.innerText || '').slice(0, 400),

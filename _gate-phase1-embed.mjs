@@ -101,7 +101,7 @@ const probeA = await page.evaluate(() => {
     src: iframe ? iframe.src : null,
     label: wrap ? wrap.textContent.includes('~15s behind live') : false,
     dropsVisible: vis(drops),
-    joinControls: ['username', 'joinBtn', 'passkeyBtn', 'connectBtn', 'priceAmount']
+    joinControls: ['username', 'joinBtn', 'connectBtn', 'depositBtn']
       .every((id) => !!document.getElementById(id)),
   };
 });
@@ -121,7 +121,7 @@ const probeB = await page.evaluate(() => {
   return {
     hidden: !wrap || getComputedStyle(wrap).display === 'none',
     iframeCount: document.querySelectorAll('#streamPreviewMount iframe').length,
-    joinControls: ['username', 'joinBtn', 'priceAmount'].every((id) => !!document.getElementById(id)),
+    joinControls: ['username', 'joinBtn', 'letterBtn'].every((id) => !!document.getElementById(id)),
   };
 });
 ok('embed hidden cleanly when no channel set', probeB.hidden && probeB.iframeCount === 0);

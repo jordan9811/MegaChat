@@ -5091,3 +5091,15 @@ commit before); `_gate-dashboard-update`, `_gate-rooms-store`,
 - **HB3 — The two dust gates were updated, not run.** `_gate-p1-features.mjs`
   and `_gate-phase3-letters.mjs` now assert a 3 s take on a $0.01 / 5 s room
   is billed 0.006 (it was 0.01). Owner-run (mainnet dust).
+
+## 2026-11-09 — Found while shipping the second round of UX picks
+
+- **HB4 — `_gate-integration.mjs` fails B6 and C1, unrelated to this round.**
+  B6 looks for a boot banner ("Meter (legacy prepaid)") that no longer exists
+  in `server.js`; C1 expects a Twitch title to rename a room that was given a
+  typed name, which the 2026-11-07 follow rule (a typed name is the owner's)
+  now leaves alone. Both gates need their expectation updated.
+- **HB5 — The landing film is silent.** The new sound toggle beside replay
+  does nothing audible until `launch-film.mp4` is re-exported with audio.
+- **HB6 — The phone header's account chip overhangs by under 1 px** on
+  /dashboard at 390, a 1 px sideways pan (ca-mobile-header-overflow).

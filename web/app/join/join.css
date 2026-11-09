@@ -108,16 +108,6 @@ html:has(.mc-join) ::-webkit-scrollbar-thumb:hover {
   text-transform: uppercase;
 }
 
-.join-demo-banner {
-  border: 1px solid color-mix(in srgb, var(--hl-strap-hi) 40%, transparent);
-  border-bottom: 0;
-  background: color-mix(in srgb, var(--hl-strap) 12%, var(--hl-panel));
-  padding: 10px 16px;
-  color: var(--mcj-fg);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 .join-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(430px, 0.75fr);
@@ -664,6 +654,72 @@ a.addr {
   height: 6px;
   border-radius: 50%;
   background: var(--f-rewards);
+}
+/* The hint's way in to earning: rewards green, the size of the hint. */
+.payout-open {
+  border: 1px solid var(--f-rewards-ink);
+  background: transparent;
+  color: var(--f-rewards-ink);
+  padding: 3px 9px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .payout-open:hover { background: color-mix(in srgb, var(--f-rewards) 14%, transparent); }
+}
+/* The sheet it opens, in place under the caption. */
+.payout-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--mcj-rule);
+  border-left: 3px solid var(--f-rewards);
+  background: var(--mcj-sunk);
+  padding: 10px 12px;
+}
+.payout-sheet-title {
+  margin: 0;
+  color: var(--mcj-fg);
+  font-size: 13px;
+  font-weight: 700;
+}
+.payout-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+.payout-form input {
+  min-width: 0;
+  height: 36px;
+  border: 1px solid var(--hl-field);
+  background: var(--hl-bg);
+  color: var(--mcj-fg);
+  padding: 0 0.7rem;
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 12.5px;
+}
+.payout-result {
+  margin: 0;
+  color: var(--mcj-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.payout-result:empty { display: none; }
+.payout-result[data-tone='success'] { color: var(--f-rewards-ink); }
+.payout-result[data-tone='error'] { color: var(--hl-danger); }
+.payout-close {
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  color: var(--mcj-muted);
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
 }
 
 /* ── Letter mode (record a Holler) ───────────────────────────────────────── */
@@ -1335,6 +1391,32 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
   opacity: 0.55;
 }
 
+/* While a seat is held the same button is a bar on the camera frame's bottom
+   edge, so the preview and Go Live are one object on screen (the page also
+   scrolls it into view on grant, join-page.ts revealSeatCam). The frame keeps
+   its 16:10 box from the start, so the bar does not jump when a LiveKit
+   self-view attaches to an empty frame. */
+.seat-cam {
+  display: flex;
+  flex-direction: column;
+  scroll-margin: calc(var(--hl-hdr-h, 60px) + 16px) 0 16px;
+}
+#cameraStage .cam-frame {
+  aspect-ratio: 16 / 10;
+  max-height: 240px;
+  border-bottom: 0;
+}
+#cameraStage.show + #joinBtn {
+  position: relative;
+  z-index: 1;
+}
+#camHint:empty { display: none; }
+
+/* Results shown in place, under the block that caused them. The block
+   already says which feature it is, so the message drops its feature pill. */
+.join-mode-zone .join-message.success[data-feature]::before { content: none; }
+.join-identity-zone .join-message { margin-top: 2px; }
+
 /* ── Human-readable tx errors (polish item 1) ─────────────────────────────
    One clean sentence up top; the raw revert lives in a quiet collapsible.
    Colors ride the theme tokens so both light and dark stay legible. */
@@ -1394,6 +1476,19 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
   .join-action-console { border-left: 0; }
 }
 
+/* Tablets (and narrow windows): the two things the page sells come first —
+   Send a Holler, then Call in — and the name and wallet block follows them.
+   Phones keep their own order (the stage folds to a strip there instead). */
+@media (min-width: 721px) and (max-width: 1279px) {
+  .join-console-body > .join-identity-zone {
+    order: 1;
+    padding-top: 21px;
+    border-top: 1px solid var(--mcj-rule);
+  }
+  .join-console-body > .join-advanced,
+  .join-console-body > #message { order: 2; }
+}
+
 @media (max-width: 720px) {
   .mcj-product-header > div { grid-template-columns: 1fr auto; }
   .mcj-product-header nav { display: none; }
@@ -1406,6 +1501,20 @@ html[data-ui='simple'] .join-shell #depositBtn { grid-column: 1 / -1; }
   .join-room-features { margin: 4px 0 2px; }
   .join-media-stage { height: 350px; min-height: 350px; }
   .join-preview-idle { padding: 24px; }
+  /* Nothing to show: a 56px strip with the H◉ mark and its one line, so
+     Send a Holler and Call in reach the first screen. */
+  .join-media-stage.is-idle { height: 56px; min-height: 56px; }
+  .join-media-stage.is-idle .join-preview-idle {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 0 16px;
+    text-align: left;
+  }
+  /* HollerMark sizes itself inline (px={52}); the strip needs it small. */
+  .join-media-stage.is-idle .join-preview-mark .hm { font-size: 26px !important; }
+  .join-media-stage.is-idle .join-coordinate { display: none; }
+  .join-media-stage.is-idle .join-preview-idle h1 { margin: 0; font-size: 15px; }
   .join-console-body { padding: 20px 16px; }
   .join-price-zone > div { align-items: flex-start; flex-direction: column; gap: 5px; }
   #priceLabel { max-width: none; text-align: left; }

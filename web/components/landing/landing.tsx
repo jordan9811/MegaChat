@@ -142,7 +142,7 @@ export function Landing({
         </section>
 
         <section className="mcl-create-strip">
-          <div><h2>Open a room.</h2><p>Set your rate, connect OBS, and decide how viewers can join.</p></div>
+          <div><h2>Create a room.</h2><p>Set your rate, connect OBS, and decide how viewers can join.</p></div>
           <Link href="/dashboard">Create room <ArrowRight size={16} aria-hidden="true" /></Link>
         </section>
       </main>

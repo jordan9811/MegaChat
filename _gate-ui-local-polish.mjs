@@ -66,7 +66,7 @@ check('Live seat, full queue, and demo actions follow capabilities', () => {
   assert.equal(roomPresentation(live).action, 'Take a seat');
   assert.equal(roomPresentation({ ...live, live: 3 }).action, 'Join queue');
   assert.equal(roomPresentation({ ...room, isDemo: true }).action, 'Try demo');
-  assert.equal(roomPresentation({ ...room, letters: undefined, joinStream: undefined }).action, 'Open room');
+  assert.equal(roomPresentation({ ...room, letters: undefined, joinStream: undefined }).action, 'Join');
 });
 
 if (process.argv.includes('--server')) {

@@ -16,6 +16,7 @@
 
 import { fetchPublicConfig } from '@/lib/api';
 import { newAttemptId } from '@/lib/attempt-id';
+import { setPayoutWallet } from '@/lib/bounty-api';
 import { formatDollars, guestName, shortAddr } from '@/lib/display-format';
 import { startEchoDetector } from '@/lib/echo-detector';
 import { fetchIdentity } from '@/lib/identity';
@@ -157,7 +158,7 @@ function viewerRidesFree() {
 // leave the screen — sign-in cluster, fund row, wallet info — and the
 // username locks (editing it mid-session does nothing). All restored on leave.
 function setSessionUi(inSession) {
-  for (const id of ['privyChoice', 'connectBtn', 'depositBtn', 'walletInfo', 'passkeyFundNote']) {
+  for (const id of ['connectBtn', 'depositBtn', 'walletInfo', 'passkeyFundNote']) {
     const el = document.getElementById(id);
     if (el) el.style.display = inSession ? 'none' : '';
   }
@@ -173,7 +174,7 @@ function applyFreeRoomUi() {
   if (!roomIsFree()) return;
   // meter included: a FREE room showing "Remaining 0.07 USDC.e" is a wallet
   // surface contradicting the room's one promise
-  for (const id of ['privyChoice', 'connectBtn', 'depositBtn', 'walletInfo', 'passkeyFundNote', 'earnedRow']) {
+  for (const id of ['connectBtn', 'depositBtn', 'walletInfo', 'passkeyFundNote', 'earnedRow']) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   }
@@ -273,7 +274,9 @@ async function humanTxErrorHtml(err, ctx) {
       haveTxt != null && needTxt != null
         ? `Not enough balance — you have ${haveTxt}, this costs ${needTxt}.`
         : 'Not enough balance for this.';
-    return `${line} <button type="button" class="tx-addfunds" onclick="fundWallet()">➕ Add funds</button>`;
+    // The funding steps then replace this line, in the same box.
+    const where = ctx && MESSAGE_BOX[ctx.where] ? ctx.where : 'wallet';
+    return `${line} <button type="button" class="tx-addfunds" onclick="fundWallet('${where}')">➕ Add funds</button>`;
   }
   if (/user rejected|user denied|rejected the request/i.test(rawFull)) {
     return 'You cancelled the request in your wallet.';
@@ -283,7 +286,7 @@ async function humanTxErrorHtml(err, ctx) {
 
 async function showTxError(prefix, err, ctx) {
   const html = await humanTxErrorHtml(err, ctx);
-  showMessage('❌ ' + (prefix ? prefix + ': ' : '') + html, 'error');
+  showMessage('❌ ' + (prefix ? prefix + ': ' : '') + html, 'error', ctx && ctx.where);
 }
 let lastMeter = null;
 function applyModeText() {
@@ -359,9 +362,15 @@ function formatTimeLeft(seconds) {
   return `${m}:${r.toString().padStart(2, '0')}`;
 }
 
+// The held seat's own meter (null for a free seat), for the receipt on leave;
+// and the last seat's Spent, which stays on the meter until the next one.
+let seatMeter = null;
+let lastSessionSpent = '0';
+
 function showMeter(remaining, spent, secondsLeft) {
   if (roomIsFree()) return; // free rooms have no balance to meter — ever
   lastMeter = { remaining, spent, secondsLeft };
+  if (mySeatId) seatMeter = { remaining, spent };
   const box = document.getElementById('meter');
   box.classList.add('show');
   document.getElementById('meterRemaining').textContent = formatDollars(remaining);
@@ -508,6 +517,8 @@ function setJoinState(state, labelOverride) {
   btn.textContent = labelOverride || (joinBtnState === 'idle' ? idleCallInLabel() : preset.label);
   btn.disabled = preset.disabled
     || (joinBtnState === 'idle' && CONFIG && CONFIG.roomActive === false);
+  // The camera attached: Go Live is the next press, so it must be on screen.
+  if (joinBtnState === 'go-live') revealSeatCam();
 }
 
 // Lazy connect: the overlay sits disconnected while idle, so it needs the
@@ -543,6 +554,7 @@ function prewarmOverlay() {
           "<strong>Heads up:</strong> this streamer's overlay isn't open right now, so your camera may not appear on their broadcast. " +
           "You can still join — you're only charged for the seconds you're actually on.",
           'warning',
+          'seat',
         );
       }
     })
@@ -600,12 +612,11 @@ function onJoinButtonClick() {
   // busy: disabled — ignore stray clicks.
 }
 
-async function connectMetaMask() {
+// `where`: the message box under the control that asked (showMessage).
+async function connectMetaMask(where) {
   walletMode = 'metamask';
-  return connectWallet();
+  return connectWallet(where);
 }
-
-const PRIVY_SIGNIN_LABEL = '🔐 Sign in — Google, email or passkey';
 
 /** The window bridge installed by components/providers/tempo-wallet.tsx. */
 function getMegaWallet() {
@@ -624,27 +635,27 @@ async function getActiveProvider() {
 
 /**
  * Privy embedded wallet connect (email / social / passkey — one modal covers
- * both new and returning users).
+ * both new and returning users). There is no sign-in button on this page any
+ * more: the paid actions (Send, Call in, Add funds) call this the moment they
+ * need an account, and `where` puts the outcome under that control.
  */
-async function connectPrivyWallet() {
-  const btn = document.getElementById('passkeyBtn');
+async function connectPrivyWallet(where) {
   const MW = getMegaWallet();
   if (!MW) {
     // The bridge appears once the room config arrives (tempo-wallet.tsx); a
     // tap before then is early, not a server without sign-in.
-    showMessage('Sign-in is still loading. Wait a moment, then retry.', 'error');
+    showMessage('Sign-in is still loading. Wait a moment, then retry.', 'error', where);
     return null;
   }
   if (!MW.configured) {
     showMessage(
       'Privy sign-in is not configured on this server yet (set NEXT_PUBLIC_PRIVY_APP_ID in .env and restart). MetaMask still works below.',
-      'error'
+      'error',
+      where
     );
     return null;
   }
   try {
-    btn.disabled = true;
-    btn.textContent = '⏳ Waiting for sign-in…';
     walletMode = 'privy';
     updatePriceDisplay();
     account = null; // clear any stale MetaMask address
@@ -654,30 +665,25 @@ async function connectPrivyWallet() {
     renderWallet();
     window.dispatchEvent(new CustomEvent('wallet:connected', { detail: { account } }));
     await refreshBalance();
-    showMessage('✅ Signed in — wallet ready on Tempo.', 'success');
+    showMessage('✅ Signed in — wallet ready on Tempo.', 'success', where);
     return account;
   } catch (err) {
     walletMode = null;
     account = null;
     console.error('[privy]', err);
-    showMessage('❌ ' + ((err && err.message) || 'Sign-in failed'), 'error');
+    showMessage('❌ ' + ((err && err.message) || 'Sign-in failed'), 'error', where);
     renderWallet();
     return null;
-  } finally {
-    if (!(account && walletMode === 'privy')) {
-      btn.disabled = false;
-      btn.textContent = PRIVY_SIGNIN_LABEL;
-    }
   }
 }
 
-async function connectWallet() {
+async function connectWallet(where) {
   try {
     const eth = ensureEthereum();
     // First account read happens HERE — only after an explicit Connect.
     const accounts = await eth.request({ method: 'eth_requestAccounts' });
     if (!accounts || !accounts.length) {
-      showMessage('🔒 Wallet is locked or no account is shared. Unlock MetaMask and try again.', 'error');
+      showMessage('🔒 Wallet is locked or no account is shared. Unlock MetaMask and try again.', 'error', where);
       return null;
     }
     account = accounts[0];
@@ -693,7 +699,7 @@ async function connectWallet() {
     const msg = err && err.code === 4001
       ? 'Connection request rejected in your wallet.'
       : (err && err.message) || 'Wallet connection failed';
-    showMessage('❌ ' + msg, 'error');
+    showMessage('❌ ' + msg, 'error', where);
     return null;
   }
 }
@@ -807,20 +813,16 @@ function onAddrCopyClick(e) {
 function renderWallet() {
   const info = document.getElementById('walletInfo');
   const connectBtn = document.getElementById('connectBtn');
-  const passkeyBtn = document.getElementById('passkeyBtn');
   const fundNote = document.getElementById('passkeyFundNote');
   const dep = document.getElementById('depositBtn');
   const join = document.getElementById('joinBtn');
-  if (!info || !connectBtn || !passkeyBtn) return;
-
-  const privyChoice = document.getElementById('privyChoice');
+  if (!info || !connectBtn) return;
 
   if (roomIsFree()) { applyFreeRoomUi(); return; }
 
   if (account && walletMode === 'privy') {
     // Connected — the paths not taken LEAVE the screen (no dulled clutter):
-    // sign up / sign in grid gone, MetaMask row gone, Fund takes the row.
-    if (privyChoice) privyChoice.style.display = 'none';
+    // MetaMask row gone, Fund takes the row.
     connectBtn.style.display = 'none';
     if (dep) dep.style.gridColumn = '1 / -1';
     info.innerHTML =
@@ -841,14 +843,14 @@ function renderWallet() {
   }
 
   if (fundNote) fundNote.style.display = 'none';
-  if (dep) { dep.style.display = ''; dep.style.gridColumn = ''; }
-  if (privyChoice) privyChoice.style.display = '';
-  connectBtn.style.display = '';
+  // MetaMask is offered only where one is installed (owner's pick, both
+  // modes): no "No injected wallet" line and no disabled fox button for the
+  // many who have none. Add funds takes the row alone then.
+  connectBtn.style.display = hasWallet ? '' : 'none';
+  if (dep) { dep.style.display = ''; dep.style.gridColumn = hasWallet ? '' : '1 / -1'; }
 
   if (account && walletMode === 'metamask') {
-    // Same rule the other way: the Privy grid leaves; the MetaMask chip
-    // stays as the one connected-state indicator.
-    if (privyChoice) privyChoice.style.display = 'none';
+    // The MetaMask chip stays as the one connected-state indicator.
     connectBtn.textContent = '🟢 🦊 Connected';
     connectBtn.disabled = true;
     info.innerHTML =
@@ -861,19 +863,11 @@ function renderWallet() {
     return;
   }
 
-  connectBtn.disabled = !hasWallet;
   const MW = getMegaWallet();
   const privyReady = !!(MW && MW.configured);
-  passkeyBtn.disabled = !privyReady;
-  if (!hasWallet) {
-    connectBtn.textContent = '🦊 No MetaMask detected';
-    info.innerHTML =
-      '<span class="adv-only">No injected wallet — sign in with email or passkey above, or install MetaMask.</span>' +
-      '<span class="simple-only">Sign in with email or passkey above to get started.</span>';
-  } else {
-    connectBtn.textContent = '🦊 Connect MetaMask';
-    info.textContent = '';
-  }
+  connectBtn.disabled = false;
+  connectBtn.textContent = '🦊 Connect MetaMask';
+  info.textContent = '';
   // Fund shows the connected address; useless before any wallet exists.
   if (dep) dep.disabled = !hasWallet && !privyReady;
   // Join stays enabled while disconnected — clicking it runs the Privy sign-in
@@ -890,7 +884,8 @@ async function refreshBalance() {
     if (!res.ok) return;
     const tickPrice = parseFloat(CONFIG.passkeyTickPrice || CONFIG.tickPrice || '0.001') || 0.001;
     const ticks = Math.floor(parseFloat(data.spendable || '0') / tickPrice);
-    showMeter(data.available, '0', ticks * (CONFIG.passkeyTickSeconds || 1));
+    // Spent is the last seat's, kept until the next one starts.
+    showMeter(data.available, lastSessionSpent, ticks * (CONFIG.passkeyTickSeconds || 1));
   } catch (e) {
     console.warn('balance refresh failed', e);
   }
@@ -911,11 +906,14 @@ async function waitForTx(hash, provider) {
 
 // "Fund wallet": there is no Gateway deposit on Tempo — funding is a plain
 // TIP-20 transfer to the connected address. Show it, copy it, link explorer.
-async function fundWallet() {
+// `whereArg`: the box to answer in — the Add funds button inside an error
+// passes its own; the wallet row's button (a click event) answers under itself.
+async function fundWallet(whereArg) {
+  const where = typeof whereArg === 'string' ? whereArg : 'wallet';
   if (!account) {
     const MW = getMegaWallet();
-    if (MW && MW.configured) await connectPrivyWallet();
-    else await connectMetaMask();
+    if (MW && MW.configured) await connectPrivyWallet(where);
+    else await connectMetaMask(where);
   }
   if (!account) return;
   showMessage(
@@ -924,7 +922,8 @@ async function fundWallet() {
     `<span class="simple-only">➕ Add funds by sending money to your account: ${addrChip(account)}<br>` +
     `1 credit costs $${perCreditUsd()} in this room.</span>` +
     `<p style="margin-top:10px;font-size:0.85rem;">Balance updates automatically once the transfer lands.</p>`,
-    'success'
+    'success',
+    where
   );
   refreshBalance();
   for (const delay of [5000, 12000]) setTimeout(refreshBalance, delay);
@@ -1089,7 +1088,8 @@ function startMppTicks(data) {
           '❌ Payment stream failed — leaving the stream.<br>' +
           `<span style="font-size:0.85em;opacity:0.85">${escapeHtml(shortTxReason(err?.message))}</span>` +
           txDetailsBlock(String(err?.stack || err?.message || 'unknown error')),
-          'error'
+          'error',
+          'seat'
         );
         leaveStream(true);
       }
@@ -1231,15 +1231,14 @@ async function joinSeat() {
   const username = document.getElementById('username').value.trim();
 
   if (!username) {
-    showMessage('Please enter a username', 'error');
+    showMessage('Please enter a username', 'error', 'seat');
     return;
   }
   if (joinBtnState !== 'idle') return;
 
   // Clear the previous attempt's result — a stale error next to a freshly
   // spinning button reads as an instant failure.
-  const msgBox = document.getElementById('message');
-  if (msgBox) msgBox.className = 'join-message';
+  clearMessage('seat');
 
   setJoinState('busy');
 
@@ -1260,7 +1259,7 @@ async function joinSeat() {
       // twice made the two look broken.
       setJoinState('busy', '🔐 Connecting your balance…');
       prewarmProgress('wallet-connect'); // slow wallet UI must not read as abandonment
-      const addr = await connectPrivyWallet();
+      const addr = await connectPrivyWallet('seat');
       if (!addr) {
         // Wallet dismissed/rejected — a real bail path. Release now rather
         // than making the overlay wait out the abandon cap.
@@ -1288,7 +1287,7 @@ async function joinSeat() {
     releasePrewarm();
     // Joining reserves the session cap — that's the "cost" a viewer must
     // cover when the revert says their balance can't.
-    await showTxError('', error, { need: CONFIG && CONFIG.maxSession });
+    await showTxError('', error, { need: CONFIG && CONFIG.maxSession, where: 'seat' });
   } finally {
     // Success hands the button to the camera states (awaiting-camera →
     // go-live → live); only reset to idle when no seat was granted.
@@ -1337,36 +1336,51 @@ function seatPost(url, body, init = {}) {
   });
 }
 
+// When this seat first went live (0: not yet), for the receipt on leave.
+let seatLiveSince = 0;
+
+// The camera frame with Go Live on its edge, brought on screen: on grant, and
+// again when the camera attaches and the button becomes Go Live.
+function revealSeatCam() {
+  const el = document.getElementById('seatCam');
+  if (!el || typeof el.scrollIntoView !== 'function') return;
+  const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  requestAnimationFrame(() => el.scrollIntoView({ block: 'nearest', behavior: still ? 'auto' : 'smooth' }));
+}
+
 function onJoinSuccess(data) {
   mySeatId = data.seatId;
   mySeatToken = data.seatToken || null;
   lastJoinData = data;
   serverLive = false;
   stageLive = false;
+  seatMeter = null;
+  seatLiveSince = 0;
   // Bind this WS to the seat so closing the tab instantly frees + refunds it.
   sendSeat('register_seat');
   setSessionUi(true);
   if (!data.free) showMeter(data.remaining, '0', data.secondsLeft);
   prewarmProgress('seat-granted');
   if (data.free) {
-    showMessage("✅ You're in — this room is FREE. Allow camera access above, then hit GO LIVE.", 'success');
-    startCameraStage(data);
-    setJoinState('awaiting-camera');
-    return;
+    showMessage("You're set. It's free once you go live.", 'success', 'seat');
+  } else {
+    // One plain line of cost, in this seat's own numbers: the rate a second
+    // and the cap the call can reach. A transaction, where the path made one
+    // (the allowance path; an MPP grant has none), sits behind "Receipt".
+    const rate = Number(data.tickPrice) / (Number(data.tickSeconds) || 1);
+    const cap = Number(data.sessionCap != null ? data.sessionCap : data.remaining);
+    const receipt = data.payment && data.payment.transaction
+      ? `<details class="tx-details"><summary>Receipt</summary><a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank" rel="noopener">${escapeHtml(data.payment.transaction)}</a></details>`
+      : '';
+    showMessage(
+      `You're set. ${formatDollars(rate)} a second once you go live${cap > 0 ? `, up to ${formatDollars(cap)}` : ''}.${receipt}`,
+      'success',
+      'seat'
+    );
   }
-  const txLink = data.payment && data.payment.transaction
-    ? ` · <a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank">authorization tx</a>`
-    : '';
-  const meterNote =
-    `${formatDollars(data.tickPrice)} every ${data.tickSeconds}s while live`;
-  const refundNote = 'Your unused balance stays yours when you leave.';
-  showMessage(
-    `✅ Authorized! Allow camera access above, then hit GO LIVE on the same button. Metering
-    (${meterNote}) starts when you're live; ${refundNote}${txLink}`,
-    'success'
-  );
   startCameraStage(data);
   setJoinState('awaiting-camera');
+  revealSeatCam();
 }
 
 function startCameraStage(data) {
@@ -1382,9 +1396,11 @@ function startCameraStage(data) {
 
   retryBtn.classList.remove('show');
   setCamStatus('', 'Requesting camera…');
+  // No direction hints: the preview and Go Live sit together on the frame.
+  // Only a page that cannot open a camera at all says so.
   document.getElementById('camHint').textContent =
     location.protocol === 'https:' || location.hostname === 'localhost'
-      ? 'Your camera preview is below. (On a phone you must use https.)'
+      ? ''
       : '⚠ Camera needs a secure context (https or localhost).';
 
   // Bare in-page publisher: webcam, auto-start, current camera, minimal UI.
@@ -1411,8 +1427,6 @@ function startCameraStage(data) {
   camFallbackTimer = setTimeout(() => {
     if (cameraLiveFired || joinBtnState !== 'awaiting-camera') return;
     setJoinState('go-live');
-    document.getElementById('camHint').textContent =
-      'Camera preview showing? Hit GO LIVE above to start.';
   }, 5000);
   // Error path: surface retry if nothing happened (camera likely denied).
   camErrorTimer = setTimeout(() => {
@@ -1443,8 +1457,6 @@ function onVdoMessage(e) {
     if (!cameraLiveFired && joinBtnState === 'awaiting-camera') {
       setJoinState('go-live');
       setCamStatus('', 'Camera ready — hit GO LIVE');
-      document.getElementById('camHint').textContent =
-        'Camera connected. Hit GO LIVE above to start your stream.';
     }
   }
 }
@@ -1503,6 +1515,8 @@ function onSeatLive() {
 
 function goLiveNow() {
   stageLive = true;
+  // Once per seat: a camera stage rebuilt mid-seat keeps the first start.
+  if (!seatLiveSince) seatLiveSince = Date.now();
   clearTimeout(liveAskTimer);
   // LiveKit: the camera was local-only until now, so nothing reaches the
   // room before GO LIVE (NEW-1: a campaign Call in cannot count preview
@@ -1526,8 +1540,7 @@ function goLiveNow() {
   // The pre-live instructions are OVER — a stale "hit GO LIVE" next to a
   // live badge read as a contradiction (audit P0-2). One status (cam pill),
   // one control (the morphing button).
-  const staleMsg = document.getElementById('message');
-  if (staleMsg) staleMsg.className = 'join-message';
+  clearMessage('seat');
   // Detector self-view has done its job; tear it down to save bandwidth.
   const det = document.getElementById('camDetector');
   det.src = 'about:blank';
@@ -1540,6 +1553,11 @@ async function leaveStream(quiet) {
   const seatToken = mySeatToken;
   releasePrewarm(); // the seat's own vacate starts the overlay grace timer
   if (!seatId) return;
+  // The receipt's numbers, read before anything is torn down: time on camera,
+  // and the seat meter's own Spent and Remaining (the server's figures; the
+  // unspent part of the session cap is what comes back).
+  const receipt = seatReceipt();
+  lastSessionSpent = seatMeter ? seatMeter.spent : '0';
   setJoinState('busy', '⏳ Leaving…');
   // Stop reacting to this seat locally right away so the meter stops instantly.
   mySeatId = null;
@@ -1557,16 +1575,23 @@ async function leaveStream(quiet) {
   }
   setJoinState('idle');
   setSessionUi(false);
-  if (!quiet) {
-    showMessage(
-      roomIsFree()
-        ? '👋 You left the stream.'
-        : '👋 You left the stream. Unspent balance remains in your wallet.',
-      'success'
-    );
-  }
-  // Back to pre-join: show the wallet's available balance as "Remaining".
+  if (!quiet) showMessage(receipt, 'success', 'seat');
+  // Back to pre-join: show the wallet's available balance as "Remaining";
+  // Spent keeps this seat's figure until the next one.
   refreshBalance();
+}
+
+// "You were on for 1:42 · $0.20 spent · $0.80 back in your balance", from
+// numbers the page already holds. A free seat has no meter, so it says only
+// the time.
+function seatReceipt() {
+  const onMs = seatLiveSince ? Date.now() - seatLiveSince : 0;
+  if (!seatMeter) {
+    return onMs ? `You were on for ${clockText(onMs)} · free` : 'You left before going live.';
+  }
+  const spent = Number(seatMeter.spent) || 0;
+  if (!onMs && !spent) return 'You left before going live · nothing spent';
+  return `You were on for ${clockText(onMs)} · ${formatDollars(spent)} spent · ${formatDollars(seatMeter.remaining)} back in your balance`;
 }
 
 // Manual fallback button.
@@ -1590,6 +1615,12 @@ function teardownCameraStage() {
   if (pub) pub.src = 'about:blank';
   if (det) det.src = 'about:blank';
   if (stage) stage.classList.remove('show');
+  // The hint and Retry sit outside the stage now (under Go Live's frame):
+  // they leave with it.
+  const hint = document.getElementById('camHint');
+  if (hint) hint.textContent = '';
+  const retryBtn = document.getElementById('camRetryBtn');
+  if (retryBtn) retryBtn.classList.remove('show');
   cameraLiveFired = false;
 }
 
@@ -1611,10 +1642,25 @@ function retryCamera() {
   restart(startCameraStage);
 }
 
-function showMessage(html, type) {
-  const msgBox = document.getElementById('message');
+// Each result shows under the control that caused it (owner's pick): a
+// Holler's under the Holler block, a seat's under Call in, a wallet step's
+// under the wallet row. Anything about the room as a whole keeps #message.
+const MESSAGE_BOX = { holler: 'letterMessage', seat: 'seatMessage', wallet: 'walletMessage' };
+
+function messageBox(where) {
+  return (MESSAGE_BOX[where] && document.getElementById(MESSAGE_BOX[where])) || document.getElementById('message');
+}
+
+function showMessage(html, type, where) {
+  const msgBox = messageBox(where);
+  if (!msgBox) return;
   msgBox.innerHTML = html;
   msgBox.className = 'join-message ' + type + ' show';
+}
+
+function clearMessage(where) {
+  const msgBox = messageBox(where);
+  if (msgBox) msgBox.className = 'join-message';
 }
 
 // ─── Init (runs after all state is initialized) ──────────────────────────
@@ -1667,6 +1713,54 @@ function syncPreviewIdle() {
     return el && el.style.display !== 'none';
   });
   idle.style.display = showing ? 'none' : '';
+  // On phones an idle stage folds to a thin strip (join.css), so the actions
+  // are on the first screen.
+  const stage = idle.closest('.join-media-stage');
+  if (stage) stage.classList.toggle('is-idle', !showing);
+}
+
+function setIdleTitle(text) {
+  const el = document.getElementById('previewIdleTitle');
+  if (el) el.textContent = text;
+}
+
+// Whether the room's Twitch channel is live, from the room's liveness
+// (join-client RoomLiveness → room:liveness): null until the first answer.
+let channelLiveNow = null;
+
+function liveEmbedMounted() {
+  const mount = document.getElementById('streamPreviewMount');
+  return !!(mount && mount.querySelector('iframe[src*="channel="]'));
+}
+
+// The off-air card: Holler's own slate, never Twitch's offline promo (whose
+// links leave the site). Watched for the channel going live meanwhile.
+function showOffAir(wrap, mount, gen, roomId) {
+  const channel = CONFIG && CONFIG.twitchChannel;
+  mount.innerHTML = '';
+  wrap.style.display = 'none';
+  setIdleTitle(channel ? `${channel} is off air` : 'No preview');
+  syncPreviewIdle();
+  if (channel) watchForLive(gen, roomId);
+}
+
+// A liveness answer arrived: put the player up the moment the channel goes
+// live, and take it down when the broadcast ends. A viewer holding a live seat
+// watches the host feed instead (echo safety), so nothing moves then.
+function syncLivePreview() {
+  if (!CONFIG || !CONFIG.twitchChannel || stageLive) return;
+  const host = document.getElementById('hostLiveFeed');
+  if (host && host.style.display !== 'none') return;
+  const wrap = document.getElementById('streamPreview');
+  const mount = document.getElementById('streamPreviewMount');
+  if (!wrap || !mount) return;
+  if (channelLiveNow && !liveEmbedMounted()) {
+    previewGen++; // a replay up meanwhile, or its live watch, steps aside
+    mount.innerHTML = '';
+    mountLivePreview(wrap, mount);
+  } else if (channelLiveNow === false && liveEmbedMounted()) {
+    mountStreamPreview(); // the broadcast ended: its replay, or the off-air card
+  }
 }
 
 // Bumped by every mount and every hide: a replay lookup that comes back after
@@ -1681,8 +1775,8 @@ function mountStreamPreview() {
   const gen = ++previewGen;
   // An OFFLINE room shows the replay of a broadcast — the one a "Recently
   // aired" card asked for (?replay=), else its latest — instead of Twitch's
-  // "is offline / Watch Latest Stream", which leaves the site. A live room,
-  // or one with nothing to replay, gets the live embed exactly as before.
+  // "is offline / Watch Latest Stream", which leaves the site. A live room
+  // gets the live embed; one with nothing to replay, Holler's off-air card.
   const roomId = (CONFIG && CONFIG.roomId) || streamRoomId;
   const want = new URLSearchParams(location.search).get('replay') || '';
   fetch(`/api/rooms/${encodeURIComponent(roomId)}/replay${want ? `?airing=${encodeURIComponent(want)}` : ''}`)
@@ -1695,11 +1789,16 @@ function mountStreamPreview() {
       // "Not looked up yet" (minutes after the end) keeps Twitch's own embed.
       const playable = replay && !replay.live && replay.airing
         && (replay.start >= 0 || (replay.recordingsResolved && replay.airing.poster?.kind === 'frame'));
-      if (playable) {
+      // The Twitch player only while the channel is live (owner's pick):
+      // liveness decides once it has answered, the replay lookup until then.
+      const live = channelLiveNow != null ? channelLiveNow : !!(replay && replay.live);
+      if (live) {
+        mountLivePreview(wrap, mount);
+      } else if (playable) {
         mountReplay(wrap, mount, replay);
         watchForLive(gen, roomId);
       } else {
-        mountLivePreview(wrap, mount);
+        showOffAir(wrap, mount, gen, roomId);
       }
     });
 }
@@ -1714,7 +1813,7 @@ function watchForLive(gen, roomId) {
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null)
       .then((j) => {
-        if (!j || !j.live || gen !== previewGen) return;
+        if (!j || !j.live || channelLiveNow === false || gen !== previewGen) return;
         clearInterval(t);
         const wrap = document.getElementById('streamPreview');
         const mount = document.getElementById('streamPreviewMount');
@@ -1836,6 +1935,7 @@ function mountLivePreview(wrap, mount) {
   const channel = CONFIG && CONFIG.twitchChannel;
   if (!channel) {
     wrap.style.display = 'none';
+    setIdleTitle('No preview');
     syncPreviewIdle();
     return;
   }
@@ -2307,7 +2407,7 @@ function reportLkQuality(q, seatId) {
 // ─── Letter mode: record → preview → pay flat → one-shot upload ─────────────
 // Recorded clips sidestep the broadcast delay entirely: the sender watches
 // the delayed embed and sees their letter pop up like any other spectator.
-let letterState = 'idle'; // idle | recording | preview | sending
+let letterState = 'idle'; // idle | recording | preview | sending | sent
 let letterRecorder = null;
 let letterChunks = [];
 let letterBlob = null;
@@ -2406,10 +2506,11 @@ async function openLetterStage() {
   if (!cfg) return;
   const stage = document.getElementById('letterStage');
   const video = document.getElementById('letterVideo');
+  clearMessage('holler'); // the last Holler's news is not this one's
   try {
     letterStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
   } catch (err) {
-    showMessage('❌ Camera/mic access is needed to record a Holler.', 'error');
+    showMessage('❌ Camera/mic access is needed to record a Holler.', 'error', 'holler');
     return;
   }
   stage.style.display = '';
@@ -2444,9 +2545,38 @@ function closeLetterStage() {
   letterAttempt = null;
   if (stage) stage.style.display = 'none';
   letterState = 'idle';
+  const cancel = document.getElementById('letterCancelBtn');
+  if (cancel) cancel.textContent = 'Cancel';
   const entry = document.getElementById('letterBtn');
   if (entry && lettersCfg()) entry.style.display = '';
   showRedoConfirm(false);
+}
+
+// Sent: the recorder stays open in a "Sent" state, with the result in its own
+// status line (owner's pick), so the viewer sees it where they pressed Send.
+// The camera goes off; the take stays on screen; Done closes the stage.
+function showLetterSent(text) {
+  clearInterval(letterCountdown);
+  clearInterval(letterFrameTimer);
+  if (letterStream) {
+    letterStream.getTracks().forEach((t) => t.stop());
+    letterStream = null;
+  }
+  letterAttempt = null;
+  letterState = 'sent';
+  showRedoConfirm(false);
+  letterButtons({ record: false, redo: false, send: false });
+  const cancel = document.getElementById('letterCancelBtn');
+  if (cancel) cancel.textContent = 'Done';
+  setLetterStatus(text);
+}
+
+// A Holler's later news (queued, approved, on air): in the open recorder's
+// status line while it shows "Sent", else under the Holler block.
+function showHollerResult(text) {
+  const stage = document.getElementById('letterStage');
+  if (letterState === 'sent' && stage && stage.style.display !== 'none') setLetterStatus(text);
+  else showMessage(escapeHtml(text), 'success', 'holler');
 }
 
 function toggleLetterRecording() {
@@ -2462,7 +2592,7 @@ function toggleLetterRecording() {
 
   const mime = recorderMime();
   if (!mime) {
-    showMessage('❌ This browser cannot record video (no MediaRecorder).', 'error');
+    showMessage('❌ This browser cannot record video (no MediaRecorder).', 'error', 'holler');
     return;
   }
   letterChunks = [];
@@ -2563,18 +2693,18 @@ async function redoLetter() {
 
 async function sendLetter() {
   const cfg = lettersCfg();
-  if (!cfg || !letterBlob || letterState === 'sending') return;
+  if (!cfg || !letterBlob || letterState === 'sending' || letterState === 'sent') return;
   const username = (document.getElementById('username').value || '').trim();
   if (!username) {
-    showMessage('Pick a username first — it labels your Holler on stream.', 'error');
+    showMessage('Pick a username first — it labels your Holler on stream.', 'error', 'holler');
     return;
   }
   const letterIsFree = letterIsFreeRoom(cfg);
   const takePrice = letterPriceForTake(cfg, letterDurationS);
   if (!account && !letterIsFree) {
     const MW = getMegaWallet();
-    if (MW && MW.configured) await connectPrivyWallet();
-    else await connectMetaMask();
+    if (MW && MW.configured) await connectPrivyWallet('holler');
+    else await connectMetaMask('holler');
     if (!account) return;
   }
   const attempt = letterAttempt || (letterAttempt = newLetterAttempt());
@@ -2589,8 +2719,7 @@ async function sendLetter() {
         setLetterStatus(letterIsFree ? 'Sending…' : `Paying ${formatDollars(takePrice)}…`);
         const sent = await submitLetter(cfg, username, letterIsFree, attempt.id, takePrice);
         if (sent.alreadySent) {
-          closeLetterStage();
-          showMessage('📮 That take was already sent — no second charge.', 'success');
+          showLetterSent('📮 That take was already sent — no second charge.');
           return;
         }
         attempt.letterId = sent.letterId;
@@ -2605,20 +2734,18 @@ async function sendLetter() {
         attempt.uploadUrl = null;
       }
     }
-    closeLetterStage();
     // overlayLive: false = the streamer's OBS overlay isn't connected, so the
     // clip HOLDS in the queue — saying "on stream shortly" there was a lie
     // that cost a solo tester their clip.
     const held = upData.overlayLive === false
-      ? '<br><span style="font-size:0.85em;opacity:0.85">Heads up: the stream overlay isn\'t online yet — your Holler is safely queued and plays the moment it connects.</span>'
+      ? ' Heads up: the stream overlay isn\'t online yet — your Holler is safely queued and plays the moment it connects.'
       : '';
-    showMessage(
+    showLetterSent(
       (upData.status === 'reviewing'
         ? '🔎 Holler sent — quick automated review (a few seconds), then it queues.'
         : upData.status === 'pending_approval'
           ? '📮 Holler sent — the streamer approves Hollers before they play. You were charged; rejects auto-refund.'
           : '📮 Holler sent! It will pop up on stream shortly — watch the preview above (it runs on a slight delay).') + held,
-      'success',
     );
   } catch (err) {
     letterState = 'preview';
@@ -2636,7 +2763,7 @@ async function sendLetter() {
     } else {
       setLetterStatus(why + ' — your take is still here, try Send again.');
     }
-    await showTxError('Holler failed', err, { need: takePrice });
+    await showTxError('Holler failed', err, { need: takePrice, where: 'holler' });
   }
 }
 
@@ -2736,8 +2863,6 @@ async function init() {
     void initAuthUi();
     const camp = campaignField().campaign;
     if (camp) void mountCampaignBanner(camp);
-    const demo = document.getElementById('demoBanner');
-    if (demo && CONFIG && CONFIG.isDemo) demo.style.display = '';
   } catch (err) {
     console.error('Failed to load config', err);
     const lbl = document.getElementById('priceLabel');
@@ -2849,9 +2974,126 @@ function initRewardsClient(wsUrl) {
   // the hint just stays away.
   const REWARDS_ACTION = {
     sign_in_required: 'Watching earns rewards in this room. Sign in to earn.',
-    payout_wallet_required: 'Watching earns rewards in this room. Add a payout wallet on your account to earn.',
+    // Followed by the "Add payout wallet" button (payoutHint).
+    payout_wallet_required: 'Watching earns rewards in this room.',
     wallet_required: 'Watching earns rewards in this room. Connect a wallet to earn.',
   };
+
+  // ── The payout wallet, added in place (owner's pick) ──
+  // Cash and credit rewards pay the signed-in account's payout wallet. The
+  // hint's button opens a sheet right here: one tap for the viewer's own
+  // Holler wallet, or a pasted address; saved through the same route and
+  // client helper as the bounty claim (bounty-api setPayoutWallet).
+  const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+  function hollerWalletAddress() {
+    if (walletMode === 'privy' && account && EVM_ADDRESS.test(account)) return account;
+    const MW = getMegaWallet();
+    return MW && MW.authenticated && MW.address && EVM_ADDRESS.test(MW.address) ? MW.address : null;
+  }
+
+  function payoutResult(text, tone) {
+    const el = document.getElementById('payoutResult');
+    if (!el) return;
+    el.textContent = text || '';
+    el.dataset.tone = tone || '';
+  }
+
+  function payoutControls(show) {
+    const form = document.getElementById('payoutForm');
+    if (form) form.hidden = !show;
+    const use = document.getElementById('payoutUseHoller');
+    if (use) use.hidden = !show || !hollerWalletAddress();
+  }
+
+  function openPayoutSheet() {
+    const sheet = document.getElementById('payoutSheet');
+    if (!sheet) return;
+    const holler = hollerWalletAddress();
+    const use = document.getElementById('payoutUseHoller');
+    if (use && holler) use.textContent = `Use my Holler wallet (${shortAddr(holler)})`;
+    const input = document.getElementById('payoutAddress');
+    if (input) input.value = '';
+    const close = document.getElementById('payoutClose');
+    if (close) close.textContent = 'Cancel';
+    payoutResult('');
+    payoutControls(true);
+    sheet.hidden = false;
+    if (!holler && input) input.focus();
+  }
+
+  function closePayoutSheet() {
+    const sheet = document.getElementById('payoutSheet');
+    if (sheet) sheet.hidden = true;
+  }
+
+  let payoutSaving = false;
+  async function savePayout(raw) {
+    if (payoutSaving) return;
+    const address = String(raw || '').trim();
+    if (!EVM_ADDRESS.test(address)) {
+      payoutResult('That is not a wallet address: 0x followed by 40 letters and numbers (0–9, a–f).', 'error');
+      return;
+    }
+    payoutSaving = true;
+    const buttons = ['payoutUseHoller', 'payoutSave'].map((id) => document.getElementById(id)).filter(Boolean);
+    buttons.forEach((b) => { b.disabled = true; });
+    payoutResult('Saving…');
+    try {
+      const out = await setPayoutWallet(address);
+      payoutControls(false);
+      payoutResult(`Saved. This room now pays ${shortAddr(out.payoutWallet || address)} for watching.`, 'success');
+      const close = document.getElementById('payoutClose');
+      if (close) close.textContent = 'Done';
+      // The server reads the payout wallet when the socket registers: ask
+      // again, and the earning starts (rewards_config comes back enabled).
+      registerWallet();
+    } catch (err) {
+      payoutResult((err && err.message) || 'Could not save the wallet. Try again.', 'error');
+    } finally {
+      payoutSaving = false;
+      buttons.forEach((b) => { b.disabled = false; });
+    }
+  }
+
+  // The hint is the way in: "Watching earns rewards in this room." and the
+  // button, only while the payout wallet is what stands between the viewer
+  // and earning.
+  function payoutHint(drops) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'payout-open';
+    btn.textContent = 'Add payout wallet';
+    btn.setAttribute('aria-controls', 'payoutSheet');
+    btn.addEventListener('click', openPayoutSheet);
+    drops.appendChild(btn);
+  }
+
+  {
+    const on = (id, type, fn) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener(type, fn, { signal: abort.signal });
+    };
+    on('payoutUseHoller', 'click', () => void savePayout(hollerWalletAddress()));
+    on('payoutForm', 'submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('payoutAddress');
+      void savePayout(input && input.value);
+    });
+    on('payoutClose', 'click', closePayoutSheet);
+  }
+
+  // The reward the streamer set, by the name the dashboard sells it under.
+  function rewardName() {
+    if (!cfg) return 'Earned';
+    if (cfg.payout === 'cash') return 'Cash';
+    if (cfg.rewardType === 'token') return cfg.symbol || 'Token';
+    return 'Holler credit';
+  }
+
+  function rewardAmount(amount, sym) {
+    return /^USDC(?:\.e)?$/i.test(sym || '') ? formatDollars(amount) : String(amount);
+  }
 
   function updateLabel() {
     // Watch-to-earn hint on the spectate surface (drops accrue while the
@@ -2861,6 +3103,7 @@ function initRewardsClient(wsUrl) {
     if (drops) {
       drops.style.display = cfg && (cfg.enabled || action) ? '' : 'none';
       drops.textContent = action || 'Watching earns rewards in this room';
+      if (cfg && !cfg.enabled && cfg.reason === 'payout_wallet_required') payoutHint(drops);
     }
     const el = document.getElementById('earnedRow');
     if (!el || !cfg) return;
@@ -2869,14 +3112,10 @@ function initRewardsClient(wsUrl) {
       return;
     }
     el.style.display = '';
+    // Named after the reward, sentence case: "Holler credit", "Cash", or the
+    // room's token. The state rides the figure (renderEarned).
     const label = el.querySelector('span');
-    if (label) {
-      // Cash goes to the account's payout wallet; credit and points count
-      // toward a seat in this room.
-      label.textContent = cfg.payout === 'cash'
-        ? 'Earned'
-        : cfg.dryRun ? 'earned toward join (sim)' : 'earned toward join';
-    }
+    if (label) label.textContent = rewardName();
   }
 
   function renderEarned(msg) {
@@ -2885,11 +3124,14 @@ function initRewardsClient(wsUrl) {
     if (meter) meter.classList.add('show');
     const el = document.getElementById('rewardsEarned');
     if (el) {
-      const sym = msg.symbol || 'USDC';
-      // Credit and points: the balance a seat can spend. Cash: the lifetime
-      // amount earned in this room (there is no per-session figure any more).
-      const amount = msg.joinBalance != null ? msg.joinBalance : (msg.earned != null ? msg.earned : '0');
-      el.textContent = (/^USDC(?:\.e)?$/i.test(sym) ? formatDollars(amount) : `${amount} ${sym}`) + (msg.capped ? ' (cap)' : '');
+      const sym = msg.symbol || (cfg && cfg.symbol) || 'USDC';
+      // "5 of 5 · maxed in this room": what this room has paid the viewer
+      // against the streamer's cap, and whether earning has stopped here.
+      const earned = msg.earned != null ? msg.earned : '0';
+      const cap = cfg && Number(cfg.earnCap) > 0 ? cfg.earnCap : null;
+      const maxed = !!msg.capped || (cap != null && Number(earned) >= Number(cap));
+      el.textContent = (cap != null ? `${rewardAmount(earned, sym)} of ${rewardAmount(cap, sym)}` : rewardAmount(earned, sym))
+        + (maxed ? ' · maxed in this room' : '');
     }
   }
 
@@ -3010,23 +3252,21 @@ export function initJoinPage({ wsUrl }) {
       // Letter lifecycle toasts are seat-independent (senders usually have
       // no seat) — handle them before the seat guard.
       if (msg.type === 'letter_play' && msg.letter && msg.letter.id === myLetterId) {
-        showMessage('▶ Your Holler is on stream RIGHT NOW — the preview above shows it after a slight delay.', 'success');
+        showHollerResult('▶ Your Holler is on stream RIGHT NOW — the preview above shows it after a slight delay.');
         return;
       }
       if (msg.type === 'letter_queued' && msg.letterId === myLetterId) {
         if (msg.status === 'queued') {
-          showMessage(
+          showHollerResult(
             msg.overlayLive === false
               ? "✅ Review passed — your Holler is queued. The stream overlay isn't online yet; it plays the moment it connects."
               : '✅ Review passed — your Holler is queued and will pop up on stream shortly.',
-            'success',
           );
         } else if (msg.status === 'pending_approval') {
-          showMessage(
+          showHollerResult(
             msg.flagged
               ? '🕵️ The automated review flagged your Holler — the streamer will approve or reject it (rejects refund).'
               : '📮 Your Holler awaits the streamer\'s approval.',
-            'success',
           );
         }
         return;
@@ -3043,25 +3283,29 @@ export function initJoinPage({ wsUrl }) {
         showMeter(msg.remaining, msg.spent, msg.secondsLeft);
       } else if (msg.type === 'seat_removed' && msg.seatId === mySeatId) {
         document.getElementById('meterTime').textContent = '0:00';
+        lastSessionSpent = seatMeter ? seatMeter.spent : '0';
         // Every way a seat can end gets its own message — a viewer should
         // never have to guess whether they left, got kicked, or broke.
         if (msg.reason === 'out_of_funds') {
-          showMessage('Out of funds. Your seat ended. Add funds to rejoin.', 'error');
+          showMessage('Out of funds. Your seat ended. Add funds to rejoin.', 'error', 'seat');
         } else if (msg.reason === 'kicked') {
           showMessage(
             '🚫 The streamer removed you from the stream. You were only charged for the time you were on camera — the rest stays in your wallet.',
-            'error'
+            'error',
+            'seat'
           );
         } else if (msg.reason === 'payment_stalled') {
           showMessage(
             '⚠️ Your payment ticks stopped reaching the server, so the seat ended. Unspent balance stays in your wallet — rejoin when your connection is stable.',
-            'error'
+            'error',
+            'seat'
           );
         } else if (msg.reason === 'not_found') {
           // We reconnected after the server's grace expired.
           showMessage(
             '⚠️ Connection was down too long — your seat ended and unused balance was returned. Rejoin when ready.',
-            'error'
+            'error',
+            'seat'
           );
         } else if (msg.reason === 'camera_timeout') {
           // These two used to end the seat without a word (audit web-2).
@@ -3069,14 +3313,16 @@ export function initJoinPage({ wsUrl }) {
             roomIsFree()
               ? '⚠️ Your camera never went live, so the seat ended. Rejoin when your camera is ready.'
               : '⚠️ Your camera never went live, so the seat ended. Unspent balance stays in your wallet — rejoin when your camera is ready.',
-            'error'
+            'error',
+            'seat'
           );
         } else if (msg.reason === 'disconnected') {
           showMessage(
             roomIsFree()
               ? '⚠️ Your connection dropped for too long, so the seat ended. Rejoin when you are back.'
               : '⚠️ Your connection dropped for too long, so the seat ended. Unspent balance stays in your wallet — rejoin when you are back.',
-            'error'
+            'error',
+            'seat'
           );
         }
         stopMppTicks(true); // server already settles on kick; close is a no-op race
@@ -3100,7 +3346,7 @@ export function initJoinPage({ wsUrl }) {
         mySeatToken = null;
         setJoinState('idle');
         setSessionUi(false);
-        showMessage('⚠️ This tab could not confirm it holds that seat, so it is not on air. Join again to take a fresh seat.', 'error');
+        showMessage('⚠️ This tab could not confirm it holds that seat, so it is not on air. Join again to take a fresh seat.', 'error', 'seat');
       }
     };
   };
@@ -3124,8 +3370,7 @@ export function initJoinPage({ wsUrl }) {
     const el = document.getElementById(id);
     if (el) el.addEventListener('click', fn, { signal: abort.signal });
   };
-  on('connectBtn', connectMetaMask);
-  on('passkeyBtn', () => connectPrivyWallet());
+  on('connectBtn', () => connectMetaMask('wallet'));
   on('depositBtn', fundWallet);
   // ONE button through the whole flow: Join Stream → (connect/authorize) →
   // Waiting for camera → Go Live → You're LIVE.
@@ -3187,7 +3432,16 @@ export function initJoinPage({ wsUrl }) {
   // Click-to-copy the connected address (delegated: the chip is re-injected
   // whenever renderWallet rewrites #walletInfo or fundWallet writes #message).
   on('walletInfo', onAddrCopyClick);
-  on('message', onAddrCopyClick);
+  for (const id of ['message', ...Object.values(MESSAGE_BOX)]) on(id, onAddrCopyClick);
+
+  // The room's liveness (join-client polls it): the Twitch player shows only
+  // while the channel is live.
+  window.addEventListener('room:liveness', (e) => {
+    const d = e && e.detail;
+    if (!d) return;
+    channelLiveNow = d.channelLive === true || d.onAir === true;
+    syncLivePreview();
+  }, { signal: abort.signal });
 
   const usernameEl = document.getElementById('username');
   if (usernameEl) {
@@ -3197,8 +3451,12 @@ export function initJoinPage({ wsUrl }) {
       usernameEl.value = name;
     }
     usernameEl.addEventListener('input', () => { usernameEl.dataset.userEdited = 'true'; }, { signal: abort.signal });
-    usernameEl.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') joinSeat();
+    // Enter commits the name and nothing else: a text field never starts a
+    // paid action (it used to run Call in, past a paused or Holler-only room).
+    usernameEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      e.preventDefault();
+      usernameEl.blur();
     }, { signal: abort.signal });
   }
 

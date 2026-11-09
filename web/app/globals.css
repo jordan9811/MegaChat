@@ -1157,6 +1157,12 @@ html:not([data-style='classic']) .mcl-film-progress i {
 .itip { position: relative; display: inline-flex; vertical-align: middle; }
 .itip-btn { width: 16px; height: 16px; display: inline-grid; place-items: center; padding: 0; border: 1px solid color-mix(in srgb, var(--muted-foreground) 55%, transparent); border-radius: 50%; background: transparent; color: var(--muted-foreground); font: 700 10px/1 var(--font-mono), ui-monospace, monospace; cursor: help; }
 .itip-btn:focus-visible { outline: 2px solid var(--ring, currentColor); outline-offset: 2px; }
-.itip-pop { position: absolute; left: 50%; bottom: calc(100% + 8px); z-index: 40; width: max-content; max-width: min(280px, 80vw); padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--popover); color: var(--popover-foreground); font: 500 12px/1.45 var(--font-sans, system-ui), system-ui, sans-serif; text-align: left; text-transform: none; letter-spacing: 0; box-shadow: 0 8px 24px rgb(0 0 0 / .18); opacity: 0; pointer-events: none; transform: translate(-50%, 4px); transition: opacity .15s cubic-bezier(.23,1,.32,1), transform .15s cubic-bezier(.23,1,.32,1); }
-.itip[data-open=true] .itip-pop { opacity: 1; transform: translate(-50%, 0); }
+/* Closed: out of layout (display: none), so a tip near the edge cannot widen the page. Open: it takes presses (a tap on it closes
+   it, info-tip.tsx) and stays on screen: data-side=end anchors it to the "i"'s right edge, start to its left, each capped at the
+   room info-tip.tsx measured (--itip-room). */
+.itip-pop { --itip-x: -50%; position: absolute; left: 50%; bottom: calc(100% + 8px); z-index: 40; display: none; width: max-content; max-width: min(280px, 80vw, var(--itip-room, 280px)); padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--popover); color: var(--popover-foreground); font: 500 12px/1.45 var(--font-sans, system-ui), system-ui, sans-serif; text-align: left; text-transform: none; letter-spacing: 0; box-shadow: 0 8px 24px rgb(0 0 0 / .18); opacity: 0; transform: translate(var(--itip-x), 4px); transition: opacity .15s cubic-bezier(.23,1,.32,1), transform .15s cubic-bezier(.23,1,.32,1); }
+.itip[data-side=end] .itip-pop { --itip-x: 0; left: auto; right: 0; }
+.itip[data-side=start] .itip-pop { --itip-x: 0; left: 0; }
+.itip[data-open=true] .itip-pop { display: block; opacity: 1; transform: translate(var(--itip-x), 0); cursor: pointer; }
+@starting-style { .itip[data-open=true] .itip-pop { opacity: 0; transform: translate(var(--itip-x), 4px); } }
 @media (prefers-reduced-motion: reduce) { .itip-pop { transition: none; } }

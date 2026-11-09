@@ -2602,6 +2602,17 @@ app.post('/api/join/passkey', async (req, res) => {
       if (rw.rewardType === 'points') {
         const tickAtomic = toAtomic(cfg.passkeyTickPrice, 0);
         const maxAtomic = toAtomic(cfg.maxSession, 0);
+        // Points are whole numbers: a dollar price under 1 a tick rounds to 0
+        // points, a seat the meter never runs down. Holler credit is retired
+        // (owner, 2026-11-09); such rooms seat on money only.
+        if (tickAtomic <= 0n) {
+          return res.status(402).json({
+            error: 'This room does not take earned points for a seat',
+            reason: 'points_price_too_small',
+            path: 'passkey',
+            roomId,
+          });
+        }
         seatAtomics = { passkeyTickPriceAtomic: tickAtomic, maxSessionAtomic: maxAtomic };
         sessionAtomic = credit.atomic < maxAtomic ? credit.atomic : maxAtomic;
         if (sessionAtomic < tickAtomic) {
@@ -2704,7 +2715,8 @@ app.post('/api/join/passkey', async (req, res) => {
       const credit = rw?.enabled && !creditRefusal(req, cfg, address) ? getCredit(roomId, address) : { atomic: 0n };
       const sym = cfg.paymentTokenSymbol;
 
-      if (rw?.enabled && rw.rewardType === 'points' && credit.atomic >= toAtomic(cfg.passkeyTickPrice, 0)) {
+      // Never offer a points seat whose tick rounds to 0 points (see the join).
+      if (rw?.enabled && rw.rewardType === 'points' && toAtomic(cfg.passkeyTickPrice, 0) > 0n && credit.atomic >= toAtomic(cfg.passkeyTickPrice, 0)) {
         const maxPts = toAtomic(cfg.maxSession, 0);
         const sessionPts = credit.atomic < maxPts ? credit.atomic : maxPts;
         return res.json({

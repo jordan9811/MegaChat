@@ -2452,3 +2452,21 @@ previous commit.
   own price ("Send a Holler — $0.005/s", "Call in — $0.002/s · max $1") and the
   stage's Send names the take's price (owner's pick, vr-rate-box). Undo: the
   JSX section in `join-client.tsx` and `updatePriceDisplay` in `join-page.ts`.
+
+## 2026-11-09 — UX bounty, second round of picks
+
+- **Holler credit is retired from the dashboard** (owner: "forget credit … I
+  abandoned it"). Rooms that already use it keep working. A points seat whose
+  tick rounds to 0 points is refused: before, any MetaMask wallet with nothing
+  earned got a free seat in a credit room priced under 1 a tick (production
+  /demo is one). Undo: the `tickAtomic <= 0n` guard and the offer condition in
+  `server.js`.
+- **Cash that can never pay is refused at save**, with the reason, mirroring
+  rewards.js policyFor. A room that already holds Cash is not refused again, so
+  its other settings stay editable. Undo: `cashRewardRefusal` in
+  `dashboard-routes.js`.
+- **Room page results land under the control that caused them**
+  (`#letterMessage`, `#seatMessage`, `#walletMessage`); room-wide notices keep
+  `#message`. Six gates were updated to read the new boxes.
+- **The Twitch player shows only while the channel is live**; otherwise
+  Holler's own off-air card.

@@ -492,9 +492,9 @@ async function joinSection({ ok, browser, APP, api, makeRoom }) {
       await fetch(`${APP}/api/dashboard/rooms/${encodeURIComponent(room.id)}/kick/${encodeURIComponent(seat.id)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Room-Password': 'webfix-room' },
       });
-      const unlocked = await until(() => page.evaluate(() => document.getElementById('username')?.readOnly === false && /kicked|removed you/i.test(document.getElementById('message')?.textContent || '')), 10000);
+      const unlocked = await until(() => page.evaluate(() => document.getElementById('username')?.readOnly === false && /kicked|removed you/i.test([...document.querySelectorAll('#message,#seatMessage,#walletMessage,#letterMessage')].find((e) => (e.innerText || '').trim())?.textContent || '')), 10000);
       ok('J7. after a kick the username unlocks and the setup controls return (HEAD: left locked)', !!unlocked,
-        await page.evaluate(() => `readOnly=${document.getElementById('username')?.readOnly} message="${(document.getElementById('message')?.textContent || '').slice(0, 60)}"`));
+        await page.evaluate(() => `readOnly=${document.getElementById('username')?.readOnly} message="${([...document.querySelectorAll('#message,#seatMessage,#walletMessage,#letterMessage')].find((e) => (e.innerText || '').trim())?.textContent || '').slice(0, 60)}"`));
     }
   } finally {
     await closePage(page);
@@ -522,12 +522,12 @@ async function joinSection({ ok, browser, APP, api, makeRoom }) {
     await p2.click('#connectBtn');
     await until(() => text(p2, '#connectBtn').then((t) => /connected/i.test(t)), 10000);
     await p2.click('#depositBtn');
-    const chip = await until(() => p2.$('#message .addr-copy'), 10000);
+    const chip = await until(() => p2.$('#walletMessage .addr-copy'), 10000);
     if (!chip) { ok('J4. web-17: the Add funds message carries the address chip', false); }
     else {
-      await p2.evaluate(() => document.querySelector('#message .addr-copy').click());
-      const icon = await until(() => text(p2, '#message .addr-copy .addr-copy-icon').then((t) => (t === '✓' ? t : null)), 3000);
-      ok('J4. web-17: tapping the chip in the Add funds message copies it (icon ✓; HEAD: stays ⧉)', icon === '✓', await text(p2, '#message .addr-copy .addr-copy-icon'));
+      await p2.evaluate(() => document.querySelector('#walletMessage .addr-copy').click());
+      const icon = await until(() => text(p2, '#walletMessage .addr-copy .addr-copy-icon').then((t) => (t === '✓' ? t : null)), 3000);
+      ok('J4. web-17: tapping the chip in the Add funds message copies it (icon ✓; HEAD: stays ⧉)', icon === '✓', await text(p2, '#walletMessage .addr-copy .addr-copy-icon'));
     }
   } finally { await closePage(p2); }
 

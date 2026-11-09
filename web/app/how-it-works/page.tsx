@@ -241,7 +241,7 @@ export default function HowItWorksPage() {
           </div>
           <div className="mch-flow-grid">
             <FlowColumn kind="viewer" body="Enter a room, choose a format, and approve the maximum cost before anything starts." steps={VIEWER_STEPS} />
-            <FlowColumn kind="streamer" body="Open a room, set the terms, add the overlay, and run the broadcast." steps={STREAMER_STEPS} />
+            <FlowColumn kind="streamer" body="Create a room, set the terms, add the overlay, and run the broadcast." steps={STREAMER_STEPS} />
           </div>
           <div className="mch-tree-result">
             <span className="mch-coordinate">Result</span>

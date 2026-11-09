@@ -15,6 +15,7 @@ import {
   setRoomOwner,
   roomsOwnedBy,
   isRoomOwnedBy,
+  roomOwnerOf,
   getRoomRecord,
   clampRoomName,
 } from './rooms-store.js';
@@ -179,6 +180,59 @@ export function attachDashboardRoutes(app, deps) {
     return null;
   }
 
+  /**
+   * Whether a room owned by `ownerKey` (null = a password-only room) can pay a
+   * CASH reward, in rewards.js policyFor's own order and from the same
+   * rewardBounds: no owner → password_room, no allowlist → cash_rewards_off,
+   * owner not listed → cash_not_allowed. The pool signer (no_pool_signer) is
+   * not visible from here, so it is not mirrored: rewards.js still answers it
+   * at earn time.
+   */
+  function cashVerdict(ownerKey) {
+    const b = rewardBounds();
+    if (!ownerKey) return { ok: false, reason: 'password_room' };
+    if (!b.cashAllowAll && !b.cashAllow.size) return { ok: false, reason: 'cash_rewards_off' };
+    if (!b.cashAllowAll && !b.cashAllow.has(String(ownerKey))) return { ok: false, reason: 'cash_not_allowed' };
+    return { ok: true, reason: null };
+  }
+
+  /** The reward is paid as cash: rewards.js policyFor's mode, read off the config. */
+  function isCashReward(rw) {
+    if (!rw || rw.enabled !== true) return false;
+    if (rw.rewardType === 'points') return false;
+    if (rw.rewardType === 'token' && rw.rewardTokenAddress) return false;
+    return rw.payout !== 'credit';
+  }
+
+  /**
+   * Why an enabled CASH reward can never pay in this room, or null. Refused
+   * at save so the streamer is told, instead of a room that advertises cash
+   * nobody is ever paid (rw-cash-unpayable). `stored` is the room's saved
+   * rewards on an update: a cash reward the room already holds is not
+   * refused again, so an older room's other settings stay editable.
+   */
+  function cashRewardRefusal(rw, ownerKey, stored = null) {
+    if (!isCashReward(rw) || isCashReward(stored)) return null;
+    const verdict = cashVerdict(ownerKey);
+    if (verdict.ok) return null;
+    if (rw.rewardType === 'token') return 'A custom token reward needs its token contract.';
+    if (verdict.reason === 'password_room') {
+      return stored
+        ? 'Cash rewards need a room owned by a signed-in, approved account. Pick another reward type.'
+        : 'Cash rewards need a signed-in, approved account. Sign in, or pick another reward type.';
+    }
+    return 'Cash rewards need an approved account, and this one is not approved yet. Pick another reward type.';
+  }
+
+  /** What the Rewards card shows: the cash bounds, and whether cash can pay here. */
+  function rewardsPolicy(ownerKey) {
+    const b = rewardBounds();
+    return {
+      limits: { maxEarn: b.maxEarn, maxCap: b.maxCap, minIntervalS: b.minIntervalS },
+      cash: cashVerdict(ownerKey),
+    };
+  }
+
   /** Public create. Signed-in → the room is OWNED (no password needed);
    *  password is optional and only sets the mod-share key. Signed out → a
    *  password is required so the room still has an admin path. */
@@ -215,6 +269,8 @@ export function attachDashboardRoutes(app, deps) {
         message: err.message,
       });
     }
+    const cashRefused = cashRewardRefusal(mergedConfig.rewards, roomOwnerKey(identity));
+    if (cashRefused) return res.status(400).json({ error: cashRefused, code: 'cash_rewards_unpayable' });
     let room;
     try {
       room = await createRoomWithPassword(name, mergedConfig, hasPassword ? password : null);
@@ -271,6 +327,16 @@ export function attachDashboardRoutes(app, deps) {
   // Public create — register BEFORE any /rooms/:roomId management routes.
   app.post('/api/dashboard/create', handleCreateRoom);
   app.post('/api/dashboard/rooms', handleCreateRoom);
+
+  // The Rewards card's limits and cash verdict. Creating: the room will be
+  // owned by whoever is signed in (nobody, signed out). Managing: the room's
+  // own owner, behind the same access check as the room itself.
+  app.get('/api/dashboard/rewards-policy', (req, res) => {
+    res.json(rewardsPolicy(roomOwnerKey(readIdentityFromRequest(req))));
+  });
+  app.get('/api/dashboard/rooms/:roomId/rewards-policy', requireRoomAccess, (req, res) => {
+    res.json(rewardsPolicy(roomOwnerOf(req.roomId)));
+  });
 
   // "Your rooms" — everything the signed-in identity owns, with live counts.
   // Signed out → empty (no password/identity, nothing to show). This is what
@@ -376,6 +442,10 @@ export function attachDashboardRoutes(app, deps) {
       } catch (err) {
         if (err.code === 'rewards_out_of_bounds') return res.status(400).json({ error: err.message, code: err.code });
         return res.status(400).json({ error: 'Invalid token', message: err.message });
+      }
+      if (body.config.rewards) {
+        const cashRefused = cashRewardRefusal(body.config.rewards, roomOwnerOf(req.roomId), resolveRoomConfig(req.roomId)?.rewards ?? {});
+        if (cashRefused) return res.status(400).json({ error: cashRefused, code: 'cash_rewards_unpayable' });
       }
     }
     const newPassword = body.newPassword && typeof body.newPassword === 'string' ? body.newPassword : undefined;

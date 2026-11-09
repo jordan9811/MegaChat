@@ -174,16 +174,6 @@ export function JoinClient() {
         <span>Your camera stays private until you confirm.</span>
       </div>
 
-      <div
-        id="demoBanner"
-        className="join-demo-banner"
-        style={{ display: 'none' }}
-      >
-        This is a live demo room. Farm rewards by watching, send a Holler, go
-        live for pennies — everything here runs the real machinery at dust
-        prices.
-      </div>
-
       <div className="join-layout">
         {/* The broadcast column is a picture, not page chrome: it stays dark in
             both themes (the .dark scope re-resolves every token inside it). It
@@ -191,7 +181,9 @@ export function JoinClient() {
             never leaves a bare strip of page under the picture; the stage
             inside it stays sticky. */}
         <div className="join-stage-col dark">
-          <section className="join-media-stage" aria-label="Broadcast preview">
+          {/* is-idle while nothing real is mounted (join-page.ts
+              syncPreviewIdle): on phones the stage folds to a thin strip. */}
+          <section className="join-media-stage is-idle" aria-label="Broadcast preview">
             <div id="hostLiveFeed" className="stream-preview host-live" style={{ display: 'none' }}>
               <div className="stream-preview-frame host-live-frame">
                 <div id="hostLiveMount" className="stream-preview-mount" />
@@ -231,6 +223,19 @@ export function JoinClient() {
                   Watching earns rewards in this room
                 </span>
               </div>
+              {/* Opened in place by the hint's "Add payout wallet" (join-page.ts
+                  initRewardsClient): the account's payout wallet, saved through
+                  POST /api/account/payout-wallet. */}
+              <div id="payoutSheet" className="payout-sheet" hidden>
+                <p className="payout-sheet-title">Where should this room pay you?</p>
+                <button id="payoutUseHoller" type="button" className={miniBtn} hidden>Use my Holler wallet</button>
+                <form id="payoutForm" className="payout-form" noValidate>
+                  <input id="payoutAddress" type="text" autoComplete="off" spellCheck={false} placeholder="Paste an address (0x…)" aria-label="Payout wallet address" />
+                  <button id="payoutSave" type="submit" className={miniBtn}>Save</button>
+                </form>
+                <p id="payoutResult" className="payout-result" aria-live="polite" />
+                <button id="payoutClose" type="button" className="payout-close">Cancel</button>
+              </div>
               {/* An offline room plays the replay of its last broadcast here, and
                   these jump to its moments (join-page.ts mountReplay). */}
               <div id="streamReplayMoments" className="stream-replay-moments" hidden />
@@ -242,7 +247,9 @@ export function JoinClient() {
               <span className="join-preview-mark" aria-hidden="true"><HollerMark variant="icon" px={52} glow /></span>
               <div>
                 <span className="join-coordinate">Stream preview</span>
-                <h1>No preview</h1>
+                {/* "<channel> is off air" when the room's Twitch channel is not
+                    live: the player mounts only while it is (mountStreamPreview). */}
+                <h1 id="previewIdleTitle">No preview</h1>
               </div>
             </div>
           </section>
@@ -261,18 +268,17 @@ export function JoinClient() {
 
             <section className="join-identity-zone">
               <label htmlFor="username" className="lbl">Display name</label>
-              <input type="text" id="username" autoComplete="off" maxLength={20} />
-              <div id="privyChoice">
-                <button id="passkeyBtn" type="button" className={ghostBtn}>
-                  Sign in — Google, email or passkey
-                </button>
-              </div>
+              {/* No sign-in button here: the header chip signs in, and Send,
+                  Call in and Add funds ask for it the moment they need it. */}
+              <input type="text" id="username" autoComplete="off" maxLength={20} enterKeyHint="done" />
               <div id="walletInfo" />
               <div id="passkeyFundNote" style={{ display: 'none' }} />
               <div className="join-wallet-row">
-                <button id="connectBtn" type="button" className={miniBtn}>Connect MetaMask</button>
+                {/* Shown only when an injected wallet is detected (renderWallet). */}
+                <button id="connectBtn" type="button" className={miniBtn} style={{ display: 'none' }}>Connect MetaMask</button>
                 <button id="depositBtn" type="button" className={miniBtn}>Fund wallet</button>
               </div>
+              <div id="walletMessage" className="join-message" aria-live="polite" />
             </section>
 
             <section id="megachatAction" className="join-mode-zone is-record" style={{ display: 'none' }}>
@@ -296,23 +302,31 @@ export function JoinClient() {
                 </div>
                 <p id="letterStatus" aria-live="polite" />
               </div>
+              {/* A Holler's results, under the block that sent it. */}
+              <div id="letterMessage" className="join-message" data-feature="holler" aria-live="polite" />
             </section>
 
             <section id="liveSeatAction" className="join-mode-zone is-live-seat" style={{ display: 'none' }}>
               <header><h2>Call in</h2><p>Your camera stays private until you press Go Live.</p></header>
-              <div id="cameraStage">
-                <div id="camStatus" className="cam-status">
-                  <span className="dot" /><span id="camStatusText">Requesting camera…</span>
-                  <span id="lkQualityDot" className="lk-quality" style={{ display: 'none' }} />
+              {/* While a seat is held the one button (Call in → Go Live → live)
+                  is a bar on the camera frame's bottom edge (join.css). */}
+              <div id="seatCam" className="seat-cam">
+                <div id="cameraStage">
+                  <div id="camStatus" className="cam-status">
+                    <span className="dot" /><span id="camStatusText">Requesting camera…</span>
+                    <span id="lkQualityDot" className="lk-quality" style={{ display: 'none' }} />
+                  </div>
+                  <div className="cam-frame dark">
+                    <iframe id="camPublisher" title="Camera publisher" allow="camera; microphone; autoplay; display-capture; fullscreen" />
+                  </div>
+                  <iframe id="camDetector" title="Publish detector" className="cam-detector" allow="autoplay" />
                 </div>
-                <div className="cam-frame dark">
-                  <iframe id="camPublisher" title="Camera publisher" allow="camera; microphone; autoplay; display-capture; fullscreen" />
-                </div>
-                <iframe id="camDetector" title="Publish detector" className="cam-detector" allow="autoplay" />
-                <button id="camRetryBtn" type="button" className={ghostBtn}>Retry camera</button>
-                <div id="camHint" />
+                <button id="joinBtn" type="button" className={dopamineBtn}>🎬 Call in</button>
               </div>
-              <button id="joinBtn" type="button" className={dopamineBtn}>🎬 Call in</button>
+              <button id="camRetryBtn" type="button" className={ghostBtn}>Retry camera</button>
+              <div id="camHint" />
+              {/* A seat's results, under Call in. */}
+              <div id="seatMessage" className="join-message" data-feature="callin" aria-live="polite" />
               <p className="join-trust-line">Leave anytime. Every unused cent returns automatically.</p>
             </section>
 

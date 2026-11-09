@@ -139,6 +139,10 @@ export function AccountChip({ accent = 'var(--hl-strap-hi)' }: { accent?: string
           <a href="/dashboard" role="menuitem" className="block px-2.5 py-2 text-[13px] text-hl-fg hover:bg-hl-panel-2">
             Your room
           </a>
+          {/* A fresh create form, its link left empty (room-provider ?new=1). */}
+          <a href="/dashboard?new=1" role="menuitem" className="block px-2.5 py-2 text-[13px] text-hl-fg hover:bg-hl-panel-2">
+            New room
+          </a>
           <a href="/dashboard/campaigns" role="menuitem" className="block px-2.5 py-2 text-[13px] text-hl-fg hover:bg-hl-panel-2">
             Campaigns
           </a>

@@ -136,3 +136,12 @@
 .mcc-status[data-ending=true] .mcc-status-live i{background:var(--f-bounty,#e8b33a);box-shadow:none}.mcc-status[data-ending=true] .mcc-status-live i:after{animation:none;opacity:0}
 .mcc-name-twitch{display:flex!important;flex-wrap:wrap;align-items:baseline;gap:4px 6px;max-width:100%}.mcc-name-twitch b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:28ch;color:var(--hl-muted);font-weight:600}.mcc-name-twitch button{border:0;background:transparent;padding:0;color:var(--hl-strap-hi);font:inherit;font-weight:700;cursor:pointer}
 @media(hover:hover) and (pointer:fine){.mcc-name-twitch button:hover{text-decoration:underline;text-underline-offset:2px}}
+/* Hollers card below 1060 px: Price per 10 seconds and Longest clip one per row, so the price field is wide enough to read
+   whole (it shrank to 30 px beside the preview column on a tablet). */
+@media(max-width:1059px){.mcc-controls.mcc-holler-controls{grid-template-columns:minmax(0,1fr)}}
+/* A field's own limit, and its error in the danger colour in the same place (press-to-explain, Cash limits, New room link). */
+.mc-create .mcc-field-limit{color:var(--hl-dim)}
+.mc-create .mcc-field-error{display:block;margin-top:7px;color:var(--hl-danger);font-size:12px;font-weight:600}
+.mcc-inline-link{border:0;background:transparent;padding:0;color:var(--hl-strap-hi);font:inherit;font-weight:700;text-decoration:underline;text-underline-offset:2px}
+/* What watching earns, in the reward's green: the same words as the board card (lib/room-browse rewardTerms). */
+.mcc-ledger p strong.mcc-earn{color:var(--f-rewards-ink);text-align:right}
