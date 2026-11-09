@@ -15,7 +15,7 @@ type Way = 'holler' | 'callin' | 'bounty'
 
 const WAYS: Record<Way, { verb: string; line: string; readout: string; cta: string; href: string; label: string }> = {
   holler: {
-    verb: 'Say it',
+    verb: 'Holler',
     line: 'Record a clip. It plays on their stream.',
     readout: 'REC 0:07 · $0.007',
     cta: 'Find a streamer',
@@ -23,7 +23,7 @@ const WAYS: Record<Way, { verb: string; line: string; readout: string; cta: stri
     label: 'A gaming stream with your recorded Holler playing on it',
   },
   callin: {
-    verb: 'Sit in',
+    verb: 'Call in',
     line: 'Take a live seat, face to face.',
     readout: '00:00:43 · $0.043',
     cta: 'Browse rooms',
@@ -31,7 +31,7 @@ const WAYS: Record<Way, { verb: string; line: string; readout: string; cta: stri
     label: 'A talk show with you live in a Call in seat',
   },
   bounty: {
-    verb: 'Back them',
+    verb: 'Pledge',
     line: 'Back a streamer before they have a room.',
     readout: '$200 · @nordtalk',
     cta: 'Browse bounties',
@@ -82,7 +82,7 @@ export function WaysIn() {
           </div>
           <div className="mcl-ways-ov mcl-ways-ov-bounty" aria-hidden="true">
             <span className="amt">$200</span>
-            <span className="who"><strong>You backed @nordtalk</strong><small>Paid out when they go live and play it</small></span>
+            <span className="who"><strong>You pledged @nordtalk</strong><small>Paid out when they go live and play it</small></span>
           </div>
         </div>
         <div className="mcl-ways-modes" role="group" aria-label="Ways in">
