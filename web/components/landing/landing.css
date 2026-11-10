@@ -159,10 +159,16 @@ body:has(.mc-landing) {
 }
 
 /* ── hero: film column + panel column ────────────────────────────────────── */
+/* The film column is exactly 16:9 of its own width, so the 16:9 film is never
+   cropped (a fixed 41.7vw height cut its sides on every laptop: owner,
+   2026-11-10). The panel follows the film's height. Capped at the screen's
+   height on very wide screens, where it crops again rather than run past the
+   fold. Below 1180px the panel needs more height than that, so the hero stacks
+   (see responsive). */
 .mcl-hero {
   display: grid;
-  grid-template-columns: 62fr 38fr;
-  height: clamp(520px, 41.7vw, 720px);
+  grid-template-columns: minmax(0, 62fr) minmax(0, 38fr);
+  container-type: inline-size;
   border-bottom: 1px solid var(--mcl-hairline);
 }
 
@@ -171,6 +177,7 @@ body:has(.mc-landing) {
    black whatever the page around it is doing. */
 .mcl-film {
   position: relative;
+  min-height: min(calc(62cqw * 9 / 16), calc(100svh - 64px));
   overflow: hidden;
   background: var(--hl-bg);
 }
@@ -871,9 +878,9 @@ body:has(.mc-landing) {
 }
 
 /* ── responsive ──────────────────────────────────────────────────────────── */
-@media (max-width: 900px) {
-  .mcl-hero { height: auto; grid-template-columns: 1fr; }
-  .mcl-film { aspect-ratio: 16 / 9; }
+@media (max-width: 1179px) {
+  .mcl-hero { grid-template-columns: 1fr; }
+  .mcl-film { min-height: 0; aspect-ratio: 16 / 9; }
   .mcl-panel {
     gap: 18px;
     padding: 32px 28px 36px;
@@ -884,6 +891,9 @@ body:has(.mc-landing) {
       repeating-linear-gradient(0deg, color-mix(in srgb, var(--hl-fg) 3%, transparent) 0 1px, transparent 1px 3px),
       var(--mcl-panel);
   }
+}
+
+@media (max-width: 900px) {
   .mcl-entry { padding: 36px 28px 40px; }
   .mcl-entry-grid { grid-template-columns: 1fr; gap: 12px; }
   .mcl-entry-card { min-height: 196px; }
