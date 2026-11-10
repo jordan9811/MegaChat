@@ -772,7 +772,7 @@ async function dashboardSection({ ok, browser, APP, auth, makeRoom, OWNER }) {
       // (ss-obs-link-buried / ss-connect-obs-wall, 2026-11-09); press it.
       const opened = await until(() => page.evaluate(() => {
         if (document.querySelector('input[placeholder="OBS WebSocket password"]')) return true;
-        const b = [...document.querySelectorAll('button')].find((x) => /Add it for me/.test(x.textContent || ''));
+        const b = [...document.querySelectorAll('button')].find((x) => /Set up OBS for me|Add it for me/.test(x.textContent || ''));
         if (b) b.click();
         return false;
       }), 30000, 500);

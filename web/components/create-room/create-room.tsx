@@ -24,6 +24,9 @@ import { rewardTerms } from '@/lib/room-browse'
 import './create-room.css'
 
 const CLIP_SECONDS = [5, 10, 15, 20, 30] as const
+// The server's bounds for a Holler's length (rooms-store.js resolveLetters).
+const CLIP_MIN = 3
+const CLIP_MAX = 30
 // The Switch room option that opens a fresh create form.
 const NEW_ROOM = '__new_room__'
 const MIN_RATE = 0.000001
@@ -113,11 +116,12 @@ function FeatureMark({ kind }: { kind: FeatureKind }) {
 // Hollers off on a live room. The title row now only folds the settings.
 // Switching on opens them and switching off folds them, as before.
 function Feature({ kind, title, copy, enabled, onToggle, children }: { kind: FeatureKind; title: string; copy: string; enabled: boolean; onToggle: () => void; children?: ReactNode }) {
-  const [open, setOpen] = useState(enabled)
+  // Folded until switched on (owner, 2026-11-09); switching on unfolds it.
+  const [open, setOpen] = useState(false)
   const was = useRef(enabled)
   useEffect(() => { if (was.current !== enabled) { was.current = enabled; setOpen(enabled) } }, [enabled])
   const bodyId = useId()
-  return <section className="mcc-feature" data-kind={kind} data-enabled={enabled} data-open={open}><div className="mcc-feature-head"><button type="button" className="mcc-feature-expand" aria-expanded={children ? open : undefined} aria-controls={children && open ? bodyId : undefined} onClick={() => setOpen((value) => !value)}><span className="mcc-feature-icon"><FeatureMark kind={kind} /></span><span className="mcc-feature-copy"><span className="mcc-feature-title"><strong>{title}</strong>{enabled ? <span className="mcc-feature-tag" aria-hidden="true"><FeatureTag kind={kind} /></span> : null}</span><small>{copy}</small></span>{children ? <ChevronDown className="mcc-feature-chevron" size={16} aria-hidden="true" /> : null}</button><button type="button" role="switch" aria-checked={enabled} aria-label={title} className="mcc-feature-switch" onClick={onToggle}><span className="mcc-toggle" aria-hidden="true"><i /></span></button></div>{open && children ? <div id={bodyId} className="mcc-feature-body">{children}</div> : null}</section>
+  return <section className="mcc-feature" data-kind={kind} data-enabled={enabled} data-open={open}><div className="mcc-feature-head"><button type="button" className="mcc-feature-expand" aria-expanded={children ? open : undefined} aria-controls={children && open ? bodyId : undefined} onClick={() => setOpen((value) => !value)}><span className="mcc-feature-copy"><span className="mcc-feature-title"><strong>{title}</strong>{enabled ? <span className="mcc-feature-tag" aria-hidden="true"><FeatureTag kind={kind} /></span> : null}</span><small>{copy}</small></span>{children ? <ChevronDown className="mcc-feature-chevron" size={16} aria-hidden="true" /> : null}</button><button type="button" role="switch" aria-checked={enabled} aria-label={title} className="mcc-feature-switch" onClick={onToggle}><span className="mcc-toggle" aria-hidden="true"><i /></span></button></div>{open && children ? <div id={bodyId} className="mcc-feature-body">{children}</div> : null}</section>
 }
 
 // The room's offer as viewers see it on the board: one tag per feature that
@@ -201,7 +205,7 @@ export function CreateRoom() {
   const { openSignIn } = useAccount()
   // One control, three states: signed out it offers the sign-in; signed in it
   // saves, or updates what is already saved.
-  const defaultsLabel = !hasIdentity ? 'Sign in to store defaults' : accountDefaults ? 'Update room default settings' : 'Save as room default'
+  const defaultsLabel = !hasIdentity ? 'Sign in to store defaults' : accountDefaults ? 'Update room default settings' : 'Save as default settings'
   const managing = mode === 'managing' && !!room
   // Until the room list has answered (and the room it opens is open), the
   // page shows the room's skeleton, not the create form: a failed list used
@@ -255,6 +259,7 @@ export function CreateRoom() {
   // than a per-second decimal); one tap switches to per second. Call in is
   // priced the same way as Hollers (ss-seat-time-not-saved).
   const [hollerUnit, setHollerUnit] = useState<10 | 1>(10)
+  const [customClip, setCustomClip] = useState(false)
   const [seatUnit, setSeatUnit] = useState<10 | 1>(10)
   const [password, setPassword] = useState('')
   // Press-to-explain: Create stays enabled; pressing it with a password too
@@ -432,7 +437,7 @@ export function CreateRoom() {
 
       <div className="mcc-layout" data-mode={managing ? 'manage' : 'create'}><div className="mcc-menus"><section className="mcc-viewer-section"><h1>How viewers join</h1><div className="mcc-feature-stack">
         <Feature kind="holler" title="Hollers" copy="Fans send recorded clips to your stream" enabled={draft.lettersEnabled} onToggle={() => updateDraft({ lettersEnabled: !draft.lettersEnabled })}>
-          <div className="mcc-pricing-top"><span>Viewer price</span><Segment label="Holler price mode" value={megaFree ? 'free' : 'paid'} onChange={setHollerMode} options={[{ value: 'paid', label: 'Paid' }, { value: 'free', label: 'Free' }]} /></div><div className="mcc-controls two mcc-holler-controls"><label><span>{hollerUnit === 10 ? 'Price per 10 seconds' : 'Price per second'}</span><span className="mcc-rate-row"><PriceInput label={hollerUnit === 10 ? 'Holler price per 10 seconds' : 'Holler price per second'} value={String(Number((Number(megaRate) * hollerUnit).toFixed(6)))} onCommit={(value) => setMegaRate(String(Number((Number(value) / hollerUnit).toFixed(6))))} suffix={hollerUnit === 10 ? '/10s' : '/s'} /><Segment label="Holler price unit" value={hollerUnit} onChange={setHollerUnit} options={[{ value: 10, label: '10s' }, { value: 1, label: '1s' }]} /></span><small className="mcc-rate-chip">{megaFree ? freeLine(lastPaid.holler, hollerUnit) : hollerUnit === 10 ? `= ${formatDollars(megaRate)} a second` : `= ${formatDollars(Number(megaRate) * 10)} per 10 seconds`}</small></label><label><span>Longest clip</span><select aria-label="Longest clip" value={clipSeconds} onChange={(event) => setClipSeconds(Number(event.target.value))}>{CLIP_SECONDS.map((seconds) => <option key={seconds} value={seconds}>{seconds} seconds</option>)}</select></label></div>
+          <div className="mcc-pricing-top"><span>Viewer price</span><Segment label="Holler price mode" value={megaFree ? 'free' : 'paid'} onChange={setHollerMode} options={[{ value: 'paid', label: 'Paid' }, { value: 'free', label: 'Free' }]} /></div><div className="mcc-controls two mcc-holler-controls"><label><span>{hollerUnit === 10 ? 'Price per 10 seconds' : 'Price per second'}</span><span className="mcc-rate-row"><PriceInput label={hollerUnit === 10 ? 'Holler price per 10 seconds' : 'Holler price per second'} value={String(Number((Number(megaRate) * hollerUnit).toFixed(6)))} onCommit={(value) => setMegaRate(String(Number((Number(value) / hollerUnit).toFixed(6))))} suffix={hollerUnit === 10 ? '/10s' : '/s'} /><Segment label="Holler price unit" value={hollerUnit} onChange={setHollerUnit} options={[{ value: 10, label: '10s' }, { value: 1, label: '1s' }]} /></span><small className="mcc-rate-chip">{megaFree ? freeLine(lastPaid.holler, hollerUnit) : hollerUnit === 10 ? `= ${formatDollars(megaRate)} a second` : `= ${formatDollars(Number(megaRate) * 10)} per 10 seconds`}</small></label><label><span>Longest clip</span><select aria-label="Longest clip" value={customClip || !(CLIP_SECONDS as readonly number[]).includes(clipSeconds) ? 'custom' : clipSeconds} onChange={(event) => { if (event.target.value === 'custom') { setCustomClip(true); return } setCustomClip(false); setClipSeconds(Number(event.target.value)) }}>{CLIP_SECONDS.map((seconds) => <option key={seconds} value={seconds}>{seconds} seconds</option>)}<option value="custom">Custom…</option></select>{customClip || !(CLIP_SECONDS as readonly number[]).includes(clipSeconds) ? <span className="mcc-clip-custom"><input aria-label="Longest clip in seconds" inputMode="numeric" type="number" min={CLIP_MIN} max={CLIP_MAX} step={1} defaultValue={clipSeconds} onBlur={(event) => { const n = Math.round(Number(event.target.value)); const v = Number.isFinite(n) ? Math.min(CLIP_MAX, Math.max(CLIP_MIN, n)) : clipSeconds; event.target.value = String(v); setClipSeconds(v) }} onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} /><small>seconds · {CLIP_MIN}–{CLIP_MAX}</small></span> : null}</label></div>
         </Feature>
         <Feature kind="callin" title="Call in" copy="Viewers join you face-to-face" enabled={draft.joinStreamEnabled} onToggle={() => updateDraft({ joinStreamEnabled: !draft.joinStreamEnabled })}>
           <div className="mcc-pricing-top"><span>Viewer price</span><Segment label="Call in price mode" value={micFree ? 'free' : 'paid'} onChange={setCallinMode} options={[{ value: 'paid', label: 'Paid' }, { value: 'free', label: 'Free' }]} /></div><div className="mcc-controls two mcc-holler-controls"><label><span>{seatUnit === 10 ? 'Seat price per 10 seconds' : 'Seat price per second'}</span><span className="mcc-rate-row"><PriceInput label={seatUnit === 10 ? 'Seat price per 10 seconds' : 'Seat price per second'} value={String(Number((micRate * seatUnit).toFixed(6)))} onCommit={(value) => updateDraft({ passkeyTickPrice: String(Number((Number(value) / seatUnit).toFixed(6))) })} suffix={seatUnit === 10 ? '/10s' : '/s'} /><Segment label="Seat price unit" value={seatUnit} onChange={setSeatUnit} options={[{ value: 10, label: '10s' }, { value: 1, label: '1s' }]} /></span><small className="mcc-rate-chip">{micFree ? freeLine(lastPaid.callin, seatUnit) : seatUnit === 10 ? `= ${formatDollars(micRate)} a second` : `= ${formatDollars(micRate * 10)} per 10 seconds`}</small></label><label><span>People on camera</span><select aria-label="People on camera" value={draft.maxSeats} onChange={(event) => updateDraft({ maxSeats: event.target.value })}><option value="1">1</option><option value="2">2</option><option value="3">3</option></select><small>+ pinned co-host, free</small></label></div>

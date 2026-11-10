@@ -107,10 +107,16 @@ export function ObsSetup() {
               className="inline-flex h-[38px] shrink-0 items-center gap-1.5 rounded-lg border border-hl-strap bg-hl-strap px-3 text-xs font-bold text-hl-on-strap"
             >
               <MonitorUp className="size-3.5" aria-hidden="true" />
-              Add it for me
+              Set up OBS for me
             </button>
           ) : null}
         </div>
+        {/* The automatic road is the one we want: OBS WebSocket adds the
+            overlay at the canvas size and lets Holler check it stays on
+            screen. Said once, only until an overlay is connected. */}
+        {oneClick && !assist && overlayLink !== 'keyed' ? (
+          <p className="mcc-obs-autonote"><b>Recommended</b> Holler sets the overlay up in OBS at your canvas size and checks it stays on screen. Manual setup works too.</p>
+        ) : null}
         {oneClick && assist ? (
           // showManual off: the folded Manual setup below IS the manual road.
           <ObsOneClick overlayUrl={obsLink} mode="room" showManual={false} />

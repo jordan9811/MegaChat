@@ -38,7 +38,7 @@ import { attachDashboardRoutes } from './dashboard-routes.js';
 import { getAccount } from './accounts.js';
 import { loginProvingHandle } from './bounty-auth.js';
 import { handleKey } from './bounty-store.js';
-import { getStreamsByLogins, twitchApiConfigured, helix } from './twitch-api.js';
+import { getStreamsByLogins, getChannelTitlesByLogins, twitchApiConfigured, helix } from './twitch-api.js';
 import { resolveAvatars, avatarKey } from './platform-avatars.js';
 import { openAiring, openAiringFor, closeAiring, addMoment, recentAirings, listAirings, allAiringIds, airingRefs, attachRecording, markRestart, momentRefs, pruneToRooms, recordOverlaySample } from './airings-store.js';
 import { classify as classifyLiveness, accumulate as accumulateOverlay, publicLiveness } from './liveness.js';
@@ -3509,6 +3509,9 @@ const followState = new Map(); // roomId -> { live, offSince, endedLive, heldAt,
 // The last stream title seen for a following room, kept after the stream
 // ends: the manage page offers it as the name when the owner typed their own.
 const followTitle = new Map(); // roomId -> title
+// When each room last asked Twitch for its offline channel title.
+const titleAskedAt = new Map();
+const TITLE_ASK_MS = 10 * 60_000;
 
 // ── the owner's manage page is a liveness signal too (owner, 2026-11-07) ──
 // The manage page beats while it is open and says goodbye on pagehide. With
@@ -3775,6 +3778,20 @@ async function followTick() {
   const streams = await getStreamsByLogins(logins);
   if (!streams) return; // could not ask — change nothing
   const liveByLogin = new Map([...streams].map(([l, st]) => [l, st.live]));
+  // Offline rooms still offer the channel's title on the manage page (the
+  // "On Twitch: … · Use this name" nudge): Twitch keeps the last title set.
+  // Asked at most every TITLE_ASK_MS per room until known; the live poll
+  // keeps it current from then on.
+  {
+    const loginOf = (r) => String(r.config.twitchChannel).trim().replace(/^@/, '').toLowerCase();
+    const t0 = Date.now();
+    const due = following.filter((r) => !followTitle.has(r.id) && !liveByLogin.get(loginOf(r)) && !(titleAskedAt.get(r.id) > t0 - TITLE_ASK_MS));
+    if (due.length) {
+      for (const r of due) titleAskedAt.set(r.id, t0);
+      const titles = await getChannelTitlesByLogins(due.map(loginOf)).catch(() => null);
+      if (titles) for (const r of due) { const t = titles.get(loginOf(r)); if (t) followTitle.set(r.id, t); }
+    }
+  }
 
   const now = Date.now();
   for (const r of following) { try {

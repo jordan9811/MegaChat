@@ -191,3 +191,13 @@
 }
 /* OBS overlay + viewer links open at the top of the right column (UX bounty ss-obs-link-buried); the live desk still lifts above it while live. */
 .mcc-runtime>.mcc-obs{order:-1}
+
+/* Longest clip: Custom opens a seconds field under the menu. */
+.mcc-clip-custom{display:flex;align-items:center;gap:8px;margin-top:8px}.mcc-clip-custom input{width:84px}.mcc-clip-custom small{color:var(--hl-muted);font-size:12px}
+/* No feature icons: the title leads, like the landing's ways in. */
+.mcc-feature-icon{display:none}
+
+/* OBS card: the automatic setup, recommended (obs-setup.tsx). */
+.mcc-obs-autonote{margin:0;color:var(--hl-muted);font-size:12.5px;line-height:1.5}.mcc-obs-autonote b{display:inline-block;margin-right:6px;padding:2px 6px;border:1px solid color-mix(in srgb,var(--hl-strap-hi) 50%,transparent);border-radius:5px;background:color-mix(in srgb,var(--hl-strap) 14%,transparent);color:var(--hl-fg);font:700 10px/1.4 var(--font-code),ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase}
+/* No icon column now that feature cards lead with the title. */
+.mcc-feature-expand{grid-template-columns:minmax(0,1fr) 16px}

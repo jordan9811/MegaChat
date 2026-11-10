@@ -153,3 +153,33 @@ export async function getStreamsByLogins(logins, { log = console } = {}) {
     return null; // "could not ask", never "offline"
   }
 }
+
+/**
+ * The channel's current title, live or not (Twitch keeps the last one set),
+ * login (lowercased) → title. null when the API could not be asked. Feeds the
+ * manage page's "On Twitch: … · Use this name" nudge while a room is offline.
+ */
+export async function getChannelTitlesByLogins(logins, { log = console } = {}) {
+  if (!twitchApiConfigured()) return null;
+  const list = [...new Set(
+    (logins || []).map((l) => String(l || '').trim().replace(/^@/, '').toLowerCase()).filter(Boolean),
+  )].slice(0, 100);
+  if (!list.length) return new Map();
+  try {
+    const users = await helix(`/users?${list.map((l) => `login=${encodeURIComponent(l)}`).join('&')}`);
+    const ids = (users.data || []).filter((u) => u?.id && u?.login).map((u) => [String(u.id), String(u.login).toLowerCase()]);
+    if (!ids.length) return new Map();
+    const loginById = new Map(ids);
+    const ch = await helix(`/channels?${ids.map(([id]) => `broadcaster_id=${encodeURIComponent(id)}`).join('&')}`);
+    const out = new Map();
+    for (const c of ch.data || []) {
+      const login = loginById.get(String(c?.broadcaster_id));
+      const title = typeof c?.title === 'string' ? c.title.trim() : '';
+      if (login && title) out.set(login, title);
+    }
+    return out;
+  } catch (e) {
+    log.warn(`[twitch-api] channel title lookup failed (${list.length} logins): ${e.message}`);
+    return null;
+  }
+}
