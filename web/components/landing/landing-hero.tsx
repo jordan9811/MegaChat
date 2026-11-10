@@ -57,6 +57,30 @@ export function LandingHero() {
     if (v) v.muted = !v.muted
   }, [])
 
+  // "Watch the film" is the theater, not a second replay button (owner,
+  // 2026-11-10): the 1080p cut, large, with sound and the browser's own
+  // controls. It loads only when opened. The hero film waits behind it and
+  // carries on when it closes.
+  const theaterRef = useRef<HTMLDialogElement | null>(null)
+  const filmRef = useRef<HTMLVideoElement | null>(null)
+  const heroWasPlaying = useRef(false)
+  const openTheater = useCallback(() => {
+    const d = theaterRef.current
+    const f = filmRef.current
+    if (!d || !f) return
+    const v = videoRef.current
+    heroWasPlaying.current = !!v && !v.paused && !v.ended
+    v?.pause()
+    if (!d.open) d.showModal()
+    f.currentTime = 0
+    f.muted = false
+    void f.play().catch(() => {})
+  }, [])
+  const onTheaterClose = useCallback(() => {
+    filmRef.current?.pause()
+    if (heroWasPlaying.current) void videoRef.current?.play().catch(() => {})
+  }, [])
+
   return (
     <section className="mcl-hero">
       {/* .dark keeps the film framed in black in both themes: it is a video */}
@@ -145,7 +169,7 @@ export function LandingHero() {
         <p className="mcl-sub mcl-r3">Camera seats on live broadcasts, billed by the second.</p>
         <div className="mcl-ctas mcl-r3">
           <Link href="/app" className="mcl-btn-primary">Enter Holler</Link>
-          <button type="button" onClick={replay} className="mcl-btn-ghost">
+          <button type="button" onClick={openTheater} className="mcl-btn-ghost" aria-haspopup="dialog">
             Watch the film
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <polygon points="6 3 20 12 6 21 6 3" />
@@ -157,6 +181,30 @@ export function LandingHero() {
           <div>{PLATFORMS.map((p) => <PlatformMark key={p.name} p={p} />)}</div>
         </div>
       </div>
+
+      <dialog
+        ref={theaterRef}
+        className="mcl-theater"
+        aria-label="The Holler launch film"
+        onClose={onTheaterClose}
+        onClick={(e) => { if (e.target === e.currentTarget) e.currentTarget.close() }}
+      >
+        <video
+          ref={filmRef}
+          src="/launch-film-1080.mp4"
+          poster="/launch-film-poster.jpg"
+          controls
+          playsInline
+          preload="none"
+          className="mcl-theater-film"
+        />
+        <button type="button" className="mcl-theater-close" onClick={() => theaterRef.current?.close()} aria-label="Close the film">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <line x1="6" y1="6" x2="18" y2="18" />
+            <line x1="18" y1="6" x2="6" y2="18" />
+          </svg>
+        </button>
+      </dialog>
     </section>
   )
 }

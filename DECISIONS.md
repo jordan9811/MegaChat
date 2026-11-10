@@ -2584,3 +2584,17 @@ previous commit.
 - **The tour's storage key is `holler.tour.v2`**: a dismissal of the old demo
   walkthrough no longer stops the new tour, so it starts by itself once for
   everyone; "Show me around" is the replay after that.
+
+## 2026-11-10 — "Watch the film" opens a 1080p theater; the hero is 16:9
+
+- **"Watch the film" opens the 1080p cut in a theater** (a modal `<dialog>`:
+  sound on, the browser's controls, Esc or a backdrop click closes it, the
+  hero film pauses behind it and resumes). Owner: it was "a redundant replay
+  button". `web/public/launch-film-1080.mp4` (16 MB, ~4.4 Mbps) is encoded
+  from `design-assets/launch-video/v9/final/holler-film-1080-master-v3.mp4`
+  and loads only when opened. **When the film is re-cut, re-encode it too**
+  (libx264 CRF 20, maxrate 6M, AAC 160k, faststart), or the theater plays the
+  old cut. Undo: point the button back at `replay`.
+- **The hero's film column is exactly 16:9 of its width**, so a laptop sees
+  the whole frame; it stacks below 1180px. The fixed 41.7vw height cropped the
+  film's sides at every laptop width.
