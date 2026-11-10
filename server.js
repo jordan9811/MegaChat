@@ -4353,6 +4353,13 @@ app.get('/api/rooms/claimed', async (req, res) => {
   res.json({ airings: await withAvatars(out) });
 });
 
+// Airings the owner has taken off the Recently aired rail (2026-11-10: the
+// 5-minute 2 MAN STREAM test from Nov 7 was sloppy). Data is kept; only the
+// rail skips them. Add more ids here or in HIDDEN_AIRINGS (comma-separated).
+const HIDDEN_AIRINGS = new Set([
+  'ef41fc86-472e-4f5a-be17-efea3ca797bf',
+  ...String(process.env.HIDDEN_AIRINGS || '').split(',').map((s) => s.trim()).filter(Boolean),
+]);
 app.get('/api/rooms/recent', async (req, res) => {
   const limit = Math.max(1, Math.min(24, Number(req.query.limit) || 12));
   const byId = new Map(listRooms().map((r) => [r.id, r]));
@@ -4360,6 +4367,7 @@ app.get('/api/rooms/recent', async (req, res) => {
   // Scan wide: airings of deleted or unlisted rooms are skipped below, and a
   // fixed small window would let them crowd real ones off the rail.
   for (const a of recentAirings({ limit: 500, include: isListable })) {
+    if (HIDDEN_AIRINGS.has(a.id)) continue;
     const room = byId.get(a.roomId);
     if (!room || !room.config || room.config.unlisted) continue;
     out.push({

@@ -48,13 +48,6 @@ export function LandingHero() {
     setEnded(false)
   }, [])
 
-  const toggle = useCallback(() => {
-    const v = videoRef.current
-    if (!v) return
-    if (v.paused) void v.play().catch(() => setPlaying(false))
-    else v.pause()
-  }, [])
-
   // The film autoplays muted (browsers allow nothing else); this is the
   // visitor's own switch for its sound. The video's volumechange keeps the
   // icon honest whatever changed it.
@@ -94,16 +87,11 @@ export function LandingHero() {
         <div aria-hidden="true" className="mcl-film-hold" style={{ opacity: ended ? 0.22 : 0 }} />
         <div aria-hidden="true" className="mcl-film-shade" />
         <div className="mcl-film-ctl">
-          {/* pause exists whenever the film is running: an autoplaying video
-              with no stop control is a WCAG 2.2.2 failure */}
-          {playing ? (
-            <button type="button" onClick={toggle} title="Pause the film" aria-label="Pause the film">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <line x1="9" y1="4" x2="9" y2="20" />
-                <line x1="15" y1="4" x2="15" y2="20" />
-              </svg>
-            </button>
-          ) : null}
+          {/* The owner's call (2026-11-10): no pause button, only replay and
+              sound, plus "Watch the film" in the panel. The old pause vanished
+              once pressed and the remaining button restarted the film, so a
+              paused film could not be resumed. Note: an autoplaying video over
+              5 s with no pause control is a WCAG 2.2.2 gap. */}
           <button
             type="button"
             onClick={replay}

@@ -99,7 +99,7 @@
   flex-direction: column;
   justify-content: space-between;
   border: 2px solid var(--f-holler);
-  background: url('/landing/ways-you.webp') center / cover no-repeat, #222;
+  background: url('/landing/ways-you-holler.webp') center / cover no-repeat, #222;
 }
 .mcl-ways-ov-holler .t {
   align-self: flex-start;
@@ -138,7 +138,7 @@
   position: relative;
   aspect-ratio: 16 / 10;
   border: 2px solid var(--f-callin);
-  background: url('/landing/ways-you.webp') center / cover no-repeat, #222;
+  background: url('/landing/ways-you-callin.webp') center / cover no-repeat, #222;
 }
 .mcl-ways-ov-callin .seat b {
   position: absolute;
