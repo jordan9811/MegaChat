@@ -247,7 +247,6 @@ export default function HowItWorksPage() {
             <FlowColumn kind="streamer" body="Create a room, set the terms, add the overlay, and run the broadcast." steps={STREAMER_STEPS} />
           </div>
           <div className="mch-tree-result">
-            <span className="mch-coordinate">Result</span>
             <h2>A camera seat on the broadcast.</h2>
             <p>Real-time between viewer and streamer. Public stream timing remains unchanged.</p>
             <FeatureTag kind="callin" size="md" />

@@ -1185,13 +1185,20 @@ const cssBrowserChecks = {
 
   // product.css :is() rewrite. GUARD: HEAD computes the same (the rule kept its specificity).
   async coordinatesKeepReadout({ ok, page, APP }) {
-    for (const [route, sel] of [['/how-it-works', '.mch-coordinate'], ['/account', '.mcc-coordinate']]) {
+    // Most pages lost their kickers (owner, 2026-11-10: no small labels that
+    // repeat a heading), so a signed-out page may render none. The guard is on
+    // the rule, not the labels: it measures one probe span per class.
+    for (const [route, sel] of [['/account', 'span.mcc-coordinate'], ['/account', 'span.mch-coordinate'], ['/account', 'span.mcb-coordinate'], ['/account', 'span.join-coordinate']]) {
       await page.goto(`${APP}${route}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      await page.waitForSelector(sel, { timeout: 30000 }).catch(() => {});
+      await page.waitForSelector('main, .mc-product', { timeout: 30000 }).catch(() => {});
       const r = await page.evaluate((s) => {
         const first = (v) => String(v).split(',')[0].trim().replace(/['"]/g, '');
         const code = first(getComputedStyle(document.documentElement).getPropertyValue('--font-code'));
-        return { code, els: [...document.querySelectorAll(s)].map((e) => { const cs = getComputedStyle(e); return [first(cs.fontFamily), cs.fontSize, cs.letterSpacing, cs.textTransform, cs.fontWeight].join(' '); }) };
+        const probe = document.createElement('span'); probe.className = s.split('.')[1]; probe.textContent = 'probe';
+        (document.querySelector('main') || document.body).appendChild(probe);
+        const cs = getComputedStyle(probe); const out = [first(cs.fontFamily), cs.fontSize, cs.letterSpacing, cs.textTransform, cs.fontWeight].join(' ');
+        probe.remove();
+        return { code, els: [out] };
       }, sel);
       const want = `${r.code} 11px 1.54px uppercase 400`;
       ok(`CSS13. guard: ${sel} on ${route} still reads as a HUD readout (Space Mono 11px, .14em, uppercase, 400)`,

@@ -55,7 +55,6 @@ export function CampaignsShell({ tag = 'Campaigns', open = false, children }: { 
           <p className="mcp-hint">Loading…</p>
         ) : !signedIn && !open ? (
           <section className="mcp-card mcp-signed-out">
-            <span className="mcp-coordinate">Campaigns / private</span>
             <h1>Sign in to run a campaign</h1>
             <p>Pay people who meet your rules to Holler or call in on your stream.</p>
             <button
@@ -79,7 +78,6 @@ export function PageTitle({ coordinate, title, lead, actions }: { coordinate: st
   return (
     <div className="mcp-title">
       <div>
-        <span className="mcp-coordinate">{coordinate}</span>
         <h1>{title}</h1>
         {lead ? <p>{lead}</p> : null}
       </div>

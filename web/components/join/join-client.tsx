@@ -242,7 +242,6 @@ export function JoinClient() {
                     frame. The host's voice plays either way. */}
                 <div id="hostFeedHeld" className="host-feed-held" style={{ display: 'none' }}>
                   <div>
-                    <span className="join-coordinate">Host camera</span>
                     <h2 id="hostFeedHeldTitle">Waiting for the host</h2>
                     <p id="hostFeedHeldText">Their camera and voice come through here when they join you.</p>
                   </div>
@@ -280,7 +279,6 @@ export function JoinClient() {
             <div id="previewIdle" className="join-preview-idle">
               <span className="join-preview-mark" aria-hidden="true"><HollerMark variant="icon" px={52} glow /></span>
               <div>
-                <span className="join-coordinate">Stream preview</span>
                 {/* "<channel> is off air" when the room's Twitch channel is not
                     live: the player mounts only while it is (mountStreamPreview). */}
                 <h1 id="previewIdleTitle">No preview</h1>

@@ -204,7 +204,6 @@ export function CampaignDetail({ id }: { id: string }) {
       <>
         <PageTitle coordinate="Campaign" title="Not here" actions={<a href="/dashboard/campaigns" className="mcp-btn-ghost">All campaigns</a>} />
         <section className="mcp-card mcp-empty" role="alert">
-          <span className="mcp-coordinate">{error.status === 404 ? 'Not found' : 'Could not load'}</span>
           <h2>{error.status === 404 ? 'No campaign at this address' : 'This campaign did not load'}</h2>
           <p>{error.status === 404 ? 'Either it was never saved, or the campaign API is not mounted on this server.' : error.message}</p>
         </section>
@@ -334,7 +333,7 @@ export function CampaignDetail({ id }: { id: string }) {
 
       <div className="mcp-detail-grid">
         <section className="mcp-card">
-          <header><span className="mcp-coordinate">Public link</span><h2>Where people claim</h2><p>{c.status === 'live' ? 'Open now.' : c.status === 'closed' ? 'Shows the campaign as closed.' : 'Goes public once the campaign is funded and open. Until then only you can see it, as a preview.'}</p></header>
+          <header><h2>Where people claim</h2><p>{c.status === 'live' ? 'Open now.' : c.status === 'closed' ? 'Shows the campaign as closed.' : 'Goes public once the campaign is funded and open. Until then only you can see it, as a preview.'}</p></header>
           <div className="mcp-linkrow">
             <span>{publicUrl}</span>
             <CopyButton value={publicUrl} what="the public link" />

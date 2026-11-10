@@ -2543,3 +2543,27 @@ previous commit.
   page only uses it in the demo.
 - Gate: `_gate-demo-credit.mjs` 31/0; the previous code fails 21 of 28 (the
   7 that agree are the non-demo-unchanged checks). `_gate-money` 99/0.
+
+## 2026-11-10 — A site tour that starts in the demo
+
+- **The demo walkthrough is now chapter one of a site tour**: Demo → Rooms →
+  Bounties → Campaigns → Account, foggy bubbles pointing at the real control
+  on each page. Owner: "start on demo" and carry on to the other pages. It
+  only starts from the demo room; a direct visit to another page shows nothing
+  unless a tour is in progress. One runner (`web/lib/site-tour.ts`), chapters
+  in `site-tour-chapters.ts`, progress in `site-tour-state.ts`. Undo: unmount
+  `<SiteTour>` from the four pages; the demo chapter alone still runs.
+- **The Holler step quotes the rate ($0.05 a second), not a 10-second total**,
+  and the counter counts parts, not steps, so it no longer skips (1/5, 2/5,
+  4/5).
+
+## 2026-11-10 — No small labels that repeat a heading
+
+- **The 11px uppercase labels sitting above a heading are gone site-wide**
+  ("Where this is going", "Identity / private", "01 · What", "Top targets",
+  "Room preview" and the like). Owner: they are redundant corner text. Kept
+  where the label carries information the heading does not: field labels and
+  value captions (Available balance, Reads as, Required notice, Who
+  qualifies, Claims, Share on X). The CSS rule stays for those; the
+  `_gate-web-fixes` CSS13 guard now measures a probe span, since a
+  signed-out page may render no label at all. Undo: revert the commit.

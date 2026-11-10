@@ -98,7 +98,6 @@ export function GuestWhitelist({ myHandle }: { myHandle: string | null }) {
         <div>
           {/* A guest takes a camera seat free: this is a Call in setting. */}
           <span className="mcc-guests-kicker">
-            <span className="mcc-coordinate">Guest list</span>
             <FeatureTag kind="callin" />
           </span>
           <h2>Let your regulars walk in.</h2>

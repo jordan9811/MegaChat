@@ -144,7 +144,6 @@ export function ApproveStep({
   const amount = rewardLabel(formatAtomic(ask.amountAtomic, decimals), symbol)
   return (
     <section className="mcp-approve" aria-live="polite">
-      <span className="mcp-coordinate">One more step</span>
       <h3>Approve the {words.thing}</h3>
       {/* Plain words first (this is where a streamer who has never used a
           wallet drops off); the addresses wait behind Details. */}

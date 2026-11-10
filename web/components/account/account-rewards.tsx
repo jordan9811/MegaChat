@@ -74,7 +74,7 @@ export function AccountRewards() {
   return (
     <section className="mcc-settings-zone mcc-rewards" id="rewards">
       <header>
-        <div><span className="mcc-coordinate">Rewards</span><h2>What you have earned watching.</h2><p>Every room that has paid you, with what is still yours to spend and every transfer that went out.</p></div>
+        <div><h2>What you have earned watching.</h2><p>Every room that has paid you, with what is still yours to spend and every transfer that went out.</p></div>
       </header>
       {error ? (
         <p className="hint" role="alert">Couldn’t load your rewards. <button type="button" className="mcc-inline-link" onClick={load}>Retry</button></p>

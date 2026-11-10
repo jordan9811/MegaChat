@@ -24,7 +24,6 @@ export function CampaignEdit({ id }: { id: string }) {
       <>
         <PageTitle coordinate="Campaign" title="Not here" actions={<a href="/dashboard/campaigns" className="mcp-btn-ghost">All campaigns</a>} />
         <section className="mcp-card mcp-empty" role="alert">
-          <span className="mcp-coordinate">{error.status === 404 ? 'Not found' : 'Could not load'}</span>
           <h2>{error.status === 404 ? 'No campaign at this address' : 'This campaign did not load'}</h2>
           <p>{error.status === 404 ? 'Either it was never saved, or the campaign API is not mounted on this server.' : error.message}</p>
         </section>
@@ -37,7 +36,6 @@ export function CampaignEdit({ id }: { id: string }) {
       <>
         <PageTitle coordinate={`Campaign · ${campaign.status}`} title={campaign.title} actions={<a href={`/dashboard/campaigns/${encodeURIComponent(campaign.id)}`} className="mcp-btn-ghost">Back to the campaign</a>} />
         <section className="mcp-card mcp-empty">
-          <span className="mcp-coordinate">Locked</span>
           <h2>A {campaign.status} campaign cannot be edited</h2>
           <p>Its terms are what people claimed against. Close it and start a new one to change the offer.</p>
         </section>

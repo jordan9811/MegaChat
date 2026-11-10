@@ -480,7 +480,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
       <div className="mcp-stack">
         {/* What */}
         <section className="mcp-card">
-          <header><span className="mcp-coordinate">01 · What</span><h2>The offer in one line</h2><p>The title and blurb are what people see on the public page and on the X card. The link name is minted when you save.</p></header>
+          <header><h2>The offer in one line</h2><p>The title and blurb are what people see on the public page and on the X card. The link name is minted when you save.</p></header>
           <div className="mcp-fields">
             <label className="mcp-field"><span>Title</span><input id={FIELD.title} value={draft.title} maxLength={90} placeholder={example.title} onChange={(e) => patch({ title: e.target.value })} /></label>
             <label className="mcp-field"><span>One-line blurb</span><input value={draft.blurb} maxLength={160} placeholder={example.blurb} onChange={(e) => patch({ blurb: e.target.value })} /><small>{draft.blurb.length}/160</small></label>
@@ -494,7 +494,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
 
         {/* Reward */}
         <section className="mcp-card" data-kind="money">
-          <header><span className="mcp-coordinate">02 · Reward</span><h2>What each person gets</h2></header>
+          <header><h2>What each person gets</h2></header>
           <div className="mcp-fields two">
             <div className="mcp-field">
               <span className="mcp-label-row">
@@ -541,7 +541,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
 
         {/* Budget and limits */}
         <section className="mcp-card" data-kind="money">
-          <header><span className="mcp-coordinate">03 · Budget and limits</span><h2>How much, how many, until when</h2><p>The budget leaves your wallet when you fund the campaign. Whatever is not paid out comes back when it closes.</p></header>
+          <header><h2>How much, how many, until when</h2><p>The budget leaves your wallet when you fund the campaign. Whatever is not paid out comes back when it closes.</p></header>
           <div className="mcp-fields three">
             <label className="mcp-field">
               <span>Budget</span>
@@ -572,7 +572,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
 
         {/* Action */}
         <section className="mcp-card" data-kind={draft.actionKind}>
-          <header><span className="mcp-coordinate">04 · Action</span><h2>What they do to get paid</h2><p>The only paid action is on your stream.</p></header>
+          <header><h2>What they do to get paid</h2><p>The only paid action is on your stream.</p></header>
           <div className="mcp-choice-grid" role="radiogroup" aria-label="Action">
             {(['holler', 'callin'] as ActionKind[]).map((k) => (
               <button key={k} type="button" role="radio" aria-checked={draft.actionKind === k} className="mcp-choice" data-kind={k}
@@ -617,7 +617,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
 
         {/* Who qualifies: three groups, the creator's own community first. */}
         <section className="mcp-card">
-          <header><span className="mcp-coordinate">05 · Who qualifies</span><h2>Rules, from the menu</h2><p>Every rule reads the claimant&rsquo;s X profile. None asks them to do anything there.</p></header>
+          <header><h2>Rules, from the menu</h2><p>Every rule reads the claimant&rsquo;s X profile. None asks them to do anything there.</p></header>
           <p className="mcp-sentence" aria-live="polite"><span className="mcp-coordinate">Reads as</span>{sentence}</p>
           {RULE_GROUPS.map((g) => (
             <div key={g.title} className="mcp-rule-group">

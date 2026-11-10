@@ -39,7 +39,6 @@ export function CampaignList() {
 
       {error ? (
         <section className="mcp-card mcp-empty" role="alert">
-          <span className="mcp-coordinate">{error.status === 404 ? 'Not on this server yet' : 'Could not load'}</span>
           <h2>{error.status === 404 ? 'Campaigns are not switched on here' : 'Your campaigns did not load'}</h2>
           <p>{error.status === 404 ? 'The campaign API is not mounted on this server, so there is nothing to list. The form still opens; saving needs the API.' : error.message}</p>
         </section>
@@ -47,7 +46,6 @@ export function CampaignList() {
         <p className="mcp-hint">Loading…</p>
       ) : rows.length === 0 ? (
         <section className="mcp-card mcp-empty">
-          <span className="mcp-coordinate">Nothing yet</span>
           <h2>Your first campaign is one form away</h2>
           <p>Pick a reward, a budget and the rules. Nothing moves until you fund it.</p>
           <a href="/dashboard/campaigns/new" className="mcp-btn">New campaign</a>

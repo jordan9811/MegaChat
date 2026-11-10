@@ -431,7 +431,7 @@ export function BountyProgram() {
               </div>
 
               <div className="mcb-create-bounty">
-                <span className="mcb-coordinate">Create a bounty <span className="mcb-step-chip">Step 1 of 2</span></span>
+                <span className="mcb-step-chip">Step 1 of 2</span>
                 <h2>Add a streamer.</h2>
                 <form
                   onSubmit={(e) => {
@@ -495,7 +495,7 @@ export function BountyProgram() {
             <div className="mcb-board-layout">
               <section className="mcb-leaderboard">
                 <header>
-                  <div><span className="mcb-coordinate">Top targets</span><h2>Top bounties</h2></div>
+                  <div><h2>Top bounties</h2></div>
                   {loadError ? null : <span className="mcb-open-count"><i /> {openCount} open pool{openCount === 1 ? '' : 's'}</span>}
                 </header>
                 {/* A failed load is not an empty board (UX sweep
@@ -544,7 +544,6 @@ export function BountyProgram() {
               <aside className="mcb-pool-detail">
                 {active ? (
                   <>
-                    <span className="mcb-coordinate">Selected pool</span>
                     <div className="mcb-detail-person">
                       <Avatar handle={active.handle || active.handleKey} platform={active.platform} avatarUrl={active.avatarUrl} />
                       <span><h2>{active.handle || active.handleKey}</h2><p>{platformLabel(active.platform)} · {active.displayOnly ? 'Display example' : `${active.contributionCount} backer${active.contributionCount === 1 ? '' : 's'}`}</p></span>
@@ -566,7 +565,7 @@ export function BountyProgram() {
                     {!active.claimed && <a href={`${poolHref(active)}?claim=1`} className="mcb-claim-action">{active.displayOnly ? 'Preview claim setup' : 'Claim this bounty'}</a>}
                   </>
                 ) : (
-                  <><span className="mcb-coordinate">Selected pool</span><p className="mcb-empty">Select a bounty to see its terms.</p></>
+                  <><p className="mcb-empty">Select a bounty to see its terms.</p></>
                 )}
               </aside>
             </div>

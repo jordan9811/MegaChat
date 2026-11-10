@@ -123,7 +123,6 @@ export function LayoutEditor() {
     <section className="mcc-preview-card" aria-label="Overlay layout">
       <div className="mcc-preview-top">
         <div>
-          <span className="mcc-eyebrow">Overlay layout</span>
           <strong>Where the tiles sit on your canvas</strong>
         </div>
       </div>
