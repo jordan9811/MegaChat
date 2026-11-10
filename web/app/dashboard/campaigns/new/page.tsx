@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { CampaignsShell, PageTitle } from '@/components/campaigns/campaigns-shell'
 import { CampaignForm } from '@/components/campaigns/campaign-form'
+import { SiteTour } from '@/components/site-tour'
 
 export const metadata: Metadata = {
   title: 'New campaign — Holler',
@@ -25,6 +26,7 @@ export default function NewCampaignPage() {
         actions={<a href="/dashboard/campaigns" className="mcp-link">All campaigns</a>}
       />
       <CampaignForm />
+      <SiteTour chapter="campaigns" />
     </CampaignsShell>
   )
 }

@@ -265,7 +265,6 @@ export function AccountPage() {
       ) : !signedIn ? (
         <main className="mcc-signed-out mx-auto w-full max-w-[1400px] px-5 py-12">
           <div>
-            <span className="mcc-coordinate">Identity / private</span>
             <h1 className="text-[26px] font-bold leading-[1.15]">Sign in to see your account</h1>
             <button
               type="button"
@@ -287,7 +286,6 @@ export function AccountPage() {
         <main className="mcc-account-shell">
           <section className="mcc-identity-hero">
             <div>
-              <span className="mcc-coordinate">Identity / permanent</span>
               <h1>{identity ? `@${identity.handle}` : 'Wallet only'}</h1>
               {identity ? null : <p>Add a sign-in to claim a permanent handle and room link.</p>}
             </div>
@@ -308,12 +306,12 @@ export function AccountPage() {
             <nav className="mcc-section-nav" aria-label="Account sections">
               <div>
                 <span>Account</span>
-                <button type="button" aria-current={section === 'overview' ? 'page' : undefined} onClick={() => setSection('overview')}>Overview</button>
-                <button type="button" aria-current={section === 'rewards' ? 'page' : undefined} onClick={() => setSection('rewards')}>Rewards</button>
-                <button type="button" aria-current={section === 'defaults' ? 'page' : undefined} onClick={() => setSection('defaults')}>Room defaults</button>
-                <button type="button" aria-current={section === 'bounties' ? 'page' : undefined} onClick={() => setSection('bounties')}>Bounty protection</button>
-                <button type="button" aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}>Guest list</button>
-                <button type="button" aria-current={section === 'connections' ? 'page' : undefined} onClick={() => setSection('connections')}>Connections</button>
+                <button type="button" data-section="overview" aria-current={section === 'overview' ? 'page' : undefined} onClick={() => setSection('overview')}>Overview</button>
+                <button type="button" data-section="rewards" aria-current={section === 'rewards' ? 'page' : undefined} onClick={() => setSection('rewards')}>Rewards</button>
+                <button type="button" data-section="defaults" aria-current={section === 'defaults' ? 'page' : undefined} onClick={() => setSection('defaults')}>Room defaults</button>
+                <button type="button" data-section="bounties" aria-current={section === 'bounties' ? 'page' : undefined} onClick={() => setSection('bounties')}>Bounty protection</button>
+                <button type="button" data-section="guests" aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}>Guest list</button>
+                <button type="button" data-section="connections" aria-current={section === 'connections' ? 'page' : undefined} onClick={() => setSection('connections')}>Connections</button>
               </div>
               <div className="mcc-nav-links">
                 <span>Go to</span>
@@ -370,7 +368,7 @@ export function AccountPage() {
               {section === 'bounties' ? (
                 <section className="mcc-settings-zone" id="bounties">
                   <header>
-                    <div><span className="mcc-coordinate">Bounty protection</span><h2>When does your pledge pay out?</h2><p>Every pledge you make releases at the tier you pick here. Change it any time; pledges already made keep theirs.</p></div>
+                    <div><h2>When does your pledge pay out?</h2><p>Every pledge you make releases at the tier you pick here. Change it any time; pledges already made keep theirs.</p></div>
                   </header>
                   {!identity ? (
                     <p className="hint">Add a sign-in before choosing a tier.</p>
@@ -400,7 +398,7 @@ export function AccountPage() {
               {section === 'defaults' ? (
                 <section className="mcc-settings-zone">
                   <header>
-                    <div><span className="mcc-coordinate">Room defaults</span><h2>Start every room ready.</h2><p>These values load into Create Room and can still be changed per stream.</p></div>
+                    <div><h2>Start every room ready.</h2><p>These values load into Create Room and can still be changed per stream.</p></div>
                   </header>
                   {!identity ? (
                     <p className="hint">Add a sign-in before saving account-level room defaults.</p>
@@ -440,7 +438,7 @@ export function AccountPage() {
 
               {section === 'connections' ? (
                 <section className="mcc-connections-zone" id="connections">
-                  <header><span className="mcc-coordinate">Linked sign-ins</span><h2>One identity, multiple ways back in.</h2><p>Every sign-in below opens this same Holler account{overview ? `, @${overview.account.handle}` : ''}. Adding one, or changing which one names you, never moves your link or your room.</p></header>
+                  <header><h2>One identity, multiple ways back in.</h2><p>Every sign-in below opens this same Holler account{overview ? `, @${overview.account.handle}` : ''}. Adding one, or changing which one names you, never moves your link or your room.</p></header>
                   {linkNotice ? <p id="link-notice" role={linkNotice.ok ? 'status' : 'alert'} className="hint">{linkNotice.text}</p> : null}
                   {/* Make primary and Disconnect report here, where they were
                       clicked; the note used to show only under Room defaults. */}

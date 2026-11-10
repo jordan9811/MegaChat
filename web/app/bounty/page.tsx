@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { BountyProgram } from '@/components/bounty/bounty-program'
+import { SiteTour } from '@/components/site-tour'
 import './bounty.css'
 
 export const dynamic = 'force-dynamic'
@@ -14,6 +15,7 @@ export default function BountyPage() {
   return (
     <div>
       <BountyProgram />
+      <SiteTour chapter="bounty" />
     </div>
   )
 }

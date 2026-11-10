@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Booth } from '@/components/booth/booth'
+import { SiteTour } from '@/components/site-tour'
 import { contactUrl } from '@/components/site-footer'
 import { loadBountyPools, loadClaimedAirings, loadInitialRooms, loadRecentAirings } from '@/lib/rooms-server'
 import { BOARD_RECENT_CAP } from '@/lib/room-browse'
@@ -21,12 +22,15 @@ export default async function Page() {
     loadClaimedAirings(),
   ])
   return (
-    <Booth
-      initialRooms={rooms}
-      initialPools={pools}
-      initialAirings={airings}
-      initialClaimed={claimed}
-      contactHref={contactUrl()}
-    />
+    <>
+      <Booth
+        initialRooms={rooms}
+        initialPools={pools}
+        initialAirings={airings}
+        initialClaimed={claimed}
+        contactHref={contactUrl()}
+      />
+      <SiteTour chapter="rooms" />
+    </>
   )
 }

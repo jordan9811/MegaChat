@@ -1194,3 +1194,312 @@ button.lv:focus-visible { outline: 2px solid var(--hl-strap-hi); outline-offset:
 .itip[data-open=true] .itip-pop { display: block; opacity: 1; transform: translate(var(--itip-x), 0); cursor: pointer; }
 @starting-style { .itip[data-open=true] .itip-pop { opacity: 0; transform: translate(var(--itip-x), 4px); } }
 @media (prefers-reduced-motion: reduce) { .itip-pop { transition: none; } }
+
+/* ─── Demo tour (lib/site-tour.ts) ─────────────────────────────────────
+   The demo room only. A frosted bubble that points at one control at a time,
+   glowing in that step's feature colour, and a pulse ring on the control.
+   Both are fixed to the viewport (appended to <body>) and placed by the
+   script: never over the control, never past the 16px gutter. Motion is the
+   house curve, transform and opacity only. */
+.site-tour,
+.site-tour-ring {
+  --tour-c: var(--f-holler);
+  --tour-ink: var(--f-holler-ink);
+  --tour-on: var(--f-holler-on);
+}
+.site-tour[data-feature='callin'],
+.site-tour-ring[data-feature='callin'] {
+  --tour-c: var(--f-callin);
+  --tour-ink: var(--f-callin-ink);
+  --tour-on: var(--f-callin-on);
+}
+.site-tour[data-feature='rewards'],
+.site-tour-ring[data-feature='rewards'] {
+  --tour-c: var(--f-rewards);
+  --tour-ink: var(--f-rewards-ink);
+  --tour-on: var(--f-rewards-on);
+}
+/* Yellow: the fill stays the solid, the lines take the bounty line, which
+   holds up on a light page where the bare yellow would wash out. */
+.site-tour[data-feature='bounty'],
+.site-tour-ring[data-feature='bounty'] {
+  --tour-c: var(--f-bounty);
+  --tour-ink: var(--f-bounty-ink);
+  --tour-on: var(--f-bounty-on);
+  --tour-line: var(--f-bounty-ui);
+}
+
+.site-tour {
+  position: fixed;
+  z-index: 40;
+  top: 0;
+  left: 0;
+  width: 320px;
+  pointer-events: none;
+  transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s;
+}
+.site-tour.is-hidden,
+.site-tour-ring.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 180ms;
+}
+
+/* The mist the bubble sits in. */
+.site-tour-fog {
+  position: absolute;
+  inset: -18px -22px;
+  border-radius: 40px;
+  background:
+    radial-gradient(closest-side, color-mix(in srgb, var(--tour-c) 22%, transparent), transparent),
+    radial-gradient(closest-side, color-mix(in srgb, var(--hl-fg) 6%, transparent), transparent);
+  filter: blur(14px);
+  opacity: calc(0.35 + 0.65 * var(--hl-glow-k, 1));
+  pointer-events: none;
+}
+
+.site-tour-bubble {
+  position: relative;
+  padding: 12px 14px 10px;
+  border: 1px solid color-mix(in srgb, var(--tour-c) 45%, transparent);
+  border-radius: 14px;
+  background:
+    radial-gradient(130% 90% at 0% 0%, color-mix(in srgb, var(--tour-c) 16%, transparent), transparent 62%),
+    color-mix(in srgb, var(--hl-panel) 74%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--hl-fg) 10%, transparent),
+    0 14px 36px -14px rgb(0 0 0 / 0.5),
+    0 0 calc(30px * var(--hl-glow-k, 1)) color-mix(in srgb, var(--tour-c) 28%, transparent);
+  color: var(--hl-fg);
+  pointer-events: auto;
+  transform-origin: var(--arrow-x, 50%) 0;
+}
+.site-tour[data-place='above'] .site-tour-bubble { transform-origin: var(--arrow-x, 50%) 100%; }
+
+/* The pointer: a rotated square clipped to its outer half, so it never
+   doubles the bubble's tint. */
+.site-tour-arrow {
+  position: absolute;
+  top: -8px;
+  left: var(--arrow-x, 50%);
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border: 1px solid color-mix(in srgb, var(--tour-c) 45%, transparent);
+  border-right: 0;
+  border-bottom: 0;
+  border-top-left-radius: 3px;
+  background: color-mix(in srgb, var(--tour-c) 8%, color-mix(in srgb, var(--hl-panel) 74%, transparent));
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+  transform: rotate(45deg);
+}
+.site-tour[data-place='above'] .site-tour-arrow {
+  top: auto;
+  bottom: -8px;
+  border: 1px solid color-mix(in srgb, var(--tour-c) 45%, transparent);
+  border-top: 0;
+  border-left: 0;
+  border-radius: 0 0 3px 0;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+.site-tour-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.site-tour-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--tour-ink);
+}
+.site-tour-kicker i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tour-c);
+  box-shadow: 0 0 calc(8px * var(--hl-glow-k, 1)) var(--tour-c);
+}
+.site-tour-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--hl-muted);
+  white-space: nowrap;
+}
+/* Where in the whole tour: a square per chapter, the board key's shape. */
+.site-tour-pips {
+  display: inline-flex;
+  gap: 3px;
+}
+.site-tour-pips i {
+  width: 5px;
+  height: 5px;
+  background: var(--hl-line-2);
+}
+.site-tour-pips i.is-past { background: color-mix(in srgb, var(--tour-c) 45%, transparent); }
+.site-tour-pips i.is-now { background: var(--tour-c); }
+
+.site-tour-text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.site-tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+}
+.site-tour-skip,
+.site-tour-alt,
+.site-tour-next,
+.site-tour-replay {
+  font: inherit;
+  cursor: pointer;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), opacity 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.site-tour-skip {
+  padding: 6px 2px;
+  border: 0;
+  background: none;
+  color: var(--hl-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.site-tour-skip[hidden],
+.site-tour-alt[hidden] { display: none; }
+/* A second way on (the signed-out account's Sign in): beside Next. */
+.site-tour-alt {
+  margin-left: auto;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--tour-line, var(--tour-c)) 60%, transparent);
+  border-radius: 8px;
+  background: none;
+  color: var(--hl-fg);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.site-tour-alt:not([hidden]) + .site-tour-next { margin-left: 0; }
+.site-tour-next {
+  margin-left: auto;
+  padding: 6px 14px;
+  border: 1px solid var(--tour-c);
+  border-radius: 8px;
+  background: var(--tour-c);
+  color: var(--tour-on);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.site-tour-skip:focus-visible,
+.site-tour-alt:focus-visible,
+.site-tour-next:focus-visible,
+.site-tour-replay:focus-visible {
+  outline: 2px solid var(--tour-c, var(--hl-strap));
+  outline-offset: 2px;
+}
+.site-tour-next:active,
+.site-tour-skip:active,
+.site-tour-alt:active,
+.site-tour-replay:active { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) {
+  .site-tour-skip:hover { color: var(--hl-fg); }
+  .site-tour-next:hover { transform: translateY(-1px); }
+}
+
+/* A new step: the bubble rises out of its pointer. */
+.site-tour.is-in .site-tour-bubble,
+.site-tour.is-in .site-tour-fog {
+  animation: siteTourIn 240ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.site-tour[data-place='above'].is-in .site-tour-bubble,
+.site-tour[data-place='above'].is-in .site-tour-fog { animation-name: siteTourInAbove; }
+@keyframes siteTourIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+}
+@keyframes siteTourInAbove {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+}
+
+/* The ring on the control: a steady outline and a soft pulse beyond it. */
+.site-tour-ring {
+  position: fixed;
+  z-index: 39;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--tour-line, var(--tour-c)) 75%, transparent),
+    0 0 calc(18px * var(--hl-glow-k, 1)) color-mix(in srgb, var(--tour-c) 40%, transparent);
+  transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s;
+}
+.site-tour-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 2px var(--tour-line, var(--tour-c));
+  animation: siteTourPulse 1800ms cubic-bezier(0.23, 1, 0.32, 1) infinite;
+}
+@keyframes siteTourPulse {
+  0% { opacity: 0.7; transform: scale(1); }
+  70%, 100% { opacity: 0; transform: scale(var(--tour-sx, 1.05), var(--tour-sy, 1.2)); }
+}
+
+/* "Show me around": brings a skipped tour back (room strip). */
+.site-tour-replay {
+  margin-left: auto;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--hl-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--hl-muted) 45%, transparent);
+  text-underline-offset: 3px;
+}
+.site-tour-replay[hidden] { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .site-tour-replay:hover { color: var(--hl-fg); }
+}
+@media (max-width: 720px) {
+  .site-tour-replay { margin-left: 0; }
+}
+
+/* Reduced motion: no pulse and no slide; a step still fades in. */
+@media (prefers-reduced-motion: reduce) {
+  .site-tour-ring::after { animation: none; opacity: 0; }
+  .site-tour.is-in .site-tour-bubble,
+  .site-tour.is-in .site-tour-fog,
+  .site-tour[data-place='above'].is-in .site-tour-bubble,
+  .site-tour[data-place='above'].is-in .site-tour-fog { animation: siteTourFade 160ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+  .site-tour-next,
+  .site-tour-skip,
+  .site-tour-alt,
+  .site-tour-replay { transition: none; }
+  .site-tour-next:active,
+  .site-tour-skip:active,
+  .site-tour-alt:active,
+  .site-tour-replay:active,
+  .site-tour-next:hover { transform: none; }
+}
+@keyframes siteTourFade {
+  from { opacity: 0; }
+}
