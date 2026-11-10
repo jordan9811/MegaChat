@@ -8,7 +8,7 @@ The contracts a contributor or integrator meets, embedded **from source** by `np
 
 <!-- source:web/lib/api.ts#Room -->
 ```typescript
-// web/lib/api.ts — Room (lines 99–132), embedded by docs:sync
+// web/lib/api.ts — Room (lines 101–136), embedded by docs:sync
 export type Room = {
   id: string
   name: string
@@ -29,6 +29,8 @@ export type Room = {
   payoutAddress: string | null
   /** Twitch login embedded on the join page as the delayed spectate surface. */
   twitchChannel: string | null
+  /** Kick slug of the room's stream, for Follow my stream on Kick. */
+  kickChannel?: string | null
   /** Auto-adopt the owner's linked Twitch account. Default true. */
   twitchAuto: boolean
   letters: LettersConfig
@@ -50,7 +52,7 @@ export type Room = {
 
 <!-- source:web/lib/api.ts#RoomLayout -->
 ```typescript
-// web/lib/api.ts — RoomLayout (lines 90–97), embedded by docs:sync
+// web/lib/api.ts — RoomLayout (lines 92–99), embedded by docs:sync
 export type RoomLayout = {
   version: number
   origin: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
@@ -68,7 +70,7 @@ What `/api/seats` and the dashboard's session view carry per seat. `paymentMode`
 
 <!-- source:web/lib/api.ts#Seat -->
 ```typescript
-// web/lib/api.ts — Seat (lines 134–151), embedded by docs:sync
+// web/lib/api.ts — Seat (lines 138–155), embedded by docs:sync
 export type Seat = {
   id: string
   username: string
@@ -94,7 +96,7 @@ export type Seat = {
 
 <!-- source:web/lib/api.ts#RoomSession -->
 ```typescript
-// web/lib/api.ts — RoomSession (lines 153–164), embedded by docs:sync
+// web/lib/api.ts — RoomSession (lines 157–168), embedded by docs:sync
 export type RoomSession = {
   room: Room
   seats: Seat[]
@@ -130,7 +132,7 @@ export type RoomPoster =
 
 <!-- source:web/lib/api.ts#RecentAiring -->
 ```typescript
-// web/lib/api.ts — RecentAiring (lines 69–83), embedded by docs:sync
+// web/lib/api.ts — RecentAiring (lines 69–85), embedded by docs:sync
 export type RecentAiring = {
   airingId: string
   roomId: string
@@ -145,6 +147,8 @@ export type RecentAiring = {
   captureRef: string | null
   moments: { kind: string; label: string | null; offsetMs: number }[]
   poster: RoomPoster | null
+  /** The streamer's platform avatar; null = draw the monogram. */
+  avatarUrl?: string | null
 }
 ```
 <!-- /source -->
@@ -153,7 +157,7 @@ export type RecentAiring = {
 
 <!-- source:web/lib/api.ts#GuestEntry -->
 ```typescript
-// web/lib/api.ts — GuestEntry (lines 553–558), embedded by docs:sync
+// web/lib/api.ts — GuestEntry (lines 562–567), embedded by docs:sync
 export type GuestEntry = {
   handle: string
   addedAt: string
@@ -165,7 +169,7 @@ export type GuestEntry = {
 
 <!-- source:web/lib/api.ts#GuestList -->
 ```typescript
-// web/lib/api.ts — GuestList (lines 561–566), embedded by docs:sync
+// web/lib/api.ts — GuestList (lines 570–575), embedded by docs:sync
 export type GuestList = {
   enabled: boolean
   explicit: boolean | null
