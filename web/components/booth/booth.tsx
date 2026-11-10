@@ -16,7 +16,7 @@ import { LivenessBadge } from '@/components/liveness-badge'
 import { HollerMark } from '@/components/holler-mark'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { RecentRail } from './recent-rail'
-import { ClaimedPledges, ClaimedToggle } from './claimed-pledges'
+import { ClaimedPledges } from './claimed-pledges'
 import { HostFace } from './host-face'
 import { SiteFooter } from '@/components/site-footer'
 
@@ -382,7 +382,6 @@ export function Booth({
   const [pools, setPools] = useState<BountyPool[]>(initialPools)
   const [airings, setAirings] = useState<RecentAiring[]>(initialAirings)
   const [claimed, setClaimed] = useState<ClaimedAiring[]>(initialClaimed)
-  const [claimedOpen, setClaimedOpen] = useState(false)
   const [chip, setChip] = useState<ChipKey>('all')
   const [showAll, setShowAll] = useState(false)
 
@@ -557,14 +556,11 @@ export function Booth({
   // In the sparse strip, where the sections share one row side by side, it is
   // its own heading row under the strip — inside, it would split that row.
   const showClaimed = chip === 'all'
-  const toggleClaimed = () => setClaimedOpen((o) => !o)
-  const docked = showClaimed && !sparse && recentAirings.length > 0 && featuredList.length > 0
   const recentSection = recentAirings.length ? (
     <RecentRail
       key="recent"
       airings={recentAirings}
       span={recentAirings.length}
-      aside={docked ? <ClaimedToggle n={claimed.length} open={claimedOpen} onToggle={toggleClaimed} docked /> : undefined}
     />
   ) : null
   const roomsSection = (
@@ -590,10 +586,11 @@ export function Booth({
     </section>
   )
   const claimedSection = showClaimed ? (
-    <ClaimedPledges key="claimed" airings={claimed} open={claimedOpen} onToggle={toggleClaimed} docked={docked} />
+    <ClaimedPledges key="claimed" airings={claimed} />
   ) : null
   const sections = quiet ? [recentSection, roomsSection] : [roomsSection, recentSection]
-  const stacked = quiet ? [recentSection, claimedSection, roomsSection] : [roomsSection, recentSection, claimedSection]
+  // Claimed pledges always comes after the rooms.
+  const stacked = quiet ? [recentSection, roomsSection, claimedSection] : [roomsSection, recentSection, claimedSection]
 
   return (
     // No forced theme: the board follows next-themes' class on <html>, and

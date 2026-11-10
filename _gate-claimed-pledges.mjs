@@ -14,18 +14,17 @@
  *   C3  the replay with &only=bounty opens at the FIRST pledged clip and
  *       offers just the pledged clips; without it, the replay is unchanged
  *       (opens at the first Holler of any kind, every moment)
- *   B1  the board's Claimed pledges control is in the first HTML, CLOSED:
- *       the count, no cards — on a busy board docked on Recently aired's
- *       heading line, costing no height (the rooms start where they did)
- *   B2  opened, it shows the card: platform badge, "3 bounty clips", a link
- *       into the replay with &only=bounty
+ *   B1  the board's Claimed pledges section is in the first HTML: a heading
+ *       like Recently aired and Rooms, BELOW the rooms (owner, 2026-11-10)
+ *   B2  it shows the card: platform badge, "3 bounty clips", a link into the
+ *       replay with &only=bounty
  *   B3  that link opens the recording at the first pledged clip (20s before
  *       it), with one button per pledged clip; the second button seeks to
  *       the second clip
  *   B4  the Recently aired card for the same broadcast still opens at its
  *       first Holler of any kind (behaviour unchanged)
- *   E1  with no pledged clip aired anywhere (a quiet board): its own heading
- *       row, closed, count 0, and says nothing exists yet only once opened
+ *   E1  with no pledged clip aired anywhere: the heading alone, no cards and
+ *       no empty row held open
  *
  * `--old <file>` runs the same checks against another server entry (e.g.
  * `git show HEAD:server.js` written next to server.js) to show they fail
@@ -134,19 +133,17 @@ const replayState = (page) => page.evaluate(() => {
 });
 const timeOf = (src) => (/[?&]time=([^&]+)/.exec(src || '') || [])[1] || null;
 const claimedRow = (page) => page.evaluate(() => {
-  const btn = document.querySelector('button.mcr-claimed-toggle');
   const sec = document.querySelector('section.mcr-claimed');
-  const rail = document.querySelector('.mcr-recent-rail');
   const rooms = document.querySelector('.mcr-rooms');
-  return btn && sec ? {
-    expanded: btn.getAttribute('aria-expanded'),
-    docked: !!rail?.contains(btn),
-    count: btn.querySelector('.mcr-claimed-count')?.textContent || '',
+  const head = sec?.querySelector('h2');
+  return sec ? {
+    heading: head?.textContent || '',
     cards: [...sec.querySelectorAll('a.mcr-recent')].map((a) => ({ href: a.getAttribute('href'), text: a.textContent, pips: a.querySelectorAll('svg.mc-pip').length })),
-    empty: sec.querySelector('.mcr-claimed-empty')?.textContent || '',
+    grid: !!sec.querySelector('.mcr-recent-grid'),
+    // Below the rooms: the section starts under the rooms' bottom edge.
+    belowRooms: rooms ? sec.getBoundingClientRect().top >= rooms.getBoundingClientRect().bottom - 1 : null,
     rowH: Math.round(sec.getBoundingClientRect().height),
-    // Where the rooms start, below the rail: what the closed control may not move.
-    gap: rail && rooms ? Math.round(rooms.getBoundingClientRect().top - rail.getBoundingClientRect().bottom) : null,
+    headH: head ? Math.round(head.getBoundingClientRect().height) : null,
   } : null;
 });
 
@@ -180,17 +177,16 @@ try {
 
   // ── B1–B4: the board, in a browser ───────────────────────────────────────
   const html = await (await fetch(`${APP}/app`)).text();
-  ok('B1 the Claimed pledges control is in the first HTML', /mcr-claimed-toggle/.test(html) && /Claimed pledges/.test(html));
+  ok('B1 the Claimed pledges section is in the first HTML', /mcr-claimed/.test(html) && /Claimed pledges/.test(html));
   let page = await newPage();
   await page.goto(`${APP}/app`, { waitUntil: 'networkidle2', timeout: 60000 });
   let row = await claimedRow(page);
-  ok('B1 ...closed, with the count and no cards, docked on the Recently aired line at no height (rooms 16px under the rail, as before)',
-    !!row && row.expanded === 'false' && row.count === '1' && row.cards.length === 0 && row.docked && row.rowH === 0 && row.gap === 16, JSON.stringify(row));
-  await page.click('button.mcr-claimed-toggle');
+  ok('B1 ...a "Claimed pledges" heading like Recently aired and Rooms, below the rooms',
+    !!row && row.heading === 'Claimed pledges' && row.belowRooms === true, JSON.stringify(row));
   row = await until(async () => { const r = await claimedRow(page); return r?.cards.length ? r : null; }, 5000) || await claimedRow(page);
   const card = row?.cards[0];
-  ok('B2 opened, the card: a platform badge, "3 bounty clips", a link into the replay with &only=bounty',
-    row?.expanded === 'true' && row.cards.length === 1 && card.pips >= 1 && /3 bounty clips/.test(card.text) && card.href.includes(`replay=${A}&only=bounty`),
+  ok('B2 the card: a platform badge, "3 bounty clips", a link into the replay with &only=bounty',
+    row?.cards.length === 1 && card.pips >= 1 && /3 bounty clips/.test(card.text) && card.href.includes(`replay=${A}&only=bounty`),
     JSON.stringify(card || row));
   const recentHref = await page.evaluate((id) => [...document.querySelectorAll('.mcr-recent-rail a.mcr-recent')].map((x) => x.getAttribute('href')).find((h) => h.includes(id)) || null, A);
   await page.close();
@@ -233,12 +229,9 @@ try {
   srv = await startGateServer({ port: PORT, label: 'claimed-empty', dataDir: emptyDir, ...(args ? { args } : {}), env: { KEEP_ORPHAN_ROOMS: 'true' } });
   page = await newPage();
   await page.goto(`${APP}/app`, { waitUntil: 'networkidle2', timeout: 60000 });
-  const closed = await claimedRow(page);
-  await page.click('button.mcr-claimed-toggle').catch(() => {});
-  const opened = await until(async () => { const r = await claimedRow(page); return r?.empty ? r : null; }, 5000) || await claimedRow(page);
-  ok('E1 nothing pledged aired (quiet board): its own heading row, closed, count 0, silent until opened',
-    !!closed && !closed.docked && closed.expanded === 'false' && closed.count === '0' && !closed.empty && closed.cards.length === 0 && closed.rowH > 0 && closed.rowH < 30, JSON.stringify(closed));
-  ok('E1 ...and opened, it says nothing exists yet', !!opened && opened.expanded === 'true' && /No claimed pledges/.test(opened.empty), JSON.stringify(opened));
+  const empty = await claimedRow(page);
+  ok('E1 nothing pledged aired: the heading alone, below the rooms, no cards and no empty row held open',
+    !!empty && empty.heading === 'Claimed pledges' && empty.belowRooms === true && empty.cards.length === 0 && !empty.grid && empty.rowH <= (empty.headH || 0) + 2, JSON.stringify(empty));
   await page.close();
 } catch (e) {
   fail++;
