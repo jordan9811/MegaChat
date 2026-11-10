@@ -1,0 +1,407 @@
+/* Roadmap: one horizontal track (components/roadmap-timeline.tsx).
+   Four tiers left to right on a rail, a node per tier, the items as cards
+   under each node. Every colour is a Holler token (app/globals.css), so the
+   page follows light/dark and the V1/V2 looks without its own theme rules,
+   except the corner radius V2 softens (end of file).
+
+   Tier hues, from the owner's old wording ("green ships next, amber after
+   that, purple is the big swing", purple now the strap azure):
+     --t-hue  the rail, the node, the card's edge (the -ui token: hue in dark,
+              a deep ink in light so pale green and yellow still show)
+     --t-ink  small text in that colour, >= 4.5:1 in both themes */
+
+.rm {
+  --rm-ease: cubic-bezier(.23, 1, .32, 1);
+  --rm-gap: 20px;
+  margin-top: 40px;
+}
+
+.rm .is-shipped {
+  --t-hue: var(--hl-fg);
+  --t-ink: var(--hl-fg);
+  --t-rail: color-mix(in srgb, var(--hl-fg) 62%, transparent);
+  --t-edge: color-mix(in srgb, var(--hl-fg) 22%, transparent);
+}
+.rm .is-now {
+  --t-hue: var(--f-rewards-ui);
+  --t-ink: var(--f-rewards-ink);
+  --t-rail: var(--f-rewards-ui);
+  --t-edge: var(--f-rewards-ui);
+}
+.rm .is-next {
+  --t-hue: var(--f-bounty-ui);
+  --t-ink: var(--f-bounty-ink);
+  --t-rail: var(--f-bounty-ui);
+  --t-edge: var(--f-bounty-ui);
+}
+.rm .is-later {
+  --t-hue: var(--hl-strap-hi);
+  --t-ink: color-mix(in srgb, var(--hl-strap-hi) 72%, var(--hl-fg));
+  --t-rail: var(--hl-strap-hi);
+  --t-edge: var(--hl-strap-hi);
+}
+/* in light strap-hi is already a deep ink (9:1), no lift needed */
+.light .rm .is-later {
+  --t-ink: var(--hl-strap-hi);
+}
+
+/* ── the scroller: the track scrolls sideways, never the page ── */
+.rm-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hl-line-2) transparent;
+}
+.rm-scroll:focus-visible {
+  outline: 2px solid var(--hl-strap-hi);
+  outline-offset: 4px;
+}
+
+.rm-track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(280px, 1fr);
+  align-items: start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rm-tier {
+  min-width: 0;
+  padding-right: var(--rm-gap);
+  scroll-snap-align: start;
+}
+.rm-tier:last-child {
+  padding-right: 0;
+}
+
+/* ── the rail: one line across every tier (each segment runs the full column,
+   gap included, so they meet), a node at the start of each ── */
+.rm-rail {
+  position: relative;
+  display: block;
+  height: 24px;
+  margin-right: calc(-1 * var(--rm-gap));
+  margin-bottom: 18px;
+}
+.rm-tier:last-child .rm-rail {
+  margin-right: 0;
+}
+.rm-rail::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--t-rail);
+}
+/* the road not yet built is dashed */
+.is-next .rm-rail::before,
+.is-later .rm-rail::before {
+  background: repeating-linear-gradient(90deg, var(--t-rail) 0 9px, transparent 9px 16px);
+}
+/* …and fades out at the far end */
+.is-later .rm-rail::before {
+  -webkit-mask-image: linear-gradient(90deg, #000 55%, transparent);
+  mask-image: linear-gradient(90deg, #000 55%, transparent);
+}
+
+.rm-node {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border: 2px solid var(--t-hue);
+  border-radius: 50%;
+  background: var(--hl-bg);
+}
+.is-shipped .rm-node {
+  background: var(--t-hue);
+}
+/* the current position: filled, with a halo */
+.is-now .rm-node {
+  width: 18px;
+  height: 18px;
+  margin-top: -9px;
+  background: var(--t-hue);
+  box-shadow:
+    0 0 0 4px var(--hl-bg),
+    0 0 0 6px color-mix(in srgb, var(--t-hue) 45%, transparent);
+}
+
+.rm-here {
+  position: absolute;
+  z-index: 1;
+  left: 30px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--t-hue) 55%, transparent);
+  border-radius: 999px;
+  background: var(--hl-panel);
+  color: var(--t-ink);
+  font: 700 12px/1.2 var(--font-ui), system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+/* ── tier heading ── */
+.rm-head h2 {
+  margin: 0;
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--hl-fg);
+}
+.rm-head p {
+  margin: 5px 0 0;
+  color: var(--hl-muted);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+.rm-count {
+  color: var(--hl-dim);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the cards ── */
+.rm-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rm-item {
+  position: relative;
+  border: 1px solid var(--hl-line);
+  border-radius: 3px;
+  background: var(--hl-panel);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  transition: transform 180ms var(--rm-ease);
+}
+/* the tier's colour as the card's edge */
+.rm-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--t-edge);
+}
+.rm-item[open] {
+  border-color: color-mix(in srgb, var(--t-hue) 40%, var(--hl-line));
+}
+
+.rm-item > summary {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  min-height: 48px;
+  padding: 12px 14px 12px 17px;
+  cursor: pointer;
+  list-style: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.rm-item > summary::-webkit-details-marker,
+.rm-earlier > summary::-webkit-details-marker {
+  display: none;
+}
+.rm-item h3 {
+  margin: 0;
+  color: var(--hl-fg);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+/* shipped: a small check */
+.rm-check {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--hl-fg);
+  color: var(--hl-bg);
+}
+/* not yet: a small node in the tier's colour, hollow until it's being built */
+.rm-tick {
+  justify-self: center;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--t-hue);
+  border-radius: 50%;
+}
+.is-now .rm-tick {
+  background: var(--t-hue);
+}
+
+/* the chevron, as How it works draws it */
+.rm-chev {
+  width: 8px;
+  height: 8px;
+  margin-right: 2px;
+  border-right: 1.5px solid var(--hl-dim);
+  border-bottom: 1.5px solid var(--hl-dim);
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 200ms var(--rm-ease);
+}
+details[open] > summary > .rm-chev {
+  transform: rotate(-135deg) translateY(-2px);
+}
+
+.rm-more {
+  padding: 0 16px 15px 46px;
+}
+.rm-item[open] > .rm-more {
+  animation: rm-open 220ms var(--rm-ease);
+}
+@keyframes rm-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.rm-more p {
+  margin: 0;
+  color: var(--hl-muted);
+  font-size: 13.5px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.rm-more a {
+  color: var(--t-ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.rm-when {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--hl-dim);
+  font: 400 12px/1.4 var(--font-code), ui-monospace, monospace;
+}
+.rm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 11px;
+}
+
+/* ── the shipped column's earlier road, folded ── */
+.rm-earlier {
+  margin-top: 8px;
+}
+.rm-earlier > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 14px 10px 17px;
+  border: 1px dashed var(--hl-line-2);
+  border-radius: 3px;
+  color: var(--hl-muted);
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.rm-earlier > summary .rm-chev {
+  margin-left: auto;
+}
+.rm-earlier[open] > summary {
+  color: var(--hl-fg);
+}
+.rm-earlier > .rm-items {
+  margin-top: 8px;
+}
+.rm-earlier[open] > .rm-items {
+  animation: rm-open 220ms var(--rm-ease);
+}
+
+.rm :is(.rm-item, .rm-earlier) > summary:focus-visible {
+  outline: 2px solid var(--hl-strap-hi);
+  outline-offset: -2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rm-item:hover {
+    transform: translateY(-1px);
+    border-color: var(--hl-line-2);
+  }
+  .rm-item[open]:hover {
+    border-color: color-mix(in srgb, var(--t-hue) 55%, var(--hl-line));
+  }
+  .rm-item > summary:hover h3 {
+    text-decoration: underline;
+    text-decoration-color: var(--hl-line-2);
+    text-underline-offset: 3px;
+  }
+  .rm-earlier > summary:hover {
+    color: var(--hl-fg);
+    border-color: var(--hl-fg);
+  }
+}
+
+/* ── phones: one tier per swipe, the next one peeking; the scroller runs to
+   the screen edges and snaps to the page gutter ── */
+@media (max-width: 640px) {
+  .rm {
+    --rm-gap: 16px;
+    margin-top: 28px;
+  }
+  .rm-scroll {
+    margin-inline: -16px;
+    padding-inline: 16px;
+    scroll-padding-inline: 16px;
+  }
+  .rm-track {
+    grid-auto-columns: 84%;
+  }
+  .rm-tier:last-child {
+    padding-right: 16px;
+  }
+  .rm-head h2 {
+    font-size: 24px;
+  }
+}
+
+/* V2 (Retro, the default look) softens corners, like its other cards */
+html:not([data-style='classic']) .rm-item,
+html:not([data-style='classic']) .rm-earlier > summary {
+  border-radius: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rm-item,
+  .rm-chev {
+    transition: none;
+  }
+  .rm-item:hover {
+    transform: none;
+  }
+  .rm-item[open] > .rm-more,
+  .rm-earlier[open] > .rm-items {
+    animation: none;
+  }
+}

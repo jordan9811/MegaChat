@@ -3,11 +3,12 @@ import { SiteHeader } from '@/components/site-header'
 import { GlitchBackground } from '@/components/glitch-background'
 import { SiteFooter, contactUrl } from '@/components/site-footer'
 import { RoadmapTimeline } from '@/components/roadmap-timeline'
+import './roadmap.css'
 
 export const metadata: Metadata = {
   title: 'Roadmap — Holler',
   description:
-    'What ships next on Holler — LiveKit hardening, Twitch Drops OAuth, live AI moderation, the stinger marketplace — and the journey that got us here.',
+    'What has shipped on Holler, what is being built now, and what comes next: real-money bounties, Hollers by the second, Follow my stream, and the road to launch.',
 }
 
 // CONTACT_URL and JOURNEY_TWEET_URL are read at request time so they can
@@ -23,23 +24,17 @@ export default function RoadmapPage() {
       <div className="relative">
         <GlitchBackground />
 
-        <main className="relative z-10 mx-auto max-w-4xl px-6 pb-16 pt-16 md:pt-20">
-          {/* Eyebrow in Space Mono, headline in Archivo: the site's readout
-              and display faces. */}
-          <p
-            className="reveal font-[family-name:var(--font-code)] text-[11px] font-normal uppercase tracking-[.14em] text-[color-mix(in_srgb,var(--hl-strap-hi)_72%,var(--hl-fg))]"
-            style={{ ['--reveal-delay' as string]: '0.05s' }}
-          >
-            Where this is going
-          </p>
+        {/* min-w-0 on the column so the track's own scroller, not the page,
+            takes the overflow on a phone. No kicker over the heading
+            (owner, 2026-11-10). */}
+        <main className="rm-page relative z-10 mx-auto min-w-0 max-w-[1400px] px-4 pb-16 pt-14 sm:px-6 md:pt-20">
           <h1
-            className="reveal mt-2 font-[family-name:var(--font-display)] text-4xl font-[800] leading-tight tracking-[-0.02em] text-hl-fg md:text-6xl"
-            style={{ ['--reveal-delay' as string]: '0.12s' }}
+            className="reveal font-[family-name:var(--font-display)] text-4xl font-[800] leading-tight tracking-[-0.02em] text-hl-fg md:text-6xl"
+            style={{ ['--reveal-delay' as string]: '0.05s' }}
           >
             Roadmap
           </h1>
-          {/* No intro line: the NEAR TERM / MID TERM / AMBITIOUS chips under
-              the switch already name the tiers, in their real colours. */}
+
           <RoadmapTimeline journeyTweetUrl={journeyTweetUrl} />
 
           {/* CTA */}
