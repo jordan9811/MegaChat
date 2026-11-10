@@ -608,3 +608,12 @@ body:has(.mc-bounty) {
   .mcb-hero .mcb-create-bounty { padding: 18px 16px; }
   .mcb-create-bounty form { grid-template-columns: 1fr; }
 }
+
+/* Real platform logos in their own colours now (owner, 2026-11-09); the
+   badge draws its own plate (platform-pip.tsx). */
+.mc-bounty .mcb-platform { background: none; }
+.mc-bounty .mcb-platform svg { width: 20px; height: 20px; }
+
+/* The ask reads as one line on a wide screen (owner, 2026-11-09). */
+.mcb-hero > div > p.mcb-hero-ask { max-width: none; }
+@media (min-width: 1100px) { .mcb-hero > div > p.mcb-hero-ask { white-space: nowrap; } }

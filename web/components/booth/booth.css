@@ -1562,7 +1562,7 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 
 
 /* The streamer's face beside the handle (booth.tsx HostFace). */
-.mcr-face {
+.mcr-hostface {
   flex: none;
   width: 18px;
   height: 18px;
@@ -1570,19 +1570,19 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
   object-fit: cover;
   background: var(--hl-panel-2);
 }
-.mcr-face.is-mono {
+.mcr-hostface.is-mono {
   display: inline-grid;
   place-items: center;
   color: var(--hl-muted);
   font: 700 10px/1 var(--font-code), ui-monospace, monospace;
 }
-.mcr-feat-body .mcr-face { width: 22px; height: 22px; }
+.mcr-feat-body .mcr-hostface { width: 22px; height: 22px; }
 .mcr-recent-meta .mcr-host { margin: 2px 0 1px; }
 /* Squares read a touch bigger on the featured picture. */
 .mcr-feat .mcr-sq i { width: 12px; height: 12px; }
 
 .mcr-recent-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 0 5px; }
-.mcr-recent-sub .mcr-face { width: 14px; height: 14px; font-size: 8px; }
+.mcr-recent-sub .mcr-hostface { width: 14px; height: 14px; font-size: 8px; }
 
 /* Name and host share one row on tiles: a second line pushed the first room
    below the fold (_gate-board-fold F4). The name truncates; the host keeps its size. */
@@ -1590,4 +1590,9 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 .mcr-card-body .mcr-name { flex: 1; min-width: 0; }
 .mcr-card-body .mcr-host { flex: none; margin: 0; }
 .mcr-card-body { padding-block: 8px; }
-.mcr-feat-body .mcr-face { width: 18px; height: 18px; }
+.mcr-feat-body .mcr-hostface { width: 18px; height: 18px; }
+
+/* Platform badges draw their own plate in the brand colour (platform-pip.tsx). */
+.mcr-face b { width: 18px; height: 18px; background: none; }
+.mcr-face b svg { width: 18px; height: 18px; }
+.mcr-host-pip svg { width: 14px; height: 14px; }

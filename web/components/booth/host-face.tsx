@@ -4,8 +4,8 @@
 export function HostFace({ url, name }: { url: string | null; name: string }) {
   return url ? (
     // eslint-disable-next-line @next/next/no-img-element
-    <img className="mcr-face" src={url} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
+    <img className="mcr-hostface" src={url} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
   ) : (
-    <span className="mcr-face is-mono" aria-hidden="true">{(name || '?').replace(/^@/, '').trim().charAt(0).toUpperCase() || '?'}</span>
+    <span className="mcr-hostface is-mono" aria-hidden="true">{(name || '?').replace(/^@/, '').trim().charAt(0).toUpperCase() || '?'}</span>
   )
 }

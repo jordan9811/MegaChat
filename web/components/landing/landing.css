@@ -996,3 +996,7 @@ body:has(.mc-landing) {
 
 /* Campaign strip: the create strip's twin, washed in the rewards green. */
 .mcl-campaign-strip { background: radial-gradient(circle at 12% 30%, color-mix(in srgb, var(--f-rewards) var(--mcl-wash), transparent), transparent 40%); }
+
+/* Platform badges draw their own plate in the brand colour (platform-pip.tsx). */
+.mcl-thumb b { width: 18px; height: 18px; background: none; }
+.mcl-thumb b svg { width: 18px; height: 18px; }

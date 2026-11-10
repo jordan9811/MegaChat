@@ -2504,3 +2504,13 @@ previous commit.
   in `followTick` and `kickChannel` from `followsBroadcast`.
 - Gate: `_gate-kick-follow.mjs` 7/0 against a fake Kick API (the previous
   loop fails all 7); `_gate-follow-stream` 46/0.
+
+## 2026-11-09 — Platform badges in their real logos and colours
+
+- **Every platform badge (bounty board, rooms board, landing) is the
+  platform's own logo on its brand colour**: Twitch purple, Kick green,
+  YouTube red, X black, Rumble green, pump.fun's pill. Owner: "easier to
+  see, quicker to know". This reverses the earlier call to draw them in the
+  text colour so a brand hue would not collide with the feature colours.
+  One component, `web/components/platform-pip.tsx`, draws its own plate.
+  Undo: restore the single-colour glyphs there.
