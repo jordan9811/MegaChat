@@ -39,6 +39,7 @@ import { getAccount } from './accounts.js';
 import { loginProvingHandle } from './bounty-auth.js';
 import { handleKey } from './bounty-store.js';
 import { getStreamsByLogins, getChannelTitlesByLogins, twitchApiConfigured, helix } from './twitch-api.js';
+import { getChannelBySlug as getKickChannel, kickApiConfigured } from './kick-api.js';
 import { resolveAvatars, avatarKey } from './platform-avatars.js';
 import { openAiring, openAiringFor, closeAiring, addMoment, recentAirings, listAirings, allAiringIds, airingRefs, attachRecording, markRestart, momentRefs, pruneToRooms, recordOverlaySample } from './airings-store.js';
 import { classify as classifyLiveness, accumulate as accumulateOverlay, publicLiveness } from './liveness.js';
@@ -3632,7 +3633,18 @@ function freshFollow(roomId) {
 }
 
 function followsBroadcast(cfg) {
-  return !!(cfg && cfg.twitchAuto !== false && cfg.twitchChannel);
+  return !!(cfg && cfg.twitchAuto !== false && (cfg.twitchChannel || cfg.kickChannel));
+}
+
+/** Which stream a following room follows: Twitch when it names a channel,
+ *  else Kick. key is what the follow loop looks the answer up by. */
+function followTarget(cfg) {
+  if (cfg?.twitchChannel) {
+    const login = String(cfg.twitchChannel).trim().replace(/^@/, '').toLowerCase();
+    return { platform: 'twitch', channel: login, key: login };
+  }
+  const slug = String(cfg?.kickChannel || '').trim().replace(/^@/, '').toLowerCase();
+  return { platform: 'kick', channel: slug, key: 'kick:' + slug };
 }
 
 /** Discovery hides a following room as soon as its broadcast is confirmed dark.
@@ -3723,6 +3735,7 @@ function followStatus(roomId) {
     following,
     state: !st ? null : st.live ? 'live' : st.endedLive ? 'ended' : 'waiting',
     title: following ? followTitle.get(roomId) || null : null,
+    platform: following ? followTarget(cfg).platform : null,
     closesAt: plan ? new Date(Math.max(plan.at, now)).toISOString() : null,
   };
 }
@@ -3774,18 +3787,34 @@ async function followTick() {
     else followState.delete(r.id);
   }
   if (!following.length) return;
-  const logins = following.map((r) => String(r.config.twitchChannel).trim().replace(/^@/, '').toLowerCase());
-  const streams = await getStreamsByLogins(logins);
-  if (!streams) return; // could not ask — change nothing
+  const twitchRooms = following.filter((r) => followTarget(r.config).platform === 'twitch');
+  const kickRooms = following.filter((r) => followTarget(r.config).platform === 'kick');
+  const streams = new Map();
+  if (twitchRooms.length) {
+    const tw = await getStreamsByLogins(twitchRooms.map((r) => followTarget(r.config).channel));
+    // null: could not ask Twitch — its rooms change nothing this poll.
+    if (tw) for (const [l, st] of tw) streams.set(l, st);
+  }
+  // Kick answers one channel per call; a handful of following rooms at most.
+  for (const r of kickRooms) {
+    const t = followTarget(r.config);
+    if (streams.has(t.key)) continue;
+    const ch = await getKickChannel(t.channel).catch(() => null);
+    // null: could not ask Kick — this room changes nothing this poll.
+    if (ch) streams.set(t.key, { live: !!ch.live, viewers: Number(ch.viewerCount) || 0, title: ch.title || '' });
+  }
+  if (!streams.size) return; // could not ask anyone — change nothing
   const liveByLogin = new Map([...streams].map(([l, st]) => [l, st.live]));
+  // Kick's channel row carries its title even offline: keep it for the nudge.
+  for (const r of kickRooms) { const st = streams.get(followTarget(r.config).key); if (st?.title && !st.live) followTitle.set(r.id, st.title); }
   // Offline rooms still offer the channel's title on the manage page (the
   // "On Twitch: … · Use this name" nudge): Twitch keeps the last title set.
   // Asked at most every TITLE_ASK_MS per room until known; the live poll
   // keeps it current from then on.
   {
-    const loginOf = (r) => String(r.config.twitchChannel).trim().replace(/^@/, '').toLowerCase();
+    const loginOf = (r) => followTarget(r.config).channel;
     const t0 = Date.now();
-    const due = following.filter((r) => !followTitle.has(r.id) && !liveByLogin.get(loginOf(r)) && !(titleAskedAt.get(r.id) > t0 - TITLE_ASK_MS));
+    const due = twitchRooms.filter((r) => !followTitle.has(r.id) && !liveByLogin.get(loginOf(r)) && !(titleAskedAt.get(r.id) > t0 - TITLE_ASK_MS));
     if (due.length) {
       for (const r of due) titleAskedAt.set(r.id, t0);
       const titles = await getChannelTitlesByLogins(due.map(loginOf)).catch(() => null);
@@ -3795,15 +3824,16 @@ async function followTick() {
 
   const now = Date.now();
   for (const r of following) { try {
-    const login = String(r.config.twitchChannel).trim().replace(/^@/, '').toLowerCase();
-    if (!liveByLogin.has(login)) continue;
-    const live = liveByLogin.get(login);
+    const target = followTarget(r.config);
+    const login = target.channel;
+    if (!liveByLogin.has(target.key)) continue;
+    const live = liveByLogin.get(target.key);
     const prev = followState.get(r.id);
 
     if (live) {
       // Viewers ride along from the same call: the board gives a big
       // streamer the big featured card (bigStreamViewers, with hysteresis).
-      const viewers = streams.get(login)?.viewers ?? 0;
+      const viewers = streams.get(target.key)?.viewers ?? 0;
       const threshold = bigStreamViewers();
       const big = prev?.big ? viewers >= threshold * BIG_STAYS_ABOVE : viewers >= threshold;
       followState.set(r.id, { live: true, offSince: null, viewers, big, at: now });
@@ -3811,7 +3841,7 @@ async function followTick() {
       // so the board and the Twitch directory say the same thing. Only a
       // real, changed title moves it; an empty title (Twitch sometimes sends
       // one for a second after going live) leaves the name alone.
-      const title = streams.get(login)?.title;
+      const title = streams.get(target.key)?.title;
       if (title) followTitle.set(r.id, title);
       // Compared through the store's own cut (by character): an emoji at the
       // 64th character neither splits nor reads as "changed" every tick (stores-10).
@@ -3825,7 +3855,7 @@ async function followTick() {
         // The airing records the BROADCAST, so it opens on the edge even when
         // the room was already active — otherwise a room the owner opened by
         // hand before going live would never get a record of the stream.
-        openAiring({ roomId: r.id, channel: login, resumeWithinMs: FOLLOW_OFF_CONFIRM_MS });
+        openAiring({ roomId: r.id, channel: login, platform: target.platform, resumeWithinMs: FOLLOW_OFF_CONFIRM_MS });
       }
       // One write for both: a rename on the rising edge used to rewrite
       // rooms.json twice in one tick (server-5).
@@ -3841,7 +3871,7 @@ async function followTick() {
       // Only for a room somebody signed in to own: a password-only room can
       // name any channel, and nothing it follows should fill the volume.
       const open = openAiringFor(r.id);
-      if (open && AIRING_POSTERS_ON && roomOwnerOf(r.id)) void snapshotLivePreview(open, login).catch(() => {});
+      if (open && AIRING_POSTERS_ON && roomOwnerOf(r.id) && target.platform === 'twitch') void snapshotLivePreview(open, login).catch(() => {});
       continue;
     }
 
@@ -4259,7 +4289,10 @@ app.get('/api/rooms/public', async (req, res) => {
       // probe's cache still says. Anything else keeps the probe, as before.
       twitchLive: cfg.twitchChannel
         ? (followLive ? followLive.live === true : twitchLiveCached(cfg.twitchChannel))
-        : false,
+        // A room following a Kick stream is on air when the follow loop saw
+        // it live (there is no Kick preview to gate, so this only lights the tag).
+        : !!(cfg.kickChannel && followsBroadcast(cfg) && freshFollow(r.id)?.live === true),
+      kickChannel: cfg.kickChannel || null,
       // Who is watching on Twitch right now, and whether that makes it a big
       // stream — the board's featured tier gives those the big card, two side
       // by side when two are live. Only for a proven channel (see
@@ -4355,7 +4388,7 @@ try {
   if (marked) console.log(`[airings] restart marked in ${marked} open airing(s) — their seats ended here`);
 }
 
-const followEnabled = process.env.FOLLOW_STREAM !== '0' && twitchApiConfigured();
+const followEnabled = process.env.FOLLOW_STREAM !== '0' && (twitchApiConfigured() || kickApiConfigured());
 if (followEnabled) {
   // Caught here: the first tick runs before nextApp.prepare() installs Next's
   // process handlers, and a rejected tick was an unhandled rejection (server-2).

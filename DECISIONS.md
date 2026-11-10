@@ -2490,3 +2490,17 @@ previous commit.
   setting can't keep refusing saves (Holler clips use the seat slots).
 - **"Send a test Holler" is one broadcast message**: no seat, no Holler record,
   no charge; refused while anything real is on screen.
+
+## 2026-11-09 — Follow my stream on Kick
+
+- **A room follows one stream: Twitch when it names a channel, else Kick**
+  (`followTarget`, `server.js`). Kick rooms open on live, read as ended when
+  the stream stops, light "on air" on the board, and offer the channel's
+  title as the name nudge ("On Kick: …"), the same rules as Twitch. Kick is
+  asked per channel through `kick-api.js` with the app credentials; one
+  platform being unreachable leaves only its rooms alone. The follow loop now
+  runs when either platform is configured. No Kick picture: the board and
+  room page show Holler's own art for Kick rooms. Undo: drop the Kick branch
+  in `followTick` and `kickChannel` from `followsBroadcast`.
+- Gate: `_gate-kick-follow.mjs` 7/0 against a fake Kick API (the previous
+  loop fails all 7); `_gate-follow-stream` 46/0.

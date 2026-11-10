@@ -625,6 +625,12 @@ export function setRoomHandle(roomId, rawHandle) {
 }
 
 /** Twitch login names: 3-25 chars, alphanumeric + underscore. Null if unset/bad. */
+export function sanitizeKickChannel(raw) {
+  if (raw == null) return null;
+  const name = String(raw).trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?kick\.com\//i, '').replace(/\/.*$/, '').toLowerCase();
+  return /^[a-z0-9_-]{3,25}$/.test(name) ? name : null;
+}
+
 export function sanitizeTwitchChannel(raw) {
   if (raw == null) return null;
   const name = String(raw).trim().replace(/^@/, '').toLowerCase();
@@ -694,6 +700,9 @@ export function resolveRoomConfig(roomId) {
     // the delayed "spectate" surface. null → no embed. (Additive field;
     // rooms.json is branch-shared, Arc branches simply ignore it.)
     twitchChannel: sanitizeTwitchChannel(cfg.twitchChannel),
+    // Kick slug of the room's stream, for Follow my stream on Kick. A room
+    // follows one stream: Twitch when it names one, else Kick.
+    kickChannel: sanitizeKickChannel(cfg.kickChannel),
     letters: resolveLetters(cfg),
     joinStream: resolveJoinStream(cfg),
     rewards: resolveRewards(cfg, defaults),

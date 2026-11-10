@@ -118,6 +118,8 @@ export type Room = {
   payoutAddress: string | null
   /** Twitch login embedded on the join page as the delayed spectate surface. */
   twitchChannel: string | null
+  /** Kick slug of the room's stream, for Follow my stream on Kick. */
+  kickChannel?: string | null
   /** Auto-adopt the owner's linked Twitch account. Default true. */
   twitchAuto: boolean
   letters: LettersConfig
@@ -169,8 +171,10 @@ export type FollowStatus = {
   following: boolean
   /** live: Twitch says live. waiting: open, stream not up yet. ended: the stream ended. null: no fresh answer. */
   state: 'live' | 'waiting' | 'ended' | null
-  /** The last stream title Twitch gave this boot. */
+  /** The last stream title the platform gave this boot. */
   title: string | null
+  /** Which stream the room follows. */
+  platform?: 'twitch' | 'kick' | null
   /** When the room closes on its own, or null when nothing will close it. */
   closesAt: string | null
 }
@@ -187,6 +191,7 @@ export type RoomConfigPatch = {
   paymentTokenAddress: string
   payoutAddress: string | null
   twitchChannel: string | null
+  kickChannel?: string | null
   twitchAuto: boolean
   transport: string
   stingerSounds: boolean

@@ -232,7 +232,6 @@ export default function HowItWorksPage() {
 
       <main className="mch-main">
         <section className="mch-hero">
-          <span className="mch-coordinate">The full signal path</span>
           <h1>How Holler works</h1>
           <p>Viewers can send a recorded Holler or take a live camera seat. Streamers control the room from one dashboard and one OBS source.</p>
           <ul className="mch-hero-tags" aria-label="Features">
@@ -244,7 +243,7 @@ export default function HowItWorksPage() {
 
         <section className="mch-tree-section">
           <div className="mch-flow-grid">
-            <FlowColumn kind="viewer" body="Enter a room, choose a format, and approve the maximum cost before anything starts." steps={VIEWER_STEPS} />
+            <FlowColumn kind="viewer" body="Enter a room, choose a format, and approve the maximum cost." steps={VIEWER_STEPS} />
             <FlowColumn kind="streamer" body="Create a room, set the terms, add the overlay, and run the broadcast." steps={STREAMER_STEPS} />
           </div>
           <div className="mch-tree-result">

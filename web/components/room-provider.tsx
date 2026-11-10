@@ -112,6 +112,10 @@ export type ConfigDraft = {
   unlisted: boolean
   payoutAddress: string
   twitchChannel: string
+  /** The Kick slug, when the room follows a Kick stream instead. */
+  kickChannel: string
+  /** Which platform Follow my stream watches. */
+  streamPlatform: 'twitch' | 'kick'
   twitchAuto: boolean
   passkeyTickPrice: string
   passkeyTickSeconds: string
@@ -167,6 +171,8 @@ const DEFAULT_DRAFT: ConfigDraft = {
   unlisted: false,
   payoutAddress: '',
   twitchChannel: '',
+  kickChannel: '',
+  streamPlatform: 'twitch',
   twitchAuto: true,
   passkeyTickPrice: '0.001',
   passkeyTickSeconds: '1',
@@ -303,7 +309,9 @@ function draftToConfig(draft: ConfigDraft, usdcAddress: string): RoomConfigPatch
   const out: RoomConfigPatch = {
     unlisted: draft.unlisted,
     payoutAddress: draft.payoutAddress.trim() || null,
-    twitchChannel: draft.twitchChannel.trim().replace(/^@/, '') || null,
+    // A room follows one stream: the platform picked in the follow row.
+    twitchChannel: draft.streamPlatform === 'twitch' ? draft.twitchChannel.trim().replace(/^@/, '') || null : null,
+    kickChannel: draft.streamPlatform === 'kick' ? draft.kickChannel.trim().replace(/^@/, '') || null : null,
     twitchAuto: draft.twitchAuto,
     passkeyTickPrice: draft.passkeyTickPrice,
     passkeyTickSeconds: Number(draft.passkeyTickSeconds) || 1,
@@ -370,6 +378,8 @@ function roomToDraft(room: Room, usdcAddress: string): ConfigDraft {
     unlisted: !!room.unlisted,
     payoutAddress: room.payoutAddress || '',
     twitchChannel: room.twitchChannel || '',
+    kickChannel: room.kickChannel || '',
+    streamPlatform: !room.twitchChannel && room.kickChannel ? 'kick' : 'twitch',
     twitchAuto: room.twitchAuto !== false,
     passkeyTickPrice: String(room.passkeyTickPrice),
     passkeyTickSeconds: String(room.passkeyTickSeconds),

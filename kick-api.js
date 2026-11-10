@@ -134,6 +134,9 @@ export async function getChannelBySlug(slug, { log = console } = {}) {
       live: !!live,
       viewerCount: Number(viewers) || 0,
       startedAt: stream.start_time || stream.startTime || null,
+      // The channel's title, kept by Kick after the stream ends: the room's
+      // name follows it the way it follows a Twitch title (server.js followTick).
+      title: typeof ch.stream_title === 'string' ? ch.stream_title.trim() : '',
       // Shape actually observed, for diagnostics — never any credential.
       _shape: { keys: Object.keys(ch), streamKeys: Object.keys(stream) },
     };
