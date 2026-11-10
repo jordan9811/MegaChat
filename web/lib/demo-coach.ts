@@ -1,6 +1,6 @@
 /**
  * The demo room's guided tour: a frosted speech bubble that points at one
- * control at a time ("Tap Send a Holler to record a 10-second clip"), with a
+ * control at a time ("Tap Send a Holler to record a clip"), with a
  * pulse ring on that control, a step count, Next and Skip.
  *
  * Demo room only: join-page.ts starts it when CONFIG.isDemo, and nowhere else.
@@ -50,7 +50,7 @@ export type DemoCoachHooks = {
 // The demo's play money, in the owner's words (2026-11-09). The earning and
 // spending are built elsewhere; these are copy only.
 const DEMO_EARN = '$1 a second, up to $10';
-const DEMO_HOLLER_10S = '50¢';
+const DEMO_HOLLER = '$0.05 a second';
 const DEMO_CALLIN = '$0.10 a second';
 
 const STORE_KEY = 'holler.demoTour';
@@ -122,7 +122,7 @@ function createCoach(h: DemoCoachHooks): () => void {
       return {
         target: btn,
         feature: 'holler',
-        text: `Tap Send a Holler to record a ${h.maxSeconds()}-second clip. 10 seconds costs ${DEMO_HOLLER_10S} of demo money.`,
+        text: `Tap Send a Holler to record a clip. It's ${DEMO_HOLLER} of demo money, so you pay only for the seconds you record.`,
       };
     },
   };
@@ -143,7 +143,7 @@ function createCoach(h: DemoCoachHooks): () => void {
       if (state === 'recording' && shown(rec)) {
         return { target: rec, feature: 'holler', text: `Recording. Tap Stop when you're done, or it stops at ${h.maxSeconds()}s.` };
       }
-      if (shown(send)) return { target: send, feature: 'holler', text: 'Like the take? Tap Send and it plays once on the stream.' };
+      if (shown(send)) return { target: send, feature: 'holler', text: 'Like the take? Send shows its price for the seconds you recorded. Tap it and it plays once on the stream.' };
       if (shown(redo)) return { target: redo, feature: 'holler', text: `Too short. Tap Re-record and go for at least ${h.minSeconds()} seconds.` };
       if (shown(rec)) return { target: rec, feature: 'holler', text: `Tap Record and say hi. You get up to ${h.maxSeconds()} seconds.` };
       return 'wait'; // "Discard this take?" is asking
@@ -187,6 +187,10 @@ function createCoach(h: DemoCoachHooks): () => void {
     ...(h.has.holler ? [holler, record] : []),
     ...(h.has.callin ? [callin, golive] : []),
   ];
+
+  function partOf(st: Step): string {
+    return st.id === 'record' ? 'holler' : st.id === 'golive' ? 'callin' : st.id;
+  }
 
   // ── Markup ────────────────────────────────────────────────────────────
   const root = document.createElement('div');
@@ -285,7 +289,10 @@ function createCoach(h: DemoCoachHooks): () => void {
     root.dataset.feature = v.feature;
     ring.dataset.feature = v.feature;
     labelEl.textContent = LABEL[v.feature];
-    countEl.textContent = `${idx + 1}/${steps.length}`;
+    // Counted in parts (earn, Holler, Call in): Record belongs to the Holler
+    // part and Go Live to Call in, so skipping a sub-step never skips a number.
+    const parts = [...new Set(steps.map(partOf))];
+    countEl.textContent = `${parts.indexOf(partOf(steps[idx])) + 1}/${parts.length}`;
     textEl.textContent = v.text;
     const more = !v.final && steps.slice(idx + 1).some((s) => s.ready());
     nextBtn.textContent = more ? 'Next' : 'Done';
