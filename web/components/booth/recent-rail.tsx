@@ -18,7 +18,8 @@
 
 import type { CSSProperties } from 'react'
 import type { RecentAiring } from '@/lib/api'
-import { FEATURE_LABELS, FeatureTag } from '@/components/feature-tag'
+import { FEATURE_LABELS } from '@/components/feature-tag'
+import { HostFace } from './host-face'
 
 function ago(ms: number): string {
   const mins = Math.max(1, Math.round((Date.now() - ms) / 60000))
@@ -85,10 +86,11 @@ function RecentCard({ a }: { a: RecentAiring }) {
         {/* On the picture, not under the title: a line of tags under it made
             every card 28px taller, and on a quiet night this row sits above
             the rooms, which are held to the fold (_gate-board-fold F4). */}
+        {/* What happened on it, as the board's colour squares (key above). */}
         {kinds.length ? (
-          <span className="mcr-recent-feats">
+          <span className="mcr-sq" role="img" aria-label={kinds.map((k) => FEATURE_LABELS[k]).join(', ')}>
             {kinds.map((k) => (
-              <FeatureTag key={k} kind={k} />
+              <i key={k} className={`is-${k}`} />
             ))}
           </span>
         ) : null}
@@ -98,7 +100,16 @@ function RecentCard({ a }: { a: RecentAiring }) {
         <strong>{a.name}</strong>
         {/* "11h ago" is computed on both sides of hydration; a minute boundary
             between them is not a bug worth a console error. */}
-        <small suppressHydrationWarning>
+        <small suppressHydrationWarning className="mcr-recent-sub">
+          {/* Whose stream, on the same line as when: a separate row made every
+              card taller and pushed the rooms below the fold (_gate-board-fold F4). */}
+          {a.handle || a.channel ? (
+            <>
+              <HostFace url={a.avatarUrl ?? null} name={a.handle || a.channel || a.name} />
+              <span className="mcr-host-h">@{a.handle || a.channel}</span>
+              {' · '}
+            </>
+          ) : null}
           {ago(a.endedAt)}
           {guests ? ` · ${guests} guest${guests === 1 ? '' : 's'} on camera` : ''}
         </small>

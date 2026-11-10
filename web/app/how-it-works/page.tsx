@@ -171,23 +171,33 @@ function FlowColumn({
       <ol>
       {steps.map((s, i) => (
         <li key={s.title}>
-          <span>{String(i + 1).padStart(2, '0')}</span>
-          <s.icon className="mch-step-icon" />
-          <div><h3>{s.title}</h3>{s.tags ? (
-            // spans, not li: .mch-flow li is the step's own grid row
-            <span className="mch-step-tags">
-              {s.tags.map((k) => <FeatureTag key={k} kind={k} />)}
-            </span>
-          ) : null}<p>
-            {s.simpleBody ? (
-              <>
-                <span className="adv-only">{s.body}</span>
-                <span className="simple-only">{s.simpleBody}</span>
-              </>
-            ) : (
-              s.body
-            )}
-          </p></div>
+          {/* Headings only until opened: the steps read as a list, and each
+              one unfolds its instructions on a tap (owner, 2026-11-09). */}
+          <details>
+            <summary>
+              <span className="mch-step-n">{String(i + 1).padStart(2, '0')}</span>
+              <h3>{s.title}</h3>
+              <span className="mch-step-chev" aria-hidden="true" />
+            </summary>
+            <div className="mch-step-more">
+              {s.tags ? (
+                // spans, not li: .mch-flow li is the step's own row
+                <span className="mch-step-tags">
+                  {s.tags.map((k) => <FeatureTag key={k} kind={k} />)}
+                </span>
+              ) : null}
+              <p>
+                {s.simpleBody ? (
+                  <>
+                    <span className="adv-only">{s.body}</span>
+                    <span className="simple-only">{s.simpleBody}</span>
+                  </>
+                ) : (
+                  s.body
+                )}
+              </p>
+            </div>
+          </details>
         </li>
       ))}
       </ol>

@@ -5120,3 +5120,16 @@ commit before); `_gate-dashboard-update`, `_gate-rooms-store`,
   rooms that pay credit.
 - **R3-5 — The join page header still wraps** at tablet widths like the others
   did, and keeps the old liveness wording.
+
+## 2026-11-09 — Board, landing and gate follow-ups
+
+- **HB2 — closed.** Free Hollers no longer need the payment meter
+  (`letters.js`: the `mppMeter` check moved onto the paid path), so a server
+  without payment keys takes free ones; `_gate-replay` 23/0,
+  `_gate-megachat-producer` 22/0, `_verify-min-duration` 10/0 (all three had
+  failed since startGateServer began blanking keys, 2026-10-24).
+- **BF1 — `_gate-board-fold` F10 (live): Rooms and Recently aired do not share
+  the one-row strip in the live scenario.** Not caused by today's board change
+  (tile counts and the strip rule are untouched); not run in round 3, so its
+  start date is unknown. F4 (first room above the fold) passes after the host
+  line moved onto the name row.

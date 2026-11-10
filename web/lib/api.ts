@@ -80,6 +80,8 @@ export type RecentAiring = {
   captureRef: string | null
   moments: { kind: string; label: string | null; offsetMs: number }[]
   poster: RoomPoster | null
+  /** The streamer's platform avatar; null = draw the monogram. */
+  avatarUrl?: string | null
 }
 
 /** Finished broadcasts with something to show. */
@@ -263,6 +265,8 @@ export type PublicRoomCard = {
   /** True only when that channel is actually live (server-verified) — Twitch
    *  serves a gray placeholder for offline channels, so gate on this. */
   twitchLive: boolean
+  /** The streamer's platform avatar; null = draw the monogram. */
+  avatarUrl?: string | null
   /** Watching on Twitch now, for a room that follows its broadcast; null when unknown. */
   viewers?: number | null
   /** Live with enough viewers to earn the big featured card (server's BOARD_BIG_VIEWERS). */

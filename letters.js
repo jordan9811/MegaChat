@@ -319,7 +319,6 @@ export function attachLetters(app, deps) {
   // ── 1. Paid submit (JSON; the mpp voucher rides this request) ─────────────
   app.post('/api/letter/submit', async (req, res) => {
     try {
-      if (!mppMeter) return res.status(503).json({ error: 'Payments unavailable on this server' });
       const roomId = normalizeRoomId((req.body && req.body.room) || req.query.room);
       const cfg = roomId ? resolveRoomConfig(roomId) : null;
       if (!cfg) return res.status(404).json({ error: 'Room not found' });
@@ -439,6 +438,9 @@ export function attachLetters(app, deps) {
       // nothing to charge and nothing to refund on reject/expiry.
       let result = null;
       if (parseFloat(price) > 0) {
+        // Only a paid take needs the payment meter: a free room's Holler never
+        // touches it, so a server without payments still takes free ones.
+        if (!mppMeter) { giveBack('payments unavailable'); return res.status(503).json({ error: 'Payments unavailable on this server' }); }
         result = await mppMeter.handleTick(toWebRequest(req), {
           amount: price,
           currency: cfg.paymentTokenAddress,

@@ -297,3 +297,21 @@
   .mcl-ways-ov-bounty .amt { padding: 0 10px; }
   .mcl-ways-ov-bounty .who { padding: 6px 10px; }
 }
+
+
+/* One-line heading; on wide screens the ways sit left and the picture right
+   (the hero's film is on the left above, so the page alternates). */
+.mcl-ways-title {
+  margin: 0 0 22px;
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 800;
+  letter-spacing: -.03em;
+  line-height: 1;
+  white-space: nowrap;
+}
+@media (min-width: 901px) {
+  .mcl-ways-wrap { grid-template-columns: minmax(280px, 1fr) minmax(0, 1.6fr); }
+  .mcl-ways-stage { order: 2; }
+  .mcl-ways-modes { order: 1; }
+}

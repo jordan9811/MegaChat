@@ -993,3 +993,6 @@ body:has(.mc-landing) {
   min-height: 58px;
   gap: 12px;
 }
+
+/* Campaign strip: the create strip's twin, washed in the rewards green. */
+.mcl-campaign-strip { background: radial-gradient(circle at 12% 30%, color-mix(in srgb, var(--f-rewards) var(--mcl-wash), transparent), transparent 40%); }

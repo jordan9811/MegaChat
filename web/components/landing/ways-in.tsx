@@ -33,7 +33,7 @@ const WAYS: Record<Way, { verb: string; line: string; readout: string; cta: stri
   bounty: {
     verb: 'Pledge',
     line: 'Back a streamer before they have a room.',
-    readout: '$200 · @nordtalk',
+    readout: '$200 · @latedesk',
     cta: 'Browse bounties',
     href: '/bounty',
     label: 'A fan on the couch backing the streamer on screen',
@@ -60,16 +60,13 @@ export function WaysIn() {
 
   return (
     <section className="mcl-ways" aria-labelledby="mcl-ways-title">
-      <div className="mcl-ways-head">
-        <span className="mcl-ways-eyebrow">Three ways in</span>
-        <h2 id="mcl-ways-title">Get on their stream.</h2>
-      </div>
+      <h2 id="mcl-ways-title" className="mcl-ways-title">Three ways on the show</h2>
       <div className="mcl-ways-wrap">
         <div className="mcl-ways-stage dark" data-way={way} role="img" aria-label={cur.label}>
           {ORDER.map((w) => <span key={w} className="mcl-ways-shot" data-shot={w} aria-hidden="true" />)}
           <span className="mcl-ways-live" aria-hidden="true">
             <i />
-            {way === 'holler' ? 'LIVE · pixelmaeve' : way === 'callin' ? 'LIVE · nordtalk' : 'WATCHING · nordtalk'}
+            {way === 'holler' ? 'LIVE · pixelmaeve' : way === 'callin' ? 'LIVE · nordtalk' : 'WATCHING · latedesk'}
           </span>
           <div className="mcl-ways-ov mcl-ways-ov-holler" aria-hidden="true">
             <span className="t">0:07</span>
@@ -82,7 +79,7 @@ export function WaysIn() {
           </div>
           <div className="mcl-ways-ov mcl-ways-ov-bounty" aria-hidden="true">
             <span className="amt">$200</span>
-            <span className="who"><strong>You pledged @nordtalk</strong><small>Paid out when they go live and play it</small></span>
+            <span className="who"><strong>You pledged @latedesk</strong><small>Paid out when they go live and play it</small></span>
           </div>
         </div>
         <div className="mcl-ways-modes" role="group" aria-label="Ways in">

@@ -39,6 +39,7 @@ import { getAccount } from './accounts.js';
 import { loginProvingHandle } from './bounty-auth.js';
 import { handleKey } from './bounty-store.js';
 import { getStreamsByLogins, twitchApiConfigured, helix } from './twitch-api.js';
+import { resolveAvatars, avatarKey } from './platform-avatars.js';
 import { openAiring, openAiringFor, closeAiring, addMoment, recentAirings, listAirings, allAiringIds, airingRefs, attachRecording, markRestart, momentRefs, pruneToRooms, recordOverlaySample } from './airings-store.js';
 import { classify as classifyLiveness, accumulate as accumulateOverlay, publicLiveness } from './liveness.js';
 import { snapshotLivePreview, finalizeAiringPoster, readAiringPoster, posterFileFor, sweepAiringPosters, lastEvidenceAt, isListable, quietShown, isQuietBroadcast, setQuietEligibility } from './airing-posters.js';
@@ -4140,7 +4141,7 @@ app.put('/api/site-settings', (req, res, next) => {
   res.json({ ...siteSettingsPayload(), changed: result.changed });
 });
 
-app.get('/api/rooms/recent', (req, res) => {
+app.get('/api/rooms/recent', async (req, res) => {
   const limit = Math.max(1, Math.min(24, Number(req.query.limit) || 12));
   const byId = new Map(listRooms().map((r) => [r.id, r]));
   const out = [];
@@ -4174,7 +4175,11 @@ app.get('/api/rooms/recent', (req, res) => {
     });
     if (out.length >= limit) break;
   }
-  res.json({ airings: out });
+  // The streamer's face beside the name (owner, 2026-11-09). Cached and
+  // deadline-bound in platform-avatars.js; any miss is null, the monogram.
+  let faces = new Map();
+  try { faces = await resolveAvatars(out.filter((a) => a.channel).map((a) => ({ platform: a.platform, handle: a.channel }))); } catch { /* decoration never fails the rail */ }
+  res.json({ airings: out.map((a) => ({ ...a, avatarUrl: a.channel ? faces.get(avatarKey(a.platform, a.channel)) ?? null : null })) });
 });
 
 // Public browse directory — active rooms that haven't opted out (unlisted).
@@ -4190,7 +4195,7 @@ app.get('/api/rooms/:roomId/liveness', (req, res) => {
   res.json({ roomId: id, ...publicLiveness(roomLiveness(id)) });
 });
 
-app.get('/api/rooms/public', (req, res) => {
+app.get('/api/rooms/public', async (req, res) => {
   const rooms = [];
   for (const r of listRooms()) {
     if (!r.active) continue;
@@ -4253,7 +4258,9 @@ app.get('/api/rooms/public', (req, res) => {
   rooms.sort((a, b) => (b.live - a.live)
     || (b.waiting - a.waiting)
     || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-  res.json({ rooms });
+  let faces = new Map();
+  try { faces = await resolveAvatars(rooms.filter((r) => r.twitchChannel).map((r) => ({ platform: 'twitch', handle: r.twitchChannel }))); } catch { /* decoration never fails the board */ }
+  res.json({ rooms: rooms.map((r) => ({ ...r, avatarUrl: r.twitchChannel ? faces.get(avatarKey('twitch', r.twitchChannel)) ?? null : null })) });
 });
 
 const PORT = Number(process.env.PORT || 3000);
@@ -4434,13 +4441,13 @@ try {
   const existing = getRoomByHandle('demo');
   if (existing) {
     // Reset the demo back to its canonical config on every deploy.
-    updateRoom(existing.id, { name: 'Holler Demo — try everything for pennies', config: DEMO_CONFIG });
+    updateRoom(existing.id, { name: 'Holler Demo', config: DEMO_CONFIG });
     console.log(`[demo] refreshed demo room ${existing.id} at /demo`);
   } else {
     const demoPassword = process.env.DEMO_ROOM_PASSWORD
       || Buffer.from(crypto.getRandomValues(new Uint8Array(12))).toString('base64url');
     const room = await createRoomWithPassword(
-      'Holler Demo — try everything for pennies', DEMO_CONFIG, demoPassword,
+      'Holler Demo', DEMO_CONFIG, demoPassword,
     );
     setRoomHandle(room.id, 'demo');
     console.log(

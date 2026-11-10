@@ -1559,3 +1559,35 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
     transition: none !important;
   }
 }
+
+
+/* The streamer's face beside the handle (booth.tsx HostFace). */
+.mcr-face {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--hl-panel-2);
+}
+.mcr-face.is-mono {
+  display: inline-grid;
+  place-items: center;
+  color: var(--hl-muted);
+  font: 700 10px/1 var(--font-code), ui-monospace, monospace;
+}
+.mcr-feat-body .mcr-face { width: 22px; height: 22px; }
+.mcr-recent-meta .mcr-host { margin: 2px 0 1px; }
+/* Squares read a touch bigger on the featured picture. */
+.mcr-feat .mcr-sq i { width: 12px; height: 12px; }
+
+.mcr-recent-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 0 5px; }
+.mcr-recent-sub .mcr-face { width: 14px; height: 14px; font-size: 8px; }
+
+/* Name and host share one row on tiles: a second line pushed the first room
+   below the fold (_gate-board-fold F4). The name truncates; the host keeps its size. */
+.mcr-card-body .mcr-t { display: flex; align-items: center; gap: 10px; }
+.mcr-card-body .mcr-name { flex: 1; min-width: 0; }
+.mcr-card-body .mcr-host { flex: none; margin: 0; }
+.mcr-card-body { padding-block: 8px; }
+.mcr-feat-body .mcr-face { width: 18px; height: 18px; }

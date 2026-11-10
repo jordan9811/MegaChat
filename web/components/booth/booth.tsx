@@ -16,6 +16,7 @@ import { LivenessBadge } from '@/components/liveness-badge'
 import { HollerMark } from '@/components/holler-mark'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { RecentRail } from './recent-rail'
+import { HostFace } from './host-face'
 import { SiteFooter } from '@/components/site-footer'
 
 const ROOM_POLL_MS = 5000
@@ -110,6 +111,7 @@ function HostLine({ room, seats }: { room: PublicRoomCard; seats?: { taken: numb
   if (!handle && !seats && room.live <= 0) return null
   return (
     <span className="mcr-host">
+      <HostFace url={room.avatarUrl ?? null} name={room.handle || room.twitchChannel || room.name} />
       {room.twitchChannel ? (
         <b className="mcr-host-pip" title={`Follows twitch.tv/${room.twitchChannel}`}>
           <PlatformPip platform="twitch" />
@@ -135,14 +137,12 @@ function Stage({
   room,
   hero = false,
   linked = false,
-  squares = false,
 }: {
   room: PublicRoomCard
   hero?: boolean
   linked?: boolean
-  squares?: boolean
 }) {
-  const { state, rate, full, rates } = roomPresentation(room)
+  const { state, full, rates } = roomPresentation(room)
   const seats = rates.find((r) => r.seats)?.seats
   // `dark`: the stage is a video frame, so its chrome reads the dark tokens
   // in either theme (globals.css redeclares them on any .dark scope).
@@ -181,16 +181,17 @@ function Stage({
         </span>
       ) : null}
       <span className="mcr-tags">
-        <span className={`mcr-tag ${onAir(room) ? 'is-live' : full ? 'is-full' : ''}`}>
-          <i aria-hidden="true" />
-          {state}
-        </span>
+        {onAir(room) || full || room.isDemo ? (
+          <span className={`mcr-tag ${onAir(room) ? 'is-live' : full ? 'is-full' : ''}`}>
+            <i aria-hidden="true" />
+            {state}
+          </span>
+        ) : null}
         {/* Which check stands behind a Holler here right now, in a viewer's
             words; the detail opens on tap. Nothing when offline. */}
         <LivenessBadge liveness={room.liveness} audience="fan" />
-        <span className="mcr-tag">{rate}</span>
       </span>
-      {squares ? <FeatureSquares room={room} /> : null}
+      <FeatureSquares room={room} />
     </span>
   )
 }
@@ -231,7 +232,8 @@ function FeaturedRoom({ room, size = 'normal', terms }: { room: PublicRoomCard; 
           <a href={roomHref(room)}>{room.name}</a>
         </h2>
         <span className="mcr-meta">
-          {kinds.length ? kinds.map((k) => <FeatureTag key={k} kind={k} />) : <span>{capabilities}</span>}
+          <HostLine room={room} />
+          {!kinds.length ? <span>{capabilities}</span> : null}
           {counts ? <span className="mcr-counts">{counts}</span> : null}
         </span>
         {rates.length ? (
@@ -280,7 +282,7 @@ function RoomCard({ room }: { room: PublicRoomCard }) {
         className="mcr-card-link"
         aria-label={room.handle ? `${room.name}, @${room.handle}` : room.name}
       />
-      <Stage room={room} squares />
+      <Stage room={room} />
       <span className="mcr-card-body">
         <span className="mcr-t">
           <span className="mcr-name">{room.name}</span>

@@ -660,3 +660,40 @@ html:has(.mc-how) ::-webkit-scrollbar-thumb:hover {
     transition: none;
   }
 }
+
+
+/* Steps are headings that open (page.tsx FlowColumn): number, title and a
+   chevron; the tags and instructions show only when opened. No icons. */
+.mch-flow li { display: block; min-height: 0; padding: 0; }
+.mch-flow li summary {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+  padding: 14px 24px;
+  cursor: pointer;
+  list-style: none;
+}
+.mch-flow li summary::-webkit-details-marker { display: none; }
+.mch-flow li summary h3 { margin: 0; }
+.mch-step-n { color: var(--mcc-faint); font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.mch-step-chev {
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid var(--mcc-dim);
+  border-bottom: 1.5px solid var(--mcc-dim);
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform .2s cubic-bezier(.23, 1, .32, 1);
+}
+.mch-flow li details[open] .mch-step-chev { transform: rotate(-135deg) translateY(-2px); }
+.mch-step-more { padding: 0 24px 18px calc(24px + 30px + 14px); }
+.mch-flow li summary:focus-visible { outline: 2px solid var(--mcc-dim); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) {
+  .mch-flow li summary:hover h3 { text-decoration: underline; text-underline-offset: 3px; }
+}
+@media (max-width: 720px) {
+  .mch-flow li summary { grid-template-columns: 24px minmax(0, 1fr) auto; gap: 9px; padding: 14px 16px; }
+  .mch-step-more { padding: 0 16px 16px calc(16px + 24px + 9px); }
+}
+@media (prefers-reduced-motion: reduce) { .mch-step-chev { transition: none; } }

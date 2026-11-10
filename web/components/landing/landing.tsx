@@ -51,7 +51,7 @@ export function Landing({
           <div className="mcl-bounty-poster">
             <h2>Your favorite streamer<br />doesn&apos;t even know you.</h2>
             <p>Be more than a username.</p>
-            <Link href="/bounty">Browse bounties <ArrowRight size={16} aria-hidden="true" /></Link>
+            <Link href="/bounty">Pledge your favorite streamer <ArrowRight size={16} aria-hidden="true" /></Link>
           </div>
           <div className="mcl-mini-board">
             <header><span>Top bounties</span><Link href="/bounty">Full board</Link></header>
@@ -75,6 +75,12 @@ export function Landing({
         <section className="mcl-create-strip">
           <div><h2>Create a room.</h2><p>Set your rate, connect OBS, and decide how viewers can join.</p></div>
           <Link href="/dashboard">Create room <ArrowRight size={16} aria-hidden="true" /></Link>
+        </section>
+
+        {/* Campaigns: the streamer pays viewers for engagement (campaign-engine.js). */}
+        <section className="mcl-create-strip mcl-campaign-strip">
+          <div><h2>Start a campaign.</h2><p>Grow your audience by incentivizing engagement.</p></div>
+          <Link href="/dashboard/campaigns/new">Start a campaign <ArrowRight size={16} aria-hidden="true" /></Link>
         </section>
       </main>
 
