@@ -34,6 +34,9 @@ const PERSISTED = [
   // The replay days the fan's page showed when sending (aired-clips.js): a
   // restart must not turn "plays once" into a kept copy.
   'replayKeepDays',
+  // 'demo' when the take was paid in demo money: a refund after a restart
+  // must return demo money, never send real money through the door.
+  'paidWith',
 ];
 
 export function createLetterStore({

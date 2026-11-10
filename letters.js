@@ -39,6 +39,10 @@
  *
  * Moderation refunds (reject, upload expiry, hold expiry) leave through the
  * settlement door as recorded intents — never a transfer signed here.
+ *
+ * THE DEMO ROOM takes DEMO MONEY only (demo-money.js): a Holler there is paid
+ * from the viewer's demo money at submit (no wallet, no MPP), and every refund
+ * case gives it back to the demo money. It never reaches the settlement door.
  */
 import express from 'express';
 import { randomUUID } from 'crypto';
@@ -131,6 +135,13 @@ export function attachLetters(app, deps) {
      * then refused rather than sent uncounted. Money never moves from here.
      */
     campaigns = null,
+    /**
+     * DEMO MONEY (demo-money.js): { applies(cfg), spend(req, cfg, address,
+     * price) → null | { status, body }, refund(letter, reason) }. Where it
+     * applies, a Holler is paid in demo money and nothing else. null = no
+     * room takes demo money.
+     */
+    demoMoney = null,
     log = console,
   } = deps;
 
@@ -298,6 +309,18 @@ export function attachLetters(app, deps) {
       removeLetter(letter);
       return;
     }
+    // Demo money goes back to the demo money, never through the door: it was
+    // never real money.
+    if (letter.paidWith === 'demo') {
+      try {
+        if (!demoMoney) throw new Error('no demo money wired');
+        demoMoney.refund(letter, reason);
+      } catch (err) {
+        log.warn(`[letters] demo money could not be returned for ${letter.id} (${reason}): ${err.message}`);
+      }
+      removeLetter(letter);
+      return;
+    }
     letter.status = 'refunding';
     try {
       const cfg = resolveRoomConfig(letter.roomId);
@@ -437,7 +460,17 @@ export function attachLetters(app, deps) {
       // Free rooms: price 0 → skip the payment handshake entirely. There is
       // nothing to charge and nothing to refund on reject/expiry.
       let result = null;
-      if (parseFloat(price) > 0) {
+      let paidWith = null;
+      if (parseFloat(price) > 0 && demoMoney && demoMoney.applies(cfg)) {
+        // The demo: exactly the take's price, in demo money, or nothing.
+        if (req.body?.useRewardCredit !== true) {
+          giveBack('demo money only');
+          return res.status(402).json({ error: 'The demo runs on demo money, not real money', reason: 'demo_money_only', hint: 'Sign in and watch: you earn $1 of demo money a second, then send a Holler with it.' });
+        }
+        const refused = demoMoney.spend(req, cfg, address, price);
+        if (refused) { giveBack('demo money refused'); return res.status(refused.status).json(refused.body); }
+        paidWith = 'demo';
+      } else if (parseFloat(price) > 0) {
         // Only a paid take needs the payment meter: a free room's Holler never
         // touches it, so a server without payments still takes free ones.
         if (!mppMeter) { giveBack('payments unavailable'); return res.status(503).json({ error: 'Payments unavailable on this server' }); }
@@ -471,6 +504,8 @@ export function attachLetters(app, deps) {
         status: 'awaiting_upload',
         media: null,
         paidAt: Date.now(),
+        // 'demo': paid in demo money, so every refund returns demo money.
+        ...(paidWith ? { paidWith } : {}),
       };
       if (campaignClaimId) {
         letter.campaignClaimId = campaignClaimId;
@@ -478,7 +513,7 @@ export function attachLetters(app, deps) {
       }
       byId.set(letter.id, letter);
       if (attempt) noteAttempt(attempt, letter.id);
-      log.log(`[letters] ${letter.id} ${parseFloat(price) > 0 ? `paid ${price} by ${address}` : 'free'} in room ${cfg.id}`);
+      log.log(`[letters] ${letter.id} ${parseFloat(price) > 0 ? `paid ${price}${paidWith === 'demo' ? ' in demo money' : ''} by ${address}` : 'free'} in room ${cfg.id}`);
       const body = {
         success: true,
         letterId: letter.id,

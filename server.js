@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { attachRewards } from './rewards.js';
 import { getCredit, consumeCredit, creditViewer } from './reward-credits.js';
+import { isDemoRoom, demoWalletFor } from './demo-money.js';
 import {
   applyStreamTick,
   streamMeterPayload,
@@ -38,6 +39,7 @@ import { attachDashboardRoutes } from './dashboard-routes.js';
 import { getAccount } from './accounts.js';
 import { loginProvingHandle } from './bounty-auth.js';
 import { handleKey } from './bounty-store.js';
+import { getClipRecord } from './bounty-clips.js';
 import { getStreamsByLogins, getChannelTitlesByLogins, twitchApiConfigured, helix } from './twitch-api.js';
 import { getChannelBySlug as getKickChannel, kickApiConfigured } from './kick-api.js';
 import { resolveAvatars, avatarKey } from './platform-avatars.js';
@@ -640,6 +642,7 @@ async function refundSeat(seat) {
         console.log(
           `[refund] credit seat ${seat.id}: returned ${fromAtomic(seat.remainingAtomic, dec)} ${sym} to earned balance`
         );
+        rewardsSvc?.pushBalance?.(seat.streamRoomId, seat.viewerAddress);
       }
     }
     return;
@@ -2483,6 +2486,14 @@ try {
     tileCap: (roomId, cfg) => effectiveMaxSeats(roomId, cfg?.maxSeats ?? 3),
     sellerAddress: SELLER_WALLET_ADDRESS,
     settlement,
+    // The demo room's Hollers are paid in demo money, never real money
+    // (demo-money.js): taken from the viewer's credit at submit, returned to
+    // it on every refund case. Off-chain only; the settlement door never sees it.
+    demoMoney: {
+      applies: (cfg) => isDemoRoom(cfg),
+      spend: (req, cfg, address, price) => spendDemoMoneyOnHoller(req, cfg, address, price),
+      refund: (letter, reason) => refundDemoMoneyHoller(letter, reason),
+    },
     getWatchSeconds: (roomId, wallet) =>
       (rewardsSvc ? rewardsSvc.getWatchSeconds(roomId, wallet) : 0),
     // Creator bounty: the watermark that proves a clip aired is minted from
@@ -2518,11 +2529,16 @@ try {
   if (bountyConfig.enabled) {
     const bank = await import('./bounty-bank.js');
     const bountyClips = await import('./bounty-clips.js');
-    bank.setReplayer(({ roomId, clipId, durationS }) => {
+    const bountyStore = await import('./bounty-store.js');
+    bank.setReplayer(({ roomId, clipId, contributionId, durationS }) => {
       const out = bountyClips.readClip(clipId);
       if (!out?.ok) return { ok: false, reason: out?.error || 'clip unreadable' };
+      // The fan's display name from the pledge, so the clip's tile and its
+      // replay moment say who sent it (never the account id).
+      let username = null;
+      try { username = (contributionId && bountyStore.getContribution(contributionId)?.displayName) || null; } catch { /* name is decoration */ }
       return lettersApi.enqueueStoredClip(roomId, {
-        clipId, media: out.data, mime: out.record?.mime, durationS: durationS ?? out.record?.durationS,
+        clipId, media: out.data, mime: out.record?.mime, durationS: durationS ?? out.record?.durationS, username,
       });
     });
     setVisibilityTransitionHook((roomId, signal, o) => { bank.onSignal(roomId, signal, o); });
@@ -2623,6 +2639,15 @@ function creditRefusal(req, cfg, address) {
   const rw = cfg.rewards;
   if (!rw?.enabled || rw.rewardType === 'points') return null;
   const accountId = readIdentityFromRequest(req)?.accountId || null;
+  if (isDemoRoom(cfg)) {
+    // Demo money is held by the account's placeholder wallet (demo-money.js),
+    // which only the server names: never a payout wallet, never one the page picks.
+    if (!accountId) return { status: 401, body: { error: 'Sign in to use demo money', reason: 'sign_in_required' } };
+    if (!sameAddress(demoWalletFor(accountId), address)) {
+      return { status: 403, body: { error: 'That demo money belongs to another account', reason: 'credit_not_yours' } };
+    }
+    return null;
+  }
   if (!accountId) return { status: 401, body: { error: 'Sign in to join with your earned balance', reason: 'sign_in_required' } };
   if (!sameAddress(getAccount(accountId)?.payoutWallet, address)) {
     return { status: 403, body: { error: 'This earned balance belongs to another account\'s payout wallet', reason: 'credit_not_yours' } };
@@ -2634,6 +2659,141 @@ function creditRefusal(req, cfg, address) {
     return { status: 409, body: { error: 'This room\'s reward token is not its payment token, so earned balance cannot buy a seat here', reason: 'credit_token_mismatch' } };
   }
   return null;
+}
+
+/**
+ * A Call in paid from the seat credit watching earned here (credit_stream; a
+ * points room's points_stream), on either join route: the allowance route and
+ * the MPP route, which is the one a signed-in viewer's page uses. In the demo
+ * room this credit is DEMO MONEY (demo-money.js). Nothing moves on chain: the
+ * cap is taken from the credit up front, the seat meter runs it down a tick at
+ * a time, and refundSeat returns the rest to the credit when the seat ends.
+ */
+function joinSeatWithCredit(req, res, { roomId, cfg, atomics, username, address, path }) {
+  const rw = cfg.rewards;
+  const demo = isDemoRoom(cfg);
+  if (!cfg.active) {
+    return res.status(403).json({ error: 'Room is not accepting joins', reason: 'room_stopped', roomId });
+  }
+  if (!rw?.enabled) {
+    return res.status(400).json({ error: 'Rewards not enabled for this room', roomId });
+  }
+  {
+    const refused = creditRefusal(req, cfg, address);
+    if (refused) return res.status(refused.status).json({ ...refused.body, roomId });
+  }
+
+  const credit = getCredit(roomId, address);
+  let sessionAtomic;
+  let paymentMode = 'credit_stream';
+  let tokenDec = cfg.paymentTokenDecimals;
+  let tokenSym = cfg.paymentTokenSymbol;
+  // E42 — the seat must tick in the units it was funded in.
+  let seatAtomics = {};
+
+  if (rw.rewardType === 'points') {
+    const tickAtomic = toAtomic(cfg.passkeyTickPrice, 0);
+    const maxAtomic = toAtomic(cfg.maxSession, 0);
+    // Points are whole numbers: a dollar price under 1 a tick rounds to 0
+    // points, a seat the meter never runs down. Holler credit is retired
+    // (owner, 2026-11-09); such rooms seat on money only.
+    if (tickAtomic <= 0n) {
+      return res.status(402).json({
+        error: 'This room does not take earned points for a seat',
+        reason: 'points_price_too_small',
+        path,
+        roomId,
+      });
+    }
+    seatAtomics = { passkeyTickPriceAtomic: tickAtomic, maxSessionAtomic: maxAtomic };
+    sessionAtomic = credit.atomic < maxAtomic ? credit.atomic : maxAtomic;
+    if (sessionAtomic < tickAtomic) {
+      return res.status(402).json({
+        error: 'Not enough earned points to join',
+        reason: 'insufficient_rewards',
+        available: fromAtomic(credit.atomic, 0),
+        needAtLeast: cfg.passkeyTickPrice,
+        tokenSymbol: 'PTS',
+        path,
+        roomId,
+      });
+    }
+    paymentMode = 'points_stream';
+    tokenDec = 0;
+    tokenSym = 'PTS';
+  } else {
+    sessionAtomic = credit.atomic < atomics.maxSessionAtomic
+      ? credit.atomic
+      : atomics.maxSessionAtomic;
+    if (sessionAtomic < atomics.passkeyTickPriceAtomic) {
+      return res.status(402).json({
+        error: demo ? 'Not enough demo money to call in — watch a little longer' : 'Not enough earned balance to join',
+        reason: 'insufficient_rewards',
+        available: fromAtomic(credit.atomic, cfg.paymentTokenDecimals),
+        needAtLeast: cfg.passkeyTickPrice,
+        tokenSymbol: cfg.paymentTokenSymbol,
+        path,
+        roomId,
+      });
+    }
+  }
+
+  const used = consumeCredit(roomId, address, sessionAtomic);
+  if (used < sessionAtomic) {
+    return res.status(402).json({
+      error: 'Earned balance changed — try again',
+      reason: 'insufficient_rewards',
+      roomId,
+    });
+  }
+
+  const result = addParticipant(username, {
+    remainingAtomic: sessionAtomic,
+    payer: address,
+    viewerAddress: address,
+    paymentMode,
+    sessionCapAtomic: sessionAtomic,
+    streamRoomId: roomId,
+    paymentTokenDecimals: tokenDec,
+    paymentTokenSymbol: tokenSym,
+    ...seatAtomics,
+    flyIn: req.body.flyIn,
+    flyOut: req.body.flyOut,
+  });
+
+  if (!result.success) {
+    creditViewer(roomId, address, used, {
+      type: rw.rewardType === 'points' ? 'points' : rw.rewardType,
+      symbol: tokenSym,
+      decimals: tokenDec,
+    });
+    const status = result.reason === 'room_stopped' ? 403 : 409;
+    return res.status(status).json({
+      error: result.reason === 'room_stopped' ? 'Room is not accepting joins' : 'No seats available',
+      reason: result.reason,
+      roomId,
+    });
+  }
+
+  schedulePendingCameraTimeout(result.seat.id);
+  console.log(`[join:${path}] room ${roomId} ${demo ? 'demo money' : 'credit'} join seat ${result.seat.id} for ${username} (${address})`);
+  rewardsSvc?.pushBalance?.(roomId, address);
+  return res.json(passkeyJoinSuccessResponse(result.seat, {
+    payer: address,
+    txHash: null,
+    allowance: sessionAtomic,
+  }, cfg));
+}
+
+/** The demo room's refusal of real money: what to do instead, in words. */
+function demoMoneyOnly(roomId, path) {
+  return {
+    error: 'The demo runs on demo money, not real money',
+    reason: 'demo_money_only',
+    hint: 'Sign in and watch: you earn $1 of demo money a second, then Call in or send a Holler with it.',
+    path,
+    roomId,
+  };
 }
 
 function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
@@ -2683,6 +2843,38 @@ function passkeyJoinSuccessResponse(seat, verified, roomCfg) {
     escrow: seat.escrow || null,
     payoutAddress: seat.payoutAddress || null,
   };
+}
+
+/**
+ * A demo Holler paid in demo money: exactly the take's price, from the
+ * signed-in account's demo money in this room. Returns null when paid, or the
+ * refusal { status, body }. Off-chain only.
+ */
+function spendDemoMoneyOnHoller(req, cfg, address, price) {
+  const refused = creditRefusal(req, cfg, address);
+  if (refused) return refused;
+  const amount = toAtomic(price, cfg.paymentTokenDecimals);
+  const have = getCredit(cfg.id, address).atomic;
+  if (have < amount) {
+    return { status: 402, body: { error: 'Not enough demo money for this Holler — watch a little longer', reason: 'insufficient_rewards', available: fromAtomic(have, cfg.paymentTokenDecimals), needAtLeast: price, tokenSymbol: cfg.paymentTokenSymbol } };
+  }
+  const used = consumeCredit(cfg.id, address, amount);
+  if (used < amount) {
+    if (used > 0n) creditViewer(cfg.id, address, used, { type: 'usdc', symbol: cfg.paymentTokenSymbol, decimals: cfg.paymentTokenDecimals });
+    return { status: 402, body: { error: 'Your demo money changed — try again', reason: 'insufficient_rewards' } };
+  }
+  console.log(`[demo-money] room ${cfg.id} Holler ${price} from ${address}`);
+  rewardsSvc?.pushBalance?.(cfg.id, address);
+  return null;
+}
+
+/** Every refund case of a demo Holler (refundLetter's): the demo money goes back. */
+function refundDemoMoneyHoller(letter, reason) {
+  const cfg = resolveRoomConfig(letter.roomId);
+  const dec = cfg?.paymentTokenDecimals ?? 6;
+  creditViewer(letter.roomId, letter.payer, toAtomic(letter.price, dec), { type: 'usdc', symbol: cfg?.paymentTokenSymbol || 'USDC', decimals: dec });
+  console.log(`[demo-money] room ${letter.roomId} Holler ${letter.id} returned ${letter.price} to ${letter.payer} (${reason})`);
+  rewardsSvc?.pushBalance?.(letter.roomId, letter.payer);
 }
 
 // Targeted reward campaigns: a Call in sent with `campaign` in the body
@@ -2736,117 +2928,10 @@ app.post('/api/join/passkey', async (req, res) => {
     const useRewardCredit = req.body.useRewardCredit === true;
 
     if (useRewardCredit && !modularPaymentHeader) {
-      if (!cfg.active) {
-        return res.status(403).json({ error: 'Room is not accepting joins', reason: 'room_stopped', roomId });
-      }
-      if (!rw?.enabled) {
-        return res.status(400).json({ error: 'Rewards not enabled for this room', roomId });
-      }
-      {
-        const refused = creditRefusal(req, cfg, address);
-        if (refused) return res.status(refused.status).json({ ...refused.body, roomId });
-      }
-
-      const credit = getCredit(roomId, address);
-      let sessionAtomic;
-      let paymentMode = 'credit_stream';
-      let tokenDec = cfg.paymentTokenDecimals;
-      let tokenSym = cfg.paymentTokenSymbol;
-      // E42 — the seat must tick in the units it was funded in.
-      let seatAtomics = {};
-
-      if (rw.rewardType === 'points') {
-        const tickAtomic = toAtomic(cfg.passkeyTickPrice, 0);
-        const maxAtomic = toAtomic(cfg.maxSession, 0);
-        // Points are whole numbers: a dollar price under 1 a tick rounds to 0
-        // points, a seat the meter never runs down. Holler credit is retired
-        // (owner, 2026-11-09); such rooms seat on money only.
-        if (tickAtomic <= 0n) {
-          return res.status(402).json({
-            error: 'This room does not take earned points for a seat',
-            reason: 'points_price_too_small',
-            path: 'passkey',
-            roomId,
-          });
-        }
-        seatAtomics = { passkeyTickPriceAtomic: tickAtomic, maxSessionAtomic: maxAtomic };
-        sessionAtomic = credit.atomic < maxAtomic ? credit.atomic : maxAtomic;
-        if (sessionAtomic < tickAtomic) {
-          return res.status(402).json({
-            error: 'Not enough earned points to join',
-            reason: 'insufficient_rewards',
-            available: fromAtomic(credit.atomic, 0),
-            needAtLeast: cfg.passkeyTickPrice,
-            tokenSymbol: 'PTS',
-            path: 'passkey',
-            roomId,
-          });
-        }
-        paymentMode = 'points_stream';
-        tokenDec = 0;
-        tokenSym = 'PTS';
-      } else {
-        sessionAtomic = credit.atomic < atomics.maxSessionAtomic
-          ? credit.atomic
-          : atomics.maxSessionAtomic;
-        if (sessionAtomic < atomics.passkeyTickPriceAtomic) {
-          return res.status(402).json({
-            error: 'Not enough earned balance to join',
-            reason: 'insufficient_rewards',
-            available: fromAtomic(credit.atomic, cfg.paymentTokenDecimals),
-            needAtLeast: cfg.passkeyTickPrice,
-            tokenSymbol: cfg.paymentTokenSymbol,
-            path: 'passkey',
-            roomId,
-          });
-        }
-      }
-
-      const used = consumeCredit(roomId, address, sessionAtomic);
-      if (used < sessionAtomic) {
-        return res.status(402).json({
-          error: 'Earned balance changed — try again',
-          reason: 'insufficient_rewards',
-          roomId,
-        });
-      }
-
-      const result = addParticipant(username, {
-        remainingAtomic: sessionAtomic,
-        payer: address,
-        viewerAddress: address,
-        paymentMode,
-        sessionCapAtomic: sessionAtomic,
-        streamRoomId: roomId,
-        paymentTokenDecimals: tokenDec,
-        paymentTokenSymbol: tokenSym,
-        ...seatAtomics,
-        flyIn: req.body.flyIn,
-        flyOut: req.body.flyOut,
-      });
-
-      if (!result.success) {
-        creditViewer(roomId, address, used, {
-          type: rw.rewardType === 'points' ? 'points' : rw.rewardType,
-          symbol: tokenSym,
-          decimals: tokenDec,
-        });
-        const status = result.reason === 'room_stopped' ? 403 : 409;
-        return res.status(status).json({
-          error: result.reason === 'room_stopped' ? 'Room is not accepting joins' : 'No seats available',
-          reason: result.reason,
-          roomId,
-        });
-      }
-
-      schedulePendingCameraTimeout(result.seat.id);
-      console.log(`[join:passkey] room ${roomId} credit join seat ${result.seat.id} for ${username} (${address})`);
-      return res.json(passkeyJoinSuccessResponse(result.seat, {
-        payer: address,
-        txHash: null,
-        allowance: sessionAtomic,
-      }, cfg));
+      return joinSeatWithCredit(req, res, { roomId, cfg, atomics, username, address, path: 'passkey' });
     }
+    // The demo runs on demo money only: no real money is taken in this room.
+    if (isDemoRoom(cfg)) return res.status(402).json(demoMoneyOnly(roomId, 'passkey'));
 
     if (!modularPaymentHeader) {
       if (!cfg.active) {
@@ -3105,7 +3190,10 @@ app.post('/api/join/mpp', async (req, res) => {
     // Guest whitelist first — ahead of the meter check too, since a guest who
     // is never charged does not need a payment meter to exist.
     if (await tryWhitelistJoin(req, res)) return;
-    if (!mppMeter) {
+    // A seat paid from earned credit (demo money in the demo) needs no meter:
+    // nothing is paid by voucher.
+    const useRewardCredit = req.body?.useRewardCredit === true;
+    if (!mppMeter && !useRewardCredit) {
       return res.status(503).json({
         error: 'MPP meter unavailable on this server',
         hint: 'SELLER_PRIVATE_KEY missing'
@@ -3188,6 +3276,15 @@ app.post('/api/join/mpp', async (req, res) => {
         payment: { payer: hasAddress ? address : null, mode: 'free_stream', network: NETWORK },
       });
     }
+
+    // The signed-in path: a seat paid from what watching earned here (the
+    // demo's demo money), the same rules as the allowance route's.
+    if (useRewardCredit) {
+      if (!hasAddress) return res.status(400).json({ error: 'Wallet address required' });
+      return joinSeatWithCredit(req, res, { roomId, cfg, atomics, username, address, path: 'mpp' });
+    }
+    // The demo runs on demo money only: no real money is taken in this room.
+    if (isDemoRoom(cfg)) return res.status(402).json(demoMoneyOnly(roomId, 'mpp'));
 
     // Paid rooms DO need a wallet — the check moved below the free branch so
     // free rooms never demand one.
@@ -4046,9 +4143,14 @@ app.get('/api/rooms/:roomId/replay', async (req, res) => {
   const recs = Array.isArray(a.recordings) ? a.recordings : [];
   const avail = await vodsAvailable(recs.map((r) => r.vodId));
   const skewMs = bountyConfig.vodTimelineSkewMs; // a VOD's timeline runs this far behind our clock
+  // ?only=bounty: the Claimed pledges card's door — just the pledged clips
+  // that aired, in order, so the replay opens at the first and steps through
+  // each. Without it, every moment, as Recently aired has always had.
+  const onlyBounty = req.query.only === 'bounty';
   const moments = [];
   for (const m of a.moments) {
     if (m.kind !== 'seat' && m.kind !== 'megachat') continue;
+    if (onlyBounty && !bountyClipOf(m)) continue;
     const rec = recs.find((r) => m.at >= r.startMs && m.at <= r.startMs + r.durationS * 1000);
     const vod = rec && avail.get(rec.vodId)
       ? { vodId: rec.vodId, offsetS: Math.max(0, Math.round((m.at - rec.startMs + skewMs) / 1000) - REPLAY_LEAD_S) }
@@ -4186,6 +4288,69 @@ app.put('/api/site-settings', (req, res, next) => {
   // files now rather than at the next sweep.
   if (result.changed.replayKeepDays) clipSweep();
   res.json({ ...siteSettingsPayload(), changed: result.changed });
+});
+
+/** The bounty clip a moment aired, or null. A pledged clip airs as a letter
+ *  whose id IS its clipId (letters.js enqueueStoredClip), so the moment's ref
+ *  names it; getClipRecord keeps purged clips too, so a refunded clip's
+ *  airing still counts as one that aired. */
+function bountyClipOf(m) {
+  if (m?.kind !== 'megachat' || !m.ref || !/^[a-f0-9-]{36}$/i.test(m.ref)) return null;
+  try { return getClipRecord(m.ref); } catch { return null; }
+}
+
+/** One Recently-aired-shaped card for an airing of a listed room. */
+function airingCardView(a, room, moments) {
+  return {
+    airingId: a.id,
+    roomId: a.roomId,
+    name: room.config.name,
+    handle: room.config.handle || null,
+    platform: a.platform,
+    channel: a.channel,
+    startedAt: a.startedAt,
+    endedAt: a.endedAt,
+    durationMs: Math.max(0, (a.endedAt || a.startedAt) - a.startedAt),
+    vodUrl: a.vodUrl,
+    captureRef: a.captureRef,
+    poster: airingPosterView(a, room.config.name),
+    moments,
+  };
+}
+
+async function withAvatars(out) {
+  let faces = new Map();
+  try { faces = await resolveAvatars(out.filter((a) => a.channel).map((a) => ({ platform: a.platform, handle: a.channel }))); } catch { /* decoration never fails the rail */ }
+  return out.map((a) => ({ ...a, avatarUrl: a.channel ? faces.get(avatarKey(a.platform, a.channel)) ?? null : null }));
+}
+
+// CLAIMED PLEDGES — broadcasts on which a streamer played the clips fans
+// pledged to them (owner, 2026-11-09: "like in case a streamer had 5 and they
+// did it one by one across an hour long vod"). The card opens the replay with
+// ?only=bounty, which steps through just those clips. The pools are named by
+// platform and handle only: a clip record's contributor never leaves here.
+app.get('/api/rooms/claimed', async (req, res) => {
+  const limit = Math.max(1, Math.min(24, Number(req.query.limit) || 12));
+  const byId = new Map(listRooms().map((r) => [r.id, r]));
+  const out = [];
+  for (const a of recentAirings({ limit: 500, include: isListable })) {
+    const room = byId.get(a.roomId);
+    if (!room || !room.config || room.config.unlisted) continue;
+    const pools = new Map();
+    const moments = [];
+    for (const m of a.moments) {
+      const clip = bountyClipOf(m);
+      if (!clip) continue;
+      moments.push({ kind: m.kind, label: m.label, offsetMs: m.offsetMs });
+      const key = String(clip.handleKey || '');
+      const i = key.indexOf(':');
+      if (i > 0 && !pools.has(key)) pools.set(key, { handle: key.slice(i + 1), platform: key.slice(0, i) });
+    }
+    if (!moments.length) continue;
+    out.push({ ...airingCardView(a, room, moments), bountyClips: moments.length, pools: [...pools.values()] });
+    if (out.length >= limit) break;
+  }
+  res.json({ airings: await withAvatars(out) });
 });
 
 app.get('/api/rooms/recent', async (req, res) => {
@@ -4468,22 +4633,29 @@ if (process.env.KEEP_ORPHAN_ROOMS !== 'true') {
 }
 
 // ─── Always-on demo room at /demo ────────────────────────────────────────────
-// A living showcase: dust live pricing, tiny point drops, letters on. RE-SPUN
-// every boot — the canonical config is re-applied so a deploy always leaves a
-// clean, current demo (LiveKit transport by default, MegaChats + drops on).
+// A living showcase that runs on DEMO MONEY (demo-money.js, owner 2026-11-09):
+// a signed-in viewer earns $1 of demo money a second, up to $10, and spends
+// it right there on a Call in ($0.10 a second, up to $10) and a Holler ($0.05
+// a second, $0.50 for the longest 10 s clip). Demo money is never real: no
+// settlement, no transfer, never exchangeable, and real money is refused in
+// this room. The house issues at most DEMO_CREDIT_HOURLY / DEMO_CREDIT_DAILY
+// of it across all users. RE-SPUN every boot: the canonical config is
+// re-applied so a deploy always leaves a clean, current demo.
 const DEMO_CONFIG = {
   isDemo: true,
-  passkeyTickPrice: '0.001',
+  passkeyTickPrice: '0.10',
   passkeyTickSeconds: 1,
-  maxSession: '0.03',
+  maxSession: '10.00',
   maxSeats: 3,
-  letters: { enabled: true, maxSeconds: 10, price: null, moderation: 'auto' },
+  // price is the longest clip's: $0.05 a second × 10 s.
+  letters: { enabled: true, maxSeconds: 10, price: '0.50', moderation: 'auto' },
   rewards: {
     enabled: true,
-    earnInterval: 30,
-    earnAmount: '1',
-    earnCap: '50',
-    rewardType: 'points',
+    earnInterval: 1,
+    earnAmount: '1.00',
+    earnCap: '10.00',
+    rewardType: 'usdc',
+    payout: 'credit',
     rewardTokenAddress: null,
   },
 };

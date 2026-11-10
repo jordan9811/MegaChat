@@ -17,6 +17,7 @@
 import { fetchPublicConfig } from '@/lib/api';
 import { newAttemptId } from '@/lib/attempt-id';
 import { setPayoutWallet } from '@/lib/bounty-api';
+import { startDemoCoach } from '@/lib/demo-coach';
 import { formatDollars, guestName, shortAddr } from '@/lib/display-format';
 import { startEchoDetector } from '@/lib/echo-detector';
 import { fetchIdentity } from '@/lib/identity';
@@ -36,6 +37,8 @@ let streamRoomId = 'default';
 
 let ws = null;
 let abort = null; // AbortController for window/document listeners
+// The demo room's guided tour (lib/demo-coach.ts): its cleanup, while mounted.
+let stopDemoCoach = null;
 
 function parseStreamRoomFromUrl() {
   try {
@@ -371,6 +374,28 @@ function roomPaused() {
   return !!CONFIG && CONFIG.roomActive === false;
 }
 
+// ── Demo money (the Holler demo room, demo-money.js on the server) ──
+// Watching earns demo money; Call in and Send a Holler spend it, and nothing
+// else pays in the demo. It is never real, and the page never calls it
+// anything but "demo money". The rewards socket tells the page who holds it
+// (payee: set only for a signed-in viewer) and how much is left to spend.
+const demoMoney = { payee: null, balance: null };
+
+function isDemoRoom() {
+  return !!CONFIG && CONFIG.isDemo === true && CONFIG.handle === 'demo';
+}
+
+function demoMoneyCovers(amount) {
+  return isDemoRoom() && !!demoMoney.payee && Number(demoMoney.balance) >= Number(amount) && Number(amount) > 0;
+}
+
+// The buttons name the demo money the moment the balance can pay for them.
+function refreshDemoMoneyLabels() {
+  if (!isDemoRoom()) return;
+  if (joinBtnState === 'idle') setJoinState('idle');
+  initLetterUi();
+}
+
 // "Call in — $0.002/s · max $1": the seat's rate and the spend cap a call
 // can reach, before anyone presses it.
 // Plain text in every state (owner's pick vr-emoji-buttons): the button's one
@@ -380,6 +405,9 @@ function idleCallInLabel() {
   if (!CONFIG || roomIsFree()) return 'Call in — FREE';
   const rate = Number(CONFIG.passkeyTickPrice || CONFIG.tickPrice) / (Number(CONFIG.passkeyTickSeconds) || 1);
   const cap = Number(CONFIG.maxSession);
+  if (isDemoRoom()) {
+    return `Call in — ${formatDollars(rate)}/s${demoMoneyCovers(CONFIG.passkeyTickPrice) ? ' · uses demo money' : ' · demo money'}`;
+  }
   return `Call in — ${formatDollars(rate)}/s${cap > 0 ? ` · max ${formatDollars(cap)}` : ''}`;
 }
 
@@ -1302,6 +1330,28 @@ async function joinSeatMetered(username, { retry = false } = {}) {
   }
 }
 
+// The demo's Call in: paid from demo money on the signed-in path (the MPP
+// route, useRewardCredit), with no wallet and no payment session. The server
+// takes the seat's cap from the demo money and the meter runs it down.
+async function joinSeatWithDemoMoney(username) {
+  const tick = CONFIG.passkeyTickPrice;
+  if (!demoMoney.payee) {
+    throw joinRefusal({ error: 'Sign in to use demo money: watching earns $1 of it a second', reason: 'sign_in_required' }, 'Sign in');
+  }
+  if (!demoMoneyCovers(tick)) {
+    throw joinRefusal({ error: `You have ${formatDollars(demoMoney.balance || 0)} of demo money and a Call in needs ${formatDollars(tick)}. Keep watching: it ticks up every second` }, 'Not enough demo money');
+  }
+  setJoinState('busy', 'Calling in with demo money…');
+  const r = await fetch('/api/join/mpp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, address: demoMoney.payee, room: streamRoomId, useRewardCredit: true, ...stingerSelections(), ...campaignField() })
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.success) throw joinRefusal(data, 'Cannot join');
+  onJoinSuccess(data);
+}
+
 async function joinSeat() {
   const username = document.getElementById('username').value.trim();
 
@@ -1326,6 +1376,11 @@ async function joinSeat() {
       // Free room, or a guest on the streamer's list: no wallet, no chain, no
       // session — straight to the seat.
       await joinSeatMpp(username);
+      return;
+    }
+    if (isDemoRoom()) {
+      // The demo takes demo money only: never a wallet prompt here.
+      await joinSeatWithDemoMoney(username);
       return;
     }
     if (!account) {
@@ -1447,8 +1502,9 @@ function onJoinSuccess(data) {
     const receipt = data.payment && data.payment.transaction
       ? `<details class="tx-details"><summary>Receipt</summary><a class="addr" href="${CONFIG.explorerUrl}/tx/${data.payment.transaction}" target="_blank" rel="noopener">${escapeHtml(data.payment.transaction)}</a></details>`
       : '';
+    const demoPaid = isDemoRoom() && data.paymentMode === 'credit_stream';
     showMessage(
-      `You're set. ${formatDollars(rate)} a second once you go live${cap > 0 ? `, up to ${formatDollars(cap)}` : ''}.${receipt}`,
+      `You're set. ${formatDollars(rate)} a second${demoPaid ? ' of demo money' : ''} once you go live${cap > 0 ? `, up to ${formatDollars(cap)}` : ''}.${demoPaid ? ' Demo money, not real.' : ''}${receipt}`,
       'success',
       'seat'
     );
@@ -1859,7 +1915,9 @@ function mountStreamPreview() {
   // gets the live embed; one with nothing to replay, Holler's off-air card.
   const roomId = (CONFIG && CONFIG.roomId) || streamRoomId;
   const want = new URLSearchParams(location.search).get('replay') || '';
-  fetch(`/api/rooms/${encodeURIComponent(roomId)}/replay${want ? `?airing=${encodeURIComponent(want)}` : ''}`)
+  // &only=bounty (a Claimed pledges card): just the pledged clips, in order.
+  const only = want && new URLSearchParams(location.search).get('only') === 'bounty' ? '&only=bounty' : '';
+  fetch(`/api/rooms/${encodeURIComponent(roomId)}/replay${want ? `?airing=${encodeURIComponent(want)}${only}` : ''}`)
     .then((r) => (r.ok ? r.json() : null))
     .catch(() => null)
     .then((replay) => {
@@ -2557,7 +2615,9 @@ function initLetterUi() {
     ? 'Send a Holler — paused'
     : letterIsFreeRoom(cfg)
       ? 'Send a Holler — FREE'
-      : `Send a Holler — ${formatDollars(letterRate(cfg))}/s`;
+      : isDemoRoom()
+        ? `Send a Holler — ${formatDollars(letterRate(cfg))}/s${demoMoneyCovers(letterPriceForTake(cfg, cfg.minSeconds ?? 3)) ? ' · uses demo money' : ' · demo money'}`
+        : `Send a Holler — ${formatDollars(letterRate(cfg))}/s`;
 }
 
 function setLetterStatus(text, tone) {
@@ -2724,7 +2784,7 @@ function toggleLetterRecording() {
     letterAttempt = newLetterAttempt();
     letterButtons({ record: false, redo: true, send: true });
     const takePrice = letterPriceForTake(cfg, letterDurationS);
-    setLetterStatus(letterIsFreeRoom(cfg) ? `${letterDurationS}s recorded. Send it.` : `${letterDurationS}s recorded. Send for ${formatDollars(takePrice)}.`);
+    setLetterStatus(letterIsFreeRoom(cfg) ? `${letterDurationS}s recorded. Send it.` : `${letterDurationS}s recorded. Send for ${formatDollars(takePrice)}${isDemoRoom() ? ' of demo money' : ''}.`);
     const sendBtn = document.getElementById('letterSendBtn');
     if (sendBtn) sendBtn.textContent = letterIsFreeRoom(cfg) ? 'Send' : `Send · ${formatDollars(takePrice)}`;
   };
@@ -2781,7 +2841,18 @@ async function sendLetter() {
   }
   const letterIsFree = letterIsFreeRoom(cfg);
   const takePrice = letterPriceForTake(cfg, letterDurationS);
-  if (!account && !letterIsFree) {
+  // The demo takes demo money only: no wallet, no payment session.
+  const demoPay = isDemoRoom() && !letterIsFree;
+  if (demoPay) {
+    if (!demoMoney.payee) {
+      setLetterStatus('Sign in to use demo money: watching earns $1 of it a second.', 'error');
+      return;
+    }
+    if (!demoMoneyCovers(takePrice)) {
+      setLetterStatus(`This take costs ${formatDollars(takePrice)} of demo money and you have ${formatDollars(demoMoney.balance || 0)}. Keep watching: it ticks up every second.`, 'error');
+      return;
+    }
+  } else if (!account && !letterIsFree) {
     const MW = getMegaWallet();
     if (MW && MW.configured) await connectPrivyWallet('holler');
     else await connectMetaMask('holler');
@@ -2796,8 +2867,8 @@ async function sendLetter() {
     // pays (letters.js: a take it already has costs nothing).
     for (let round = 0; round < 2 && !upData; round++) {
       if (!attempt.uploadUrl) {
-        setLetterStatus(letterIsFree ? 'Sending…' : `Paying ${formatDollars(takePrice)}…`);
-        const sent = await submitLetter(cfg, username, letterIsFree, attempt.id, takePrice);
+        setLetterStatus(letterIsFree ? 'Sending…' : demoPay ? `Sending with ${formatDollars(takePrice)} of demo money…` : `Paying ${formatDollars(takePrice)}…`);
+        const sent = await submitLetter(cfg, username, letterIsFree, attempt.id, takePrice, demoPay);
         if (sent.alreadySent) {
           showLetterSent('📮 That take was already sent — no second charge.');
           return;
@@ -2854,9 +2925,10 @@ async function sendLetter() {
 // The stub must still quack like a session: close() gets called after
 // submit, and a missing method threw right there, killing the upload
 // ("Sending…" then silence).
-async function submitLetter(cfg, username, letterIsFree, attemptId, takePrice) {
+async function submitLetter(cfg, username, letterIsFree, attemptId, takePrice, demoPay = false) {
   // Paid ones ride a one-voucher session at the take's price (same rails as ticks).
-  const session = letterIsFree
+  // A demo take is paid in demo money on the server: a plain request.
+  const session = letterIsFree || demoPay
     ? { fetch: (u, i) => fetch(u, i), close: async () => {} }
     : await buildMppManager(takePrice);
   const resp = await session.fetch(
@@ -2867,7 +2939,8 @@ async function submitLetter(cfg, username, letterIsFree, attemptId, takePrice) {
       body: JSON.stringify({
         room: streamRoomId,
         username,
-        address: account,
+        address: demoPay ? demoMoney.payee : account,
+        ...(demoPay ? { useRewardCredit: true } : {}),
         durationS: letterDurationS,
         mime: letterBlob.type || 'video/webm',
         replayKeepDays: shownKeepDays,
@@ -2945,6 +3018,7 @@ async function init() {
     void initAuthUi();
     const camp = campaignField().campaign;
     if (camp) void mountCampaignBanner(camp);
+    if (CONFIG.isDemo) mountDemoCoach();
   } catch (err) {
     console.error('Failed to load config', err);
     if (err && err.status === 404) {
@@ -2958,6 +3032,20 @@ async function init() {
     );
   }
   initWallet();
+}
+
+// The demo room only: a step-by-step tour of the page's own controls. It
+// reads this script's states through these getters and changes none of them.
+function mountDemoCoach() {
+  if (abort.signal.aborted) return;
+  if (stopDemoCoach) stopDemoCoach();
+  stopDemoCoach = startDemoCoach({
+    seatState: () => joinBtnState,
+    letterState: () => letterState,
+    maxSeconds: () => Number(lettersCfg()?.maxSeconds) || 10,
+    minSeconds: () => Number(lettersCfg()?.minSeconds) || 3,
+    has: { rewards: !!CONFIG.rewardsEnabled, holler: !!lettersCfg(), callin: joinStreamEnabled() },
+  });
 }
 
 // A link to no room (owner's pick vr-unknown-room): the strip and the tab say
@@ -3027,10 +3115,28 @@ function initRewardsClient(wsUrl) {
           // The server sends the balance with the state, earning or not
           // (rewards.js keptFor), so a paused or superseded page keeps it.
           if (msg.earned != null) lastEarned = msg.earned;
+          if (msg.demo) {
+            // Signed out: no holder, nothing to spend.
+            demoMoney.payee = msg.payee || null;
+            demoMoney.balance = msg.joinBalance != null ? msg.joinBalance : null;
+            refreshDemoMoneyLabels();
+          }
           renderRewardsLine();
           break;
         case 'rewards_earned':
+          if (msg.demo && msg.joinBalance != null) {
+            demoMoney.balance = msg.joinBalance;
+            refreshDemoMoneyLabels();
+          }
           renderEarned(msg);
+          break;
+        case 'rewards_balance':
+          // A Call in or a Holler took demo money, or a refund gave it back.
+          if (msg.demo && msg.joinBalance != null) {
+            demoMoney.balance = msg.joinBalance;
+            refreshDemoMoneyLabels();
+            renderRewardsLine();
+          }
           break;
         case 'rewards_error':
           console.warn('[rewards] payout error:', msg.message);
@@ -3222,10 +3328,46 @@ function initRewardsClient(wsUrl) {
     return ` · your ${amt} ${one ? 'is' : 'are'} kept`;
   }
 
+  // The demo's line, in plain dollars of demo money: "Demo money · $4 of $10
+  // · not real" (owner, 2026-11-09). Never "credit", never a payout step.
+  function demoLineText(reason, maxed) {
+    const spend = demoMoney.balance != null && Number(demoMoney.balance) !== Number(lastEarned || 0)
+      ? ` · ${formatDollars(demoMoney.balance)} left to spend`
+      : '';
+    if (cfg.enabled) {
+      return maxed
+        ? `Maxed · ${balanceOfCap()}${spend} · not real`
+        : `Earning ${formatDollars(cfg.earnAmount)} every ${Number(cfg.earnInterval) || 1} s · ${balanceOfCap()}${spend} · not real`;
+    }
+    const have = demoMoney.balance != null && Number(demoMoney.balance) > 0 ? ` · you have ${formatDollars(demoMoney.balance)} to spend` : '';
+    if (reason === 'demo_budget_hour') return `Demo money is used up for now — back within the hour${have}`;
+    if (reason === 'demo_budget_day') return `Demo money is used up for today — back within a day${have}`;
+    if (reason === 'sign_in_required') return `${rewardTerms()} · not real`;
+    if (reason === 'room_not_live') return 'Paused by the streamer' + keptNote();
+    if (reason === 'superseded') return 'Earning in another tab' + keptNote();
+    return 'Not earning right now' + have;
+  }
+
   function renderRewardsLine() {
     const line = document.getElementById('rewardsLine');
     const state = document.getElementById('rewardsState');
     if (!line || !state || !cfg) return;
+    if (cfg.demo) {
+      const tag = line.querySelector('.join-rewards-tag');
+      if (tag) tag.textContent = 'Demo money';
+      const reason = cfg.enabled ? null : cfg.reason;
+      const maxed = cfg.enabled && (lastCapped || (Number(cfg.earnCap) > 0 && lastEarned != null && Number(lastEarned) >= Number(cfg.earnCap)));
+      line.hidden = false;
+      line.dataset.state = cfg.enabled ? (maxed ? 'maxed' : 'earning') : String(reason || '');
+      state.textContent = demoLineText(reason, maxed);
+      const signIn = document.getElementById('rewardsSignIn');
+      if (signIn) signIn.hidden = reason !== 'sign_in_required';
+      const payout = document.getElementById('rewardsPayoutBtn');
+      if (payout) payout.hidden = true;
+      const sheet = document.getElementById('payoutSheet');
+      if (sheet) sheet.hidden = true;
+      return;
+    }
     const signIn = document.getElementById('rewardsSignIn');
     const payout = document.getElementById('rewardsPayoutBtn');
     const reason = cfg.enabled ? null : cfg.reason;
@@ -3288,6 +3430,8 @@ function initRewardsClient(wsUrl) {
     // A different viewer now: the balance shown is theirs, from the server.
     lastEarned = null;
     lastCapped = false;
+    demoMoney.payee = null;
+    demoMoney.balance = null;
     const old = rws;
     rws = null;
     clearTimeout(reconnectTimer);
@@ -3626,6 +3770,7 @@ export function initJoinPage({ wsUrl }) {
   return () => {
     abort.abort();
     cleanupRewards();
+    if (stopDemoCoach) { stopDemoCoach(); stopDemoCoach = null; }
     clearTimeout(camFallbackTimer);
     clearTimeout(camErrorTimer);
     clearTimeout(liveAskTimer);

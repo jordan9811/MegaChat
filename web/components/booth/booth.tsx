@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import { fetchPublicConfig, listPublicRooms, listRecentAirings, type PublicRoomCard, type RecentAiring } from '@/lib/api'
+import { fetchPublicConfig, listClaimedAirings, listPublicRooms, listRecentAirings, type ClaimedAiring, type PublicRoomCard, type RecentAiring } from '@/lib/api'
 import { listBountyPools, type BountyPool } from '@/lib/bounty-api'
 import { AccountChip } from '@/components/account-chip'
 import { PlatformPip } from '@/components/platform-pip'
@@ -16,6 +16,7 @@ import { LivenessBadge } from '@/components/liveness-badge'
 import { HollerMark } from '@/components/holler-mark'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { RecentRail } from './recent-rail'
+import { ClaimedPledges, ClaimedToggle } from './claimed-pledges'
 import { HostFace } from './host-face'
 import { SiteFooter } from '@/components/site-footer'
 
@@ -367,17 +368,21 @@ export function Booth({
   initialRooms,
   initialPools,
   initialAirings = [],
+  initialClaimed = [],
   contactHref,
 }: {
   initialRooms: PublicRoomCard[]
   initialPools: BountyPool[]
   initialAirings?: RecentAiring[]
+  initialClaimed?: ClaimedAiring[]
   /** Read on the server (CONTACT_URL), for the footer's Contact link. */
   contactHref?: string
 }) {
   const [rooms, setRooms] = useState<PublicRoomCard[]>(initialRooms)
   const [pools, setPools] = useState<BountyPool[]>(initialPools)
   const [airings, setAirings] = useState<RecentAiring[]>(initialAirings)
+  const [claimed, setClaimed] = useState<ClaimedAiring[]>(initialClaimed)
+  const [claimedOpen, setClaimedOpen] = useState(false)
   const [chip, setChip] = useState<ChipKey>('all')
   const [showAll, setShowAll] = useState(false)
 
@@ -447,6 +452,25 @@ export function Booth({
       clearInterval(t)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Claimed pledges ride the same clock: a broadcast that just ended with
+  // pledged clips on it reaches the (closed) row's count without a reload.
+  useEffect(() => {
+    let alive = true
+    const tick = async () => {
+      try {
+        const data = await listClaimedAirings()
+        if (alive) setClaimed(data.airings || [])
+      } catch {
+        /* keep last good data */
+      }
+    }
+    const t = setInterval(tick, AIRING_POLL_MS)
+    return () => {
+      alive = false
+      clearInterval(t)
+    }
   }, [])
 
   const onAirCount = useMemo(() => rooms.filter(onAir).length, [rooms])
@@ -525,8 +549,23 @@ export function Booth({
   // row: as a tile it dropped alone onto a half-height third row whenever
   // the 8 tiles filled two rows of four.
   const capped = rest.length > GRID_CAP
+  // Claimed pledges (claimed-pledges.tsx), on the "All" chip only, as Recently
+  // aired is, and closed until opened. Where Recently aired stacks above the
+  // rooms, the closed toggle docks on the end of its heading line and the
+  // opened cards drop in between it and the rooms: a row of its own there
+  // pushed the first room off the fold on a busy board (_gate-board-fold F4).
+  // In the sparse strip, where the sections share one row side by side, it is
+  // its own heading row under the strip — inside, it would split that row.
+  const showClaimed = chip === 'all'
+  const toggleClaimed = () => setClaimedOpen((o) => !o)
+  const docked = showClaimed && !sparse && recentAirings.length > 0 && featuredList.length > 0
   const recentSection = recentAirings.length ? (
-    <RecentRail key="recent" airings={recentAirings} span={recentAirings.length} />
+    <RecentRail
+      key="recent"
+      airings={recentAirings}
+      span={recentAirings.length}
+      aside={docked ? <ClaimedToggle n={claimed.length} open={claimedOpen} onToggle={toggleClaimed} docked /> : undefined}
+    />
   ) : null
   const roomsSection = (
     <section key="rooms" className="mcr-rooms" style={spanStyle(shown.length + 1)}>
@@ -550,7 +589,11 @@ export function Booth({
       </div>
     </section>
   )
+  const claimedSection = showClaimed ? (
+    <ClaimedPledges key="claimed" airings={claimed} open={claimedOpen} onToggle={toggleClaimed} docked={docked} />
+  ) : null
   const sections = quiet ? [recentSection, roomsSection] : [roomsSection, recentSection]
+  const stacked = quiet ? [recentSection, claimedSection, roomsSection] : [roomsSection, recentSection, claimedSection]
 
   return (
     // No forced theme: the board follows next-themes' class on <html>, and
@@ -637,11 +680,14 @@ export function Booth({
                   <FeaturedRoom room={featuredList[0]} size={featuredSize} terms={rewardTermsById[featuredList[0].id]} />
                 )}
                 {sparse ? (
-                  <div className="mcr-strip" data-n={tiles} style={{ ['--n' as string]: tiles } as CSSProperties}>
-                    {sections}
-                  </div>
+                  <>
+                    <div className="mcr-strip" data-n={tiles} style={{ ['--n' as string]: tiles } as CSSProperties}>
+                      {sections}
+                    </div>
+                    {claimedSection}
+                  </>
                 ) : (
-                  sections
+                  stacked
                 )}
               </>
             ) : (
@@ -677,6 +723,7 @@ export function Booth({
               </div>
             )}
             {featuredList.length ? null : recentSection}
+            {featuredList.length ? null : claimedSection}
           </div>
 
           <BountyBoard pools={topPools.slice(0, 5)} />

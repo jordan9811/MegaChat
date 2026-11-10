@@ -89,6 +89,18 @@ export function listRecentAirings(limit = 12) {
   return request<{ airings: RecentAiring[] }>(`/api/rooms/recent?limit=${limit}`)
 }
 
+/** A finished broadcast on which a streamer played the clips fans pledged to
+ *  them (/api/rooms/claimed). `moments` holds only those clips, in order. */
+export type ClaimedAiring = RecentAiring & {
+  bountyClips: number
+  /** The pools the clips came from: where, and whose. Never who pledged. */
+  pools: { handle: string; platform: string }[]
+}
+
+export function listClaimedAirings(limit = 12) {
+  return request<{ airings: ClaimedAiring[] }>(`/api/rooms/claimed?limit=${limit}`)
+}
+
 export type RoomLayout = {
   version: number
   origin: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'

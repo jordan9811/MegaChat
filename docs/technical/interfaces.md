@@ -8,7 +8,7 @@ The contracts a contributor or integrator meets, embedded **from source** by `np
 
 <!-- source:web/lib/api.ts#Room -->
 ```typescript
-// web/lib/api.ts — Room (lines 101–136), embedded by docs:sync
+// web/lib/api.ts — Room (lines 113–148), embedded by docs:sync
 export type Room = {
   id: string
   name: string
@@ -52,7 +52,7 @@ export type Room = {
 
 <!-- source:web/lib/api.ts#RoomLayout -->
 ```typescript
-// web/lib/api.ts — RoomLayout (lines 92–99), embedded by docs:sync
+// web/lib/api.ts — RoomLayout (lines 104–111), embedded by docs:sync
 export type RoomLayout = {
   version: number
   origin: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
@@ -70,7 +70,7 @@ What `/api/seats` and the dashboard's session view carry per seat. `paymentMode`
 
 <!-- source:web/lib/api.ts#Seat -->
 ```typescript
-// web/lib/api.ts — Seat (lines 138–155), embedded by docs:sync
+// web/lib/api.ts — Seat (lines 150–167), embedded by docs:sync
 export type Seat = {
   id: string
   username: string
@@ -96,7 +96,7 @@ export type Seat = {
 
 <!-- source:web/lib/api.ts#RoomSession -->
 ```typescript
-// web/lib/api.ts — RoomSession (lines 157–168), embedded by docs:sync
+// web/lib/api.ts — RoomSession (lines 169–180), embedded by docs:sync
 export type RoomSession = {
   room: Room
   seats: Seat[]
@@ -157,7 +157,7 @@ export type RecentAiring = {
 
 <!-- source:web/lib/api.ts#GuestEntry -->
 ```typescript
-// web/lib/api.ts — GuestEntry (lines 562–567), embedded by docs:sync
+// web/lib/api.ts — GuestEntry (lines 574–579), embedded by docs:sync
 export type GuestEntry = {
   handle: string
   addedAt: string
@@ -169,7 +169,7 @@ export type GuestEntry = {
 
 <!-- source:web/lib/api.ts#GuestList -->
 ```typescript
-// web/lib/api.ts — GuestList (lines 570–575), embedded by docs:sync
+// web/lib/api.ts — GuestList (lines 582–587), embedded by docs:sync
 export type GuestList = {
   enabled: boolean
   explicit: boolean | null

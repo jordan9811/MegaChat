@@ -1,4 +1,4 @@
-import type { PublicRoomCard, RecentAiring } from '@/lib/api'
+import type { ClaimedAiring, PublicRoomCard, RecentAiring } from '@/lib/api'
 import type { BountyPool } from '@/lib/bounty-api'
 import { withBountyExamples } from '@/lib/bounty-examples'
 import { backendBase } from '@/lib/backend-base'
@@ -56,6 +56,19 @@ export async function loadRecentAirings(limit = 8): Promise<RecentAiring[]> {
     return data.airings ?? []
   } catch {
     return [] // a rail that cannot load is a quiet rail, never an error
+  }
+}
+
+// Claimed pledges, for the same reason: the board draws its (collapsed) row in
+// the first HTML, and its count should not change a beat after load.
+export async function loadClaimedAirings(limit = 12): Promise<ClaimedAiring[]> {
+  try {
+    const res = await fetch(`${backendBase()}/api/rooms/claimed?limit=${limit}`, { cache: 'no-store' })
+    if (!res.ok) return []
+    const data = (await res.json()) as { airings?: ClaimedAiring[] }
+    return data.airings ?? []
+  } catch {
+    return []
   }
 }
 

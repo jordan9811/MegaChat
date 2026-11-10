@@ -25,13 +25,23 @@
 // not money: no bounds beyond the room's own, and their cap is per wallet in
 // memory. One earning socket per account (or points wallet) per room; a newer
 // register supersedes the older.
+//
+// THE DEMO ROOM (demo-money.js) is the one exception to the bounds above: its
+// reward is DEMO MONEY, seat credit that is never real, so it earns on its own
+// terms (every 1 s at the fastest, its own amount and cap), credit only, never
+// cash, and only while the house budget (DEMO_CREDIT_HOURLY / _DAILY, across
+// all users) has room. It is held by a placeholder wallet per account
+// (demoWalletFor), not the payout wallet, and the account page never lists it.
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createLedger } from './bounty-ledger.js';
 import { creditViewer, parseRewardAmount, formatRewardAmount, getCredit } from './reward-credits.js';
 import { toAtomic, isEvmAddress } from './token-utils.js';
+import { isDemoRoom, demoWalletFor, createDemoBudget } from './demo-money.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// A viewer's demo-money cap is counted over this window (rewards.js earnedSoFar).
+const DEMO_CAP_WINDOW_MS = 24 * 60 * 60_000;
 const posInt = (v, d) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : d; };
 
 /** The operator's bounds, read when the rewards attach (after server.js loads .env). Env names only. */
@@ -88,6 +98,8 @@ export function attachRewards(wss, opts = {}) {
     earnedReady = true;
   }
   const pointsEarned = new Map(); // points are not money: per (room, wallet), in memory
+  // The house budget over every demo grant, folded from this ledger.
+  const demoBudget = createDemoBudget({ rows: () => ledger.all(), env: opts.env || process.env });
   // A cash EARN row is written before its door intent, and its ref is the
   // row's seq, so a crash between the two leaves an EARN with no intent:
   // record the missing intents now (idempotent on ref), if a pool signer exists.
@@ -148,13 +160,20 @@ export function attachRewards(wss, opts = {}) {
     if (!rw?.enabled) return { enabled: false, reason: 'rewards_off' };
     const meta = rewardMeta(cfg);
     const mode = meta.type === 'points' ? 'points' : meta.type === 'token' || rw.payout === 'credit' ? 'credit' : 'cash';
-    const base = { mode, meta, rw };
+    // The demo's reward is demo money, which is credit and never cash.
+    const demo = isDemoRoom(cfg) && mode !== 'points';
+    const base = { mode, meta, rw, demo };
+    if (demo && mode === 'cash') return { ...base, enabled: false, reason: 'demo_money_only' };
     let interval, earn, cap;
     try {
       interval = Number(rw.earnInterval) > 0 ? Number(rw.earnInterval) : 60;
       earn = parseRewardAmount(rw.earnAmount, meta.decimals);
       cap = parseRewardAmount(rw.earnCap, meta.decimals);
-      if (mode !== 'points') {
+      if (demo) {
+        // Demo money: the room's own terms, every second at the fastest; the
+        // house budget is what bounds it (demoBudget, below and in earnOnce).
+        interval = Math.max(1, Math.round(interval));
+      } else if (mode !== 'points') {
         interval = Math.max(interval, bounds.minIntervalS);
         earn = min(earn, toAtomic(bounds.maxEarn, meta.decimals));
         cap = min(cap, toAtomic(bounds.maxCap, meta.decimals));
@@ -176,7 +195,16 @@ export function attachRewards(wss, opts = {}) {
       if (!poolReady()) return { ...base, ...limits, enabled: false, reason: 'no_pool_signer' };
     }
     if (ledger.corrupt) return { ...base, ...limits, enabled: false, reason: 'ledger_corrupt' };
+    if (demo) {
+      const spent = demoBudget.state().blocked;
+      if (spent) return { ...base, ...limits, enabled: false, reason: spent };
+    }
     if (!state.identity?.accountId) return { ...base, ...limits, enabled: false, reason: 'sign_in_required' };
+    if (demo) {
+      // Demo money is paid to no one: its placeholder wallet, never the payout wallet.
+      const payee = demoWalletFor(state.identity.accountId);
+      return { ...base, ...limits, enabled: true, payee, accountId: state.identity.accountId, holder: `a:${state.identity.accountId}` };
+    }
     const payee = payoutWalletFor(state.identity.accountId);
     if (!isEvmAddress(payee)) return { ...base, ...limits, enabled: false, reason: 'payout_wallet_required' };
     return { ...base, ...limits, enabled: true, payee, accountId: state.identity.accountId, holder: `a:${state.identity.accountId}` };
@@ -185,6 +213,20 @@ export function attachRewards(wss, opts = {}) {
   /** Lifetime earned in this room by this payee, and by this account: the larger counts against the cap. */
   function earnedSoFar(roomId, p) {
     if (p.mode === 'points') return pointsEarned.get(walletKey(roomId, p.payee)) || 0n;
+    // Demo money resets daily: the cap counts this viewer's demo grants in the
+    // last 24 hours (from the ledger, so a deploy changes nothing), not a
+    // lifetime total, so anyone can come back tomorrow and try it again.
+    // Counting what is in hand instead let a viewer keep earning while their
+    // money sat in a running Call in, which drained the house budget.
+    if (p.demo) {
+      const since = Date.now() - DEMO_CAP_WINDOW_MS;
+      let sum = 0n;
+      for (const r of ledger.all()) {
+        if (r.type === 'EARN' && r.house === 'demo' && r.roomId === roomId && r.at > since
+          && ((p.accountId && r.accountId === p.accountId) || String(r.payee).toLowerCase() === String(p.payee).toLowerCase())) sum += BigInt(r.amountAtomic);
+      }
+      return sum;
+    }
     loadEarned();
     const byWallet = earned.get(walletKey(roomId, p.payee)) || 0n;
     const byAccount = p.accountId ? earned.get(acctKey(roomId, p.accountId)) || 0n : 0n;
@@ -208,6 +250,18 @@ export function attachRewards(wss, opts = {}) {
     return atomic == null ? {} : { earned: formatRewardAmount(atomic, p.meta.decimals) };
   }
 
+  // The demo page needs the spendable demo money and the wallet that holds it
+  // whatever the earning state (paused by the house budget, maxed), because
+  // spending it on a Call in or a Holler does not depend on earning more.
+  function demoExtras(state, p) {
+    if (!p.demo) return {};
+    const holder = state.identity?.accountId ? demoWalletFor(state.identity.accountId) : null;
+    return {
+      demo: true,
+      ...(holder ? { payee: holder, joinBalance: formatRewardAmount(getCredit(state.roomId, holder).atomic, p.meta.decimals) } : {}),
+    };
+  }
+
   function configMessage(state, p) {
     return {
       type: 'rewards_config',
@@ -223,6 +277,7 @@ export function attachRewards(wss, opts = {}) {
       // dryRun: true when nothing on chain moves for this reward.
       dryRun: p.mode !== 'cash',
       ...(p.enabled ? { payee: p.payee, earned: formatRewardAmount(earnedSoFar(state.roomId, p), p.meta.decimals) } : keptFor(state, p)),
+      ...demoExtras(state, p),
     };
   }
 
@@ -230,7 +285,14 @@ export function attachRewards(wss, opts = {}) {
     const p = policyFor(state);
     if (!p.enabled || holders.get(`${state.roomId}|${p.holder}`) !== ws) return;
     const so = earnedSoFar(state.roomId, p);
-    const amountAtomic = min(p.earn, p.cap - so);
+    let amountAtomic = min(p.earn, p.cap - so);
+    // Never past the house budget: a grant is cut to what is left of it, and
+    // none is made once it is spent (the ticker then pushes the paused state).
+    if (p.demo && amountAtomic > 0n) {
+      const left = demoBudget.state().left;
+      if (left <= 0n) return;
+      amountAtomic = min(amountAtomic, left);
+    }
     if (amountAtomic <= 0n) {
       send(ws, { type: 'rewards_earned', roomId: state.roomId, payout: p.mode, earned: formatRewardAmount(so, p.meta.decimals), symbol: p.meta.symbol, capped: true, dryRun: p.mode !== 'cash' });
       return;
@@ -242,7 +304,9 @@ export function attachRewards(wss, opts = {}) {
     } else {
       // The EARN row first: it is what the cap counts, and a cash intent's ref
       // is its seq. Then ONE of: the cash intent, or the seat credit.
-      const row = ledger.append({ type: 'EARN', roomId: state.roomId, accountId: p.accountId, payee: p.payee, mode: p.mode, amountAtomic: amountAtomic.toString(), decimals: p.meta.decimals, symbol: p.meta.symbol, at: Date.now() });
+      const at = Date.now();
+      const row = ledger.append({ type: 'EARN', roomId: state.roomId, accountId: p.accountId, payee: p.payee, mode: p.mode, amountAtomic: amountAtomic.toString(), decimals: p.meta.decimals, symbol: p.meta.symbol, at, ...(p.demo ? { house: 'demo' } : {}) });
+      if (p.demo) demoBudget.note(amountAtomic, at);
       addEarned(walletKey(state.roomId, p.payee), amountAtomic);
       addEarned(acctKey(state.roomId, p.accountId), amountAtomic);
       if (p.mode === 'cash') intentRef = recordIntent(row).row.ref;
@@ -259,6 +323,7 @@ export function attachRewards(wss, opts = {}) {
       ...(p.mode === 'cash' ? {} : { joinBalance: formatRewardAmount(getCredit(state.roomId, p.payee).atomic, p.meta.decimals) }),
       symbol: p.meta.symbol,
       ...(intentRef ? { intentRef } : {}),
+      ...(p.demo ? { demo: true } : {}),
       capped: total >= p.cap,
       dryRun: p.mode !== 'cash',
     });
@@ -283,9 +348,23 @@ export function attachRewards(wss, opts = {}) {
     if (!state.superseded) register(ws, state);
   }
 
+  // The house budget reaches the open demo pages the same way: a demo socket
+  // whose budget state flips (spent, or freed as the window rolls) registers
+  // again, which pushes the paused or earning state in words.
+  function syncBudget(ws, state, blocked) {
+    if (state.budgetBlocked === blocked) return;
+    state.budgetBlocked = blocked;
+    if (!state.superseded) register(ws, state);
+  }
+
   const ticker = setInterval(() => {
+    let budgetBlocked;
     for (const [ws, state] of sessions.entries()) {
       if (state.roomId) syncLive(ws, state);
+      if (state.demo) {
+        if (budgetBlocked === undefined) budgetBlocked = demoBudget.state().blocked;
+        syncBudget(ws, state, budgetBlocked);
+      }
       if (!state.visible || !state.roomId) continue;
       const watcher = state.wallet || state.payee;
       if (watcher) {
@@ -317,6 +396,8 @@ export function attachRewards(wss, opts = {}) {
     const p = policyFor(state);
     state.interval = p.enabled ? p.interval : 0;
     state.payee = p.enabled ? p.payee : null;
+    state.demo = !!p.demo;
+    if (p.demo) state.budgetBlocked = demoBudget.state().blocked;
     if (p.enabled) {
       // One earning socket per account (points: per wallet) per room.
       state.holderKey = `${state.roomId}|${p.holder}`;
@@ -330,7 +411,7 @@ export function attachRewards(wss, opts = {}) {
     }
     send(ws, configMessage(state, p));
     if (p.enabled && p.mode !== 'cash') {
-      send(ws, { type: 'rewards_earned', roomId: state.roomId, payout: p.mode, earned: formatRewardAmount(earnedSoFar(state.roomId, p), p.meta.decimals), joinBalance: formatRewardAmount(getCredit(state.roomId, p.payee).atomic, p.meta.decimals), symbol: p.meta.symbol, dryRun: true });
+      send(ws, { type: 'rewards_earned', roomId: state.roomId, payout: p.mode, earned: formatRewardAmount(earnedSoFar(state.roomId, p), p.meta.decimals), joinBalance: formatRewardAmount(getCredit(state.roomId, p.payee).atomic, p.meta.decimals), symbol: p.meta.symbol, dryRun: true, ...(p.demo ? { demo: true } : {}) });
     }
   }
 
@@ -394,6 +475,8 @@ export function attachRewards(wss, opts = {}) {
     const byRoom = new Map();
     for (const r of ledger.all()) {
       if (r.type !== 'EARN' || r.accountId !== accountId) continue;
+      // Demo money is never real: the account's Rewards section never lists it.
+      if (r.house === 'demo' || isDemoRoom(getRoomConfig(r.roomId))) continue;
       let room = byRoom.get(r.roomId);
       if (!room) byRoom.set(r.roomId, (room = { roomId: r.roomId, decimals: Number(r.decimals ?? 6), symbol: r.symbol || 'USDC', earned: 0n, cash: 0n, credit: 0n, payees: new Set(), transfers: [], lastAt: 0 }));
       const amt = BigInt(r.amountAtomic || 0);
@@ -439,8 +522,27 @@ export function attachRewards(wss, opts = {}) {
     return { rooms };
   }
 
+  /**
+   * The spendable seat balance changed outside watching (a Call in took it, a
+   * seat or a Holler gave some back): tell the open pages that hold it, so the
+   * page shows the server's balance. Read-only; moves nothing.
+   */
+  function pushBalance(roomId, wallet) {
+    if (!roomId || !wallet) return;
+    const w = String(wallet).toLowerCase();
+    for (const [ws, state] of sessions.entries()) {
+      if (state.roomId !== roomId) continue;
+      const accountId = state.identity?.accountId || null;
+      const holder = state.payee || (accountId ? (state.demo ? demoWalletFor(accountId) : payoutWalletFor(accountId)) : null);
+      if (!holder || String(holder).toLowerCase() !== w) continue;
+      const c = getCredit(roomId, holder);
+      send(ws, { type: 'rewards_balance', roomId, joinBalance: formatRewardAmount(c.atomic, c.decimals ?? 6), ...(state.demo ? { demo: true } : {}) });
+    }
+  }
+
   return {
     summaryFor,
+    pushBalance,
     /** Seconds this wallet has watched this room (visible tab + registered). */
     getWatchSeconds(roomId, wallet) {
       if (!roomId || !wallet) return 0;

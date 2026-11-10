@@ -16,9 +16,10 @@
 //             with no video treatment, because a generated card that could
 //             pass for a screenshot is a lie about what we have.
 
-import type { CSSProperties } from 'react'
-import type { RecentAiring } from '@/lib/api'
+import type { CSSProperties, ReactNode } from 'react'
+import type { ClaimedAiring, RecentAiring } from '@/lib/api'
 import { FEATURE_LABELS } from '@/components/feature-tag'
+import { PlatformPip } from '@/components/platform-pip'
 import { HostFace } from './host-face'
 
 function ago(ms: number): string {
@@ -53,19 +54,24 @@ function momentKinds(a: RecentAiring): ('holler' | 'callin')[] {
   return kinds
 }
 
-function RecentCard({ a }: { a: RecentAiring }) {
+/** `claimed`: the Claimed pledges card (claimed-pledges.tsx) — the same card,
+ *  opening a replay of just the pledged clips, and saying how many and from
+ *  which platform's pool. */
+export function RecentCard({ a, claimed }: { a: RecentAiring; claimed?: ClaimedAiring }) {
   // A plain anchor, never next/link: /<handle> is served by Express, and a
   // client-side route to it is the 404 5993024 fixed on the room cards.
   // ?replay= opens THIS broadcast's replay on the room page (while the room
-  // is offline), at its MegaChat or first guest (/api/rooms/:id/replay).
-  const replay = `replay=${encodeURIComponent(a.airingId)}`
+  // is offline), at its MegaChat or first guest (/api/rooms/:id/replay);
+  // &only=bounty narrows it to the pledged clips, opening at the first.
+  const replay = `replay=${encodeURIComponent(a.airingId)}${claimed ? '&only=bounty' : ''}`
   const href = a.handle ? `/${a.handle}?${replay}` : `/join?room=${encodeURIComponent(a.roomId)}&${replay}`
   const p = a.poster
   const guests = guestCount(a)
   const kinds = momentKinds(a)
   // The aria-label replaces the card's text for a screen reader, so the tags'
   // words ride along in it.
-  const label = [`${a.name}, aired ${ago(a.endedAt)}`, ...kinds.map((k) => FEATURE_LABELS[k])].join(', ')
+  const clips = claimed ? `${claimed.bountyClips} bounty clip${claimed.bountyClips === 1 ? '' : 's'}` : ''
+  const label = [`${a.name}, aired ${ago(a.endedAt)}`, ...kinds.map((k) => FEATURE_LABELS[k]), ...(clips ? [clips] : [])].join(', ')
   return (
     <a href={href} className="mcr-recent" aria-label={label}>
       {/* `dark`: a picture of a broadcast is a dark screen in either theme. */}
@@ -112,14 +118,27 @@ function RecentCard({ a }: { a: RecentAiring }) {
           ) : null}
           {ago(a.endedAt)}
           {guests ? ` · ${guests} guest${guests === 1 ? '' : 's'} on camera` : ''}
+          {claimed ? (
+            <>
+              {' · '}
+              {claimed.pools.slice(0, 3).map((p) => (
+                <b key={`${p.platform}:${p.handle}`} className="mcr-host-pip" title={`${p.platform} pool for @${p.handle}`}>
+                  <PlatformPip platform={p.platform} />
+                </b>
+              ))}
+              <span className="mcr-claimed-n">{clips}</span>
+            </>
+          ) : null}
         </small>
       </span>
     </a>
   )
 }
 
-/** `span`: how many of the sparse strip's columns this section takes (booth.css .mcr-strip). */
-export function RecentRail({ airings, span }: { airings: RecentAiring[]; span?: number }) {
+/** `span`: how many of the sparse strip's columns this section takes (booth.css .mcr-strip).
+ *  `aside`: a control on the end of the heading line, out of the flow (the
+ *  closed Claimed pledges toggle, claimed-pledges.tsx), so it costs no height. */
+export function RecentRail({ airings, span, aside }: { airings: RecentAiring[]; span?: number; aside?: ReactNode }) {
   if (!airings.length) return null
   return (
     <section
@@ -128,6 +147,7 @@ export function RecentRail({ airings, span }: { airings: RecentAiring[]; span?: 
       style={span ? ({ ['--k' as string]: span } as CSSProperties) : undefined}
     >
       <h2 className="mcr-sec-h">Recently aired</h2>
+      {aside}
       <div className="mcr-recent-grid">
         {airings.map((a) => (
           <RecentCard key={a.airingId} a={a} />

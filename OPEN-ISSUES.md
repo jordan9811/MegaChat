@@ -5133,3 +5133,19 @@ commit before); `_gate-dashboard-update`, `_gate-rooms-store`,
   (tile counts and the strip rule are untouched); not run in round 3, so its
   start date is unknown. F4 (first room above the fold) passes after the host
   line moved onto the name row.
+
+## 2026-11-09 — Demo money
+
+- **DM1 — a deploy empties every viewer's unspent demo money, and the $10 cap
+  is lifetime.** Seat credit lives in memory (`reward-credits.js`); the EARN
+  rows that the per-viewer cap counts are on disk. So a viewer holding demo
+  money at a deploy loses it and cannot earn it back in the demo. The same is
+  true of credit in any room (rewards.js `summaryFor` notes it). Options: fold
+  the balance from the ledger with spend rows, or reset the demo's cap per day.
+  **Update 2026-11-09:** the demo's cap is now $10 per viewer per rolling 24
+  hours (rewards.js `earnedSoFar`, counted from the ledger on disk), so
+  anyone can come back the next day; a balance lost to a deploy counts
+  against that day. Counting the balance in hand instead let a viewer keep
+  earning while their money sat in a running Call in (it drained the house
+  budget in _gate-demo-credit D5-D7). Credit in other rooms still loses its
+  in-memory balance on a deploy.

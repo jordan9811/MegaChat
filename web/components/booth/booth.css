@@ -1596,3 +1596,87 @@ html:has(.mc-booth) ::-webkit-scrollbar-thumb:hover {
 .mcr-face b { width: 18px; height: 18px; background: none; }
 .mcr-face b svg { width: 18px; height: 18px; }
 .mcr-host-pip svg { width: 14px; height: 14px; }
+
+/* ── claimed pledges ────────────────────────────────────────────────────
+   A closed dropdown (claimed-pledges.tsx). Docked: the toggle sits on the end
+   of Recently aired's heading line, out of the flow, and the section below
+   the rail is only the opened cards — closed, it costs the board nothing
+   (_gate-board-fold F4). Otherwise: one short heading row of its own. */
+.mcr-claimed {
+  margin-bottom: 12px;
+}
+.mcr-claimed.is-docked:has(> .mcr-claimed-body[hidden]) {
+  display: none;
+}
+.mcr-claimed.is-docked {
+  margin-bottom: 16px;
+}
+.mcr-claimed-h {
+  margin: 0;
+}
+.mcr-recent-rail {
+  position: relative;
+}
+.mcr-claimed-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  font-family: var(--font-display), var(--font-ui), sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+/* On Recently aired's line it is the second thing there: smaller, muted. */
+.mcr-claimed-toggle.is-docked {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 13px;
+  color: var(--mcb-muted);
+}
+.mcr-claimed-toggle:hover,
+.mcr-claimed-toggle[aria-expanded='true'] {
+  color: var(--mcb-fg);
+}
+.mcr-claimed-toggle:hover .mcr-claimed-chev,
+.mcr-claimed-toggle[aria-expanded='true'] .mcr-claimed-chev {
+  color: var(--hl-strap-hi);
+}
+.mcr-claimed-count {
+  min-width: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--mcb-line2);
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--mcb-muted);
+}
+.mcr-claimed-chev {
+  width: 12px;
+  height: 12px;
+  color: var(--mcb-dim);
+  transition: transform 160ms var(--mcb-ease);
+}
+.mcr-claimed-toggle[aria-expanded='true'] .mcr-claimed-chev {
+  transform: rotate(180deg);
+}
+.mcr-claimed:not(.is-docked) > .mcr-claimed-body:not([hidden]) {
+  margin-top: 10px;
+}
+.mcr-claimed-empty {
+  margin: 0;
+  color: var(--mcb-dim);
+  font-size: 12.5px;
+}
+.mcr-recent-sub .mcr-host-pip svg { width: 12px; height: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .mcr-claimed-chev { transition: none; }
+}

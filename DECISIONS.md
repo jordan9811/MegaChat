@@ -2514,3 +2514,32 @@ previous commit.
   text colour so a brand hue would not collide with the feature colours.
   One component, `web/components/platform-pip.tsx`, draws its own plate.
   Undo: restore the single-colour glyphs there.
+
+## 2026-11-09 — Demo money in the Holler demo room
+
+- **The demo runs on demo money: $1 earned a second, up to $10 per signed-in
+  viewer; Call in $0.10/s (max $10), Holler $0.05/s ($0.50 for 10 s).**
+  Owner's numbers. Internally it is seat credit (`reward-credits.js`); a viewer
+  only ever sees "demo money, not real". `demo-money.js` holds the rules.
+- **Real money is refused in the demo room** (`demo_money_only` on both join
+  routes and on `/api/letter/submit`). Judgment call: at $0.10/s a "demo"
+  that quietly charged a real wallet would be a nasty surprise, and the owner
+  said the demo's money is never real. Undo: drop the `isDemoRoom` refusals in
+  `server.js` and `letters.js`.
+- **Demo money is held by a placeholder wallet per account**
+  (`demoWalletFor`: a hash of the account id, no key), not the payout wallet,
+  so the demo never asks for a payout wallet and nothing presents it as paid
+  out. The account Rewards section skips it (`rewards.js summaryFor`). Undo:
+  have `policyFor` and `creditRefusal` use `payoutWalletFor` in the demo too.
+- **Only the room with handle `demo` AND `isDemo` is the demo**: `isDemo` is a
+  plain config key a create call can store, so it alone earns no exemption.
+- **House budget: DEMO_CREDIT_HOURLY / DEMO_CREDIT_DAILY (defaults 200 / 1000)
+  across all users**, folded from the EARN rows marked `house: 'demo'` in
+  `rewards-ledger.jsonl`, so it survives a restart. A grant is cut to what is
+  left; when none is left the page says "Demo money is used up for now — back
+  within the hour" (or "for today — back within a day").
+- **The MPP join takes `useRewardCredit`** in every credit room, with the same
+  rules as the allowance route (`joinSeatWithCredit`, shared by both). The
+  page only uses it in the demo.
+- Gate: `_gate-demo-credit.mjs` 31/0; the previous code fails 21 of 28 (the
+  7 that agree are the non-demo-unchanged checks). `_gate-money` 99/0.
