@@ -5149,3 +5149,5 @@ commit before); `_gate-dashboard-update`, `_gate-rooms-store`,
   earning while their money sat in a running Call in (it drained the house
   budget in _gate-demo-credit D5-D7). Credit in other rooms still loses its
   in-memory balance on a deploy.
+
+- **DM1 update (2026-11-10):** the 24-hour window is replaced by a per-visit cap (leave and come back, earn again; 30 s grace). See DECISIONS 2026-11-10.

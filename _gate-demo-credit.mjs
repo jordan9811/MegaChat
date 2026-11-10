@@ -26,6 +26,8 @@
  *   D9  a non-demo room is unchanged: 60 s minimum, $0.01 / $0.1 bounds, cash
  *       rules (a room that only stores isDemo is not the demo)
  *   D10 the account's Rewards section never lists demo money
+ *   D11 the $10 cap is per visit: back within the grace (a refresh) it is
+ *       still maxed; gone past it, the counter starts at $0 and earns again
  *
  * GATE_CWD runs the same checks against another tree (the previous code).
  */
@@ -239,6 +241,28 @@ try {
   const c3 = await socket(auth.cookieFor('democ')); sockets.push(c3);
   const r3 = await register(c3, demoId);
   ok('D8. the daily limit, read from the same ledger, pauses with its own reason', r3?.enabled === false && r3?.reason === 'demo_budget_day', r3?.reason);
+
+  // ── D11: the cap is per visit ─────────────────────────────────────────────
+  for (const s of sockets) { try { s.close(); } catch { /* gone */ } }
+  sockets.length = 0;
+  srv.kill(); srv = null;
+  await sleep(1500);
+  srv = await boot('demo-money-visits', { DEMO_CREDIT_HOURLY: '1000', DEMO_CREDIT_DAILY: '1000', DEMO_VISIT_GRACE_MS: '3000' });
+  const credited = (ws) => ws.msgs.filter((m) => m.type === 'rewards_earned' && m.credited).length;
+  const d1 = await socket(auth.cookieFor('demod')); sockets.push(d1);
+  await register(d1, demoId);
+  await waitFor(() => d1.msgs.some((m) => m.type === 'rewards_earned' && m.capped), 15_000);
+  ok('D11. a visit earns to the $10 cap', credited(d1) === 10, `${credited(d1)} grants`);
+  d1.close(); await sleep(800);
+  const d2 = await socket(auth.cookieFor('demod')); sockets.push(d2);
+  const back = await register(d2, demoId);
+  await sleep(2200);
+  ok('D11. back within the grace (a refresh): still maxed, nothing more earned', Number(back?.earned) === 10 && credited(d2) === 0, `earned ${back?.earned}, ${credited(d2)} grants`);
+  d2.close(); await sleep(4000);
+  const d3 = await socket(auth.cookieFor('demod')); sockets.push(d3);
+  const fresh = await register(d3, demoId);
+  const again = await waitFor(() => (credited(d3) >= 2 ? credited(d3) : null), 6000) ?? credited(d3);
+  ok('D11. left past the grace: a new visit starts at $0 and earns again', Number(fresh?.earned) === 0 && again >= 2, `earned at return ${fresh?.earned}, ${again} grants`);
 } catch (e) {
   crashed = e;
 } finally {

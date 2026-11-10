@@ -21,9 +21,10 @@ export const CHAPTERS: { id: ChapterId; name: string; href: string }[] = [
 
 export type TourState = { status: 'running' | 'done'; chapter: ChapterId; step: number; at: number }
 
-const STORE_KEY = 'holler.tour'
-// The demo-only tour's dismissal, before the tour went site-wide.
-const LEGACY_KEY = 'holler.demoTour'
+// v2: the site-wide tour. A dismissal of the old demo-only walkthrough (or of
+// v1) no longer counts, so everyone gets the new tour once, on its own
+// (owner, 2026-11-10: it starts by itself; "Show me around" is the replay).
+const STORE_KEY = 'holler.tour.v2'
 // A tour left mid-chapter this long ago is not picked up again.
 const STALE_MS = 2 * 60 * 60 * 1000
 
@@ -36,7 +37,6 @@ export function readTour(): TourState | null {
       if (!CHAPTERS.some((c) => c.id === s.chapter)) return null
       return { status: s.status, chapter: s.chapter, step: Math.max(0, Number(s.step) || 0), at: Number(s.at) || 0 }
     }
-    if (localStorage.getItem(LEGACY_KEY) === 'done') return { status: 'done', chapter: 'demo', step: 0, at: 0 }
   } catch { /* storage optional */ }
   return null
 }

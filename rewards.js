@@ -40,8 +40,11 @@ import { toAtomic, isEvmAddress } from './token-utils.js';
 import { isDemoRoom, demoWalletFor, createDemoBudget } from './demo-money.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// A viewer's demo-money cap is counted over this window (rewards.js earnedSoFar).
-const DEMO_CAP_WINDOW_MS = 24 * 60 * 60_000;
+// A viewer's demo-money cap counts one visit: it starts again when they leave
+// the demo and come back (owner, 2026-11-10: "reset the counter when you leave
+// the demo and let it re-accrue"). Away less than this is a refresh, not a
+// leave. The house budget (demo-money.js) still bounds every visit together.
+const DEMO_VISIT_GRACE_MS = Number(process.env.DEMO_VISIT_GRACE_MS) || 30_000;
 const posInt = (v, d) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : d; };
 
 /** The operator's bounds, read when the rewards attach (after server.js loads .env). Env names only. */
@@ -123,6 +126,8 @@ export function attachRewards(wss, opts = {}) {
 
   const sessions = new Map();
   const holders = new Map(); // `${roomId}|${who}` → the one ws earning for it
+  // Demo visits per holder key: { start, left } (ms). In memory: a deploy starts everyone a fresh visit.
+  const demoVisits = new Map();
 
   function send(ws, msg) {
     if (ws.readyState === 1) {
@@ -213,13 +218,13 @@ export function attachRewards(wss, opts = {}) {
   /** Lifetime earned in this room by this payee, and by this account: the larger counts against the cap. */
   function earnedSoFar(roomId, p) {
     if (p.mode === 'points') return pointsEarned.get(walletKey(roomId, p.payee)) || 0n;
-    // Demo money resets daily: the cap counts this viewer's demo grants in the
-    // last 24 hours (from the ledger, so a deploy changes nothing), not a
-    // lifetime total, so anyone can come back tomorrow and try it again.
-    // Counting what is in hand instead let a viewer keep earning while their
-    // money sat in a running Call in, which drained the house budget.
+    // Demo money counts this visit's grants (from the ledger), not a lifetime
+    // total: leave and come back, and it starts at $0 again. Counting what is
+    // in hand instead let a viewer keep earning while their money sat in a
+    // running Call in, which drained the house budget: within a visit the
+    // count only goes up, spent or not.
     if (p.demo) {
-      const since = Date.now() - DEMO_CAP_WINDOW_MS;
+      const since = demoVisits.get(`${roomId}|${p.holder}`)?.start ?? Date.now();
       let sum = 0n;
       for (const r of ledger.all()) {
         if (r.type === 'EARN' && r.house === 'demo' && r.roomId === roomId && r.at > since
@@ -294,7 +299,7 @@ export function attachRewards(wss, opts = {}) {
       amountAtomic = min(amountAtomic, left);
     }
     if (amountAtomic <= 0n) {
-      send(ws, { type: 'rewards_earned', roomId: state.roomId, payout: p.mode, earned: formatRewardAmount(so, p.meta.decimals), symbol: p.meta.symbol, capped: true, dryRun: p.mode !== 'cash' });
+      send(ws, { type: 'rewards_earned', roomId: state.roomId, payout: p.mode, earned: formatRewardAmount(so, p.meta.decimals), symbol: p.meta.symbol, capped: true, dryRun: p.mode !== 'cash', ...(p.demo ? { demo: true } : {}) });
       return;
     }
     let intentRef = null;
@@ -382,6 +387,7 @@ export function attachRewards(wss, opts = {}) {
   if (typeof ticker.unref === 'function') ticker.unref();
 
   function release(ws, state) {
+    if (state.holderKey && state.demo) { const v = demoVisits.get(state.holderKey); if (v) v.left = Date.now(); }
     if (state.holderKey && holders.get(state.holderKey) === ws) holders.delete(state.holderKey);
     state.holderKey = null;
   }
@@ -408,6 +414,13 @@ export function attachRewards(wss, opts = {}) {
         send(prev, { ...configMessage(ps || state, { ...p, enabled: false, reason: 'superseded' }) });
       }
       holders.set(state.holderKey, ws);
+      if (p.demo) {
+        // A new visit when nobody was here for this account past the grace.
+        const v = demoVisits.get(state.holderKey);
+        const now = Date.now();
+        if (!v || (!prev && v.left != null && now - v.left > DEMO_VISIT_GRACE_MS)) demoVisits.set(state.holderKey, { start: now, left: null });
+        else v.left = null;
+      }
     }
     send(ws, configMessage(state, p));
     if (p.enabled && p.mode !== 'cash') {

@@ -2567,3 +2567,20 @@ previous commit.
   qualifies, Claims, Share on X). The CSS rule stays for those; the
   `_gate-web-fixes` CSS13 guard now measures a probe span, since a
   signed-out page may render no label at all. Undo: revert the commit.
+
+## 2026-11-10 — Demo money caps per visit; the new tour plays once for everyone
+
+- **A viewer's $10 of demo money is per visit, not per 24 hours.** Leave the
+  demo and come back and the counter starts at $0 and earns again. Owner:
+  "reset the counter when you leave the demo and let it re-accrue". Within a
+  visit the count only goes up, spent or not, so a long Call in cannot keep
+  earning (the drain the 24-hour window closed). Away under 30 s
+  (`DEMO_VISIT_GRACE_MS`) is a refresh, not a leave. Visits are kept in
+  memory: a deploy starts everyone a fresh one. The house budget
+  (`DEMO_CREDIT_HOURLY` / `DEMO_CREDIT_DAILY`) still bounds all visits
+  together, which is the sybil guard. The page says "Maxed for this visit".
+  Gate: `_gate-demo-credit` D11 (34/0; the 24-hour code fails D11 at return,
+  still $10). Undo: count `earnedSoFar` over a time window again.
+- **The tour's storage key is `holler.tour.v2`**: a dismissal of the old demo
+  walkthrough no longer stops the new tour, so it starts by itself once for
+  everyone; "Show me around" is the replay after that.

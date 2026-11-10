@@ -3335,8 +3335,10 @@ function initRewardsClient(wsUrl) {
       ? ` · ${formatDollars(demoMoney.balance)} left to spend`
       : '';
     if (cfg.enabled) {
+      // The cap is per visit (rewards.js): a bare "Maxed" read as broken
+      // (owner, 2026-11-10).
       return maxed
-        ? `Maxed · ${balanceOfCap()}${spend} · not real`
+        ? `Maxed for this visit · ${balanceOfCap()}${spend} · not real`
         : `Earning ${formatDollars(cfg.earnAmount)} every ${Number(cfg.earnInterval) || 1} s · ${balanceOfCap()}${spend} · not real`;
     }
     const have = demoMoney.balance != null && Number(demoMoney.balance) > 0 ? ` · you have ${formatDollars(demoMoney.balance)} to spend` : '';
