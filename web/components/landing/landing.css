@@ -955,13 +955,12 @@ body:has(.mc-landing) {
   }
 }
 
-/* ── ways + pledge row ───────────────────────────────────────────────────── */
-/* The picture is a supporting shot, not a second hero (owner, 2026-11-11:
-   "overwhelming too big"). On a laptop the three ways take a column capped at
-   1040px, so the stage tops out near 600px, and the pledge pitch fills the rest
-   of the row as a compact dark column. Below 1280 both stack as before (at 1180
-   the stage would shrink to 400px). The cards are tightened so the stage keeps
-   its 16:9 instead of stretching to the cards' height. */
+/* ── ways + what keeps it fair ──────────────────────────────────────────── */
+/* Mock D (owner, 2026-11-11). The picture is a supporting shot, not a second
+   hero: on a laptop the three ways take a column capped at 1040px (stage near
+   600px) and the four things that keep it fair fill the rest of the row. Below
+   1280 the list sits under the ways (at 1180 the stage would shrink to 400px).
+   The cards are tightened so the stage keeps its 16:9. */
 @media (min-width: 1280px) {
   .mcl-duo {
     display: grid;
@@ -975,25 +974,71 @@ body:has(.mc-landing) {
   .mcl-duo .mcl-ways-mode strong { font-size: 26px; }
   .mcl-duo .mcl-ways-mode small { font-size: 13px; }
   .mcl-duo .mcl-ways-mode .bar { min-height: 36px; }
-  .mcl-duo .mcl-bounty {
-    grid-template-columns: minmax(0, 440px);
+  .mcl-duo .mcl-trust {
+    grid-template-columns: minmax(0, 360px);
     align-content: center;
-    justify-content: center;
-    border: 0;
+    padding: 48px 48px 48px 40px;
     border-left: 1px solid var(--mcl-hairline);
-    background:
-      radial-gradient(circle at 18% 22%, color-mix(in srgb, var(--f-bounty) var(--mcl-bounty-wash), transparent), transparent 46%),
-      var(--mcl-panel);
+    background: var(--mcl-panel-2);
   }
-  .mcl-duo .mcl-bounty-poster { gap: 10px; padding: 48px 48px 8px; background: none; }
-  .mcl-duo .mcl-bounty-poster h2 { font-size: clamp(28px, 2.3vw, 36px); text-wrap: balance; }
-  .mcl-duo .mcl-bounty-poster h2 br { display: none; }
-  .mcl-duo .mcl-bounty-poster p { font-size: 15px; }
-  .mcl-duo .mcl-bounty-poster > a { margin-top: 12px; }
-  .mcl-duo .mcl-mini-board { justify-content: flex-start; padding: 24px 48px 48px; background: none; }
-  .mcl-duo .mcl-pool-row { min-height: 60px; }
-  .mcl-duo .mcl-pool-empty { padding: 20px 0 0; }
 }
+.mcl-trust { display: grid; gap: 22px; padding: 0 64px 64px; }
+@media (min-width: 640px) and (max-width: 1279px) {
+  .mcl-trust { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 32px; }
+}
+.mcl-trust-item { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 14px; align-items: start; }
+.mcl-trust-item[data-k='holler'] { --k-bg: var(--f-holler-bg); --k-ink: var(--f-holler-ink); }
+.mcl-trust-item[data-k='bounty'] { --k-bg: var(--f-bounty-bg); --k-ink: var(--f-bounty-ink); }
+.mcl-trust-item[data-k='rewards'] { --k-bg: var(--f-rewards-bg); --k-ink: var(--f-rewards-ink); }
+.mcl-trust-item[data-k='callin'] { --k-bg: var(--f-callin-bg); --k-ink: var(--f-callin-ink); }
+.mcl-trust-item > span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--k-bg);
+  color: var(--k-ink);
+}
+.mcl-trust-item p { display: flex; min-width: 0; flex-direction: column; gap: 3px; margin: 0; }
+.mcl-trust-item strong { font-size: 15px; }
+.mcl-trust-item small { color: var(--mcl-muted); font-size: 13px; line-height: 1.4; }
+
+/* ── two boards: fans pledge, streamers start a campaign ─────────────────── */
+.mcl-half {
+  --mcl-half-wash: 9%;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 30px;
+  padding: 56px 64px 60px;
+  background:
+    radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--hk) var(--mcl-half-wash), transparent), transparent 50%),
+    var(--mcl-panel);
+}
+.mcl-half + .mcl-half { border-left: 1px solid var(--mcl-hairline); }
+.mcl-half[data-k='bounty'] { --hk: var(--f-bounty); --hk-ink: var(--f-bounty-ink); --hk-solid: var(--f-bounty-solid); --hk-on: var(--f-bounty-on); }
+.mcl-half[data-k='campaign'] { --hk: var(--f-rewards); --hk-ink: var(--f-rewards-ink); --hk-solid: var(--f-rewards-solid); --hk-on: var(--f-rewards-on); }
+.mcl-half .mcl-bounty-poster { justify-content: flex-start; gap: 12px; padding: 0; background: none; }
+.mcl-half .mcl-bounty-poster h2 { max-width: 19ch; font-size: clamp(30px, 2.6vw, 40px); text-wrap: balance; }
+.mcl-half .mcl-bounty-poster p { color: var(--hk-ink); }
+.mcl-half .mcl-bounty-poster > a { margin-top: 8px; background: var(--hk-solid); color: var(--hk-on); }
+.mcl-half .mcl-mini-board { justify-content: flex-start; padding: 0; background: none; }
+.mcl-half .mcl-mini-board > header a { color: var(--hk-ink); }
+.mcl-half .mcl-pool-row { min-height: 62px; }
+.mcl-half .mcl-pool-row > b { color: var(--hk-ink); }
+.mcl-half .mcl-pool-row:last-child { border-bottom: 0; }
+.mcl-idea-row { grid-template-columns: 40px minmax(0, 1fr) auto; }
+.mcl-idea-row > p strong { white-space: normal; }
+.mcl-pool-row > .mcl-idea-kind {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  background: var(--f-holler-bg);
+  color: var(--f-holler-ink);
+}
+.mcl-pool-row > .mcl-idea-kind[data-kind='callin'] { background: var(--f-callin-bg); color: var(--f-callin-ink); }
 
 /* ── responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 1179px) {
@@ -1017,6 +1062,9 @@ body:has(.mc-landing) {
   .mcl-entry-card { min-height: 196px; }
   .mcl-bounty { grid-template-columns: 1fr; }
   .mcl-bounty-poster, .mcl-mini-board { padding: 40px 28px; }
+  .mcl-half { padding: 40px 28px 44px; }
+  .mcl-half + .mcl-half { border-top: 1px solid var(--mcl-hairline); border-left: 0; }
+  .mcl-trust { padding: 0 20px 40px; }
   .mcl-create-strip { padding: 40px 28px 44px; }
 }
 
@@ -1031,6 +1079,7 @@ body:has(.mc-landing) {
   .mcl-btn-primary, .mcl-btn-ghost { justify-content: center; text-align: center; }
   .mcl-film-ctl { right: 12px; bottom: 14px; }
   .mcl-entry, .mcl-bounty-poster, .mcl-mini-board { padding-right: 20px; padding-left: 20px; }
+  .mcl-half { padding-right: 20px; padding-left: 20px; }
   .mcl-create-strip { flex-direction: column; align-items: stretch; gap: 20px; padding: 40px 20px 44px; }
   .mcl-create-strip > a { justify-content: center; }
   .mcl-footer { padding: 28px 20px; }
@@ -1123,7 +1172,6 @@ body:has(.mc-landing) {
 }
 
 /* Campaign strip: the create strip's twin, washed in the rewards green. */
-.mcl-campaign-strip { background: radial-gradient(circle at 12% 30%, color-mix(in srgb, var(--f-rewards) var(--mcl-wash), transparent), transparent 40%); }
 
 /* Platform badges draw their own plate in the brand colour (platform-pip.tsx). */
 .mcl-thumb b { width: 18px; height: 18px; background: none; }

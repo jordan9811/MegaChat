@@ -2598,3 +2598,24 @@ previous commit.
 - **The hero's film column is exactly 16:9 of its width**, so a laptop sees
   the whole frame; it stacks below 1180px. The fixed 41.7vw height cropped the
   film's sides at every laptop width.
+
+## 2026-11-11 — The landing's middle: three ways, what keeps it fair, two boards
+
+- **The Three ways picture is a supporting shot** (owner: "overwhelming too
+  big"). From 1280px the ways take a 1040px column, so the stage tops out
+  near 600px; below 1280 it stacks as before. The stage keeps 16:9 beside
+  taller cards (stretched, it went 1.4:1 at 1024 and cropped its overlays).
+- **Mock D of the "Pledge and campaign row" canvas**: four things that keep it
+  fair sit beside the ways (stacked under them below 1280), then one dark row
+  of two equal boards: fans pledge (Top bounties), streamers start a campaign
+  (Campaigns to try). The separate "Start a campaign" strip is gone.
+- **The fair-play lines say only what the code does**: every Holler clears
+  the room's moderation (a person, or the automatic check in an
+  auto-moderated room); unpaid pledges and unspent budgets refund; payouts
+  settle in USDC; a bounty pays only a streamer who proves the channel on air.
+  The owner's "instant payouts" became "Paid in USDC": a bounty pays on a
+  verified broadcast, not at once.
+- **Campaigns to try are starting points, not live campaigns**: there is no
+  public list of open campaigns, so each row is marked "example" and opens the
+  new-campaign form (which does not prefill yet). Undo: `landing.tsx`
+  `CAMPAIGN_IDEAS` / `TRUST`, and the `mcl-duo` / `mcl-half` rules.
