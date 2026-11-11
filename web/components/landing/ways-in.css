@@ -29,6 +29,9 @@
 /* ── stage ── */
 .mcl-ways-stage {
   position: relative;
+  /* start, not stretch: beside taller cards a stretched stage went 1.4:1 and
+     cropped the picture out from under its overlays */
+  align-self: start;
   aspect-ratio: 16 / 9;
   max-width: 100%;
   overflow: hidden;
@@ -310,10 +313,6 @@
   line-height: 1;
   white-space: nowrap;
 }
-/* The picture is a supporting shot, not a second hero (owner, 2026-11-11: "overwhelming
-   too big"): the section is capped and centred, so the stage tops out near 620px wide,
-   under four fifths of the hero film on a 1280 laptop and well under it above that. */
-.mcl-ways-title, .mcl-ways-wrap { max-width: 1040px; margin-inline: auto; }
 @media (min-width: 901px) {
   .mcl-ways-wrap { grid-template-columns: minmax(280px, 1fr) minmax(0, 1.6fr); }
   .mcl-ways-stage { order: 2; }

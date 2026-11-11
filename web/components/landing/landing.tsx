@@ -44,12 +44,15 @@ export function Landing({
       <LandingHero />
 
       <main>
+        {/* One row on a laptop: the three ways on the left, the pledge pitch
+            compacted beside them (owner, 2026-11-11). Stacks below 1180. */}
+        <div className="mcl-duo">
         <WaysIn />
 
         {/* .dark: the bounty band stays at night in light mode too (Stone) */}
         <section className="mcl-bounty dark">
           <div className="mcl-bounty-poster">
-            <h2>Your favorite streamer<br />doesn&apos;t even know you.</h2>
+            <h2>Your favorite streamer{' '}<br />doesn&apos;t even know you.</h2>
             <p>Be more than a username.</p>
             <Link href="/bounty">Pledge your favorite streamer <ArrowRight size={16} aria-hidden="true" /></Link>
           </div>
@@ -71,6 +74,7 @@ export function Landing({
             )}
           </div>
         </section>
+        </div>
 
         <section className="mcl-create-strip">
           <div><h2>Create a room.</h2><p>Set your rate, connect OBS, and decide how viewers can join.</p></div>

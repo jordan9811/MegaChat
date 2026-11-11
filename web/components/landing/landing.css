@@ -955,6 +955,46 @@ body:has(.mc-landing) {
   }
 }
 
+/* ── ways + pledge row ───────────────────────────────────────────────────── */
+/* The picture is a supporting shot, not a second hero (owner, 2026-11-11:
+   "overwhelming too big"). On a laptop the three ways take a column capped at
+   1040px, so the stage tops out near 600px, and the pledge pitch fills the rest
+   of the row as a compact dark column. Below 1280 both stack as before (at 1180
+   the stage would shrink to 400px). The cards are tightened so the stage keeps
+   its 16:9 instead of stretching to the cards' height. */
+@media (min-width: 1280px) {
+  .mcl-duo {
+    display: grid;
+    grid-template-columns: minmax(0, 1040px) minmax(360px, 1fr);
+    border-bottom: 1px solid var(--mcl-hairline);
+  }
+  .mcl-duo .mcl-ways { padding: 56px 48px 64px 64px; }
+  .mcl-duo .mcl-ways-wrap { grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr); }
+  .mcl-duo .mcl-ways-modes { gap: 8px; }
+  .mcl-duo .mcl-ways-mode { padding: 12px 16px; }
+  .mcl-duo .mcl-ways-mode strong { font-size: 26px; }
+  .mcl-duo .mcl-ways-mode small { font-size: 13px; }
+  .mcl-duo .mcl-ways-mode .bar { min-height: 36px; }
+  .mcl-duo .mcl-bounty {
+    grid-template-columns: minmax(0, 440px);
+    align-content: center;
+    justify-content: center;
+    border: 0;
+    border-left: 1px solid var(--mcl-hairline);
+    background:
+      radial-gradient(circle at 18% 22%, color-mix(in srgb, var(--f-bounty) var(--mcl-bounty-wash), transparent), transparent 46%),
+      var(--mcl-panel);
+  }
+  .mcl-duo .mcl-bounty-poster { gap: 10px; padding: 48px 48px 8px; background: none; }
+  .mcl-duo .mcl-bounty-poster h2 { font-size: clamp(28px, 2.3vw, 36px); text-wrap: balance; }
+  .mcl-duo .mcl-bounty-poster h2 br { display: none; }
+  .mcl-duo .mcl-bounty-poster p { font-size: 15px; }
+  .mcl-duo .mcl-bounty-poster > a { margin-top: 12px; }
+  .mcl-duo .mcl-mini-board { justify-content: flex-start; padding: 24px 48px 48px; background: none; }
+  .mcl-duo .mcl-pool-row { min-height: 60px; }
+  .mcl-duo .mcl-pool-empty { padding: 20px 0 0; }
+}
+
 /* ── responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 1179px) {
   .mcl-hero { grid-template-columns: 1fr; }
