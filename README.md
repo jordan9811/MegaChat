@@ -1,209 +1,67 @@
-# VDO.Ninja Stream Platform
+# Holler
 
-**Free to watch, pay to appear on camera**
+**Get on the stream, not just in the chat.** Holler lets viewers put themselves on a streamer's live broadcast: a recorded clip that plays on stream, or a live camera seat billed by the second. Fans can also pool money to bring a streamer on, and streamers can pay viewers to show up.
 
-Viewers pay USDC → Their webcam automatically appears on your stream in a video box (like Ninja's facecam) → Box disappears when they leave.
+Live at **[hollertv.com](https://hollertv.com)** · pre-launch
 
-## How It Works
+## What it does
 
-```
-Viewer clicks link
-    ↓
-Pays 0.01 USDC (we'll add this)
-    ↓
-Gets VDO.Ninja camera link (auto-opens)
-    ↓
-Their camera goes live
-    ↓
-Server adds video to overlay
-    ↓
-OBS shows overlay → Camera box appears on stream
-    ↓
-User leaves → Box animates out
-```
+| | |
+|---|---|
+| **Holler** | Record a short clip. It clears the room's moderation, then plays on the stream. |
+| **Call in** | Take a live seat: your camera appears in a tile on the broadcast, metered per second at the streamer's rate. Leave, and the tile goes. |
+| **Pledge** | Back a streamer who isn't on Holler yet. The pool pays out when they go live and verify the channel on air. |
+| **Campaigns** | A streamer funds a budget and pays viewers per Holler or call-in that airs. Whatever isn't paid out is refunded. |
 
-## Quick Start
+The streamer adds one browser source to OBS. Viewers need nothing but a link.
 
-### 1. Install
+## How it's built
+
+- **One Node process.** An Express server (`server.js`) owns the API, WebSockets and the OBS overlay, and mounts the Next.js app in `web/` as its fallthrough handler.
+- **Live video** runs on LiveKit. The overlay connects lazily, so an idle stream doesn't hold a room open.
+- **Sign-in** is Privy.
+- **Money** is USDC on the Tempo chain via viem. Live seats are metered per second (`meter-mpp.js`, with a seat escrow contract in `contracts/MegaChatEscrow.sol`). Every server-side transfer goes through one of two doors: `settlement.js` (platform wallet) or `escrow-chain.js` (escrow contract).
+- **Bounty verification** doesn't trust the streamer's word. The overlay renders a rotating code per air session, and a verifier reads it back out of the public broadcast's frames before anything is paid (`bounty-verifier.js`, `bounty-claim.config.js`).
+- **Frontend:** Next.js 16, React 19, Tailwind 4.
+
+## Repository map
+
+| Path | What's there |
+|---|---|
+| `server.js` | The server: rooms, seats, overlay, and the mount for the web app |
+| `web/` | The Next.js app: landing page, rooms, dashboard, bounties, campaigns |
+| `bounty-*.js` | Bounty program: ledger, escrow state machine, claim verification, settlement |
+| `campaign-*.js` | Reward campaigns: eligibility rules, funding, payouts, refunds |
+| `livekit*.js` | Live video: tokens, webhooks, lazy connect, circuit breaker |
+| `settlement.js`, `escrow-chain.js`, `meter-mpp.js` | The money paths |
+| `contracts/` | The seat escrow contract and its deployment record |
+| `public/` | The OBS overlay and other static pages |
+| `_gate-*.mjs` | End-to-end gates (see below) |
+| `docs/` | The handbook: concepts, features, verification, technical reference |
+
+## Testing
+
+There are 100+ end-to-end **gates** (`_gate-*.mjs`). Each one boots the real server, authenticates with real minted credentials (no test-only bypass in the auth path), and drives it with Puppeteer or direct API calls. The money gate (`_gate-money.mjs`) has to stay green for any change that touches a payment path. Shared harness: `_gate-helpers.mjs`.
 
 ```bash
-cd video-stream
-npm install
-npm start
+node _gate-demo-credit.mjs   # run one gate
+npm run docs:verify          # every claim in docs/ still points at real code
 ```
 
-### 2. Test It
+## Running it locally
 
-**Open 3 tabs:**
-- Tab 1: `http://localhost:3000` (main page)
-- Tab 2: `http://localhost:3000/overlay` (OBS overlay)
-- Tab 3: VDO.Ninja link (opens automatically)
+Requires Node 22.
 
-**Click "JOIN STREAM"**, enter username → Camera link opens → Your video appears in overlay tab!
-
-### 3. Add to OBS
-
-1. Open OBS
-2. Add Source → Browser
-3. URL: `http://localhost:3000/overlay`
-4. Width: 1920, Height: 1080
-5. Check "Shutdown source when not visible"
-6. Done!
-
-Now when people join, video boxes appear automatically on your stream.
-
-## Files
-
-- `server.js` - Backend (seat management, VDO.Ninja room generation, WebSocket)
-- `public/overlay.html` - OBS overlay (just video boxes, transparent background)
-- `web/` - the Next.js app: the join page, dashboard, browse and bounty surfaces. The Arc-era `public/index.html` viewer page was deleted on 2026-09-17: it still carried a client-signed Circle Gateway deposit, and nothing routed to it.
-
-## What's Working
-
-✅ Seat management (6 max)
-✅ VDO.Ninja integration (automatic camera capture)
-✅ Real-time overlay updates via WebSocket
-✅ Animated video boxes (fade in/out)
-✅ 10-minute auto-expire
-✅ Timer countdown
-✅ Username labels
-✅ Responsive grid (adjusts to 1-6 people)
-
-## What's Next
-
-### Add x402 USDC Payments
-
-Currently anyone can join. To add payments:
-
-1. Install x402:
 ```bash
-npm install x402-express dotenv
+npm install                  # also installs web/
+cp .env.example .env         # fill in the keys you need; see the comments in the file
+npm run dev                  # http://localhost:3000
 ```
 
-2. Add to server.js:
-```javascript
-import { paymentMiddleware } from 'x402-express';
+For a production build: `npm run build && npm start`.
 
-app.post('/api/join',
-  paymentMiddleware(
-    process.env.WALLET_ADDRESS,
-    { 'POST /api/join': '$0.01' },
-    { network: 'base-sepolia' }
-  ),
-  (req, res) => {
-    // existing join logic
-  }
-);
-```
+## Notes
 
-3. Create `.env`:
-```env
-WALLET_ADDRESS=0xYourBaseAddress
-```
-
-### Deploy to Production
-
-**Option 1: Railway**
-1. Connect GitHub repo
-2. Railway auto-detects Node.js
-3. Set environment variables
-4. Deploy
-5. Get URL like: `your-app.railway.app`
-
-**Option 2: Vercel**
-1. `vercel deploy`
-2. Set environment variables
-3. Done
-
-**Option 3: VPS (Digital Ocean, Linode)**
-1. SSH into server
-2. Clone repo
-3. `npm install && npm start`
-4. Use PM2 to keep it running
-5. Point domain with nginx
-
-## OBS Tips
-
-**Best Settings:**
-- Browser Source Width: 1920
-- Browser Source Height: 1080
-- FPS: 30
-- Hardware Acceleration: ON
-- Refresh browser when not active: OFF
-
-**Layout:**
-- Overlay covers full screen OR
-- Position in corner like traditional facecam OR
-- Bottom bar with multiple smaller boxes
-
-**Chroma Key:**
-Not needed! Transparent background by default.
-
-## VDO.Ninja Notes
-
-**What's happening:**
-1. Server generates unique room ID
-2. Push URL = User's camera broadcast
-3. View URL = What appears in OBS
-4. VDO.Ninja handles all WebRTC (peer-to-peer video)
-
-**It's free!** VDO.Ninja is open source, no API keys needed.
-
-**Quality:** Defaults to 720p, add `&quality=2` to URL for 1080p
-
-**No accounts needed** - Works immediately
-
-## Troubleshooting
-
-**Video not showing in overlay:**
-- Check VDO.Ninja link opened
-- User granted camera permission
-- Check browser console for errors
-- VDO.Ninja sometimes takes 5-10 seconds to connect
-
-**OBS overlay not updating:**
-- Refresh browser source in OBS
-- Check WebSocket connected (console)
-- Restart server
-
-**"No seats available":**
-- Max 6 seats (change MAX_SEATS in server.js)
-- Wait for someone to expire/leave
-
-## Customization
-
-**Change seat duration:**
-```javascript
-const SEAT_DURATION = 20 * 60 * 1000; // 20 minutes
-```
-
-**Change max seats:**
-```javascript
-const MAX_SEATS = 12;
-```
-
-**Change video quality:**
-In overlay.html, modify iframe src:
-```javascript
-iframe.src = seat.viewUrl + '&quality=2'; // 1080p
-```
-
-**Change grid layout:**
-Modify CSS in overlay.html `.grid` styles
-
-**Change colors:**
-Replace `#0ff` (cyan) with your brand color
-
-## Next Steps
-
-1. ✅ Test locally - Make sure video appears
-2. 🔮 Add x402 payments - Require USDC to join
-3. 🔮 Deploy to production - Get public URL
-4. 🔮 Add Creator Coin - Holders get free access
-5. 🔮 Custom branding - Your colors, logo
-
----
-
-**You now have automatic on-stream camera boxes!** 🎥
-
-VDO.Ninja does the hard WebRTC work. Your server just manages who's allowed on camera.
+- The product was called MegaChat until the October 2026 rebrand, so some code, routes and data keys still use that name.
+- `v0-ui-migration` is the shipping branch: Railway deploys it on every push.
+- Design decisions and their reasoning are in [`DECISIONS.md`](DECISIONS.md); known gaps are in [`OPEN-ISSUES.md`](OPEN-ISSUES.md).
