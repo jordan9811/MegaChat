@@ -43,6 +43,7 @@ import { FeatureTag } from '@/components/feature-tag'
 import { ApproveStep, connectedWallet, type ApprovalAsk, type FundProof } from './approve-step'
 import { ReferenceSetPicker } from './reference-set-builder'
 import { amountProblem, amountToSend, countProblems, parseCap, parseCostCaps, placesPaid } from './form-rules'
+import { MAX_PRIZE_PLACES, ordinal, percentOf, placesProblems, sumAmounts } from './prize-places'
 import {
   ACTION_LABEL,
   COMPLIANCE_NOTICE,
@@ -87,6 +88,7 @@ const FIELD = {
   room: 'mcp-f-room',
   seconds: 'mcp-f-seconds',
   xcap: 'mcp-f-xcap',
+  places: 'mcp-f-places',
 }
 
 /** Scrolls a field into the middle of the screen and puts the cursor in it. */
@@ -103,6 +105,10 @@ type Draft = {
   /** each: every qualifying action is paid the reward. prize: the reward is
    *  one prize (and the budget); the creator picks the winner. */
   payout: PayoutMode
+  /** A prize: one winner, or places by amount or by percent. */
+  placesMode: 'one' | 'amount' | 'percent'
+  /** The places as typed, 1st first (amounts, or percents). */
+  places: string[]
   rewardAmount: string
   tokenMode: 'usdc' | 'token'
   tokenAddress: string
@@ -139,6 +145,8 @@ function blankDraft(): Draft {
     title: '',
     blurb: '',
     payout: 'each',
+    placesMode: 'one',
+    places: [],
     rewardAmount: '5',
     tokenMode: 'usdc',
     tokenAddress: '',
@@ -161,6 +169,8 @@ function fromCampaign(c: Campaign): Draft {
     title: c.title,
     blurb: c.blurb,
     payout: c.payout === 'prize' ? 'prize' : 'each',
+    placesMode: c.prizePlaces?.places?.length ? c.prizePlaces.by : 'one',
+    places: c.prizePlaces?.places?.length ? c.prizePlaces.places.map((p) => (c.prizePlaces!.by === 'amount' ? p.amount || '' : String(p.percent ?? ''))) : [],
     rewardAmount: c.reward.amount,
     tokenMode: c.reward.type === 'token' ? 'token' : 'usdc',
     tokenAddress: c.reward.address || c.token?.address || '',
@@ -326,6 +336,9 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
     else if (budgetBad) add(budgetBad, 'Budget', FIELD.budget)
     else if (!(budget > 0)) add('Set a budget.', 'Budget', FIELD.budget, true)
     else if (reward > 0 && budget < reward) add('The budget is smaller than one reward.', 'Budget below one reward', FIELD.budget)
+    if (prize && draft.placesMode !== 'one' && decimals != null) {
+      for (const p of placesProblems(draft.placesMode, draft.places, decimals, capSet)) add(p, 'Prize places', FIELD.places)
+    }
     for (const p of countProblems(maxClaims, minSeconds, draft.actionKind === 'callin')) {
       if (/^Max claims/.test(p)) add(prize ? p.replace(/^Max claims/, 'Max entries') : p, prize ? 'Max entries' : 'Max claims', FIELD.cap)
       else add(p, 'Time on camera', FIELD.seconds)
@@ -340,7 +353,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
     if (fb) for (const p of caps.problems) add(p, 'X-API cost cap', FIELD.xcap)
     if (draft.rules.verifiedTypes && draft.rules.verifiedTypes.length === 0) add('Pick at least one checkmark type, or switch that rule off.', 'Checkmark type', 'mcp-rule-verified')
     return out
-  }, [draft, reward, budget, maxClaims, minSeconds, token, tokenState, fb, decimals, symbol, caps, prize])
+  }, [draft, reward, budget, maxClaims, minSeconds, token, tokenState, fb, decimals, symbol, caps, prize, capSet])
 
   // Money goes out exactly as typed (form-rules.ts amountToSend), never as
   // String(Number(typed)), and the caps are parsed from their text here.
@@ -353,6 +366,9 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
     // A prize is its own budget (the server ignores any other).
     budget: { amount: amountToSend(prize ? draft.rewardAmount : draft.budgetAmount) },
     payout: draft.payout,
+    // A prize's places, 1st first; null = one winner takes the prize. By
+    // amount the server makes the prize their sum (the reward above already is).
+    ...(prize ? { prizes: draft.placesMode === 'one' || draft.places.length < 2 ? null : { by: draft.placesMode, places: draft.places.map((p) => p.trim()) } } : {}),
     // Blank sends null: the budget decides how many places (the server's
     // placesFor); for a prize, blank means no limit on entries.
     maxClaims: capSet,
@@ -475,6 +491,10 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
   const sentence = rulesSentence(draft.rules, sets)
   // The typed text, so a custom token's 18 decimals read back as typed.
   const rewardText = Number.isFinite(reward) && reward > 0 ? rewardLabel(amountToSend(draft.rewardAmount), symbol) : `— ${symbol}`
+  // "1st $30 · 2nd $15 · 3rd $5" for the preview, when the prize has places.
+  const previewPlaces = prize && draft.placesMode !== 'one' && draft.places.length > 1 && decimals != null
+    ? draft.places.map((p, i) => `${ordinal(i + 1)} ${rewardLabel(draft.placesMode === 'amount' ? p || '0' : percentOf(draft.rewardAmount, Number(p), decimals) || '0', symbol)}`).join(' · ')
+    : ''
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const publicUrl = campaign ? `${origin}/c/${campaign.slug}` : `${origin}/c/…`
   const share = shareText({ reward: rewardText, action: draft.actionKind, sentence, rules: ruleCount(draft.rules), url: publicUrl })
@@ -523,6 +543,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
               </button>
             ))}
           </div>
+          {prize ? placesEditor() : null}
           <div className="mcp-fields two">
             <div className="mcp-field">
               <span className="mcp-label-row">
@@ -536,7 +557,8 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
                   </span>
                 ) : null}
               </span>
-              <span className="mcp-money-input"><span>{symbol === 'USDC' ? '$' : ''}</span><input id={FIELD.reward} inputMode="decimal" aria-label="Reward amount" value={draft.rewardAmount} onChange={(e) => patch({ rewardAmount: e.target.value })} /><b>{symbol}</b></span>
+              <span className="mcp-money-input"><span>{symbol === 'USDC' ? '$' : ''}</span><input id={FIELD.reward} inputMode="decimal" aria-label="Reward amount" value={draft.rewardAmount} readOnly={prize && draft.placesMode === 'amount'} onChange={(e) => patch({ rewardAmount: e.target.value })} /><b>{symbol}</b></span>
+              {prize && draft.placesMode === 'amount' ? <small>The places added up.</small> : null}
             </div>
             <label className="mcp-field">
               <span>Token</span>
@@ -741,7 +763,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
           <h3>{draft.title.trim() || 'Your campaign title'}</h3>
           <p>{draft.blurb.trim() || 'Your one-line blurb goes here.'}</p>
           {prize ? (
-            <div className="mcp-preview-reward"><strong className="mcp-money">{rewardText}</strong><span>to the best {draft.actionKind === 'holler' ? 'Holler' : 'Call in'} on @{draft.roomHandle || 'your-room'}. Not picked within 48 hours? Split between every entry.</span></div>
+            <div className="mcp-preview-reward"><strong className="mcp-money">{rewardText}</strong><span>to the best {draft.actionKind === 'holler' ? 'Holler' : 'Call in'}{previewPlaces ? 's' : ''} on @{draft.roomHandle || 'your-room'}{previewPlaces ? `: ${previewPlaces}` : ''}. Not picked within 48 hours? Split between every entry.</span></div>
           ) : (
             <div className="mcp-preview-reward"><strong className="mcp-money">{rewardText}</strong><span>to {ACTION_LABEL[draft.actionKind]} on @{draft.roomHandle || 'your-room'}</span></div>
           )}
@@ -756,6 +778,63 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
       </aside>
     </div>
   )
+
+  /** A prize's winners: one, or up to ten places by amount or by percent of
+   *  the prize. Only a draft can change them (the server refuses it after). */
+  function placesEditor() {
+    const locked = !!campaign && campaign.status !== 'draft'
+    const dec = decimals ?? 6
+    const setPlaces = (mode: Draft['placesMode'], places: string[]) => {
+      // By amount, the prize is the places added up.
+      const sum = mode === 'amount' ? sumAmounts(places, dec) : null
+      patch(sum != null ? { placesMode: mode, places, rewardAmount: sum } : { placesMode: mode, places })
+    }
+    const switchTo = (mode: Draft['placesMode']) => {
+      if (mode === draft.placesMode) return
+      if (mode === 'one') return setPlaces('one', [])
+      if (mode === 'percent') return setPlaces('percent', draft.placesMode === 'one' ? ['50', '30', '20'] : draft.places.map((_, i, a) => String(a.length === 3 ? [50, 30, 20][i] : Math.floor(100 / a.length) + (i === 0 ? 100 % a.length : 0))))
+      // Amount: start from what the percents (or 50/30/20) pay of the prize now.
+      const pct = draft.placesMode === 'percent' ? draft.places.map(Number) : [50, 30, 20]
+      setPlaces('amount', pct.map((p) => percentOf(draft.rewardAmount, p, dec) || '0'))
+    }
+    return (
+      <div className="mcp-places" id={FIELD.places}>
+        <div className="mcp-places-head">
+          <span>Winners</span>
+          <div className="mcp-seg" role="radiogroup" aria-label="Winners">
+            {([['one', 'One winner'], ['amount', 'Places, set amounts'], ['percent', 'Places, % of the prize']] as [Draft['placesMode'], string][]).map(([k, label]) => (
+              <button key={k} type="button" role="radio" aria-checked={draft.placesMode === k} disabled={locked} onClick={() => switchTo(k)}>{label}</button>
+            ))}
+          </div>
+        </div>
+        {draft.placesMode !== 'one' ? (
+          <ol className="mcp-place-list">
+            {draft.places.map((p, i) => (
+              <li key={i}>
+                <span className="mcp-place-n">{ordinal(i + 1)}</span>
+                <span className="mcp-money-input">
+                  {draft.placesMode === 'amount' ? <span>{symbol === 'USDC' ? '$' : ''}</span> : null}
+                  <input inputMode="decimal" aria-label={`${ordinal(i + 1)} place`} value={p} disabled={locked}
+                    onChange={(e) => setPlaces(draft.placesMode, draft.places.map((x, j) => (j === i ? e.target.value : x)))} />
+                  <b>{draft.placesMode === 'amount' ? symbol : '%'}</b>
+                </span>
+                {draft.placesMode === 'percent' ? <small className="mcp-place-eq">{rewardLabel(percentOf(draft.rewardAmount, Number(p), dec) || '0', symbol)}</small> : null}
+                {draft.places.length > 2 && !locked ? (
+                  <button type="button" className="mcp-btn-ghost mcp-btn-sm" aria-label={`Remove ${ordinal(i + 1)} place`} onClick={() => setPlaces(draft.placesMode, draft.places.filter((_, j) => j !== i))}>Remove</button>
+                ) : null}
+              </li>
+            ))}
+            {draft.places.length < MAX_PRIZE_PLACES && !locked ? (
+              <li><button type="button" className="mcp-btn-ghost mcp-btn-sm" onClick={() => setPlaces(draft.placesMode, [...draft.places, draft.placesMode === 'amount' ? (draft.places[draft.places.length - 1] || '1') : '0'])}>Add a place</button></li>
+            ) : null}
+          </ol>
+        ) : null}
+        <small className="mcp-hint">{draft.placesMode === 'one'
+          ? 'You pick one entry; it gets the whole prize.'
+          : 'You pick one entry per place, best first. With fewer entries than places, every entry is placed and the unfilled places come back to you.'}</small>
+      </div>
+    )
+  }
 
   /** One rule row. Where a rule has an (i), it sits right after the title,
    *  not at the far end of the row. */

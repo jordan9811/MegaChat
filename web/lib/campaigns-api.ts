@@ -113,12 +113,24 @@ export type CampaignInput = {
    *  ONE prize (it is also the budget); the creator picks the winning entry
    *  after the end, or it is split evenly between every entry. */
   payout?: PayoutMode
+  /** A prize split into places, 1st first: by amount (the prize is their
+   *  sum) or by percent (they sum to 100). null: one winner takes it all. */
+  prizes?: { by: 'amount' | 'percent'; places: (string | number)[] } | null
 }
 
 export type PayoutMode = 'each' | 'prize'
 
-/** A prize campaign's decision: awarded to one entry, split between all, or none (nobody entered). */
-export type PrizeDecision = { mode: 'awarded' | 'split' | 'none'; at: string; by: string | null; winners: string[]; entries: number; shareAtomic: string }
+/** A prize's places as stored: amounts (with atomic units) or percents (with basis points). */
+export type PrizePlaces = { by: 'amount' | 'percent'; places: { amount?: string; atomic?: string; percent?: number; bps?: number }[] }
+
+/** A prize campaign's decision: awarded (to one entry, or one per place), split between all, or none (nobody entered). */
+export type PrizeDecision = {
+  mode: 'awarded' | 'split' | 'none'; at: string; by: string | null; winners: string[]; entries: number
+  /** One prize, or each entry's even share of a split; null for a placed award. */
+  shareAtomic: string | null
+  /** A placed award: who took each place and what it paid. */
+  awards?: { claimId: string; place: number; atomic: string }[] | null
+}
 
 /** N14: the Holler room's overlay link, judged over the last 10 minutes.
  *  keyed: the room's keyed overlay is connected (or was), so campaign Hollers
@@ -167,6 +179,8 @@ export type Campaign = {
   payout?: PayoutMode
   /** A prize campaign: what was decided, once it was. */
   prize?: PrizeDecision | null
+  /** A prize campaign split into places; null for one winner. */
+  prizePlaces?: PrizePlaces | null
   /** A prize campaign that has ended: the creator picks by this, or the sweep splits it. */
   awardBy?: string | null
   /** A draft nothing was ever attempted against: it can be deleted outright. */
@@ -238,6 +252,8 @@ export type Claim = {
   payout?: { amount: string; symbol: string; txHash?: string | null; intentRef?: string; door?: string | null; to?: string; error?: string } | null
   /** Owed, but the claimant has not named a payout wallet yet. */
   needsWallet?: boolean
+  /** The aired Holler is still kept in the replay archive: entryClipUrl plays it. */
+  clip?: boolean
   /** Submitted before the close: still counts if it reaches the required
    *  state before this (ISO). Absent on every other claim. */
   honourUntil?: string | null
@@ -405,10 +421,13 @@ export function deleteCampaign(id: string) {
   return req<{ ok: true; id: string; slug: string }>(`/api/campaigns/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
-/** A prize campaign, after it ended: the creator picks the winning entry. */
-export function awardCampaign(id: string, claimId: string) {
-  return req<{ ok: true; campaign?: Campaign }>(`/api/campaigns/${encodeURIComponent(id)}/award`, { method: 'POST', body: { claimId } })
+/** A prize campaign, after it ended: the creator picks one entry per place, 1st first. */
+export function awardCampaign(id: string, claimIds: string[]) {
+  return req<{ ok: true; campaign?: Campaign }>(`/api/campaigns/${encodeURIComponent(id)}/award`, { method: 'POST', body: { claimIds } })
 }
+
+/** Where the creator plays an entry's aired Holler back (creator-only, served from the replay archive). */
+export const entryClipUrl = (id: string, claimId: string) => `/api/campaigns/${encodeURIComponent(id)}/claims/${encodeURIComponent(claimId)}/clip`
 
 export function listClaims(id: string) {
   return req<{ claims: Claim[] }>(`/api/campaigns/${encodeURIComponent(id)}/claims`)

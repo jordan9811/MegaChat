@@ -33,7 +33,9 @@ export type PublicCampaign = {
   prize?: {
     entries: number
     awardBy: string | null
-    decided: { mode: 'awarded' | 'split' | 'none'; at: string; winners: number; share: string } | null
+    /** The places, 1st first, and what each pays when the pot is whole; null for one winner. */
+    places?: { place: number; amount: string; percent: number | null }[] | null
+    decided: { mode: 'awarded' | 'split' | 'none'; at: string; winners: number; share: string | null; awards?: { place: number; amount: string }[] | null } | null
   } | null
   deadline: string | null
   rules: string[]

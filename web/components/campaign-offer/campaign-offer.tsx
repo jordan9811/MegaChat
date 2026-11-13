@@ -24,6 +24,7 @@ import { shortAddr } from '@/lib/display-format'
 import { allUnread, isUnreadCheck, joinAnd, polishRule, rewardLabel, UNREAD_CHECK } from '@/components/campaigns/rules'
 import { fmtDate, statusCopy, type Kind } from './offer-copy'
 import type { CampaignCheck, CampaignClaim, MyClaim, PublicCampaign, SetFingerprint } from './types'
+import { ordinal } from '@/components/campaigns/prize-places'
 
 async function jsonOrThrow<T>(r: Response): Promise<T> {
   const d = (await r.json().catch(() => ({}))) as T & { error?: string }
@@ -259,11 +260,11 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
           <p className="mt-2 max-w-2xl text-[14px] text-hl-muted">
             {c.prize?.decided
               ? c.prize.decided.mode === 'awarded'
-                ? 'The streamer picked a winner.'
+                ? c.prize.decided.awards && c.prize.decided.awards.length > 1 ? `The streamer picked ${c.prize.decided.awards.length} winners.` : 'The streamer picked a winner.'
                 : c.prize.decided.mode === 'split'
                   ? `No winner was picked in time, so the prize was split between ${c.prize.decided.winners} ${c.prize.decided.winners === 1 ? 'entry' : 'entries'}${c.prize.decided.share ? `, ${rewardLabel(c.prize.decided.share, c.reward.symbol)} each` : ''}.`
                   : 'Nobody entered.'
-              : <>Every {actionName} that counts is an entry. The streamer picks the winner after it ends{c.prize?.awardBy ? <>, by {fmtDate(c.prize.awardBy)}</> : null}; if they don't, the prize is split evenly between every entry.</>}
+              : <>{c.prize?.places?.length ? <><strong className="text-hl-text">{c.prize.places.map((p) => `${ordinal(p.place)} ${rewardLabel(p.amount, c.reward.symbol)}`).join(' · ')}</strong>. </> : null}Every {actionName} that counts is an entry. The streamer picks the {c.prize?.places?.length ? 'winners' : 'winner'} after it ends{c.prize?.awardBy ? <>, by {fmtDate(c.prize.awardBy)}</> : null}; if they don't, the prize is split evenly between every entry.</>}
           </p>
         ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-3">

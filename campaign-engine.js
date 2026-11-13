@@ -68,6 +68,20 @@
  * Either way each payout is the same `campaign:pay:<claimId>` release
  * through the door, under tryPay's funded ceiling, and the refund waits for
  * the prize to be decided (`prize` on the campaign record).
+ *
+ * PLACES (owner 2026-11-13, "several winners with set amounts or % of the
+ * pot"): `prizePlaces` splits the prize into up to MAX_PRIZE_PLACES places,
+ * by AMOUNT (1st $30, 2nd $20: the prize is their sum) or by PERCENT (50/30/20,
+ * summing to 100). The award names one entry per place, in order, and must
+ * fill every place there are entries for — a creator cannot award 1st and
+ * keep the rest. Each place is paid pot × its weight ÷ the sum of weights, so
+ * an X cost comes out of every place alike; a place with no entry to fill it
+ * comes back in the refund. Not awarded in time, places are ignored: the pot
+ * is split evenly between every entry, as above.
+ *
+ * CLIPS: the pick list links each entry's aired Holler from the replay archive
+ * (aired-clips.js, through the `entryClip` dep) while it is kept there; the
+ * file is served to the creator only (GET …/claims/:claimId/clip).
  */
 import { randomUUID } from 'crypto';
 import { verifyTypedData as verifyTypedDataEoa, hashTypedData, parseEventLogs, erc20Abi } from 'viem';
@@ -124,6 +138,8 @@ export const isPrize = (c) => c?.payout === 'prize';
  * the time an unawarded prize is split.
  */
 export const AWARD_WINDOW_MS = () => Math.max(CLOSE_GRACE_MS(), envNum('CAMPAIGN_AWARD_HOURS', 48) * 60 * 60_000);
+/** At most this many places in one prize (1st, 2nd, …). */
+export const MAX_PRIZE_PLACES = 10;
 /** What one X profile / list lookup is held at before it runs (it bills $0.01). */
 const LOOKUP_HOLD_USD = 0.05;
 /** X estimates a campaign gets free (the platform absorbs the $0.01 lookup); after that they are charged. */
@@ -388,6 +404,8 @@ export function createCampaignEngine({
    * Shown to the creator only; null wiring shows nothing.
    */
   overlayKeyState = null,
+  // The kept copy of an aired Holler (aired-clips.js): letterId → { path, mime } or null.
+  entryClip = () => null,
   xApi = xApiDefault,
   xTokens = xTokensDefault,
   now = () => Date.now(),
@@ -548,6 +566,54 @@ export function createCampaignEngine({
     };
   }
 
+  /**
+   * Prize places from what the creator sent: { by: 'amount', places: ['30', '20'] }
+   * or { by: 'percent', places: [50, 30, 20] }. Answers { places, total }:
+   * `places` is what is stored as prizePlaces (null = one prize, the whole
+   * pot) and `total` is the prize when it is set by amounts (their sum).
+   */
+  function prizeTerms(token, input, rewardAmount) {
+    if (input == null) return { places: null, total: null };
+    const by = input.by === 'percent' ? 'percent' : input.by === 'amount' ? 'amount' : null;
+    if (!by) throw fail('invalid', 'Prize places are split by "amount" or by "percent".');
+    const raw = Array.isArray(input.places) ? input.places : [];
+    if (raw.length > MAX_PRIZE_PLACES) throw fail('invalid', `A prize can have at most ${MAX_PRIZE_PLACES} places.`);
+    if (raw.length <= 1) return { places: null, total: by === 'amount' && raw.length === 1 ? String(raw[0]) : null };
+    let places;
+    if (by === 'amount') {
+      let sum = 0n;
+      places = raw.map((v, i) => {
+        let a;
+        try { a = toAtomic(String(v), token.decimals, { exact: true }); } catch { throw fail('invalid', `Place ${i + 1} needs an amount, at most ${token.decimals} decimal places.`); }
+        if (a <= 0n) throw fail('invalid', `Place ${i + 1} needs an amount above zero.`);
+        sum += a;
+        return { amount: fromAtomic(a, token.decimals), atomic: a.toString() };
+      });
+      rewardAmount = fromAtomic(sum, token.decimals);
+    } else {
+      let sum = 0;
+      places = raw.map((v, i) => {
+        const n = Number(v); const bps = Math.round(n * 100);
+        if (!Number.isFinite(n) || n <= 0 || Math.abs(bps - n * 100) > 1e-6) throw fail('invalid', `Place ${i + 1} needs a percentage above zero, at most two decimal places.`);
+        sum += bps;
+        return { percent: bps / 100, bps };
+      });
+      if (sum !== 10_000) throw fail('invalid', `The places add up to ${sum / 100}%; they must add up to 100%.`);
+      rewardAmount = null;
+    }
+    const w = places.map((p) => big(p.atomic ?? p.bps));
+    if (w.some((x, i) => i > 0 && x > w[i - 1])) throw fail('invalid', 'Each place pays no more than the place above it.');
+    return { places: { by, places }, total: rewardAmount };
+  }
+  /** The stored places back in the shape the form sends (an edit that leaves them out keeps them). */
+  const placesInput = (pp) => (pp ? { by: pp.by, places: pp.places.map((p) => (pp.by === 'amount' ? p.amount : p.percent)) } : null);
+  /** Each place's weight: its atomic amount or its basis points; one prize is one place of weight 1. */
+  const placeWeights = (c) => (c.prizePlaces?.places?.length ? c.prizePlaces.places.map((p) => big(p.atomic ?? p.bps)) : [1n]);
+  function placesFit(c) {
+    const n = c.prizePlaces?.places?.length || 0;
+    if (isPrize(c) && n > 1 && capOf(c) != null && capOf(c) < n) throw fail('invalid', `Max entries must be at least the number of places (${n}).`);
+  }
+
   async function createCampaign(input, { accountId, isAdmin = false }) {
     if (!accountId) throw fail('auth_required', 'Sign in to create a campaign.', 401);
     const drafts = store.listCampaigns().filter((x) => x.creatorAccountId === accountId && x.status === 'draft').length;
@@ -566,13 +632,17 @@ export function createCampaignEngine({
     }
     const d = validateDraft(input, { isAdmin, accountId });
     const { type, token } = await resolveToken(input.reward);
-    // A prize is its own budget: whatever budget was sent is ignored.
-    const a = amounts(token, input.reward?.amount, d.payout === 'prize' ? input.reward?.amount : input.budget?.amount);
+    // A prize is its own budget: whatever budget was sent is ignored. Set by
+    // place amounts, the prize is their sum.
+    const pp = d.payout === 'prize' ? prizeTerms(token, input.prizes, input.reward?.amount) : { places: null, total: null };
+    const rewardAmount = pp.total ?? input.reward?.amount;
+    const a = amounts(token, rewardAmount, d.payout === 'prize' ? rewardAmount : input.budget?.amount);
     const at = new Date(now()).toISOString();
     const c = {
       id: `cmp_${randomUUID().replace(/-/g, '').slice(0, 14)}`, slug, ...d,
       maxClaims: placesOf({ payout: d.payout, claimCap: d.claimCap, reward: a.reward, budget: a.budget }),
       reward: { type, ...a.reward }, budget: a.budget, token,
+      prizePlaces: pp.places,
       status: 'draft', hidden: false, creatorAccountId: accountId,
       funding: null, fundingAttempts: 0, xCostAtomic: '0', refund: null,
       // When the money terms (token, budget) were last set: an approve cited
@@ -580,6 +650,7 @@ export function createCampaignEngine({
       termsAt: at,
       createdAt: at, updatedAt: at,
     };
+    placesFit(c);
     store.appendLedger({ kind: 'created', campaignId: c.id, by: accountId });
     return store.putCampaign(c);
   }
@@ -601,6 +672,10 @@ export function createCampaignEngine({
     if (!c) throw fail('not_found', 'No such campaign.', 404);
     if (fundingBusy(id, c)) throw fail('funding_in_progress', FUNDING_BUSY_MSG, 409);
     if (c.status === 'closed') throw fail('closed', 'A closed campaign cannot change.', 409);
+    if (c.status !== 'draft' && isPrize(c) && input.prizes !== undefined
+      && JSON.stringify(prizeTerms(c.token, input.prizes, c.reward.amount).places) !== JSON.stringify(c.prizePlaces || null)) {
+      throw fail('invalid', 'The prize places are part of the money: they can only change while it is a draft.', 409);
+    }
     if (c.status === 'live') {
       if (input.payout != null && input.payout !== (c.payout || 'each')) throw fail('invalid', 'How a campaign pays can only change while it is a draft.', 409);
       const next = { ...c };
@@ -627,11 +702,12 @@ export function createCampaignEngine({
     }
     const d = validateDraft(input, { existing: c, isAdmin, accountId });
     const next = { ...c, ...d, updatedAt: new Date(now()).toISOString() };
-    if (c.status === 'draft' && (input.reward || input.budget || d.payout !== (c.payout || 'each'))) {
+    if (c.status === 'draft' && (input.reward || input.budget || input.prizes !== undefined || d.payout !== (c.payout || 'each'))) {
       const { type, token } = input.reward ? resolved : { type: c.reward.type, token: c.token };
-      const rewardAmount = input.reward?.amount ?? c.reward.amount;
+      const pp = d.payout === 'prize' ? prizeTerms(token, input.prizes !== undefined ? input.prizes : placesInput(c.prizePlaces), input.reward?.amount ?? c.reward.amount) : { places: null, total: null };
+      const rewardAmount = pp.total ?? input.reward?.amount ?? c.reward.amount;
       const a = amounts(token, rewardAmount, d.payout === 'prize' ? rewardAmount : (input.budget?.amount ?? c.budget.amount));
-      Object.assign(next, { reward: { type, ...a.reward }, budget: a.budget, token });
+      Object.assign(next, { reward: { type, ...a.reward }, budget: a.budget, token, prizePlaces: pp.places });
       // New money terms: an approve mined before now cannot fund them (an old
       // draft edited to match an approve someone else sent).
       if (!sameAddr(token?.address, c.token?.address) || String(a.budget.atomic) !== String(c.budget?.atomic)) next.termsAt = next.updatedAt;
@@ -639,6 +715,7 @@ export function createCampaignEngine({
     // Places follow the money as it now stands (the cap may have changed, or
     // the reward and budget on a draft).
     next.maxClaims = placesOf(next);
+    placesFit(next);
     return store.putCampaign(next);
   }
 
@@ -1786,16 +1863,22 @@ export function createCampaignEngine({
    * not chosen, and the decision is written on the campaign BEFORE any payout
    * intent, so a second award or split is refused even if a payout throws.
    */
-  function decidePrize(c, winners, share, mode, by) {
+  function decidePrize(c, awards, mode, by, share = null) {
     const entries = store.listClaims(c.id).filter((k) => k.status === 'entered');
-    const win = new Set(winners.map((k) => k.id));
+    const owed = new Map(awards.filter((x) => x.atomic > 0n).map((x) => [x.k.id, x]));
+    const win = new Set(owed.keys());
+    const placed = mode === 'awarded' && placeWeights(c).length > 1;
+    // Per place (an award with places); a split lists its winners and one share.
+    const rec = placed ? awards.map((x) => ({ claimId: x.k.id, place: x.place, atomic: x.atomic.toString() })) : null;
+    const shareAtomic = share != null ? share.toString() : null;
     const at = new Date(now()).toISOString();
-    store.putCampaign({ ...c, prize: { mode, at, by: by || null, winners: [...win], entries: entries.length, shareAtomic: share.toString() }, updatedAt: at });
-    store.appendLedger({ kind: 'prize', campaignId: c.id, mode, winners: [...win], entries: entries.length, shareAtomic: share.toString() });
+    store.putCampaign({ ...c, prize: { mode, at, by: by || null, winners: [...win], entries: entries.length, shareAtomic, awards: rec }, updatedAt: at });
+    store.appendLedger({ kind: 'prize', campaignId: c.id, mode, winners: [...win], entries: entries.length, shareAtomic, awards: rec });
     for (const k of entries) {
-      if (win.has(k.id) && share > 0n) {
-        history(k, 'owed', mode === 'awarded' ? 'chosen by the creator: the prize' : 'the award window passed: an even share of the prize');
-        k.owedAtomic = share.toString();
+      const x = owed.get(k.id);
+      if (x) {
+        history(k, 'owed', mode !== 'awarded' ? 'the award window passed: an even share of the prize' : placed ? `chosen by the creator: place ${x.place}` : 'chosen by the creator: the prize');
+        k.owedAtomic = x.atomic.toString();
         store.putClaim(k);
         store.appendLedger({ kind: 'owed', campaignId: c.id, claimId: k.id, atomic: k.owedAtomic });
       } else {
@@ -1809,7 +1892,7 @@ export function createCampaignEngine({
   }
 
   /** POST /api/campaigns/:id/award — the creator picks the winning entry. */
-  function award(id, { claimId } = {}, { accountId = null, isAdmin = false } = {}) {
+  function award(id, { claimId, claimIds } = {}, { accountId = null, isAdmin = false } = {}) {
     const c = store.getCampaign(id);
     if (!c) throw fail('not_found', 'No such campaign.', 404);
     if (!isAdmin && c.creatorAccountId !== accountId) throw fail('forbidden', 'This is not your campaign.', 403);
@@ -1820,11 +1903,22 @@ export function createCampaignEngine({
     const by = awardDeadline(c);
     if (by != null && now() > by) throw fail('award_window_passed', 'The award window has passed; the prize is split between every entry.', 409);
     if (Object.keys(c.xHolds || {}).length) throw fail('x_in_flight', 'An X check charged to this campaign is still settling. Try again in a minute.', 409);
-    const k = claimId ? store.getClaim(claimId) : null;
-    if (!k || k.campaignId !== id || k.status !== 'entered') throw fail('not_an_entry', 'Pick one of this campaign\'s entries.', 409);
+    // One entry per place, in place order (1st first). Every place there is an
+    // entry for must be filled, so the prize cannot be part-awarded and the
+    // rest refunded to the creator.
+    const picks = (Array.isArray(claimIds) ? claimIds : claimId ? [claimId] : []).map(String);
+    const ks = picks.map((p) => store.getClaim(p));
+    if (!ks.length || ks.some((k) => !k || k.campaignId !== id || k.status !== 'entered')) throw fail('not_an_entry', 'Pick one of this campaign\'s entries.', 409);
+    if (new Set(picks).size !== picks.length) throw fail('duplicate_pick', 'One entry can win one place.', 409);
+    const weights = placeWeights(c);
+    const entries = store.listClaims(id).filter((k) => k.status === 'entered').length;
+    const need = Math.min(weights.length, entries);
+    if (ks.length !== need) throw fail('places_unfilled', weights.length === 1 ? 'Pick one entry.' : `Pick an entry for each of the ${need} places, 1st first.`, 409);
     const pot = prizePot(c);
     if (pot <= 0n) throw fail('empty_pot', 'Nothing is left of the prize to award.', 409);
-    return decidePrize(c, [k], pot, 'awarded', accountId || 'admin');
+    const total = weights.reduce((s, w) => s + w, 0n);
+    const awards = ks.map((k, i) => ({ k, place: i + 1, atomic: (pot * weights[i]) / total }));
+    return decidePrize(c, awards, 'awarded', accountId || 'admin', weights.length === 1 ? pot : null);
   }
 
   /** The sweep, past the award window: an even share for every entry, or nothing (and the refund) when there is none. */
@@ -1835,7 +1929,7 @@ export function createCampaignEngine({
     const entries = store.listClaims(id).filter((k) => k.status === 'entered');
     const pot = prizePot(c);
     const share = entries.length ? pot / BigInt(entries.length) : 0n;
-    return decidePrize(c, share > 0n ? entries : [], share, entries.length ? 'split' : 'none', null);
+    return decidePrize(c, share > 0n ? entries.map((k) => ({ k, place: null, atomic: share })) : [], entries.length ? 'split' : 'none', null, share);
   }
 
   /** POST /api/account/payout-wallet: the wallet just arrived, so pay this account's owed claims now (not a whole sweep). */
@@ -2079,7 +2173,14 @@ export function createCampaignEngine({
       prize: isPrize(c) ? {
         entries: t.claims.filter((k) => k.status === 'entered' || k.status === 'not_chosen' || (k.owedAtomic && ['owed', 'releasing', 'paid', 'failed'].includes(k.status))).length,
         awardBy: awardDeadline(c) != null ? new Date(awardDeadline(c)).toISOString() : (c.deadline ? new Date(Date.parse(c.deadline) + AWARD_WINDOW_MS()).toISOString() : null),
-        decided: c.prize ? { mode: c.prize.mode, at: c.prize.at, winners: (c.prize.winners || []).length, share: fromAtomic(big(c.prize.shareAtomic), moneyToken(c).decimals) } : null,
+        // The places as set: what each pays if the pot is whole (a percent
+        // place, its share of the prize).
+        places: c.prizePlaces ? c.prizePlaces.places.map((p, i) => ({ place: i + 1, amount: p.amount ?? fromAtomic((big(c.reward.atomic) * BigInt(p.bps)) / 10_000n, moneyToken(c).decimals), percent: p.percent ?? null })) : null,
+        decided: c.prize ? {
+          mode: c.prize.mode, at: c.prize.at, winners: (c.prize.winners || []).length,
+          share: c.prize.shareAtomic != null ? fromAtomic(big(c.prize.shareAtomic), moneyToken(c).decimals) : null,
+          awards: c.prize.awards ? c.prize.awards.map((a) => ({ place: a.place, amount: fromAtomic(big(a.atomic), moneyToken(c).decimals) })) : null,
+        } : null,
       } : null,
       deadline: c.deadline,
       rules: describeRules(c.rules, { refSets: sets }),
@@ -2215,7 +2316,20 @@ export function createCampaignEngine({
     return store.listClaims(id).map((k) => ({
       ...claimView(k), accountId: k.accountId, handle: getAccount(k.accountId)?.handle || null,
       xHandle: k.xUsername || null, xUserId: k.xUserId, createdAt: k.createdAt, history: k.history || [],
+      // Whether the aired Holler is still in the replay archive (entryClipFile serves it).
+      clip: !!(k.letterId && safeClip(k.letterId)),
     }));
+  }
+
+  const safeClip = (letterId) => { try { return entryClip(letterId) || null; } catch { return null; } };
+  /** GET /api/campaigns/:id/claims/:claimId/clip — the creator watches an entry back. */
+  function entryClipFile(id, claimId, who) {
+    getManaged(id, who);
+    const k = store.getClaim(String(claimId || ''));
+    if (!k || k.campaignId !== id || !k.letterId) throw fail('not_found', 'No such entry.', 404);
+    const f = safeClip(k.letterId);
+    if (!f) throw fail('no_clip', 'No copy of this Holler is kept any more.', 404);
+    return f;
   }
 
   function listSets({ accountId, isAdmin = false }) {
@@ -2235,7 +2349,7 @@ export function createCampaignEngine({
     createCampaign, updateCampaign, deleteDraft, fundTerms, fund, open, close, setHidden,
     check, reserve, releaseSlot, bind, advance, tryPay, payAccount, onLetterEvent, onSeatEvent, sync, maybeRefund, award,
     estimateSet, estimateForCampaign, buildSet, refreshSet, listSets, getSetView, reconcileFunding, resolveStuckFunding,
-    publicView, ownerPreview, myClaim, claimView, listManaged, getManaged, manageView, claimsFor,
+    publicView, ownerPreview, myClaim, claimView, listManaged, getManaged, manageView, claimsFor, entryClipFile,
     /** Whether this server can SEND payouts (a platform payout signer at the door). */
     payoutsEnabled: () => !!settlement?.hasSigner?.('platform'),
     start(ms = 15_000) { if (!timer) { timer = setInterval(() => { try { sync(); } catch (e) { log.warn?.(`[campaigns] sync failed: ${e.message}`); } }, ms); timer.unref?.(); } return this; },

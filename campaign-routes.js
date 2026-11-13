@@ -32,6 +32,8 @@ import { fundingEnabled, PAID_OFF_MSG } from './campaign-engine.js';
 import { RULE_MENU } from './campaign-eligibility.js';
 
 export const TIER = { PUBLIC: 'PUBLIC', FAN: 'FAN', ADMIN: 'ADMIN' };
+/** A handler that answers { [SEND_FILE]: { path, mime } } streams that file instead of JSON. */
+const SEND_FILE = Symbol('send-file');
 const isCampaignId = (k) => /^cmp_[a-z0-9]+$/.test(String(k || ''));
 const httpErr = (status, code, message) => Object.assign(new Error(message), { status, code });
 
@@ -140,7 +142,10 @@ export const CAMPAIGN_ROUTES = [
   ['POST', '/api/campaigns/:id/open', TIER.FAN, (e, req, w) => ({ ok: true, campaign: e.manageView(e.open(req.params.id, w)) })],
   ['POST', '/api/campaigns/:id/close', TIER.FAN, (e, req, w) => ({ ok: true, campaign: e.manageView(e.close(req.params.id, { ...w, reason: 'closed by creator' })) })],
   // A prize campaign: the creator picks the winning entry (campaign-engine.js award).
-  ['POST', '/api/campaigns/:id/award', TIER.FAN, (e, req, w) => ({ ok: true, campaign: e.manageView(e.award(req.params.id, { claimId: String(req.body?.claimId || '') }, w)) })],
+  // claimIds: one per place, 1st first; claimId alone is a one-prize award.
+  ['POST', '/api/campaigns/:id/award', TIER.FAN, (e, req, w) => ({ ok: true, campaign: e.manageView(e.award(req.params.id, { claimId: req.body?.claimId ? String(req.body.claimId) : null, claimIds: Array.isArray(req.body?.claimIds) ? req.body.claimIds.slice(0, 20).map(String) : null }, w)) })],
+  // A prize entry's aired Holler, from the replay archive: the creator only.
+  ['GET', '/api/campaigns/:id/claims/:claimId/clip', TIER.FAN, (e, req, w) => ({ [SEND_FILE]: e.entryClipFile(req.params.id, req.params.claimId, w) })],
   ['GET', '/api/campaigns/:id/claims', TIER.FAN, (e, req, w) => ({ claims: e.claimsFor(req.params.id, w) })],
 
   // ── reference sets ──────────────────────────────────────────────────────
@@ -256,7 +261,17 @@ export function attachCampaignRoutes(app, engine, { onPayoutWallet = null, rewar
   // 'manage' are reserved slugs besides.
   for (const [method, path, tier, handler] of CAMPAIGN_ROUTES) {
     app[method.toLowerCase()](path, guard(tier, hooks), async (req, res) => {
-      try { res.json(await handler(engine, req, req.campaignWho)); }
+      try {
+        const out = await handler(engine, req, req.campaignWho);
+        if (out?.[SEND_FILE]) {
+          const f = out[SEND_FILE];
+          res.type(f.mime === 'video/mp4' ? 'video/mp4' : 'video/webm');
+          res.setHeader('X-Content-Type-Options', 'nosniff');
+          res.setHeader('Cache-Control', 'private, no-store');
+          return res.sendFile(f.path); // honours Range, so the player can seek
+        }
+        res.json(out);
+      }
       catch (e) { send(res, e); }
     });
   }

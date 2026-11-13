@@ -2654,3 +2654,34 @@ previous commit.
   prize: the second entry is refused). `_gate-campaigns` 287/0, Gate H 99/0.
   Undo: stop offering `payout: 'prize'` in the form; existing prize campaigns
   still resolve.
+
+## 2026-11-13 — Prize places, and clips on the pick list
+
+- **A prize can be split into places** (owner: "several winners with set
+  amounts or % of the pot"). `prizePlaces` holds up to 10 places, by AMOUNT
+  (1st $30, 2nd $15, 3rd $5: the prize is their sum) or by PERCENT (50/30/20
+  of the prize; they must sum to 100). Each place pays no more than the one
+  above it. Places are money terms: only a draft can change them, and max
+  entries cannot be below the number of places.
+- **The award must fill every place it can.** The creator names one entry per
+  place, 1st first; with N entries and P places they must name min(N, P).
+  Otherwise a creator could award 1st only and take 2nd and 3rd back in the
+  refund. With fewer entries than places, every entry is placed and the
+  unfilled places come back to the creator (the prizes as promised are paid,
+  nothing more).
+- **Each place is paid pot × its weight ÷ the sum of weights**, so an X cost
+  taken from the pot comes out of every place alike; rounding comes back in
+  the refund. Not awarded in time, places are ignored and the pot is split
+  evenly between every entry, as for one prize.
+- **Clips on the pick list come from the replay archive** (`aired-clips.js`),
+  not a new store: an entry gets a Watch link while its copy is kept there,
+  served to the creator only. So a clip exists only when the archive kept one:
+  a Holler that played to the end on a recorded broadcast of a proven
+  channel, with replay keeping on. Call ins have no clip. The room's 100 MB
+  budget can evict a clip before the 48 h award window ends on a busy room;
+  pinning entries until the award is the next step if that bites.
+- Gate: `_gate-campaign-prize.mjs` 58/0 (Q1-Q5 places, K1 clips). Two
+  mutations are caught: allowing a part-award (4 checks fail) and paying
+  places evenly instead of by weight (4 checks fail). `_gate-campaigns`
+  287/0, Gate H 99/0. Undo: send `prizes: null` (one winner); the clip route
+  is one row in `CAMPAIGN_ROUTES`.

@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   awardCampaign,
+  entryClipUrl,
   closeCampaign,
   deleteCampaign,
   fundCampaign,
@@ -33,6 +34,7 @@ import {
 } from '@/lib/campaigns-api'
 import { FeatureTag } from '@/components/feature-tag'
 import { ApproveStep, connectedWallet, type ApprovalAsk, type FundProof } from './approve-step'
+import { fromUnits, ordinal, placeAmounts } from './prize-places'
 import { PageTitle, Pip } from './campaigns-shell'
 import { FrozenSet, ReferenceSetBuilder } from './reference-set-builder'
 import { ACTION_LABEL, COMPLIANCE_NOTICE, allUnread, budgetFigures, checkLabel, fmtAgo, fmtClock, fmtDate, placesTaken, polishRule, requireLabel, rewardLabel, ruleCount, rulesSentence, shareText, xIntentUrl } from './rules'
@@ -107,8 +109,9 @@ export function CampaignDetail({ id }: { id: string }) {
   const [error, setError] = useState<{ status: number; message: string } | null>(null)
   const [chain, setChain] = useState({ explorerUrl: 'https://explore.tempo.xyz' })
   const [busy, setBusy] = useState<'fund' | 'open' | 'close' | 'delete' | 'award' | null>(null)
-  // A prize campaign: the entry the creator is about to award (asked once).
-  const [picking, setPicking] = useState<string | null>(null)
+  // A prize campaign: the entries the creator has picked, 1st first; the
+  // award is asked once, when every place that can be filled is.
+  const [picks, setPicks] = useState<string[]>([])
   const [actionError, setActionError] = useState<string | null>(null)
   const [approval, setApproval] = useState<ApprovalAsk | null>(null)
   const [confirmClose, setConfirmClose] = useState(false)
@@ -192,12 +195,12 @@ export function CampaignDetail({ id }: { id: string }) {
     }
   }, [id, load])
 
-  const award = useCallback(async (claimId: string) => {
+  const award = useCallback(async (claimIds: string[]) => {
     setBusy('award')
     setActionError(null)
     try {
-      await awardCampaign(id, claimId)
-      setPicking(null)
+      await awardCampaign(id, claimIds)
+      setPicks([])
       await load()
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Could not award the prize')
@@ -284,6 +287,13 @@ export function CampaignDetail({ id }: { id: string }) {
   const winners = new Set(c.prize?.winners || [])
   const handleOf = (k: Claim) => (k.handle ? `@${k.handle}` : k.xHandle ? `@${k.xHandle.replace(/^@/, '')}` : 'an entry')
   const prizeShare = c.prize ? (claims || []).find((k) => winners.has(k.id))?.owed?.amount ?? null : null
+  // Places: what each pays (nominal), how many the award must fill.
+  const dec = c.token?.decimals ?? 6
+  const placeAmts = placeAmounts(c.reward.amount, c.prizePlaces, dec)
+  const placed = placeAmts.length > 1
+  const need = Math.min(placeAmts.length, entries.length)
+  const byId = new Map((claims || []).map((k) => [k.id, k]))
+  const pickedAll = picks.length > 0 && picks.length === need
 
   return (
     <>
@@ -401,12 +411,16 @@ export function CampaignDetail({ id }: { id: string }) {
           {c.prize ? (
             <header>
               <h2>{c.prize.mode === 'awarded'
-                ? `Awarded to ${(claims || []).filter((k) => winners.has(k.id)).map(handleOf).join(', ') || 'the winner'}`
+                ? placed && c.prize.awards?.length
+                  ? `Awarded to ${c.prize.awards.length} ${c.prize.awards.length === 1 ? 'entry' : 'entries'}`
+                  : `Awarded to ${(claims || []).filter((k) => winners.has(k.id)).map(handleOf).join(', ') || 'the winner'}`
                 : c.prize.mode === 'split'
                   ? `Split between ${c.prize.winners.length} ${c.prize.winners.length === 1 ? 'entry' : 'entries'}`
                   : 'Nobody entered'}</h2>
               <p>{c.prize.mode === 'awarded'
-                ? `${rewardLabel(prizeShare || c.reward.amount, sym)} goes to the winner. The other entries were not chosen.`
+                ? placed && c.prize.awards?.length
+                  ? <>{c.prize.awards.map((a) => `${ordinal(a.place)} ${byId.get(a.claimId) ? handleOf(byId.get(a.claimId)!) : 'an entry'} ${rewardLabel(fromUnits(BigInt(a.atomic), dec), sym)}`).join(' · ')}.{c.prize.awards.length < placeAmts.length ? ' The unfilled places come back to you.' : ''}</>
+                  : `${rewardLabel(prizeShare || c.reward.amount, sym)} goes to the winner. The other entries were not chosen.`
                 : c.prize.mode === 'split'
                   ? `No winner was picked by the award deadline, so every entry got an even share${prizeShare ? ` of ${rewardLabel(prizeShare, sym)}` : ''}. Anything left over comes back to you.`
                   : 'The prize comes back to you in the refund.'}</p>
@@ -414,33 +428,51 @@ export function CampaignDetail({ id }: { id: string }) {
           ) : c.status === 'live' ? (
             <header>
               <h2>{entries.length === 0 ? 'No entries yet' : `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} so far`}</h2>
-              <p>Every {c.action.kind === 'holler' ? 'Holler' : 'Call in'} that counts is an entry. Pick the winner once the campaign ends ({fmtDate(c.deadline, true)}). You will have 48 hours; after that the prize is split evenly between every entry.</p>
+              {placed ? <p className="mcp-place-line">{placeAmts.map((a, i) => `${ordinal(i + 1)} ${rewardLabel(a, sym)}`).join(' · ')}</p> : null}
+              <p>Every {c.action.kind === 'holler' ? 'Holler' : 'Call in'} that counts is an entry. Pick the {placed ? 'winners' : 'winner'} once the campaign ends ({fmtDate(c.deadline, true)}). You will have 48 hours; after that the prize is split evenly between every entry.</p>
             </header>
           ) : (
             <>
               <header>
-                <h2>{entries.length === 0 ? 'No entries' : 'Pick the winner'}</h2>
+                <h2>{entries.length === 0 ? 'No entries' : placed ? 'Pick the winners' : 'Pick the winner'}</h2>
                 <p>{entries.length === 0
                   ? 'Nothing counted as an entry, so the prize comes back to you.'
-                  : <>The winner gets the whole prize. Pick by <strong>{fmtDate(c.awardBy, true)}</strong>; after that it is split evenly between all {entries.length} {entries.length === 1 ? 'entry' : 'entries'}.</>}</p>
+                  : <>{placed
+                    ? <>Pick {need === placeAmts.length ? `one entry for each place` : `all ${need} entries, best first (${placeAmts.length - need} ${placeAmts.length - need === 1 ? 'place goes' : 'places go'} unfilled and ${placeAmts.length - need === 1 ? 'comes' : 'come'} back to you)`}: {placeAmts.map((a, i) => `${ordinal(i + 1)} ${rewardLabel(a, sym)}`).join(' · ')}.</>
+                    : 'The winner gets the whole prize.'} Pick by <strong>{fmtDate(c.awardBy, true)}</strong>; after that it is split evenly between all {entries.length} {entries.length === 1 ? 'entry' : 'entries'}.</>}</p>
               </header>
               {entries.length > 0 ? (
                 <ul className="mcp-entries">
-                  {entries.map((k) => (
-                    <li key={k.id}>
-                      <span><strong>{handleOf(k)}</strong><small>{fmtDate(k.updatedAt || k.createdAt, true)}</small></span>
-                      {picking === k.id ? (
-                        <span className="mcp-end-confirm">
-                          <small>Give {handleOf(k)} the prize? It pays out now and cannot be undone.</small>
-                          <button type="button" className="mcp-btn" disabled={busy !== null} onClick={() => void award(k.id)}>{busy === 'award' ? 'Awarding…' : 'Yes, award it'}</button>
-                          <button type="button" className="mcp-btn-ghost" disabled={busy !== null} onClick={() => setPicking(null)}>Back</button>
+                  {entries.map((k) => {
+                    const at = picks.indexOf(k.id)
+                    return (
+                      <li key={k.id} data-picked={at >= 0 || undefined}>
+                        <span><strong>{handleOf(k)}</strong><small>{fmtDate(k.updatedAt || k.createdAt, true)}</small></span>
+                        <span className="mcp-entry-acts">
+                          {/* The aired Holler, from the replay archive, while it is kept there. */}
+                          {k.clip ? <a className="mcp-btn-ghost mcp-btn-sm" href={entryClipUrl(id, k.id)} target="_blank" rel="noreferrer">Watch</a> : c.action.kind === 'holler' ? <small>No clip kept</small> : null}
+                          {at >= 0 ? (
+                            <>
+                              <span className="mcp-place-badge">{placed ? `${ordinal(at + 1)} · ${rewardLabel(placeAmts[at], sym)}` : 'Winner'}</span>
+                              <button type="button" className="mcp-btn-ghost mcp-btn-sm" disabled={busy !== null} onClick={() => setPicks((p) => p.filter((x) => x !== k.id))}>Undo</button>
+                            </>
+                          ) : picks.length < need ? (
+                            <button type="button" className="mcp-btn-ghost mcp-btn-sm" disabled={busy !== null} onClick={() => setPicks((p) => [...p, k.id])}>{placed ? `Pick for ${ordinal(picks.length + 1)}` : 'Pick as winner'}</button>
+                          ) : null}
                         </span>
-                      ) : (
-                        <button type="button" className="mcp-btn-ghost mcp-btn-sm" disabled={busy !== null} onClick={() => setPicking(k.id)}>Pick as winner</button>
-                      )}
-                    </li>
-                  ))}
+                      </li>
+                    )
+                  })}
                 </ul>
+              ) : null}
+              {pickedAll ? (
+                <div className="mcp-end-confirm mcp-award-confirm">
+                  <small>{placed
+                    ? `Give ${picks.map((p, i) => `${ordinal(i + 1)} to ${byId.get(p) ? handleOf(byId.get(p)!) : 'an entry'} (${rewardLabel(placeAmts[i], sym)})`).join(', ')}?`
+                    : `Give ${byId.get(picks[0]) ? handleOf(byId.get(picks[0])!) : 'this entry'} the prize?`} It pays out now and cannot be undone.</small>
+                  <button type="button" className="mcp-btn" disabled={busy !== null} onClick={() => void award(picks)}>{busy === 'award' ? 'Awarding…' : 'Yes, award it'}</button>
+                  <button type="button" className="mcp-btn-ghost" disabled={busy !== null} onClick={() => setPicks([])}>Start over</button>
+                </div>
               ) : null}
             </>
           )}

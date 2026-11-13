@@ -19,6 +19,16 @@
  *   P9  an entry that counts after the prize was decided is not chosen and
  *       is paid nothing
  *   P10 a per-claim ("each") campaign is unchanged
+ *   Q1  places by amount: the prize is their sum; bad places are refused
+ *   Q2  places by percent: they must sum to 100; places fixed once funded
+ *   Q3  the award fills every place there is an entry for, 1st first, one
+ *       entry per place; each place is paid pot × its share, and the refund
+ *       is only rounding
+ *   Q4  fewer entries than places: every entry is placed, the unfilled
+ *       places come back in the refund
+ *   Q5  a placed prize not awarded in time is still an even split
+ *   K1  the pick list says which entries still have their clip; only the
+ *       creator can fetch it
  *   M1  x-mutuals: the estimate reads both lists; the frozen set holds only
  *       accounts on both
  *
@@ -110,7 +120,9 @@ const eng = createCampaignEngine({
   seatSignalAvailable: () => true, roomOnAir: () => true,
   xApi: mockX, xTokens: { holdersByXUserId: () => new Map(), async getXAccessToken() { return null; } },
   now: () => clock, log: quiet,
+  entryClip: (letterId) => CLIPS.get(letterId) || null,
 });
+const CLIPS = new Map();
 
 const creator = accounts.upsertAccountForLink({ provider: 'x', platformId: '9000', username: 'prizecreator', attributes: recs(BASE) });
 rooms.prizeroom.ownerKey = creator.id;
@@ -237,6 +249,83 @@ r = await attempt(() => eng.award(E.id, { claimId: e1.claimId }, as(creator)));
 ok('P10. award is refused on an "each" campaign', code(r) === 'not_prize', code(r));
 r = await attempt(() => eng.updateCampaign(E.id, { payout: 'prize' }, as(creator)));
 ok('P10. a live campaign cannot switch to a prize', r.error != null, code(r));
+
+// ── Q1 / Q2 ──
+console.log('\n── Q1-Q2 places ───────────────────────────────────────────────');
+const F = await funded(prizeInput({ reward: { type: 'usdc', amount: '1' }, prizes: { by: 'amount', places: ['30', '15', '5'] } }));
+ok('Q1. by amount: the prize is the sum ($50 pulled), three places stored', F.budget.atomic === '50000000' && F.reward.atomic === '50000000' && F.prizePlaces?.places?.length === 3 && chain.pulls.at(-1).amountAtomic === 50_000_000n, `${F.budget.atomic} ${F.prizePlaces?.places?.length}`);
+r = await attempt(() => eng.createCampaign(prizeInput({ prizes: { by: 'amount', places: ['10', '20'] } }), as(creator)));
+ok('Q1. a place paying more than the one above it is refused', code(r) === 'invalid', r.error?.message);
+r = await attempt(() => eng.createCampaign(prizeInput({ prizes: { by: 'amount', places: ['10', '0'] } }), as(creator)));
+ok('Q1. a zero place is refused', code(r) === 'invalid', r.error?.message);
+r = await attempt(() => eng.createCampaign(prizeInput({ prizes: { by: 'amount', places: Array(11).fill('1') } }), as(creator)));
+ok('Q1. more than 10 places is refused', code(r) === 'invalid', r.error?.message);
+r = await attempt(() => eng.createCampaign(prizeInput({ maxClaims: 2, prizes: { by: 'amount', places: ['3', '2', '1'] } }), as(creator)));
+ok('Q1. max entries below the number of places is refused', code(r) === 'invalid', r.error?.message);
+r = await attempt(() => eng.createCampaign(prizeInput({ prizes: { by: 'percent', places: [50, 30, 10] } }), as(creator)));
+ok('Q2. by percent: places that do not sum to 100 are refused', code(r) === 'invalid', r.error?.message);
+const G = await funded(prizeInput({ reward: { type: 'usdc', amount: '20' }, prizes: { by: 'percent', places: [50, 30, 20] } }));
+ok('Q2. by percent: the prize stays the reward ($20), shares stored in basis points', G.budget.atomic === '20000000' && G.prizePlaces?.places?.map((p) => p.bps).join(',') === '5000,3000,2000');
+r = await attempt(() => eng.updateCampaign(G.id, { prizes: { by: 'percent', places: [90, 10] } }, as(creator)));
+ok('Q2. a live campaign cannot change its places', code(r) === 'invalid' && /draft/.test(r.error?.message || ''), r.error?.message);
+r = await attempt(() => eng.updateCampaign(G.id, { prizes: { by: 'percent', places: [50, 30, 20] } }, as(creator)));
+ok('Q2. ...but sending the same places is fine', code(r) === 'ok', code(r));
+const draft = await eng.createCampaign(prizeInput({ prizes: { by: 'amount', places: ['6', '4'] } }), as(creator));
+const draft2 = await eng.updateCampaign(draft.id, { prizes: { by: 'percent', places: [70, 30] }, reward: { type: 'usdc', amount: '25' } }, as(creator));
+ok('Q2. a draft can switch amount → percent, and the prize follows the reward again', draft2.prizePlaces?.by === 'percent' && draft2.reward.atomic === '25000000' && draft2.budget.atomic === '25000000', `${draft2.prizePlaces?.by} ${draft2.reward.atomic}`);
+const draft3 = await eng.updateCampaign(draft.id, { title: 'Renamed' }, as(creator));
+ok('Q2. an edit that leaves places out keeps them', draft3.prizePlaces?.by === 'percent' && draft3.prizePlaces.places.length === 2);
+
+// ── Q3 ──
+console.log('\n── Q3 a placed award ──────────────────────────────────────────');
+const f1 = await enter(F, fan('kai')), f2 = await enter(F, fan('lea')), f3 = await enter(F, fan('max')), f4 = await enter(F, fan('ned'));
+eng.close(F.id, as(creator));
+r = await attempt(() => eng.award(F.id, { claimId: f1.claimId }, as(creator)));
+ok('Q3. awarding only 1st when 4 entries could fill 3 places is refused', code(r) === 'places_unfilled', code(r));
+r = await attempt(() => eng.award(F.id, { claimIds: [f1.claimId, f2.claimId, f1.claimId] }, as(creator)));
+ok('Q3. one entry cannot take two places', code(r) === 'duplicate_pick', code(r));
+r = await attempt(() => eng.award(F.id, { claimIds: [f1.claimId, f2.claimId, f3.claimId, f4.claimId] }, as(creator)));
+ok('Q3. more picks than places is refused', code(r) === 'places_unfilled', code(r));
+ok('Q3. no refusal moved anything', intents(F.id).length === 0 && !eng.store.getCampaign(F.id).prize);
+await eng.award(F.id, { claimIds: [f3.claimId, f1.claimId, f4.claimId] }, as(creator));
+const byClaim = Object.fromEntries(intents(F.id).map((x) => [x.rows[0].meta.claimId, amt(x)]));
+ok('Q3. 1st $30, 2nd $15, 3rd $5, in the order picked', byClaim[f3.claimId] === 30_000_000n && byClaim[f1.claimId] === 15_000_000n && byClaim[f4.claimId] === 5_000_000n && intents(F.id).length === 3, JSON.stringify(Object.values(byClaim).map(String)));
+ok('Q3. the unplaced entry is not chosen; the record lists each place', claim(f2.claimId).status === 'not_chosen' && eng.store.getCampaign(F.id).prize.awards?.map((a) => a.place).join(',') === '1,2,3');
+await door.flush(); eng.sync(); eng.sync();
+ok('Q3. the refund is $0: the whole prize was placed', eng.store.getCampaign(F.id).refund?.atomic === '0', JSON.stringify(eng.store.getCampaign(F.id).refund));
+
+// ── Q4 ──
+console.log('\n── Q4 fewer entries than places ───────────────────────────────');
+const g1 = await enter(G, fan('ola')), g2 = await enter(G, fan('pip'));
+eng.close(G.id, as(creator));
+r = await attempt(() => eng.award(G.id, { claimIds: [g1.claimId] }, as(creator)));
+ok('Q4. with 2 entries and 3 places, both entries must be placed', code(r) === 'places_unfilled', code(r));
+await eng.award(G.id, { claimIds: [g2.claimId, g1.claimId] }, as(creator));
+ok('Q4. 1st 50% ($10), 2nd 30% ($6)', intents(G.id).map(amt).sort().join(',') === '10000000,6000000', intents(G.id).map(amt).join(','));
+await door.flush(); eng.sync(); eng.sync();
+ok('Q4. the unfilled 3rd place ($4) comes back in the refund', eng.store.getCampaign(G.id).refund?.atomic === '4000000', JSON.stringify(eng.store.getCampaign(G.id).refund));
+
+// ── Q5 ──
+console.log('\n── Q5 placed, not awarded in time ─────────────────────────────');
+const Hc = await funded(prizeInput({ reward: { type: 'usdc', amount: '9' }, prizes: { by: 'percent', places: [60, 40] } }));
+const h1 = await enter(Hc, fan('quin')), h2 = await enter(Hc, fan('rex')), h3 = await enter(Hc, fan('sol'));
+eng.close(Hc.id, as(creator));
+clock += 49 * H; eng.sync();
+ok('Q5. past the window: an even $3 to each of the 3 entries, places ignored', intents(Hc.id).length === 3 && intents(Hc.id).every((x) => amt(x) === 3_000_000n) && eng.store.getCampaign(Hc.id).prize?.mode === 'split');
+
+// ── K1 ──
+console.log('\n── K1 entry clips ─────────────────────────────────────────────');
+CLIPS.set(f3.letterId, { path: '/tmp/x.clip', mime: 'video/webm' });
+const list = eng.claimsFor(F.id, as(creator));
+ok('K1. the pick list marks the entry whose clip is kept, and only that one', list.find((k) => k.id === f3.claimId)?.clip === true && list.filter((k) => k.clip).length === 1);
+const file = await attempt(() => eng.entryClipFile(F.id, f3.claimId, as(creator)));
+ok('K1. the creator gets the file', file.value?.path === '/tmp/x.clip', code(file));
+r = await attempt(() => eng.entryClipFile(F.id, f3.claimId, as(fa)));
+ok('K1. anyone else is refused', r.error != null && !r.value, code(r));
+r = await attempt(() => eng.entryClipFile(F.id, f1.claimId, as(creator)));
+ok('K1. an entry with no kept clip answers no_clip', code(r) === 'no_clip', code(r));
+r = await attempt(() => eng.entryClipFile(G.id, f3.claimId, as(creator)));
+ok('K1. a claim of another campaign is not found', code(r) === 'not_found', code(r));
 
 // ── M1 ──
 console.log('\n── M1 the mutuals list ────────────────────────────────────────');

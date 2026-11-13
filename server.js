@@ -477,6 +477,9 @@ const campaignEngine = createCampaignEngine({
   // N14: the creator's view says whether the Holler room's overlay is the
   // KEYED one. Read lazily (wss is built further down; this runs per request).
   overlayKeyState: (roomId) => overlayKeyState(roomId),
+  // A prize entry's aired Holler, while the replay archive still keeps it
+  // (aired-clips.js: null past its days, or with keeping off).
+  entryClip: (letterId) => { const m = readAiredClip(letterId); return m ? { path: path.resolve(airedClipFile(letterId)), mime: m.mime || 'video/webm' } : null; },
 }).start();
 
 // ─── The seat escrow contract (Session 2) ───────────────────────────────────
