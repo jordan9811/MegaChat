@@ -199,7 +199,9 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
   const preview = c.preview === true
   const live = c.status === 'live'
   const pastDeadline = !!c.deadline && Number.isFinite(Date.parse(c.deadline)) && Date.parse(c.deadline) <= Date.now()
-  const full = c.spotsLeft <= 0 || Number(c.budget.left) < Number(c.reward.amount)
+  const isPrize = c.payout === 'prize'
+  // A prize is one amount, not one per place: only the places can run out.
+  const full = c.spotsLeft <= 0 || (!isPrize && Number(c.budget.left) < Number(c.reward.amount))
   const closedWhy = !live
     ? (pastDeadline ? `This campaign ended ${fmtDate(c.deadline)}.` : 'This campaign has closed.')
     : full ? 'All places are taken.' : null
@@ -251,8 +253,19 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
         {c.blurb ? <p className="mt-3 max-w-2xl whitespace-pre-line text-[15px] text-hl-muted">{c.blurb}</p> : null}
         <p className="mt-4 flex flex-wrap items-baseline gap-x-2 text-[15px]">
           <strong className="text-[24px] font-extrabold tracking-tight text-f-bounty-ink">{reward}</strong>
-          <span className="text-hl-muted">for a {actionName} on <a href={`/${c.action.roomHandle}`} className="font-bold text-hl-strap-hi hover:underline">@{c.action.roomHandle}</a></span>
+          <span className="text-hl-muted">{isPrize ? 'to the best' : 'for a'} {actionName} on <a href={`/${c.action.roomHandle}`} className="font-bold text-hl-strap-hi hover:underline">@{c.action.roomHandle}</a></span>
         </p>
+        {isPrize ? (
+          <p className="mt-2 max-w-2xl text-[14px] text-hl-muted">
+            {c.prize?.decided
+              ? c.prize.decided.mode === 'awarded'
+                ? 'The streamer picked a winner.'
+                : c.prize.decided.mode === 'split'
+                  ? `No winner was picked in time, so the prize was split between ${c.prize.decided.winners} ${c.prize.decided.winners === 1 ? 'entry' : 'entries'}${c.prize.decided.share ? `, ${rewardLabel(c.prize.decided.share, c.reward.symbol)} each` : ''}.`
+                  : 'Nobody entered.'
+              : <>Every {actionName} that counts is an entry. The streamer picks the winner after it ends{c.prize?.awardBy ? <>, by {fmtDate(c.prize.awardBy)}</> : null}; if they don't, the prize is split evenly between every entry.</>}
+          </p>
+        ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {heroCta}
           {closedWhy && !holdsPlace ? <p className="text-[15px] font-semibold text-hl-fg">{closedWhy}{full && live ? ' Nobody else can claim.' : ''}</p> : null}
@@ -261,8 +274,10 @@ export function CampaignOffer({ slug, initial }: { slug: string; initial: Public
         </div>
         {/* A closed campaign advertises no space: only the date it ran to. */}
         <dl className={`mt-6 grid grid-cols-2 gap-4 border-t border-hl-line pt-5 ${live ? 'sm:grid-cols-3' : ''}`}>
-          {live ? <div><dt className="text-[12px] text-hl-dim">Places</dt><dd className="text-[16px] font-bold">{c.spotsLeft} of {c.maxClaims} left</dd></div> : null}
-          {live ? <div><dt className="text-[12px] text-hl-dim">Budget left</dt><dd className="text-[16px] font-bold text-f-bounty-ink">{rewardLabel(c.budget.left, c.budget.symbol)}</dd></div> : null}
+          {live && isPrize ? <div><dt className="text-[12px] text-hl-dim">Entries so far</dt><dd className="text-[16px] font-bold">{c.prize?.entries ?? 0}{c.maxClaims < 100_000 ? ` of ${c.maxClaims}` : ''}</dd></div> : null}
+          {live && isPrize ? <div><dt className="text-[12px] text-hl-dim">Prize</dt><dd className="text-[16px] font-bold text-f-bounty-ink">{reward}</dd></div> : null}
+          {live && !isPrize ? <div><dt className="text-[12px] text-hl-dim">Places</dt><dd className="text-[16px] font-bold">{c.spotsLeft} of {c.maxClaims} left</dd></div> : null}
+          {live && !isPrize ? <div><dt className="text-[12px] text-hl-dim">Budget left</dt><dd className="text-[16px] font-bold text-f-bounty-ink">{rewardLabel(c.budget.left, c.budget.symbol)}</dd></div> : null}
           <div><dt className="text-[12px] text-hl-dim">{live ? 'Deadline' : pastDeadline ? 'Ended' : 'Was open until'}</dt><dd className="text-[16px] font-bold">{fmtDate(c.deadline) || 'None set'}</dd></div>
         </dl>
         <p className="mt-5 text-[13px] text-hl-dim">

@@ -2619,3 +2619,38 @@ previous commit.
   public list of open campaigns, so each row is marked "example" and opens the
   new-campaign form (which does not prefill yet). Undo: `landing.tsx`
   `CAMPAIGN_IDEAS` / `TRUST`, and the `mcl-duo` / `mcl-half` rules.
+
+## 2026-11-13 — Prize campaigns, and a mutuals list
+
+- **A campaign can pay one prize instead of a reward per action**
+  (`payout: 'prize'`; owner: "$50 to the funniest Holler… if he doesn't award
+  within X time it goes to the Hollers pro rata"). The prize is the budget,
+  funded and pulled through the same door as any campaign. Every Holler or
+  Call in that reaches the required state is an ENTRY: it holds a place, never
+  money. After the campaign ends the creator has the award window
+  (`CAMPAIGN_AWARD_HOURS`, default 48, never shorter than the 48 h close
+  grace) to pick ONE entry, which is owed the whole pot (funded − X cost);
+  every other entry reads "not chosen". Not picked in time, the sweep splits
+  the pot evenly between every entry (floor; the remainder, or the whole
+  prize when nobody entered, comes back in the refund). The refund waits for
+  the decision. Each payout is the ordinary `campaign:pay:<claimId>` release
+  under tryPay's funded ceiling. Only a draft can switch modes.
+- **The money is held the way every campaign budget is, not in a contract
+  escrow**: pulled into the platform wallet against a recorded intent
+  (`settlement.js`), as reward campaigns have been since bd741f1. "Locks money
+  in escrow" in the owner's words is that.
+- **One winner, not several, for now.** Several winners with chosen amounts
+  is a small step on `decidePrize` if wanted.
+- **A winner who never adds a payout wallet forfeits after 14 days** and the
+  prize refunds to the creator: the same rule every owed campaign reward has.
+- **Mutuals** (`x-mutuals` reference set): the accounts you follow that follow
+  you back, read from both X lists and frozen. Following the creator after the
+  snapshot never qualifies anyone, so nothing rewards a follow (X's developer
+  policy; the copy check is unchanged). It reads both lists, so it costs the
+  sum of the two in X calls.
+- Gate: `_gate-campaign-prize.mjs` (31/0) drives the real door; two
+  mutations are caught (the refund not waiting for the prize: the creator is
+  refunded the full $50 while the winner is owed it; entries reserving the
+  prize: the second entry is refused). `_gate-campaigns` 287/0, Gate H 99/0.
+  Undo: stop offering `payout: 'prize'` in the form; existing prize campaigns
+  still resolve.

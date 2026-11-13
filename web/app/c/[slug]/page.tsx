@@ -40,7 +40,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const c = await loadCampaign(slug)
   if (!c) return { title: 'Campaign — Holler' }
   // "$5 for a Holler": the symbol only when it is not USDC (rewardLabel).
-  const title = `${rewardLabel(c.reward.amount, c.reward.symbol)} for a ${actionWords(c)} on @${c.action.roomHandle}'s stream`
+  const title = c.payout === 'prize'
+    ? `${rewardLabel(c.reward.amount, c.reward.symbol)} to the best ${actionWords(c)} on @${c.action.roomHandle}'s stream`
+    : `${rewardLabel(c.reward.amount, c.reward.symbol)} for a ${actionWords(c)} on @${c.action.roomHandle}'s stream`
   const description = c.blurb || `${c.title}. Check if you qualify with your X account; paid for the ${actionWords(c)} only.`
   const url = `/c/${encodeURIComponent(c.slug)}`
   return {

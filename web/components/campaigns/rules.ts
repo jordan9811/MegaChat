@@ -160,7 +160,7 @@ export function placesTaken(c: Pick<Campaign, 'claims'>) {
   if (!k) return 0
   if (typeof k.active === 'number') return k.active
   if (k.counts) {
-    const held: ClaimStatus[] = ['eligible', 'recorded', 'approved', 'aired', 'joined', 'owed', 'releasing', 'paid']
+    const held: ClaimStatus[] = ['eligible', 'recorded', 'approved', 'aired', 'joined', 'entered', 'owed', 'releasing', 'paid']
     return held.reduce((n, s) => n + (k.counts?.[s] || 0), 0)
   }
   return k.paid

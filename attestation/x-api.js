@@ -106,7 +106,7 @@ export async function fetchUserById({ userId, log = console } = {}) {
     const me = (await r.json())?.data;
     if (!me) return { ok: false, records: [], error: 'no-data', costUsd: 0 };
     return { ok: true, records: recordsFromUser(me, { log }), error: null, costUsd: X_COST_PER_USER_USD,
-      user: { id: String(me.id), username: me.username || null, followingCount: me.public_metrics?.following_count ?? null } };
+      user: { id: String(me.id), username: me.username || null, followingCount: me.public_metrics?.following_count ?? null, followersCount: me.public_metrics?.followers_count ?? null } };
   } catch (e) {
     return { ok: false, records: [], error: e.name === 'TimeoutError' ? 'timeout' : 'network', costUsd: 0 };
   }

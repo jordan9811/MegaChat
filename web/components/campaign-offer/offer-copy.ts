@@ -69,6 +69,9 @@ export function statusCopy({ kind, closed, unread, claim, moderation }: StatusCo
       return `${cleared} It counts once it airs.`
     }
     case 'aired': return 'It aired. Your reward is being lined up.'
+    // A prize campaign: counted, waiting for the streamer to pick.
+    case 'entered': return `You're in. The streamer picks the best ${kind === 'callin' ? 'Call in' : 'Holler'} after the campaign ends; if they don't pick in time, the prize is split between every entry.`
+    case 'not_chosen': return 'Another entry won the prize this time.'
     case 'joined':
       if (honour) return `You are on camera. This campaign has closed, but your seat still counts if it reaches the minimum before ${honour}.`
       return 'You are on camera. Stay on to count.'

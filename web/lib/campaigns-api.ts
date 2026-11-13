@@ -47,7 +47,7 @@ export type RuleKey = keyof Rules
 
 // ── Reference sets ──────────────────────────────────────────────────────────
 
-export type ReferenceSetSource = 'x-following' | 'x-list' | 'manual'
+export type ReferenceSetSource = 'x-following' | 'x-mutuals' | 'x-list' | 'manual'
 
 /** A frozen list of X account ids. `root` is the Merkle root of the snapshot,
  *  so a set can be shown and checked without ever handing out the list. */
@@ -109,7 +109,16 @@ export type CampaignInput = {
   deadline: string
   action: { kind: ActionKind; roomHandle: string; require: ActionRequire; minSeconds?: number }
   rules: Rules
+  /** each: the reward goes to every qualifying action. prize: the reward is
+   *  ONE prize (it is also the budget); the creator picks the winning entry
+   *  after the end, or it is split evenly between every entry. */
+  payout?: PayoutMode
 }
+
+export type PayoutMode = 'each' | 'prize'
+
+/** A prize campaign's decision: awarded to one entry, split between all, or none (nobody entered). */
+export type PrizeDecision = { mode: 'awarded' | 'split' | 'none'; at: string; by: string | null; winners: string[]; entries: number; shareAtomic: string }
 
 /** N14: the Holler room's overlay link, judged over the last 10 minutes.
  *  keyed: the room's keyed overlay is connected (or was), so campaign Hollers
@@ -155,6 +164,11 @@ export type Campaign = {
   maxClaims: number
   /** The creator's cap as set; null when the budget decides. */
   claimCap?: number | null
+  payout?: PayoutMode
+  /** A prize campaign: what was decided, once it was. */
+  prize?: PrizeDecision | null
+  /** A prize campaign that has ended: the creator picks by this, or the sweep splits it. */
+  awardBy?: string | null
   /** A draft nothing was ever attempted against: it can be deleted outright. */
   deletable?: boolean
   deadline: string | null
@@ -201,6 +215,10 @@ export type ClaimStatus =
   | 'releasing'
   | 'paid'
   | 'failed'
+  /** A prize campaign: counted as an entry, waiting for the award. */
+  | 'entered'
+  /** A prize campaign: another entry won. */
+  | 'not_chosen'
   | 'rejected'
   /** The campaign closed (or a wallet never arrived) before it counted. */
   | 'expired'
@@ -385,6 +403,11 @@ export function closeCampaign(id: string) {
  *  on record). Its link stays a 404. */
 export function deleteCampaign(id: string) {
   return req<{ ok: true; id: string; slug: string }>(`/api/campaigns/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+/** A prize campaign, after it ended: the creator picks the winning entry. */
+export function awardCampaign(id: string, claimId: string) {
+  return req<{ ok: true; campaign?: Campaign }>(`/api/campaigns/${encodeURIComponent(id)}/award`, { method: 'POST', body: { claimId } })
 }
 
 export function listClaims(id: string) {

@@ -54,6 +54,20 @@
  * A dropped clip or a seat that left early gives its slot back. A closed
  * campaign gives back every slot not yet bound to a Holler or seat; one
  * already submitted is honoured for CLOSE_GRACE_MS, and then expires.
+ *
+ * ── PRIZE CAMPAIGNS (payout: 'prize', owner 2026-11-13) ───────────────────
+ * "$50 to the best Holler tonight." The reward IS the budget: one prize,
+ * funded and pulled exactly like any campaign. A Holler / Call in that reaches
+ * the required state becomes an ENTRY (status 'entered'): it holds a place
+ * (one per account and X id, as ever) but no money. After the campaign ends
+ * the creator has the AWARD WINDOW (endOf + CAMPAIGN_AWARD_HOURS, default 48,
+ * never shorter than the close grace) to pick one entry (award): it is owed
+ * the whole pot = funded − X cost, and the rest read 'not_chosen'. Not picked
+ * in time, the sweep SPLITS the pot evenly between every entry (floor; the
+ * remainder, or the whole pot when nobody entered, comes back in the refund).
+ * Either way each payout is the same `campaign:pay:<claimId>` release
+ * through the door, under tryPay's funded ceiling, and the refund waits for
+ * the prize to be decided (`prize` on the campaign record).
  */
 import { randomUUID } from 'crypto';
 import { verifyTypedData as verifyTypedDataEoa, hashTypedData, parseEventLogs, erc20Abi } from 'viem';
@@ -101,6 +115,15 @@ export const MAX_EXTENSION_DAYS = 90;
  * waits for it, like it waits for owed claims.
  */
 const CLOSE_GRACE_MS = () => Math.max(60 * 60_000, envNum('CAMPAIGN_CLOSE_GRACE_HOURS', 48) * 60 * 60_000);
+/** How a campaign pays: a fixed reward per qualifying action, or one prize the creator awards. */
+export const PAYOUT_MODES = ['each', 'prize'];
+export const isPrize = (c) => c?.payout === 'prize';
+/**
+ * A prize campaign's award window, after its end. Never shorter than the close
+ * grace, so every entry that could still count has counted (or expired) by
+ * the time an unawarded prize is split.
+ */
+export const AWARD_WINDOW_MS = () => Math.max(CLOSE_GRACE_MS(), envNum('CAMPAIGN_AWARD_HOURS', 48) * 60 * 60_000);
 /** What one X profile / list lookup is held at before it runs (it bills $0.01). */
 const LOOKUP_HOLD_USD = 0.05;
 /** X estimates a campaign gets free (the platform absorbs the $0.01 lookup); after that they are charged. */
@@ -174,10 +197,10 @@ export function placesFor(rewardAtomic, budgetAtomic, cap = null) {
   return cap != null && cap < affordable ? cap : affordable;
 }
 /** What a stored campaign offers, whatever it stored. */
-export const placesOf = (c) => placesFor(c?.reward?.atomic, c?.budget?.atomic, capOf(c));
+export const placesOf = (c) => (isPrize(c) ? (capOf(c) ?? MAX_PLACES) : placesFor(c?.reward?.atomic, c?.budget?.atomic, capOf(c)));
 
 /** Statuses that hold a slot (count toward maxClaims and the budget). */
-export const ACTIVE =new Set(['recorded', 'approved', 'aired', 'joined', 'owed', 'releasing', 'paid', 'failed']);
+export const ACTIVE = new Set(['recorded', 'approved', 'aired', 'joined', 'entered', 'owed', 'releasing', 'paid', 'failed']);
 /** Reached the action but not yet owed. */
 const IN_FLIGHT = new Set(['recorded', 'approved', 'aired', 'joined']);
 const RANK = {
@@ -442,6 +465,9 @@ export function createCampaignEngine({
     if (!isAdmin && room.ownerKey && room.ownerKey !== accountId) throw fail('not_your_room', 'A campaign can only send people to a room you own.', 403);
     if (kind === 'callin' && room.transport && room.transport !== 'livekit') throw fail('needs_livekit', 'A Call in campaign needs a room on the LiveKit camera transport: that is where the server sees a camera go live. This room uses another transport.', 409);
     const minSeconds = kind === 'callin' ? Math.max(10, Math.min(3600, Math.floor(Number(actionIn.minSeconds) || 60))) : null;
+    const payout = input.payout ?? existing?.payout ?? 'each';
+    if (!PAYOUT_MODES.includes(payout)) throw fail('invalid', 'payout must be "each" or "prize".');
+    if (existing && existing.status !== 'draft' && payout !== (existing.payout || 'each')) throw fail('invalid', 'How a campaign pays can only change while it is a draft.', 409);
     const { rules, errors } = normaliseRules(input.rules ?? existing?.rules ?? {});
     if (errors.length) throw fail('invalid', errors.join('; '));
     for (const sid of [rules.referenceSetId, rules.followedByFromSet?.referenceSetId].filter(Boolean)) {
@@ -470,7 +496,7 @@ export function createCampaignEngine({
     if (dt <= now()) throw fail('invalid', 'The deadline is in the past.');
     if (dt > now() + MAX_DEADLINE_DAYS * DAY) throw fail('invalid', `The deadline can be at most ${MAX_DEADLINE_DAYS} days away.`);
     deadline = new Date(dt).toISOString();
-    return { title, blurb, action: { kind, roomHandle, require, ...(minSeconds ? { minSeconds } : {}) }, rules, claimCap, deadline };
+    return { title, blurb, payout, action: { kind, roomHandle, require, ...(minSeconds ? { minSeconds } : {}) }, rules, claimCap, deadline };
   }
 
   /** {address, symbol, decimals} for a Tempo ERC-20, read on chain once and cached. */
@@ -540,11 +566,12 @@ export function createCampaignEngine({
     }
     const d = validateDraft(input, { isAdmin, accountId });
     const { type, token } = await resolveToken(input.reward);
-    const a = amounts(token, input.reward?.amount, input.budget?.amount);
+    // A prize is its own budget: whatever budget was sent is ignored.
+    const a = amounts(token, input.reward?.amount, d.payout === 'prize' ? input.reward?.amount : input.budget?.amount);
     const at = new Date(now()).toISOString();
     const c = {
       id: `cmp_${randomUUID().replace(/-/g, '').slice(0, 14)}`, slug, ...d,
-      maxClaims: placesFor(a.reward.atomic, a.budget.atomic, d.claimCap),
+      maxClaims: placesOf({ payout: d.payout, claimCap: d.claimCap, reward: a.reward, budget: a.budget }),
       reward: { type, ...a.reward }, budget: a.budget, token,
       status: 'draft', hidden: false, creatorAccountId: accountId,
       funding: null, fundingAttempts: 0, xCostAtomic: '0', refund: null,
@@ -575,6 +602,7 @@ export function createCampaignEngine({
     if (fundingBusy(id, c)) throw fail('funding_in_progress', FUNDING_BUSY_MSG, 409);
     if (c.status === 'closed') throw fail('closed', 'A closed campaign cannot change.', 409);
     if (c.status === 'live') {
+      if (input.payout != null && input.payout !== (c.payout || 'each')) throw fail('invalid', 'How a campaign pays can only change while it is a draft.', 409);
       const next = { ...c };
       if (input.title != null || input.blurb != null) {
         const title = String(input.title ?? c.title).trim().slice(0, 90);
@@ -599,9 +627,10 @@ export function createCampaignEngine({
     }
     const d = validateDraft(input, { existing: c, isAdmin, accountId });
     const next = { ...c, ...d, updatedAt: new Date(now()).toISOString() };
-    if (c.status === 'draft' && (input.reward || input.budget)) {
+    if (c.status === 'draft' && (input.reward || input.budget || d.payout !== (c.payout || 'each'))) {
       const { type, token } = input.reward ? resolved : { type: c.reward.type, token: c.token };
-      const a = amounts(token, input.reward?.amount ?? c.reward.amount, input.budget?.amount ?? c.budget.amount);
+      const rewardAmount = input.reward?.amount ?? c.reward.amount;
+      const a = amounts(token, rewardAmount, d.payout === 'prize' ? rewardAmount : (input.budget?.amount ?? c.budget.amount));
       Object.assign(next, { reward: { type, ...a.reward }, budget: a.budget, token });
       // New money terms: an approve mined before now cannot fund them (an old
       // draft edited to match an approve someone else sent).
@@ -609,7 +638,7 @@ export function createCampaignEngine({
     }
     // Places follow the money as it now stands (the cap may have changed, or
     // the reward and budget on a draft).
-    next.maxClaims = placesFor(next.reward.atomic, next.budget.atomic, d.claimCap);
+    next.maxClaims = placesOf(next);
     return store.putCampaign(next);
   }
 
@@ -1313,7 +1342,7 @@ export function createCampaignEngine({
             followedBy = { error: `this campaign has used its X checking allowance ($${fromAtomic(ceiling, usdc.decimals)}); the creator can raise it`, count: 0, costUsd: 0, ceiling: true };
           } else {
             // Hold the cost cap (and room for the reward) BEFORE any X call.
-            try { holdId = holdX(c.id, fb.perClaimCostCapUsd, `followedBy check ${claimId}`, { alsoNeed: big(c.reward.atomic) }); }
+            try { holdId = holdX(c.id, fb.perClaimCostCapUsd, `followedBy check ${claimId}`, { alsoNeed: isPrize(c) ? 0n : big(c.reward.atomic) }); }
             catch (e) { followedBy = { error: e.code === 'budget_spent' ? 'the campaign budget cannot cover this check' : 'the campaign cannot pay for this check now', count: 0, costUsd: 0 }; }
           }
           if (holdId) {
@@ -1389,13 +1418,15 @@ export function createCampaignEngine({
     // The budget first, then the places (which never exceed what the budget
     // pays: placesOf), so a campaign whose places are the budget's answers
     // as it always did when the money runs out.
-    if (t.remaining + held < big(c.reward.atomic)) throw fail('budget_spent', 'This campaign\'s budget is spent.', 409);
+    // A prize entry holds a place, not money: the pot is decided at the award.
+    const stake = isPrize(c) ? 0n : big(c.reward.atomic);
+    if (isPrize(c) ? t.remaining <= 0n : t.remaining + held < stake) throw fail('budget_spent', 'This campaign\'s budget is spent.', 409);
     if (countNow + 1 > placesOf(c)) throw fail('full', 'Every place in this campaign is taken.', 409);
-    claim.reservedAtomic = c.reward.atomic;
+    claim.reservedAtomic = stake.toString();
     claim.reservedAt = new Date(now()).toISOString();
     if (claim.status !== 'recorded') history(claim, 'recorded', `${kind} started`);
     store.putClaim(claim);
-    store.appendLedger({ kind: 'reserved', campaignId: c.id, claimId: claim.id, atomic: c.reward.atomic });
+    store.appendLedger({ kind: 'reserved', campaignId: c.id, claimId: claim.id, atomic: claim.reservedAtomic });
     return { claimId: claim.id, campaignId: c.id };
   }
 
@@ -1453,6 +1484,14 @@ export function createCampaignEngine({
     const rank = RANK[c.action.kind];
     if (rank[reached] == null) return k;
     if (rank[reached] > rank[k.status]) history(k, reached, why);
+    if (rank[k.status] >= rank[c.action.require] && isPrize(c)) {
+      // An entry, not a payout. Once the prize is decided, a late one is
+      // simply not chosen: nothing is left to win.
+      if (c.prize) { history(k, 'not_chosen', `${c.action.require} reached after the prize was decided`); k.reservedAtomic = null; }
+      else history(k, 'entered', `${c.action.require} reached: an entry for the prize`);
+      store.appendLedger({ kind: k.status, campaignId: c.id, claimId: k.id });
+      return store.putClaim(k);
+    }
     if (rank[k.status] >= rank[c.action.require]) {
       history(k, 'owed', `${c.action.require} reached`);
       k.owedAtomic = k.reservedAtomic;
@@ -1655,7 +1694,7 @@ export function createCampaignEngine({
   }
 
   /** Nothing the sweep does can move a claim in one of these statuses. */
-  const isFinal = (k) => !IN_FLIGHT.has(k.status) && k.status !== 'owed' && k.status !== 'releasing';
+  const isFinal = (k) => !IN_FLIGHT.has(k.status) && k.status !== 'owed' && k.status !== 'releasing' && k.status !== 'entered';
   /** A stuck funding already put to a person is re-asked of the chain every PERSON_RECONCILE_MS, not every sweep. */
   const reconcileWaits = (c) => !!c.funding?.needsPerson && now() - Date.parse(c.funding.at || 0) >= STUCK_FUNDING_MS
     && now() - (reconciledAt.get(c.id) ?? -Infinity) < PERSON_RECONCILE_MS;
@@ -1723,7 +1762,80 @@ export function createCampaignEngine({
         else if (st === 'FAILED') { history(k, 'failed', 'door FAILED — needs a person'); store.putClaim(k); }
       }
     }
+    if (isPrize(c) && c.status === 'closed' && !c.prize && fundedAtomic(c) > 0n && now() > awardDeadline(c)) splitPrize(id);
     if (c.status === 'closed' && c.funding && !c.refund) maybeRefund(id);
+  }
+
+  // ── prize campaigns: award, or split when the window passes ───────────────
+  /** When an unawarded prize is split: the campaign's end plus the award window. */
+  function awardDeadline(c) {
+    const end = endOf(c);
+    return end == null ? null : end + AWARD_WINDOW_MS();
+  }
+
+  /** The pot: what was funded less every X cost (at the door or on the record, whichever is larger) and anything already paid. */
+  function prizePot(c) {
+    const xcDoor = doorSum(c.id, 'campaign:xcost:', 'release');
+    const xc = xcDoor > big(c.xCostAtomic) ? xcDoor : big(c.xCostAtomic);
+    const pot = fundedAtomic(c) - xc - doorSum(c.id, 'campaign:pay:', 'release');
+    return pot > 0n ? pot : 0n;
+  }
+
+  /**
+   * Decide the prize: `winners` are owed `share` each, every other entry is
+   * not chosen, and the decision is written on the campaign BEFORE any payout
+   * intent, so a second award or split is refused even if a payout throws.
+   */
+  function decidePrize(c, winners, share, mode, by) {
+    const entries = store.listClaims(c.id).filter((k) => k.status === 'entered');
+    const win = new Set(winners.map((k) => k.id));
+    const at = new Date(now()).toISOString();
+    store.putCampaign({ ...c, prize: { mode, at, by: by || null, winners: [...win], entries: entries.length, shareAtomic: share.toString() }, updatedAt: at });
+    store.appendLedger({ kind: 'prize', campaignId: c.id, mode, winners: [...win], entries: entries.length, shareAtomic: share.toString() });
+    for (const k of entries) {
+      if (win.has(k.id) && share > 0n) {
+        history(k, 'owed', mode === 'awarded' ? 'chosen by the creator: the prize' : 'the award window passed: an even share of the prize');
+        k.owedAtomic = share.toString();
+        store.putClaim(k);
+        store.appendLedger({ kind: 'owed', campaignId: c.id, claimId: k.id, atomic: k.owedAtomic });
+      } else {
+        history(k, 'not_chosen', mode === 'awarded' ? 'another entry won the prize' : 'the prize was too small to split');
+        k.reservedAtomic = null;
+        store.putClaim(k);
+      }
+    }
+    for (const id of win) tryPay(id);
+    return store.getCampaign(c.id);
+  }
+
+  /** POST /api/campaigns/:id/award — the creator picks the winning entry. */
+  function award(id, { claimId } = {}, { accountId = null, isAdmin = false } = {}) {
+    const c = store.getCampaign(id);
+    if (!c) throw fail('not_found', 'No such campaign.', 404);
+    if (!isAdmin && c.creatorAccountId !== accountId) throw fail('forbidden', 'This is not your campaign.', 403);
+    if (!isPrize(c)) throw fail('not_prize', 'This campaign pays every qualifying action; there is no prize to award.', 409);
+    if (c.prize) throw fail('already_decided', c.prize.mode === 'awarded' ? 'This prize has already been awarded.' : 'The award window passed, so the prize was already decided.', 409);
+    if (c.status !== 'closed') throw fail('not_closed', 'Pick a winner once the campaign has ended: close it, or wait for its deadline.', 409);
+    if (fundedAtomic(c) <= 0n) throw fail('not_funded', 'This campaign holds no prize.', 409);
+    const by = awardDeadline(c);
+    if (by != null && now() > by) throw fail('award_window_passed', 'The award window has passed; the prize is split between every entry.', 409);
+    if (Object.keys(c.xHolds || {}).length) throw fail('x_in_flight', 'An X check charged to this campaign is still settling. Try again in a minute.', 409);
+    const k = claimId ? store.getClaim(claimId) : null;
+    if (!k || k.campaignId !== id || k.status !== 'entered') throw fail('not_an_entry', 'Pick one of this campaign\'s entries.', 409);
+    const pot = prizePot(c);
+    if (pot <= 0n) throw fail('empty_pot', 'Nothing is left of the prize to award.', 409);
+    return decidePrize(c, [k], pot, 'awarded', accountId || 'admin');
+  }
+
+  /** The sweep, past the award window: an even share for every entry, or nothing (and the refund) when there is none. */
+  function splitPrize(id) {
+    const c = store.getCampaign(id);
+    if (!c || !isPrize(c) || c.prize || c.status !== 'closed') return null;
+    if (Object.keys(c.xHolds || {}).length) return null;
+    const entries = store.listClaims(id).filter((k) => k.status === 'entered');
+    const pot = prizePot(c);
+    const share = entries.length ? pot / BigInt(entries.length) : 0n;
+    return decidePrize(c, share > 0n ? entries : [], share, entries.length ? 'split' : 'none', null);
   }
 
   /** POST /api/account/payout-wallet: the wallet just arrived, so pay this account's owed claims now (not a whole sweep). */
@@ -1739,6 +1851,7 @@ export function createCampaignEngine({
     if (!c || c.status !== 'closed' || !c.funding || c.refund) return null;
     if (fundedAtomic(c) <= 0n) return null;                 // nothing confirmed as pulled: nothing to return
     if (Object.keys(c.xHolds || {}).length) return null;    // an X spend in flight settles first
+    if (isPrize(c) && !c.prize) return null;                // the prize is decided first (award or split)
     const claims = store.listClaims(id);
     if (claims.some((k) => k.status === 'owed' || IN_FLIGHT.has(k.status))) return null; // every owed claim intended first
     const spent = doorSum(id, 'campaign:', 'release');
@@ -1755,8 +1868,11 @@ export function createCampaignEngine({
   async function estimateSet({ source, sourceRef, accountId = null }) {
     if (source === 'manual') return { source, count: normaliseIds(String(sourceRef || '').split(/[\s,;]+/)).length, costUsd: 0, requests: 0, lookupCostUsd: 0 };
     if (!xApi.appBearerConfigured()) throw fail('no_bearer', 'Building from X needs X_BEARER_TOKEN on the server. Paste numeric X ids instead.', 503);
-    if (source === 'x-following') {
+    if (source === 'x-following' || source === 'x-mutuals') {
       // No sourceRef: the caller's OWN following list, through their X link.
+      // x-mutuals reads BOTH lists (following and followers) and keeps the
+      // accounts on both. Frozen like every set, so following someone after
+      // the snapshot never qualifies them: nothing here rewards a follow.
       let ref = String(sourceRef || '').trim().replace(/^@/, '');
       if (!ref) {
         ref = (getAccount(accountId)?.links || []).find((l) => l.provider === 'x')?.platformId || '';
@@ -1765,6 +1881,13 @@ export function createCampaignEngine({
       const r = /^\d{1,20}$/.test(ref) ? await xApi.fetchUserById({ userId: ref, log }) : await xApi.fetchUserByUsername({ username: ref, log });
       if (!r.ok) throw fail('x_lookup_failed', `X did not return that account (${r.error}).`, 502);
       const n = Number(r.user.followingCount) || 0;
+      if (source === 'x-mutuals') {
+        const f = Number(r.user.followersCount) || 0;
+        const read = n + f;
+        const requests = Math.max(1, Math.ceil(n / 1000)) + Math.max(1, Math.ceil(f / 1000));
+        // count: at most this many can be mutuals; the snapshot says how many are.
+        return { source, sourceRef: r.user.id, label: `@${r.user.username}'s mutuals`, count: Math.min(n, f), reads: read, requests, costUsd: roundUsd(read * xApi.X_COST_PER_USER_USD), lookupCostUsd: r.costUsd, minutes: requests > 300 ? Math.ceil(requests / 300) * 15 : 0 };
+      }
       const requests = Math.max(1, Math.ceil(n / 1000));
       return { source, sourceRef: r.user.id, label: `Accounts @${r.user.username} follows`, count: n, requests, costUsd: roundUsd(n * xApi.X_COST_PER_USER_USD), lookupCostUsd: r.costUsd, minutes: requests > 300 ? Math.ceil(requests / 300) * 15 : 0 };
     }
@@ -1775,7 +1898,7 @@ export function createCampaignEngine({
       const requests = Math.max(1, Math.ceil(n / 100));
       return { source, sourceRef: r.list.id, label: r.list.name ? `X List "${r.list.name}"` : `X List ${r.list.id}`, count: n, requests, costUsd: roundUsd(n * xApi.X_COST_PER_USER_USD), lookupCostUsd: r.costUsd, minutes: requests > 300 ? Math.ceil(requests / 300) * 15 : 0 };
     }
-    throw fail('invalid', 'source must be manual, x-following or x-list.');
+    throw fail('invalid', 'source must be manual, x-following, x-mutuals or x-list.');
   }
 
   /**
@@ -1843,24 +1966,35 @@ export function createCampaignEngine({
           est = await estimateSet({ source, sourceRef, accountId });
           costUsd += est.lookupCostUsd;
           if (!confirm || !(cap >= est.costUsd)) {
-            throw fail('confirm_required', `This snapshot reads ${est.count.toLocaleString('en-US')} accounts and costs about $${est.costUsd.toFixed(2)}. Send confirm: true with confirmCostUsd to run it.`, 402, { estimate: est });
+            throw fail('confirm_required', `This snapshot reads ${(est.reads ?? est.count).toLocaleString('en-US')} accounts and costs about $${est.costUsd.toFixed(2)}. Send confirm: true with confirmCostUsd to run it.`, 402, { estimate: est });
           }
           resolvedRef = est.sourceRef;
-          const kind = source === 'x-list' ? 'list-members' : 'following';
-          let next = null;
-          do {
-            const room = Math.floor((cap - (costUsd - est.lookupCostUsd)) / xApi.X_COST_PER_USER_USD + 1e-9);
-            if (room < 1) throw fail('over_cost', 'The list grew past the confirmed cost; nothing was stored. Estimate again.', 409);
-            let page = await xApi.pageUsers({ kind, id: est.sourceRef, maxResults: Math.min(kind === 'list-members' ? 100 : 1000, room), paginationToken: next, log });
-            if (!page.ok && page.error === 'rate_limited' && page.resetAt && page.resetAt - now() <= 60_000) {
-              await new Promise((r) => setTimeout(r, Math.max(0, page.resetAt - now()) + 500));
-              page = await xApi.pageUsers({ kind, id: est.sourceRef, maxResults: Math.min(kind === 'list-members' ? 100 : 1000, room), paginationToken: next, log });
-            }
-            if (!page.ok) throw fail('x_page_failed', page.error === 'rate_limited' ? 'X rate limit reached part-way; nothing was stored. Try again in 15 minutes.' : `X refused a page (${page.error}); nothing was stored.`, 502);
-            costUsd += page.costUsd;
-            for (const u of page.users) { ids.push(u.id); if (u.username) handles[u.id] = u.username; }
-            next = page.nextToken;
-          } while (next);
+          /** Every page of one list, inside the confirmed cost. */
+          const pageAll = async (kind, into, names) => {
+            let next = null;
+            do {
+              const room = Math.floor((cap - (costUsd - est.lookupCostUsd)) / xApi.X_COST_PER_USER_USD + 1e-9);
+              if (room < 1) throw fail('over_cost', 'The list grew past the confirmed cost; nothing was stored. Estimate again.', 409);
+              let page = await xApi.pageUsers({ kind, id: est.sourceRef, maxResults: Math.min(kind === 'list-members' ? 100 : 1000, room), paginationToken: next, log });
+              if (!page.ok && page.error === 'rate_limited' && page.resetAt && page.resetAt - now() <= 60_000) {
+                await new Promise((r) => setTimeout(r, Math.max(0, page.resetAt - now()) + 500));
+                page = await xApi.pageUsers({ kind, id: est.sourceRef, maxResults: Math.min(kind === 'list-members' ? 100 : 1000, room), paginationToken: next, log });
+              }
+              if (!page.ok) throw fail('x_page_failed', page.error === 'rate_limited' ? 'X rate limit reached part-way; nothing was stored. Try again in 15 minutes.' : `X refused a page (${page.error}); nothing was stored.`, 502);
+              costUsd += page.costUsd;
+              for (const u of page.users) { into.push(u.id); if (u.username) names[u.id] = u.username; }
+              next = page.nextToken;
+            } while (next);
+          };
+          if (source === 'x-mutuals') {
+            const following = [], followers = [];
+            await pageAll('following', following, handles);
+            await pageAll('followers', followers, handles);
+            const back = new Set(followers.map(String));
+            for (const id of following) if (back.has(String(id))) ids.push(id);
+          } else {
+            await pageAll(source === 'x-list' ? 'list-members' : 'following', ids, handles);
+          }
         });
       } finally {
         if (holdId) settleX(chargeTo.id, holdId, roundUsd(costUsd), 'set');
@@ -1929,7 +2063,7 @@ export function createCampaignEngine({
     const reward = big(c.reward.atomic);
     // Places left: the places not yet held, and never more than what is left
     // of the budget pays (X lookups spend it too).
-    const affordableLeft = reward > 0n ? Number(remaining / reward > BigInt(MAX_PLACES) ? BigInt(MAX_PLACES) : remaining / reward) : 0;
+    const affordableLeft = isPrize(c) ? (remaining > 0n ? MAX_PLACES : 0) : reward > 0n ? Number(remaining / reward > BigInt(MAX_PLACES) ? BigInt(MAX_PLACES) : remaining / reward) : 0;
     const spotsLeft = preview ? places : Math.max(0, Math.min(places - t.activeCount, affordableLeft));
     return {
       slug: c.slug, title: c.title, blurb: c.blurb, status: isOpen(c) ? 'live' : 'closed',
@@ -1939,6 +2073,14 @@ export function createCampaignEngine({
       reward: { type: c.reward.type, amount: c.reward.amount, symbol: moneyToken(c).symbol, tokenAddress: moneyToken(c).address },
       budget: { amount: c.budget.amount, left: fromAtomic(remaining, moneyToken(c).decimals), symbol: moneyToken(c).symbol },
       maxClaims: places, spotsLeft,
+      payout: c.payout || 'each',
+      // A prize campaign: entries so far, when the creator must pick by, and
+      // what was decided (null until then).
+      prize: isPrize(c) ? {
+        entries: t.claims.filter((k) => k.status === 'entered' || k.status === 'not_chosen' || (k.owedAtomic && ['owed', 'releasing', 'paid', 'failed'].includes(k.status))).length,
+        awardBy: awardDeadline(c) != null ? new Date(awardDeadline(c)).toISOString() : (c.deadline ? new Date(Date.parse(c.deadline) + AWARD_WINDOW_MS()).toISOString() : null),
+        decided: c.prize ? { mode: c.prize.mode, at: c.prize.at, winners: (c.prize.winners || []).length, share: fromAtomic(big(c.prize.shareAtomic), moneyToken(c).decimals) } : null,
+      } : null,
       deadline: c.deadline,
       rules: describeRules(c.rules, { refSets: sets }),
       referenceSet: setFingerprint(c.rules.referenceSetId),
@@ -2007,7 +2149,7 @@ export function createCampaignEngine({
     // A warning, not a refusal: a cap below what the budget pays leaves budget
     // that can never be paid out; the extra comes back in the refund.
     const places = placesOf(c);
-    const warnings = big(c.budget.atomic) > big(c.reward.atomic) * BigInt(places)
+    const warnings = !isPrize(c) && big(c.budget.atomic) > big(c.reward.atomic) * BigInt(places)
       && big(c.budget.atomic) - big(c.reward.atomic) * BigInt(places) >= big(c.reward.atomic)
       ? [`The budget is more than reward × max claims (${fromAtomic(big(c.reward.atomic) * BigInt(places), dec)} ${moneyToken(c).symbol}). The extra can never be paid out; it comes back when the campaign closes.`]
       : [];
@@ -2019,6 +2161,9 @@ export function createCampaignEngine({
       // The places offered (≤ budget ÷ reward) and the creator's cap as set.
       maxClaims: places,
       claimCap: capOf(c),
+      payout: c.payout || 'each',
+      prize: c.prize || null,
+      awardBy: isPrize(c) && awardDeadline(c) != null ? new Date(awardDeadline(c)).toISOString() : null,
       // A draft nothing was ever attempted against can be deleted outright.
       deletable: neverFunded(c),
       warnings,
@@ -2088,7 +2233,7 @@ export function createCampaignEngine({
   return {
     store, totals, tokenInfo,
     createCampaign, updateCampaign, deleteDraft, fundTerms, fund, open, close, setHidden,
-    check, reserve, releaseSlot, bind, advance, tryPay, payAccount, onLetterEvent, onSeatEvent, sync, maybeRefund,
+    check, reserve, releaseSlot, bind, advance, tryPay, payAccount, onLetterEvent, onSeatEvent, sync, maybeRefund, award,
     estimateSet, estimateForCampaign, buildSet, refreshSet, listSets, getSetView, reconcileFunding, resolveStuckFunding,
     publicView, ownerPreview, myClaim, claimView, listManaged, getManaged, manageView, claimsFor,
     /** Whether this server can SEND payouts (a platform payout signer at the door). */

@@ -31,6 +31,7 @@ import {
   type Campaign,
   type CampaignConfig,
   type CampaignInput,
+  type PayoutMode,
   type ReferenceSet,
   type RuleKey,
   type Rules,
@@ -99,6 +100,9 @@ function goToField(id: string) {
 type Draft = {
   title: string
   blurb: string
+  /** each: every qualifying action is paid the reward. prize: the reward is
+   *  one prize (and the budget); the creator picks the winner. */
+  payout: PayoutMode
   rewardAmount: string
   tokenMode: 'usdc' | 'token'
   tokenAddress: string
@@ -134,6 +138,7 @@ function blankDraft(): Draft {
   return {
     title: '',
     blurb: '',
+    payout: 'each',
     rewardAmount: '5',
     tokenMode: 'usdc',
     tokenAddress: '',
@@ -155,6 +160,7 @@ function fromCampaign(c: Campaign): Draft {
   return {
     title: c.title,
     blurb: c.blurb,
+    payout: c.payout === 'prize' ? 'prize' : 'each',
     rewardAmount: c.reward.amount,
     tokenMode: c.reward.type === 'token' ? 'token' : 'usdc',
     tokenAddress: c.reward.address || c.token?.address || '',
@@ -278,6 +284,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
   }, [draft.tokenMode, draft.tokenAddress, token])
 
   const symbol = draft.tokenMode === 'usdc' ? 'USDC' : token?.symbol || 'TOKEN'
+  const prize = draft.payout === 'prize'
   const reward = num(draft.rewardAmount)
   // The optional cap: null when blank, NaN when it is not a whole number.
   const maxClaims = parseCap(draft.maxClaims)
@@ -313,12 +320,14 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
     else if (!(reward > 0)) add('The reward must be more than zero.', 'Reward', FIELD.reward, !draft.rewardAmount.trim())
     if (draft.tokenMode === 'token' && !token) add(tokenState === 'error' ? 'The custom token could not be read.' : 'Enter a Tempo token address and wait for it to resolve.', 'Token address', FIELD.token, tokenState !== 'error')
     if (draft.tokenMode === 'token' && token && token.campaignAllowed === false) add('This server does not take that token for campaigns yet: custom tokens need an on-chain test first.', 'Token', FIELD.token)
-    const budgetBad = decimals != null ? amountProblem(draft.budgetAmount, decimals, symbol, 'budget') : null
-    if (budgetBad) add(budgetBad, 'Budget', FIELD.budget)
+    // A prize is its own budget: there is no budget field to check.
+    const budgetBad = prize ? null : decimals != null ? amountProblem(draft.budgetAmount, decimals, symbol, 'budget') : null
+    if (prize) { /* the prize is the budget */ }
+    else if (budgetBad) add(budgetBad, 'Budget', FIELD.budget)
     else if (!(budget > 0)) add('Set a budget.', 'Budget', FIELD.budget, true)
     else if (reward > 0 && budget < reward) add('The budget is smaller than one reward.', 'Budget below one reward', FIELD.budget)
     for (const p of countProblems(maxClaims, minSeconds, draft.actionKind === 'callin')) {
-      if (/^Max claims/.test(p)) add(p, 'Max claims', FIELD.cap)
+      if (/^Max claims/.test(p)) add(prize ? p.replace(/^Max claims/, 'Max entries') : p, prize ? 'Max entries' : 'Max claims', FIELD.cap)
       else add(p, 'Time on camera', FIELD.seconds)
     }
     const dl = new Date(draft.deadline)
@@ -331,7 +340,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
     if (fb) for (const p of caps.problems) add(p, 'X-API cost cap', FIELD.xcap)
     if (draft.rules.verifiedTypes && draft.rules.verifiedTypes.length === 0) add('Pick at least one checkmark type, or switch that rule off.', 'Checkmark type', 'mcp-rule-verified')
     return out
-  }, [draft, reward, budget, maxClaims, minSeconds, token, tokenState, fb, decimals, symbol, caps])
+  }, [draft, reward, budget, maxClaims, minSeconds, token, tokenState, fb, decimals, symbol, caps, prize])
 
   // Money goes out exactly as typed (form-rules.ts amountToSend), never as
   // String(Number(typed)), and the caps are parsed from their text here.
@@ -341,8 +350,11 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
     reward: draft.tokenMode === 'usdc'
       ? { type: 'usdc', amount: amountToSend(draft.rewardAmount) }
       : { type: 'token', address: token!.address, amount: amountToSend(draft.rewardAmount) },
-    budget: { amount: amountToSend(draft.budgetAmount) },
-    // Blank sends null: the budget decides how many places (the server's placesFor).
+    // A prize is its own budget (the server ignores any other).
+    budget: { amount: amountToSend(prize ? draft.rewardAmount : draft.budgetAmount) },
+    payout: draft.payout,
+    // Blank sends null: the budget decides how many places (the server's
+    // placesFor); for a prize, blank means no limit on entries.
     maxClaims: capSet,
     deadline: new Date(draft.deadline).toISOString(),
     action: {
@@ -494,11 +506,27 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
 
         {/* Reward */}
         <section className="mcp-card" data-kind="money">
-          <header><h2>What each person gets</h2></header>
+          <header><h2>{prize ? 'The prize' : 'What each person gets'}</h2></header>
+          {/* How it pays. A prize is one amount the creator awards to the
+              best entry after the end (campaign-engine.js award), split
+              evenly between every entry if they do not pick in time. Only a
+              draft can switch (the server refuses it after funding). */}
+          <div className="mcp-choice-grid" role="radiogroup" aria-label="How it pays">
+            {([
+              ['each', 'Pay everyone who qualifies', 'A fixed reward for every Holler or Call in that counts.'],
+              ['prize', 'One prize, you pick the winner', 'Every Holler or Call in that counts is an entry. Pick the best within 48 hours of the end, or it is split between every entry.'],
+            ] as [PayoutMode, string, string][]).map(([k, title, copy]) => (
+              <button key={k} type="button" role="radio" aria-checked={draft.payout === k} className="mcp-choice" disabled={!!campaign && campaign.status !== 'draft'}
+                onClick={() => patch({ payout: k })}>
+                <strong>{title}</strong>
+                <small>{copy}</small>
+              </button>
+            ))}
+          </div>
           <div className="mcp-fields two">
             <div className="mcp-field">
               <span className="mcp-label-row">
-                <label htmlFor={FIELD.reward}>Reward per claim</label>
+                <label htmlFor={FIELD.reward}>{prize ? 'Prize' : 'Reward per claim'}</label>
                 {payouts === true ? (
                   <span className="mcp-state-chip" data-tone="ok">Pays out automatically</span>
                 ) : payouts === false ? (
@@ -541,7 +569,19 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
 
         {/* Budget and limits */}
         <section className="mcp-card" data-kind="money">
-          <header><h2>How much, how many, until when</h2><p>The budget leaves your wallet when you fund the campaign. Whatever is not paid out comes back when it closes.</p></header>
+          <header>{prize
+            ? <><h2>How many, until when</h2><p>The prize leaves your wallet when you fund the campaign. Pick the winner within 48 hours of the deadline; if you do not, it is split evenly between every entry. With no entries, it comes back to you.</p></>
+            : <><h2>How much, how many, until when</h2><p>The budget leaves your wallet when you fund the campaign. Whatever is not paid out comes back when it closes.</p></>}</header>
+          {prize ? (
+            <div className="mcp-fields two">
+              <label className="mcp-field">
+                <span>Max entries <em className="mcp-optional">optional</em></span>
+                <input id={FIELD.cap} inputMode="numeric" value={draft.maxClaims} placeholder="No limit" onChange={(e) => patch({ maxClaims: e.target.value })} />
+                <small>{capSet == null ? 'Blank: anyone who qualifies can enter.' : `Stops taking entries after ${capSet.toLocaleString('en-US')}.`}</small>
+              </label>
+              <label className="mcp-field"><span>Deadline</span><input id={FIELD.deadline} type="datetime-local" required min={deadlineMin} max={deadlineMax} value={draft.deadline} onChange={(e) => patch({ deadline: e.target.value })} /><small>Required. Entries stop here; set it to the end of the show.</small></label>
+            </div>
+          ) : (
           <div className="mcp-fields three">
             <label className="mcp-field">
               <span>Budget</span>
@@ -568,6 +608,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
             </label>
             <label className="mcp-field"><span>Deadline</span><input id={FIELD.deadline} type="datetime-local" required min={deadlineMin} max={deadlineMax} value={draft.deadline} onChange={(e) => patch({ deadline: e.target.value })} /><small>Required. Claims stop here, whatever is left; up to {MAX_DEADLINE_DAYS} days out.</small></label>
           </div>
+          )}
         </section>
 
         {/* Action */}
@@ -660,7 +701,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
           ) : followerChecksOff ? (
             <p className="mcp-hint">Save keeps it private. {followerWarning} Switch the rule off to fund, or fund once this server can read X.</p>
           ) : (
-            <p className="mcp-hint">Save keeps it private. Fund pulls <strong className="mcp-money">{rewardLabel(amountToSend(draft.budgetAmount), symbol)}</strong> from your wallet; you open it to claims from the campaign page.</p>
+            <p className="mcp-hint">Save keeps it private. Fund pulls <strong className="mcp-money">{rewardLabel(amountToSend(prize ? draft.rewardAmount : draft.budgetAmount), symbol)}</strong> from your wallet; you open it to claims from the campaign page.</p>
           )}
           {/* Keyed on the ask: when fund answers needsApproval again (a short
               allowance), that is a new step, not the old one left on a
@@ -699,7 +740,11 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
           <FeatureTag kind={draft.actionKind} />
           <h3>{draft.title.trim() || 'Your campaign title'}</h3>
           <p>{draft.blurb.trim() || 'Your one-line blurb goes here.'}</p>
-          <div className="mcp-preview-reward"><strong className="mcp-money">{rewardText}</strong><span>to {ACTION_LABEL[draft.actionKind]} on @{draft.roomHandle || 'your-room'}</span></div>
+          {prize ? (
+            <div className="mcp-preview-reward"><strong className="mcp-money">{rewardText}</strong><span>to the best {draft.actionKind === 'holler' ? 'Holler' : 'Call in'} on @{draft.roomHandle || 'your-room'}. Not picked within 48 hours? Split between every entry.</span></div>
+          ) : (
+            <div className="mcp-preview-reward"><strong className="mcp-money">{rewardText}</strong><span>to {ACTION_LABEL[draft.actionKind]} on @{draft.roomHandle || 'your-room'}</span></div>
+          )}
           <p className="mcp-preview-rule">{sentence}.</p>
           <p className="mcp-preview-notice">No follow, reply or repost needed.</p>
         </section>

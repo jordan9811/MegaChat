@@ -459,3 +459,15 @@ body:has(.mc-camp) { background: var(--hl-bg); }
 @media (max-width: 700px) {
   .mcp-rule-copy { padding-left: 15px; }
 }
+
+/* A prize campaign's entries: one row each, the award button at the end
+   (campaign-detail.tsx, campaign-engine.js award). */
+.mcp-entries { display: flex; flex-direction: column; gap: 0; margin: 12px 0 0; padding: 0; list-style: none; }
+.mcp-entries li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px 0; border-top: 1px solid var(--hl-line); }
+.mcp-entries li > span:first-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mcp-entries li small { color: var(--hl-muted); font-size: 12px; }
+.mcp-prize { margin-bottom: 16px; }
+/* How it pays (each / prize): no feature colour of its own, so the campaign
+   green marks the choice. Locked once funded. */
+.mcp-choice[aria-checked='true']:not([data-kind]) { border-color: var(--f-rewards-line); background: linear-gradient(105deg, var(--f-rewards-bg), transparent 70%), var(--hl-panel-2); box-shadow: inset 3px 0 0 var(--f-rewards-ui); }
+.mcp-choice:disabled { cursor: not-allowed; opacity: .7; }

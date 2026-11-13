@@ -139,6 +139,8 @@ export const CAMPAIGN_ROUTES = [
   }],
   ['POST', '/api/campaigns/:id/open', TIER.FAN, (e, req, w) => ({ ok: true, campaign: e.manageView(e.open(req.params.id, w)) })],
   ['POST', '/api/campaigns/:id/close', TIER.FAN, (e, req, w) => ({ ok: true, campaign: e.manageView(e.close(req.params.id, { ...w, reason: 'closed by creator' })) })],
+  // A prize campaign: the creator picks the winning entry (campaign-engine.js award).
+  ['POST', '/api/campaigns/:id/award', TIER.FAN, (e, req, w) => ({ ok: true, campaign: e.manageView(e.award(req.params.id, { claimId: String(req.body?.claimId || '') }, w)) })],
   ['GET', '/api/campaigns/:id/claims', TIER.FAN, (e, req, w) => ({ claims: e.claimsFor(req.params.id, w) })],
 
   // ── reference sets ──────────────────────────────────────────────────────

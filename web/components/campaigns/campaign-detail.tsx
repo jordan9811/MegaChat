@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  awardCampaign,
   closeCampaign,
   deleteCampaign,
   fundCampaign,
@@ -82,6 +83,8 @@ const CLAIM_PIP: Record<ClaimStatus, { label: string; tone: Tone }> = {
   failed: { label: 'Failed', tone: 'bad' },
   rejected: { label: 'Rejected', tone: 'bad' },
   expired: { label: 'Expired', tone: 'bad' },
+  entered: { label: 'Entry', tone: 'ok' },
+  not_chosen: { label: 'Not chosen', tone: 'draft' },
 }
 
 /** `what` completes the button's name for a screen reader ("Copy the
@@ -103,7 +106,9 @@ export function CampaignDetail({ id }: { id: string }) {
   const [sets, setSets] = useState<ReferenceSet[]>([])
   const [error, setError] = useState<{ status: number; message: string } | null>(null)
   const [chain, setChain] = useState({ explorerUrl: 'https://explore.tempo.xyz' })
-  const [busy, setBusy] = useState<'fund' | 'open' | 'close' | 'delete' | null>(null)
+  const [busy, setBusy] = useState<'fund' | 'open' | 'close' | 'delete' | 'award' | null>(null)
+  // A prize campaign: the entry the creator is about to award (asked once).
+  const [picking, setPicking] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [approval, setApproval] = useState<ApprovalAsk | null>(null)
   const [confirmClose, setConfirmClose] = useState(false)
@@ -187,6 +192,20 @@ export function CampaignDetail({ id }: { id: string }) {
     }
   }, [id, load])
 
+  const award = useCallback(async (claimId: string) => {
+    setBusy('award')
+    setActionError(null)
+    try {
+      await awardCampaign(id, claimId)
+      setPicking(null)
+      await load()
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Could not award the prize')
+    } finally {
+      setBusy(null)
+    }
+  }, [id, load])
+
   const remove = useCallback(async () => {
     setBusy('delete')
     setActionError(null)
@@ -259,6 +278,12 @@ export function CampaignDetail({ id }: { id: string }) {
   const canChargeX = c.status === 'funded' && c.reward.type === 'usdc'
   const usedSetIds = [c.rules?.referenceSetId, c.rules?.followedByFromSet?.referenceSetId].filter(Boolean) as string[]
   const usedSets = sets.filter((s) => usedSetIds.includes(s.id))
+  // A prize campaign (campaign-engine.js award): its entries, and who won.
+  const isPrize = c.payout === 'prize'
+  const entries = (claims || []).filter((k) => k.status === 'entered')
+  const winners = new Set(c.prize?.winners || [])
+  const handleOf = (k: Claim) => (k.handle ? `@${k.handle}` : k.xHandle ? `@${k.xHandle.replace(/^@/, '')}` : 'an entry')
+  const prizeShare = c.prize ? (claims || []).find((k) => winners.has(k.id))?.owed?.amount ?? null : null
 
   return (
     <>
@@ -295,7 +320,7 @@ export function CampaignDetail({ id }: { id: string }) {
         <div className="mcp-status-state">
           <Pip tone={c.status === 'funding_pending' ? 'draft' : c.status}>{st.label}</Pip>
           <span>
-            <strong>{rewardLabel(c.reward.amount, sym)} to {ACTION_LABEL[c.action.kind]} on @{c.action.roomHandle}</strong>
+            <strong>{isPrize ? `${rewardLabel(c.reward.amount, sym)} to the best ${c.action.kind === 'holler' ? 'Holler' : 'Call in'} on @${c.action.roomHandle}` : `${rewardLabel(c.reward.amount, sym)} to ${ACTION_LABEL[c.action.kind]} on @${c.action.roomHandle}`}</strong>
             <small>{stCopy} Counts when {requireLabel(c.action.kind, c.action.require).title.toLowerCase()}{c.action.kind === 'callin' && c.action.minSeconds ? ` for ${c.action.minSeconds}s+` : ''}. Deadline {fmtDate(c.deadline, true)}.</small>
           </span>
           <FeatureTag kind={c.action.kind} />
@@ -370,6 +395,57 @@ export function CampaignDetail({ id }: { id: string }) {
           ) : null}
         </section>
       </div>
+
+      {isPrize && (c.status === 'live' || c.status === 'closed') ? (
+        <section className="mcp-card mcp-prize" aria-label="The prize">
+          {c.prize ? (
+            <header>
+              <h2>{c.prize.mode === 'awarded'
+                ? `Awarded to ${(claims || []).filter((k) => winners.has(k.id)).map(handleOf).join(', ') || 'the winner'}`
+                : c.prize.mode === 'split'
+                  ? `Split between ${c.prize.winners.length} ${c.prize.winners.length === 1 ? 'entry' : 'entries'}`
+                  : 'Nobody entered'}</h2>
+              <p>{c.prize.mode === 'awarded'
+                ? `${rewardLabel(prizeShare || c.reward.amount, sym)} goes to the winner. The other entries were not chosen.`
+                : c.prize.mode === 'split'
+                  ? `No winner was picked by the award deadline, so every entry got an even share${prizeShare ? ` of ${rewardLabel(prizeShare, sym)}` : ''}. Anything left over comes back to you.`
+                  : 'The prize comes back to you in the refund.'}</p>
+            </header>
+          ) : c.status === 'live' ? (
+            <header>
+              <h2>{entries.length === 0 ? 'No entries yet' : `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} so far`}</h2>
+              <p>Every {c.action.kind === 'holler' ? 'Holler' : 'Call in'} that counts is an entry. Pick the winner once the campaign ends ({fmtDate(c.deadline, true)}). You will have 48 hours; after that the prize is split evenly between every entry.</p>
+            </header>
+          ) : (
+            <>
+              <header>
+                <h2>{entries.length === 0 ? 'No entries' : 'Pick the winner'}</h2>
+                <p>{entries.length === 0
+                  ? 'Nothing counted as an entry, so the prize comes back to you.'
+                  : <>The winner gets the whole prize. Pick by <strong>{fmtDate(c.awardBy, true)}</strong>; after that it is split evenly between all {entries.length} {entries.length === 1 ? 'entry' : 'entries'}.</>}</p>
+              </header>
+              {entries.length > 0 ? (
+                <ul className="mcp-entries">
+                  {entries.map((k) => (
+                    <li key={k.id}>
+                      <span><strong>{handleOf(k)}</strong><small>{fmtDate(k.updatedAt || k.createdAt, true)}</small></span>
+                      {picking === k.id ? (
+                        <span className="mcp-end-confirm">
+                          <small>Give {handleOf(k)} the prize? It pays out now and cannot be undone.</small>
+                          <button type="button" className="mcp-btn" disabled={busy !== null} onClick={() => void award(k.id)}>{busy === 'award' ? 'Awarding…' : 'Yes, award it'}</button>
+                          <button type="button" className="mcp-btn-ghost" disabled={busy !== null} onClick={() => setPicking(null)}>Back</button>
+                        </span>
+                      ) : (
+                        <button type="button" className="mcp-btn-ghost mcp-btn-sm" disabled={busy !== null} onClick={() => setPicking(k.id)}>Pick as winner</button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
+          )}
+        </section>
+      ) : null}
 
       <section className="mcp-card mcp-claims">
         <header><span className="mcp-coordinate">Claims</span><h2>{claims == null ? (claimsError ? 'Not loaded' : 'Loading…') : claims.length === 0 ? 'No claims yet' : `${claims.length} ${claims.length === 1 ? 'claim' : 'claims'}`}</h2>{claimsError ? <p className="mcp-hint">Claims could not be loaded ({claimsError}).</p> : null}</header>

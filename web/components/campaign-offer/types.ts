@@ -4,7 +4,7 @@
 export type SetFingerprint = {
   id: string
   name: string
-  source: 'x-following' | 'x-list' | 'manual'
+  source: 'x-following' | 'x-mutuals' | 'x-list' | 'manual'
   count: number
   snapshotAt: string
   root: string
@@ -26,6 +26,15 @@ export type PublicCampaign = {
   /** Places offered: never more than the budget pays (placesOf). */
   maxClaims: number
   spotsLeft: number
+  /** 'prize': the reward is one prize the creator awards to the best entry
+   *  (campaign-engine.js award), split between every entry if they do not
+   *  pick by `prize.awardBy`. Absent or 'each': every qualifying action is paid. */
+  payout?: 'each' | 'prize'
+  prize?: {
+    entries: number
+    awardBy: string | null
+    decided: { mode: 'awarded' | 'split' | 'none'; at: string; winners: number; share: string } | null
+  } | null
   deadline: string | null
   rules: string[]
   referenceSet: SetFingerprint | null
@@ -40,7 +49,7 @@ export type CampaignCheck = { rule: string; pass: boolean; detail: string }
 
 export type CampaignClaim = {
   id: string
-  status: 'ineligible' | 'eligible' | 'recorded' | 'approved' | 'aired' | 'joined' | 'owed' | 'releasing' | 'paid' | 'failed' | 'rejected' | 'expired'
+  status: 'ineligible' | 'eligible' | 'recorded' | 'approved' | 'aired' | 'joined' | 'entered' | 'not_chosen' | 'owed' | 'releasing' | 'paid' | 'failed' | 'rejected' | 'expired'
   checks: CampaignCheck[]
   checkedAt: string | null
   xUsername: string | null
