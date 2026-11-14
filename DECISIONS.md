@@ -2685,3 +2685,27 @@ previous commit.
   places evenly instead of by weight (4 checks fail). `_gate-campaigns`
   287/0, Gate H 99/0. Undo: send `prizes: null` (one winner); the clip route
   is one row in `CAMPAIGN_ROUTES`.
+
+## 2026-11-13 — Mutuals withdrawn; link previews in the Retro look
+
+- **The mutuals list (`x-mutuals`, 7ae3d6c) is withdrawn.** A mutual has to
+  follow the creator, so a campaign gated on mutuals rewards following them,
+  which the 2026-10-23 entry ("followedByFromSet counts `following`, not
+  `followed_by`") refuses under X's developer policy. The frozen snapshot
+  only narrowed that: "follow me before Friday's snapshot" still works. The
+  owner's original ask (2026-10-23) was the compliant one: "people that have X
+  mutuals so they are followed by X people on my following list", which is
+  the "Followed by people on a list" rule over an "Accounts I follow" set: it
+  counts list members who already follow the applicant, which the applicant
+  cannot manufacture. For "$100 split between my mutuals who call in", use an
+  "Accounts I follow" set: it holds every mutual, plus people the creator
+  follows who do not follow back. The engine refuses `x-mutuals` with that
+  advice; the builder no longer offers it. Undo: revert this entry's commit.
+  Do not without a policy answer.
+- **The link-preview card and the sign-in logo now use the Retro wordmark**
+  (lowercase holler, the o a test card; `scripts/generate-og.mjs`). They had
+  kept the neon strap since 8140950. `/og.png` is now referenced as
+  `/og.png?v=2` because X, Discord and iMessage cache a preview image by URL;
+  bump it on every re-render. The Privy logo is two files, one per modal
+  theme. `apple-icon.png` was already the test card and is no longer made by
+  the script.

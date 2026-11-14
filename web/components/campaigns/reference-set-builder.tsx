@@ -25,8 +25,7 @@ import { fmtDate, fmtInt, shortRoot } from './rules'
 
 const SOURCE_LABEL: Record<ReferenceSetSource, { title: string; copy: string; refLabel?: string; refPlaceholder?: string }> = {
   manual: { title: 'Paste account ids', copy: 'Numeric X ids, one per line or comma-separated. Free.', refLabel: 'Account ids', refPlaceholder: '783214\n12\n…' },
-  'x-following': { title: 'Accounts I follow on X', copy: 'Snapshot of your own following list. Costs X-API calls.' },
-  'x-mutuals': { title: 'My mutuals on X', copy: 'Accounts you follow that follow you back, frozen today: following you later does not get anyone in. Reads both lists, so it costs more X-API calls.' },
+  'x-following': { title: 'Accounts I follow on X', copy: 'Snapshot of your own following list, so every one of your mutuals is on it. Costs X-API calls.' },
   'x-list': { title: 'An X List', copy: 'Members of a List by its id. Costs X-API calls.', refLabel: 'List id', refPlaceholder: '1234567890123456789' },
 }
 
@@ -99,7 +98,7 @@ export function ReferenceSetBuilder({
   // Any change to what is being frozen invalidates the price the creator saw.
   useEffect(() => { setEstimate(null) }, [source, sourceRef])
 
-  const needsRef = source !== 'x-following' && source !== 'x-mutuals'
+  const needsRef = source !== 'x-following'
   const xSourced = source !== 'manual'
   const pasted = useMemo(() => (source === 'manual' ? parsePastedIds(sourceRef) : null), [source, sourceRef])
   // The server takes numeric ids only; handles are named as not added, never dropped quietly.
@@ -160,7 +159,7 @@ export function ReferenceSetBuilder({
       ) : null}
       <label className="mcp-field">
         <span>Name <small>(optional)</small></span>
-        <input value={name} maxLength={80} placeholder={source === 'x-following' ? 'Following · today' : source === 'x-mutuals' ? 'Mutuals · today' : source === 'x-list' ? 'My List' : 'Pasted ids'} onChange={(e) => setName(e.target.value)} />
+        <input value={name} maxLength={80} placeholder={source === 'x-following' ? 'Following · today' : source === 'x-list' ? 'My List' : 'Pasted ids'} onChange={(e) => setName(e.target.value)} />
       </label>
       {needsRef ? (
         <label className="mcp-field">

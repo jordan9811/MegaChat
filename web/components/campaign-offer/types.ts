@@ -4,7 +4,7 @@
 export type SetFingerprint = {
   id: string
   name: string
-  source: 'x-following' | 'x-mutuals' | 'x-list' | 'manual'
+  source: 'x-following' | 'x-list' | 'manual'
   count: number
   snapshotAt: string
   root: string

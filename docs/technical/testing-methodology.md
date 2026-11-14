@@ -239,7 +239,7 @@ Retired on 2026-10-24 and deleted (named without their extension here, since the
 | `scripts/docs-gitbook-check.mjs` | docs:gitbook-check — is the repo side ready for GitBook Git Sync? | free | in-process | - | - | - | - | live |
 | `scripts/docs-summary.mjs` | docs:summary — MERGE the docs/ tree into docs/SUMMARY.md. SUMMARY.md is GitBook's table of contents: a markdown file that is not listed… | free | in-process | - | - | - | - | live |
 | `scripts/docs-sync.mjs` | docs:sync — currency by construction. Docs rot because the code they describe moves and nothing notices. This script makes that… | free | in-process | - | - | - | - | live |
-| `scripts/generate-og.mjs` | Generate the Holler brand rasters and save them to web/public/: og.png 1200x630 social card — the full mark, large, on the night ground… | free | in-process | - | - | - | - | live |
+| `scripts/generate-og.mjs` | Generate the Holler brand rasters and save them to web/public/, in the default (Retro) look: og.png 1200x630 social card and the Privy sign-in logo… | free | in-process | - | - | - | - | live |
 | `scripts/play-endpoint.ps1` | Plays a WAV into one chosen Windows playback endpoint (the OBS-monitoring stand-in for the AEC probes). | free | in-process | - | - | - | - | live |
 
 <a id="ports-that-collide"></a>

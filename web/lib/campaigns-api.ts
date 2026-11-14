@@ -47,7 +47,7 @@ export type RuleKey = keyof Rules
 
 // ── Reference sets ──────────────────────────────────────────────────────────
 
-export type ReferenceSetSource = 'x-following' | 'x-mutuals' | 'x-list' | 'manual'
+export type ReferenceSetSource = 'x-following' | 'x-list' | 'manual'
 
 /** A frozen list of X account ids. `root` is the Merkle root of the snapshot,
  *  so a set can be shown and checked without ever handing out the list. */

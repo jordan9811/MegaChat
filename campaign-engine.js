@@ -1962,11 +1962,13 @@ export function createCampaignEngine({
   async function estimateSet({ source, sourceRef, accountId = null }) {
     if (source === 'manual') return { source, count: normaliseIds(String(sourceRef || '').split(/[\s,;]+/)).length, costUsd: 0, requests: 0, lookupCostUsd: 0 };
     if (!xApi.appBearerConfigured()) throw fail('no_bearer', 'Building from X needs X_BEARER_TOKEN on the server. Paste numeric X ids instead.', 503);
-    if (source === 'x-following' || source === 'x-mutuals') {
+    // No mutuals set (withdrawn 2026-11-13, owner): a mutual has to follow the
+    // creator, so a mutuals rule rewards following them (X Developer Policy).
+    // "My mutuals" is served by Accounts I follow, and "followed by N of my
+    // people" by followedByFromSet over that set; neither asks anyone to follow.
+    if (source === 'x-mutuals') throw fail('invalid', 'A mutuals list would need people to follow you, which X does not allow a reward for. Use "Accounts I follow" (it holds every mutual), or the "Followed by people on a list" rule.');
+    if (source === 'x-following') {
       // No sourceRef: the caller's OWN following list, through their X link.
-      // x-mutuals reads BOTH lists (following and followers) and keeps the
-      // accounts on both. Frozen like every set, so following someone after
-      // the snapshot never qualifies them: nothing here rewards a follow.
       let ref = String(sourceRef || '').trim().replace(/^@/, '');
       if (!ref) {
         ref = (getAccount(accountId)?.links || []).find((l) => l.provider === 'x')?.platformId || '';
@@ -1975,13 +1977,6 @@ export function createCampaignEngine({
       const r = /^\d{1,20}$/.test(ref) ? await xApi.fetchUserById({ userId: ref, log }) : await xApi.fetchUserByUsername({ username: ref, log });
       if (!r.ok) throw fail('x_lookup_failed', `X did not return that account (${r.error}).`, 502);
       const n = Number(r.user.followingCount) || 0;
-      if (source === 'x-mutuals') {
-        const f = Number(r.user.followersCount) || 0;
-        const read = n + f;
-        const requests = Math.max(1, Math.ceil(n / 1000)) + Math.max(1, Math.ceil(f / 1000));
-        // count: at most this many can be mutuals; the snapshot says how many are.
-        return { source, sourceRef: r.user.id, label: `@${r.user.username}'s mutuals`, count: Math.min(n, f), reads: read, requests, costUsd: roundUsd(read * xApi.X_COST_PER_USER_USD), lookupCostUsd: r.costUsd, minutes: requests > 300 ? Math.ceil(requests / 300) * 15 : 0 };
-      }
       const requests = Math.max(1, Math.ceil(n / 1000));
       return { source, sourceRef: r.user.id, label: `Accounts @${r.user.username} follows`, count: n, requests, costUsd: roundUsd(n * xApi.X_COST_PER_USER_USD), lookupCostUsd: r.costUsd, minutes: requests > 300 ? Math.ceil(requests / 300) * 15 : 0 };
     }
@@ -1992,7 +1987,7 @@ export function createCampaignEngine({
       const requests = Math.max(1, Math.ceil(n / 100));
       return { source, sourceRef: r.list.id, label: r.list.name ? `X List "${r.list.name}"` : `X List ${r.list.id}`, count: n, requests, costUsd: roundUsd(n * xApi.X_COST_PER_USER_USD), lookupCostUsd: r.costUsd, minutes: requests > 300 ? Math.ceil(requests / 300) * 15 : 0 };
     }
-    throw fail('invalid', 'source must be manual, x-following, x-mutuals or x-list.');
+    throw fail('invalid', 'source must be manual, x-following or x-list.');
   }
 
   /**
@@ -2080,15 +2075,7 @@ export function createCampaignEngine({
               next = page.nextToken;
             } while (next);
           };
-          if (source === 'x-mutuals') {
-            const following = [], followers = [];
-            await pageAll('following', following, handles);
-            await pageAll('followers', followers, handles);
-            const back = new Set(followers.map(String));
-            for (const id of following) if (back.has(String(id))) ids.push(id);
-          } else {
-            await pageAll(source === 'x-list' ? 'list-members' : 'following', ids, handles);
-          }
+          await pageAll(source === 'x-list' ? 'list-members' : 'following', ids, handles);
         });
       } finally {
         if (holdId) settleX(chargeTo.id, holdId, roundUsd(costUsd), 'set');

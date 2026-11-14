@@ -287,7 +287,8 @@ export default function PrivyBridge({ appId, privyTheme }: { appId: string; priv
       appearance: {
         theme: privyTheme,
         accentColor: '#0a9bff' as `#${string}`,
-        logo: '/holler-logo.png',
+        // The wordmark in the letters' colour for the modal's theme (scripts/generate-og.mjs).
+        logo: privyTheme === 'light' ? '/holler-logo-light.png' : '/holler-logo-dark.png',
         walletChainType: 'ethereum-only' as const,
       },
     }),

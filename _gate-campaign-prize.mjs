@@ -29,8 +29,8 @@
  *   Q5  a placed prize not awarded in time is still an even split
  *   K1  the pick list says which entries still have their clip; only the
  *       creator can fetch it
- *   M1  x-mutuals: the estimate reads both lists; the frozen set holds only
- *       accounts on both
+ *   M1  x-mutuals is refused (withdrawn 2026-11-13: a mutual must follow
+ *       the creator); an x-following set still builds
  *
  * `--engine <path>` imports another copy of campaign-engine.js (a mutation
  * run: see DECISIONS.md, prize campaigns).
@@ -329,12 +329,14 @@ ok('K1. a claim of another campaign is not found', code(r) === 'not_found', code
 
 // ── M1 ──
 console.log('\n── M1 the mutuals list ────────────────────────────────────────');
-const est = await eng.estimateSet({ source: 'x-mutuals', sourceRef: '', accountId: creator.id });
-ok('M1. the estimate reads both lists (6 + 6 accounts, $0.12) and offers at most min(6, 6)', est.reads === 12 && est.costUsd === 0.12 && est.count === 6, JSON.stringify({ reads: est.reads, cost: est.costUsd, count: est.count }));
-const set = await eng.buildSet({ name: 'Mutuals', source: 'x-mutuals', sourceRef: '', confirm: true, confirmCostUsd: est.costUsd }, { accountId: creator.id, isAdmin: true });
+r = await attempt(() => eng.estimateSet({ source: 'x-mutuals', sourceRef: '', accountId: creator.id }));
+ok('M1. a mutuals estimate is refused, naming the alternatives', code(r) === 'invalid' && /Accounts I follow/.test(r.error?.message || ''), r.error?.message);
+r = await attempt(() => eng.buildSet({ name: 'Mutuals', source: 'x-mutuals', sourceRef: '', confirm: true, confirmCostUsd: 1 }, { accountId: creator.id, isAdmin: true }));
+ok('M1. a mutuals build is refused and reads nobody\'s followers', r.error != null && !xcalls.pages.includes('followers'), code(r));
+const est = await eng.estimateSet({ source: 'x-following', sourceRef: '', accountId: creator.id });
+const set = await eng.buildSet({ name: 'Following', source: 'x-following', sourceRef: '', confirm: true, confirmCostUsd: est.costUsd }, { accountId: creator.id, isAdmin: true });
 const ids = eng.store.getSet(set.id).ids;
-ok('M1. the frozen set holds exactly the accounts on both lists (4, 5, 6)', ids.length === 3 && ['4', '5', '6'].every((i) => ids.includes(i)), ids.join(','));
-ok('M1. ...after reading following AND followers', xcalls.pages.includes('following') && xcalls.pages.includes('followers'));
+ok('M1. "Accounts I follow" still builds: the 6 accounts the creator follows', ids.length === 6 && FOLLOWING.every((i) => ids.includes(i)), ids.join(','));
 
 console.log(`\nRESULT: ${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

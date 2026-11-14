@@ -5151,3 +5151,16 @@ commit before); `_gate-dashboard-update`, `_gate-rooms-store`,
   in-memory balance on a deploy.
 
 - **DM1 update (2026-11-10):** the 24-hour window is replaced by a per-visit cap (leave and come back, earn again; 30 s grace). See DECISIONS 2026-11-10.
+
+## 2026-11-13 — Prize campaigns
+
+- **PC1 — a prize entry's clip can be evicted before the creator picks.** The
+  pick-the-winner list links each entry's aired Holler from the replay archive
+  (`aired-clips.js`, b1a4f2e). That archive drops the oldest clips once a room
+  passes 100 MB (400 MB across all rooms), and nothing protects a prize entry,
+  so on a very busy room an entry's Watch link can vanish inside the 48-hour
+  award window. The entry still counts and can still win; only the replay is
+  gone. Fix when it matters: pin clips whose claim is `entered` until the
+  prize is decided (exempt them from the budget pass in `archiveAiredClip`).
+  **Owner, 2026-11-13: not needed yet.** Bring it back up if prize campaigns
+  see real use (busy rooms, many entries), or when he asks for open issues.

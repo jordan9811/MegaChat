@@ -60,12 +60,12 @@ export const metadata: Metadata = {
     description: SITE_DESC,
     images: [
       {
-        // Purpose-built 1200x630 card (scripts/generate-og.mjs) — the old
-        // portrait hero PNG cropped badly in every link preview.
-        url: '/og.png',
+        // Purpose-built 1200x630 card (scripts/generate-og.mjs). Versioned:
+        // link previews cache by URL, so bump ?v= whenever og.png changes.
+        url: '/og.png?v=2',
         width: 1200,
         height: 630,
-        alt: 'Holler — the word HOLLER on an azure broadcast strap, the O a magenta record button',
+        alt: 'holler, the o a round TV test card, over: Skip the chat. Be the stream.',
       },
     ],
   },
@@ -73,7 +73,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: SITE_TITLE,
     description: SITE_DESC,
-    images: ['/og.png'],
+    images: ['/og.png?v=2'],
   },
   // Versioned: browsers cache a tab icon by its URL and ignore no-cache, so a
   // new icon needs a new URL. Bump ?v= whenever icon.svg or apple-icon.png change.
