@@ -28,12 +28,12 @@ const TRUST = [
 // examples (campaign-form.tsx PLACEHOLDER).
 // Owner's picks, 2026-11-13: one prize, places, the followed-by rule ("mutual
 // follows": accounts the streamer follows that follow the viewer), and a
-// follower minimum. Four rows, like the bounty board beside it.
+// verified-follower minimum (minVerifiedFollowers). Four rows, like the bounty board beside it.
 const CAMPAIGN_IDEAS = [
   { kind: 'holler', title: 'Funniest Holler tonight wins', detail: 'Holler / one prize, you pick', price: '$50' },
   { kind: 'callin', title: 'Top 3 hot takes', detail: 'Call in / 1st $30 · 2nd $15 · 3rd $5', price: '$50' },
-  { kind: 'holler', title: '5 mutual follows? Get paid to Holler', detail: 'Holler / followed by 5 people I follow', price: '$3' },
-  { kind: 'holler', title: '1,000+ followers? Get paid to Holler', detail: 'Holler / the first 50 that air', price: '$2' },
+  { kind: 'callin', title: '5 mutual follows? Get paid to call in', detail: 'Call in / followed by 5 people I follow', price: '$3' },
+  { kind: 'holler', title: '1,000+ verified followers? Get paid to Holler', detail: 'Holler / the first 50 that air', price: '$2' },
 ] as const
 
 function poolHref(pool: BountyPool): string {
