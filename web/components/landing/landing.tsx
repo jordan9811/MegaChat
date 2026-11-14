@@ -26,10 +26,14 @@ const TRUST = [
 
 // Starting points for a streamer's first campaign, after the form's own
 // examples (campaign-form.tsx PLACEHOLDER).
+// Owner's picks, 2026-11-13: one prize, places, the followed-by rule ("mutual
+// follows": accounts the streamer follows that follow the viewer), and a
+// follower minimum. Four rows, like the bounty board beside it.
 const CAMPAIGN_IDEAS = [
-  { kind: 'holler', title: 'Holler your worst take', detail: 'Holler / paid when it airs', price: '$0.25' },
-  { kind: 'callin', title: 'Call in with a hot take', detail: 'Call in / 5 min on camera', price: '$0.50' },
-  { kind: 'holler', title: 'First time here? Say hi', detail: 'Holler / paid when it airs', price: '$1.00' },
+  { kind: 'holler', title: 'Funniest Holler tonight wins', detail: 'Holler / one prize, you pick', price: '$50' },
+  { kind: 'callin', title: 'Top 3 hot takes', detail: 'Call in / 1st $30 · 2nd $15 · 3rd $5', price: '$50' },
+  { kind: 'holler', title: '5 mutual follows? Get paid to Holler', detail: 'Holler / followed by 5 people I follow', price: '$3' },
+  { kind: 'holler', title: '1,000+ followers? Get paid to Holler', detail: 'Holler / the first 50 that air', price: '$2' },
 ] as const
 
 function poolHref(pool: BountyPool): string {
@@ -48,7 +52,7 @@ export function Landing({
   pools: BountyPool[]
   contactHref: string
 }) {
-  const boardPools = [...pools].sort((a, b) => b.remaining - a.remaining).slice(0, 3)
+  const boardPools = [...pools].sort((a, b) => b.remaining - a.remaining).slice(0, 4)
   return (
     <div className="mc-landing min-h-screen">
       <header className="mcl-nav">
